@@ -128,6 +128,33 @@ export class GitHubClient {
     return parseJson<GitHubPullRequest>(result.stdout);
   }
 
+  async getPullRequestIfExists(prNumber: number): Promise<GitHubPullRequest | null> {
+    try {
+      return await this.getPullRequest(prNumber);
+    } catch {
+      return null;
+    }
+  }
+
+  async resolvePullRequestForBranch(
+    branch: string,
+    trackedPrNumber: number | null,
+  ): Promise<GitHubPullRequest | null> {
+    const openPullRequest = await this.findOpenPullRequest(branch);
+    if (openPullRequest) {
+      return openPullRequest;
+    }
+
+    if (trackedPrNumber !== null) {
+      const trackedPullRequest = await this.getPullRequestIfExists(trackedPrNumber);
+      if (trackedPullRequest) {
+        return trackedPullRequest;
+      }
+    }
+
+    return this.findLatestPullRequestForBranch(branch);
+  }
+
   async getChecks(prNumber: number): Promise<PullRequestCheck[]> {
     const result = await runCommand(
       "gh",
