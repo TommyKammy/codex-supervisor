@@ -756,24 +756,22 @@ export class Supervisor {
     let checks: PullRequestCheck[] = [];
     let reviewThreads: ReviewThread[] = [];
 
-    if (activeRecord.pr_number !== null || activeRecord.branch) {
-      try {
-        pr = await this.github.resolvePullRequestForBranch(activeRecord.branch, activeRecord.pr_number);
-        if (isOpenPullRequest(pr)) {
-          checks = await this.github.getChecks(pr.number);
-          reviewThreads = await this.github.getUnresolvedCopilotReviewThreads(pr.number);
-        }
-      } catch (error) {
-        const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
-        return `${formatDetailedStatus({
-          activeRecord,
-          latestRecord,
-          trackedIssueCount: Object.keys(state.issues).length,
-          pr,
-          checks,
-          reviewThreads,
-        })}\nstatus_warning=${truncate(message, 200)}`;
+    try {
+      pr = await this.github.resolvePullRequestForBranch(activeRecord.branch, activeRecord.pr_number);
+      if (isOpenPullRequest(pr)) {
+        checks = await this.github.getChecks(pr.number);
+        reviewThreads = await this.github.getUnresolvedCopilotReviewThreads(pr.number);
       }
+    } catch (error) {
+      const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
+      return `${formatDetailedStatus({
+        activeRecord,
+        latestRecord,
+        trackedIssueCount: Object.keys(state.issues).length,
+        pr,
+        checks,
+        reviewThreads,
+      })}\nstatus_warning=${truncate(message, 200)}`;
     }
 
     return formatDetailedStatus({
