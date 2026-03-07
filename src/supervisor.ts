@@ -472,6 +472,14 @@ function formatStatus(record: IssueRunRecord | null): string {
   ].join(" ");
 }
 
+function sanitizeStatusValue(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  return value.replace(/\r?\n/g, "\\n");
+}
+
 function summarizeCheckBuckets(checks: PullRequestCheck[]): string {
   if (checks.length === 0) {
     return "none";
@@ -554,7 +562,8 @@ function formatDetailedStatus(args: {
   ];
 
   if (activeRecord.last_error) {
-    lines.push(`last_error=${truncate(activeRecord.last_error, 300)}`);
+    const sanitizedLastError = sanitizeStatusValue(activeRecord.last_error);
+    lines.push(`last_error=${truncate(sanitizedLastError, 300)}`);
   }
 
   if (pr) {
@@ -718,8 +727,12 @@ export class Supervisor {
     const state = await this.stateStore.load();
     const activeRecord =
       state.activeIssueNumber !== null ? state.issues[String(state.activeIssueNumber)] ?? null : null;
-    const latestRecord =
-      Object.values(state.issues).sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] ?? null;
+    let latestRecord: IssueRunRecord | null = null;
+    for (const record of Object.values(state.issues)) {
+      if (latestRecord === null || record.updated_at.localeCompare(latestRecord.updated_at) > 0) {
+        latestRecord = record;
+      }
+    }
 
     if (!activeRecord) {
       return formatDetailedStatus({
@@ -742,7 +755,7 @@ export class Supervisor {
         checks = await this.github.getChecks(activeRecord.pr_number);
         reviewThreads = await this.github.getUnresolvedCopilotReviewThreads(activeRecord.pr_number);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
         return `${formatDetailedStatus({
           activeRecord,
           latestRecord,
