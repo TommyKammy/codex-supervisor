@@ -21,10 +21,10 @@ async function branchExists(repoPath: string, branch: string): Promise<boolean> 
   return result.exitCode === 0;
 }
 
-async function remoteTrackingRefExists(repoPath: string, branch: string): Promise<boolean> {
+async function remoteTrackingRefExists(gitPath: string, branch: string): Promise<boolean> {
   const result = await runCommand(
     "git",
-    ["-C", repoPath, "show-ref", "--verify", "--quiet", `refs/remotes/origin/${branch}`],
+    ["-C", gitPath, "show-ref", "--verify", "--quiet", `refs/remotes/origin/${branch}`],
     { allowExitCodes: [0, 1] },
   );
   return result.exitCode === 0;
