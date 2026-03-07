@@ -4,7 +4,7 @@ import { loadConfig } from "./config";
 import { GitHubClient } from "./github";
 import { findBlockingIssue, findParentIssuesReadyToClose } from "./issue-metadata";
 import { hasMeaningfulJournalHandoff, issueJournalPath, readIssueJournal, syncIssueJournal } from "./journal";
-import { acquireFileLock } from "./lock";
+import { acquireFileLock, LockHandle } from "./lock";
 import { StateStore } from "./state-store";
 import {
   CliOptions,
@@ -595,9 +595,13 @@ export class Supervisor {
     return this.config.pollIntervalSeconds * 1000;
   }
 
-  private lockPath(kind: "issues" | "sessions", key: string): string {
+  private lockPath(kind: "issues" | "sessions" | "supervisor", key: string): string {
     const safeKey = key.replace(/[^a-zA-Z0-9._-]/g, "_");
     return path.resolve(path.dirname(this.config.stateFile), "locks", kind, `${safeKey}.lock`);
+  }
+
+  async acquireSupervisorLock(label: "loop" | "run-once"): Promise<LockHandle> {
+    return acquireFileLock(this.lockPath("supervisor", "run"), `supervisor-${label}`);
   }
 
   async status(): Promise<string> {
