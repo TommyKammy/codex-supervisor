@@ -46,6 +46,17 @@ export function loadConfig(configPath?: string): SupervisorConfig {
     sharedMemoryFiles: Array.isArray(raw.sharedMemoryFiles)
       ? raw.sharedMemoryFiles.filter((value): value is string => typeof value === "string")
       : [],
+    localReviewEnabled:
+      typeof raw.localReviewEnabled === "boolean"
+        ? raw.localReviewEnabled
+        : false,
+    localReviewRoles: Array.isArray(raw.localReviewRoles)
+      ? raw.localReviewRoles.filter((value): value is string => typeof value === "string" && value.trim() !== "")
+      : ["reviewer", "explorer"],
+    localReviewArtifactDir:
+      typeof raw.localReviewArtifactDir === "string" && raw.localReviewArtifactDir.trim() !== ""
+        ? resolveMaybeRelative(configDir, raw.localReviewArtifactDir)
+        : path.join(path.dirname(resolveMaybeRelative(configDir, assertString(raw.stateFile, "stateFile"))), "reviews"),
     reviewBotLogins: Array.isArray(raw.reviewBotLogins)
       ? raw.reviewBotLogins
           .filter((value): value is string => typeof value === "string" && value.trim() !== "")

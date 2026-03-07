@@ -5,6 +5,7 @@ import { GitHubClient } from "./github";
 import { findBlockingIssue, findParentIssuesReadyToClose } from "./issue-metadata";
 import { hasMeaningfulJournalHandoff, issueJournalPath, readIssueJournal, syncIssueJournal } from "./journal";
 import { acquireFileLock, LockHandle } from "./lock";
+import { runLocalReview, shouldRunLocalReview } from "./local-review";
 import { syncMemoryArtifacts } from "./memory";
 import { StateStore } from "./state-store";
 import {
@@ -42,6 +43,11 @@ function createIssueRecord(config: SupervisorConfig, issueNumber: number): Issue
     review_wait_started_at: null,
     review_wait_head_sha: null,
     codex_session_id: null,
+    local_review_head_sha: null,
+    local_review_summary_path: null,
+    local_review_run_at: null,
+    local_review_max_severity: null,
+    local_review_findings_count: 0,
     attempt_count: 0,
     timeout_retry_count: 0,
     blocked_verification_retry_count: 0,
@@ -683,6 +689,7 @@ function formatDetailedStatus(args: {
     `last_failure_kind=${activeRecord.last_failure_kind ?? "none"}`,
     `last_failure_signature=${activeRecord.last_failure_signature ?? "none"}`,
     `retries timeout=${activeRecord.timeout_retry_count} verification=${activeRecord.blocked_verification_retry_count} same_blocker=${activeRecord.repeated_blocker_count} same_failure_signature=${activeRecord.repeated_failure_signature_count}`,
+    `local_review head=${activeRecord.local_review_head_sha ?? "none"} severity=${activeRecord.local_review_max_severity ?? "none"} findings=${activeRecord.local_review_findings_count} ran_at=${activeRecord.local_review_run_at ?? "none"}`,
   ];
 
   if (activeRecord.last_error) {
@@ -712,6 +719,16 @@ function formatDetailedStatus(args: {
     lines.push(
       `failure_context category=${activeRecord.last_failure_context.category ?? "none"} summary=${truncate(activeRecord.last_failure_context.summary, 200) ?? "none"}`,
     );
+  }
+
+  if (activeRecord.local_review_summary_path) {
+    const relativeSummaryPath = path.relative(config.localReviewArtifactDir, activeRecord.local_review_summary_path);
+    const displayedSummaryPath =
+      relativeSummaryPath && !relativeSummaryPath.startsWith("..") && !path.isAbsolute(relativeSummaryPath)
+        ? relativeSummaryPath
+        : path.basename(activeRecord.local_review_summary_path);
+    const sanitizedSummaryPath = sanitizeStatusValue(displayedSummaryPath);
+    lines.push(`local_review_summary_path=${truncate(sanitizedSummaryPath, 200)}`);
   }
 
   return lines.join("\n");
@@ -1391,6 +1408,59 @@ export class Supervisor {
       const refreshedChecks = await this.github.getChecks(pr.number);
       const refreshedReviewThreads = await this.github.getUnresolvedReviewThreads(pr.number);
       const refreshedCheckSummary = summarizeChecks(refreshedChecks);
+      if (
+        shouldRunLocalReview(this.config, record, refreshedPr) &&
+        !refreshedCheckSummary.hasPending &&
+        !refreshedCheckSummary.hasFailing &&
+        configuredBotReviewThreads(this.config, refreshedReviewThreads).length === 0 &&
+        (!this.config.humanReviewBlocksMerge || manualReviewThreads(this.config, refreshedReviewThreads).length === 0) &&
+        !mergeConflictDetected(refreshedPr) &&
+        !options.dryRun
+      ) {
+        record = this.stateStore.touch(record, { state: "local_review" });
+        state.issues[String(record.issue_number)] = record;
+        await this.stateStore.save(state);
+        await syncJournal(record);
+
+        try {
+          const localReview = await runLocalReview({
+            config: this.config,
+            issue,
+            branch: record.branch,
+            workspacePath,
+            defaultBranch: this.config.defaultBranch,
+            pr: refreshedPr,
+            alwaysReadFiles: memoryArtifacts.alwaysReadFiles,
+            onDemandFiles: memoryArtifacts.onDemandFiles,
+          });
+
+          record = this.stateStore.touch(record, {
+            state: "draft_pr",
+            local_review_head_sha: refreshedPr.headRefOid,
+            local_review_summary_path: localReview.summaryPath,
+            local_review_run_at: localReview.ranAt,
+            local_review_max_severity: localReview.maxSeverity,
+            local_review_findings_count: localReview.findingsCount,
+            last_error: null,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          record = this.stateStore.touch(record, {
+            state: "draft_pr",
+            local_review_head_sha: refreshedPr.headRefOid,
+            local_review_summary_path: null,
+            local_review_run_at: nowIso(),
+            local_review_max_severity: null,
+            local_review_findings_count: 0,
+            last_error: `Local review failed: ${truncate(message, 500) ?? "unknown error"}`,
+          });
+        }
+
+        state.issues[String(record.issue_number)] = record;
+        await this.stateStore.save(state);
+        await syncJournal(record);
+      }
+
       if (
         refreshedPr.isDraft &&
         !refreshedCheckSummary.hasPending &&

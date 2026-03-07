@@ -28,6 +28,7 @@ export function extractStateHint(message: string): RunState | null {
     "implementing",
     "stabilizing",
     "draft_pr",
+    "local_review",
     "pr_open",
     "repairing_ci",
     "resolving_conflict",
@@ -97,6 +98,13 @@ function phaseGuidance(state: RunState): string[] {
     return [
       "- A draft PR exists or should exist. Keep changes incremental and reviewable.",
       "- Update the branch, run focused verification, and leave a clear handoff in the issue journal.",
+    ];
+  }
+
+  if (state === "local_review") {
+    return [
+      "- A local advisory review is running for the current draft PR.",
+      "- Do not change code in this phase unless a later implementation turn is explicitly triggered.",
     ];
   }
 
@@ -254,7 +262,7 @@ export function buildCodexPrompt(input: {
     "",
     "Respond in this exact footer format at the end:",
     "Summary: <short summary>",
-    "State hint: <reproducing|implementing|stabilizing|draft_pr|pr_open|repairing_ci|resolving_conflict|waiting_ci|addressing_review|blocked|failed>",
+    "State hint: <reproducing|implementing|stabilizing|draft_pr|local_review|pr_open|repairing_ci|resolving_conflict|waiting_ci|addressing_review|blocked|failed>",
     "Blocked reason: <requirements|permissions|secrets|verification|manual_review|unknown|none>",
     "Tests: <what you ran or not run>",
     "Failure signature: <stable short signature for the current primary failure or none>",

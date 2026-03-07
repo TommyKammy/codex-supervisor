@@ -5,6 +5,7 @@ export type RunState =
   | "implementing"
   | "stabilizing"
   | "draft_pr"
+  | "local_review"
   | "pr_open"
   | "repairing_ci"
   | "resolving_conflict"
@@ -26,6 +27,9 @@ export interface SupervisorConfig {
   stateBootstrapFile?: string;
   codexBinary: string;
   sharedMemoryFiles: string[];
+  localReviewEnabled: boolean;
+  localReviewRoles: string[];
+  localReviewArtifactDir: string;
   reviewBotLogins: string[];
   humanReviewBlocksMerge: boolean;
   issueJournalRelativePath: string;
@@ -89,6 +93,11 @@ export interface IssueRunRecord {
   review_wait_started_at: string | null;
   review_wait_head_sha: string | null;
   codex_session_id: string | null;
+  local_review_head_sha: string | null;
+  local_review_summary_path: string | null;
+  local_review_run_at: string | null;
+  local_review_max_severity: "none" | "low" | "medium" | "high" | null;
+  local_review_findings_count: number;
   attempt_count: number;
   timeout_retry_count: number;
   blocked_verification_retry_count: number;
