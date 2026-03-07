@@ -243,7 +243,8 @@ This is designed to reduce dependence on GitHub-hosted auto review. The supervis
 
 - waits until the draft PR is green and conflict-free
 - runs a separate local review turn with Codex
-- suggests reviewer roles such as `reviewer` and `explorer`
+- suggests reviewer roles such as `reviewer`, `explorer`, and `docs_researcher`
+- keeps the same context-budget policy used by implementation turns: read the compact context index and issue journal first, then open durable memory files only on demand
 - saves artifacts under `localReviewArtifactDir`
 - then continues the normal ready / Copilot wait flow
 

@@ -1424,7 +1424,8 @@ export class Supervisor {
             workspacePath,
             defaultBranch: this.config.defaultBranch,
             pr: refreshedPr,
-            sharedMemoryFiles: [...memoryArtifacts.alwaysReadFiles, ...memoryArtifacts.onDemandFiles],
+            alwaysReadFiles: memoryArtifacts.alwaysReadFiles,
+            onDemandFiles: memoryArtifacts.onDemandFiles,
           });
 
           record = this.stateStore.touch(record, {

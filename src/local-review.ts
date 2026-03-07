@@ -56,10 +56,16 @@ export function buildLocalReviewPrompt(args: {
   defaultBranch: string;
   pr: GitHubPullRequest;
   roles: string[];
-  sharedMemoryFiles: string[];
+  alwaysReadFiles: string[];
+  onDemandFiles: string[];
 }): string {
   const compareRef = `origin/${args.defaultBranch}...HEAD`;
   const roleList = args.roles.length > 0 ? args.roles.join(", ") : "reviewer, explorer";
+  const roleGuidance = [
+    "- explorer: scan the diff and touched files first, then nominate only the smallest set of additional files worth opening.",
+    "- reviewer: focus on correctness, regressions, and edge cases in the changed code paths. Do not widen context unless the explorer signal says it is necessary.",
+    "- docs_researcher: open durable memory files only when the diff or issue explicitly points to workflow, architecture, or policy questions.",
+  ];
 
   return [
     `You are performing a local pre-ready review for ${args.repoSlug}.`,
@@ -78,11 +84,21 @@ export function buildLocalReviewPrompt(args: {
     "Multi-agent guidance:",
     `- If your Codex environment supports specialized sub-agents, use a small PR-review team with roles such as: ${roleList}.`,
     "- If specialized sub-agents are not available, perform the review yourself in a single turn.",
+    ...roleGuidance,
     "",
-    ...(args.sharedMemoryFiles.length > 0
+    ...(args.alwaysReadFiles.length > 0
       ? [
-          "Durable memory files:",
-          ...args.sharedMemoryFiles.map((filePath) => `- ${filePath}`),
+          "Always-read memory files:",
+          ...args.alwaysReadFiles.map((filePath) => `- ${filePath}`),
+          "",
+          "On-demand durable memory files:",
+          ...(args.onDemandFiles.length > 0 ? args.onDemandFiles.map((filePath) => `- ${filePath}`) : ["- none configured"]),
+          "",
+          "Memory policy:",
+          "- Read the always-read files first.",
+          "- Use the context index to decide whether any on-demand file is worth opening.",
+          "- Do not bulk-read every durable memory file just because multiple reviewer roles exist.",
+          "- Keep each reviewer narrow: diff first, then the smallest number of targeted file reads.",
           "",
         ]
       : []),
@@ -105,7 +121,8 @@ export async function runLocalReview(args: {
   workspacePath: string;
   defaultBranch: string;
   pr: GitHubPullRequest;
-  sharedMemoryFiles: string[];
+  alwaysReadFiles: string[];
+  onDemandFiles: string[];
 }): Promise<LocalReviewResult> {
   const prompt = buildLocalReviewPrompt({
     repoSlug: args.config.repoSlug,
@@ -115,7 +132,8 @@ export async function runLocalReview(args: {
     defaultBranch: args.defaultBranch,
     pr: args.pr,
     roles: args.config.localReviewRoles,
-    sharedMemoryFiles: args.sharedMemoryFiles,
+    alwaysReadFiles: args.alwaysReadFiles,
+    onDemandFiles: args.onDemandFiles,
   });
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-review-"));

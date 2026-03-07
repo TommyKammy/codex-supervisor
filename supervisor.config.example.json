@@ -17,7 +17,8 @@
   "localReviewEnabled": false,
   "localReviewRoles": [
     "reviewer",
-    "explorer"
+    "explorer",
+    "docs_researcher"
   ],
   "localReviewArtifactDir": "./.local/reviews",
   "reviewBotLogins": [
