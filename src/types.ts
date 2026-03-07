@@ -27,6 +27,7 @@ export interface SupervisorConfig {
   codexBinary: string;
   sharedMemoryFiles: string[];
   issueJournalRelativePath: string;
+  issueJournalMaxChars: number;
   issueLabel?: string;
   issueSearch?: string;
   skipTitlePrefixes: string[];

@@ -5,6 +5,7 @@ import { GitHubClient } from "./github";
 import { findBlockingIssue, findParentIssuesReadyToClose } from "./issue-metadata";
 import { hasMeaningfulJournalHandoff, issueJournalPath, readIssueJournal, syncIssueJournal } from "./journal";
 import { acquireFileLock, LockHandle } from "./lock";
+import { syncMemoryArtifacts } from "./memory";
 import { StateStore } from "./state-store";
 import {
   CliOptions,
@@ -830,6 +831,10 @@ export class Supervisor {
       await this.stateStore.save(state);
     }
 
+    if (!record) {
+      throw new Error("Invariant violation: active issue record is missing after selection.");
+    }
+
     const issueLock = await acquireFileLock(
       this.lockPath("issues", `issue-${record.issue_number}`),
       `issue-${record.issue_number}`,
@@ -887,6 +892,14 @@ export class Supervisor {
 
       const workspacePath = await ensureWorkspace(this.config, record.issue_number, record.branch);
       const journalPath = issueJournalPath(workspacePath, this.config.issueJournalRelativePath);
+      const syncJournal = async (currentRecord: IssueRunRecord): Promise<void> => {
+        await syncIssueJournal({
+          issue,
+          record: currentRecord,
+          journalPath,
+          maxChars: this.config.issueJournalMaxChars,
+        });
+      };
       record = this.stateStore.touch(record, {
         workspace: workspacePath,
         journal_path: journalPath,
@@ -897,7 +910,13 @@ export class Supervisor {
       });
       state.issues[String(record.issue_number)] = record;
       await this.stateStore.save(state);
-      await syncIssueJournal({ issue, record, journalPath });
+      await syncJournal(record);
+      const memoryArtifacts = await syncMemoryArtifacts({
+        config: this.config,
+        issueNumber: record.issue_number,
+        workspacePath,
+        journalPath,
+      });
 
       let workspaceStatus = await getWorkspaceStatus(workspacePath, record.branch, this.config.defaultBranch);
       record = this.stateStore.touch(record, { last_head_sha: workspaceStatus.headSha });
@@ -947,7 +966,7 @@ export class Supervisor {
           state.issues[String(record.issue_number)] = record;
           state.activeIssueNumber = null;
           await this.stateStore.save(state);
-          await syncIssueJournal({ issue, record, journalPath });
+          await syncJournal(record);
           return `Issue #${record.issue_number} blocked because PR #${resolvedPr.number} was closed without merge.`;
         }
       }
@@ -987,7 +1006,7 @@ export class Supervisor {
           state.issues[String(record.issue_number)] = record;
           state.activeIssueNumber = null;
           await this.stateStore.save(state);
-          await syncIssueJournal({ issue, record, journalPath });
+          await syncJournal(record);
           return `Issue #${record.issue_number} stopped after repeated identical failure signatures.`;
         }
       } else {
@@ -1001,7 +1020,7 @@ export class Supervisor {
       }
       state.issues[String(record.issue_number)] = record;
       await this.stateStore.save(state);
-      await syncIssueJournal({ issue, record, journalPath });
+      await syncJournal(record);
 
       if (shouldRunCodex(record, pr, checks, reviewThreads, this.config)) {
       const reviewThreadsToProcess = pendingReviewThreads(record, reviewThreads);
@@ -1028,7 +1047,7 @@ export class Supervisor {
       });
       state.issues[String(record.issue_number)] = record;
       await this.stateStore.save(state);
-      await syncIssueJournal({ issue, record, journalPath });
+      await syncJournal(record);
 
       const journalContent = await readIssueJournal(journalPath);
 
@@ -1046,9 +1065,8 @@ export class Supervisor {
         failureContext: record.last_failure_context,
         previousSummary: previousCodexSummary,
         previousError,
-        sharedMemoryFiles: this.config.sharedMemoryFiles.map((filePath) =>
-          path.resolve(this.config.repoPath, filePath),
-        ),
+        alwaysReadFiles: memoryArtifacts.alwaysReadFiles,
+        onDemandMemoryFiles: memoryArtifacts.onDemandFiles,
       });
 
       const sessionLock = record.codex_session_id
@@ -1082,7 +1100,7 @@ export class Supervisor {
         });
         state.issues[String(record.issue_number)] = record;
         await this.stateStore.save(state);
-        await syncIssueJournal({ issue, record, journalPath });
+        await syncJournal(record);
         return `Codex turn failed for issue #${record.issue_number}.`;
       } finally {
         await sessionLock?.release();
@@ -1123,7 +1141,7 @@ export class Supervisor {
         });
         state.issues[String(record.issue_number)] = record;
         await this.stateStore.save(state);
-        await syncIssueJournal({ issue, record, journalPath });
+        await syncJournal(record);
         return `Codex turn for issue #${record.issue_number} was rejected because no journal handoff was written.`;
       }
 
@@ -1149,7 +1167,7 @@ export class Supervisor {
         });
         state.issues[String(record.issue_number)] = record;
         await this.stateStore.save(state);
-        await syncIssueJournal({ issue, record, journalPath });
+        await syncJournal(record);
         return `Codex turn failed for issue #${record.issue_number}.`;
       }
 
@@ -1184,7 +1202,7 @@ export class Supervisor {
         });
         state.issues[String(record.issue_number)] = record;
         await this.stateStore.save(state);
-        await syncIssueJournal({ issue, record, journalPath });
+        await syncJournal(record);
         return `Codex reported ${hintedState} for issue #${record.issue_number}.`;
       }
 
@@ -1237,7 +1255,7 @@ export class Supervisor {
       });
       state.issues[String(record.issue_number)] = record;
       await this.stateStore.save(state);
-      await syncIssueJournal({ issue, record, journalPath });
+      await syncJournal(record);
       }
 
       if (pr) {
@@ -1289,13 +1307,13 @@ export class Supervisor {
       }
 
       await this.stateStore.save(state);
-      await syncIssueJournal({ issue, record, journalPath });
+      await syncJournal(record);
       return formatStatus(record);
       }
 
       state.issues[String(record.issue_number)] = record;
       await this.stateStore.save(state);
-      await syncIssueJournal({ issue, record, journalPath });
+      await syncJournal(record);
       return formatStatus(record);
     } finally {
       await issueLock.release();

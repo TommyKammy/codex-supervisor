@@ -6,9 +6,15 @@ import { ensureDir, truncate } from "./utils";
 const NOTES_MARKER = "## Codex Working Notes";
 const NOTES_TEMPLATE = [
   NOTES_MARKER,
-  "- Update this section before ending each Codex turn.",
-  "- Record the active hypothesis, the exact failing test/check, what changed, and the next 1-3 actions.",
-  "- Keep the notes concise so future resume turns can pick up quickly.",
+  "### Current Handoff",
+  "- Hypothesis:",
+  "- Primary failure or risk:",
+  "- Last focused command:",
+  "- Files changed:",
+  "- Next 1-3 actions:",
+  "",
+  "### Scratchpad",
+  "- Keep this section short. The supervisor may compact older notes automatically.",
   "",
 ].join("\n");
 
@@ -68,6 +74,43 @@ function preserveCodexNotes(existing: string): string | null {
   return existing.slice(markerIndex);
 }
 
+function compactCodexNotes(notes: string, maxChars: number): string {
+  if (notes.length <= maxChars) {
+    return notes;
+  }
+
+  const headerLines = [
+    NOTES_MARKER,
+    "### Current Handoff",
+    "- Older scratchpad entries were compacted by codex-supervisor to keep resume context small.",
+    "",
+  ];
+  const header = headerLines.join("\n");
+  const tailBudget = Math.max(0, maxChars - header.length - 1);
+
+  const lines = notes.split("\n");
+  const preservedTail: string[] = [];
+  let currentLength = 0;
+
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    const nextLength = currentLength + line.length + 1;
+    if (preservedTail.length > 0 && nextLength > tailBudget) {
+      break;
+    }
+
+    preservedTail.unshift(line);
+    currentLength = nextLength;
+  }
+
+  const compacted = [
+    ...headerLines,
+    ...preservedTail.filter((line) => line.trim() !== NOTES_MARKER),
+  ].join("\n");
+
+  return compacted.length <= maxChars ? compacted : compacted.slice(0, maxChars);
+}
+
 export function hasMeaningfulJournalHandoff(content: string | null): boolean {
   if (!content) {
     return false;
@@ -103,12 +146,13 @@ export async function syncIssueJournal(args: {
   issue: GitHubIssue;
   record: IssueRunRecord;
   journalPath: string;
+  maxChars?: number;
 }): Promise<void> {
-  const { issue, record, journalPath } = args;
+  const { issue, record, journalPath, maxChars = 6000 } = args;
   await ensureDir(path.dirname(journalPath));
   const existing = await readIssueJournal(journalPath);
   const notes = existing ? preserveCodexNotes(existing) : null;
   const snapshot = buildSupervisorSnapshot({ issue, record, journalPath });
-  const nextContent = `${snapshot}\n${notes ?? NOTES_TEMPLATE}`;
+  const nextContent = `${snapshot}\n${notes ? compactCodexNotes(notes, maxChars) : NOTES_TEMPLATE}`;
   await fs.writeFile(journalPath, nextContent, "utf8");
 }
