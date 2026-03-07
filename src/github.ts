@@ -270,8 +270,12 @@ export class GitHubClient {
     );
 
     const trimmed = result.stdout.trim();
-    if (result.exitCode === 0 && trimmed !== "") {
-      return parseJson<PullRequestCheck[]>(trimmed);
+    if (trimmed !== "") {
+      try {
+        return parseJson<PullRequestCheck[]>(trimmed);
+      } catch {
+        // Fall back to statusCheckRollup when gh pr checks emitted non-JSON or incompatible JSON.
+      }
     }
 
     const fallback = await runCommand(
