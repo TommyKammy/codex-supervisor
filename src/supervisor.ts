@@ -472,6 +472,125 @@ function formatStatus(record: IssueRunRecord | null): string {
   ].join(" ");
 }
 
+function sanitizeStatusValue(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  return value.replace(/\r?\n/g, "\\n");
+}
+
+function summarizeCheckBuckets(checks: PullRequestCheck[]): string {
+  if (checks.length === 0) {
+    return "none";
+  }
+
+  const counts = {
+    pass: 0,
+    fail: 0,
+    pending: 0,
+    skipping: 0,
+    cancel: 0,
+    other: 0,
+  };
+
+  for (const check of checks) {
+    if (check.bucket === "pass") {
+      counts.pass += 1;
+    } else if (check.bucket === "fail") {
+      counts.fail += 1;
+    } else if (check.bucket === "pending") {
+      counts.pending += 1;
+    } else if (check.bucket === "skipping") {
+      counts.skipping += 1;
+    } else if (check.bucket === "cancel") {
+      counts.cancel += 1;
+    } else {
+      counts.other += 1;
+    }
+  }
+
+  return Object.entries(counts)
+    .filter(([, count]) => count > 0)
+    .map(([bucket, count]) => `${bucket}=${count}`)
+    .join(" ");
+}
+
+function listChecksByBucket(checks: PullRequestCheck[], bucket: "fail" | "pending"): string | null {
+  const matches = checks.filter((check) => check.bucket === bucket).map((check) => check.name);
+  return matches.length > 0 ? matches.join(", ") : null;
+}
+
+function formatRecentRecord(record: IssueRunRecord | null): string {
+  if (!record) {
+    return "none";
+  }
+
+  return `#${record.issue_number} state=${record.state} updated_at=${record.updated_at}`;
+}
+
+function formatDetailedStatus(args: {
+  activeRecord: IssueRunRecord | null;
+  latestRecord: IssueRunRecord | null;
+  trackedIssueCount: number;
+  pr: GitHubPullRequest | null;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): string {
+  const { activeRecord, latestRecord, trackedIssueCount, pr, checks, reviewThreads } = args;
+
+  if (!activeRecord) {
+    return [
+      "No active issue.",
+      `tracked_issues=${trackedIssueCount}`,
+      `latest_record=${formatRecentRecord(latestRecord)}`,
+    ].join("\n");
+  }
+
+  const lines = [
+    `issue=#${activeRecord.issue_number}`,
+    `state=${activeRecord.state}`,
+    `branch=${activeRecord.branch}`,
+    `pr=${activeRecord.pr_number ?? "none"}`,
+    `attempts=${activeRecord.attempt_count}`,
+    `updated_at=${activeRecord.updated_at}`,
+    `workspace=${activeRecord.workspace}`,
+    `blocked_reason=${activeRecord.blocked_reason ?? "none"}`,
+    `last_failure_kind=${activeRecord.last_failure_kind ?? "none"}`,
+    `last_failure_signature=${activeRecord.last_failure_signature ?? "none"}`,
+    `retries timeout=${activeRecord.timeout_retry_count} verification=${activeRecord.blocked_verification_retry_count} same_blocker=${activeRecord.repeated_blocker_count} same_failure_signature=${activeRecord.repeated_failure_signature_count}`,
+  ];
+
+  if (activeRecord.last_error) {
+    const sanitizedLastError = sanitizeStatusValue(activeRecord.last_error);
+    lines.push(`last_error=${truncate(sanitizedLastError, 300)}`);
+  }
+
+  if (pr) {
+    lines.push(
+      `pr_state=${pr.state} draft=${pr.isDraft ? "yes" : "no"} merge_state=${pr.mergeStateStatus ?? "unknown"} review_decision=${pr.reviewDecision ?? "none"} head_sha=${pr.headRefOid}`,
+    );
+    lines.push(`checks=${summarizeCheckBuckets(checks)}`);
+    const failingChecks = listChecksByBucket(checks, "fail");
+    if (failingChecks) {
+      lines.push(`failing_checks=${failingChecks}`);
+    }
+    const pendingChecks = listChecksByBucket(checks, "pending");
+    if (pendingChecks) {
+      lines.push(`pending_checks=${pendingChecks}`);
+    }
+    lines.push(`unresolved_review_threads=${pendingReviewThreads(activeRecord, reviewThreads).length}`);
+  }
+
+  if (activeRecord.last_failure_context) {
+    lines.push(
+      `failure_context category=${activeRecord.last_failure_context.category ?? "none"} summary=${truncate(activeRecord.last_failure_context.summary, 200) ?? "none"}`,
+    );
+  }
+
+  return lines.join("\n");
+}
+
 async function cleanupExpiredDoneWorkspaces(
   config: SupervisorConfig,
   state: SupervisorStateFile,
@@ -609,9 +728,56 @@ export class Supervisor {
 
   async status(): Promise<string> {
     const state = await this.stateStore.load();
-    const record =
+    const activeRecord =
       state.activeIssueNumber !== null ? state.issues[String(state.activeIssueNumber)] ?? null : null;
-    return formatStatus(record);
+    let latestRecord: IssueRunRecord | null = null;
+    for (const record of Object.values(state.issues)) {
+      if (latestRecord === null || record.updated_at.localeCompare(latestRecord.updated_at) > 0) {
+        latestRecord = record;
+      }
+    }
+
+    if (!activeRecord) {
+      return formatDetailedStatus({
+        activeRecord: null,
+        latestRecord,
+        trackedIssueCount: Object.keys(state.issues).length,
+        pr: null,
+        checks: [],
+        reviewThreads: [],
+      });
+    }
+
+    let pr: GitHubPullRequest | null = null;
+    let checks: PullRequestCheck[] = [];
+    let reviewThreads: ReviewThread[] = [];
+
+    if (activeRecord.pr_number !== null) {
+      try {
+        pr = await this.github.getPullRequest(activeRecord.pr_number);
+        checks = await this.github.getChecks(activeRecord.pr_number);
+        reviewThreads = await this.github.getUnresolvedCopilotReviewThreads(activeRecord.pr_number);
+      } catch (error) {
+        const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
+        return `${formatDetailedStatus({
+          activeRecord,
+          latestRecord,
+          trackedIssueCount: Object.keys(state.issues).length,
+          pr,
+          checks,
+          reviewThreads,
+        })}\nstatus_warning=${truncate(message, 200)}`;
+      }
+    }
+
+    return formatDetailedStatus({
+      activeRecord,
+      latestRecord,
+      trackedIssueCount: Object.keys(state.issues).length,
+      pr,
+      checks,
+      reviewThreads,
+    });
   }
 
   async runOnce(options: Pick<CliOptions, "dryRun">): Promise<string> {

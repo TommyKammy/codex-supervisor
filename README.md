@@ -175,6 +175,8 @@ node dist/index.js run-once
 node dist/index.js loop
 ```
 
+`status` is intended to be the first place to look during operations. It reports the active issue, current state, retry counters, failure signature, and live PR/check/review context when a PR exists. If there is no active issue, it reports the latest tracked record instead of only printing an empty state.
+
 ## Runtime
 
 ### macOS
