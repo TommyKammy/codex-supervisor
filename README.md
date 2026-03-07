@@ -177,6 +177,37 @@ node dist/index.js loop
 
 `status` is intended to be the first place to look during operations. It reports the active issue, current state, retry counters, failure signature, and live PR/check/review context when a PR exists. If there is no active issue, it reports the latest tracked record instead of only printing an empty state.
 
+## Using Codex as an operator console
+
+Many teams use Codex itself as the human-facing entry point for the supervisor. That is a good fit for this project.
+
+In that operating model:
+
+- `codex-supervisor` is the execution engine
+- Codex CLI or Codex App is the operator console
+
+Typical operator requests look like:
+
+- `Build the supervisor and start working atlaspm issues.`
+- `Report the current supervisor status.`
+- `Requeue issue #123.`
+- `Show why the current PR is blocked.`
+
+This is useful because humans can interact in natural language while the supervisor remains a small deterministic state machine over GitHub, local state, worktrees, and `codex exec`.
+
+Recommended boundaries:
+
+- let the supervisor own state, locks, worktrees, and GitHub mutations
+- let Codex handle operator requests, inspection, and one-off interventions
+- do not treat the chat thread as the source of truth
+- prefer `status` plus the state file and GitHub facts when answering operational questions
+
+If you run the supervisor this way, keep the service model simple:
+
+- one long-running `loop` process per config
+- optional operator-triggered `run-once` calls only when the global supervisor lock says it is safe
+- no assumption that Codex chat history is shared across machines or sessions
+
 ## Runtime
 
 ### macOS
