@@ -3,7 +3,9 @@
   "repoSlug": "OWNER/REPO",
   "defaultBranch": "main",
   "workspaceRoot": "/absolute/path/to/worktrees",
+  "stateBackend": "json",
   "stateFile": "./.local/state.json",
+  "stateBootstrapFile": "",
   "codexBinary": "/absolute/path/to/codex",
   "sharedMemoryFiles": [
     "README.md",

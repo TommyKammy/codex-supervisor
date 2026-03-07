@@ -33,7 +33,15 @@ export function loadConfig(configPath?: string): SupervisorConfig {
     repoSlug: assertString(raw.repoSlug, "repoSlug"),
     defaultBranch: assertString(raw.defaultBranch, "defaultBranch"),
     workspaceRoot: resolveMaybeRelative(configDir, assertString(raw.workspaceRoot, "workspaceRoot")),
+    stateBackend:
+      raw.stateBackend === "sqlite" || raw.stateBackend === "json"
+        ? raw.stateBackend
+        : "json",
     stateFile: resolveMaybeRelative(configDir, assertString(raw.stateFile, "stateFile")),
+    stateBootstrapFile:
+      typeof raw.stateBootstrapFile === "string" && raw.stateBootstrapFile.trim() !== ""
+        ? resolveMaybeRelative(configDir, raw.stateBootstrapFile)
+        : undefined,
     codexBinary: resolveMaybeRelative(configDir, assertString(raw.codexBinary, "codexBinary")),
     sharedMemoryFiles: Array.isArray(raw.sharedMemoryFiles)
       ? raw.sharedMemoryFiles.filter((value): value is string => typeof value === "string")

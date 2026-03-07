@@ -86,7 +86,9 @@ Important fields:
 - `repoPath`: absolute path to the managed repository
 - `repoSlug`: `OWNER/REPO`
 - `workspaceRoot`: directory used for per-issue worktrees
+- `stateBackend`: `json` or `sqlite`
 - `stateFile`: local JSON state file
+- `stateBootstrapFile`: optional JSON file to import once when initializing a SQLite state database
 - `codexBinary`: path to the Codex CLI
 - `sharedMemoryFiles`: durable repo-memory files to reference every turn
 - `issueJournalRelativePath`: per-issue handoff journal inside each worktree
@@ -124,6 +126,34 @@ Template shared-memory files are included here:
 - [docs/shared-memory/constitution.example.md](./docs/shared-memory/constitution.example.md)
 - [docs/shared-memory/workflow.example.md](./docs/shared-memory/workflow.example.md)
 - [docs/shared-memory/decisions.example.md](./docs/shared-memory/decisions.example.md)
+
+## State backends
+
+The default state backend is JSON, but SQLite is also supported.
+
+- JSON: simple and easy to inspect, good for local prototypes
+- SQLite: better for schema evolution, recovery, and public/general use
+
+To switch to SQLite, set:
+
+```json
+{
+  "stateBackend": "sqlite",
+  "stateFile": "./.local/state.sqlite"
+}
+```
+
+If you already have JSON state and want a one-time bootstrap into SQLite, also set:
+
+```json
+{
+  "stateBackend": "sqlite",
+  "stateFile": "./.local/state.sqlite",
+  "stateBootstrapFile": "./.local/state.json"
+}
+```
+
+On first load, the supervisor imports the JSON state into SQLite if the SQLite database is empty.
 
 ## Issue metadata
 
@@ -184,7 +214,7 @@ If another supervisor process is already active, extra `loop` or `run-once` invo
 
 ## Current limitations
 
-- JSON state store, not SQLite
+- single state backend per config file
 - single active issue only
 - GitHub-specific workflow assumptions
 - no built-in multi-repo scheduler yet
