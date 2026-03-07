@@ -21,6 +21,15 @@ async function branchExists(repoPath: string, branch: string): Promise<boolean> 
   return result.exitCode === 0;
 }
 
+async function remoteTrackingRefExists(repoPath: string, branch: string): Promise<boolean> {
+  const result = await runCommand(
+    "git",
+    ["-C", repoPath, "show-ref", "--verify", "--quiet", `refs/remotes/origin/${branch}`],
+    { allowExitCodes: [0, 1] },
+  );
+  return result.exitCode === 0;
+}
+
 export async function ensureWorkspace(
   config: SupervisorConfig,
   issueNumber: number,
@@ -80,6 +89,10 @@ export async function getWorkspaceStatus(
   let remoteBehind = 0;
   let remoteAhead = 0;
   if (remoteBranchExists) {
+    if (!(await remoteTrackingRefExists(workspacePath, branch))) {
+      await runCommand("git", ["-C", workspacePath, "fetch", "origin", `${branch}:refs/remotes/origin/${branch}`]);
+    }
+
     const remoteResult = await runCommand("git", [
       "-C",
       workspacePath,
