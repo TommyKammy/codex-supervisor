@@ -722,7 +722,13 @@ function formatDetailedStatus(args: {
   }
 
   if (activeRecord.local_review_summary_path) {
-    lines.push(`local_review_summary_path=${activeRecord.local_review_summary_path}`);
+    const relativeSummaryPath = path.relative(config.localReviewArtifactDir, activeRecord.local_review_summary_path);
+    const displayedSummaryPath =
+      relativeSummaryPath && !relativeSummaryPath.startsWith("..") && !path.isAbsolute(relativeSummaryPath)
+        ? relativeSummaryPath
+        : path.basename(activeRecord.local_review_summary_path);
+    const sanitizedSummaryPath = sanitizeStatusValue(displayedSummaryPath);
+    lines.push(`local_review_summary_path=${truncate(sanitizedSummaryPath, 200)}`);
   }
 
   return lines.join("\n");
@@ -1442,6 +1448,7 @@ export class Supervisor {
           record = this.stateStore.touch(record, {
             state: "draft_pr",
             local_review_head_sha: refreshedPr.headRefOid,
+            local_review_summary_path: null,
             local_review_run_at: nowIso(),
             local_review_max_severity: null,
             local_review_findings_count: 0,
