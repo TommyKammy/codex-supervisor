@@ -71,11 +71,13 @@ export async function getWorkspaceStatus(
   branch: string,
   defaultBranch: string,
 ): Promise<WorkspaceStatus> {
+  const defaultBranchRef = `refs/remotes/origin/${defaultBranch}`;
+  const remoteBranchRef = `refs/remotes/origin/${branch}`;
   const [headResult, branchResult, statusResult, baseResult, remoteExistsResult] = await Promise.all([
     runCommand("git", ["-C", workspacePath, "rev-parse", "HEAD"]),
     runCommand("git", ["-C", workspacePath, "rev-parse", "--abbrev-ref", "HEAD"]),
     runCommand("git", ["-C", workspacePath, "status", "--short"]),
-    runCommand("git", ["-C", workspacePath, "rev-list", "--left-right", "--count", `origin/${defaultBranch}...HEAD`]),
+    runCommand("git", ["-C", workspacePath, "rev-list", "--left-right", "--count", `${defaultBranchRef}...HEAD`]),
     runCommand(
       "git",
       ["-C", workspacePath, "ls-remote", "--exit-code", "--heads", "origin", branch],
@@ -90,7 +92,7 @@ export async function getWorkspaceStatus(
   let remoteAhead = 0;
   if (remoteBranchExists) {
     if (!(await remoteTrackingRefExists(workspacePath, branch))) {
-      await runCommand("git", ["-C", workspacePath, "fetch", "origin", `${branch}:refs/remotes/origin/${branch}`]);
+      await runCommand("git", ["-C", workspacePath, "fetch", "origin", `${branch}:${remoteBranchRef}`]);
     }
 
     const remoteResult = await runCommand("git", [
@@ -99,7 +101,7 @@ export async function getWorkspaceStatus(
       "rev-list",
       "--left-right",
       "--count",
-      `origin/${branch}...HEAD`,
+      `${remoteBranchRef}...HEAD`,
     ]);
     [remoteBehind, remoteAhead] = remoteResult.stdout
       .trim()
