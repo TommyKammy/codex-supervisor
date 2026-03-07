@@ -8,6 +8,7 @@ import { acquireFileLock, LockHandle } from "./lock";
 import { syncMemoryArtifacts } from "./memory";
 import { StateStore } from "./state-store";
 import {
+  BlockedReason,
   CliOptions,
   FailureContext,
   GitHubPullRequest,
@@ -212,8 +213,84 @@ function buildReviewFailureContext(reviewThreads: ReviewThread[]): FailureContex
 
   return {
     category: "review",
-    summary: `${reviewThreads.length} unresolved Copilot review thread(s) remain.`,
+    summary: `${reviewThreads.length} unresolved automated review thread(s) remain.`,
     signature: reviewThreads.map((thread) => thread.id).join("|"),
+    command: null,
+    details,
+    url: reviewThreads[0]?.comments.nodes[0]?.url ?? null,
+    updated_at: nowIso(),
+  };
+}
+
+function latestReviewComment(thread: ReviewThread) {
+  return thread.comments.nodes[thread.comments.nodes.length - 1] ?? null;
+}
+
+function isAllowedReviewBotThread(config: SupervisorConfig, thread: ReviewThread): boolean {
+  return thread.comments.nodes.some((comment) => {
+    const login = comment.author?.login?.toLowerCase();
+    return Boolean(login && config.reviewBotLogins.includes(login));
+  });
+}
+
+function manualReviewThreads(config: SupervisorConfig, reviewThreads: ReviewThread[]): ReviewThread[] {
+  return reviewThreads.filter((thread) => !isAllowedReviewBotThread(config, thread));
+}
+
+function configuredBotReviewThreads(
+  config: SupervisorConfig,
+  reviewThreads: ReviewThread[],
+): ReviewThread[] {
+  return reviewThreads.filter((thread) => isAllowedReviewBotThread(config, thread));
+}
+
+function pendingBotReviewThreads(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+  reviewThreads: ReviewThread[],
+): ReviewThread[] {
+  return configuredBotReviewThreads(config, reviewThreads).filter(
+    (thread) => !record.processed_review_thread_ids.includes(thread.id),
+  );
+}
+
+function buildManualReviewFailureContext(reviewThreads: ReviewThread[]): FailureContext | null {
+  if (reviewThreads.length === 0) {
+    return null;
+  }
+
+  const details = reviewThreads.slice(0, 5).map((thread) => {
+    const latestComment = latestReviewComment(thread);
+    const author = latestComment?.author?.login ?? "unknown";
+    return `${thread.path ?? "unknown"}:${thread.line ?? "?"} reviewer=${author} ${latestComment?.body.replace(/\s+/g, " ").trim() ?? ""}`;
+  });
+
+  return {
+    category: "manual",
+    summary: `${reviewThreads.length} unresolved manual or unconfigured review thread(s) require human attention.`,
+    signature: reviewThreads.map((thread) => `manual:${thread.id}`).join("|"),
+    command: null,
+    details,
+    url: reviewThreads[0]?.comments.nodes[0]?.url ?? null,
+    updated_at: nowIso(),
+  };
+}
+
+function buildStalledBotReviewFailureContext(reviewThreads: ReviewThread[]): FailureContext | null {
+  if (reviewThreads.length === 0) {
+    return null;
+  }
+
+  const details = reviewThreads.slice(0, 5).map((thread) => {
+    const latestComment = latestReviewComment(thread);
+    const author = latestComment?.author?.login ?? "unknown";
+    return `${thread.path ?? "unknown"}:${thread.line ?? "?"} reviewer=${author} ${latestComment?.body.replace(/\s+/g, " ").trim() ?? ""}`;
+  });
+
+  return {
+    category: "manual",
+    summary: `${reviewThreads.length} configured bot review thread(s) remain unresolved after processing and now require manual attention.`,
+    signature: reviewThreads.map((thread) => `stalled-bot:${thread.id}`).join("|"),
     command: null,
     details,
     url: reviewThreads[0]?.comments.nodes[0]?.url ?? null,
@@ -273,6 +350,7 @@ function shouldStopForRepeatedFailureSignature(record: IssueRunRecord, config: S
 }
 
 function inferFailureContext(
+  config: SupervisorConfig,
   record: IssueRunRecord,
   pr: GitHubPullRequest | null,
   checks: PullRequestCheck[],
@@ -284,9 +362,22 @@ function inferFailureContext(
       return checksContext;
     }
 
-    const reviewContext = buildReviewFailureContext(pendingReviewThreads(record, reviewThreads));
+    const manualReviewContext =
+      config.humanReviewBlocksMerge ? buildManualReviewFailureContext(manualReviewThreads(config, reviewThreads)) : null;
+    if (manualReviewContext) {
+      return manualReviewContext;
+    }
+
+    const reviewContext = buildReviewFailureContext(pendingBotReviewThreads(config, record, reviewThreads));
     if (reviewContext) {
       return reviewContext;
+    }
+
+    const stalledBotReviewContext = buildStalledBotReviewFailureContext(
+      configuredBotReviewThreads(config, reviewThreads),
+    );
+    if (stalledBotReviewContext) {
+      return stalledBotReviewContext;
     }
 
     if (mergeConflictDetected(pr)) {
@@ -314,6 +405,20 @@ function mergeConditionsSatisfied(pr: GitHubPullRequest, checks: PullRequestChec
     checkSummary.allPassing &&
     pr.mergeStateStatus === "CLEAN"
   );
+}
+
+function blockedReasonFromReviewState(
+  config: SupervisorConfig,
+  reviewThreads: ReviewThread[],
+): Exclude<BlockedReason, null> | null {
+  if (
+    manualReviewThreads(config, reviewThreads).length > 0 ||
+    configuredBotReviewThreads(config, reviewThreads).length > 0
+  ) {
+    return "manual_review";
+  }
+
+  return null;
 }
 
 function syncReviewWaitWindow(record: IssueRunRecord, pr: GitHubPullRequest): Partial<IssueRunRecord> {
@@ -355,13 +460,6 @@ function copilotReviewGraceExpired(
   return Date.now() - createdAtMs >= config.copilotReviewWaitMinutes * 60_000;
 }
 
-function pendingReviewThreads(
-  record: IssueRunRecord,
-  reviewThreads: ReviewThread[],
-): ReviewThread[] {
-  return reviewThreads.filter((thread) => !record.processed_review_thread_ids.includes(thread.id));
-}
-
 function inferStateFromPullRequest(
   config: SupervisorConfig,
   record: IssueRunRecord,
@@ -369,12 +467,24 @@ function inferStateFromPullRequest(
   checks: PullRequestCheck[],
   reviewThreads: ReviewThread[],
 ): RunState {
+  const manualThreads = manualReviewThreads(config, reviewThreads);
+  const unresolvedBotThreads = configuredBotReviewThreads(config, reviewThreads);
+  const botThreads = pendingBotReviewThreads(config, record, reviewThreads);
+
   if (pr.mergedAt || pr.state === "MERGED") {
     return "done";
   }
 
   if (pr.reviewDecision === "CHANGES_REQUESTED") {
-    return "addressing_review";
+    if (botThreads.length > 0) {
+      return "addressing_review";
+    }
+
+    if (unresolvedBotThreads.length > 0 || config.humanReviewBlocksMerge) {
+      return "blocked";
+    }
+
+    return "pr_open";
   }
 
   const checkSummary = summarizeChecks(checks);
@@ -382,8 +492,16 @@ function inferStateFromPullRequest(
     return "repairing_ci";
   }
 
-  if (pendingReviewThreads(record, reviewThreads).length > 0) {
+  if (botThreads.length > 0) {
     return "addressing_review";
+  }
+
+  if (unresolvedBotThreads.length > 0) {
+    return "blocked";
+  }
+
+  if (config.humanReviewBlocksMerge && manualThreads.length > 0) {
+    return "blocked";
   }
 
   if (mergeConflictDetected(pr)) {
@@ -535,6 +653,7 @@ function formatRecentRecord(record: IssueRunRecord | null): string {
 }
 
 function formatDetailedStatus(args: {
+  config: SupervisorConfig;
   activeRecord: IssueRunRecord | null;
   latestRecord: IssueRunRecord | null;
   trackedIssueCount: number;
@@ -542,7 +661,7 @@ function formatDetailedStatus(args: {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
 }): string {
-  const { activeRecord, latestRecord, trackedIssueCount, pr, checks, reviewThreads } = args;
+  const { config, activeRecord, latestRecord, trackedIssueCount, pr, checks, reviewThreads } = args;
 
   if (!activeRecord) {
     return [
@@ -584,7 +703,9 @@ function formatDetailedStatus(args: {
     if (pendingChecks) {
       lines.push(`pending_checks=${pendingChecks}`);
     }
-    lines.push(`unresolved_review_threads=${pendingReviewThreads(activeRecord, reviewThreads).length}`);
+    lines.push(
+      `review_threads bot_pending=${pendingBotReviewThreads(config, activeRecord, reviewThreads).length} bot_unresolved=${configuredBotReviewThreads(config, reviewThreads).length} manual=${manualReviewThreads(config, reviewThreads).length}`,
+    );
   }
 
   if (activeRecord.last_failure_context) {
@@ -744,6 +865,7 @@ export class Supervisor {
 
     if (!activeRecord) {
       return formatDetailedStatus({
+        config: this.config,
         activeRecord: null,
         latestRecord,
         trackedIssueCount: Object.keys(state.issues).length,
@@ -761,21 +883,23 @@ export class Supervisor {
       pr = await this.github.resolvePullRequestForBranch(activeRecord.branch, activeRecord.pr_number);
       if (isOpenPullRequest(pr)) {
         checks = await this.github.getChecks(pr.number);
-        reviewThreads = await this.github.getUnresolvedCopilotReviewThreads(pr.number);
+        reviewThreads = await this.github.getUnresolvedReviewThreads(pr.number);
       }
     } catch (error) {
-      const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
-      return `${formatDetailedStatus({
-        activeRecord,
-        latestRecord,
-        trackedIssueCount: Object.keys(state.issues).length,
-        pr,
+        const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
+        return `${formatDetailedStatus({
+          config: this.config,
+          activeRecord,
+          latestRecord,
+          trackedIssueCount: Object.keys(state.issues).length,
+          pr,
         checks,
         reviewThreads,
       })}\nstatus_warning=${truncate(message, 200)}`;
     }
 
     return formatDetailedStatus({
+      config: this.config,
       activeRecord,
       latestRecord,
       trackedIssueCount: Object.keys(state.issues).length,
@@ -931,7 +1055,7 @@ export class Supervisor {
       let resolvedPr = await this.github.resolvePullRequestForBranch(record.branch, record.pr_number);
       let pr = isOpenPullRequest(resolvedPr) ? resolvedPr : null;
       let checks = pr ? await this.github.getChecks(pr.number) : [];
-      let reviewThreads = pr ? await this.github.getUnresolvedCopilotReviewThreads(pr.number) : [];
+      let reviewThreads = pr ? await this.github.getUnresolvedReviewThreads(pr.number) : [];
 
       if (!pr) {
         if (!resolvedPr) {
@@ -980,19 +1104,21 @@ export class Supervisor {
         await pushBranch(workspacePath, record.branch, workspaceStatus.remoteBranchExists);
         pr = await this.github.createPullRequest(issue, record, { draft: true });
         checks = await this.github.getChecks(pr.number);
-        reviewThreads = await this.github.getUnresolvedCopilotReviewThreads(pr.number);
+        reviewThreads = await this.github.getUnresolvedReviewThreads(pr.number);
       }
 
       if (pr) {
-        const failureContext = inferFailureContext(record, pr, checks, reviewThreads);
+        const failureContext = inferFailureContext(this.config, record, pr, checks, reviewThreads);
         const reviewWaitPatch = syncReviewWaitWindow(record, pr);
+        const nextState = inferStateFromPullRequest(this.config, record, pr, checks, reviewThreads);
         record = this.stateStore.touch(record, {
           pr_number: pr.number,
-          state: inferStateFromPullRequest(this.config, record, pr, checks, reviewThreads),
+          state: nextState,
           ...reviewWaitPatch,
+          last_error: nextState === "blocked" && failureContext ? truncate(failureContext.summary, 1000) : record.last_error,
           last_failure_context: failureContext,
           ...applyFailureSignature(record, failureContext),
-          blocked_reason: null,
+          blocked_reason: nextState === "blocked" ? blockedReasonFromReviewState(this.config, reviewThreads) : null,
         });
         if (failureContext && shouldStopForRepeatedFailureSignature(record, this.config)) {
           record = this.stateStore.touch(record, {
@@ -1023,7 +1149,7 @@ export class Supervisor {
       await syncJournal(record);
 
       if (shouldRunCodex(record, pr, checks, reviewThreads, this.config)) {
-      const reviewThreadsToProcess = pendingReviewThreads(record, reviewThreads);
+      const reviewThreadsToProcess = pendingBotReviewThreads(this.config, record, reviewThreads);
 
       if (options.dryRun) {
         record = this.stateStore.touch(record, {
@@ -1042,7 +1168,7 @@ export class Supervisor {
       record = this.stateStore.touch(record, {
         state: preRunState,
         attempt_count: record.attempt_count + 1,
-        last_failure_context: inferFailureContext(record, pr, checks, reviewThreads),
+        last_failure_context: inferFailureContext(this.config, record, pr, checks, reviewThreads),
         blocked_reason: null,
       });
       state.issues[String(record.issue_number)] = record;
@@ -1226,13 +1352,22 @@ export class Supervisor {
       }
 
       checks = pr ? await this.github.getChecks(pr.number) : [];
-      reviewThreads = pr ? await this.github.getUnresolvedCopilotReviewThreads(pr.number) : [];
+      reviewThreads = pr ? await this.github.getUnresolvedReviewThreads(pr.number) : [];
       const processedReviewThreadIds =
         preRunState === "addressing_review"
           ? Array.from(new Set([...record.processed_review_thread_ids, ...reviewThreadsToProcess.map((thread) => thread.id)]))
           : record.processed_review_thread_ids;
-      const postRunFailureContext = inferFailureContext(record, pr, checks, reviewThreads);
+      const postRunFailureContext = inferFailureContext(this.config, record, pr, checks, reviewThreads);
       const postRunReviewWaitPatch = pr ? syncReviewWaitWindow(record, pr) : {};
+      const postRunState = pr
+        ? inferStateFromPullRequest(
+            this.config,
+            { ...record, processed_review_thread_ids: processedReviewThreadIds },
+            pr,
+            checks,
+            reviewThreads,
+          )
+        : hintedState ?? inferStateWithoutPullRequest(record, workspaceStatus);
       record = this.stateStore.touch(record, {
         pr_number: pr?.number ?? null,
         ...postRunReviewWaitPatch,
@@ -1240,18 +1375,11 @@ export class Supervisor {
         blocked_verification_retry_count: pr ? 0 : record.blocked_verification_retry_count,
         repeated_blocker_count: 0,
         last_blocker_signature: null,
+        last_error: postRunState === "blocked" && postRunFailureContext ? truncate(postRunFailureContext.summary, 1000) : record.last_error,
         last_failure_context: postRunFailureContext,
         ...applyFailureSignature(record, postRunFailureContext),
-        blocked_reason: null,
-        state: pr
-          ? inferStateFromPullRequest(
-              this.config,
-              { ...record, processed_review_thread_ids: processedReviewThreadIds },
-              pr,
-              checks,
-              reviewThreads,
-            )
-          : hintedState ?? inferStateWithoutPullRequest(record, workspaceStatus),
+        blocked_reason: pr && postRunState === "blocked" ? blockedReasonFromReviewState(this.config, reviewThreads) : null,
+        state: postRunState,
       });
       state.issues[String(record.issue_number)] = record;
       await this.stateStore.save(state);
@@ -1261,13 +1389,14 @@ export class Supervisor {
       if (pr) {
       const refreshedPr = await this.github.getPullRequest(pr.number);
       const refreshedChecks = await this.github.getChecks(pr.number);
-      const refreshedReviewThreads = await this.github.getUnresolvedCopilotReviewThreads(pr.number);
+      const refreshedReviewThreads = await this.github.getUnresolvedReviewThreads(pr.number);
       const refreshedCheckSummary = summarizeChecks(refreshedChecks);
       if (
         refreshedPr.isDraft &&
         !refreshedCheckSummary.hasPending &&
         !refreshedCheckSummary.hasFailing &&
-        pendingReviewThreads(record, refreshedReviewThreads).length === 0 &&
+        configuredBotReviewThreads(this.config, refreshedReviewThreads).length === 0 &&
+        (!this.config.humanReviewBlocksMerge || manualReviewThreads(this.config, refreshedReviewThreads).length === 0) &&
         !mergeConflictDetected(refreshedPr) &&
         !options.dryRun
       ) {
@@ -1275,7 +1404,7 @@ export class Supervisor {
       }
       const postReadyPr = await this.github.getPullRequest(pr.number);
       const postReadyChecks = await this.github.getChecks(pr.number);
-      const postReadyReviewThreads = await this.github.getUnresolvedCopilotReviewThreads(pr.number);
+      const postReadyReviewThreads = await this.github.getUnresolvedReviewThreads(pr.number);
       const nextState = inferStateFromPullRequest(
         this.config,
         record,
@@ -1283,16 +1412,17 @@ export class Supervisor {
         postReadyChecks,
         postReadyReviewThreads,
       );
-      const refreshedFailureContext = inferFailureContext(record, postReadyPr, postReadyChecks, postReadyReviewThreads);
+      const refreshedFailureContext = inferFailureContext(this.config, record, postReadyPr, postReadyChecks, postReadyReviewThreads);
       const refreshedReviewWaitPatch = syncReviewWaitWindow(record, postReadyPr);
       record = this.stateStore.touch(record, {
         pr_number: postReadyPr.number,
         ...refreshedReviewWaitPatch,
         state: nextState,
         last_head_sha: postReadyPr.headRefOid,
+        last_error: nextState === "blocked" && refreshedFailureContext ? truncate(refreshedFailureContext.summary, 1000) : record.last_error,
         last_failure_context: refreshedFailureContext,
         ...applyFailureSignature(record, refreshedFailureContext),
-        blocked_reason: null,
+        blocked_reason: nextState === "blocked" ? blockedReasonFromReviewState(this.config, postReadyReviewThreads) : null,
       });
       state.issues[String(record.issue_number)] = record;
 

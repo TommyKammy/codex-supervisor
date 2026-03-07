@@ -26,6 +26,8 @@ export interface SupervisorConfig {
   stateBootstrapFile?: string;
   codexBinary: string;
   sharedMemoryFiles: string[];
+  reviewBotLogins: string[];
+  humanReviewBlocksMerge: boolean;
   issueJournalRelativePath: string;
   issueJournalMaxChars: number;
   issueLabel?: string;
@@ -61,6 +63,7 @@ export type BlockedReason =
   | "permissions"
   | "secrets"
   | "verification"
+  | "manual_review"
   | "manual_pr_closed"
   | "handoff_missing"
   | "unknown"
@@ -154,6 +157,7 @@ export interface ReviewThreadComment {
   url: string;
   author: {
     login: string | null;
+    typeName: string | null;
   } | null;
 }
 

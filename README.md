@@ -66,6 +66,7 @@ The supervisor itself is intentionally small. It decides the next action from Gi
 - `permissions`
 - `secrets`
 - `verification`
+- `manual_review`
 - `manual_pr_closed`
 - `handoff_missing`
 - `unknown`
@@ -91,6 +92,8 @@ Important fields:
 - `stateBootstrapFile`: optional JSON file to import once when initializing a SQLite state database
 - `codexBinary`: path to the Codex CLI
 - `sharedMemoryFiles`: durable repo-memory files to reference every turn
+- `reviewBotLogins`: bot reviewer logins that the supervisor may auto-address
+- `humanReviewBlocksMerge`: if `true`, unresolved human or unconfigured-bot review threads stop auto-merge and require manual intervention
 - `issueJournalRelativePath`: per-issue handoff journal inside each worktree
 - `issueJournalMaxChars`: compaction budget for the journal handoff section
 - `issueLabel`: optional issue label filter
@@ -260,6 +263,8 @@ Both installers render a local service file from templates and inject the curren
 - uses issue locks and session locks to avoid duplicate turns
 - requires issue-journal handoff before accepting a Codex turn
 - waits for Copilot auto review before merge
+- only auto-addresses review threads from configured bot reviewers
+- treats unresolved human or unconfigured-bot review threads as manual blockers when configured
 - handles CI repair, review response, and merge-conflict resolution as separate phases
 - closes merged issues automatically
 - closes parent epic issues automatically when every child issue is closed

@@ -20,6 +20,8 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
     "docs/workflow.md",
     "docs/decisions.md"
   ],
+  "reviewBotLogins": ["copilot-pull-request-reviewer"],
+  "humanReviewBlocksMerge": true,
   "issueJournalRelativePath": ".codex-supervisor/issue-journal.md",
   "issueJournalMaxChars": 6000,
   "issueLabel": "codex",
@@ -43,5 +45,6 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
 
 - `atlaspm` uses `Part of #...`, `Depends on: ...`, and `## Execution order`, so the built-in sequencing logic is enough.
 - Copilot review is expected to start automatically after the PR is marked ready.
+- Only configured review bots are auto-addressed. Human review comments block merge and require manual follow-up.
 - `Epic:` title prefixes are skipped as direct work items because the supervisor closes epics after all child issues close.
 - Generated context index and `AGENTS.generated.md` artifacts are written under the supervisor state directory, not into the managed repo.
