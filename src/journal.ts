@@ -79,6 +79,15 @@ function compactCodexNotes(notes: string, maxChars: number): string {
     return notes;
   }
 
+  const headerLines = [
+    NOTES_MARKER,
+    "### Current Handoff",
+    "- Older scratchpad entries were compacted by codex-supervisor to keep resume context small.",
+    "",
+  ];
+  const header = headerLines.join("\n");
+  const tailBudget = Math.max(0, maxChars - header.length - 1);
+
   const lines = notes.split("\n");
   const preservedTail: string[] = [];
   let currentLength = 0;
@@ -86,7 +95,7 @@ function compactCodexNotes(notes: string, maxChars: number): string {
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index];
     const nextLength = currentLength + line.length + 1;
-    if (preservedTail.length > 0 && nextLength > maxChars) {
+    if (preservedTail.length > 0 && nextLength > tailBudget) {
       break;
     }
 
@@ -94,13 +103,12 @@ function compactCodexNotes(notes: string, maxChars: number): string {
     currentLength = nextLength;
   }
 
-  return [
-    NOTES_MARKER,
-    "### Current Handoff",
-    "- Older scratchpad entries were compacted by codex-supervisor to keep resume context small.",
-    "",
+  const compacted = [
+    ...headerLines,
     ...preservedTail.filter((line) => line.trim() !== NOTES_MARKER),
   ].join("\n");
+
+  return compacted.length <= maxChars ? compacted : compacted.slice(0, maxChars);
 }
 
 export function hasMeaningfulJournalHandoff(content: string | null): boolean {

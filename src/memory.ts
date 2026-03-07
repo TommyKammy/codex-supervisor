@@ -64,7 +64,12 @@ async function readWorkspaceMemoryFile(workspacePath: string, relativePath: stri
       };
     }
 
-    throw error;
+    return {
+      absolutePath,
+      exists: false,
+      summary: `Unable to read file: ${maybeErr.code ?? "unknown_error"}.`,
+      headings: [],
+    };
   }
 }
 
