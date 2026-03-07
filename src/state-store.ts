@@ -1,52 +1,116 @@
 import fs from "node:fs/promises";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { IssueRunRecord, SupervisorStateFile } from "./types";
-import { nowIso, writeJsonAtomic } from "./utils";
+import { ensureDir, nowIso, readJsonIfExists, writeJsonAtomic } from "./utils";
+
+interface StateStoreOptions {
+  backend: "json" | "sqlite";
+  bootstrapFilePath?: string;
+}
+
+const SQLITE_SCHEMA_VERSION = 1;
+
+function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
+  return {
+    ...value,
+    journal_path: value.journal_path ?? null,
+    review_wait_started_at: value.review_wait_started_at ?? null,
+    review_wait_head_sha: value.review_wait_head_sha ?? null,
+    codex_session_id: value.codex_session_id ?? null,
+    timeout_retry_count: value.timeout_retry_count ?? 0,
+    blocked_verification_retry_count: value.blocked_verification_retry_count ?? 0,
+    repeated_blocker_count: value.repeated_blocker_count ?? 0,
+    repeated_failure_signature_count: value.repeated_failure_signature_count ?? 0,
+    last_failure_kind: value.last_failure_kind ?? null,
+    last_failure_context: value.last_failure_context ?? null,
+    last_blocker_signature: value.last_blocker_signature ?? null,
+    last_failure_signature: value.last_failure_signature ?? null,
+    blocked_reason: value.blocked_reason ?? null,
+    processed_review_thread_ids: value.processed_review_thread_ids ?? [],
+  };
+}
+
+function normalizeState(raw: SupervisorStateFile | null | undefined): SupervisorStateFile {
+  const issues = Object.fromEntries(
+    Object.entries(raw?.issues ?? {}).map(([key, value]) => [key, normalizeIssueRecord(value as IssueRunRecord)]),
+  );
+
+  return {
+    activeIssueNumber: raw?.activeIssueNumber ?? null,
+    issues,
+  };
+}
+
+function initSqlite(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS metadata (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS issues (
+      issue_number INTEGER PRIMARY KEY,
+      record_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  db.prepare(`
+    INSERT INTO metadata(key, value)
+    VALUES ('schemaVersion', ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(String(SQLITE_SCHEMA_VERSION));
+}
+
+function readSqliteState(db: DatabaseSync): SupervisorStateFile {
+  const activeRow = db
+    .prepare("SELECT value FROM metadata WHERE key = 'activeIssueNumber'")
+    .get() as { value?: string } | undefined;
+  const rows = db
+    .prepare("SELECT issue_number, record_json FROM issues ORDER BY issue_number ASC")
+    .all() as Array<{ issue_number: number; record_json: string }>;
+
+  const issues = Object.fromEntries(
+    rows.map((row) => {
+      const parsed = JSON.parse(row.record_json) as IssueRunRecord;
+      return [String(row.issue_number), normalizeIssueRecord(parsed)];
+    }),
+  );
+
+  return {
+    activeIssueNumber:
+      activeRow?.value && activeRow.value.trim() !== "" ? Number.parseInt(activeRow.value, 10) : null,
+    issues,
+  };
+}
+
+async function readJsonStateFromFile(filePath: string): Promise<SupervisorStateFile | null> {
+  const raw = await readJsonIfExists<SupervisorStateFile>(filePath);
+  return raw ? normalizeState(raw) : null;
+}
 
 export class StateStore {
-  constructor(private readonly stateFilePath: string) {}
+  constructor(
+    private readonly stateFilePath: string,
+    private readonly options: StateStoreOptions,
+  ) {}
 
   async load(): Promise<SupervisorStateFile> {
-    try {
-      const raw = await fs.readFile(this.stateFilePath, "utf8");
-      const parsed = JSON.parse(raw) as SupervisorStateFile;
-      const issues = Object.fromEntries(
-        Object.entries(parsed.issues ?? {}).map(([key, value]) => [
-          key,
-          {
-            ...value,
-            journal_path: value.journal_path ?? null,
-            review_wait_started_at: value.review_wait_started_at ?? null,
-            review_wait_head_sha: value.review_wait_head_sha ?? null,
-            codex_session_id: value.codex_session_id ?? null,
-            timeout_retry_count: value.timeout_retry_count ?? 0,
-            blocked_verification_retry_count: value.blocked_verification_retry_count ?? 0,
-            repeated_blocker_count: value.repeated_blocker_count ?? 0,
-            repeated_failure_signature_count: value.repeated_failure_signature_count ?? 0,
-            last_failure_kind: value.last_failure_kind ?? null,
-            last_failure_context: value.last_failure_context ?? null,
-            last_blocker_signature: value.last_blocker_signature ?? null,
-            last_failure_signature: value.last_failure_signature ?? null,
-            blocked_reason: value.blocked_reason ?? null,
-            processed_review_thread_ids: value.processed_review_thread_ids ?? [],
-          },
-        ]),
-      );
-      return {
-        activeIssueNumber: parsed.activeIssueNumber ?? null,
-        issues,
-      };
-    } catch (error) {
-      const maybeErr = error as NodeJS.ErrnoException;
-      if (maybeErr.code === "ENOENT") {
-        return this.emptyState();
-      }
-
-      throw error;
+    if (this.options.backend === "sqlite") {
+      return this.loadFromSqlite();
     }
+
+    return this.loadFromJson(this.stateFilePath);
   }
 
   async save(state: SupervisorStateFile): Promise<void> {
-    await writeJsonAtomic(this.stateFilePath, state);
+    if (this.options.backend === "sqlite") {
+      await this.saveToSqlite(normalizeState(state));
+      return;
+    }
+
+    await writeJsonAtomic(this.stateFilePath, normalizeState(state));
   }
 
   touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
@@ -78,5 +142,82 @@ export class StateStore {
       activeIssueNumber: null,
       issues: {},
     };
+  }
+
+  private async loadFromJson(filePath: string): Promise<SupervisorStateFile> {
+    try {
+      const raw = await fs.readFile(filePath, "utf8");
+      return normalizeState(JSON.parse(raw) as SupervisorStateFile);
+    } catch (error) {
+      const maybeErr = error as NodeJS.ErrnoException;
+      if (maybeErr.code === "ENOENT") {
+        return this.emptyState();
+      }
+
+      throw error;
+    }
+  }
+
+  private async loadFromSqlite(): Promise<SupervisorStateFile> {
+    await ensureDir(path.dirname(this.stateFilePath));
+    const db = new DatabaseSync(this.stateFilePath);
+
+    try {
+      initSqlite(db);
+      const currentState = readSqliteState(db);
+      if (Object.keys(currentState.issues).length > 0 || currentState.activeIssueNumber !== null) {
+        return currentState;
+      }
+
+      if (!this.options.bootstrapFilePath) {
+        return this.emptyState();
+      }
+
+      const bootstrapState = await readJsonStateFromFile(this.options.bootstrapFilePath);
+      if (!bootstrapState) {
+        return this.emptyState();
+      }
+
+      await this.saveToSqlite(bootstrapState);
+      return bootstrapState;
+    } finally {
+      db.close();
+    }
+  }
+
+  private async saveToSqlite(state: SupervisorStateFile): Promise<void> {
+    await ensureDir(path.dirname(this.stateFilePath));
+    const db = new DatabaseSync(this.stateFilePath);
+
+    try {
+      initSqlite(db);
+      db.exec("BEGIN IMMEDIATE");
+
+      try {
+        db.prepare(`
+          INSERT INTO metadata(key, value)
+          VALUES (?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        `).run("activeIssueNumber", state.activeIssueNumber === null ? "" : String(state.activeIssueNumber));
+
+        db.exec("DELETE FROM issues");
+        const insertIssue = db.prepare(`
+          INSERT INTO issues(issue_number, record_json, updated_at)
+          VALUES (?, ?, ?)
+        `);
+
+        for (const record of Object.values(state.issues)) {
+          const normalized = normalizeIssueRecord(record);
+          insertIssue.run(normalized.issue_number, JSON.stringify(normalized), normalized.updated_at);
+        }
+
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    } finally {
+      db.close();
+    }
   }
 }

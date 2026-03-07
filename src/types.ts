@@ -21,7 +21,9 @@ export interface SupervisorConfig {
   repoSlug: string;
   defaultBranch: string;
   workspaceRoot: string;
+  stateBackend: "json" | "sqlite";
   stateFile: string;
+  stateBootstrapFile?: string;
   codexBinary: string;
   sharedMemoryFiles: string[];
   issueJournalRelativePath: string;

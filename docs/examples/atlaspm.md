@@ -10,6 +10,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
   "repoSlug": "TommyKammy/atlaspm",
   "defaultBranch": "main",
   "workspaceRoot": "/Users/yourname/Dev/atlaspm-worktrees",
+  "stateBackend": "json",
   "stateFile": "/Users/yourname/Dev/codex-supervisor/.local/state.json",
   "codexBinary": "/Applications/Codex.app/Contents/Resources/codex",
   "sharedMemoryFiles": [

@@ -584,7 +584,10 @@ export class Supervisor {
 
   constructor(private readonly config: SupervisorConfig) {
     this.github = new GitHubClient(config);
-    this.stateStore = new StateStore(config.stateFile);
+    this.stateStore = new StateStore(config.stateFile, {
+      backend: config.stateBackend,
+      bootstrapFilePath: config.stateBootstrapFile,
+    });
   }
 
   static fromConfig(configPath?: string): Supervisor {
