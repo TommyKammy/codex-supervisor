@@ -170,6 +170,7 @@ Both installers render a local service file from templates and inject the curren
 ## Safety model
 
 - never pushes directly to the default branch
+- acquires a global supervisor lock for every `run-once` / loop cycle before mutating state
 - uses issue-specific branches only
 - relies on branch protection for merge safety
 - uses issue locks and session locks to avoid duplicate turns
@@ -178,6 +179,8 @@ Both installers render a local service file from templates and inject the curren
 - handles CI repair, review response, and merge-conflict resolution as separate phases
 - closes merged issues automatically
 - closes parent epic issues automatically when every child issue is closed
+
+If another supervisor process is already active, extra `loop` or `run-once` invocations do not mutate state. They log a skip message and rely on stale-lock cleanup if the previous process died unexpectedly.
 
 ## Current limitations
 

@@ -35,6 +35,23 @@ function parseArgs(argv: string[]): CliOptions {
   return { command, configPath, dryRun };
 }
 
+async function runOnceWithSupervisorLock(
+  supervisor: Supervisor,
+  command: "loop" | "run-once",
+  options: Pick<CliOptions, "dryRun">,
+): Promise<string> {
+  const lock = await supervisor.acquireSupervisorLock(command);
+  if (!lock.acquired) {
+    return `Skipped supervisor cycle: ${lock.reason}.`;
+  }
+
+  try {
+    return await supervisor.runOnce(options);
+  } finally {
+    await lock.release();
+  }
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const supervisor = Supervisor.fromConfig(options.configPath);
@@ -46,13 +63,13 @@ async function main(): Promise<void> {
   }
 
   if (options.command === "run-once") {
-    console.log(await supervisor.runOnce({ dryRun: options.dryRun }));
+    console.log(await runOnceWithSupervisorLock(supervisor, "run-once", { dryRun: options.dryRun }));
     return;
   }
 
   while (true) {
     try {
-      const message = await supervisor.runOnce({ dryRun: options.dryRun });
+      const message = await runOnceWithSupervisorLock(supervisor, "loop", { dryRun: options.dryRun });
       console.log(`${new Date().toISOString()} ${message}`);
     } catch (error) {
       const message = error instanceof Error ? error.stack ?? error.message : String(error);
