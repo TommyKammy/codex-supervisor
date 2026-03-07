@@ -20,6 +20,9 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
     "docs/workflow.md",
     "docs/decisions.md"
   ],
+  "localReviewEnabled": true,
+  "localReviewRoles": ["reviewer", "explorer"],
+  "localReviewArtifactDir": "/Users/yourname/Dev/codex-supervisor/.local/reviews",
   "reviewBotLogins": ["copilot-pull-request-reviewer"],
   "humanReviewBlocksMerge": true,
   "issueJournalRelativePath": ".codex-supervisor/issue-journal.md",
@@ -45,6 +48,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
 
 - `atlaspm` uses `Part of #...`, `Depends on: ...`, and `## Execution order`, so the built-in sequencing logic is enough.
 - Copilot review is expected to start automatically after the PR is marked ready.
+- A local advisory review can run before `gh pr ready`, with artifacts written under the supervisor's `.local/reviews` directory.
 - Only configured review bots are auto-addressed. Human review comments block merge and require manual follow-up.
 - `Epic:` title prefixes are skipped as direct work items because the supervisor closes epics after all child issues close.
 - Generated context index and `AGENTS.generated.md` artifacts are written under the supervisor state directory, not into the managed repo.

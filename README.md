@@ -92,6 +92,9 @@ Important fields:
 - `stateBootstrapFile`: optional JSON file to import once when initializing a SQLite state database
 - `codexBinary`: path to the Codex CLI
 - `sharedMemoryFiles`: durable repo-memory files to reference every turn
+- `localReviewEnabled`: run an advisory local review before a draft PR is marked ready
+- `localReviewRoles`: role labels to suggest when Codex multi-agent review is available
+- `localReviewArtifactDir`: directory for generated local review artifacts
 - `reviewBotLogins`: bot reviewer logins that the supervisor may auto-address
 - `humanReviewBlocksMerge`: if `true`, unresolved human or unconfigured-bot review threads stop auto-merge and require manual intervention
 - `issueJournalRelativePath`: per-issue handoff journal inside each worktree
@@ -231,6 +234,20 @@ If you run the supervisor this way, keep the service model simple:
 - one long-running `loop` process per config
 - optional operator-triggered `run-once` calls only when the global supervisor lock says it is safe
 - no assumption that Codex chat history is shared across machines or sessions
+
+## Local review
+
+`codex-supervisor` can optionally run a local advisory review before a draft PR is marked ready.
+
+This is designed to reduce dependence on GitHub-hosted auto review. The supervisor:
+
+- waits until the draft PR is green and conflict-free
+- runs a separate local review turn with Codex
+- suggests reviewer roles such as `reviewer` and `explorer`
+- saves artifacts under `localReviewArtifactDir`
+- then continues the normal ready / Copilot wait flow
+
+This review is advisory by default. It does not mutate code and it does not block merge unless you later add your own gating policy around the saved artifacts.
 
 ## Runtime
 

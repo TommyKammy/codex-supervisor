@@ -13,6 +13,12 @@
     "docs/workflow.md",
     "docs/decisions.md"
   ],
+  "localReviewEnabled": true,
+  "localReviewRoles": [
+    "reviewer",
+    "explorer"
+  ],
+  "localReviewArtifactDir": "/Users/yourname/Dev/codex-supervisor/.local/reviews",
   "reviewBotLogins": [
     "copilot-pull-request-reviewer"
   ],
