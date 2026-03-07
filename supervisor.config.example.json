@@ -1,0 +1,30 @@
+{
+  "repoPath": "/absolute/path/to/managed-repo",
+  "repoSlug": "OWNER/REPO",
+  "defaultBranch": "main",
+  "workspaceRoot": "/absolute/path/to/worktrees",
+  "stateFile": "./.local/state.json",
+  "codexBinary": "/absolute/path/to/codex",
+  "sharedMemoryFiles": [
+    "README.md",
+    "docs/architecture.md",
+    "docs/constitution.md",
+    "docs/workflow.md",
+    "docs/decisions.md"
+  ],
+  "issueJournalRelativePath": ".codex-supervisor/issue-journal.md",
+  "issueLabel": "codex",
+  "skipTitlePrefixes": [],
+  "branchPrefix": "codex/issue-",
+  "pollIntervalSeconds": 120,
+  "copilotReviewWaitMinutes": 10,
+  "codexExecTimeoutMinutes": 30,
+  "maxCodexAttemptsPerIssue": 30,
+  "timeoutRetryLimit": 2,
+  "blockedVerificationRetryLimit": 3,
+  "sameBlockerRepeatLimit": 2,
+  "sameFailureSignatureRepeatLimit": 3,
+  "cleanupDoneWorkspacesAfterHours": 24,
+  "mergeMethod": "squash",
+  "draftPrAfterAttempt": 1
+}

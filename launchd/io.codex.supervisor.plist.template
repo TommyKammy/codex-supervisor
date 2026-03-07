@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.codex.supervisor</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__ROOT__/scripts/run-loop.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__ROOT__</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>__ROOT__/.local/logs/launchd.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>__ROOT__/.local/logs/launchd.stderr.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__PATH__</string>
+    <key>NODE_BIN</key>
+    <string>__NODE__</string>
+    <key>NPM_BIN</key>
+    <string>__NPM__</string>
+    <key>npm_config_yes</key>
+    <string>true</string>
+    <key>CI</key>
+    <string>1</string>
+  </dict>
+</dict>
+</plist>

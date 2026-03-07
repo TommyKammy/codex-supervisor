@@ -1,0 +1,19 @@
+[Unit]
+Description=codex-supervisor loop
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__ROOT__
+ExecStart=/bin/bash __ROOT__/scripts/run-loop.sh
+Restart=always
+RestartSec=5
+Environment=PATH=__PATH__
+Environment=NODE_BIN=__NODE__
+Environment=NPM_BIN=__NPM__
+Environment=npm_config_yes=true
+Environment=CI=1
+
+[Install]
+WantedBy=default.target
