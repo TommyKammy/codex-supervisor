@@ -431,6 +431,10 @@ function shouldRunCodex(
   );
 }
 
+function isOpenPullRequest(pr: GitHubPullRequest | null): pr is GitHubPullRequest {
+  return pr !== null && pr.state === "OPEN" && !pr.mergedAt;
+}
+
 async function selectNextIssue(
   github: GitHubClient,
   config: SupervisorConfig,
@@ -752,22 +756,22 @@ export class Supervisor {
     let checks: PullRequestCheck[] = [];
     let reviewThreads: ReviewThread[] = [];
 
-    if (activeRecord.pr_number !== null) {
-      try {
-        pr = await this.github.getPullRequest(activeRecord.pr_number);
-        checks = await this.github.getChecks(activeRecord.pr_number);
-        reviewThreads = await this.github.getUnresolvedCopilotReviewThreads(activeRecord.pr_number);
-      } catch (error) {
-        const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
-        return `${formatDetailedStatus({
-          activeRecord,
-          latestRecord,
-          trackedIssueCount: Object.keys(state.issues).length,
-          pr,
-          checks,
-          reviewThreads,
-        })}\nstatus_warning=${truncate(message, 200)}`;
+    try {
+      pr = await this.github.resolvePullRequestForBranch(activeRecord.branch, activeRecord.pr_number);
+      if (isOpenPullRequest(pr)) {
+        checks = await this.github.getChecks(pr.number);
+        reviewThreads = await this.github.getUnresolvedCopilotReviewThreads(pr.number);
       }
+    } catch (error) {
+      const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
+      return `${formatDetailedStatus({
+        activeRecord,
+        latestRecord,
+        trackedIssueCount: Object.keys(state.issues).length,
+        pr,
+        checks,
+        reviewThreads,
+      })}\nstatus_warning=${truncate(message, 200)}`;
     }
 
     return formatDetailedStatus({
@@ -905,38 +909,35 @@ export class Supervisor {
         workspaceStatus = await getWorkspaceStatus(workspacePath, record.branch, this.config.defaultBranch);
       }
 
-      let pr = await this.github.findOpenPullRequest(record.branch);
+      let resolvedPr = await this.github.resolvePullRequestForBranch(record.branch, record.pr_number);
+      let pr = isOpenPullRequest(resolvedPr) ? resolvedPr : null;
       let checks = pr ? await this.github.getChecks(pr.number) : [];
       let reviewThreads = pr ? await this.github.getUnresolvedCopilotReviewThreads(pr.number) : [];
 
       if (!pr) {
-        const existingPr =
-          record.pr_number !== null
-            ? await this.github.getPullRequest(record.pr_number)
-            : await this.github.findLatestPullRequestForBranch(record.branch);
-
-        if (!existingPr) {
+        if (!resolvedPr) {
           // No current or historical PR for this branch; continue with normal branch/PR flow.
-        } else if (existingPr.mergedAt || existingPr.state === "MERGED") {
+        } else if (resolvedPr.mergedAt || resolvedPr.state === "MERGED") {
           record = this.stateStore.touch(record, {
+            pr_number: resolvedPr.number,
             state: "done",
-            last_head_sha: existingPr.headRefOid,
+            last_head_sha: resolvedPr.headRefOid,
           });
           state.issues[String(record.issue_number)] = record;
           state.activeIssueNumber = null;
           await this.stateStore.save(state);
           return this.runOnce(options);
-        } else if (existingPr.state === "CLOSED") {
+        } else if (resolvedPr.state === "CLOSED") {
           const failureContext = buildCodexFailureContext(
             "manual",
-            `PR #${existingPr.number} was closed without merge.`,
+            `PR #${resolvedPr.number} was closed without merge.`,
             ["Manual intervention is required before the supervisor can continue this issue."],
           );
           record = this.stateStore.touch(record, {
-            pr_number: existingPr.number,
+            pr_number: resolvedPr.number,
             state: "blocked",
             last_error:
-              `PR #${existingPr.number} was closed without merge. ` +
+              `PR #${resolvedPr.number} was closed without merge. ` +
               `Manual intervention is required before issue #${record.issue_number} can continue.`,
             last_failure_kind: null,
             last_failure_context: failureContext,
@@ -947,7 +948,7 @@ export class Supervisor {
           state.activeIssueNumber = null;
           await this.stateStore.save(state);
           await syncIssueJournal({ issue, record, journalPath });
-          return `Issue #${record.issue_number} blocked because PR #${existingPr.number} was closed without merge.`;
+          return `Issue #${record.issue_number} blocked because PR #${resolvedPr.number} was closed without merge.`;
         }
       }
 
@@ -1195,7 +1196,8 @@ export class Supervisor {
         workspaceStatus = await getWorkspaceStatus(workspacePath, record.branch, this.config.defaultBranch);
       }
 
-      pr = await this.github.findOpenPullRequest(record.branch);
+      resolvedPr = await this.github.resolvePullRequestForBranch(record.branch, record.pr_number);
+      pr = isOpenPullRequest(resolvedPr) ? resolvedPr : null;
       if (
         !pr &&
         workspaceStatus.baseAhead > 0 &&

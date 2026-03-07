@@ -128,6 +128,58 @@ export class GitHubClient {
     return parseJson<GitHubPullRequest>(result.stdout);
   }
 
+  async getPullRequestIfExists(prNumber: number): Promise<GitHubPullRequest | null> {
+    const result = await runCommand(
+      "gh",
+      [
+        "pr",
+        "view",
+        String(prNumber),
+        "--repo",
+        this.config.repoSlug,
+        "--json",
+        "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,headRefName,headRefOid,mergedAt",
+      ],
+      { allowExitCodes: [0, 1] },
+    );
+
+    if (result.exitCode === 0) {
+      return parseJson<GitHubPullRequest>(result.stdout);
+    }
+
+    const stderr = result.stderr.toLowerCase();
+    if (
+      stderr.includes("pull request not found") ||
+      stderr.includes("could not find pull request") ||
+      stderr.includes("no pull requests match")
+    ) {
+      return null;
+    }
+
+    throw new Error(
+      `Failed to get pull request #${prNumber}: ${result.stderr.trim() || `exit code ${result.exitCode}`}`,
+    );
+  }
+
+  async resolvePullRequestForBranch(
+    branch: string,
+    trackedPrNumber: number | null,
+  ): Promise<GitHubPullRequest | null> {
+    const openPullRequest = await this.findOpenPullRequest(branch);
+    if (openPullRequest) {
+      return openPullRequest;
+    }
+
+    if (trackedPrNumber !== null) {
+      const trackedPullRequest = await this.getPullRequestIfExists(trackedPrNumber);
+      if (trackedPullRequest) {
+        return trackedPullRequest;
+      }
+    }
+
+    return this.findLatestPullRequestForBranch(branch);
+  }
+
   async getChecks(prNumber: number): Promise<PullRequestCheck[]> {
     const result = await runCommand(
       "gh",
