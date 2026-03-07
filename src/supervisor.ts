@@ -226,17 +226,21 @@ function latestReviewComment(thread: ReviewThread) {
 }
 
 function isAllowedReviewBotThread(config: SupervisorConfig, thread: ReviewThread): boolean {
-  const latestComment = latestReviewComment(thread);
-  if (!latestComment?.author?.login) {
-    return false;
-  }
-
-  const login = latestComment.author.login.toLowerCase();
-  return config.reviewBotLogins.includes(login);
+  return thread.comments.nodes.some((comment) => {
+    const login = comment.author?.login?.toLowerCase();
+    return Boolean(login && config.reviewBotLogins.includes(login));
+  });
 }
 
 function manualReviewThreads(config: SupervisorConfig, reviewThreads: ReviewThread[]): ReviewThread[] {
   return reviewThreads.filter((thread) => !isAllowedReviewBotThread(config, thread));
+}
+
+function configuredBotReviewThreads(
+  config: SupervisorConfig,
+  reviewThreads: ReviewThread[],
+): ReviewThread[] {
+  return reviewThreads.filter((thread) => isAllowedReviewBotThread(config, thread));
 }
 
 function pendingBotReviewThreads(
@@ -244,8 +248,8 @@ function pendingBotReviewThreads(
   record: IssueRunRecord,
   reviewThreads: ReviewThread[],
 ): ReviewThread[] {
-  return reviewThreads.filter(
-    (thread) => isAllowedReviewBotThread(config, thread) && !record.processed_review_thread_ids.includes(thread.id),
+  return configuredBotReviewThreads(config, reviewThreads).filter(
+    (thread) => !record.processed_review_thread_ids.includes(thread.id),
   );
 }
 
@@ -264,6 +268,28 @@ function buildManualReviewFailureContext(reviewThreads: ReviewThread[]): Failure
     category: "manual",
     summary: `${reviewThreads.length} unresolved manual or unconfigured review thread(s) require human attention.`,
     signature: reviewThreads.map((thread) => `manual:${thread.id}`).join("|"),
+    command: null,
+    details,
+    url: reviewThreads[0]?.comments.nodes[0]?.url ?? null,
+    updated_at: nowIso(),
+  };
+}
+
+function buildStalledBotReviewFailureContext(reviewThreads: ReviewThread[]): FailureContext | null {
+  if (reviewThreads.length === 0) {
+    return null;
+  }
+
+  const details = reviewThreads.slice(0, 5).map((thread) => {
+    const latestComment = latestReviewComment(thread);
+    const author = latestComment?.author?.login ?? "unknown";
+    return `${thread.path ?? "unknown"}:${thread.line ?? "?"} reviewer=${author} ${latestComment?.body.replace(/\s+/g, " ").trim() ?? ""}`;
+  });
+
+  return {
+    category: "manual",
+    summary: `${reviewThreads.length} configured bot review thread(s) remain unresolved after processing and now require manual attention.`,
+    signature: reviewThreads.map((thread) => `stalled-bot:${thread.id}`).join("|"),
     command: null,
     details,
     url: reviewThreads[0]?.comments.nodes[0]?.url ?? null,
@@ -346,6 +372,13 @@ function inferFailureContext(
       return reviewContext;
     }
 
+    const stalledBotReviewContext = buildStalledBotReviewFailureContext(
+      configuredBotReviewThreads(config, reviewThreads),
+    );
+    if (stalledBotReviewContext) {
+      return stalledBotReviewContext;
+    }
+
     if (mergeConflictDetected(pr)) {
       return buildConflictFailureContext(pr);
     }
@@ -377,7 +410,10 @@ function blockedReasonFromReviewState(
   config: SupervisorConfig,
   reviewThreads: ReviewThread[],
 ): Exclude<BlockedReason, null> | null {
-  if (config.humanReviewBlocksMerge && manualReviewThreads(config, reviewThreads).length > 0) {
+  if (
+    manualReviewThreads(config, reviewThreads).length > 0 ||
+    configuredBotReviewThreads(config, reviewThreads).length > 0
+  ) {
     return "manual_review";
   }
 
@@ -431,6 +467,7 @@ function inferStateFromPullRequest(
   reviewThreads: ReviewThread[],
 ): RunState {
   const manualThreads = manualReviewThreads(config, reviewThreads);
+  const unresolvedBotThreads = configuredBotReviewThreads(config, reviewThreads);
   const botThreads = pendingBotReviewThreads(config, record, reviewThreads);
 
   if (pr.mergedAt || pr.state === "MERGED") {
@@ -442,7 +479,11 @@ function inferStateFromPullRequest(
       return "addressing_review";
     }
 
-    return config.humanReviewBlocksMerge ? "blocked" : "pr_open";
+    if (unresolvedBotThreads.length > 0 || config.humanReviewBlocksMerge) {
+      return "blocked";
+    }
+
+    return "pr_open";
   }
 
   const checkSummary = summarizeChecks(checks);
@@ -452,6 +493,10 @@ function inferStateFromPullRequest(
 
   if (botThreads.length > 0) {
     return "addressing_review";
+  }
+
+  if (unresolvedBotThreads.length > 0) {
+    return "blocked";
   }
 
   if (config.humanReviewBlocksMerge && manualThreads.length > 0) {
@@ -658,7 +703,7 @@ function formatDetailedStatus(args: {
       lines.push(`pending_checks=${pendingChecks}`);
     }
     lines.push(
-      `review_threads bot_pending=${pendingBotReviewThreads(config, activeRecord, reviewThreads).length} manual=${manualReviewThreads(config, reviewThreads).length}`,
+      `review_threads bot_pending=${pendingBotReviewThreads(config, activeRecord, reviewThreads).length} bot_unresolved=${configuredBotReviewThreads(config, reviewThreads).length} manual=${manualReviewThreads(config, reviewThreads).length}`,
     );
   }
 
@@ -1332,7 +1377,7 @@ export class Supervisor {
         refreshedPr.isDraft &&
         !refreshedCheckSummary.hasPending &&
         !refreshedCheckSummary.hasFailing &&
-        pendingBotReviewThreads(this.config, record, refreshedReviewThreads).length === 0 &&
+        configuredBotReviewThreads(this.config, refreshedReviewThreads).length === 0 &&
         (!this.config.humanReviewBlocksMerge || manualReviewThreads(this.config, refreshedReviewThreads).length === 0) &&
         !mergeConflictDetected(refreshedPr) &&
         !options.dryRun

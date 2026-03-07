@@ -49,7 +49,7 @@ export function loadConfig(configPath?: string): SupervisorConfig {
     reviewBotLogins: Array.isArray(raw.reviewBotLogins)
       ? raw.reviewBotLogins
           .filter((value): value is string => typeof value === "string" && value.trim() !== "")
-          .map((value) => value.toLowerCase())
+          .map((value) => value.trim().toLowerCase())
       : ["copilot-pull-request-reviewer"],
     humanReviewBlocksMerge:
       typeof raw.humanReviewBlocksMerge === "boolean"
