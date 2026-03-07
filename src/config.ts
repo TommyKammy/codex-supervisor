@@ -50,6 +50,10 @@ export function loadConfig(configPath?: string): SupervisorConfig {
       typeof raw.issueJournalRelativePath === "string" && raw.issueJournalRelativePath.trim() !== ""
         ? raw.issueJournalRelativePath
         : ".codex-supervisor/issue-journal.md",
+    issueJournalMaxChars:
+      typeof raw.issueJournalMaxChars === "number" && raw.issueJournalMaxChars >= 2000
+        ? raw.issueJournalMaxChars
+        : 6000,
     issueLabel: typeof raw.issueLabel === "string" ? raw.issueLabel : undefined,
     issueSearch: typeof raw.issueSearch === "string" ? raw.issueSearch : undefined,
     skipTitlePrefixes: Array.isArray(raw.skipTitlePrefixes)

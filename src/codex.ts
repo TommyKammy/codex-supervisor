@@ -130,7 +130,8 @@ export function buildCodexPrompt(input: {
   pr: GitHubPullRequest | null;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
-  sharedMemoryFiles: string[];
+  alwaysReadFiles: string[];
+  onDemandMemoryFiles: string[];
   journalPath: string;
   journalExcerpt?: string | null;
   failureContext?: FailureContext | null;
@@ -207,13 +208,22 @@ export function buildCodexPrompt(input: {
     "",
     "Structured failure context:",
     failureSummary,
-    ...(input.sharedMemoryFiles.length > 0
+    ...(input.alwaysReadFiles.length > 0
       ? [
           "",
-          "Shared repo memory files:",
-          ...input.sharedMemoryFiles.map((filePath) => `- ${filePath}`),
+          "Always-read memory files:",
+          ...input.alwaysReadFiles.map((filePath) => `- ${filePath}`),
           "",
-          "Before making decisions, read the shared repo memory files above if they exist in the workspace. Treat them as the durable cross-thread memory shared by Codex, CI agents, and future sessions.",
+          "On-demand durable memory files:",
+          ...(input.onDemandMemoryFiles.length > 0
+            ? input.onDemandMemoryFiles.map((filePath) => `- ${filePath}`)
+            : ["- none configured"]),
+          "",
+          "Memory policy:",
+          "- Read the always-read files first.",
+          "- Use the context index to decide whether you need any on-demand durable memory files.",
+          "- Do not bulk-read every durable memory file on every turn.",
+          "- Treat these files as the durable cross-thread memory shared by Codex, CI agents, and future sessions.",
         ]
       : []),
     "",

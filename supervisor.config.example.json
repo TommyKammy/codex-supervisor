@@ -15,6 +15,7 @@
     "docs/decisions.md"
   ],
   "issueJournalRelativePath": ".codex-supervisor/issue-journal.md",
+  "issueJournalMaxChars": 6000,
   "issueLabel": "codex",
   "skipTitlePrefixes": [],
   "branchPrefix": "codex/issue-",

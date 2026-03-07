@@ -92,6 +92,7 @@ Important fields:
 - `codexBinary`: path to the Codex CLI
 - `sharedMemoryFiles`: durable repo-memory files to reference every turn
 - `issueJournalRelativePath`: per-issue handoff journal inside each worktree
+- `issueJournalMaxChars`: compaction budget for the journal handoff section
 - `issueLabel`: optional issue label filter
 - `issueSearch`: optional GitHub issue search query
 - `skipTitlePrefixes`: optional title prefixes to exclude, for example `["Epic:"]`
@@ -120,6 +121,26 @@ Typical files:
 - `docs/decisions.md`
 
 The supervisor also keeps a per-issue journal in each worktree. Codex is required to update that journal before ending a turn.
+
+To keep token usage small and deterministic, the supervisor also generates:
+
+- a compact context index outside the managed repo
+- an `AGENTS.generated.md` file outside the managed repo
+
+These generated files tell Codex what to read first and which durable memory files are only on-demand.
+
+### Memory read policy
+
+- always read:
+  - `AGENTS.generated.md`
+  - the compact context index
+  - the current issue journal
+- read on demand:
+  - `README.md`
+  - architecture / workflow / decisions docs
+  - any other shared memory files listed in config
+
+The goal is to avoid bulk-reading every durable memory file on every turn while still preserving cross-session memory.
 
 Template shared-memory files are included here:
 
