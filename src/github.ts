@@ -289,7 +289,7 @@ export class GitHubClient {
     await runCommand("gh", args, { allowExitCodes: [0, 1] });
   }
 
-  async getUnresolvedCopilotReviewThreads(prNumber: number): Promise<ReviewThread[]> {
+  async getUnresolvedReviewThreads(prNumber: number): Promise<ReviewThread[]> {
     const [owner, repo] = this.config.repoSlug.split("/", 2);
     if (!owner || !repo) {
       throw new Error(`Invalid repoSlug: ${this.config.repoSlug}`);
@@ -314,6 +314,7 @@ export class GitHubClient {
                     url
                     author {
                       login
+                      __typename
                     }
                   }
                 }
@@ -350,15 +351,19 @@ export class GitHubClient {
     }>(result.stdout);
 
     const threads = payload.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
-    return threads.filter((thread) => {
-      if (thread.isResolved || thread.isOutdated) {
-        return false;
-      }
-
-      return thread.comments.nodes.some((comment) => {
-        const login = comment.author?.login?.toLowerCase() ?? "";
-        return login.includes("copilot");
-      });
-    });
+    return threads.map((thread) => ({
+      ...thread,
+      comments: {
+        nodes: thread.comments.nodes.map((comment) => ({
+          ...comment,
+          author: comment.author
+            ? {
+                login: comment.author.login,
+                typeName: (comment.author as { __typename?: string }).__typename ?? null,
+              }
+            : null,
+        })),
+      },
+    })).filter((thread) => !thread.isResolved && !thread.isOutdated);
   }
 }

@@ -46,6 +46,15 @@ export function loadConfig(configPath?: string): SupervisorConfig {
     sharedMemoryFiles: Array.isArray(raw.sharedMemoryFiles)
       ? raw.sharedMemoryFiles.filter((value): value is string => typeof value === "string")
       : [],
+    reviewBotLogins: Array.isArray(raw.reviewBotLogins)
+      ? raw.reviewBotLogins
+          .filter((value): value is string => typeof value === "string" && value.trim() !== "")
+          .map((value) => value.toLowerCase())
+      : ["copilot-pull-request-reviewer"],
+    humanReviewBlocksMerge:
+      typeof raw.humanReviewBlocksMerge === "boolean"
+        ? raw.humanReviewBlocksMerge
+        : true,
     issueJournalRelativePath:
       typeof raw.issueJournalRelativePath === "string" && raw.issueJournalRelativePath.trim() !== ""
         ? raw.issueJournalRelativePath

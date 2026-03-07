@@ -55,6 +55,7 @@ export function extractBlockedReason(message: string): BlockedReason {
     "permissions",
     "secrets",
     "verification",
+    "manual_review",
     "manual_pr_closed",
     "handoff_missing",
     "unknown",
@@ -153,16 +154,15 @@ export function buildCodexPrompt(input: {
 
   const reviewSummary =
     input.reviewThreads.length === 0
-      ? "No unresolved Copilot review threads."
+      ? "No unresolved configured-bot review threads."
       : input.reviewThreads
           .map((thread) => {
-            const latestComment = [...thread.comments.nodes]
-              .reverse()
-              .find((comment) => comment.author?.login?.toLowerCase().includes("copilot"));
+            const latestComment = thread.comments.nodes[thread.comments.nodes.length - 1];
             return [
               `- Thread ${thread.id}`,
               `  File: ${thread.path ?? "unknown"}:${thread.line ?? "?"}`,
               `  Updated: ${latestComment?.createdAt ?? "unknown"}`,
+              `  Reviewer: ${latestComment?.author?.login ?? "unknown"}`,
               `  Comment URL: ${latestComment?.url ?? "n/a"}`,
               `  Comment: ${latestComment?.body.replace(/\s+/g, " ").trim() ?? ""}`,
             ].join("\n");
@@ -202,7 +202,7 @@ export function buildCodexPrompt(input: {
     "Checks:",
     checksSummary,
     "",
-    "Unresolved Copilot review threads:",
+    "Unresolved configured-bot review threads:",
     reviewSummary,
     "",
     "Structured failure context:",
@@ -245,7 +245,7 @@ export function buildCodexPrompt(input: {
     "Respond in this exact footer format at the end:",
     "Summary: <short summary>",
     "State hint: <reproducing|implementing|stabilizing|draft_pr|pr_open|repairing_ci|resolving_conflict|waiting_ci|addressing_review|blocked|failed>",
-    "Blocked reason: <requirements|permissions|secrets|verification|unknown|none>",
+    "Blocked reason: <requirements|permissions|secrets|verification|manual_review|unknown|none>",
     "Tests: <what you ran or not run>",
     "Failure signature: <stable short signature for the current primary failure or none>",
     "Next action: <next supervisor-relevant action>",
