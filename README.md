@@ -41,6 +41,22 @@ The supervisor itself is intentionally small. It decides the next action from Gi
 - GitHub operations via `gh`
 - Codex execution via `codex exec`
 
+## Best fit
+
+- solo development, or a single clearly-owned automation lane inside a small team
+- repositories where issue order and dependencies are explicitly written down
+- repos with branch protection, required checks, and a stable PR workflow
+- work that can be decomposed into implementation-sized GitHub issues
+- teams that want GitHub to remain the source of truth instead of chat history
+
+## Not a fit
+
+- fast-moving multi-author repos where multiple people frequently touch the same area at once
+- backlogs where issue priority and dependency order are mostly implicit
+- projects that rely on long design discussions inside PRs before code can proceed
+- repos where issues are vague prompts rather than execution-ready work items
+- workflows that expect the supervisor to invent prioritization, architecture, or team coordination policy on its own
+
 ## Run states
 
 - `queued`
@@ -191,6 +207,43 @@ Currently enforced:
 - `Depends on: #123, #124`
 - `Part of #...`
 - `## Execution order`
+
+Example issue body:
+
+```md
+## Summary
+
+Persist timeline row layout separately for each swimlane mode.
+
+## Scope
+
+- save manual row layout for `section`
+- save manual row layout for `assignee`
+- save manual row layout for `status`
+- keep existing section behavior unchanged
+
+Depends on: #232
+Part of #227
+Parallelizable: No
+
+## Execution order
+
+7 of 15
+
+## Acceptance criteria
+
+- switching between `section`, `assignee`, and `status` restores each mode's own saved layout
+- existing timeline reorder tests still pass
+- a focused E2E covers cross-mode persistence
+```
+
+Practical guidance:
+
+- keep one execution-ready change per issue
+- write `Depends on` whenever a later issue would be unsafe without an earlier one
+- use `Part of` for epics or parent rollups
+- use `Execution order` when a series must be processed in a specific sequence
+- if parallel execution is safe, say so explicitly in the issue body instead of expecting the supervisor to infer it
 
 ## Commands
 
