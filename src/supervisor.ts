@@ -1137,6 +1137,9 @@ export class Supervisor {
           ...applyFailureSignature(record, failureContext),
           blocked_reason: nextState === "blocked" ? blockedReasonFromReviewState(this.config, reviewThreads) : null,
         });
+        state.issues[String(record.issue_number)] = record;
+        await this.stateStore.save(state);
+
         if (failureContext && shouldStopForRepeatedFailureSignature(record, this.config)) {
           record = this.stateStore.touch(record, {
             state: "failed",
