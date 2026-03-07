@@ -13,6 +13,80 @@ function parseJson<T>(stdout: string): T {
   return JSON.parse(stdout) as T;
 }
 
+interface PullRequestStatusCheckRollupResponse {
+  statusCheckRollup?: Array<{
+    __typename?: string;
+    name?: string;
+    workflowName?: string | null;
+    detailsUrl?: string | null;
+    conclusion?: string | null;
+    status?: string | null;
+    context?: string;
+    targetUrl?: string | null;
+    state?: string | null;
+  }>;
+}
+
+function mapCheckBucket(args: {
+  bucket?: string | null;
+  state?: string | null;
+  conclusion?: string | null;
+}): PullRequestCheck["bucket"] {
+  const explicitBucket = args.bucket?.toLowerCase();
+  if (explicitBucket) {
+    return explicitBucket;
+  }
+
+  const outcome = (args.conclusion ?? args.state ?? "").toLowerCase();
+  if (["success", "successful", "pass", "passed"].includes(outcome)) {
+    return "pass";
+  }
+  if (["pending", "queued", "in_progress", "expected", "waiting", "requested"].includes(outcome)) {
+    return "pending";
+  }
+  if (["failure", "failed", "error", "timed_out", "action_required", "startup_failure"].includes(outcome)) {
+    return "fail";
+  }
+  if (["cancelled", "canceled", "cancel"].includes(outcome)) {
+    return "cancel";
+  }
+  if (["neutral", "skipped", "stale", "skipping"].includes(outcome)) {
+    return "skipping";
+  }
+
+  return outcome || "unknown";
+}
+
+function normalizeRollupChecks(rollup: PullRequestStatusCheckRollupResponse | null | undefined): PullRequestCheck[] {
+  const nodes = rollup?.statusCheckRollup ?? [];
+  return nodes
+    .map((node): PullRequestCheck | null => {
+      if (node.__typename === "CheckRun" || node.name) {
+        const state = (node.conclusion ?? node.status ?? "UNKNOWN").toUpperCase();
+        return {
+          name: node.name ?? "unknown",
+          state,
+          bucket: mapCheckBucket({ state: node.status, conclusion: node.conclusion }),
+          workflow: node.workflowName ?? undefined,
+          link: node.detailsUrl ?? undefined,
+        };
+      }
+
+      if (node.__typename === "StatusContext" || node.context) {
+        const state = (node.state ?? "UNKNOWN").toUpperCase();
+        return {
+          name: node.context ?? "unknown",
+          state,
+          bucket: mapCheckBucket({ state: node.state }),
+          link: node.targetUrl ?? undefined,
+        };
+      }
+
+      return null;
+    })
+    .filter((check): check is PullRequestCheck => check !== null);
+}
+
 export class GitHubClient {
   constructor(private readonly config: SupervisorConfig) {}
 
@@ -196,11 +270,36 @@ export class GitHubClient {
     );
 
     const trimmed = result.stdout.trim();
-    if (trimmed === "") {
-      return [];
+    if (result.exitCode === 0 && trimmed !== "") {
+      return parseJson<PullRequestCheck[]>(trimmed);
     }
 
-    return parseJson<PullRequestCheck[]>(trimmed);
+    const fallback = await runCommand(
+      "gh",
+      [
+        "pr",
+        "view",
+        String(prNumber),
+        "--repo",
+        this.config.repoSlug,
+        "--json",
+        "statusCheckRollup",
+      ],
+      { allowExitCodes: [0, 1] },
+    );
+
+    const fallbackTrimmed = fallback.stdout.trim();
+    if (fallback.exitCode === 0 && fallbackTrimmed !== "") {
+      return normalizeRollupChecks(parseJson<PullRequestStatusCheckRollupResponse>(fallbackTrimmed));
+    }
+
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `Failed to get checks for PR #${prNumber}: ${truncate(result.stderr.trim() || fallback.stderr.trim(), 500) ?? `exit code ${result.exitCode}`}`,
+      );
+    }
+
+    return [];
   }
 
   async createPullRequest(
