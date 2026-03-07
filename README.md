@@ -11,6 +11,27 @@ The design goal is small, durable orchestration:
 
 This keeps loop continuity outside the chat thread.
 
+## Architecture
+
+```mermaid
+flowchart TD
+  A["GitHub Issues"] --> B["codex-supervisor"]
+  B --> C["Local state.json"]
+  B --> D["Per-issue worktree"]
+  B --> E["Issue journal"]
+  B --> F["codex exec / resume"]
+  F --> D
+  B --> G["gh issue / pr / checks / reviews"]
+  G --> H["Draft PR / PR updates"]
+  H --> I["CI + Copilot auto review"]
+  I --> B
+  B --> J["Auto-merge"]
+  J --> K["Issue close"]
+  K --> L["Parent epic close"]
+```
+
+The supervisor itself is intentionally small. It decides the next action from GitHub facts plus local state, not from long-lived chat memory.
+
 ## Current scope
 
 - one managed repository per config
@@ -169,4 +190,8 @@ Both installers render a local service file from templates and inject the curren
 
 The validation checklist used for the original end-to-end proving loop is in [docs/validation-checklist.md](./docs/validation-checklist.md).
 
-An example managed-repo configuration is in [docs/examples/atlaspm.md](./docs/examples/atlaspm.md).
+Example material:
+
+- managed-repo walkthrough: [docs/examples/atlaspm.md](./docs/examples/atlaspm.md)
+- concrete config file: [docs/examples/atlaspm.supervisor.config.example.json](./docs/examples/atlaspm.supervisor.config.example.json)
+- architecture notes: [docs/architecture.md](./docs/architecture.md)
