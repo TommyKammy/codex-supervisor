@@ -40,7 +40,7 @@ function clampReasoningEffortForModel(model: string | null, effort: ReasoningEff
 
   const normalized = model.toLowerCase();
   if (normalized.includes("gpt-5-pro")) {
-    return "high";
+    return effort === "xhigh" ? "high" : effort;
   }
 
   if (
