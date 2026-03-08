@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { SupervisorConfig } from "./types";
+import { ReasoningEffort, RunState, SupervisorConfig } from "./types";
 import { resolveMaybeRelative } from "./utils";
 
 const DEFAULT_CONFIG_FILE = "supervisor.config.json";
@@ -11,6 +11,39 @@ function assertString(value: unknown, label: string): string {
   }
 
   return value;
+}
+
+const VALID_REASONING_EFFORTS = new Set<ReasoningEffort>(["none", "low", "medium", "high", "xhigh"]);
+const VALID_RUN_STATES = new Set<RunState>([
+  "queued",
+  "planning",
+  "reproducing",
+  "implementing",
+  "stabilizing",
+  "draft_pr",
+  "local_review",
+  "pr_open",
+  "repairing_ci",
+  "resolving_conflict",
+  "waiting_ci",
+  "addressing_review",
+  "ready_to_merge",
+  "merging",
+  "done",
+  "blocked",
+  "failed",
+]);
+
+function parseReasoningPolicy(value: unknown): Partial<Record<RunState, ReasoningEffort>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([key, raw]) => VALID_RUN_STATES.has(key as RunState) && typeof raw === "string" && VALID_REASONING_EFFORTS.has(raw as ReasoningEffort))
+    .map(([key, raw]) => [key as RunState, raw as ReasoningEffort]);
+
+  return Object.fromEntries(entries) as Partial<Record<RunState, ReasoningEffort>>;
 }
 
 export function resolveConfigPath(configPath?: string): string {
@@ -27,8 +60,7 @@ export function loadConfig(configPath?: string): SupervisorConfig {
 
   const raw = JSON.parse(fs.readFileSync(resolvedPath, "utf8")) as Record<string, unknown>;
   const configDir = path.dirname(resolvedPath);
-
-  return {
+  const config: SupervisorConfig = {
     repoPath: resolveMaybeRelative(configDir, assertString(raw.repoPath, "repoPath")),
     repoSlug: assertString(raw.repoSlug, "repoSlug"),
     defaultBranch: assertString(raw.defaultBranch, "defaultBranch"),
@@ -43,6 +75,19 @@ export function loadConfig(configPath?: string): SupervisorConfig {
         ? resolveMaybeRelative(configDir, raw.stateBootstrapFile)
         : undefined,
     codexBinary: resolveMaybeRelative(configDir, assertString(raw.codexBinary, "codexBinary")),
+    codexModelStrategy:
+      raw.codexModelStrategy === "fixed" || raw.codexModelStrategy === "alias" || raw.codexModelStrategy === "inherit"
+        ? raw.codexModelStrategy
+        : "inherit",
+    codexModel:
+      typeof raw.codexModel === "string" && raw.codexModel.trim() !== ""
+        ? raw.codexModel.trim()
+        : undefined,
+    codexReasoningEffortByState: parseReasoningPolicy(raw.codexReasoningEffortByState),
+    codexReasoningEscalateOnRepeatedFailure:
+      typeof raw.codexReasoningEscalateOnRepeatedFailure === "boolean"
+        ? raw.codexReasoningEscalateOnRepeatedFailure
+        : true,
     sharedMemoryFiles: Array.isArray(raw.sharedMemoryFiles)
       ? raw.sharedMemoryFiles.filter((value): value is string => typeof value === "string")
       : [],
@@ -125,4 +170,10 @@ export function loadConfig(configPath?: string): SupervisorConfig {
         ? raw.draftPrAfterAttempt
         : 1,
   };
+
+  if ((config.codexModelStrategy === "fixed" || config.codexModelStrategy === "alias") && !config.codexModel) {
+    throw new Error(`Missing or invalid config field: codexModel (required when codexModelStrategy=${config.codexModelStrategy})`);
+  }
+
+  return config;
 }

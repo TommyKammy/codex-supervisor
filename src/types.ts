@@ -17,6 +17,10 @@ export type RunState =
   | "blocked"
   | "failed";
 
+export type CodexModelStrategy = "inherit" | "fixed" | "alias";
+
+export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
+
 export interface SupervisorConfig {
   repoPath: string;
   repoSlug: string;
@@ -26,6 +30,10 @@ export interface SupervisorConfig {
   stateFile: string;
   stateBootstrapFile?: string;
   codexBinary: string;
+  codexModelStrategy: CodexModelStrategy;
+  codexModel?: string;
+  codexReasoningEffortByState: Partial<Record<RunState, ReasoningEffort>>;
+  codexReasoningEscalateOnRepeatedFailure: boolean;
   sharedMemoryFiles: string[];
   localReviewEnabled: boolean;
   localReviewRoles: string[];

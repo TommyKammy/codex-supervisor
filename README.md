@@ -107,6 +107,10 @@ Important fields:
 - `stateFile`: local JSON state file
 - `stateBootstrapFile`: optional JSON file to import once when initializing a SQLite state database
 - `codexBinary`: path to the Codex CLI
+- `codexModelStrategy`: `inherit`, `fixed`, or `alias`
+- `codexModel`: explicit model or model alias when strategy is `fixed` or `alias`
+- `codexReasoningEffortByState`: per-state reasoning policy from `none` to `xhigh`
+- `codexReasoningEscalateOnRepeatedFailure`: bump reasoning by one level after repeated failures or verification retries
 - `sharedMemoryFiles`: durable repo-memory files to reference every turn
 - `localReviewEnabled`: run an advisory local review before a draft PR is marked ready
 - `localReviewRoles`: role labels to suggest when Codex multi-agent review is available
@@ -129,6 +133,40 @@ Important fields:
 - `cleanupDoneWorkspacesAfterHours`: cleanup delay for done worktrees
 - `mergeMethod`: `merge`, `squash`, or `rebase`
 - `draftPrAfterAttempt`: attempt number after which a clean checkpoint may become a draft PR
+
+### Model and reasoning policy
+
+`codex-supervisor` can steer model selection and reasoning effort per turn without turning the supervisor into a dynamic model router.
+
+- `codexModelStrategy: "inherit"`: do not pass `--model`; follow the Codex CLI/App default model
+- `codexModelStrategy: "fixed"`: pass a specific model every turn
+- `codexModelStrategy: "alias"`: pass a moving alias every turn if your Codex environment exposes one
+
+Recommended default:
+
+- set your Codex CLI/App default model to `GPT-5.4`, then use `inherit` so the supervisor follows that default automatically
+- use per-state reasoning instead of a single global reasoning level
+
+Practical guidance:
+
+- for most `codex-supervisor` workloads, `GPT-5.4` is a good default
+- you do not need to actively rotate through older Codex 5.1 to 5.3 variants unless you have a repo-specific reason
+- keep model policy simple; most token and cost tuning should come from reasoning control, not model churn
+- do not use `xhigh` in the default per-state policy; reserve it for exceptional escalation paths only
+
+Default reasoning policy:
+
+- `planning`: `low`
+- `reproducing`: `medium`
+- `implementing`: `high`
+- `stabilizing`: `medium`
+- `draft_pr`: `low`
+- `local_review`: `low`
+- `repairing_ci`: `medium`
+- `resolving_conflict`: `high`
+- `addressing_review`: `medium`
+
+If `codexReasoningEscalateOnRepeatedFailure` is enabled, the supervisor raises reasoning by one level when the current issue is already retrying the same failure path. That escalation path is the main reason to keep `xhigh` available at all. When a fixed or alias model is configured, the supervisor also clamps unsupported reasoning levels to a safe value for known model families.
 
 ## Durable memory
 

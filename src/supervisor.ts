@@ -1225,7 +1225,14 @@ export class Supervisor {
 
       let codexResult;
       try {
-        codexResult = await runCodexTurn(this.config, workspacePath, prompt, record.codex_session_id);
+        codexResult = await runCodexTurn(
+          this.config,
+          workspacePath,
+          prompt,
+          record.state,
+          record,
+          record.codex_session_id,
+        );
       } catch (error) {
         const message = error instanceof Error ? error.stack ?? error.message : String(error);
         const failureKind = classifyFailure(message);

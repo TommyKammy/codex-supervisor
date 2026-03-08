@@ -6,6 +6,20 @@
   "stateBackend": "json",
   "stateFile": "/Users/yourname/Dev/codex-supervisor/.local/state.json",
   "codexBinary": "/Applications/Codex.app/Contents/Resources/codex",
+  "codexModelStrategy": "inherit",
+  "codexModel": "",
+  "codexReasoningEffortByState": {
+    "planning": "low",
+    "reproducing": "medium",
+    "implementing": "high",
+    "stabilizing": "medium",
+    "draft_pr": "low",
+    "local_review": "low",
+    "repairing_ci": "medium",
+    "resolving_conflict": "high",
+    "addressing_review": "medium"
+  },
+  "codexReasoningEscalateOnRepeatedFailure": true,
   "sharedMemoryFiles": [
     "README.md",
     "docs/architecture.md",
