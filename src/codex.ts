@@ -2,11 +2,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runCommand } from "./command";
+import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "./codex-policy";
 import {
   BlockedReason,
   CodexTurnResult,
   FailureContext,
   GitHubIssue,
+  IssueRunRecord,
   GitHubPullRequest,
   PullRequestCheck,
   ReviewThread,
@@ -274,14 +276,18 @@ export async function runCodexTurn(
   config: SupervisorConfig,
   workspacePath: string,
   prompt: string,
+  state: RunState,
+  record?: Pick<IssueRunRecord, "repeated_failure_signature_count" | "blocked_verification_retry_count" | "timeout_retry_count"> | null,
   sessionId?: string | null,
 ): Promise<CodexTurnResult> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-"));
   const messageFile = path.join(tempDir, "last-message.txt");
+  const overrideArgs = buildCodexConfigOverrideArgs(resolveCodexExecutionPolicy(config, state, record));
   const commandArgs = sessionId
     ? [
         "exec",
         "resume",
+        ...overrideArgs,
         "--json",
         "--dangerously-bypass-approvals-and-sandbox",
         "-o",
@@ -291,6 +297,7 @@ export async function runCodexTurn(
       ]
     : [
         "exec",
+        ...overrideArgs,
         "--json",
         "--dangerously-bypass-approvals-and-sandbox",
         "-C",

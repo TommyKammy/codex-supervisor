@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runCommand } from "./command";
+import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "./codex-policy";
 import { GitHubIssue, GitHubPullRequest, SupervisorConfig } from "./types";
 import { ensureDir, nowIso, truncate } from "./utils";
 
@@ -138,10 +139,12 @@ export async function runLocalReview(args: {
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-review-"));
   const messageFile = path.join(tempDir, "local-review.txt");
+  const overrideArgs = buildCodexConfigOverrideArgs(resolveCodexExecutionPolicy(args.config, "local_review"));
   const result = await runCommand(
     args.config.codexBinary,
     [
       "exec",
+      ...overrideArgs,
       "--json",
       "--dangerously-bypass-approvals-and-sandbox",
       "-C",

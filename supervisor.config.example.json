@@ -7,6 +7,20 @@
   "stateFile": "./.local/state.json",
   "stateBootstrapFile": "",
   "codexBinary": "/absolute/path/to/codex",
+  "codexModelStrategy": "inherit",
+  "codexModel": "",
+  "codexReasoningEffortByState": {
+    "planning": "low",
+    "reproducing": "medium",
+    "implementing": "high",
+    "stabilizing": "medium",
+    "draft_pr": "low",
+    "local_review": "low",
+    "repairing_ci": "medium",
+    "resolving_conflict": "high",
+    "addressing_review": "medium"
+  },
+  "codexReasoningEscalateOnRepeatedFailure": true,
   "sharedMemoryFiles": [
     "README.md",
     "docs/architecture.md",
