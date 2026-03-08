@@ -152,6 +152,7 @@ Practical guidance:
 - for most `codex-supervisor` workloads, `GPT-5.4` is a good default
 - you do not need to actively rotate through older Codex 5.1 to 5.3 variants unless you have a repo-specific reason
 - keep model policy simple; most token and cost tuning should come from reasoning control, not model churn
+- do not use `xhigh` in the default per-state policy; reserve it for exceptional escalation paths only
 
 Default reasoning policy:
 
@@ -165,7 +166,7 @@ Default reasoning policy:
 - `resolving_conflict`: `high`
 - `addressing_review`: `medium`
 
-If `codexReasoningEscalateOnRepeatedFailure` is enabled, the supervisor raises reasoning by one level when the current issue is already retrying the same failure path. When a fixed or alias model is configured, the supervisor also clamps unsupported reasoning levels to a safe value for known model families.
+If `codexReasoningEscalateOnRepeatedFailure` is enabled, the supervisor raises reasoning by one level when the current issue is already retrying the same failure path. That escalation path is the main reason to keep `xhigh` available at all. When a fixed or alias model is configured, the supervisor also clamps unsupported reasoning levels to a safe value for known model families.
 
 ## Durable memory
 
