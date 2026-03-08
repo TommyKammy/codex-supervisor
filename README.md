@@ -144,8 +144,14 @@ Important fields:
 
 Recommended default:
 
-- use `inherit` if you want the supervisor to follow your Codex CLI/App default automatically
+- set your Codex CLI/App default model to `GPT-5.4`, then use `inherit` so the supervisor follows that default automatically
 - use per-state reasoning instead of a single global reasoning level
+
+Practical guidance:
+
+- for most `codex-supervisor` workloads, `GPT-5.4` is a good default
+- you do not need to actively rotate through older Codex 5.1 to 5.3 variants unless you have a repo-specific reason
+- keep model policy simple; most token and cost tuning should come from reasoning control, not model churn
 
 Default reasoning policy:
 

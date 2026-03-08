@@ -64,7 +64,8 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
 - Copilot review is expected to start automatically after the PR is marked ready.
 - A local advisory review can run before `gh pr ready`, with artifacts written under the supervisor's `.local/reviews` directory.
 - Even with multiple local review roles, the reviewer turn should still read the generated context index and issue journal first, then open durable memory files only on demand.
-- `codexModelStrategy: "inherit"` means the supervisor follows the Codex CLI/App default model automatically. That is the safest way to auto-follow a moving default without hard-coding a model in the supervisor config.
+- `codexModelStrategy: "inherit"` means the supervisor follows the Codex CLI/App default model automatically. In practice, set the Codex default model to `GPT-5.4` and let the supervisor inherit it.
+- For most atlaspm-style implementation loops, there is little reason to rotate through older Codex 5.1 to 5.3 variants. Tune reasoning effort first.
 - Only configured review bots are auto-addressed. Human review comments block merge and require manual follow-up.
 - `Epic:` title prefixes are skipped as direct work items because the supervisor closes epics after all child issues close.
 - Generated context index and `AGENTS.generated.md` artifacts are written under the supervisor state directory, not into the managed repo.
