@@ -11,6 +11,13 @@ interface StateStoreOptions {
 
 const SQLITE_SCHEMA_VERSION = 1;
 
+function hasOwn<T extends object, K extends PropertyKey>(
+  value: T,
+  key: K,
+): value is T & Record<K, unknown> {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
 function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
   return {
     ...value,
@@ -122,15 +129,23 @@ export class StateStore {
     return {
       ...record,
       ...patch,
-      processed_review_thread_ids: patch.processed_review_thread_ids ?? record.processed_review_thread_ids ?? [],
-      journal_path: patch.journal_path ?? record.journal_path ?? null,
-      review_wait_started_at: patch.review_wait_started_at ?? record.review_wait_started_at ?? null,
-      review_wait_head_sha: patch.review_wait_head_sha ?? record.review_wait_head_sha ?? null,
-      codex_session_id: patch.codex_session_id ?? record.codex_session_id ?? null,
-      local_review_head_sha: patch.local_review_head_sha ?? record.local_review_head_sha ?? null,
-      local_review_summary_path: patch.local_review_summary_path ?? record.local_review_summary_path ?? null,
-      local_review_run_at: patch.local_review_run_at ?? record.local_review_run_at ?? null,
-      local_review_max_severity: patch.local_review_max_severity ?? record.local_review_max_severity ?? null,
+      processed_review_thread_ids:
+        patch.processed_review_thread_ids ?? record.processed_review_thread_ids ?? [],
+      journal_path: hasOwn(patch, "journal_path") ? patch.journal_path ?? null : record.journal_path ?? null,
+      review_wait_started_at:
+        hasOwn(patch, "review_wait_started_at") ? patch.review_wait_started_at ?? null : record.review_wait_started_at ?? null,
+      review_wait_head_sha:
+        hasOwn(patch, "review_wait_head_sha") ? patch.review_wait_head_sha ?? null : record.review_wait_head_sha ?? null,
+      codex_session_id:
+        hasOwn(patch, "codex_session_id") ? patch.codex_session_id ?? null : record.codex_session_id ?? null,
+      local_review_head_sha:
+        hasOwn(patch, "local_review_head_sha") ? patch.local_review_head_sha ?? null : record.local_review_head_sha ?? null,
+      local_review_summary_path:
+        hasOwn(patch, "local_review_summary_path") ? patch.local_review_summary_path ?? null : record.local_review_summary_path ?? null,
+      local_review_run_at:
+        hasOwn(patch, "local_review_run_at") ? patch.local_review_run_at ?? null : record.local_review_run_at ?? null,
+      local_review_max_severity:
+        hasOwn(patch, "local_review_max_severity") ? patch.local_review_max_severity ?? null : record.local_review_max_severity ?? null,
       local_review_findings_count: patch.local_review_findings_count ?? record.local_review_findings_count ?? 0,
       timeout_retry_count: patch.timeout_retry_count ?? record.timeout_retry_count ?? 0,
       blocked_verification_retry_count:
@@ -138,11 +153,16 @@ export class StateStore {
       repeated_blocker_count: patch.repeated_blocker_count ?? record.repeated_blocker_count ?? 0,
       repeated_failure_signature_count:
         patch.repeated_failure_signature_count ?? record.repeated_failure_signature_count ?? 0,
-      last_failure_kind: patch.last_failure_kind ?? record.last_failure_kind ?? null,
-      last_failure_context: patch.last_failure_context ?? record.last_failure_context ?? null,
-      last_blocker_signature: patch.last_blocker_signature ?? record.last_blocker_signature ?? null,
-      last_failure_signature: patch.last_failure_signature ?? record.last_failure_signature ?? null,
-      blocked_reason: patch.blocked_reason ?? record.blocked_reason ?? null,
+      last_failure_kind:
+        hasOwn(patch, "last_failure_kind") ? patch.last_failure_kind ?? null : record.last_failure_kind ?? null,
+      last_failure_context:
+        hasOwn(patch, "last_failure_context") ? patch.last_failure_context ?? null : record.last_failure_context ?? null,
+      last_blocker_signature:
+        hasOwn(patch, "last_blocker_signature") ? patch.last_blocker_signature ?? null : record.last_blocker_signature ?? null,
+      last_failure_signature:
+        hasOwn(patch, "last_failure_signature") ? patch.last_failure_signature ?? null : record.last_failure_signature ?? null,
+      blocked_reason:
+        hasOwn(patch, "blocked_reason") ? patch.blocked_reason ?? null : record.blocked_reason ?? null,
       updated_at: nowIso(),
     };
   }
