@@ -761,10 +761,11 @@ async function reconcileMergedIssueClosures(
   state: SupervisorStateFile,
 ): Promise<void> {
   let changed = false;
+  const issues = await github.listAllIssues();
+  const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
 
   for (const record of Object.values(state.issues)) {
-    const issue = await github.getIssue(record.issue_number);
-    if (issue.state !== "CLOSED") {
+    if (issueStateByNumber.get(record.issue_number) !== "CLOSED") {
       continue;
     }
 
@@ -778,7 +779,11 @@ async function reconcileMergedIssueClosures(
         blocked_reason: null,
         last_failure_kind: null,
         last_failure_context: null,
+        last_blocker_signature: null,
         last_failure_signature: null,
+        timeout_retry_count: 0,
+        blocked_verification_retry_count: 0,
+        repeated_blocker_count: 0,
         repeated_failure_signature_count: 0,
       });
       state.issues[String(record.issue_number)] = updated;
@@ -804,14 +809,17 @@ async function reconcileMergedIssueClosures(
 
     const updated = stateStore.touch(record, {
       state: "done",
-      branch: satisfyingPullRequest.headRefName,
       pr_number: satisfyingPullRequest.number,
       last_head_sha: satisfyingPullRequest.headRefOid,
       last_error: null,
       blocked_reason: null,
       last_failure_kind: null,
       last_failure_context: null,
+      last_blocker_signature: null,
       last_failure_signature: null,
+      timeout_retry_count: 0,
+      blocked_verification_retry_count: 0,
+      repeated_blocker_count: 0,
       repeated_failure_signature_count: 0,
     });
     state.issues[String(record.issue_number)] = updated;
