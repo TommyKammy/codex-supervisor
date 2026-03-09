@@ -755,6 +755,36 @@ async function cleanupExpiredDoneWorkspaces(
   }
 }
 
+function doneResetPatch(
+  patch: Partial<IssueRunRecord> = {},
+): Partial<IssueRunRecord> {
+  return {
+    state: "done",
+    last_error: null,
+    blocked_reason: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_blocker_signature: null,
+    last_failure_signature: null,
+    timeout_retry_count: 0,
+    blocked_verification_retry_count: 0,
+    repeated_blocker_count: 0,
+    repeated_failure_signature_count: 0,
+    ...patch,
+  };
+}
+
+function needsRecordUpdate(record: IssueRunRecord, patch: Partial<IssueRunRecord>): boolean {
+  for (const [key, value] of Object.entries(patch)) {
+    const recordValue = record[key as keyof IssueRunRecord];
+    if (JSON.stringify(recordValue) !== JSON.stringify(value)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 async function reconcileMergedIssueClosures(
   github: GitHubClient,
   stateStore: StateStore,
@@ -773,24 +803,15 @@ async function reconcileMergedIssueClosures(
     const satisfyingPullRequest = satisfyingPullRequests[0] ?? null;
 
     if (!satisfyingPullRequest) {
-      const updated = stateStore.touch(record, {
-        state: "done",
-        last_error: null,
-        blocked_reason: null,
-        last_failure_kind: null,
-        last_failure_context: null,
-        last_blocker_signature: null,
-        last_failure_signature: null,
-        timeout_retry_count: 0,
-        blocked_verification_retry_count: 0,
-        repeated_blocker_count: 0,
-        repeated_failure_signature_count: 0,
-      });
-      state.issues[String(record.issue_number)] = updated;
-      if (state.activeIssueNumber === record.issue_number) {
-        state.activeIssueNumber = null;
+      const patch = doneResetPatch();
+      if (needsRecordUpdate(record, patch)) {
+        const updated = stateStore.touch(record, patch);
+        state.issues[String(record.issue_number)] = updated;
+        if (state.activeIssueNumber === record.issue_number) {
+          state.activeIssueNumber = null;
+        }
+        changed = true;
       }
-      changed = true;
       continue;
     }
 
@@ -807,26 +828,18 @@ async function reconcileMergedIssueClosures(
       }
     }
 
-    const updated = stateStore.touch(record, {
-      state: "done",
+    const patch = doneResetPatch({
       pr_number: satisfyingPullRequest.number,
       last_head_sha: satisfyingPullRequest.headRefOid,
-      last_error: null,
-      blocked_reason: null,
-      last_failure_kind: null,
-      last_failure_context: null,
-      last_blocker_signature: null,
-      last_failure_signature: null,
-      timeout_retry_count: 0,
-      blocked_verification_retry_count: 0,
-      repeated_blocker_count: 0,
-      repeated_failure_signature_count: 0,
     });
-    state.issues[String(record.issue_number)] = updated;
-    if (state.activeIssueNumber === record.issue_number) {
-      state.activeIssueNumber = null;
+    if (needsRecordUpdate(record, patch)) {
+      const updated = stateStore.touch(record, patch);
+      state.issues[String(record.issue_number)] = updated;
+      if (state.activeIssueNumber === record.issue_number) {
+        state.activeIssueNumber = null;
+      }
+      changed = true;
     }
-    changed = true;
   }
 
   if (changed) {
@@ -859,16 +872,15 @@ async function reconcileParentEpicClosures(
 
     const existingRecord = state.issues[String(parentIssue.number)];
     if (existingRecord) {
-      const updated = stateStore.touch(existingRecord, {
-        state: "done",
-        last_error: null,
-        blocked_reason: null,
-      });
-      state.issues[String(parentIssue.number)] = updated;
-      if (state.activeIssueNumber === parentIssue.number) {
-        state.activeIssueNumber = null;
+      const patch = doneResetPatch();
+      if (needsRecordUpdate(existingRecord, patch)) {
+        const updated = stateStore.touch(existingRecord, patch);
+        state.issues[String(parentIssue.number)] = updated;
+        if (state.activeIssueNumber === parentIssue.number) {
+          state.activeIssueNumber = null;
+        }
+        changed = true;
       }
-      changed = true;
     }
   }
 
