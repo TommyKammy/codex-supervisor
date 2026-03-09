@@ -761,30 +761,67 @@ async function reconcileMergedIssueClosures(
   state: SupervisorStateFile,
 ): Promise<void> {
   let changed = false;
+  const issues = await github.listAllIssues();
+  const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
 
   for (const record of Object.values(state.issues)) {
-    if (record.pr_number === null) {
+    if (issueStateByNumber.get(record.issue_number) !== "CLOSED") {
       continue;
     }
 
-    if (record.state !== "done" && record.state !== "merging") {
+    const satisfyingPullRequests = await github.getMergedPullRequestsClosingIssue(record.issue_number);
+    const satisfyingPullRequest = satisfyingPullRequests[0] ?? null;
+
+    if (!satisfyingPullRequest) {
+      const updated = stateStore.touch(record, {
+        state: "done",
+        last_error: null,
+        blocked_reason: null,
+        last_failure_kind: null,
+        last_failure_context: null,
+        last_blocker_signature: null,
+        last_failure_signature: null,
+        timeout_retry_count: 0,
+        blocked_verification_retry_count: 0,
+        repeated_blocker_count: 0,
+        repeated_failure_signature_count: 0,
+      });
+      state.issues[String(record.issue_number)] = updated;
+      if (state.activeIssueNumber === record.issue_number) {
+        state.activeIssueNumber = null;
+      }
+      changed = true;
       continue;
     }
 
-    const pr = await github.getPullRequest(record.pr_number);
-    if (!pr.mergedAt && pr.state !== "MERGED") {
-      continue;
+    if (
+      record.pr_number !== null &&
+      record.pr_number !== satisfyingPullRequest.number
+    ) {
+      const trackedPullRequest = await github.getPullRequestIfExists(record.pr_number);
+      if (trackedPullRequest && trackedPullRequest.state === "OPEN" && !trackedPullRequest.mergedAt) {
+        await github.closePullRequest(
+          trackedPullRequest.number,
+          `Closing as superseded because issue #${record.issue_number} was satisfied by merged PR #${satisfyingPullRequest.number}.`,
+        );
+      }
     }
 
-    const issue = await github.getIssue(record.issue_number);
-    if (issue.state !== "CLOSED") {
-      await github.closeIssue(
-        record.issue_number,
-        `Closed automatically because PR #${record.pr_number} was merged.`,
-      );
-    }
-
-    const updated = stateStore.touch(record, { state: "done", last_head_sha: pr.headRefOid });
+    const updated = stateStore.touch(record, {
+      state: "done",
+      pr_number: satisfyingPullRequest.number,
+      last_head_sha: satisfyingPullRequest.headRefOid,
+      last_error: null,
+      blocked_reason: null,
+      last_failure_kind: null,
+      last_failure_context: null,
+      last_blocker_signature: null,
+      last_failure_signature: null,
+      timeout_retry_count: 0,
+      blocked_verification_retry_count: 0,
+      repeated_blocker_count: 0,
+      repeated_failure_signature_count: 0,
+    });
     state.issues[String(record.issue_number)] = updated;
     if (state.activeIssueNumber === record.issue_number) {
       state.activeIssueNumber = null;
