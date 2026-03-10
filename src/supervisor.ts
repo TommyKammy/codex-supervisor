@@ -589,6 +589,43 @@ async function selectNextIssue(
   return null;
 }
 
+async function buildReadinessSummary(
+  github: GitHubClient,
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+): Promise<string[]> {
+  const issues = await github.listCandidateIssues();
+  const runnable: string[] = [];
+  const blocked: string[] = [];
+
+  for (const issue of issues) {
+    if (config.skipTitlePrefixes.some((prefix) => issue.title.startsWith(prefix))) {
+      continue;
+    }
+
+    const blockingIssue = findBlockingIssue(issue, issues, state);
+    if (blockingIssue) {
+      blocked.push(`#${issue.number} blocked_by=${blockingIssue.reason}`);
+      continue;
+    }
+
+    const existing = state.issues[String(issue.number)];
+    if (!isEligibleForSelection(existing, config)) {
+      blocked.push(
+        `#${issue.number} blocked_by=local_state:${existing?.state ?? "unknown"}`,
+      );
+      continue;
+    }
+
+    runnable.push(`#${issue.number}`);
+  }
+
+  return [
+    `runnable_issues=${runnable.length > 0 ? runnable.join(",") : "none"}`,
+    `blocked_issues=${blocked.length > 0 ? blocked.join("; ") : "none"}`,
+  ];
+}
+
 function formatStatus(record: IssueRunRecord | null): string {
   if (!record) {
     return "No active issue.";
@@ -674,14 +711,17 @@ function formatDetailedStatus(args: {
   const gsdSummary = summarizeGsdIntegration(config);
 
   if (!activeRecord) {
-    return [
-      gsdSummary,
+    const lines = [
       "No active issue.",
       `tracked_issues=${trackedIssueCount}`,
       `latest_record=${formatRecentRecord(latestRecord)}`,
-    ]
-      .filter(Boolean)
-      .join("\n");
+    ];
+
+    if (gsdSummary) {
+      lines.unshift(gsdSummary);
+    }
+
+    return lines.join("\n");
   }
 
   const lines = [
@@ -1081,7 +1121,7 @@ export class Supervisor {
     }
 
     if (!activeRecord) {
-      return formatDetailedStatus({
+      const baseStatus = formatDetailedStatus({
         config: this.config,
         activeRecord: null,
         latestRecord,
@@ -1090,6 +1130,13 @@ export class Supervisor {
         checks: [],
         reviewThreads: [],
       });
+      try {
+        const readinessLines = await buildReadinessSummary(this.github, this.config, state);
+        return `${baseStatus}\n${readinessLines.join("\n")}`;
+      } catch (error) {
+        const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
+        return `${baseStatus}\nreadiness_warning=${truncate(message, 200)}`;
+      }
     }
 
     let pr: GitHubPullRequest | null = null;
