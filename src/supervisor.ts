@@ -748,10 +748,9 @@ async function cleanupExpiredDoneWorkspaces(
     .filter((record) => record.state === "done")
     .sort((left, right) => left.updated_at.localeCompare(right.updated_at));
 
-  const existingDoneRecords = doneRecords
-    .filter((record) => record.state === "done")
-    .filter((record) => fs.existsSync(path.join(record.workspace, ".git")))
-    .sort((left, right) => left.updated_at.localeCompare(right.updated_at));
+  const existingDoneRecords = doneRecords.filter((record) =>
+    fs.existsSync(path.join(record.workspace, ".git")),
+  );
 
   const cleanedWorkspacePaths = new Set<string>();
 
