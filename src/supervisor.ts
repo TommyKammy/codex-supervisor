@@ -12,6 +12,7 @@ import {
   BlockedReason,
   CliOptions,
   FailureContext,
+  GitHubIssue,
   GitHubPullRequest,
   IssueRunRecord,
   PullRequestCheck,
@@ -789,9 +790,9 @@ async function reconcileMergedIssueClosures(
   github: GitHubClient,
   stateStore: StateStore,
   state: SupervisorStateFile,
+  issues: GitHubIssue[],
 ): Promise<void> {
   let changed = false;
-  const issues = await github.listAllIssues();
   const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
 
   for (const record of Object.values(state.issues)) {
@@ -847,12 +848,129 @@ async function reconcileMergedIssueClosures(
   }
 }
 
+async function reconcileTrackedMergedButOpenIssues(
+  github: GitHubClient,
+  stateStore: StateStore,
+  state: SupervisorStateFile,
+  issues: GitHubIssue[],
+): Promise<void> {
+  let changed = false;
+  const issueByNumber = new Map(issues.map((issue) => [issue.number, issue]));
+
+  for (const record of Object.values(state.issues)) {
+    if (record.pr_number === null) {
+      continue;
+    }
+
+    const issue = issueByNumber.get(record.issue_number);
+    if (!issue || issue.state !== "OPEN") {
+      continue;
+    }
+
+    const trackedPullRequest = await github.getPullRequestIfExists(record.pr_number);
+    if (!trackedPullRequest || (!trackedPullRequest.mergedAt && trackedPullRequest.state !== "MERGED")) {
+      continue;
+    }
+
+    const mergedAtMs = Date.parse(trackedPullRequest.mergedAt ?? "");
+    const issueUpdatedAtMs = Date.parse(issue.updatedAt);
+    // If the issue changed after the tracked PR merged, treat it as intentionally still open
+    // (for example, reopened after requirements changed) and do not auto-close it.
+    if (
+      !Number.isFinite(mergedAtMs) ||
+      !Number.isFinite(issueUpdatedAtMs) ||
+      issueUpdatedAtMs > mergedAtMs
+    ) {
+      continue;
+    }
+
+    await github.closeIssue(
+      record.issue_number,
+      `Closed automatically because tracked PR #${trackedPullRequest.number} was merged.`,
+    );
+
+    const patch = doneResetPatch({
+      pr_number: trackedPullRequest.number,
+      last_head_sha: trackedPullRequest.headRefOid,
+    });
+    const updated = stateStore.touch(record, patch);
+    state.issues[String(record.issue_number)] = updated;
+    if (state.activeIssueNumber === record.issue_number) {
+      state.activeIssueNumber = null;
+    }
+    changed = true;
+  }
+
+  if (changed) {
+    await stateStore.save(state);
+  }
+}
+
+async function reconcileStaleFailedIssueStates(
+  github: GitHubClient,
+  stateStore: StateStore,
+  state: SupervisorStateFile,
+  config: SupervisorConfig,
+  issues: GitHubIssue[],
+): Promise<void> {
+  let changed = false;
+  const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
+
+  for (const record of Object.values(state.issues)) {
+    if (record.state !== "failed" || record.pr_number === null) {
+      continue;
+    }
+
+    if (issueStateByNumber.get(record.issue_number) !== "OPEN") {
+      continue;
+    }
+
+    const pr = await github.getPullRequestIfExists(record.pr_number);
+    if (!pr || !isOpenPullRequest(pr)) {
+      continue;
+    }
+
+    const checks = await github.getChecks(pr.number);
+    const reviewThreads = await github.getUnresolvedReviewThreads(pr.number);
+    const nextState = inferStateFromPullRequest(config, record, pr, checks, reviewThreads);
+
+    if (nextState === "blocked" || nextState === "failed") {
+      continue;
+    }
+
+    const patch: Partial<IssueRunRecord> = {
+      state: nextState,
+      last_error: null,
+      last_failure_kind: null,
+      last_failure_context: null,
+      last_blocker_signature: null,
+      last_failure_signature: null,
+      blocked_reason: null,
+      repeated_blocker_count: 0,
+      repeated_failure_signature_count: 0,
+      timeout_retry_count: 0,
+      blocked_verification_retry_count: 0,
+      pr_number: pr.number,
+      last_head_sha: pr.headRefOid,
+      ...syncReviewWaitWindow(record, pr),
+    };
+
+    const updated = stateStore.touch(record, patch);
+    state.issues[String(record.issue_number)] = updated;
+    changed = true;
+  }
+
+  if (changed) {
+    await stateStore.save(state);
+  }
+}
+
 async function reconcileParentEpicClosures(
   github: GitHubClient,
   stateStore: StateStore,
   state: SupervisorStateFile,
+  issues: GitHubIssue[],
 ): Promise<void> {
-  const issues = await github.listAllIssues();
   const parentIssuesReadyToClose = findParentIssuesReadyToClose(issues);
   if (parentIssuesReadyToClose.length === 0) {
     return;
@@ -977,8 +1095,11 @@ export class Supervisor {
 
   async runOnce(options: Pick<CliOptions, "dryRun">): Promise<string> {
     const state = await this.stateStore.load();
-    await reconcileMergedIssueClosures(this.github, this.stateStore, state);
-    await reconcileParentEpicClosures(this.github, this.stateStore, state);
+    const issues = await this.github.listAllIssues();
+    await reconcileTrackedMergedButOpenIssues(this.github, this.stateStore, state, issues);
+    await reconcileMergedIssueClosures(this.github, this.stateStore, state, issues);
+    await reconcileStaleFailedIssueStates(this.github, this.stateStore, state, this.config, issues);
+    await reconcileParentEpicClosures(this.github, this.stateStore, state, issues);
     await cleanupExpiredDoneWorkspaces(this.config, state);
 
     let record =

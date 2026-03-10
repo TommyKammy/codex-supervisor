@@ -68,6 +68,13 @@ export function findBlockingIssue(
       continue;
     }
 
+    if (dependencyIssue.state !== "CLOSED") {
+      return {
+        issue: dependencyIssue,
+        reason: `depends on #${dependencyNumber}`,
+      };
+    }
+
     const dependencyRecord = state.issues[String(dependencyNumber)];
     if (!dependencyRecord || dependencyRecord.state !== "done") {
       return {
@@ -100,6 +107,13 @@ export function findBlockingIssue(
     });
 
   for (const predecessor of predecessors) {
+    if (predecessor.issue.state !== "CLOSED") {
+      return {
+        issue: predecessor.issue,
+        reason: `execution order requires #${predecessor.issue.number} first`,
+      };
+    }
+
     const predecessorRecord = state.issues[String(predecessor.issue.number)];
     if (!predecessorRecord || predecessorRecord.state !== "done") {
       return {

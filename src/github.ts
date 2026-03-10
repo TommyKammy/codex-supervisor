@@ -126,7 +126,7 @@ export class GitHubClient {
       "--limit",
       "100",
       "--json",
-      "number,title,body,createdAt,updatedAt,url,labels",
+      "number,title,body,createdAt,updatedAt,url,labels,state",
     ];
 
     if (this.config.issueLabel) {
