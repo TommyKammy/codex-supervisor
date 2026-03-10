@@ -157,6 +157,10 @@ export function loadConfig(configPath?: string): SupervisorConfig {
       typeof raw.sameFailureSignatureRepeatLimit === "number" && raw.sameFailureSignatureRepeatLimit >= 0
         ? raw.sameFailureSignatureRepeatLimit
         : 3,
+    maxDoneWorkspaces:
+      typeof raw.maxDoneWorkspaces === "number" && raw.maxDoneWorkspaces >= 0
+        ? raw.maxDoneWorkspaces
+        : 24,
     cleanupDoneWorkspacesAfterHours:
       typeof raw.cleanupDoneWorkspacesAfterHours === "number" && raw.cleanupDoneWorkspacesAfterHours >= 0
         ? raw.cleanupDoneWorkspacesAfterHours

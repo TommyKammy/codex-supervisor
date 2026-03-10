@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { buildCodexPrompt, extractBlockedReason, extractFailureSignature, extractStateHint, runCodexTurn } from "./codex";
 import { loadConfig } from "./config";
@@ -739,12 +740,32 @@ async function cleanupExpiredDoneWorkspaces(
   config: SupervisorConfig,
   state: SupervisorStateFile,
 ): Promise<void> {
+  if (config.cleanupDoneWorkspacesAfterHours < 0 && config.maxDoneWorkspaces <= 0) {
+    return;
+  }
+
+  const existingDoneRecords = Object.values(state.issues)
+    .filter((record) => record.state === "done")
+    .filter((record) => fs.existsSync(path.join(record.workspace, ".git")))
+    .sort((left, right) => left.updated_at.localeCompare(right.updated_at));
+
+  const cleanedWorkspacePaths = new Set<string>();
+
+  if (config.maxDoneWorkspaces > 0 && existingDoneRecords.length > config.maxDoneWorkspaces) {
+    const overflowCount = existingDoneRecords.length - config.maxDoneWorkspaces;
+    const overflowRecords = existingDoneRecords.slice(0, overflowCount);
+    for (const record of overflowRecords) {
+      await cleanupWorkspace(config.repoPath, record.workspace, record.branch);
+      cleanedWorkspacePaths.add(record.workspace);
+    }
+  }
+
   if (config.cleanupDoneWorkspacesAfterHours < 0) {
     return;
   }
 
-  for (const record of Object.values(state.issues)) {
-    if (record.state !== "done") {
+  for (const record of existingDoneRecords) {
+    if (cleanedWorkspacePaths.has(record.workspace)) {
       continue;
     }
 

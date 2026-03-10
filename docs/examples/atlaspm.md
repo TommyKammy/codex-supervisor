@@ -52,6 +52,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
   "blockedVerificationRetryLimit": 3,
   "sameBlockerRepeatLimit": 2,
   "sameFailureSignatureRepeatLimit": 3,
+  "maxDoneWorkspaces": 24,
   "cleanupDoneWorkspacesAfterHours": 24,
   "mergeMethod": "squash",
   "draftPrAfterAttempt": 1
@@ -70,3 +71,4 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
 - Only configured review bots are auto-addressed. Human review comments block merge and require manual follow-up.
 - `Epic:` title prefixes are skipped as direct work items because the supervisor closes epics after all child issues close.
 - Generated context index and `AGENTS.generated.md` artifacts are written under the supervisor state directory, not into the managed repo.
+- `maxDoneWorkspaces: 24` keeps the newest 24 finished worktrees available for debugging; older done worktrees are cleaned up first.

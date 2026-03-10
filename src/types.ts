@@ -54,6 +54,7 @@ export interface SupervisorConfig {
   blockedVerificationRetryLimit: number;
   sameBlockerRepeatLimit: number;
   sameFailureSignatureRepeatLimit: number;
+  maxDoneWorkspaces: number;
   cleanupDoneWorkspacesAfterHours: number;
   mergeMethod: "merge" | "squash" | "rebase";
   draftPrAfterAttempt: number;

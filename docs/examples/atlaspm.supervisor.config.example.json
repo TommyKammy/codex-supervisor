@@ -53,6 +53,7 @@
   "blockedVerificationRetryLimit": 3,
   "sameBlockerRepeatLimit": 2,
   "sameFailureSignatureRepeatLimit": 3,
+  "maxDoneWorkspaces": 24,
   "cleanupDoneWorkspacesAfterHours": 24,
   "mergeMethod": "squash",
   "draftPrAfterAttempt": 1
