@@ -2,11 +2,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SCOPE="${1:-global}"
 TARGET_REPO="${2:-${PWD}}"
 NPX_BIN="${NPX_BIN:-$(command -v npx)}"
 CODEX_CONFIG_DIR="${CODEX_CONFIG_DIR:-${CODEX_HOME:-${HOME}/.codex}}"
+GSD_PACKAGE_SPEC="${GSD_PACKAGE_SPEC:-get-shit-done-cc@1.22.4}"
 
 if [[ -z "${NPX_BIN}" ]]; then
   echo "npx must be available on PATH" >&2
@@ -18,7 +18,7 @@ if [[ "${SCOPE}" != "global" && "${SCOPE}" != "local" ]]; then
   exit 1
 fi
 
-ARGS=(get-shit-done-cc@latest --codex)
+ARGS=("${GSD_PACKAGE_SPEC}" --codex)
 if [[ "${SCOPE}" == "local" ]]; then
   ARGS+=(--local)
   cd "${TARGET_REPO}"
