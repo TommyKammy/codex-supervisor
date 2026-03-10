@@ -35,6 +35,11 @@ export interface SupervisorConfig {
   codexReasoningEffortByState: Partial<Record<RunState, ReasoningEffort>>;
   codexReasoningEscalateOnRepeatedFailure: boolean;
   sharedMemoryFiles: string[];
+  gsdEnabled: boolean;
+  gsdAutoInstall: boolean;
+  gsdInstallScope: "global" | "local";
+  gsdCodexConfigDir?: string;
+  gsdPlanningFiles: string[];
   localReviewEnabled: boolean;
   localReviewRoles: string[];
   localReviewArtifactDir: string;

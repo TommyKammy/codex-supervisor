@@ -4,6 +4,7 @@ import { buildCodexPrompt, extractBlockedReason, extractFailureSignature, extrac
 import { loadConfig } from "./config";
 import { GitHubClient } from "./github";
 import { findBlockingIssue, findParentIssuesReadyToClose } from "./issue-metadata";
+import { summarizeGsdIntegration } from "./gsd";
 import { hasMeaningfulJournalHandoff, issueJournalPath, readIssueJournal, syncIssueJournal } from "./journal";
 import { acquireFileLock, LockHandle } from "./lock";
 import { runLocalReview, shouldRunLocalReview } from "./local-review";
@@ -670,13 +671,17 @@ function formatDetailedStatus(args: {
   reviewThreads: ReviewThread[];
 }): string {
   const { config, activeRecord, latestRecord, trackedIssueCount, pr, checks, reviewThreads } = args;
+  const gsdSummary = summarizeGsdIntegration(config);
 
   if (!activeRecord) {
     return [
+      gsdSummary,
       "No active issue.",
       `tracked_issues=${trackedIssueCount}`,
       `latest_record=${formatRecentRecord(latestRecord)}`,
-    ].join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   const lines = [
@@ -731,6 +736,10 @@ function formatDetailedStatus(args: {
         : path.basename(activeRecord.local_review_summary_path);
     const sanitizedSummaryPath = sanitizeStatusValue(displayedSummaryPath);
     lines.push(`local_review_summary_path=${truncate(sanitizedSummaryPath, 200)}`);
+  }
+
+  if (gsdSummary) {
+    lines.unshift(gsdSummary);
   }
 
   return lines.join("\n");
@@ -1405,6 +1414,8 @@ export class Supervisor {
         previousError,
         alwaysReadFiles: memoryArtifacts.alwaysReadFiles,
         onDemandMemoryFiles: memoryArtifacts.onDemandFiles,
+        gsdEnabled: this.config.gsdEnabled,
+        gsdPlanningFiles: this.config.gsdPlanningFiles,
       });
 
       const sessionLock = record.codex_session_id

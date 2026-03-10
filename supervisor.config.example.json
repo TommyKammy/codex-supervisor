@@ -28,6 +28,16 @@
     "docs/workflow.md",
     "docs/decisions.md"
   ],
+  "gsdEnabled": false,
+  "gsdAutoInstall": false,
+  "gsdInstallScope": "global",
+  "gsdCodexConfigDir": "",
+  "gsdPlanningFiles": [
+    "PROJECT.md",
+    "REQUIREMENTS.md",
+    "ROADMAP.md",
+    "STATE.md"
+  ],
   "localReviewEnabled": false,
   "localReviewRoles": [
     "reviewer",

@@ -62,6 +62,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
 ## Notes
 
 - `atlaspm` uses `Part of #...`, `Depends on: ...`, and `## Execution order`, so the built-in sequencing logic is enough.
+- If you use GSD for upstream planning, enable `gsdEnabled` and point `gsdPlanningFiles` at `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, and `STATE.md`.
 - Copilot review is expected to start automatically after the PR is marked ready.
 - A local advisory review can run before `gh pr ready`, with artifacts written under the supervisor's `.local/reviews` directory.
 - Even with multiple local review roles, the reviewer turn should still read the generated context index and issue journal first, then open durable memory files only on demand.
