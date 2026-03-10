@@ -27,6 +27,16 @@
     "docs/workflow.md",
     "docs/decisions.md"
   ],
+  "gsdEnabled": false,
+  "gsdAutoInstall": false,
+  "gsdInstallScope": "global",
+  "gsdCodexConfigDir": "",
+  "gsdPlanningFiles": [
+    "PROJECT.md",
+    "REQUIREMENTS.md",
+    "ROADMAP.md",
+    "STATE.md"
+  ],
   "localReviewEnabled": true,
   "localReviewRoles": [
     "reviewer",
@@ -34,6 +44,7 @@
     "docs_researcher"
   ],
   "localReviewArtifactDir": "/Users/yourname/Dev/codex-supervisor/.local/reviews",
+  "localReviewConfidenceThreshold": 0.7,
   "reviewBotLogins": [
     "copilot-pull-request-reviewer"
   ],

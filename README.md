@@ -133,9 +133,15 @@ Important fields:
 - `codexReasoningEffortByState`: per-state reasoning policy from `none` to `xhigh`
 - `codexReasoningEscalateOnRepeatedFailure`: bump reasoning by one level after repeated failures or verification retries
 - `sharedMemoryFiles`: durable repo-memory files to reference every turn
+- `gsdEnabled`: enable optional `get-shit-done` collaboration
+- `gsdAutoInstall`: install GSD Codex skills automatically on startup if missing
+- `gsdInstallScope`: `global` or `local`
+- `gsdCodexConfigDir`: optional Codex config directory for GSD installation
+- `gsdPlanningFiles`: GSD planning docs to treat as upstream durable memory
 - `localReviewEnabled`: run an advisory local review before a draft PR is marked ready
-- `localReviewRoles`: role labels to suggest when Codex multi-agent review is available
+- `localReviewRoles`: role labels for the local review swarm, for example `reviewer`, `explorer`, `docs_researcher`
 - `localReviewArtifactDir`: directory for generated local review artifacts
+- `localReviewConfidenceThreshold`: minimum confidence for a local review finding to be treated as actionable in saved artifacts
 - `reviewBotLogins`: bot reviewer logins that the supervisor may auto-address
 - `humanReviewBlocksMerge`: if `true`, unresolved human or unconfigured-bot review threads stop auto-merge and require manual intervention
 - `issueJournalRelativePath`: per-issue handoff journal inside each worktree
@@ -350,15 +356,16 @@ If you run the supervisor this way, keep the service model simple:
 
 ## Local review
 
-`codex-supervisor` can optionally run a local advisory review before a draft PR is marked ready.
+`codex-supervisor` can optionally run a local advisory review swarm before a draft PR is marked ready.
 
 This is designed to reduce dependence on GitHub-hosted auto review. The supervisor:
 
 - waits until the draft PR is green and conflict-free
-- runs a separate local review turn with Codex
-- suggests reviewer roles such as `reviewer`, `explorer`, and `docs_researcher`
+- runs one separate local review turn per configured role
+- supports reviewer roles such as `reviewer`, `explorer`, and `docs_researcher`
 - keeps the same context-budget policy used by implementation turns: read the compact context index and issue journal first, then open durable memory files only on demand
-- saves artifacts under `localReviewArtifactDir`
+- saves a Markdown summary plus a structured JSON artifact (for example `head-<sha>.json`) under `localReviewArtifactDir`
+- deduplicates findings and keeps only findings at or above `localReviewConfidenceThreshold`
 - then continues the normal ready / Copilot wait flow
 
 This review is advisory by default. It does not mutate code and it does not block merge unless you later add your own gating policy around the saved artifacts.
@@ -384,6 +391,43 @@ systemctl --user status codex-supervisor.service
 ```
 
 Both installers render a local service file from templates and inject the current repo root, `node`, `npm`, and `PATH`.
+
+### Optional GSD integration
+
+If the host that runs `codex-supervisor` should also have `get-shit-done` available for Codex, install it separately:
+
+```bash
+./scripts/install-gsd.sh global
+```
+
+Or enable startup install in `supervisor.config.json`:
+
+```json
+{
+  "gsdEnabled": true,
+  "gsdAutoInstall": true,
+  "gsdInstallScope": "global",
+  "gsdPlanningFiles": [
+    "PROJECT.md",
+    "REQUIREMENTS.md",
+    "ROADMAP.md",
+    "STATE.md"
+  ]
+}
+```
+
+Recommended collaboration boundary:
+
+- GSD owns planning docs and phase definition
+- GitHub Issues remain the execution queue
+- `codex-supervisor` keeps ownership of worktrees, PRs, CI repair, review handling, and merge
+- supervisor turns should read GSD planning docs when needed, but should not run GSD execution workflows inside the automated loop
+
+Operational notes:
+
+- `run-once` and `loop` now trigger GSD auto-install when `gsdAutoInstall` is enabled
+- `status` reports whether GSD is both enabled and currently installed
+- `./scripts/install-gsd.sh local /path/to/managed-repo` installs GSD into a specific managed repo instead of the supervisor repo
 
 ## Safety model
 
@@ -417,4 +461,5 @@ Example material:
 
 - managed-repo walkthrough: [docs/examples/atlaspm.md](./docs/examples/atlaspm.md)
 - concrete config file: [docs/examples/atlaspm.supervisor.config.example.json](./docs/examples/atlaspm.supervisor.config.example.json)
+- GSD to GitHub issue template: [docs/examples/gsd-to-github-issues.md](./docs/examples/gsd-to-github-issues.md)
 - architecture notes: [docs/architecture.md](./docs/architecture.md)

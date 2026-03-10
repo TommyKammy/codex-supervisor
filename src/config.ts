@@ -91,6 +91,25 @@ export function loadConfig(configPath?: string): SupervisorConfig {
     sharedMemoryFiles: Array.isArray(raw.sharedMemoryFiles)
       ? raw.sharedMemoryFiles.filter((value): value is string => typeof value === "string")
       : [],
+    gsdEnabled:
+      typeof raw.gsdEnabled === "boolean"
+        ? raw.gsdEnabled
+        : false,
+    gsdAutoInstall:
+      typeof raw.gsdAutoInstall === "boolean"
+        ? raw.gsdAutoInstall
+        : false,
+    gsdInstallScope:
+      raw.gsdInstallScope === "local" || raw.gsdInstallScope === "global"
+        ? raw.gsdInstallScope
+        : "global",
+    gsdCodexConfigDir:
+      typeof raw.gsdCodexConfigDir === "string" && raw.gsdCodexConfigDir.trim() !== ""
+        ? resolveMaybeRelative(configDir, raw.gsdCodexConfigDir)
+        : undefined,
+    gsdPlanningFiles: Array.isArray(raw.gsdPlanningFiles)
+      ? raw.gsdPlanningFiles.filter((value): value is string => typeof value === "string" && value.trim() !== "")
+      : ["PROJECT.md", "REQUIREMENTS.md", "ROADMAP.md", "STATE.md"],
     localReviewEnabled:
       typeof raw.localReviewEnabled === "boolean"
         ? raw.localReviewEnabled
@@ -102,6 +121,13 @@ export function loadConfig(configPath?: string): SupervisorConfig {
       typeof raw.localReviewArtifactDir === "string" && raw.localReviewArtifactDir.trim() !== ""
         ? resolveMaybeRelative(configDir, raw.localReviewArtifactDir)
         : path.join(path.dirname(resolveMaybeRelative(configDir, assertString(raw.stateFile, "stateFile"))), "reviews"),
+    localReviewConfidenceThreshold:
+      typeof raw.localReviewConfidenceThreshold === "number" &&
+      Number.isFinite(raw.localReviewConfidenceThreshold) &&
+      raw.localReviewConfidenceThreshold >= 0 &&
+      raw.localReviewConfidenceThreshold <= 1
+        ? raw.localReviewConfidenceThreshold
+        : 0.7,
     reviewBotLogins: Array.isArray(raw.reviewBotLogins)
       ? raw.reviewBotLogins
           .filter((value): value is string => typeof value === "string" && value.trim() !== "")

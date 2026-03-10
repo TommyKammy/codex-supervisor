@@ -10,6 +10,33 @@ export interface MemoryArtifacts {
   onDemandFiles: string[];
 }
 
+function collectDurableMemoryFiles(config: SupervisorConfig): string[] {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+
+  const push = (filePath: string): void => {
+    const trimmed = filePath.trim();
+    if (!trimmed || seen.has(trimmed)) {
+      return;
+    }
+
+    seen.add(trimmed);
+    ordered.push(trimmed);
+  };
+
+  for (const filePath of config.sharedMemoryFiles) {
+    push(filePath);
+  }
+
+  if (config.gsdEnabled) {
+    for (const filePath of config.gsdPlanningFiles) {
+      push(filePath);
+    }
+  }
+
+  return ordered;
+}
+
 function safeSlug(input: string): string {
   return input.replace(/[^a-zA-Z0-9._-]+/g, "-");
 }
@@ -147,9 +174,10 @@ export async function syncMemoryArtifacts(args: {
   const { config, issueNumber, workspacePath, journalPath } = args;
   const dirPath = artifactDir(config, issueNumber);
   await ensureDir(dirPath);
+  const durableMemoryFiles = collectDurableMemoryFiles(config);
 
   const sharedFiles = await Promise.all(
-    config.sharedMemoryFiles.map(async (relativePath) => ({
+    durableMemoryFiles.map(async (relativePath) => ({
       relativePath,
       ...(await readWorkspaceMemoryFile(workspacePath, relativePath)),
     })),
