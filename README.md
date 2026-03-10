@@ -364,7 +364,7 @@ This is designed to reduce dependence on GitHub-hosted auto review. The supervis
 - runs one separate local review turn per configured role
 - supports reviewer roles such as `reviewer`, `explorer`, and `docs_researcher`
 - keeps the same context-budget policy used by implementation turns: read the compact context index and issue journal first, then open durable memory files only on demand
-- saves a Markdown summary plus a structured `findings.json` artifact under `localReviewArtifactDir`
+- saves a Markdown summary plus a structured JSON artifact (for example `head-<sha>.json`) under `localReviewArtifactDir`
 - deduplicates findings and keeps only findings at or above `localReviewConfidenceThreshold`
 - then continues the normal ready / Copilot wait flow
 

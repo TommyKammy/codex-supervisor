@@ -104,14 +104,18 @@ function normalizeFinding(role: string, value: unknown): LocalReviewFinding | nu
     return null;
   }
 
-  const start =
+  let start =
     typeof record.start === "number" && Number.isInteger(record.start) && record.start > 0
       ? record.start
       : null;
-  const end =
+  let end =
     typeof record.end === "number" && Number.isInteger(record.end) && record.end > 0
       ? record.end
       : start;
+
+  if (start === null && end !== null) {
+    start = end;
+  }
 
   return {
     role,
@@ -308,6 +312,16 @@ function summarizeRoles(roleResults: LocalReviewRoleResult[]): string {
     : "- local review completed without structured role summaries.";
 }
 
+function renderLines(finding: LocalReviewFinding): string {
+  if (finding.start == null) {
+    return "?";
+  }
+
+  return finding.end && finding.end !== finding.start
+    ? `${finding.start}-${finding.end}`
+    : `${finding.start}`;
+}
+
 async function runRoleReview(args: {
   config: SupervisorConfig;
   issue: GitHubIssue;
@@ -395,16 +409,25 @@ export async function runLocalReview(args: {
   onDemandFiles: string[];
 }): Promise<LocalReviewResult> {
   const roles = args.config.localReviewRoles.length > 0 ? args.config.localReviewRoles : ["reviewer", "explorer"];
-  const roleResults: LocalReviewRoleResult[] = [];
+  const roleResults: LocalReviewRoleResult[] = new Array(roles.length);
+  const concurrency = Math.min(2, roles.length);
+  let currentIndex = 0;
 
-  for (const role of roles) {
-    roleResults.push(
-      await runRoleReview({
+  async function runNextRole(): Promise<void> {
+    while (true) {
+      const index = currentIndex;
+      if (index >= roles.length) {
+        return;
+      }
+      currentIndex += 1;
+      roleResults[index] = await runRoleReview({
         ...args,
-        role,
-      }),
-    );
+        role: roles[index],
+      });
+    }
   }
+
+  await Promise.all(Array.from({ length: concurrency }, () => runNextRole()));
 
   const allFindings = roleResults.flatMap((result) => result.findings);
   const actionableFindings = dedupeFindings(
@@ -454,7 +477,7 @@ export async function runLocalReview(args: {
               `- Severity: ${finding.severity}`,
               `- Confidence: ${finding.confidence.toFixed(2)}`,
               `- File: ${finding.file ?? "none"}`,
-              `- Lines: ${finding.start ?? "?"}${finding.end && finding.end !== finding.start ? `-${finding.end}` : ""}`,
+              `- Lines: ${renderLines(finding)}`,
               `- Category: ${finding.category ?? "none"}`,
               `- Body: ${finding.body}`,
               ...(finding.evidence ? [`- Evidence: ${finding.evidence}`] : []),

@@ -12,18 +12,20 @@ const REQUIRED_GSD_SKILLS = [
   "gsd-execute-phase",
   "gsd-verify-work",
 ];
+const GSD_PACKAGE_SPEC = "get-shit-done-cc@1.22.4";
+const GSD_INSTALL_TIMEOUT_MS = 300_000;
 
 function resolveCodexConfigDir(config: SupervisorConfig): string {
   if (config.gsdCodexConfigDir) {
     return config.gsdCodexConfigDir;
   }
 
-  if (process.env.CODEX_HOME && process.env.CODEX_HOME.trim() !== "") {
-    return path.resolve(process.env.CODEX_HOME);
-  }
-
   if (config.gsdInstallScope === "local") {
     return path.join(config.repoPath, ".codex");
+  }
+
+  if (process.env.CODEX_HOME && process.env.CODEX_HOME.trim() !== "") {
+    return path.resolve(process.env.CODEX_HOME);
   }
 
   return path.join(os.homedir(), ".codex");
@@ -65,12 +67,12 @@ export async function ensureGsdInstalled(config: SupervisorConfig): Promise<stri
 
   const codexDir = resolveCodexConfigDir(config);
   const args = [
-    "get-shit-done-cc@latest",
+    GSD_PACKAGE_SPEC,
     "--codex",
     config.gsdInstallScope === "local" ? "--local" : "--global",
   ];
 
-  if (config.gsdInstallScope === "global" || config.gsdCodexConfigDir) {
+  if (config.gsdInstallScope === "global") {
     args.push("--config-dir", codexDir);
   }
 
@@ -78,10 +80,14 @@ export async function ensureGsdInstalled(config: SupervisorConfig): Promise<stri
     cwd: config.repoPath,
     env: {
       ...process.env,
-      CODEX_HOME: config.gsdInstallScope === "global" ? codexDir : process.env.CODEX_HOME,
+      CODEX_HOME:
+        config.gsdInstallScope === "global" || config.gsdCodexConfigDir
+          ? codexDir
+          : process.env.CODEX_HOME,
       CI: "1",
       npm_config_yes: "true",
     },
+    timeoutMs: GSD_INSTALL_TIMEOUT_MS,
   });
 
   if (!(await isGsdInstalled(config))) {
