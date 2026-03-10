@@ -12,6 +12,7 @@ import {
   BlockedReason,
   CliOptions,
   FailureContext,
+  GitHubIssue,
   GitHubPullRequest,
   IssueRunRecord,
   PullRequestCheck,
@@ -789,9 +790,9 @@ async function reconcileMergedIssueClosures(
   github: GitHubClient,
   stateStore: StateStore,
   state: SupervisorStateFile,
+  issues: GitHubIssue[],
 ): Promise<void> {
   let changed = false;
-  const issues = await github.listAllIssues();
   const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
 
   for (const record of Object.values(state.issues)) {
@@ -851,9 +852,9 @@ async function reconcileTrackedMergedButOpenIssues(
   github: GitHubClient,
   stateStore: StateStore,
   state: SupervisorStateFile,
+  issues: GitHubIssue[],
 ): Promise<void> {
   let changed = false;
-  const issues = await github.listAllIssues();
   const issueByNumber = new Map(issues.map((issue) => [issue.number, issue]));
 
   for (const record of Object.values(state.issues)) {
@@ -868,6 +869,18 @@ async function reconcileTrackedMergedButOpenIssues(
 
     const trackedPullRequest = await github.getPullRequestIfExists(record.pr_number);
     if (!trackedPullRequest || (!trackedPullRequest.mergedAt && trackedPullRequest.state !== "MERGED")) {
+      continue;
+    }
+
+    const mergedAtMs = Date.parse(trackedPullRequest.mergedAt ?? "");
+    const issueUpdatedAtMs = Date.parse(issue.updatedAt);
+    // If the issue changed after the tracked PR merged, treat it as intentionally still open
+    // (for example, reopened after requirements changed) and do not auto-close it.
+    if (
+      !Number.isFinite(mergedAtMs) ||
+      !Number.isFinite(issueUpdatedAtMs) ||
+      issueUpdatedAtMs > mergedAtMs
+    ) {
       continue;
     }
 
@@ -898,9 +911,9 @@ async function reconcileStaleFailedIssueStates(
   stateStore: StateStore,
   state: SupervisorStateFile,
   config: SupervisorConfig,
+  issues: GitHubIssue[],
 ): Promise<void> {
   let changed = false;
-  const issues = await github.listAllIssues();
   const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
 
   for (const record of Object.values(state.issues)) {
@@ -956,8 +969,8 @@ async function reconcileParentEpicClosures(
   github: GitHubClient,
   stateStore: StateStore,
   state: SupervisorStateFile,
+  issues: GitHubIssue[],
 ): Promise<void> {
-  const issues = await github.listAllIssues();
   const parentIssuesReadyToClose = findParentIssuesReadyToClose(issues);
   if (parentIssuesReadyToClose.length === 0) {
     return;
@@ -1082,10 +1095,11 @@ export class Supervisor {
 
   async runOnce(options: Pick<CliOptions, "dryRun">): Promise<string> {
     const state = await this.stateStore.load();
-    await reconcileTrackedMergedButOpenIssues(this.github, this.stateStore, state);
-    await reconcileMergedIssueClosures(this.github, this.stateStore, state);
-    await reconcileStaleFailedIssueStates(this.github, this.stateStore, state, this.config);
-    await reconcileParentEpicClosures(this.github, this.stateStore, state);
+    const issues = await this.github.listAllIssues();
+    await reconcileTrackedMergedButOpenIssues(this.github, this.stateStore, state, issues);
+    await reconcileMergedIssueClosures(this.github, this.stateStore, state, issues);
+    await reconcileStaleFailedIssueStates(this.github, this.stateStore, state, this.config, issues);
+    await reconcileParentEpicClosures(this.github, this.stateStore, state, issues);
     await cleanupExpiredDoneWorkspaces(this.config, state);
 
     let record =
