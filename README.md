@@ -130,6 +130,7 @@ Important fields:
 - `blockedVerificationRetryLimit`: retry budget for verification blockers
 - `sameBlockerRepeatLimit`: repeated-blocker stop limit
 - `sameFailureSignatureRepeatLimit`: repeated failure-signature stop limit
+- `maxDoneWorkspaces`: maximum number of existing `done` worktrees to retain under `workspaceRoot` (`0` means retain none, negative disables the count cap)
 - `cleanupDoneWorkspacesAfterHours`: cleanup delay for done worktrees
 - `mergeMethod`: `merge`, `squash`, or `rebase`
 - `draftPrAfterAttempt`: attempt number after which a clean checkpoint may become a draft PR
