@@ -8,6 +8,35 @@ import { ensureDir, nowIso, truncate } from "./utils";
 
 export type LocalReviewSeverity = "none" | "low" | "medium" | "high";
 
+type ActionableSeverity = Exclude<LocalReviewSeverity, "none">;
+
+interface ParsedRoleFooter {
+  summary: string;
+  recommendation: "ready" | "changes_requested" | "unknown";
+  findings: LocalReviewFinding[];
+}
+
+export interface LocalReviewFinding {
+  role: string;
+  title: string;
+  body: string;
+  file: string | null;
+  start: number | null;
+  end: number | null;
+  severity: ActionableSeverity;
+  confidence: number;
+  category: string | null;
+  evidence: string | null;
+}
+
+export interface LocalReviewRoleResult {
+  role: string;
+  summary: string;
+  recommendation: "ready" | "changes_requested" | "unknown";
+  findings: LocalReviewFinding[];
+  rawOutput: string;
+}
+
 export interface LocalReviewResult {
   ranAt: string;
   summaryPath: string;
@@ -19,6 +48,19 @@ export interface LocalReviewResult {
   rawOutput: string;
 }
 
+interface RolePromptArgs {
+  repoSlug: string;
+  issue: GitHubIssue;
+  branch: string;
+  workspacePath: string;
+  defaultBranch: string;
+  pr: GitHubPullRequest;
+  role: string;
+  alwaysReadFiles: string[];
+  onDemandFiles: string[];
+  confidenceThreshold: number;
+}
+
 function safeSlug(input: string): string {
   return input.replace(/[^a-zA-Z0-9._-]+/g, "-");
 }
@@ -27,65 +69,144 @@ function reviewDir(config: SupervisorConfig, issueNumber: number): string {
   return path.join(config.localReviewArtifactDir, safeSlug(config.repoSlug), `issue-${issueNumber}`);
 }
 
-function parseFooter(output: string): Pick<LocalReviewResult, "summary" | "findingsCount" | "maxSeverity" | "recommendation"> {
-  const summaryMatch = output.match(/Review summary:\s*(.+)/i);
-  const findingsMatch = output.match(/Findings count:\s*(\d+)/i);
-  const severityMatch = output.match(/Max severity:\s*(none|low|medium|high)/i);
-  const recommendationMatch = output.match(/Recommendation:\s*(ready|changes_requested)/i);
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function normalizeSeverity(value: unknown): ActionableSeverity | null {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (normalized === "low" || normalized === "medium" || normalized === "high") {
+    return normalized;
+  }
+
+  return null;
+}
+
+function normalizeConfidence(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+
+  return Math.max(0, Math.min(1, value));
+}
+
+function normalizeFinding(role: string, value: unknown): LocalReviewFinding | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const title = typeof record.title === "string" ? normalizeWhitespace(record.title) : "";
+  const body = typeof record.body === "string" ? normalizeWhitespace(record.body) : "";
+  const severity = normalizeSeverity(record.severity);
+  const confidence = normalizeConfidence(record.confidence);
+  if (!title || !body || !severity || confidence === null) {
+    return null;
+  }
+
+  const start =
+    typeof record.start === "number" && Number.isInteger(record.start) && record.start > 0
+      ? record.start
+      : null;
+  const end =
+    typeof record.end === "number" && Number.isInteger(record.end) && record.end > 0
+      ? record.end
+      : start;
 
   return {
-    summary: truncate(summaryMatch?.[1]?.trim() ?? "Local review completed without a structured summary.", 500) ?? "",
-    findingsCount: findingsMatch ? Number.parseInt(findingsMatch[1], 10) : 0,
-    maxSeverity: (severityMatch?.[1]?.toLowerCase() as LocalReviewSeverity | undefined) ?? "none",
-    recommendation: (recommendationMatch?.[1]?.toLowerCase() as "ready" | "changes_requested" | undefined) ?? "unknown",
+    role,
+    title,
+    body,
+    file: typeof record.file === "string" && record.file.trim() !== "" ? record.file.trim() : null,
+    start,
+    end,
+    severity,
+    confidence,
+    category: typeof record.category === "string" && record.category.trim() !== "" ? record.category.trim() : null,
+    evidence: typeof record.evidence === "string" && record.evidence.trim() !== "" ? truncate(record.evidence.trim(), 500) : null,
   };
 }
 
-export function shouldRunLocalReview(
-  config: SupervisorConfig,
-  record: { local_review_head_sha: string | null },
-  pr: GitHubPullRequest,
-): boolean {
-  return config.localReviewEnabled && pr.isDraft && record.local_review_head_sha !== pr.headRefOid;
+function parseRoleFooter(role: string, output: string): ParsedRoleFooter {
+  const summaryMatch = output.match(/Review summary:\s*(.+)/i);
+  const recommendationMatch = output.match(/Recommendation:\s*(ready|changes_requested)/i);
+  const jsonMatch = output.match(/REVIEW_FINDINGS_JSON_START\s*([\s\S]*?)\s*REVIEW_FINDINGS_JSON_END/i);
+
+  let findings: LocalReviewFinding[] = [];
+
+  if (jsonMatch?.[1]) {
+    try {
+      const parsed = JSON.parse(jsonMatch[1]) as Record<string, unknown>;
+      if (Array.isArray(parsed.findings)) {
+        findings = parsed.findings
+          .map((item) => normalizeFinding(role, item))
+          .filter((item): item is LocalReviewFinding => item !== null);
+      }
+    } catch {
+      findings = [];
+    }
+  }
+
+  return {
+    summary: truncate(summaryMatch?.[1]?.trim() ?? `${role} review completed without a structured summary.`, 500) ?? "",
+    recommendation: (recommendationMatch?.[1]?.toLowerCase() as "ready" | "changes_requested" | undefined) ?? "unknown",
+    findings,
+  };
 }
 
-export function buildLocalReviewPrompt(args: {
-  repoSlug: string;
-  issue: GitHubIssue;
-  branch: string;
-  workspacePath: string;
-  defaultBranch: string;
-  pr: GitHubPullRequest;
-  roles: string[];
-  alwaysReadFiles: string[];
-  onDemandFiles: string[];
-}): string {
-  const compareRef = `origin/${args.defaultBranch}...HEAD`;
-  const roleList = args.roles.length > 0 ? args.roles.join(", ") : "reviewer, explorer";
-  const roleGuidance = [
-    "- explorer: scan the diff and touched files first, then nominate only the smallest set of additional files worth opening.",
-    "- reviewer: focus on correctness, regressions, and edge cases in the changed code paths. Do not widen context unless the explorer signal says it is necessary.",
-    "- docs_researcher: open durable memory files only when the diff or issue explicitly points to workflow, architecture, or policy questions.",
-  ];
+function compareRef(defaultBranch: string): string {
+  return `origin/${defaultBranch}...HEAD`;
+}
+
+function roleGoal(role: string): string[] {
+  switch (role) {
+    case "explorer":
+      return [
+        "- Start with the diff and identify the narrowest set of risky code paths.",
+        "- Focus on missing context, hidden coupling, and files that deserve deeper review.",
+        "- Report only actionable engineering findings, not generic suggestions.",
+      ];
+    case "reviewer":
+      return [
+        "- Focus on correctness, regressions, edge cases, and missing tests in the changed code paths.",
+        "- Prefer precise findings tied to a specific file and line whenever possible.",
+        "- Ignore style nits unless they could hide a bug or maintenance trap.",
+      ];
+    case "docs_researcher":
+      return [
+        "- Open durable memory files only if the diff or issue suggests a workflow, architecture, or policy mismatch.",
+        "- Focus on requirements drift, contract mismatches, and contradictions with repo guidance.",
+        "- Do not report docs-only wording concerns unless they reveal a code or workflow defect.",
+      ];
+    default:
+      return [
+        `- Operate as a specialized reviewer named ${role}.`,
+        "- Focus on concrete, actionable defects in the current diff.",
+        "- Keep context narrow and avoid speculative findings.",
+      ];
+  }
+}
+
+function buildRolePrompt(args: RolePromptArgs): string {
+  const ref = compareRef(args.defaultBranch);
 
   return [
-    `You are performing a local pre-ready review for ${args.repoSlug}.`,
+    `You are performing a local pre-ready ${args.role} review for ${args.repoSlug}.`,
     `Issue: #${args.issue.number} ${args.issue.title}`,
     `Issue URL: ${args.issue.url}`,
     `PR: #${args.pr.number} ${args.pr.url}`,
     `Branch: ${args.branch}`,
     `Workspace: ${args.workspacePath}`,
-    `Compare diff against: ${compareRef}`,
+    `Compare diff against: ${ref}`,
     "",
     "Goal:",
-    "- Review the current branch before the draft PR is marked ready.",
-    "- Focus on correctness, edge cases, config handling, state-machine safety, and tests.",
-    "- Do not edit files, do not commit, and do not push.",
+    ...roleGoal(args.role),
     "",
-    "Multi-agent guidance:",
-    `- If your Codex environment supports specialized sub-agents, use a small PR-review team with roles such as: ${roleList}.`,
-    "- If specialized sub-agents are not available, perform the review yourself in a single turn.",
-    ...roleGuidance,
+    "Constraints:",
+    "- Do not edit files, do not commit, and do not push.",
+    "- Review the current branch only.",
+    `- Confidence threshold for actionable findings: ${args.confidenceThreshold.toFixed(2)}.`,
+    "- Report only findings that you can justify from the diff and any narrowly targeted reads.",
     "",
     ...(args.alwaysReadFiles.length > 0
       ? [
@@ -99,46 +220,120 @@ export function buildLocalReviewPrompt(args: {
           "- Read the always-read files first.",
           "- Use the context index to decide whether any on-demand file is worth opening.",
           "- Do not bulk-read every durable memory file just because multiple reviewer roles exist.",
-          "- Keep each reviewer narrow: diff first, then the smallest number of targeted file reads.",
+          "- Keep this role narrow: diff first, then the smallest number of targeted file reads.",
           "",
         ]
       : []),
     "Suggested commands:",
-    `- git diff --stat ${compareRef}`,
-    `- git diff ${compareRef}`,
+    `- git diff --stat ${ref}`,
+    `- git diff ${ref}`,
     "",
     "Respond with a concise review and end with this exact footer:",
     "Review summary: <short summary>",
-    "Findings count: <integer>",
-    "Max severity: <none|low|medium|high>",
     "Recommendation: <ready|changes_requested>",
+    "REVIEW_FINDINGS_JSON_START",
+    '{"findings":[{"title":"short label","body":"one-paragraph explanation","file":"path/or/null","start":10,"end":12,"severity":"low|medium|high","confidence":0.0,"category":"optional short tag","evidence":"optional short supporting detail"}]}',
+    "REVIEW_FINDINGS_JSON_END",
+    "",
+    "Return an empty findings array when you have no actionable findings.",
   ].join("\n");
 }
 
-export async function runLocalReview(args: {
+function severityWeight(severity: ActionableSeverity): number {
+  switch (severity) {
+    case "high":
+      return 3;
+    case "medium":
+      return 2;
+    default:
+      return 1;
+  }
+}
+
+function dedupeFindings(findings: LocalReviewFinding[]): LocalReviewFinding[] {
+  const deduped = new Map<string, LocalReviewFinding>();
+  for (const finding of findings) {
+    const key = [
+      finding.file ?? "",
+      finding.start ?? "",
+      finding.end ?? "",
+      finding.title.toLowerCase(),
+      finding.body.toLowerCase(),
+    ].join("|");
+    const existing = deduped.get(key);
+    if (!existing) {
+      deduped.set(key, finding);
+      continue;
+    }
+
+    if (
+      severityWeight(finding.severity) > severityWeight(existing.severity) ||
+      (severityWeight(finding.severity) === severityWeight(existing.severity) && finding.confidence > existing.confidence)
+    ) {
+      deduped.set(key, finding);
+    }
+  }
+
+  return [...deduped.values()].sort((left, right) => {
+    const severityDelta = severityWeight(right.severity) - severityWeight(left.severity);
+    if (severityDelta !== 0) {
+      return severityDelta;
+    }
+
+    return right.confidence - left.confidence;
+  });
+}
+
+function maxSeverity(findings: LocalReviewFinding[]): LocalReviewSeverity {
+  if (findings.some((finding) => finding.severity === "high")) {
+    return "high";
+  }
+  if (findings.some((finding) => finding.severity === "medium")) {
+    return "medium";
+  }
+  if (findings.some((finding) => finding.severity === "low")) {
+    return "low";
+  }
+
+  return "none";
+}
+
+function summarizeRoles(roleResults: LocalReviewRoleResult[]): string {
+  const summaries = roleResults
+    .map((result) => `- ${result.role}: ${result.summary}`)
+    .slice(0, 10);
+
+  return summaries.length > 0
+    ? summaries.join("\n")
+    : "- local review completed without structured role summaries.";
+}
+
+async function runRoleReview(args: {
   config: SupervisorConfig;
   issue: GitHubIssue;
   branch: string;
   workspacePath: string;
   defaultBranch: string;
   pr: GitHubPullRequest;
+  role: string;
   alwaysReadFiles: string[];
   onDemandFiles: string[];
-}): Promise<LocalReviewResult> {
-  const prompt = buildLocalReviewPrompt({
+}): Promise<LocalReviewRoleResult> {
+  const prompt = buildRolePrompt({
     repoSlug: args.config.repoSlug,
     issue: args.issue,
     branch: args.branch,
     workspacePath: args.workspacePath,
     defaultBranch: args.defaultBranch,
     pr: args.pr,
-    roles: args.config.localReviewRoles,
+    role: args.role,
     alwaysReadFiles: args.alwaysReadFiles,
     onDemandFiles: args.onDemandFiles,
+    confidenceThreshold: args.config.localReviewConfidenceThreshold,
   });
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-review-"));
-  const messageFile = path.join(tempDir, "local-review.txt");
+  const messageFile = path.join(tempDir, `${safeSlug(args.role)}.txt`);
   const overrideArgs = buildCodexConfigOverrideArgs(resolveCodexExecutionPolicy(args.config, "local_review"));
   const result = await runCommand(
     args.config.codexBinary,
@@ -173,7 +368,54 @@ export async function runLocalReview(args: {
   }
   await fs.rm(tempDir, { recursive: true, force: true });
 
-  const parsed = parseFooter(rawOutput);
+  const parsed = parseRoleFooter(args.role, rawOutput);
+  return {
+    role: args.role,
+    rawOutput,
+    ...parsed,
+  };
+}
+
+export function shouldRunLocalReview(
+  config: SupervisorConfig,
+  record: { local_review_head_sha: string | null },
+  pr: GitHubPullRequest,
+): boolean {
+  return config.localReviewEnabled && pr.isDraft && record.local_review_head_sha !== pr.headRefOid;
+}
+
+export async function runLocalReview(args: {
+  config: SupervisorConfig;
+  issue: GitHubIssue;
+  branch: string;
+  workspacePath: string;
+  defaultBranch: string;
+  pr: GitHubPullRequest;
+  alwaysReadFiles: string[];
+  onDemandFiles: string[];
+}): Promise<LocalReviewResult> {
+  const roles = args.config.localReviewRoles.length > 0 ? args.config.localReviewRoles : ["reviewer", "explorer"];
+  const roleResults: LocalReviewRoleResult[] = [];
+
+  for (const role of roles) {
+    roleResults.push(
+      await runRoleReview({
+        ...args,
+        role,
+      }),
+    );
+  }
+
+  const allFindings = roleResults.flatMap((result) => result.findings);
+  const actionableFindings = dedupeFindings(
+    allFindings.filter((finding) => finding.confidence >= args.config.localReviewConfidenceThreshold),
+  );
+  const aggregateSummary = truncate(
+    `Roles run: ${roles.join(", ")}. Actionable findings above confidence ${args.config.localReviewConfidenceThreshold.toFixed(2)}: ${actionableFindings.length}.`,
+    500,
+  ) ?? "";
+  const aggregateRecommendation: LocalReviewResult["recommendation"] =
+    actionableFindings.length > 0 ? "changes_requested" : "ready";
   const ranAt = nowIso();
   const dirPath = reviewDir(args.config, args.issue.number);
   await ensureDir(dirPath);
@@ -181,6 +423,9 @@ export async function runLocalReview(args: {
   const baseName = `head-${args.pr.headRefOid.slice(0, 12)}`;
   const summaryPath = path.join(dirPath, `${baseName}.md`);
   const findingsPath = path.join(dirPath, `${baseName}.json`);
+  const rawOutput = roleResults
+    .map((result) => `## ${result.role}\n\n${result.rawOutput}`)
+    .join("\n\n");
 
   await fs.writeFile(
     summaryPath,
@@ -191,10 +436,33 @@ export async function runLocalReview(args: {
       `- Branch: ${args.branch}`,
       `- Head SHA: ${args.pr.headRefOid}`,
       `- Ran at: ${ranAt}`,
-      `- Findings: ${parsed.findingsCount}`,
-      `- Max severity: ${parsed.maxSeverity}`,
-      `- Recommendation: ${parsed.recommendation}`,
+      `- Roles: ${roles.join(", ")}`,
+      `- Confidence threshold: ${args.config.localReviewConfidenceThreshold.toFixed(2)}`,
+      `- Actionable findings: ${actionableFindings.length}`,
+      `- Max severity: ${maxSeverity(actionableFindings)}`,
+      `- Recommendation: ${aggregateRecommendation}`,
       "",
+      "## Role summaries",
+      summarizeRoles(roleResults),
+      "",
+      "## Actionable findings",
+      ...(actionableFindings.length > 0
+        ? actionableFindings.map((finding, index) =>
+            [
+              `### ${index + 1}. ${finding.title}`,
+              `- Role: ${finding.role}`,
+              `- Severity: ${finding.severity}`,
+              `- Confidence: ${finding.confidence.toFixed(2)}`,
+              `- File: ${finding.file ?? "none"}`,
+              `- Lines: ${finding.start ?? "?"}${finding.end && finding.end !== finding.start ? `-${finding.end}` : ""}`,
+              `- Category: ${finding.category ?? "none"}`,
+              `- Body: ${finding.body}`,
+              ...(finding.evidence ? [`- Evidence: ${finding.evidence}`] : []),
+              "",
+            ].join("\n"),
+          )
+        : ["- No actionable findings above the confidence threshold.", ""]),
+      "## Raw role outputs",
       rawOutput,
       "",
     ].join("\n"),
@@ -210,7 +478,19 @@ export async function runLocalReview(args: {
         branch: args.branch,
         headSha: args.pr.headRefOid,
         ranAt,
-        ...parsed,
+        confidenceThreshold: args.config.localReviewConfidenceThreshold,
+        roles,
+        summary: aggregateSummary,
+        recommendation: aggregateRecommendation,
+        findingsCount: actionableFindings.length,
+        maxSeverity: maxSeverity(actionableFindings),
+        actionableFindings,
+        roleReports: roleResults.map((result) => ({
+          role: result.role,
+          summary: result.summary,
+          recommendation: result.recommendation,
+          findings: result.findings,
+        })),
       },
       null,
       2,
@@ -222,7 +502,10 @@ export async function runLocalReview(args: {
     ranAt,
     summaryPath,
     findingsPath,
+    summary: aggregateSummary,
+    findingsCount: actionableFindings.length,
+    maxSeverity: maxSeverity(actionableFindings),
+    recommendation: aggregateRecommendation,
     rawOutput,
-    ...parsed,
   };
 }

@@ -139,8 +139,9 @@ Important fields:
 - `gsdCodexConfigDir`: optional Codex config directory for GSD installation
 - `gsdPlanningFiles`: GSD planning docs to treat as upstream durable memory
 - `localReviewEnabled`: run an advisory local review before a draft PR is marked ready
-- `localReviewRoles`: role labels to suggest when Codex multi-agent review is available
+- `localReviewRoles`: role labels for the local review swarm, for example `reviewer`, `explorer`, `docs_researcher`
 - `localReviewArtifactDir`: directory for generated local review artifacts
+- `localReviewConfidenceThreshold`: minimum confidence for a local review finding to be treated as actionable in saved artifacts
 - `reviewBotLogins`: bot reviewer logins that the supervisor may auto-address
 - `humanReviewBlocksMerge`: if `true`, unresolved human or unconfigured-bot review threads stop auto-merge and require manual intervention
 - `issueJournalRelativePath`: per-issue handoff journal inside each worktree
@@ -355,15 +356,16 @@ If you run the supervisor this way, keep the service model simple:
 
 ## Local review
 
-`codex-supervisor` can optionally run a local advisory review before a draft PR is marked ready.
+`codex-supervisor` can optionally run a local advisory review swarm before a draft PR is marked ready.
 
 This is designed to reduce dependence on GitHub-hosted auto review. The supervisor:
 
 - waits until the draft PR is green and conflict-free
-- runs a separate local review turn with Codex
-- suggests reviewer roles such as `reviewer`, `explorer`, and `docs_researcher`
+- runs one separate local review turn per configured role
+- supports reviewer roles such as `reviewer`, `explorer`, and `docs_researcher`
 - keeps the same context-budget policy used by implementation turns: read the compact context index and issue journal first, then open durable memory files only on demand
-- saves artifacts under `localReviewArtifactDir`
+- saves a Markdown summary plus a structured `findings.json` artifact under `localReviewArtifactDir`
+- deduplicates findings and keeps only findings at or above `localReviewConfidenceThreshold`
 - then continues the normal ready / Copilot wait flow
 
 This review is advisory by default. It does not mutate code and it does not block merge unless you later add your own gating policy around the saved artifacts.

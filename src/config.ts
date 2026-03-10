@@ -121,6 +121,13 @@ export function loadConfig(configPath?: string): SupervisorConfig {
       typeof raw.localReviewArtifactDir === "string" && raw.localReviewArtifactDir.trim() !== ""
         ? resolveMaybeRelative(configDir, raw.localReviewArtifactDir)
         : path.join(path.dirname(resolveMaybeRelative(configDir, assertString(raw.stateFile, "stateFile"))), "reviews"),
+    localReviewConfidenceThreshold:
+      typeof raw.localReviewConfidenceThreshold === "number" &&
+      Number.isFinite(raw.localReviewConfidenceThreshold) &&
+      raw.localReviewConfidenceThreshold >= 0 &&
+      raw.localReviewConfidenceThreshold <= 1
+        ? raw.localReviewConfidenceThreshold
+        : 0.7,
     reviewBotLogins: Array.isArray(raw.reviewBotLogins)
       ? raw.reviewBotLogins
           .filter((value): value is string => typeof value === "string" && value.trim() !== "")

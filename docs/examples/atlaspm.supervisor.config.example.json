@@ -44,6 +44,7 @@
     "docs_researcher"
   ],
   "localReviewArtifactDir": "/Users/yourname/Dev/codex-supervisor/.local/reviews",
+  "localReviewConfidenceThreshold": 0.7,
   "reviewBotLogins": [
     "copilot-pull-request-reviewer"
   ],
