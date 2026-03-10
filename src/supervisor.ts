@@ -740,18 +740,22 @@ async function cleanupExpiredDoneWorkspaces(
   config: SupervisorConfig,
   state: SupervisorStateFile,
 ): Promise<void> {
-  if (config.cleanupDoneWorkspacesAfterHours < 0 && config.maxDoneWorkspaces <= 0) {
+  if (config.cleanupDoneWorkspacesAfterHours < 0 && config.maxDoneWorkspaces < 0) {
     return;
   }
 
-  const existingDoneRecords = Object.values(state.issues)
+  const doneRecords = Object.values(state.issues)
+    .filter((record) => record.state === "done")
+    .sort((left, right) => left.updated_at.localeCompare(right.updated_at));
+
+  const existingDoneRecords = doneRecords
     .filter((record) => record.state === "done")
     .filter((record) => fs.existsSync(path.join(record.workspace, ".git")))
     .sort((left, right) => left.updated_at.localeCompare(right.updated_at));
 
   const cleanedWorkspacePaths = new Set<string>();
 
-  if (config.maxDoneWorkspaces > 0 && existingDoneRecords.length > config.maxDoneWorkspaces) {
+  if (config.maxDoneWorkspaces >= 0 && existingDoneRecords.length > config.maxDoneWorkspaces) {
     const overflowCount = existingDoneRecords.length - config.maxDoneWorkspaces;
     const overflowRecords = existingDoneRecords.slice(0, overflowCount);
     for (const record of overflowRecords) {
@@ -764,7 +768,7 @@ async function cleanupExpiredDoneWorkspaces(
     return;
   }
 
-  for (const record of existingDoneRecords) {
+  for (const record of doneRecords) {
     if (cleanedWorkspacePaths.has(record.workspace)) {
       continue;
     }
