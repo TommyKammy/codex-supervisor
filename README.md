@@ -57,6 +57,27 @@ The supervisor itself is intentionally small. It decides the next action from Gi
 - repos where issues are vague prompts rather than execution-ready work items
 - workflows that expect the supervisor to invent prioritization, architecture, or team coordination policy on its own
 
+## Readiness-first polling
+
+`codex-supervisor` is designed around readiness polling, not "issue created" events.
+
+- the main question is not "did a new issue appear?"
+- the main question is "which open issue is runnable right now?"
+
+This matters when a repo opens an epic and many child issues at once. In that model:
+
+- several issues may become `OPEN` together
+- only a subset is actually runnable because of `Depends on` and `Execution order`
+- the next useful transition is often "a dependency was merged/closed" rather than "a new issue was created"
+
+For that reason, the intended operating model is:
+
+- keep the supervisor in `loop`
+- poll GitHub at a short, regular interval
+- re-evaluate issue readiness each cycle against dependency metadata and current PR state
+
+If you need near-immediate reaction, lower `pollIntervalSeconds`. Do not treat issue-creation monitoring as the primary workflow model for ordered epic/child-issue backlogs.
+
 ## Run states
 
 - `queued`
