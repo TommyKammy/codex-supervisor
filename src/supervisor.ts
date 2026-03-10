@@ -4,7 +4,7 @@ import { buildCodexPrompt, extractBlockedReason, extractFailureSignature, extrac
 import { loadConfig } from "./config";
 import { GitHubClient } from "./github";
 import { findBlockingIssue, findParentIssuesReadyToClose } from "./issue-metadata";
-import { summarizeGsdIntegration } from "./gsd";
+import { describeGsdIntegration } from "./gsd";
 import { hasMeaningfulJournalHandoff, issueJournalPath, readIssueJournal, syncIssueJournal } from "./journal";
 import { acquireFileLock, LockHandle } from "./lock";
 import { runLocalReview, shouldRunLocalReview } from "./local-review";
@@ -708,7 +708,6 @@ function formatDetailedStatus(args: {
   reviewThreads: ReviewThread[];
 }): string {
   const { config, activeRecord, latestRecord, trackedIssueCount, pr, checks, reviewThreads } = args;
-  const gsdSummary = summarizeGsdIntegration(config);
 
   if (!activeRecord) {
     const lines = [
@@ -716,10 +715,6 @@ function formatDetailedStatus(args: {
       `tracked_issues=${trackedIssueCount}`,
       `latest_record=${formatRecentRecord(latestRecord)}`,
     ];
-
-    if (gsdSummary) {
-      lines.unshift(gsdSummary);
-    }
 
     return lines.join("\n");
   }
@@ -776,10 +771,6 @@ function formatDetailedStatus(args: {
         : path.basename(activeRecord.local_review_summary_path);
     const sanitizedSummaryPath = sanitizeStatusValue(displayedSummaryPath);
     lines.push(`local_review_summary_path=${truncate(sanitizedSummaryPath, 200)}`);
-  }
-
-  if (gsdSummary) {
-    lines.unshift(gsdSummary);
   }
 
   return lines.join("\n");
@@ -1084,7 +1075,7 @@ export class Supervisor {
   private readonly github: GitHubClient;
   private readonly stateStore: StateStore;
 
-  constructor(private readonly config: SupervisorConfig) {
+  constructor(public readonly config: SupervisorConfig) {
     this.github = new GitHubClient(config);
     this.stateStore = new StateStore(config.stateFile, {
       backend: config.stateBackend,
@@ -1111,6 +1102,7 @@ export class Supervisor {
 
   async status(): Promise<string> {
     const state = await this.stateStore.load();
+    const gsdSummary = await describeGsdIntegration(this.config);
     const activeRecord =
       state.activeIssueNumber !== null ? state.issues[String(state.activeIssueNumber)] ?? null : null;
     let latestRecord: IssueRunRecord | null = null;
@@ -1132,10 +1124,14 @@ export class Supervisor {
       });
       try {
         const readinessLines = await buildReadinessSummary(this.github, this.config, state);
-        return `${baseStatus}\n${readinessLines.join("\n")}`;
+        return [gsdSummary, `${baseStatus}\n${readinessLines.join("\n")}`]
+          .filter(Boolean)
+          .join("\n");
       } catch (error) {
         const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
-        return `${baseStatus}\nreadiness_warning=${truncate(message, 200)}`;
+        return [gsdSummary, `${baseStatus}\nreadiness_warning=${truncate(message, 200)}`]
+          .filter(Boolean)
+          .join("\n");
       }
     }
 
@@ -1151,7 +1147,7 @@ export class Supervisor {
       }
     } catch (error) {
         const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
-        return `${formatDetailedStatus({
+        return [gsdSummary, `${formatDetailedStatus({
           config: this.config,
           activeRecord,
           latestRecord,
@@ -1159,10 +1155,12 @@ export class Supervisor {
           pr,
         checks,
         reviewThreads,
-      })}\nstatus_warning=${truncate(message, 200)}`;
+      })}\nstatus_warning=${truncate(message, 200)}`]
+          .filter(Boolean)
+          .join("\n");
     }
 
-    return formatDetailedStatus({
+    return [gsdSummary, formatDetailedStatus({
       config: this.config,
       activeRecord,
       latestRecord,
@@ -1170,7 +1168,9 @@ export class Supervisor {
       pr,
       checks,
       reviewThreads,
-    });
+    })]
+      .filter(Boolean)
+      .join("\n");
   }
 
   async runOnce(options: Pick<CliOptions, "dryRun">): Promise<string> {

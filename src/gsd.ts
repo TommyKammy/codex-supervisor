@@ -105,3 +105,13 @@ export function summarizeGsdIntegration(config: SupervisorConfig): string | null
     `planning_files=${config.gsdPlanningFiles.join(",") || "none"}`,
   ].join(" ");
 }
+
+export async function describeGsdIntegration(config: SupervisorConfig): Promise<string | null> {
+  const summary = summarizeGsdIntegration(config);
+  if (!summary) {
+    return null;
+  }
+
+  const installed = await isGsdInstalled(config);
+  return `${summary} installed=${installed ? "yes" : "no"}`;
+}

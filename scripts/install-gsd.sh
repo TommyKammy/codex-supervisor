@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SCOPE="${1:-global}"
+TARGET_REPO="${2:-${PWD}}"
 NPX_BIN="${NPX_BIN:-$(command -v npx)}"
 CODEX_CONFIG_DIR="${CODEX_CONFIG_DIR:-${CODEX_HOME:-${HOME}/.codex}}"
 
@@ -13,14 +14,14 @@ if [[ -z "${NPX_BIN}" ]]; then
 fi
 
 if [[ "${SCOPE}" != "global" && "${SCOPE}" != "local" ]]; then
-  echo "usage: $0 [global|local]" >&2
+  echo "usage: $0 [global|local] [target_repo_for_local_install]" >&2
   exit 1
 fi
 
 ARGS=(get-shit-done-cc@latest --codex)
 if [[ "${SCOPE}" == "local" ]]; then
   ARGS+=(--local)
-  cd "${ROOT}"
+  cd "${TARGET_REPO}"
 else
   ARGS+=(--global --config-dir "${CODEX_CONFIG_DIR}")
 fi

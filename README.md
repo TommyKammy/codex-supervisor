@@ -421,6 +421,12 @@ Recommended collaboration boundary:
 - `codex-supervisor` keeps ownership of worktrees, PRs, CI repair, review handling, and merge
 - supervisor turns should read GSD planning docs when needed, but should not run GSD execution workflows inside the automated loop
 
+Operational notes:
+
+- `run-once` and `loop` now trigger GSD auto-install when `gsdAutoInstall` is enabled
+- `status` reports whether GSD is both enabled and currently installed
+- `./scripts/install-gsd.sh local /path/to/managed-repo` installs GSD into a specific managed repo instead of the supervisor repo
+
 ## Safety model
 
 - never pushes directly to the default branch
