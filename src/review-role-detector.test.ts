@@ -40,6 +40,8 @@ function createConfig(repoPath: string, overrides: Partial<SupervisorConfig> = {
     copilotReviewWaitMinutes: 10,
     codexExecTimeoutMinutes: 30,
     maxCodexAttemptsPerIssue: 5,
+    maxImplementationAttemptsPerIssue: 5,
+    maxRepairAttemptsPerIssue: 5,
     timeoutRetryLimit: 2,
     blockedVerificationRetryLimit: 3,
     sameBlockerRepeatLimit: 2,

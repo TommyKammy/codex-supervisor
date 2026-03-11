@@ -206,6 +206,18 @@ export function loadConfig(configPath?: string): SupervisorConfig {
       typeof raw.maxCodexAttemptsPerIssue === "number" && raw.maxCodexAttemptsPerIssue > 0
         ? raw.maxCodexAttemptsPerIssue
         : 30,
+    maxImplementationAttemptsPerIssue:
+      typeof raw.maxImplementationAttemptsPerIssue === "number" && raw.maxImplementationAttemptsPerIssue > 0
+        ? raw.maxImplementationAttemptsPerIssue
+        : typeof raw.maxCodexAttemptsPerIssue === "number" && raw.maxCodexAttemptsPerIssue > 0
+          ? raw.maxCodexAttemptsPerIssue
+          : 30,
+    maxRepairAttemptsPerIssue:
+      typeof raw.maxRepairAttemptsPerIssue === "number" && raw.maxRepairAttemptsPerIssue > 0
+        ? raw.maxRepairAttemptsPerIssue
+        : typeof raw.maxCodexAttemptsPerIssue === "number" && raw.maxCodexAttemptsPerIssue > 0
+          ? raw.maxCodexAttemptsPerIssue
+          : 30,
     timeoutRetryLimit:
       typeof raw.timeoutRetryLimit === "number" && raw.timeoutRetryLimit >= 0
         ? raw.timeoutRetryLimit

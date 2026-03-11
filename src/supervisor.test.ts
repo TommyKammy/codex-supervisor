@@ -44,6 +44,8 @@ function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConf
     copilotReviewWaitMinutes: 10,
     codexExecTimeoutMinutes: 30,
     maxCodexAttemptsPerIssue: 5,
+    maxImplementationAttemptsPerIssue: 5,
+    maxRepairAttemptsPerIssue: 5,
     timeoutRetryLimit: 2,
     blockedVerificationRetryLimit: 3,
     sameBlockerRepeatLimit: 2,
@@ -77,6 +79,8 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     local_review_recommendation: null,
     local_review_degraded: false,
     attempt_count: 2,
+    implementation_attempt_count: 2,
+    repair_attempt_count: 0,
     timeout_retry_count: 0,
     blocked_verification_retry_count: 0,
     repeated_blocker_count: 0,
@@ -104,9 +108,23 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
 }
 
 test("shouldAutoRetryHandoffMissing only retries recoverable blocked handoffs", () => {
-  const config = createConfig();
+  const config = createConfig({
+    maxImplementationAttemptsPerIssue: 3,
+    maxRepairAttemptsPerIssue: 9,
+  });
 
   assert.equal(shouldAutoRetryHandoffMissing(createRecord(), config), true);
+  assert.equal(
+    shouldAutoRetryHandoffMissing(
+      createRecord({
+        attempt_count: 8,
+        implementation_attempt_count: 2,
+        repair_attempt_count: 6,
+      }),
+      config,
+    ),
+    true,
+  );
   assert.equal(shouldAutoRetryHandoffMissing(createRecord({ pr_number: 12 }), config), false);
   assert.equal(
     shouldAutoRetryHandoffMissing(
@@ -116,7 +134,14 @@ test("shouldAutoRetryHandoffMissing only retries recoverable blocked handoffs", 
     false,
   );
   assert.equal(
-    shouldAutoRetryHandoffMissing(createRecord({ attempt_count: config.maxCodexAttemptsPerIssue }), config),
+    shouldAutoRetryHandoffMissing(
+      createRecord({
+        attempt_count: config.maxImplementationAttemptsPerIssue + 6,
+        implementation_attempt_count: config.maxImplementationAttemptsPerIssue,
+        repair_attempt_count: 6,
+      }),
+      config,
+    ),
     false,
   );
 });

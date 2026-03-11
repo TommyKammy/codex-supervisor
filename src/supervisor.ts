@@ -57,6 +57,8 @@ function createIssueRecord(config: SupervisorConfig, issueNumber: number): Issue
     local_review_recommendation: null,
     local_review_degraded: false,
     attempt_count: 0,
+    implementation_attempt_count: 0,
+    repair_attempt_count: 0,
     timeout_retry_count: 0,
     blocked_verification_retry_count: 0,
     repeated_blocker_count: 0,
@@ -258,7 +260,7 @@ function shouldAutoRetryBlockedVerification(record: IssueRunRecord, config: Supe
   return (
     record.state === "blocked" &&
     isVerificationBlockedMessage(record.last_error) &&
-    record.attempt_count < config.maxCodexAttemptsPerIssue &&
+    hasAttemptBudgetRemaining(record, config, "implementation") &&
     record.blocked_verification_retry_count < config.blockedVerificationRetryLimit &&
     record.repeated_blocker_count < config.sameBlockerRepeatLimit &&
     record.repeated_failure_signature_count < config.sameFailureSignatureRepeatLimit
@@ -270,7 +272,7 @@ export function shouldAutoRetryHandoffMissing(record: IssueRunRecord, config: Su
     record.state === "blocked" &&
     record.blocked_reason === "handoff_missing" &&
     record.pr_number === null &&
-    record.attempt_count < config.maxCodexAttemptsPerIssue &&
+    hasAttemptBudgetRemaining(record, config, "implementation") &&
     record.repeated_failure_signature_count < config.sameFailureSignatureRepeatLimit
   );
 }
@@ -284,8 +286,39 @@ function shouldPreserveNoPrFailureTracking(record: IssueRunRecord): boolean {
   );
 }
 
-function hasAttemptBudgetRemaining(record: IssueRunRecord, config: SupervisorConfig): boolean {
-  return record.attempt_count < config.maxCodexAttemptsPerIssue;
+type AttemptLane = "implementation" | "repair";
+
+function attemptLane(record: IssueRunRecord, pr: GitHubPullRequest | null): AttemptLane {
+  return pr !== null || record.pr_number !== null ? "repair" : "implementation";
+}
+
+function attemptBudgetForLane(config: SupervisorConfig, lane: AttemptLane): number {
+  return lane === "repair" ? config.maxRepairAttemptsPerIssue : config.maxImplementationAttemptsPerIssue;
+}
+
+function attemptsUsedForLane(record: IssueRunRecord, lane: AttemptLane): number {
+  return lane === "repair" ? record.repair_attempt_count : record.implementation_attempt_count;
+}
+
+function hasAttemptBudgetRemaining(
+  record: IssueRunRecord,
+  config: SupervisorConfig,
+  lane: AttemptLane,
+): boolean {
+  return attemptsUsedForLane(record, lane) < attemptBudgetForLane(config, lane);
+}
+
+function incrementAttemptCounters(
+  record: IssueRunRecord,
+  lane: AttemptLane,
+): Pick<IssueRunRecord, "attempt_count" | "implementation_attempt_count" | "repair_attempt_count"> {
+  return {
+    attempt_count: record.attempt_count + 1,
+    implementation_attempt_count:
+      lane === "implementation" ? record.implementation_attempt_count + 1 : record.implementation_attempt_count,
+    repair_attempt_count:
+      lane === "repair" ? record.repair_attempt_count + 1 : record.repair_attempt_count,
+  };
 }
 
 function isEligibleForSelection(record: IssueRunRecord | undefined, config: SupervisorConfig): boolean {
@@ -333,7 +366,7 @@ function inferStateWithoutPullRequest(
   workspaceStatus: WorkspaceStatus,
 ): RunState {
   const branchHasCheckpoint = workspaceStatus.baseAhead > 0 || workspaceStatus.remoteAhead > 0;
-  if (record.attempt_count === 0) {
+  if (record.implementation_attempt_count === 0) {
     return "reproducing";
   }
 
@@ -803,7 +836,7 @@ function formatStatus(record: IssueRunRecord | null): string {
     `state=${record.state}`,
     `branch=${record.branch}`,
     `pr=${record.pr_number ?? "none"}`,
-    `attempts=${record.attempt_count}`,
+    `attempts=${record.attempt_count} impl=${record.implementation_attempt_count} repair=${record.repair_attempt_count}`,
     `workspace=${record.workspace}`,
   ].join(" ");
 }
@@ -924,6 +957,8 @@ export function formatDetailedStatus(args: {
     `branch=${activeRecord.branch}`,
     `pr=${activeRecord.pr_number ?? "none"}`,
     `attempts=${activeRecord.attempt_count}`,
+    `implementation_attempts=${activeRecord.implementation_attempt_count}`,
+    `repair_attempts=${activeRecord.repair_attempt_count}`,
     `updated_at=${activeRecord.updated_at}`,
     `workspace=${activeRecord.workspace}`,
     `blocked_reason=${activeRecord.blocked_reason ?? "none"}`,
@@ -1505,17 +1540,26 @@ export class Supervisor {
         return this.runOnce(options);
       }
 
-      if (!hasAttemptBudgetRemaining(record, this.config)) {
-        const failureContext = buildCodexFailureContext("manual", `Issue #${record.issue_number} exhausted its Codex attempt budget.`, [
-          `attempts=${record.attempt_count}`,
-          `max=${this.config.maxCodexAttemptsPerIssue}`,
-        ]);
+      const budgetLaneBeforeWorkspace = attemptLane(record, null);
+      if (!hasAttemptBudgetRemaining(record, this.config, budgetLaneBeforeWorkspace)) {
+        const used = attemptsUsedForLane(record, budgetLaneBeforeWorkspace);
+        const max = attemptBudgetForLane(this.config, budgetLaneBeforeWorkspace);
+        const failureContext = buildCodexFailureContext(
+          "manual",
+          `Issue #${record.issue_number} exhausted its ${budgetLaneBeforeWorkspace} Codex attempt budget.`,
+          [
+            `attempt_lane=${budgetLaneBeforeWorkspace}`,
+            `attempts=${used}`,
+            `max=${max}`,
+            `total_attempts=${record.attempt_count}`,
+          ],
+        );
         record = this.stateStore.touch(record, {
           state: "failed",
           last_failure_kind: "command_error",
           last_error:
-            `Reached max Codex attempts for issue #${record.issue_number} ` +
-            `(${record.attempt_count}/${this.config.maxCodexAttemptsPerIssue}).`,
+            `Reached max ${budgetLaneBeforeWorkspace} Codex attempts for issue #${record.issue_number} ` +
+            `(${used}/${max}).`,
           last_failure_context: failureContext,
           ...applyFailureSignature(record, failureContext),
           blocked_reason: null,
@@ -1523,7 +1567,7 @@ export class Supervisor {
         state.issues[String(record.issue_number)] = record;
         state.activeIssueNumber = null;
         await this.stateStore.save(state);
-        return `Issue #${record.issue_number} reached max Codex attempts.`;
+        return `Issue #${record.issue_number} reached max ${budgetLaneBeforeWorkspace} Codex attempts.`;
       }
 
       const workspacePath = await ensureWorkspace(this.config, record.issue_number, record.branch);
@@ -1539,7 +1583,7 @@ export class Supervisor {
       record = this.stateStore.touch(record, {
         workspace: workspacePath,
         journal_path: journalPath,
-        state: record.attempt_count === 0 ? "planning" : record.state,
+        state: record.implementation_attempt_count === 0 ? "planning" : record.state,
         last_error: null,
         last_failure_kind: null,
         blocked_reason: null,
@@ -1611,7 +1655,7 @@ export class Supervisor {
         !pr &&
         workspaceStatus.baseAhead > 0 &&
         !workspaceStatus.hasUncommittedChanges &&
-        record.attempt_count >= this.config.draftPrAfterAttempt
+        record.implementation_attempt_count >= this.config.draftPrAfterAttempt
       ) {
         await pushBranch(workspacePath, record.branch, workspaceStatus.remoteBranchExists);
         pr = await this.github.createPullRequest(issue, record, { draft: true });
@@ -1679,9 +1723,10 @@ export class Supervisor {
       const preRunState: RunState = pr
         ? inferStateFromPullRequest(this.config, record, pr, checks, reviewThreads)
         : inferStateWithoutPullRequest(record, workspaceStatus);
+      const preRunAttemptLane = attemptLane(record, pr);
       record = this.stateStore.touch(record, {
         state: preRunState,
-        attempt_count: record.attempt_count + 1,
+        ...incrementAttemptCounters(record, preRunAttemptLane),
         last_failure_context: inferFailureContext(this.config, record, pr, checks, reviewThreads),
         blocked_reason: null,
       });
@@ -1869,7 +1914,7 @@ export class Supervisor {
         !pr &&
         workspaceStatus.baseAhead > 0 &&
         !workspaceStatus.hasUncommittedChanges &&
-        record.attempt_count >= this.config.draftPrAfterAttempt
+        record.implementation_attempt_count >= this.config.draftPrAfterAttempt
       ) {
         pr = await this.github.createPullRequest(issue, record, { draft: true });
       }

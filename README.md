@@ -157,7 +157,9 @@ Important fields:
 - `branchPrefix`: branch prefix, usually `codex/issue-`
 - `copilotReviewWaitMinutes`: grace period after a PR becomes ready or gets a new head SHA
 - `codexExecTimeoutMinutes`: per-turn timeout
-- `maxCodexAttemptsPerIssue`: total Codex-turn budget per issue
+- `maxImplementationAttemptsPerIssue`: Codex-turn budget before a PR exists
+- `maxRepairAttemptsPerIssue`: Codex-turn budget after a PR exists
+- `maxCodexAttemptsPerIssue`: legacy fallback used when the split budgets are omitted
 - `timeoutRetryLimit`: timeout-only retry budget
 - `blockedVerificationRetryLimit`: retry budget for verification blockers
 - `sameBlockerRepeatLimit`: repeated-blocker stop limit
