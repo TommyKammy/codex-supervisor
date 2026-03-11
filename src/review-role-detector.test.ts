@@ -91,5 +91,32 @@ test("detectLocalReviewRoles adds UI reviewer for playwright repos", async (t) =
     "reviewer",
     "explorer",
     "ui_regression_reviewer",
+    "portability_reviewer",
+  ]);
+});
+
+test("detectLocalReviewRoles adds workflow specialists for GitHub Actions repos", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-roles-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+  await fs.writeFile(path.join(repoPath, "package.json"), "{}\n", "utf8");
+  await fs.mkdir(path.join(repoPath, ".github", "workflows"), { recursive: true });
+  await fs.mkdir(path.join(repoPath, "src"), { recursive: true });
+  await fs.writeFile(
+    path.join(repoPath, ".github", "workflows", "ci.yml"),
+    "name: CI\non: [push, pull_request]\n",
+    "utf8",
+  );
+  await fs.writeFile(path.join(repoPath, "src", "ci-workflow.test.ts"), "import test from 'node:test';\n", "utf8");
+
+  const roles = await detectLocalReviewRoles(createConfig(repoPath));
+
+  assert.deepEqual(roles, [
+    "reviewer",
+    "explorer",
+    "github_actions_semantics_reviewer",
+    "workflow_test_reviewer",
+    "portability_reviewer",
   ]);
 });

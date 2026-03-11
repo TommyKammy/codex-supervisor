@@ -367,7 +367,7 @@ This is designed to reduce dependence on GitHub-hosted auto review. The supervis
 
 - waits until the draft PR is green and conflict-free
 - runs one separate local review turn per configured role
-- supports reviewer roles such as `reviewer`, `explorer`, `docs_researcher`, `prisma_postgres_reviewer`, `migration_invariant_reviewer`, and `contract_consistency_reviewer`
+- supports reviewer roles such as `reviewer`, `explorer`, `docs_researcher`, `prisma_postgres_reviewer`, `migration_invariant_reviewer`, `contract_consistency_reviewer`, `github_actions_semantics_reviewer`, `workflow_test_reviewer`, and `portability_reviewer`
 - keeps the same context-budget policy used by implementation turns: read the compact context index and issue journal first, then open durable memory files only on demand
 - saves a Markdown summary plus a structured JSON artifact (for example `head-<sha>.json`) under `localReviewArtifactDir`
 - deduplicates findings and keeps only findings at or above `localReviewConfidenceThreshold`
@@ -379,6 +379,9 @@ If `localReviewRoles` is empty and `localReviewAutoDetect` is enabled, the super
 - adds `docs_researcher` when the repo has durable memory or docs
 - adds Prisma and migration specialists when it detects Prisma schema and migration-heavy layouts
 - adds `ui_regression_reviewer` for Playwright-heavy repos
+- adds `github_actions_semantics_reviewer` for repos with GitHub Actions workflows
+- adds `workflow_test_reviewer` when workflow-oriented test files are present
+- adds `portability_reviewer` for repos where shell/runtime portability is likely to matter
 
 Use explicit `localReviewRoles` when you want full manual control.
 

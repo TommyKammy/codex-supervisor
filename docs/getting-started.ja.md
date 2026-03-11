@@ -230,6 +230,9 @@ baseline は次です。
 - docs や durable memory がある -> `docs_researcher`
 - Prisma schema と migrations がある -> `prisma_postgres_reviewer`, `migration_invariant_reviewer`, `contract_consistency_reviewer`
 - Playwright を使う repo -> `ui_regression_reviewer`
+- GitHub Actions workflow がある -> `github_actions_semantics_reviewer`
+- workflow 向け test がある -> `workflow_test_reviewer`
+- Node/script-heavy または workflow-heavy な repo -> `portability_reviewer`
 
 初回セットアップでは、最初から role 設計を細かくしなくてよいので、この方法が扱いやすいです。
 
@@ -274,6 +277,12 @@ baseline は次です。
   - contract、schema、docs、tests のズレを見る
 - `ui_regression_reviewer`
   - browser flow や E2E regression の可能性を見る
+- `github_actions_semantics_reviewer`
+  - GitHub Actions の event/context ミス、concurrency の落とし穴、stale な cancelled check の扱いを見る
+- `workflow_test_reviewer`
+  - brittle な workflow test、regex 依存の assertion、path/cwd 前提の崩れやすさを見る
+- `portability_reviewer`
+  - shell glob、path、改行コード、OS 差異に起因する portability risk を見る
 
 `atlaspm` のような repo では、generic role を増やすより、こうした specialist role を入れる方が効くことが多いです。
 

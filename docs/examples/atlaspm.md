@@ -69,7 +69,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
 - If you use GSD for upstream planning, enable `gsdEnabled` and point `gsdPlanningFiles` at `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, and `STATE.md`.
 - Copilot review is expected to start automatically after the PR is marked ready.
 - A local advisory review swarm can run before `gh pr ready`, with Markdown (`head-<sha>.md`) and JSON (`head-<sha>.json`) artifacts written under the supervisor's `.local/reviews` directory.
-- Leaving `localReviewRoles` empty while `localReviewAutoDetect` is `true` lets the supervisor add repo-specific specialists such as `prisma_postgres_reviewer`, `migration_invariant_reviewer`, and `contract_consistency_reviewer`.
+- Leaving `localReviewRoles` empty while `localReviewAutoDetect` is `true` lets the supervisor add repo-specific specialists such as `prisma_postgres_reviewer`, `migration_invariant_reviewer`, `contract_consistency_reviewer`, and workflow-oriented roles like `github_actions_semantics_reviewer`, `workflow_test_reviewer`, and `portability_reviewer` when the repo shape suggests them.
 - `localReviewPolicy: "block_ready"` keeps actionable local-review findings from advancing a draft PR to ready. `block_merge` allows the PR to become ready but still stops merge until the findings are resolved.
 - `localReviewHighSeverityAction: "retry"` sends high-severity local-review findings back into another implementation pass instead of allowing the PR to progress.
 - Findings below the configured confidence threshold stay in the raw role reports but are not counted as actionable.

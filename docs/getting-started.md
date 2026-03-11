@@ -224,6 +224,9 @@ Then the supervisor adds specialists when the repo suggests them. For example:
 - docs or durable memory present -> `docs_researcher`
 - Prisma schema + migrations present -> `prisma_postgres_reviewer`, `migration_invariant_reviewer`, `contract_consistency_reviewer`
 - Playwright-heavy repo -> `ui_regression_reviewer`
+- GitHub Actions workflows present -> `github_actions_semantics_reviewer`
+- workflow-focused tests present -> `workflow_test_reviewer`
+- Node/script-heavy or workflow-heavy repo -> `portability_reviewer`
 
 This works well for first-time setup because you do not need to design the swarm up front.
 
@@ -268,6 +271,12 @@ Examples:
   - compares contracts, schema, docs, and tests for drift
 - `ui_regression_reviewer`
   - looks for likely browser-flow and end-to-end regressions
+- `github_actions_semantics_reviewer`
+  - looks for GitHub Actions event/context mistakes, concurrency pitfalls, and stale cancelled-check behavior
+- `workflow_test_reviewer`
+  - looks for brittle workflow tests, regex-heavy assertions, and path/cwd assumptions
+- `portability_reviewer`
+  - looks for shell glob, path, line-ending, and OS portability risks
 
 In a repo like `atlaspm`, these specialist reviewers are often more useful than adding more generic reviewer turns.
 

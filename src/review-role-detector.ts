@@ -33,6 +33,9 @@ async function detectRepoSignals(repoPath: string): Promise<{
   hasMigrations: boolean;
   hasContracts: boolean;
   hasPlaywright: boolean;
+  hasGithubActions: boolean;
+  hasWorkflowTests: boolean;
+  hasNodeScripts: boolean;
 }> {
   const [
     hasDocs,
@@ -46,6 +49,9 @@ async function detectRepoSignals(repoPath: string): Promise<{
     hasMigrations,
     hasContracts,
     hasPlaywright,
+    hasGithubActions,
+    hasWorkflowTests,
+    hasNodeScripts,
   ] = await Promise.all([
     existsAny(repoPath, ["docs", "README.md", "PROJECT.md", "REQUIREMENTS.md", "ROADMAP.md", "STATE.md"]),
     existsAny(repoPath, ["package.json", "tsconfig.json"]),
@@ -74,6 +80,14 @@ async function detectRepoSignals(repoPath: string): Promise<{
       "packages/contracts",
     ]),
     existsAny(repoPath, ["playwright.config.ts", "playwright.config.js", "e2e/playwright"]),
+    existsAny(repoPath, [".github/workflows"]),
+    existsAny(repoPath, [
+      "src/ci-workflow.test.ts",
+      "src/workflow.test.ts",
+      "test/ci-workflow.test.ts",
+      "tests/ci-workflow.test.ts",
+    ]),
+    existsAny(repoPath, ["package.json"]),
   ]);
 
   return {
@@ -88,6 +102,9 @@ async function detectRepoSignals(repoPath: string): Promise<{
     hasMigrations,
     hasContracts,
     hasPlaywright,
+    hasGithubActions,
+    hasWorkflowTests,
+    hasNodeScripts,
   };
 }
 
@@ -118,6 +135,18 @@ export async function detectLocalReviewRoles(config: SupervisorConfig): Promise<
 
   if (signals.hasPlaywright) {
     roles.add("ui_regression_reviewer");
+  }
+
+  if (signals.hasGithubActions) {
+    roles.add("github_actions_semantics_reviewer");
+  }
+
+  if (signals.hasGithubActions && signals.hasWorkflowTests) {
+    roles.add("workflow_test_reviewer");
+  }
+
+  if (signals.hasNodeScripts || signals.hasGithubActions) {
+    roles.add("portability_reviewer");
   }
 
   return [...roles];

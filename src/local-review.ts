@@ -229,6 +229,24 @@ function roleGoal(role: string): string[] {
         "- Look for changed selectors, state transitions, form flows, and rendering assumptions that could break existing end-to-end tests.",
         "- Report concrete regressions, not general UX suggestions.",
       ];
+    case "github_actions_semantics_reviewer":
+      return [
+        "- Focus on GitHub Actions semantics, event context, concurrency behavior, expression safety, and PR check surface behavior.",
+        "- Look for cases where workflow changes can appear green locally but behave differently under pull_request, push, merge queue, or cancelled-run scenarios.",
+        "- Prefer findings about incorrect event assumptions, stale cancelled checks, ref collisions, or unsafe workflow expressions.",
+      ];
+    case "workflow_test_reviewer":
+      return [
+        "- Focus on tests that validate workflow files or CI behavior.",
+        "- Look for brittle regex assertions, newline-sensitive matching, path assumptions, and tests that depend on repo root or exact YAML formatting.",
+        "- Prefer findings where a workflow test can pass today but break on harmless formatting changes or different execution environments.",
+      ];
+    case "portability_reviewer":
+      return [
+        "- Focus on portability across shells, operating systems, path layouts, and line endings.",
+        "- Look for shell-glob assumptions, cwd-sensitive file access, hard-coded separators, and constructs that behave differently on macOS, Linux, or Windows.",
+        "- Report only concrete portability risks that could break local development or CI execution.",
+      ];
     default:
       return [
         `- Operate as a specialized reviewer named ${role}.`,
