@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { detectLocalReviewRoles } from "./review-role-detector";
+import { detectLocalReviewRoleSelections, detectLocalReviewRoles } from "./review-role-detector";
 import { SupervisorConfig } from "./types";
 
 function createConfig(repoPath: string, overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
@@ -78,6 +78,48 @@ test("detectLocalReviewRoles adds prisma specialists for prisma repos", async (t
     "contract_consistency_reviewer",
     "portability_reviewer",
   ]);
+});
+
+test("detectLocalReviewRoleSelections records machine-readable reasons for auto-detected roles", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-roles-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+  await fs.writeFile(path.join(repoPath, "package.json"), "{}\n", "utf8");
+  await fs.mkdir(path.join(repoPath, "prisma"), { recursive: true });
+  await fs.writeFile(path.join(repoPath, "prisma", "schema.prisma"), "datasource db { provider = \"postgresql\" }\n", "utf8");
+  await fs.mkdir(path.join(repoPath, "docs"), { recursive: true });
+  await fs.writeFile(path.join(repoPath, "docs", "architecture.md"), "# Architecture\n", "utf8");
+  await fs.mkdir(path.join(repoPath, "apps", "core-api", "prisma", "migrations"), { recursive: true });
+  await fs.mkdir(path.join(repoPath, "packages", "contracts"), { recursive: true });
+
+  const selections = await detectLocalReviewRoleSelections(createConfig(repoPath));
+
+  assert.deepEqual(
+    selections.map((selection) => ({
+      role: selection.role,
+      reasonKinds: selection.reasons.map((reason) => reason.kind),
+    })),
+    [
+      { role: "reviewer", reasonKinds: ["baseline"] },
+      { role: "explorer", reasonKinds: ["baseline"] },
+      { role: "docs_researcher", reasonKinds: ["repo_signal"] },
+      { role: "prisma_postgres_reviewer", reasonKinds: ["repo_signal"] },
+      { role: "migration_invariant_reviewer", reasonKinds: ["repo_signal", "repo_signal"] },
+      { role: "contract_consistency_reviewer", reasonKinds: ["repo_signal", "repo_signal"] },
+      { role: "portability_reviewer", reasonKinds: ["repo_signal"] },
+    ],
+  );
+  assert.deepEqual(selections[2]?.reasons[0], {
+    kind: "repo_signal",
+    signal: "docs",
+    paths: ["docs"],
+  });
+  assert.deepEqual(selections[3]?.reasons[0], {
+    kind: "repo_signal",
+    signal: "prisma",
+    paths: ["prisma/schema.prisma"],
+  });
 });
 
 test("detectLocalReviewRoles adds UI reviewer for playwright repos", async (t) => {

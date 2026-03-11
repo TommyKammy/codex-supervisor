@@ -234,6 +234,13 @@ baseline は次です。
 - workflow 向け test がある -> `workflow_test_reviewer`
 - Node/script-heavy または workflow-heavy な repo -> `portability_reviewer`
 
+生成される local review artifact には、各 auto-detected role が選ばれた理由も入ります。
+
+- Markdown summary には `Auto-detected roles` セクションが追加され、signal を短く確認できます
+- JSON artifact には `autoDetectedRoles` が入り、role ごとに `kind`、`signal`、`paths` を machine-readable に保存します
+
+manual override に切り替えたいときは、まずこの理由データを見て必要な role だけを `localReviewRoles` にコピーし、`localReviewAutoDetect` を `false` にします。これで specialist を維持しつつ、role 選択を deterministic にできます。
+
 初回セットアップでは、最初から role 設計を細かくしなくてよいので、この方法が扱いやすいです。
 
 ### 方法 2: role を明示指定する

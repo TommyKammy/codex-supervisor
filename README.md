@@ -386,6 +386,8 @@ If `localReviewRoles` is empty and `localReviewAutoDetect` is enabled, the super
 - adds `workflow_test_reviewer` when workflow-oriented test files are present
 - adds `portability_reviewer` for repos where shell/runtime portability is likely to matter
 
+The local review artifacts explain these choices in two forms: the Markdown summary has a concise `Auto-detected roles` section, and the JSON artifact includes machine-readable `autoDetectedRoles` entries with `kind`, `signal`, and `paths`. If you later want deterministic manual control, inspect those reasons, copy the roles you want into `localReviewRoles`, and disable `localReviewAutoDetect`.
+
 Use explicit `localReviewRoles` when you want full manual control.
 
 This review does not mutate code. By default, `localReviewPolicy` is `block_ready`, so actionable findings keep a draft PR from becoming ready until the branch is updated and re-reviewed.
