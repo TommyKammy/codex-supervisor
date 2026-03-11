@@ -31,6 +31,7 @@ function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
     local_review_max_severity: value.local_review_max_severity ?? null,
     local_review_findings_count: value.local_review_findings_count ?? 0,
     local_review_recommendation: value.local_review_recommendation ?? null,
+    local_review_degraded: value.local_review_degraded ?? false,
     timeout_retry_count: value.timeout_retry_count ?? 0,
     blocked_verification_retry_count: value.blocked_verification_retry_count ?? 0,
     repeated_blocker_count: value.repeated_blocker_count ?? 0,
@@ -69,11 +70,26 @@ function initSqlite(db: DatabaseSync): void {
     );
   `);
 
-  db.prepare(`
-    INSERT INTO metadata(key, value)
-    VALUES ('schemaVersion', ?)
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value
-  `).run(String(SQLITE_SCHEMA_VERSION));
+}
+
+function validateSqliteSchemaVersion(db: DatabaseSync): void {
+  const schemaRow = db
+    .prepare("SELECT value FROM metadata WHERE key = 'schemaVersion'")
+    .get() as { value?: string } | undefined;
+
+  if (!schemaRow?.value) {
+    db.prepare(`
+      INSERT INTO metadata(key, value)
+      VALUES ('schemaVersion', ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run(String(SQLITE_SCHEMA_VERSION));
+    return;
+  }
+
+  const schemaVersion = Number.parseInt(schemaRow.value, 10);
+  if (!Number.isInteger(schemaVersion) || schemaVersion !== SQLITE_SCHEMA_VERSION) {
+    throw new Error(`Unsupported sqlite schema version ${schemaRow.value}. Expected ${SQLITE_SCHEMA_VERSION}.`);
+  }
 }
 
 function readSqliteState(db: DatabaseSync): SupervisorStateFile {
@@ -157,6 +173,10 @@ export class StateStore {
         hasOwn(patch, "local_review_recommendation")
           ? patch.local_review_recommendation ?? null
           : record.local_review_recommendation ?? null,
+      local_review_degraded:
+        hasOwn(patch, "local_review_degraded")
+          ? patch.local_review_degraded ?? false
+          : record.local_review_degraded ?? false,
       timeout_retry_count: patch.timeout_retry_count ?? record.timeout_retry_count ?? 0,
       blocked_verification_retry_count:
         patch.blocked_verification_retry_count ?? record.blocked_verification_retry_count ?? 0,
@@ -209,6 +229,7 @@ export class StateStore {
 
     try {
       initSqlite(db);
+      validateSqliteSchemaVersion(db);
       const currentState = readSqliteState(db);
       if (Object.keys(currentState.issues).length > 0 || currentState.activeIssueNumber !== null) {
         return currentState;
@@ -236,6 +257,7 @@ export class StateStore {
 
     try {
       initSqlite(db);
+      validateSqliteSchemaVersion(db);
       db.exec("BEGIN IMMEDIATE");
 
       try {

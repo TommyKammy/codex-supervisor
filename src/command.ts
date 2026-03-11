@@ -33,6 +33,27 @@ export async function runCommand(
     let timeoutHandle: NodeJS.Timeout | undefined;
     let killHandle: NodeJS.Timeout | undefined;
     let settled = false;
+    let timedOut = false;
+
+    const settleReject = (error: Error): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimers();
+      reject(error);
+    };
+
+    const settleResolve = (result: CommandResult): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimers();
+      resolve(result);
+    };
 
     const clearTimers = (): void => {
       if (timeoutHandle) {
@@ -51,10 +72,17 @@ export async function runCommand(
       stderr += chunk.toString();
     });
 
-    child.on("error", reject);
+    child.on("error", (error) => {
+      settleReject(error);
+    });
 
     if (typeof options.timeoutMs === "number") {
       timeoutHandle = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+
+        timedOut = true;
         const pid = child.pid;
         const timeoutMessage = `Command timed out after ${options.timeoutMs}ms: ${command} ${args.join(" ")}`;
         stderr += `${stderr.endsWith("\n") || stderr.length === 0 ? "" : "\n"}${timeoutMessage}\n`;
@@ -88,11 +116,24 @@ export async function runCommand(
     }
 
     child.on("close", (code) => {
-      settled = true;
-      clearTimers();
       const exitCode = code ?? 1;
+      if (timedOut) {
+        settleReject(
+          new Error(
+            [
+              `Command timed out: ${command} ${args.join(" ")}`,
+              `exitCode=${exitCode}`,
+              stderr.trim(),
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          ),
+        );
+        return;
+      }
+
       if (!allowExitCodes.includes(exitCode)) {
-        reject(
+        settleReject(
           new Error(
             [
               `Command failed: ${command} ${args.join(" ")}`,
@@ -106,7 +147,7 @@ export async function runCommand(
         return;
       }
 
-      resolve({ exitCode, stdout, stderr });
+      settleResolve({ exitCode, stdout, stderr });
     });
   });
 }
