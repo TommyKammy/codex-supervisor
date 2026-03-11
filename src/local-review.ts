@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { runCommand } from "./command";
 import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "./codex-policy";
-import { detectLocalReviewRoles } from "./review-role-detector";
+import { detectLocalReviewRoleSelections, type LocalReviewRoleSelection } from "./review-role-detector";
 import { GitHubIssue, GitHubPullRequest, SupervisorConfig } from "./types";
 import { ensureDir, nowIso, truncate } from "./utils";
 
@@ -71,6 +71,7 @@ interface LocalReviewArtifact {
   ranAt: string;
   confidenceThreshold: number;
   roles: string[];
+  autoDetectedRoles: LocalReviewRoleSelection[];
   summary: string;
   recommendation: "ready" | "changes_requested" | "unknown";
   degraded: boolean;
@@ -524,6 +525,31 @@ function summarizeRoles(roleResults: LocalReviewRoleResult[]): string {
     : "- local review completed without structured role summaries.";
 }
 
+function formatRoleSelectionReason(reason: LocalReviewRoleSelection["reasons"][number]): string {
+  const suffix = reason.paths.length > 0 ? ` (${reason.paths.join(", ")})` : "";
+  switch (reason.kind) {
+    case "baseline":
+      return `baseline${suffix}`;
+    case "config_signal":
+      return `${reason.signal}${suffix}`;
+    case "repo_signal":
+      return `${reason.signal}${suffix}`;
+  }
+}
+
+function summarizeAutoDetectedRoles(detectedRoles: LocalReviewRoleSelection[]): string[] {
+  const specialistSelections = detectedRoles.filter(
+    (selection) => selection.role !== "reviewer" && selection.role !== "explorer",
+  );
+  if (specialistSelections.length === 0) {
+    return ["- No specialist roles were auto-detected beyond the baseline reviewer/explorer pair."];
+  }
+
+  return specialistSelections
+    .slice(0, 10)
+    .map((selection) => `- ${selection.role}: ${selection.reasons.map(formatRoleSelectionReason).join("; ")}`);
+}
+
 function renderLines(finding: LocalReviewFinding): string {
   if (finding.start == null) {
     return "?";
@@ -710,6 +736,7 @@ export function finalizeLocalReview(args: {
   prNumber: number;
   branch: string;
   headSha: string;
+  detectedRoles?: LocalReviewRoleSelection[];
   roleResults: LocalReviewRoleResult[];
   verifierReport: LocalReviewVerifierReport | null;
   ranAt: string;
@@ -740,6 +767,7 @@ export function finalizeLocalReview(args: {
     ranAt: args.ranAt,
     confidenceThreshold: args.config.localReviewConfidenceThreshold,
     roles,
+    autoDetectedRoles: args.detectedRoles ?? [],
     summary,
     recommendation,
     degraded,
@@ -813,11 +841,15 @@ export async function runLocalReview(args: {
   alwaysReadFiles: string[];
   onDemandFiles: string[];
 }): Promise<LocalReviewResult> {
+  const detectedRoles =
+    args.config.localReviewRoles.length === 0 && args.config.localReviewAutoDetect
+      ? await detectLocalReviewRoleSelections(args.config)
+      : [];
   const roles =
     args.config.localReviewRoles.length > 0
       ? args.config.localReviewRoles
-      : args.config.localReviewAutoDetect
-        ? await detectLocalReviewRoles(args.config)
+      : detectedRoles.length > 0
+        ? detectedRoles.map((selection) => selection.role)
         : ["reviewer", "explorer"];
   const roleResults: LocalReviewRoleResult[] = new Array(roles.length);
   const concurrency = Math.min(2, roles.length);
@@ -864,6 +896,7 @@ export async function runLocalReview(args: {
     prNumber: args.pr.number,
     branch: args.branch,
     headSha: args.pr.headRefOid,
+    detectedRoles,
     roleResults,
     verifierReport,
     ranAt,
@@ -894,6 +927,9 @@ export async function runLocalReview(args: {
       `- Verified max severity: ${finalized.verifiedMaxSeverity}`,
       `- Recommendation: ${finalized.recommendation}`,
       `- Degraded: ${finalized.degraded ? "yes" : "no"}`,
+      "",
+      "## Auto-detected roles",
+      ...summarizeAutoDetectedRoles(finalized.artifact.autoDetectedRoles),
       "",
       "## Role summaries",
       summarizeRoles(roleResults),

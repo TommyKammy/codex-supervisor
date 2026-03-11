@@ -2,6 +2,17 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { SupervisorConfig } from "./types";
 
+export interface LocalReviewRoleReason {
+  kind: "baseline" | "repo_signal" | "config_signal";
+  signal: string;
+  paths: string[];
+}
+
+export interface LocalReviewRoleSelection {
+  role: string;
+  reasons: LocalReviewRoleReason[];
+}
+
 async function existsAt(repoPath: string, relativePath: string): Promise<boolean> {
   try {
     await fs.access(path.join(repoPath, relativePath));
@@ -11,57 +22,58 @@ async function existsAt(repoPath: string, relativePath: string): Promise<boolean
   }
 }
 
-async function existsAny(repoPath: string, relativePaths: string[]): Promise<boolean> {
+async function matchingPaths(repoPath: string, relativePaths: string[]): Promise<string[]> {
+  const matches: string[] = [];
   for (const relativePath of relativePaths) {
     if (await existsAt(repoPath, relativePath)) {
-      return true;
+      matches.push(relativePath);
     }
   }
 
-  return false;
+  return matches;
 }
 
 async function detectRepoSignals(repoPath: string): Promise<{
-  hasDocs: boolean;
-  hasTypescript: boolean;
-  hasPython: boolean;
-  hasGo: boolean;
-  hasRust: boolean;
-  hasElixir: boolean;
-  hasRuby: boolean;
-  hasPrisma: boolean;
-  hasMigrations: boolean;
-  hasContracts: boolean;
-  hasPlaywright: boolean;
-  hasGithubActions: boolean;
-  hasWorkflowTests: boolean;
-  hasNodeScripts: boolean;
+  docs: string[];
+  typescript: string[];
+  python: string[];
+  go: string[];
+  rust: string[];
+  elixir: string[];
+  ruby: string[];
+  prisma: string[];
+  migrations: string[];
+  contracts: string[];
+  playwright: string[];
+  githubActions: string[];
+  workflowTests: string[];
+  nodeScripts: string[];
 }> {
   const [
-    hasDocs,
-    hasTypescript,
-    hasPython,
-    hasGo,
-    hasRust,
-    hasElixir,
-    hasRuby,
-    hasPrisma,
-    hasMigrations,
-    hasContracts,
-    hasPlaywright,
-    hasGithubActions,
-    hasWorkflowTests,
-    hasNodeScripts,
+    docs,
+    typescript,
+    python,
+    go,
+    rust,
+    elixir,
+    ruby,
+    prisma,
+    migrations,
+    contracts,
+    playwright,
+    githubActions,
+    workflowTests,
+    nodeScripts,
   ] = await Promise.all([
-    existsAny(repoPath, ["docs", "README.md", "PROJECT.md", "REQUIREMENTS.md", "ROADMAP.md", "STATE.md"]),
-    existsAny(repoPath, ["package.json", "tsconfig.json"]),
-    existsAny(repoPath, ["pyproject.toml", "requirements.txt", "setup.py"]),
-    existsAny(repoPath, ["go.mod"]),
-    existsAny(repoPath, ["Cargo.toml"]),
-    existsAny(repoPath, ["mix.exs"]),
-    existsAny(repoPath, ["Gemfile"]),
-    existsAny(repoPath, ["prisma/schema.prisma", "apps/core-api/prisma/schema.prisma"]),
-    existsAny(repoPath, [
+    matchingPaths(repoPath, ["docs", "README.md", "PROJECT.md", "REQUIREMENTS.md", "ROADMAP.md", "STATE.md"]),
+    matchingPaths(repoPath, ["package.json", "tsconfig.json"]),
+    matchingPaths(repoPath, ["pyproject.toml", "requirements.txt", "setup.py"]),
+    matchingPaths(repoPath, ["go.mod"]),
+    matchingPaths(repoPath, ["Cargo.toml"]),
+    matchingPaths(repoPath, ["mix.exs"]),
+    matchingPaths(repoPath, ["Gemfile"]),
+    matchingPaths(repoPath, ["prisma/schema.prisma", "apps/core-api/prisma/schema.prisma"]),
+    matchingPaths(repoPath, [
       "prisma/migrations",
       "apps/core-api/prisma/migrations",
       "migrations",
@@ -70,7 +82,7 @@ async function detectRepoSignals(repoPath: string): Promise<{
       "alembic",
       "alembic.ini",
     ]),
-    existsAny(repoPath, [
+    matchingPaths(repoPath, [
       "contracts",
       "openapi.yaml",
       "openapi.yml",
@@ -79,75 +91,147 @@ async function detectRepoSignals(repoPath: string): Promise<{
       "apps/core-api/src/contracts",
       "packages/contracts",
     ]),
-    existsAny(repoPath, ["playwright.config.ts", "playwright.config.js", "e2e/playwright"]),
-    existsAny(repoPath, [".github/workflows"]),
-    existsAny(repoPath, [
+    matchingPaths(repoPath, ["playwright.config.ts", "playwright.config.js", "e2e/playwright"]),
+    matchingPaths(repoPath, [".github/workflows"]),
+    matchingPaths(repoPath, [
       "src/ci-workflow.test.ts",
       "src/workflow.test.ts",
       "test/ci-workflow.test.ts",
       "tests/ci-workflow.test.ts",
     ]),
-    existsAny(repoPath, ["package.json"]),
+    matchingPaths(repoPath, ["package.json"]),
   ]);
 
   return {
-    hasDocs,
-    hasTypescript,
-    hasPython,
-    hasGo,
-    hasRust,
-    hasElixir,
-    hasRuby,
-    hasPrisma,
-    hasMigrations,
-    hasContracts,
-    hasPlaywright,
-    hasGithubActions,
-    hasWorkflowTests,
-    hasNodeScripts,
+    docs,
+    typescript,
+    python,
+    go,
+    rust,
+    elixir,
+    ruby,
+    prisma,
+    migrations,
+    contracts,
+    playwright,
+    githubActions,
+    workflowTests,
+    nodeScripts,
   };
 }
 
-export async function detectLocalReviewRoles(config: SupervisorConfig): Promise<string[]> {
-  const roles = new Set<string>(["reviewer", "explorer"]);
+function hasMatches(paths: string[]): boolean {
+  return paths.length > 0;
+}
+
+function addSelection(
+  selections: LocalReviewRoleSelection[],
+  role: string,
+  reasons: LocalReviewRoleReason[],
+): void {
+  if (reasons.length === 0) {
+    return;
+  }
+  selections.push({ role, reasons });
+}
+
+export async function detectLocalReviewRoleSelections(config: SupervisorConfig): Promise<LocalReviewRoleSelection[]> {
   const signals = await detectRepoSignals(config.repoPath);
-  const hasDurableMemorySignals =
-    config.sharedMemoryFiles.length > 0 ||
-    (config.gsdEnabled === true &&
-      config.gsdPlanningFiles.length > 0 &&
-      (await existsAny(config.repoPath, config.gsdPlanningFiles)));
+  const selections: LocalReviewRoleSelection[] = [
+    {
+      role: "reviewer",
+      reasons: [{ kind: "baseline", signal: "default", paths: [] }],
+    },
+    {
+      role: "explorer",
+      reasons: [{ kind: "baseline", signal: "default", paths: [] }],
+    },
+  ];
+  const durableMemoryPaths =
+    config.gsdEnabled === true && config.gsdPlanningFiles.length > 0
+      ? await matchingPaths(config.repoPath, config.gsdPlanningFiles)
+      : [];
 
-  if (signals.hasDocs || hasDurableMemorySignals) {
-    roles.add("docs_researcher");
+  const docsReasons: LocalReviewRoleReason[] = [];
+  if (hasMatches(signals.docs)) {
+    docsReasons.push({ kind: "repo_signal", signal: "docs", paths: signals.docs });
+  }
+  if (config.sharedMemoryFiles.length > 0) {
+    docsReasons.push({ kind: "config_signal", signal: "shared_memory_files", paths: config.sharedMemoryFiles });
+  }
+  if (durableMemoryPaths.length > 0) {
+    docsReasons.push({ kind: "config_signal", signal: "gsd_planning_files", paths: durableMemoryPaths });
+  }
+  addSelection(selections, "docs_researcher", docsReasons);
+
+  if (hasMatches(signals.prisma)) {
+    addSelection(selections, "prisma_postgres_reviewer", [
+      { kind: "repo_signal", signal: "prisma", paths: signals.prisma },
+    ]);
   }
 
-  if (signals.hasPrisma) {
-    roles.add("prisma_postgres_reviewer");
+  if (
+    hasMatches(signals.migrations) &&
+    (hasMatches(signals.typescript) ||
+      hasMatches(signals.python) ||
+      hasMatches(signals.go) ||
+      hasMatches(signals.elixir) ||
+      hasMatches(signals.ruby))
+  ) {
+    const reasons: LocalReviewRoleReason[] = [{ kind: "repo_signal", signal: "migrations", paths: signals.migrations }];
+    if (hasMatches(signals.typescript)) {
+      reasons.push({ kind: "repo_signal", signal: "typescript", paths: signals.typescript });
+    } else if (hasMatches(signals.python)) {
+      reasons.push({ kind: "repo_signal", signal: "python", paths: signals.python });
+    } else if (hasMatches(signals.go)) {
+      reasons.push({ kind: "repo_signal", signal: "go", paths: signals.go });
+    } else if (hasMatches(signals.elixir)) {
+      reasons.push({ kind: "repo_signal", signal: "elixir", paths: signals.elixir });
+    } else if (hasMatches(signals.ruby)) {
+      reasons.push({ kind: "repo_signal", signal: "ruby", paths: signals.ruby });
+    }
+    addSelection(selections, "migration_invariant_reviewer", reasons);
   }
 
-  if (signals.hasMigrations && (signals.hasTypescript || signals.hasPython || signals.hasGo || signals.hasElixir || signals.hasRuby)) {
-    roles.add("migration_invariant_reviewer");
+  if (hasMatches(signals.contracts) && (hasMatches(signals.typescript) || hasMatches(signals.python))) {
+    addSelection(selections, "contract_consistency_reviewer", [
+      { kind: "repo_signal", signal: "contracts", paths: signals.contracts },
+      hasMatches(signals.typescript)
+        ? { kind: "repo_signal", signal: "typescript", paths: signals.typescript }
+        : { kind: "repo_signal", signal: "python", paths: signals.python },
+    ]);
   }
 
-  if (signals.hasContracts && (signals.hasTypescript || signals.hasPython)) {
-    roles.add("contract_consistency_reviewer");
+  if (hasMatches(signals.playwright)) {
+    addSelection(selections, "ui_regression_reviewer", [
+      { kind: "repo_signal", signal: "playwright", paths: signals.playwright },
+    ]);
   }
 
-  if (signals.hasPlaywright) {
-    roles.add("ui_regression_reviewer");
+  if (hasMatches(signals.githubActions)) {
+    addSelection(selections, "github_actions_semantics_reviewer", [
+      { kind: "repo_signal", signal: "github_actions", paths: signals.githubActions },
+    ]);
   }
 
-  if (signals.hasGithubActions) {
-    roles.add("github_actions_semantics_reviewer");
+  if (hasMatches(signals.githubActions) && hasMatches(signals.workflowTests)) {
+    addSelection(selections, "workflow_test_reviewer", [
+      { kind: "repo_signal", signal: "github_actions", paths: signals.githubActions },
+      { kind: "repo_signal", signal: "workflow_tests", paths: signals.workflowTests },
+    ]);
   }
 
-  if (signals.hasGithubActions && signals.hasWorkflowTests) {
-    roles.add("workflow_test_reviewer");
+  if (hasMatches(signals.nodeScripts) || hasMatches(signals.githubActions)) {
+    addSelection(selections, "portability_reviewer", [
+      hasMatches(signals.nodeScripts)
+        ? { kind: "repo_signal", signal: "node_scripts", paths: signals.nodeScripts }
+        : { kind: "repo_signal", signal: "github_actions", paths: signals.githubActions },
+    ]);
   }
 
-  if (signals.hasNodeScripts || signals.hasGithubActions) {
-    roles.add("portability_reviewer");
-  }
+  return selections;
+}
 
-  return [...roles];
+export async function detectLocalReviewRoles(config: SupervisorConfig): Promise<string[]> {
+  return (await detectLocalReviewRoleSelections(config)).map((selection) => selection.role);
 }

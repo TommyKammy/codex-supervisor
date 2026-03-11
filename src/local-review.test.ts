@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { finalizeLocalReview, shouldRunLocalReview } from "./local-review";
+import { LocalReviewRoleSelection } from "./review-role-detector";
 import { GitHubPullRequest, SupervisorConfig } from "./types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
@@ -65,6 +66,19 @@ function createPullRequest(overrides: Partial<GitHubPullRequest> = {}): GitHubPu
     headRefOid: "abcdef1234567890",
     ...overrides,
   };
+}
+
+function createDetectedRoles(): LocalReviewRoleSelection[] {
+  return [
+    {
+      role: "reviewer",
+      reasons: [{ kind: "baseline", signal: "default", paths: [] }],
+    },
+    {
+      role: "prisma_postgres_reviewer",
+      reasons: [{ kind: "repo_signal", signal: "prisma", paths: ["prisma/schema.prisma"] }],
+    },
+  ];
 }
 
 test("shouldRunLocalReview reruns on ready PR head updates when block_merge is enabled", () => {
@@ -200,4 +214,39 @@ test("finalizeLocalReview propagates verifier degradation to top-level result", 
   assert.equal(result.recommendation, "unknown");
   assert.equal(result.artifact.degraded, true);
   assert.equal(result.artifact.verification.degraded, true);
+});
+
+test("finalizeLocalReview includes auto-detect reasons in the artifact", () => {
+  const result = finalizeLocalReview({
+    config: createConfig({ localReviewConfidenceThreshold: 0.7 }),
+    issueNumber: 39,
+    prNumber: 13,
+    branch: "codex/issue-39",
+    headSha: "feedfacecafebeef",
+    detectedRoles: createDetectedRoles(),
+    roleResults: [
+      {
+        role: "reviewer",
+        summary: "No issues found.",
+        recommendation: "ready",
+        degraded: false,
+        exitCode: 0,
+        rawOutput: "review raw output",
+        findings: [],
+      },
+      {
+        role: "prisma_postgres_reviewer",
+        summary: "Checked schema and migrations.",
+        recommendation: "ready",
+        degraded: false,
+        exitCode: 0,
+        rawOutput: "prisma raw output",
+        findings: [],
+      },
+    ],
+    verifierReport: null,
+    ranAt: "2026-03-12T01:00:00Z",
+  });
+
+  assert.deepEqual(result.artifact.autoDetectedRoles, createDetectedRoles());
 });

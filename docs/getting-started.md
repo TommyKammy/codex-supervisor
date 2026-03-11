@@ -228,6 +228,13 @@ Then the supervisor adds specialists when the repo suggests them. For example:
 - workflow-focused tests present -> `workflow_test_reviewer`
 - Node/script-heavy or workflow-heavy repo -> `portability_reviewer`
 
+The generated local review artifacts now show why each auto-detected role was selected:
+
+- the Markdown summary includes an `Auto-detected roles` section with concise signal summaries
+- the JSON artifact includes `autoDetectedRoles`, with machine-readable `kind`, `signal`, and `paths` fields for each selected role
+
+When you want to override auto-detect manually, inspect those reasons first, then copy only the roles you want into `localReviewRoles` and set `localReviewAutoDetect` to `false`. That preserves the useful specialists while making the swarm deterministic.
+
 This works well for first-time setup because you do not need to design the swarm up front.
 
 ### Option 2: Explicit roles
