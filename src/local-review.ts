@@ -444,7 +444,11 @@ export function shouldRunLocalReview(
   record: { local_review_head_sha: string | null },
   pr: GitHubPullRequest,
 ): boolean {
-  return config.localReviewEnabled && pr.isDraft && record.local_review_head_sha !== pr.headRefOid;
+  return (
+    config.localReviewEnabled &&
+    (pr.isDraft || config.localReviewPolicy === "block_merge") &&
+    record.local_review_head_sha !== pr.headRefOid
+  );
 }
 
 export async function runLocalReview(args: {

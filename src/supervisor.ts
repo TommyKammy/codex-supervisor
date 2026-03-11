@@ -92,6 +92,7 @@ function localReviewBlocksMerge(config: SupervisorConfig, record: Pick<IssueRunR
 
 function localReviewHighSeverityNeedsRetry(config: SupervisorConfig, record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_max_severity">, pr: GitHubPullRequest): boolean {
   return (
+    config.localReviewPolicy !== "advisory" &&
     record.local_review_head_sha === pr.headRefOid &&
     record.local_review_max_severity === "high" &&
     config.localReviewHighSeverityAction === "retry"
@@ -100,6 +101,7 @@ function localReviewHighSeverityNeedsRetry(config: SupervisorConfig, record: Pic
 
 function localReviewHighSeverityNeedsBlock(config: SupervisorConfig, record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_max_severity">, pr: GitHubPullRequest): boolean {
   return (
+    config.localReviewPolicy !== "advisory" &&
     record.local_review_head_sha === pr.headRefOid &&
     record.local_review_max_severity === "high" &&
     config.localReviewHighSeverityAction === "blocked"
