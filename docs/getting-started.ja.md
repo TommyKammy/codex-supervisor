@@ -192,12 +192,13 @@ supervisor は、まず compact context index を読み、その後必要な dur
 
 ## local review swarm
 
-`codex-supervisor` は、draft PR を ready にする前に local advisory review swarm を実行できます。
+`codex-supervisor` は、local review swarm を pull request に対して実行できます。デフォルトの `localReviewPolicy` は `block_ready` なので、通常は draft PR を ready にする前に実行されます。`localReviewPolicy` を `block_merge` にすると、ready PR の head 更新時にも再実行できます。
 
 重要な点は次の通りです。
 
 - 各 role は別々の Codex turn で実行される
-- swarm はデフォルトでは advisory である
+- 挙動は `localReviewPolicy` で決まる
+- `advisory` は non-blocking、`block_ready` は draft から ready への進行を止め、`block_merge` は ready PR の merge を止める
 - findings は Markdown と JSON artifact に保存される
 - ここでも context 節約方針は同じで、まず compact context index と issue journal を読み、その後必要な durable memory だけを on-demand で開く
 

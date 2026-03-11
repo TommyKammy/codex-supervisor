@@ -138,7 +138,7 @@ Important fields:
 - `gsdInstallScope`: `global` or `local`
 - `gsdCodexConfigDir`: optional Codex config directory for GSD installation
 - `gsdPlanningFiles`: GSD planning docs to treat as upstream durable memory
-- `localReviewEnabled`: run an advisory local review before a draft PR is marked ready
+- `localReviewEnabled`: run a local review swarm before draft PRs are marked ready, and also on ready PR head updates when `localReviewPolicy` is `block_merge`
 - `localReviewAutoDetect`: if `true`, infer a specialist review swarm from the managed repo shape when `localReviewRoles` is empty
 - `localReviewRoles`: explicit role labels for the local review swarm; leave empty to rely on auto-detect
 - `localReviewArtifactDir`: directory for generated local review artifacts
@@ -380,13 +380,13 @@ If `localReviewRoles` is empty and `localReviewAutoDetect` is enabled, the super
 
 Use explicit `localReviewRoles` when you want full manual control.
 
-This review is advisory by default. It does not mutate code and it does not block merge unless you later add your own gating policy around the saved artifacts.
+This review does not mutate code. By default, `localReviewPolicy` is `block_ready`, so actionable findings keep a draft PR from becoming ready until the branch is updated and re-reviewed.
 
 If you want stronger enforcement without giving the review swarm destructive powers, use policy gates instead of auto-closing PRs:
 
 - `advisory`: save findings only
 - `block_ready`: keep draft PRs from becoming ready when actionable findings exist
-- `block_merge`: allow the PR to become ready, but stop merge while actionable findings remain
+- `block_merge`: allow the PR to become ready, but stop merge while actionable findings remain; the swarm can re-run after ready PR head updates
 
 For high-severity findings, `localReviewHighSeverityAction` can either:
 

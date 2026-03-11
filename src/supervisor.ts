@@ -87,7 +87,7 @@ function localReviewBlocksReady(config: SupervisorConfig, record: Pick<IssueRunR
 }
 
 function localReviewBlocksMerge(config: SupervisorConfig, record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation">, pr: GitHubPullRequest): boolean {
-  return config.localReviewPolicy === "block_merge" && localReviewHasActionableFindings(record, pr);
+  return !pr.isDraft && config.localReviewPolicy === "block_merge" && localReviewHasActionableFindings(record, pr);
 }
 
 function localReviewHighSeverityNeedsRetry(config: SupervisorConfig, record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_max_severity">, pr: GitHubPullRequest): boolean {

@@ -186,12 +186,13 @@ The supervisor reads a compact context index first, then opens durable memory fi
 
 ## Local review swarm
 
-Before a draft PR is marked ready, `codex-supervisor` can run a local advisory review swarm.
+`codex-supervisor` can run a local review swarm on pull requests. By default, `localReviewPolicy` is `block_ready`, so the swarm runs before a draft PR is marked ready. If you set `localReviewPolicy` to `block_merge`, it can also re-run on ready PR head updates.
 
 The important points are:
 
 - each role runs in a separate Codex turn
-- the swarm is advisory by default
+- behavior is controlled by `localReviewPolicy`
+- `advisory` is non-blocking, `block_ready` gates draft-to-ready, and `block_merge` gates merge on ready PRs
 - findings are saved as Markdown and JSON artifacts
 - the same context-budget policy still applies: read the compact context index and issue journal first, then open durable memory only on demand
 
