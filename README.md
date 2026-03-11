@@ -1,8 +1,8 @@
 # codex-supervisor
 
-Minimal GitHub issue/PR/CI supervisor for `codex exec` and `gh`.
+Deterministic, durable GitHub issue/PR/CI supervisor for `codex exec` and `gh`.
 
-The design goal is small, durable orchestration:
+The design goal is explicit, durable orchestration:
 
 - GitHub is the source of truth
 - the supervisor keeps local persistent state
@@ -10,6 +10,8 @@ The design goal is small, durable orchestration:
 - after every turn, the supervisor re-reads issue, PR, checks, reviews, and mergeability from GitHub
 
 This keeps loop continuity outside the chat thread.
+
+Japanese overview: [docs/README.ja.md](./docs/README.ja.md)
 
 ## Architecture
 
@@ -30,7 +32,7 @@ flowchart TD
   K --> L["Parent epic close"]
 ```
 
-The supervisor itself is intentionally small. It decides the next action from GitHub facts plus local state, not from long-lived chat memory.
+The supervisor itself is intentionally explicit and GitHub-driven. It decides the next action from GitHub facts plus local state, not from long-lived chat memory.
 
 ## Current scope
 
