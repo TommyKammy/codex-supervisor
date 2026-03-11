@@ -2,6 +2,8 @@
 
 This template shows how to use `get-shit-done` as the planning layer and `codex-supervisor` as the execution layer.
 
+Upstream project: [gsd-build/get-shit-done](https://github.com/gsd-build/get-shit-done)
+
 The boundary is simple:
 
 - GSD owns project understanding, requirements, roadmap, and phase planning

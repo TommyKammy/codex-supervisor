@@ -424,6 +424,8 @@ Both installers render a local service file from templates and inject the curren
 
 If the host that runs `codex-supervisor` should also have `get-shit-done` available for Codex, install it separately:
 
+Upstream project: [gsd-build/get-shit-done](https://github.com/gsd-build/get-shit-done)
+
 ```bash
 ./scripts/install-gsd.sh global
 ```
