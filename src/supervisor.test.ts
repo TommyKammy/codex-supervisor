@@ -150,9 +150,12 @@ test("reconcileRecoverableBlockedIssueStates requeues open handoff-missing issue
   assert.equal(updated.state, "queued");
   assert.equal(updated.blocked_reason, null);
   assert.equal(updated.last_error, null);
-  assert.equal(updated.last_failure_context, null);
   assert.equal(updated.codex_session_id, null);
   assert.equal(updated.last_failure_signature, "handoff-missing");
+  assert.equal(
+    updated.last_failure_context?.summary ?? null,
+    "Codex completed without updating the issue journal for issue #366.",
+  );
   assert.equal(updated.repeated_failure_signature_count, 1);
   assert.equal(saveCalls, 1);
 });

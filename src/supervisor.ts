@@ -219,6 +219,15 @@ export function shouldAutoRetryHandoffMissing(record: IssueRunRecord, config: Su
   );
 }
 
+function shouldPreserveNoPrFailureTracking(record: IssueRunRecord): boolean {
+  return (
+    record.pr_number === null &&
+    record.last_failure_context?.category === "blocked" &&
+    record.last_failure_signature !== null &&
+    record.repeated_failure_signature_count > 0
+  );
+}
+
 function hasAttemptBudgetRemaining(record: IssueRunRecord, config: SupervisorConfig): boolean {
   return record.attempt_count < config.maxCodexAttemptsPerIssue;
 }
@@ -1146,7 +1155,6 @@ export async function reconcileRecoverableBlockedIssueStates(
       blocked_reason: null,
       last_error: null,
       last_failure_kind: null,
-      last_failure_context: null,
       last_blocker_signature: null,
       codex_session_id: null,
       review_wait_started_at: null,
@@ -1541,11 +1549,12 @@ export class Supervisor {
           return `Issue #${record.issue_number} stopped after repeated identical failure signatures.`;
         }
       } else {
+        const preserveFailureTracking = shouldPreserveNoPrFailureTracking(record);
         record = this.stateStore.touch(record, {
           state: inferStateWithoutPullRequest(record, workspaceStatus),
-          last_failure_context: null,
-          last_failure_signature: null,
-          repeated_failure_signature_count: 0,
+          last_failure_context: preserveFailureTracking ? record.last_failure_context : null,
+          last_failure_signature: preserveFailureTracking ? record.last_failure_signature : null,
+          repeated_failure_signature_count: preserveFailureTracking ? record.repeated_failure_signature_count : 0,
           blocked_reason: null,
         });
       }
