@@ -152,3 +152,52 @@ test("finalizeLocalReview keeps raw high-severity findings separate from dismiss
   assert.equal(result.artifact.verification.verifiedFindingsCount, 0);
   assert.equal(result.artifact.verification.findings[0]?.verdict, "dismissed");
 });
+
+test("finalizeLocalReview propagates verifier degradation to top-level result", () => {
+  const result = finalizeLocalReview({
+    config: createConfig({ localReviewConfidenceThreshold: 0.7 }),
+    issueNumber: 38,
+    prNumber: 12,
+    branch: "codex/issue-38",
+    headSha: "deadbeefcafebabe",
+    roleResults: [
+      {
+        role: "reviewer",
+        summary: "Flagged one high issue.",
+        recommendation: "changes_requested",
+        degraded: false,
+        exitCode: 0,
+        rawOutput: "review raw output",
+        findings: [
+          {
+            role: "reviewer",
+            title: "Potential high severity issue",
+            body: "Needs verifier confirmation.",
+            file: "src/example.ts",
+            start: 10,
+            end: 12,
+            severity: "high",
+            confidence: 0.95,
+            category: "correctness",
+            evidence: "Initial evidence",
+          },
+        ],
+      },
+    ],
+    verifierReport: {
+      role: "verifier",
+      summary: "Verifier failed to complete.",
+      recommendation: "unknown",
+      degraded: true,
+      exitCode: 1,
+      rawOutput: "verifier raw output",
+      findings: [],
+    },
+    ranAt: "2026-03-12T00:05:00Z",
+  });
+
+  assert.equal(result.degraded, true);
+  assert.equal(result.recommendation, "unknown");
+  assert.equal(result.artifact.degraded, true);
+  assert.equal(result.artifact.verification.degraded, true);
+});

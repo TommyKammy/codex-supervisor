@@ -719,7 +719,7 @@ export function finalizeLocalReview(args: {
   const actionableFindings = dedupeFindings(
     allFindings.filter((finding) => finding.confidence >= args.config.localReviewConfidenceThreshold),
   );
-  const degraded = args.roleResults.some((result) => result.degraded);
+  const degraded = args.roleResults.some((result) => result.degraded) || (args.verifierReport?.degraded ?? false);
   const summary = truncate(
     `Roles run: ${roles.join(", ")}. Actionable findings above confidence ${args.config.localReviewConfidenceThreshold.toFixed(2)}: ${actionableFindings.length}. Degraded roles: ${args.roleResults.filter((result) => result.degraded).length}.`,
     500,
