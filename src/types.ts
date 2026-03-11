@@ -122,6 +122,8 @@ export interface IssueRunRecord {
   local_review_findings_count: number;
   local_review_recommendation: "ready" | "changes_requested" | "unknown" | null;
   local_review_degraded: boolean;
+  last_local_review_signature: string | null;
+  repeated_local_review_signature_count: number;
   attempt_count: number;
   implementation_attempt_count: number;
   repair_attempt_count: number;

@@ -32,6 +32,8 @@ function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
     local_review_findings_count: value.local_review_findings_count ?? 0,
     local_review_recommendation: value.local_review_recommendation ?? null,
     local_review_degraded: value.local_review_degraded ?? false,
+    last_local_review_signature: value.last_local_review_signature ?? null,
+    repeated_local_review_signature_count: value.repeated_local_review_signature_count ?? 0,
     implementation_attempt_count: value.implementation_attempt_count ?? value.attempt_count ?? 0,
     repair_attempt_count: value.repair_attempt_count ?? 0,
     timeout_retry_count: value.timeout_retry_count ?? 0,
@@ -179,6 +181,12 @@ export class StateStore {
         hasOwn(patch, "local_review_degraded")
           ? patch.local_review_degraded ?? false
           : record.local_review_degraded ?? false,
+      last_local_review_signature:
+        hasOwn(patch, "last_local_review_signature")
+          ? patch.last_local_review_signature ?? null
+          : record.last_local_review_signature ?? null,
+      repeated_local_review_signature_count:
+        patch.repeated_local_review_signature_count ?? record.repeated_local_review_signature_count ?? 0,
       implementation_attempt_count:
         patch.implementation_attempt_count ?? record.implementation_attempt_count ?? 0,
       repair_attempt_count:

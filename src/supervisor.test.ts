@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildChecksFailureContext,
   formatDetailedStatus,
+  inferStateFromPullRequest,
   reconcileRecoverableBlockedIssueStates,
   shouldAutoRetryHandoffMissing,
   summarizeChecks,
@@ -75,6 +76,8 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     local_review_findings_count: 0,
     local_review_recommendation: null,
     local_review_degraded: false,
+    last_local_review_signature: null,
+    repeated_local_review_signature_count: 0,
     attempt_count: 2,
     implementation_attempt_count: 2,
     repair_attempt_count: 0,
@@ -265,6 +268,69 @@ test("buildChecksFailureContext ignores cancelled runs", () => {
   ];
 
   assert.equal(buildChecksFailureContext(pr, checks), null);
+});
+
+test("inferStateFromPullRequest forces implementing for actionable high local-review retry", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_ready",
+    localReviewHighSeverityAction: "retry",
+  });
+  const record = createRecord({
+    state: "draft_pr",
+    pr_number: 44,
+    local_review_head_sha: "head123",
+    local_review_max_severity: "high",
+    local_review_findings_count: 3,
+    local_review_recommendation: "changes_requested",
+    repeated_local_review_signature_count: 1,
+  });
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T00:00:00Z",
+    isDraft: true,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    headRefName: "codex/issue-38",
+    headRefOid: "head123",
+  };
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, [], []), "implementing");
+});
+
+test("inferStateFromPullRequest blocks stalled identical high local-review retries", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_ready",
+    localReviewHighSeverityAction: "retry",
+    sameFailureSignatureRepeatLimit: 3,
+  });
+  const record = createRecord({
+    state: "draft_pr",
+    pr_number: 44,
+    local_review_head_sha: "head123",
+    local_review_max_severity: "high",
+    local_review_findings_count: 3,
+    local_review_recommendation: "changes_requested",
+    repeated_local_review_signature_count: 3,
+  });
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T00:00:00Z",
+    isDraft: true,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    headRefName: "codex/issue-38",
+    headRefOid: "head123",
+  };
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, [], []), "blocked");
 });
 
 test("formatDetailedStatus shows blocking local review status for current PR head", () => {
