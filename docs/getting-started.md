@@ -184,6 +184,92 @@ These files work well as durable shared memory:
 
 The supervisor reads a compact context index first, then opens durable memory files only on demand.
 
+## Local review swarm
+
+Before a draft PR is marked ready, `codex-supervisor` can run a local advisory review swarm.
+
+The important points are:
+
+- each role runs in a separate Codex turn
+- the swarm is advisory by default
+- findings are saved as Markdown and JSON artifacts
+- the same context-budget policy still applies: read the compact context index and issue journal first, then open durable memory only on demand
+
+There are two ways to choose reviewer roles.
+
+### Option 1: Auto-detect roles
+
+This is the recommended starting point.
+
+If `localReviewRoles` is empty and `localReviewAutoDetect` is `true`, the supervisor detects a role set from the managed repo shape.
+
+Example:
+
+```json
+{
+  "localReviewEnabled": true,
+  "localReviewAutoDetect": true,
+  "localReviewRoles": []
+}
+```
+
+The baseline is:
+
+- `reviewer`
+- `explorer`
+
+Then the supervisor adds specialists when the repo suggests them. For example:
+
+- docs or durable memory present -> `docs_researcher`
+- Prisma schema + migrations present -> `prisma_postgres_reviewer`, `migration_invariant_reviewer`, `contract_consistency_reviewer`
+- Playwright-heavy repo -> `ui_regression_reviewer`
+
+This works well for first-time setup because you do not need to design the swarm up front.
+
+### Option 2: Explicit roles
+
+Use explicit roles when you want full manual control.
+
+Example:
+
+```json
+{
+  "localReviewEnabled": true,
+  "localReviewAutoDetect": false,
+  "localReviewRoles": [
+    "reviewer",
+    "explorer",
+    "docs_researcher",
+    "prisma_postgres_reviewer",
+    "migration_invariant_reviewer",
+    "contract_consistency_reviewer"
+  ]
+}
+```
+
+Use this when:
+
+- you already know the repo needs specialist reviewers
+- you want deterministic role selection across machines
+- you want to compare swarm results over time
+
+### What specialist roles are for
+
+The generic roles are good at broad bug hunting, but they will miss some repo-specific defects.
+
+Examples:
+
+- `prisma_postgres_reviewer`
+  - looks for PostgreSQL uniqueness semantics, nullable unique traps, partial indexes, and Prisma/schema drift
+- `migration_invariant_reviewer`
+  - looks for invalid persisted states that are blocked in app code but not enforced by the database
+- `contract_consistency_reviewer`
+  - compares contracts, schema, docs, and tests for drift
+- `ui_regression_reviewer`
+  - looks for likely browser-flow and end-to-end regressions
+
+In a repo like `atlaspm`, these specialist reviewers are often more useful than adding more generic reviewer turns.
+
 ## How issue scheduling actually works
 
 This is the most important concept.

@@ -138,9 +138,13 @@ export function loadConfig(configPath?: string): SupervisorConfig {
       typeof raw.localReviewEnabled === "boolean"
         ? raw.localReviewEnabled
         : false,
+    localReviewAutoDetect:
+      typeof raw.localReviewAutoDetect === "boolean"
+        ? raw.localReviewAutoDetect
+        : true,
     localReviewRoles: Array.isArray(raw.localReviewRoles)
       ? raw.localReviewRoles.filter((value): value is string => typeof value === "string" && value.trim() !== "")
-      : ["reviewer", "explorer"],
+      : [],
     localReviewArtifactDir:
       typeof raw.localReviewArtifactDir === "string" && raw.localReviewArtifactDir.trim() !== ""
         ? resolveMaybeRelative(configDir, raw.localReviewArtifactDir)

@@ -38,11 +38,8 @@
     "STATE.md"
   ],
   "localReviewEnabled": true,
-  "localReviewRoles": [
-    "reviewer",
-    "explorer",
-    "docs_researcher"
-  ],
+  "localReviewAutoDetect": true,
+  "localReviewRoles": [],
   "localReviewArtifactDir": "/Users/yourname/Dev/codex-supervisor/.local/reviews",
   "localReviewConfidenceThreshold": 0.7,
   "reviewBotLogins": [

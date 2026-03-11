@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { runCommand } from "./command";
 import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "./codex-policy";
+import { detectLocalReviewRoles } from "./review-role-detector";
 import { GitHubIssue, GitHubPullRequest, SupervisorConfig } from "./types";
 import { ensureDir, nowIso, truncate } from "./utils";
 
@@ -184,6 +185,30 @@ function roleGoal(role: string): string[] {
         "- Open durable memory files only if the diff or issue suggests a workflow, architecture, or policy mismatch.",
         "- Focus on requirements drift, contract mismatches, and contradictions with repo guidance.",
         "- Do not report docs-only wording concerns unless they reveal a code or workflow defect.",
+      ];
+    case "prisma_postgres_reviewer":
+      return [
+        "- Focus on Prisma schema, migration SQL, PostgreSQL uniqueness semantics, nullability, and relation invariants.",
+        "- Look for places where application code assumes a database guarantee that the schema or migration does not actually enforce.",
+        "- Prefer findings around unique indexes, partial indexes, check constraints, nullable uniqueness, and schema/migration drift.",
+      ];
+    case "migration_invariant_reviewer":
+      return [
+        "- Focus on persisted-state invariants that should be enforced by the database, not just by application validation.",
+        "- Look for invalid row combinations, missing CHECK constraints, unsafe defaults, and migrations that allow data shapes the code treats as impossible.",
+        "- Report only concrete invariant gaps that could survive into production data.",
+      ];
+    case "contract_consistency_reviewer":
+      return [
+        "- Compare API contracts, TypeScript types, schema fields, docs, and tests for drift.",
+        "- Look for dropped required fields, widened enums, missing audit fields, and response shapes that no longer match documented behavior.",
+        "- Focus on contract mismatches that can break callers or hide data needed for downstream logic.",
+      ];
+    case "ui_regression_reviewer":
+      return [
+        "- Focus on UI or browser-flow regressions suggested by the diff, especially around Playwright-covered surfaces.",
+        "- Look for changed selectors, state transitions, form flows, and rendering assumptions that could break existing end-to-end tests.",
+        "- Report concrete regressions, not general UX suggestions.",
       ];
     default:
       return [
@@ -413,7 +438,12 @@ export async function runLocalReview(args: {
   alwaysReadFiles: string[];
   onDemandFiles: string[];
 }): Promise<LocalReviewResult> {
-  const roles = args.config.localReviewRoles.length > 0 ? args.config.localReviewRoles : ["reviewer", "explorer"];
+  const roles =
+    args.config.localReviewRoles.length > 0
+      ? args.config.localReviewRoles
+      : args.config.localReviewAutoDetect
+        ? await detectLocalReviewRoles(args.config)
+        : ["reviewer", "explorer"];
   const roleResults: LocalReviewRoleResult[] = new Array(roles.length);
   const concurrency = Math.min(2, roles.length);
   let currentIndex = 0;
