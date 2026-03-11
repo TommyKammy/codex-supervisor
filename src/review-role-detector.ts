@@ -94,23 +94,26 @@ async function detectRepoSignals(repoPath: string): Promise<{
 export async function detectLocalReviewRoles(config: SupervisorConfig): Promise<string[]> {
   const roles = new Set<string>(["reviewer", "explorer"]);
   const signals = await detectRepoSignals(config.repoPath);
+  const hasDurableMemorySignals =
+    config.sharedMemoryFiles.length > 0 ||
+    (config.gsdEnabled === true &&
+      config.gsdPlanningFiles.length > 0 &&
+      (await existsAny(config.repoPath, config.gsdPlanningFiles)));
 
-  if (signals.hasDocs || config.sharedMemoryFiles.length > 0 || config.gsdPlanningFiles.length > 0) {
+  if (signals.hasDocs || hasDurableMemorySignals) {
     roles.add("docs_researcher");
   }
 
   if (signals.hasPrisma) {
     roles.add("prisma_postgres_reviewer");
-    roles.add("migration_invariant_reviewer");
-    roles.add("contract_consistency_reviewer");
-  } else {
-    if (signals.hasMigrations && (signals.hasTypescript || signals.hasPython || signals.hasGo || signals.hasElixir || signals.hasRuby)) {
-      roles.add("migration_invariant_reviewer");
-    }
+  }
 
-    if (signals.hasContracts && (signals.hasTypescript || signals.hasPython)) {
-      roles.add("contract_consistency_reviewer");
-    }
+  if (signals.hasMigrations && (signals.hasTypescript || signals.hasPython || signals.hasGo || signals.hasElixir || signals.hasRuby)) {
+    roles.add("migration_invariant_reviewer");
+  }
+
+  if (signals.hasContracts && (signals.hasTypescript || signals.hasPython)) {
+    roles.add("contract_consistency_reviewer");
   }
 
   if (signals.hasPlaywright) {

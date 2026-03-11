@@ -50,13 +50,18 @@ function createConfig(repoPath: string, overrides: Partial<SupervisorConfig> = {
   };
 }
 
-test("detectLocalReviewRoles adds prisma specialists for prisma repos", async () => {
+test("detectLocalReviewRoles adds prisma specialists for prisma repos", async (t) => {
   const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-roles-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
   await fs.writeFile(path.join(repoPath, "package.json"), "{}\n", "utf8");
   await fs.mkdir(path.join(repoPath, "prisma"), { recursive: true });
   await fs.writeFile(path.join(repoPath, "prisma", "schema.prisma"), "datasource db { provider = \"postgresql\" }\n", "utf8");
   await fs.mkdir(path.join(repoPath, "docs"), { recursive: true });
   await fs.writeFile(path.join(repoPath, "docs", "architecture.md"), "# Architecture\n", "utf8");
+  await fs.mkdir(path.join(repoPath, "apps", "core-api", "prisma", "migrations"), { recursive: true });
+  await fs.mkdir(path.join(repoPath, "packages", "contracts"), { recursive: true });
 
   const roles = await detectLocalReviewRoles(createConfig(repoPath));
 
@@ -70,8 +75,11 @@ test("detectLocalReviewRoles adds prisma specialists for prisma repos", async ()
   ]);
 });
 
-test("detectLocalReviewRoles adds UI reviewer for playwright repos", async () => {
+test("detectLocalReviewRoles adds UI reviewer for playwright repos", async (t) => {
   const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-roles-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
   await fs.writeFile(path.join(repoPath, "package.json"), "{}\n", "utf8");
   await fs.writeFile(path.join(repoPath, "playwright.config.ts"), "export default {};\n", "utf8");
 
