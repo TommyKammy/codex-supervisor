@@ -164,3 +164,24 @@ export async function cleanupWorkspace(
     { allowExitCodes: [0, 1] },
   );
 }
+
+export function isSafeCleanupTarget(
+  config: Pick<SupervisorConfig, "workspaceRoot" | "branchPrefix">,
+  workspacePath: string,
+  branch: string,
+): boolean {
+  const resolvedRoot = path.resolve(config.workspaceRoot);
+  const resolvedWorkspace = path.resolve(workspacePath);
+  const relativeWorkspace = path.relative(resolvedRoot, resolvedWorkspace);
+
+  if (
+    relativeWorkspace === "" ||
+    relativeWorkspace.startsWith("..") ||
+    path.isAbsolute(relativeWorkspace) ||
+    !relativeWorkspace.startsWith("issue-")
+  ) {
+    return false;
+  }
+
+  return branch.startsWith(config.branchPrefix) && isValidGitRefName(branch);
+}

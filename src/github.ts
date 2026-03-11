@@ -95,6 +95,23 @@ export class GitHubClient {
     return { owner, repo };
   }
 
+  async authStatus(): Promise<{ ok: boolean; message: string | null }> {
+    const result = await runCommand(
+      "gh",
+      ["auth", "status", "--hostname", "github.com"],
+      { allowExitCodes: [0, 1] },
+    );
+
+    if (result.exitCode === 0) {
+      return { ok: true, message: null };
+    }
+
+    return {
+      ok: false,
+      message: truncate([result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n"), 500),
+    };
+  }
+
   async listAllIssues(): Promise<GitHubIssue[]> {
     const result = await runCommand("gh", [
       "issue",

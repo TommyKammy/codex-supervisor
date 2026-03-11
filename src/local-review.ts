@@ -35,6 +35,8 @@ export interface LocalReviewRoleResult {
   recommendation: "ready" | "changes_requested" | "unknown";
   findings: LocalReviewFinding[];
   rawOutput: string;
+  exitCode: number;
+  degraded: boolean;
 }
 
 export interface LocalReviewResult {
@@ -45,6 +47,7 @@ export interface LocalReviewResult {
   findingsCount: number;
   maxSeverity: LocalReviewSeverity;
   recommendation: "ready" | "changes_requested" | "unknown";
+  degraded: boolean;
   rawOutput: string;
 }
 
@@ -386,6 +389,8 @@ async function runRoleReview(args: {
   return {
     role: args.role,
     rawOutput,
+    exitCode: result.exitCode,
+    degraded: result.exitCode !== 0,
     ...parsed,
   };
 }
@@ -433,12 +438,13 @@ export async function runLocalReview(args: {
   const actionableFindings = dedupeFindings(
     allFindings.filter((finding) => finding.confidence >= args.config.localReviewConfidenceThreshold),
   );
+  const degraded = roleResults.some((result) => result.degraded);
   const aggregateSummary = truncate(
-    `Roles run: ${roles.join(", ")}. Actionable findings above confidence ${args.config.localReviewConfidenceThreshold.toFixed(2)}: ${actionableFindings.length}.`,
+    `Roles run: ${roles.join(", ")}. Actionable findings above confidence ${args.config.localReviewConfidenceThreshold.toFixed(2)}: ${actionableFindings.length}. Degraded roles: ${roleResults.filter((result) => result.degraded).length}.`,
     500,
   ) ?? "";
   const aggregateRecommendation: LocalReviewResult["recommendation"] =
-    actionableFindings.length > 0 ? "changes_requested" : "ready";
+    degraded ? "unknown" : actionableFindings.length > 0 ? "changes_requested" : "ready";
   const ranAt = nowIso();
   const dirPath = reviewDir(args.config, args.issue.number);
   await ensureDir(dirPath);
@@ -464,6 +470,7 @@ export async function runLocalReview(args: {
       `- Actionable findings: ${actionableFindings.length}`,
       `- Max severity: ${maxSeverity(actionableFindings)}`,
       `- Recommendation: ${aggregateRecommendation}`,
+      `- Degraded: ${degraded ? "yes" : "no"}`,
       "",
       "## Role summaries",
       summarizeRoles(roleResults),
@@ -505,11 +512,14 @@ export async function runLocalReview(args: {
         roles,
         summary: aggregateSummary,
         recommendation: aggregateRecommendation,
+        degraded,
         findingsCount: actionableFindings.length,
         maxSeverity: maxSeverity(actionableFindings),
         actionableFindings,
         roleReports: roleResults.map((result) => ({
           role: result.role,
+          exitCode: result.exitCode,
+          degraded: result.degraded,
           summary: result.summary,
           recommendation: result.recommendation,
           findings: result.findings,
@@ -529,6 +539,7 @@ export async function runLocalReview(args: {
     findingsCount: actionableFindings.length,
     maxSeverity: maxSeverity(actionableFindings),
     recommendation: aggregateRecommendation,
+    degraded,
     rawOutput,
   };
 }

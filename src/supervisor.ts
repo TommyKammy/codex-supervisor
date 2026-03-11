@@ -30,6 +30,7 @@ import {
   cleanupWorkspace,
   ensureWorkspace,
   getWorkspaceStatus,
+  isSafeCleanupTarget,
   pushBranch,
   workspacePathForIssue,
 } from "./workspace";
@@ -52,6 +53,7 @@ function createIssueRecord(config: SupervisorConfig, issueNumber: number): Issue
     local_review_max_severity: null,
     local_review_findings_count: 0,
     local_review_recommendation: null,
+    local_review_degraded: false,
     attempt_count: 0,
     timeout_retry_count: 0,
     blocked_verification_retry_count: 0,
@@ -84,10 +86,63 @@ function localReviewBlocksReady(record: Pick<IssueRunRecord, "local_review_head_
   return (
     record.local_review_head_sha === pr.headRefOid &&
     (
-      record.local_review_recommendation === "changes_requested" ||
+      record.local_review_recommendation !== "ready" ||
       record.local_review_findings_count > 0
     )
   );
+}
+
+function buildAuthFailureContext(message: string): FailureContext {
+  return {
+    category: "manual",
+    summary: "GitHub CLI authentication is unavailable.",
+    signature: "gh-auth-unavailable",
+    command: "gh auth status --hostname github.com",
+    details: [message],
+    url: null,
+    updated_at: nowIso(),
+  };
+}
+
+async function handleAuthFailure(
+  github: GitHubClient,
+  stateStore: StateStore,
+  state: SupervisorStateFile,
+): Promise<string | null> {
+  const auth = await github.authStatus();
+  if (auth.ok) {
+    return null;
+  }
+
+  if (state.activeIssueNumber !== null) {
+    const activeRecord = state.issues[String(state.activeIssueNumber)];
+    if (activeRecord) {
+      const failureContext = buildAuthFailureContext(auth.message ?? "GitHub CLI authentication is unavailable.");
+      state.issues[String(activeRecord.issue_number)] = stateStore.touch(activeRecord, {
+        state: "blocked",
+        last_error: truncate(auth.message ?? failureContext.summary, 1000),
+        last_failure_kind: "command_error",
+        last_failure_context: failureContext,
+        ...applyFailureSignature(activeRecord, failureContext),
+        blocked_reason: "unknown",
+      });
+      await stateStore.save(state);
+      return `Paused issue #${activeRecord.issue_number}: GitHub auth unavailable.`;
+    }
+  }
+
+  return `Skipped supervisor cycle: GitHub auth unavailable (${auth.message ?? "gh auth status failed"}).`;
+}
+
+async function cleanupRecordWorkspace(config: SupervisorConfig, record: IssueRunRecord): Promise<void> {
+  if (!isSafeCleanupTarget(config, record.workspace, record.branch)) {
+    console.warn(
+      `Skipped unsafe cleanup target workspace=${record.workspace} branch=${record.branch} for issue #${record.issue_number}.`,
+    );
+    return;
+  }
+
+  await cleanupWorkspace(config.repoPath, record.workspace, record.branch);
 }
 
 function classifyFailure(message: string | null | undefined): "timeout" | "command_error" {
@@ -819,7 +874,7 @@ async function cleanupExpiredDoneWorkspaces(
     const overflowCount = existingDoneRecords.length - config.maxDoneWorkspaces;
     const overflowRecords = existingDoneRecords.slice(0, overflowCount);
     for (const record of overflowRecords) {
-      await cleanupWorkspace(config.repoPath, record.workspace, record.branch);
+      await cleanupRecordWorkspace(config, record);
       cleanedWorkspacePaths.add(record.workspace);
     }
   }
@@ -837,7 +892,7 @@ async function cleanupExpiredDoneWorkspaces(
       continue;
     }
 
-    await cleanupWorkspace(config.repoPath, record.workspace, record.branch);
+    await cleanupRecordWorkspace(config, record);
   }
 }
 
@@ -849,6 +904,7 @@ function doneResetPatch(
     last_error: null,
     blocked_reason: null,
     local_review_recommendation: null,
+    local_review_degraded: false,
     last_failure_kind: null,
     last_failure_context: null,
     last_blocker_signature: null,
@@ -1197,6 +1253,10 @@ export class Supervisor {
 
   async runOnce(options: Pick<CliOptions, "dryRun">): Promise<string> {
     const state = await this.stateStore.load();
+    const authFailure = await handleAuthFailure(this.github, this.stateStore, state);
+    if (authFailure) {
+      return authFailure;
+    }
     const issues = await this.github.listAllIssues();
     await reconcileTrackedMergedButOpenIssues(this.github, this.stateStore, state, issues);
     await reconcileMergedIssueClosures(this.github, this.stateStore, state, issues);
@@ -1726,11 +1786,14 @@ export class Supervisor {
             local_review_max_severity: localReview.maxSeverity,
             local_review_findings_count: localReview.findingsCount,
             local_review_recommendation: localReview.recommendation,
-            blocked_reason: localReview.recommendation === "changes_requested" ? "verification" : null,
+            local_review_degraded: localReview.degraded,
+            blocked_reason: localReview.recommendation !== "ready" ? "verification" : null,
             last_error:
-              localReview.recommendation === "changes_requested"
+              localReview.recommendation !== "ready"
                 ? truncate(
-                    `Local review requested changes (${localReview.findingsCount} actionable findings). PR will remain draft until the branch is updated and re-reviewed.`,
+                    localReview.degraded
+                      ? "Local review completed in a degraded state. PR will remain draft until local review succeeds cleanly."
+                      : `Local review requested changes (${localReview.findingsCount} actionable findings). PR will remain draft until the branch is updated and re-reviewed.`,
                     500,
                   )
                 : null,
@@ -1745,6 +1808,8 @@ export class Supervisor {
             local_review_max_severity: null,
             local_review_findings_count: 0,
             local_review_recommendation: "unknown",
+            local_review_degraded: true,
+            blocked_reason: "verification",
             last_error: `Local review failed: ${truncate(message, 500) ?? "unknown error"}`,
           });
         }
