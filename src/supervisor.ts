@@ -848,12 +848,16 @@ function formatRecentRecord(record: IssueRunRecord | null): string {
 function localReviewHeadStatus(
   record: Pick<IssueRunRecord, "local_review_head_sha">,
   pr: Pick<GitHubPullRequest, "headRefOid"> | null,
-): "none" | "current" | "stale" {
+): "none" | "current" | "stale" | "unknown" {
   if (!record.local_review_head_sha) {
     return "none";
   }
 
-  return pr && record.local_review_head_sha === pr.headRefOid ? "current" : "stale";
+  if (!pr) {
+    return "unknown";
+  }
+
+  return record.local_review_head_sha === pr.headRefOid ? "current" : "stale";
 }
 
 function localReviewIsGating(

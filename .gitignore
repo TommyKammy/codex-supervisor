@@ -1,4 +1,5 @@
 node_modules/
 dist/
 .local/
+.codex-supervisor/issue-journal.md
 supervisor.config.json
