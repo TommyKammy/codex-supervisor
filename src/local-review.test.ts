@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { shouldRunLocalReview } from "./local-review";
+import { finalizeLocalReview, shouldRunLocalReview } from "./local-review";
 import { GitHubPullRequest, SupervisorConfig } from "./types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
@@ -79,4 +79,74 @@ test("shouldRunLocalReview does not rerun on ready PR head updates in advisory m
   const pr = createPullRequest({ isDraft: false, headRefOid: "newhead" });
 
   assert.equal(shouldRunLocalReview(config, record, pr), false);
+});
+
+test("finalizeLocalReview keeps raw high-severity findings separate from dismissed verifier results", () => {
+  const result = finalizeLocalReview({
+    config: createConfig({ localReviewConfidenceThreshold: 0.7 }),
+    issueNumber: 38,
+    prNumber: 12,
+    branch: "codex/issue-38",
+    headSha: "deadbeefcafebabe",
+    roleResults: [
+      {
+        role: "reviewer",
+        summary: "Flagged one high issue and one medium issue.",
+        recommendation: "changes_requested",
+        degraded: false,
+        exitCode: 0,
+        rawOutput: "review raw output",
+        findings: [
+          {
+            role: "reviewer",
+            title: "False high severity",
+            body: "Looks severe at first glance.",
+            file: "src/example.ts",
+            start: 10,
+            end: 12,
+            severity: "high",
+            confidence: 0.95,
+            category: "correctness",
+            evidence: "Initial evidence",
+          },
+          {
+            role: "reviewer",
+            title: "Real medium severity",
+            body: "This still needs follow-up.",
+            file: "src/example.ts",
+            start: 20,
+            end: 21,
+            severity: "medium",
+            confidence: 0.9,
+            category: "tests",
+            evidence: null,
+          },
+        ],
+      },
+    ],
+    verifierReport: {
+      role: "verifier",
+      summary: "Dismissed the high-severity finding after re-check.",
+      recommendation: "ready",
+      degraded: false,
+      exitCode: 0,
+      rawOutput: "verifier raw output",
+      findings: [
+        {
+          findingKey: "src/example.ts|10|12|false high severity|looks severe at first glance.",
+          verdict: "dismissed",
+          rationale: "The code path is already guarded.",
+        },
+      ],
+    },
+    ranAt: "2026-03-11T14:05:00Z",
+  });
+
+  assert.equal(result.findingsCount, 2);
+  assert.equal(result.maxSeverity, "high");
+  assert.equal(result.verifiedFindingsCount, 0);
+  assert.equal(result.verifiedMaxSeverity, "none");
+  assert.equal(result.artifact.verification.findingsCount, 1);
+  assert.equal(result.artifact.verification.verifiedFindingsCount, 0);
+  assert.equal(result.artifact.verification.findings[0]?.verdict, "dismissed");
 });
