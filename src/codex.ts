@@ -89,6 +89,13 @@ function phaseGuidance(state: RunState): string[] {
     ];
   }
 
+  if (state === "implementing") {
+    return [
+      "- The current branch needs concrete code changes, not another clean-checkpoint pass.",
+      "- Focus on the narrowest implementation fix that addresses the active blocker or review finding.",
+    ];
+  }
+
   if (state === "stabilizing") {
     return [
       "- You already have progress in the branch. Focus on turning current changes into a clean, reviewable checkpoint.",
