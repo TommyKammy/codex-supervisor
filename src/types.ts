@@ -113,6 +113,7 @@ export interface IssueRunRecord {
   local_review_run_at: string | null;
   local_review_max_severity: "none" | "low" | "medium" | "high" | null;
   local_review_findings_count: number;
+  local_review_recommendation: "ready" | "changes_requested" | "unknown" | null;
   attempt_count: number;
   timeout_retry_count: number;
   blocked_verification_retry_count: number;

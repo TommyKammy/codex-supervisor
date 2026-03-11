@@ -4,11 +4,19 @@ import { runCommand } from "./command";
 import { SupervisorConfig, WorkspaceStatus } from "./types";
 import { ensureDir } from "./utils";
 
+function assertIssueNumber(issueNumber: number): void {
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+    throw new Error(`Invalid issue number: ${issueNumber}`);
+  }
+}
+
 export function branchNameForIssue(config: SupervisorConfig, issueNumber: number): string {
+  assertIssueNumber(issueNumber);
   return `${config.branchPrefix}${issueNumber}`;
 }
 
 export function workspacePathForIssue(config: SupervisorConfig, issueNumber: number): string {
+  assertIssueNumber(issueNumber);
   return path.join(config.workspaceRoot, `issue-${issueNumber}`);
 }
 
@@ -35,6 +43,7 @@ export async function ensureWorkspace(
   issueNumber: number,
   branch: string,
 ): Promise<string> {
+  assertIssueNumber(issueNumber);
   const workspacePath = workspacePathForIssue(config, issueNumber);
   await ensureDir(config.workspaceRoot);
   await runCommand("git", ["-C", config.repoPath, "fetch", "origin", config.defaultBranch]);

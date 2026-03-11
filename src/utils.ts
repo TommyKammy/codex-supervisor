@@ -31,7 +31,7 @@ export async function writeJsonAtomic(filePath: string, value: unknown): Promise
 export async function readJsonIfExists<T>(filePath: string): Promise<T | null> {
   try {
     const raw = await fs.readFile(filePath, "utf8");
-    return JSON.parse(raw) as T;
+    return parseJson<T>(raw, filePath);
   } catch (error) {
     const maybeErr = error as NodeJS.ErrnoException;
     if (maybeErr.code === "ENOENT") {
@@ -52,6 +52,15 @@ export function isTerminalState(state: string): boolean {
 
 export function resolveMaybeRelative(baseDir: string, inputPath: string): string {
   return path.isAbsolute(inputPath) ? inputPath : path.resolve(baseDir, inputPath);
+}
+
+export function parseJson<T>(raw: string, source: string): T {
+  try {
+    return JSON.parse(raw) as T;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to parse JSON from ${source}: ${message}`);
+  }
 }
 
 export function hoursSince(isoTimestamp: string): number {

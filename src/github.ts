@@ -7,11 +7,7 @@ import {
   SupervisorConfig,
 } from "./types";
 import { runCommand } from "./command";
-import { truncate } from "./utils";
-
-function parseJson<T>(stdout: string): T {
-  return JSON.parse(stdout) as T;
-}
+import { parseJson, truncate } from "./utils";
 
 interface PullRequestStatusCheckRollupResponse {
   statusCheckRollup?: Array<{
@@ -112,7 +108,7 @@ export class GitHubClient {
       "--json",
       "number,title,body,createdAt,updatedAt,url,labels,state",
     ]);
-    return parseJson<GitHubIssue[]>(result.stdout);
+    return parseJson<GitHubIssue[]>(result.stdout, "gh issue list");
   }
 
   async listCandidateIssues(): Promise<GitHubIssue[]> {
@@ -138,7 +134,7 @@ export class GitHubClient {
     }
 
     const result = await runCommand("gh", args);
-    const issues = parseJson<GitHubIssue[]>(result.stdout);
+    const issues = parseJson<GitHubIssue[]>(result.stdout, "gh issue list --candidate");
     return issues.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   }
 
@@ -152,7 +148,7 @@ export class GitHubClient {
       "--json",
       "number,title,body,createdAt,updatedAt,url,labels,state",
     ]);
-    return parseJson<GitHubIssue>(result.stdout);
+    return parseJson<GitHubIssue>(result.stdout, `gh issue view #${issueNumber}`);
   }
 
   async findOpenPullRequest(branch: string): Promise<GitHubPullRequest | null> {
@@ -170,7 +166,7 @@ export class GitHubClient {
       "--json",
       "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,headRefName,headRefOid,mergedAt",
     ]);
-    const pullRequests = parseJson<GitHubPullRequest[]>(result.stdout);
+    const pullRequests = parseJson<GitHubPullRequest[]>(result.stdout, `gh pr list --head ${branch}`);
     return pullRequests[0] ?? null;
   }
 
@@ -189,7 +185,7 @@ export class GitHubClient {
       "--json",
       "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,headRefName,headRefOid,mergedAt",
     ]);
-    const pullRequests = parseJson<GitHubPullRequest[]>(result.stdout);
+    const pullRequests = parseJson<GitHubPullRequest[]>(result.stdout, `gh pr list --all --head ${branch}`);
     const sorted = [...pullRequests].sort((left, right) => {
       const leftTimestamp = Date.parse(left.updatedAt ?? left.createdAt);
       const rightTimestamp = Date.parse(right.updatedAt ?? right.createdAt);
@@ -208,7 +204,7 @@ export class GitHubClient {
       "--json",
       "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,headRefName,headRefOid,mergedAt",
     ]);
-    return parseJson<GitHubPullRequest>(result.stdout);
+    return parseJson<GitHubPullRequest>(result.stdout, `gh pr view #${prNumber}`);
   }
 
   async getPullRequestIfExists(prNumber: number): Promise<GitHubPullRequest | null> {
@@ -227,7 +223,7 @@ export class GitHubClient {
     );
 
     if (result.exitCode === 0) {
-      return parseJson<GitHubPullRequest>(result.stdout);
+      return parseJson<GitHubPullRequest>(result.stdout, `gh pr view #${prNumber}`);
     }
 
     const stderr = result.stderr.toLowerCase();
@@ -314,7 +310,7 @@ export class GitHubClient {
           };
         };
       };
-    }>(result.stdout);
+    }>(result.stdout, `gh api graphql closedByPullRequestsReferences issue=${issueNumber}`);
 
     const pullRequests = parsed.data?.repository?.issue?.closedByPullRequestsReferences?.nodes ?? [];
     return pullRequests
@@ -340,7 +336,7 @@ export class GitHubClient {
     const trimmed = result.stdout.trim();
     if (trimmed !== "") {
       try {
-        return parseJson<PullRequestCheck[]>(trimmed);
+        return parseJson<PullRequestCheck[]>(trimmed, `gh pr checks #${prNumber}`);
       } catch {
         // Fall back to statusCheckRollup when gh pr checks emitted non-JSON or incompatible JSON.
       }
@@ -362,7 +358,7 @@ export class GitHubClient {
 
     const fallbackTrimmed = fallback.stdout.trim();
     if (fallback.exitCode === 0 && fallbackTrimmed !== "") {
-      return normalizeRollupChecks(parseJson<PullRequestStatusCheckRollupResponse>(fallbackTrimmed));
+      return normalizeRollupChecks(parseJson<PullRequestStatusCheckRollupResponse>(fallbackTrimmed, `gh pr view statusCheckRollup #${prNumber}`));
     }
 
     if (result.exitCode !== 0) {
@@ -532,7 +528,7 @@ export class GitHubClient {
           };
         };
       };
-    }>(result.stdout);
+    }>(result.stdout, `gh api graphql reviewThreads pr=${prNumber}`);
 
     const threads = payload.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
     return threads.map((thread) => ({

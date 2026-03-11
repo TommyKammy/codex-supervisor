@@ -57,6 +57,15 @@ async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const supervisor = Supervisor.fromConfig(options.configPath);
   const pollIntervalMs = supervisor.pollIntervalMs();
+  let shouldStop = false;
+
+  const requestStop = (signal: NodeJS.Signals): void => {
+    shouldStop = true;
+    console.log(`${new Date().toISOString()} received ${signal}, stopping after current cycle`);
+  };
+
+  process.once("SIGINT", () => requestStop("SIGINT"));
+  process.once("SIGTERM", () => requestStop("SIGTERM"));
 
   if (options.command !== "status") {
     const installMessage = await ensureGsdInstalled(supervisor.config);
@@ -75,7 +84,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  while (true) {
+  while (!shouldStop) {
     try {
       const message = await runOnceWithSupervisorLock(supervisor, "loop", { dryRun: options.dryRun });
       console.log(`${new Date().toISOString()} ${message}`);
@@ -84,7 +93,9 @@ async function main(): Promise<void> {
       console.error(`${new Date().toISOString()} loop-error ${message}`);
     }
 
-    await sleep(pollIntervalMs);
+    if (!shouldStop) {
+      await sleep(pollIntervalMs);
+    }
   }
 }
 
