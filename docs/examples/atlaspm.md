@@ -35,7 +35,8 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
     "docs/decisions.md"
   ],
   "localReviewEnabled": true,
-  "localReviewRoles": ["reviewer", "explorer", "docs_researcher"],
+  "localReviewAutoDetect": true,
+  "localReviewRoles": [],
   "localReviewArtifactDir": "/Users/yourname/Dev/codex-supervisor/.local/reviews",
   "localReviewConfidenceThreshold": 0.7,
   "reviewBotLogins": ["copilot-pull-request-reviewer"],
@@ -66,6 +67,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
 - If you use GSD for upstream planning, enable `gsdEnabled` and point `gsdPlanningFiles` at `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, and `STATE.md`.
 - Copilot review is expected to start automatically after the PR is marked ready.
 - A local advisory review swarm can run before `gh pr ready`, with Markdown (`head-<sha>.md`) and JSON (`head-<sha>.json`) artifacts written under the supervisor's `.local/reviews` directory.
+- Leaving `localReviewRoles` empty while `localReviewAutoDetect` is `true` lets the supervisor add repo-specific specialists such as `prisma_postgres_reviewer`, `migration_invariant_reviewer`, and `contract_consistency_reviewer`.
 - Findings below the configured confidence threshold stay in the raw role reports but are not counted as actionable.
 - Even with multiple local review roles, the reviewer turn should still read the generated context index and issue journal first, then open durable memory files only on demand.
 - `codexModelStrategy: "inherit"` means the supervisor follows the Codex CLI/App default model automatically. In practice, set the Codex default model to `GPT-5.4` and let the supervisor inherit it.

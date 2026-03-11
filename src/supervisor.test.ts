@@ -21,6 +21,7 @@ function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConf
     gsdInstallScope: "global",
     gsdPlanningFiles: [],
     localReviewEnabled: false,
+    localReviewAutoDetect: true,
     localReviewRoles: [],
     localReviewArtifactDir: "/tmp/reviews",
     localReviewConfidenceThreshold: 0.7,

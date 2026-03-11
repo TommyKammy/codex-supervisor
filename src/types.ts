@@ -41,6 +41,7 @@ export interface SupervisorConfig {
   gsdCodexConfigDir?: string;
   gsdPlanningFiles: string[];
   localReviewEnabled: boolean;
+  localReviewAutoDetect: boolean;
   localReviewRoles: string[];
   localReviewArtifactDir: string;
   localReviewConfidenceThreshold: number;

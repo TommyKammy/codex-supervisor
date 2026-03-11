@@ -190,6 +190,92 @@ hand-off の境界はこうです。
 
 supervisor は、まず compact context index を読み、その後必要な durable memory だけを on-demand で開きます。
 
+## local review swarm
+
+`codex-supervisor` は、draft PR を ready にする前に local advisory review swarm を実行できます。
+
+重要な点は次の通りです。
+
+- 各 role は別々の Codex turn で実行される
+- swarm はデフォルトでは advisory である
+- findings は Markdown と JSON artifact に保存される
+- ここでも context 節約方針は同じで、まず compact context index と issue journal を読み、その後必要な durable memory だけを on-demand で開く
+
+review role の選び方は 2 通りあります。
+
+### 方法 1: role を自動検出する
+
+最初はこれが推奨です。
+
+`localReviewRoles` が空で、`localReviewAutoDetect` が `true` の場合、supervisor は managed repo の構成から role を推定します。
+
+例:
+
+```json
+{
+  "localReviewEnabled": true,
+  "localReviewAutoDetect": true,
+  "localReviewRoles": []
+}
+```
+
+baseline は次です。
+
+- `reviewer`
+- `explorer`
+
+そのうえで、repo の特徴に応じて specialist role を追加します。例えば:
+
+- docs や durable memory がある -> `docs_researcher`
+- Prisma schema と migrations がある -> `prisma_postgres_reviewer`, `migration_invariant_reviewer`, `contract_consistency_reviewer`
+- Playwright を使う repo -> `ui_regression_reviewer`
+
+初回セットアップでは、最初から role 設計を細かくしなくてよいので、この方法が扱いやすいです。
+
+### 方法 2: role を明示指定する
+
+完全に手動で制御したい場合は、role を明示指定します。
+
+例:
+
+```json
+{
+  "localReviewEnabled": true,
+  "localReviewAutoDetect": false,
+  "localReviewRoles": [
+    "reviewer",
+    "explorer",
+    "docs_researcher",
+    "prisma_postgres_reviewer",
+    "migration_invariant_reviewer",
+    "contract_consistency_reviewer"
+  ]
+}
+```
+
+この方法が向いているのは次のケースです。
+
+- その repo に specialist reviewer が必要だと既に分かっている
+- マシンごとの差を減らしたい
+- swarm の比較検証を継続したい
+
+### specialist role の役割
+
+汎用 role は broad な bug hunt には役立ちますが、repo 固有の欠陥は取りこぼします。
+
+例:
+
+- `prisma_postgres_reviewer`
+  - PostgreSQL の unique 制約 semantics、nullable unique の罠、partial index、Prisma/schema の不整合を見る
+- `migration_invariant_reviewer`
+  - app code では禁止しているのに DB では入ってしまう invalid state を見る
+- `contract_consistency_reviewer`
+  - contract、schema、docs、tests のズレを見る
+- `ui_regression_reviewer`
+  - browser flow や E2E regression の可能性を見る
+
+`atlaspm` のような repo では、generic role を増やすより、こうした specialist role を入れる方が効くことが多いです。
+
 ## issue 検知ではなく issue scheduling
 
 ここが最重要です。

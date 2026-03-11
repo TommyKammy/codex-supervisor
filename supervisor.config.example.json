@@ -39,11 +39,8 @@
     "STATE.md"
   ],
   "localReviewEnabled": false,
-  "localReviewRoles": [
-    "reviewer",
-    "explorer",
-    "docs_researcher"
-  ],
+  "localReviewAutoDetect": true,
+  "localReviewRoles": [],
   "localReviewArtifactDir": "./.local/reviews",
   "localReviewConfidenceThreshold": 0.7,
   "reviewBotLogins": [

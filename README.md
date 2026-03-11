@@ -139,7 +139,8 @@ Important fields:
 - `gsdCodexConfigDir`: optional Codex config directory for GSD installation
 - `gsdPlanningFiles`: GSD planning docs to treat as upstream durable memory
 - `localReviewEnabled`: run an advisory local review before a draft PR is marked ready
-- `localReviewRoles`: role labels for the local review swarm, for example `reviewer`, `explorer`, `docs_researcher`
+- `localReviewAutoDetect`: if `true`, infer a specialist review swarm from the managed repo shape when `localReviewRoles` is empty
+- `localReviewRoles`: explicit role labels for the local review swarm; leave empty to rely on auto-detect
 - `localReviewArtifactDir`: directory for generated local review artifacts
 - `localReviewConfidenceThreshold`: minimum confidence for a local review finding to be treated as actionable in saved artifacts
 - `reviewBotLogins`: bot reviewer logins that the supervisor may auto-address
@@ -362,11 +363,20 @@ This is designed to reduce dependence on GitHub-hosted auto review. The supervis
 
 - waits until the draft PR is green and conflict-free
 - runs one separate local review turn per configured role
-- supports reviewer roles such as `reviewer`, `explorer`, and `docs_researcher`
+- supports reviewer roles such as `reviewer`, `explorer`, `docs_researcher`, `prisma_postgres_reviewer`, `migration_invariant_reviewer`, and `contract_consistency_reviewer`
 - keeps the same context-budget policy used by implementation turns: read the compact context index and issue journal first, then open durable memory files only on demand
 - saves a Markdown summary plus a structured JSON artifact (for example `head-<sha>.json`) under `localReviewArtifactDir`
 - deduplicates findings and keeps only findings at or above `localReviewConfidenceThreshold`
 - then continues the normal ready / Copilot wait flow
+
+If `localReviewRoles` is empty and `localReviewAutoDetect` is enabled, the supervisor chooses a baseline swarm from the managed repo shape:
+
+- always starts with `reviewer` and `explorer`
+- adds `docs_researcher` when the repo has durable memory or docs
+- adds Prisma and migration specialists when it detects Prisma schema and migration-heavy layouts
+- adds `ui_regression_reviewer` for Playwright-heavy repos
+
+Use explicit `localReviewRoles` when you want full manual control.
 
 This review is advisory by default. It does not mutate code and it does not block merge unless you later add your own gating policy around the saved artifacts.
 
