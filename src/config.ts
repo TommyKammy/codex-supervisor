@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ReasoningEffort, RunState, SupervisorConfig } from "./types";
+import { LocalReviewHighSeverityAction, LocalReviewPolicy, ReasoningEffort, RunState, SupervisorConfig } from "./types";
 import { isValidGitRefName, parseJson, resolveMaybeRelative } from "./utils";
 
 const DEFAULT_CONFIG_FILE = "supervisor.config.json";
@@ -38,6 +38,8 @@ function assertBranchPrefix(value: string, label: string): string {
 }
 
 const VALID_REASONING_EFFORTS = new Set<ReasoningEffort>(["none", "low", "medium", "high", "xhigh"]);
+const VALID_LOCAL_REVIEW_POLICIES = new Set<LocalReviewPolicy>(["advisory", "block_ready", "block_merge"]);
+const VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS = new Set<LocalReviewHighSeverityAction>(["retry", "blocked"]);
 const VALID_RUN_STATES = new Set<RunState>([
   "queued",
   "planning",
@@ -156,6 +158,15 @@ export function loadConfig(configPath?: string): SupervisorConfig {
       raw.localReviewConfidenceThreshold <= 1
         ? raw.localReviewConfidenceThreshold
         : 0.7,
+    localReviewPolicy:
+      typeof raw.localReviewPolicy === "string" && VALID_LOCAL_REVIEW_POLICIES.has(raw.localReviewPolicy as LocalReviewPolicy)
+        ? (raw.localReviewPolicy as LocalReviewPolicy)
+        : "block_ready",
+    localReviewHighSeverityAction:
+      typeof raw.localReviewHighSeverityAction === "string" &&
+      VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS.has(raw.localReviewHighSeverityAction as LocalReviewHighSeverityAction)
+        ? (raw.localReviewHighSeverityAction as LocalReviewHighSeverityAction)
+        : "retry",
     reviewBotLogins: Array.isArray(raw.reviewBotLogins)
       ? raw.reviewBotLogins
           .filter((value): value is string => typeof value === "string" && value.trim() !== "")
