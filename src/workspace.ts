@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { runCommand } from "./command";
 import { SupervisorConfig, WorkspaceStatus } from "./types";
-import { ensureDir } from "./utils";
+import { ensureDir, isValidGitRefName } from "./utils";
 
 function assertIssueNumber(issueNumber: number): void {
   if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
@@ -12,7 +12,12 @@ function assertIssueNumber(issueNumber: number): void {
 
 export function branchNameForIssue(config: SupervisorConfig, issueNumber: number): string {
   assertIssueNumber(issueNumber);
-  return `${config.branchPrefix}${issueNumber}`;
+  const branch = `${config.branchPrefix}${issueNumber}`;
+  if (!isValidGitRefName(branch)) {
+    throw new Error(`Invalid branch name for issue ${issueNumber}: ${branch}`);
+  }
+
+  return branch;
 }
 
 export function workspacePathForIssue(config: SupervisorConfig, issueNumber: number): string {

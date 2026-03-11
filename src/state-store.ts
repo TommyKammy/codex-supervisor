@@ -194,7 +194,7 @@ export class StateStore {
         return this.emptyState();
       }
 
-      if (error instanceof Error && error.message.includes("Failed to parse JSON")) {
+      if (error instanceof Error && error.cause instanceof SyntaxError) {
         console.warn(`${error.message}. Starting with empty state.`);
         return this.emptyState();
       }

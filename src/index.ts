@@ -58,9 +58,11 @@ async function main(): Promise<void> {
   const supervisor = Supervisor.fromConfig(options.configPath);
   const pollIntervalMs = supervisor.pollIntervalMs();
   let shouldStop = false;
+  let sleepController: AbortController | null = null;
 
   const requestStop = (signal: NodeJS.Signals): void => {
     shouldStop = true;
+    sleepController?.abort();
     console.log(`${new Date().toISOString()} received ${signal}, stopping after current cycle`);
   };
 
@@ -94,7 +96,9 @@ async function main(): Promise<void> {
     }
 
     if (!shouldStop) {
-      await sleep(pollIntervalMs);
+      sleepController = new AbortController();
+      await sleep(pollIntervalMs, sleepController.signal);
+      sleepController = null;
     }
   }
 }
