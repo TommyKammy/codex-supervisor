@@ -17,6 +17,8 @@ interface PullRequestStatusCheckRollupResponse {
     detailsUrl?: string | null;
     conclusion?: string | null;
     status?: string | null;
+    startedAt?: string | null;
+    completedAt?: string | null;
     context?: string;
     targetUrl?: string | null;
     state?: string | null;
@@ -53,9 +55,18 @@ function mapCheckBucket(args: {
   return outcome || "unknown";
 }
 
+function parseTimestamp(value: string | null | undefined): number {
+  if (!value) {
+    return 0;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function normalizeRollupChecks(rollup: PullRequestStatusCheckRollupResponse | null | undefined): PullRequestCheck[] {
   const nodes = rollup?.statusCheckRollup ?? [];
-  return nodes
+  const checks = nodes
     .map((node): PullRequestCheck | null => {
       if (node.__typename === "CheckRun" || node.name) {
         const state = (node.conclusion ?? node.status ?? "UNKNOWN").toUpperCase();
@@ -81,6 +92,44 @@ function normalizeRollupChecks(rollup: PullRequestStatusCheckRollupResponse | nu
       return null;
     })
     .filter((check): check is PullRequestCheck => check !== null);
+
+  const deduped = new Map<string, { check: PullRequestCheck; rank: number }>();
+  for (const node of nodes) {
+    const check =
+      (node.__typename === "CheckRun" || node.name)
+        ? {
+            name: node.name ?? "unknown",
+            state: (node.conclusion ?? node.status ?? "UNKNOWN").toUpperCase(),
+            bucket: mapCheckBucket({ state: node.status, conclusion: node.conclusion }),
+            workflow: node.workflowName ?? undefined,
+            link: node.detailsUrl ?? undefined,
+          }
+        : (node.__typename === "StatusContext" || node.context)
+          ? {
+              name: node.context ?? "unknown",
+              state: (node.state ?? "UNKNOWN").toUpperCase(),
+              bucket: mapCheckBucket({ state: node.state }),
+              link: node.targetUrl ?? undefined,
+            }
+          : null;
+
+    if (!check) {
+      continue;
+    }
+
+    const key = `${check.workflow ?? ""}::${check.name}`;
+    const rank = Math.max(parseTimestamp(node.completedAt), parseTimestamp(node.startedAt));
+    const existing = deduped.get(key);
+    if (!existing || rank >= existing.rank) {
+      deduped.set(key, { check, rank });
+    }
+  }
+
+  if (deduped.size > 0) {
+    return Array.from(deduped.values()).map((entry) => entry.check);
+  }
+
+  return checks;
 }
 
 export class GitHubClient {

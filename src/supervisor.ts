@@ -284,7 +284,7 @@ function isEligibleForSelection(record: IssueRunRecord | undefined, config: Supe
   );
 }
 
-function summarizeChecks(checks: PullRequestCheck[]): { allPassing: boolean; hasPending: boolean; hasFailing: boolean } {
+export function summarizeChecks(checks: PullRequestCheck[]): { allPassing: boolean; hasPending: boolean; hasFailing: boolean } {
   if (checks.length === 0) {
     return { allPassing: true, hasPending: false, hasFailing: false };
   }
@@ -294,10 +294,10 @@ function summarizeChecks(checks: PullRequestCheck[]): { allPassing: boolean; has
   let hasFailing = false;
 
   for (const check of checks) {
-    if (check.bucket === "pending") {
+    if (check.bucket === "pending" || check.bucket === "cancel") {
       hasPending = true;
       allPassing = false;
-    } else if (check.bucket === "fail" || check.bucket === "cancel") {
+    } else if (check.bucket === "fail") {
       hasFailing = true;
       allPassing = false;
     } else if (check.bucket !== "pass" && check.bucket !== "skipping") {
@@ -328,8 +328,8 @@ function inferStateWithoutPullRequest(
   return "stabilizing";
 }
 
-function buildChecksFailureContext(pr: GitHubPullRequest, checks: PullRequestCheck[]): FailureContext | null {
-  const failingChecks = checks.filter((check) => check.bucket === "fail" || check.bucket === "cancel");
+export function buildChecksFailureContext(pr: GitHubPullRequest, checks: PullRequestCheck[]): FailureContext | null {
+  const failingChecks = checks.filter((check) => check.bucket === "fail");
   if (failingChecks.length === 0) {
     return null;
   }

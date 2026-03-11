@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { reconcileRecoverableBlockedIssueStates, shouldAutoRetryHandoffMissing } from "./supervisor";
-import { GitHubIssue, IssueRunRecord, SupervisorConfig, SupervisorStateFile } from "./types";
+import {
+  buildChecksFailureContext,
+  reconcileRecoverableBlockedIssueStates,
+  shouldAutoRetryHandoffMissing,
+  summarizeChecks,
+} from "./supervisor";
+import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, SupervisorConfig, SupervisorStateFile } from "./types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
@@ -198,4 +203,40 @@ test("reconcileRecoverableBlockedIssueStates leaves closed issues blocked", asyn
 
   assert.deepEqual(state.issues["366"], original);
   assert.equal(saveCalls, 0);
+});
+
+test("summarizeChecks treats cancelled runs as waiting, not failing", () => {
+  const checks: PullRequestCheck[] = [
+    { name: "build (ubuntu-latest)", state: "CANCELLED", bucket: "cancel", workflow: "CI" },
+  ];
+
+  assert.deepEqual(summarizeChecks(checks), {
+    allPassing: false,
+    hasPending: true,
+    hasFailing: false,
+  });
+});
+
+test("buildChecksFailureContext ignores cancelled runs", () => {
+  const pr: GitHubPullRequest = {
+    number: 42,
+    title: "Test PR",
+    url: "https://example.test/pr/42",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "UNSTABLE",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-42",
+    headRefOid: "deadbeef",
+    mergedAt: null,
+  };
+
+  const checks: PullRequestCheck[] = [
+    { name: "build (ubuntu-latest)", state: "CANCELLED", bucket: "cancel", workflow: "CI" },
+    { name: "build (macos-latest)", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+  ];
+
+  assert.equal(buildChecksFailureContext(pr, checks), null);
 });
