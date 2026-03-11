@@ -96,20 +96,27 @@ export class GitHubClient {
   }
 
   async authStatus(): Promise<{ ok: boolean; message: string | null }> {
-    const result = await runCommand(
-      "gh",
-      ["auth", "status", "--hostname", "github.com"],
-      { allowExitCodes: [0, 1] },
-    );
+    try {
+      const result = await runCommand(
+        "gh",
+        ["auth", "status", "--hostname", "github.com"],
+        { allowExitCodes: [0, 1] },
+      );
 
-    if (result.exitCode === 0) {
-      return { ok: true, message: null };
+      if (result.exitCode === 0) {
+        return { ok: true, message: null };
+      }
+
+      return {
+        ok: false,
+        message: truncate([result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n"), 500),
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: truncate(error instanceof Error ? error.message : String(error), 500),
+      };
     }
-
-    return {
-      ok: false,
-      message: truncate([result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n"), 500),
-    };
   }
 
   async listAllIssues(): Promise<GitHubIssue[]> {

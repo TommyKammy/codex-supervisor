@@ -33,6 +33,7 @@ export async function runCommand(
     let timeoutHandle: NodeJS.Timeout | undefined;
     let killHandle: NodeJS.Timeout | undefined;
     let settled = false;
+    let timedOut = false;
 
     const settleReject = (error: Error): void => {
       if (settled) {
@@ -81,6 +82,7 @@ export async function runCommand(
           return;
         }
 
+        timedOut = true;
         const pid = child.pid;
         const timeoutMessage = `Command timed out after ${options.timeoutMs}ms: ${command} ${args.join(" ")}`;
         stderr += `${stderr.endsWith("\n") || stderr.length === 0 ? "" : "\n"}${timeoutMessage}\n`;
@@ -115,6 +117,21 @@ export async function runCommand(
 
     child.on("close", (code) => {
       const exitCode = code ?? 1;
+      if (timedOut) {
+        settleReject(
+          new Error(
+            [
+              `Command timed out: ${command} ${args.join(" ")}`,
+              `exitCode=${exitCode}`,
+              stderr.trim(),
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          ),
+        );
+        return;
+      }
+
       if (!allowExitCodes.includes(exitCode)) {
         settleReject(
           new Error(
