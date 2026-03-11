@@ -43,6 +43,8 @@
   "localReviewRoles": [],
   "localReviewArtifactDir": "./.local/reviews",
   "localReviewConfidenceThreshold": 0.7,
+  "localReviewPolicy": "block_ready",
+  "localReviewHighSeverityAction": "retry",
   "reviewBotLogins": [
     "copilot-pull-request-reviewer"
   ],

@@ -52,6 +52,25 @@ export interface LocalReviewResult {
   rawOutput: string;
 }
 
+export function localReviewHasActionableFindings(
+  record: Pick<IssueRunRecordLike, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+): boolean {
+  return (
+    record.local_review_head_sha === pr.headRefOid &&
+    (
+      record.local_review_recommendation !== "ready" ||
+      record.local_review_findings_count > 0
+    )
+  );
+}
+
+interface IssueRunRecordLike {
+  local_review_head_sha: string | null;
+  local_review_findings_count: number;
+  local_review_recommendation: "ready" | "changes_requested" | "unknown" | null;
+}
+
 interface RolePromptArgs {
   repoSlug: string;
   issue: GitHubIssue;

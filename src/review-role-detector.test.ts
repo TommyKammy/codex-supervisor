@@ -28,6 +28,8 @@ function createConfig(repoPath: string, overrides: Partial<SupervisorConfig> = {
     localReviewRoles: [],
     localReviewArtifactDir: "/tmp/reviews",
     localReviewConfidenceThreshold: 0.7,
+    localReviewPolicy: "block_ready",
+    localReviewHighSeverityAction: "retry",
     reviewBotLogins: [],
     humanReviewBlocksMerge: true,
     issueJournalRelativePath: ".codex-supervisor/issue-journal.md",

@@ -20,6 +20,8 @@ export type RunState =
 export type CodexModelStrategy = "inherit" | "fixed" | "alias";
 
 export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
+export type LocalReviewPolicy = "advisory" | "block_ready" | "block_merge";
+export type LocalReviewHighSeverityAction = "retry" | "blocked";
 
 export interface SupervisorConfig {
   repoPath: string;
@@ -45,6 +47,8 @@ export interface SupervisorConfig {
   localReviewRoles: string[];
   localReviewArtifactDir: string;
   localReviewConfidenceThreshold: number;
+  localReviewPolicy: LocalReviewPolicy;
+  localReviewHighSeverityAction: LocalReviewHighSeverityAction;
   reviewBotLogins: string[];
   humanReviewBlocksMerge: boolean;
   issueJournalRelativePath: string;

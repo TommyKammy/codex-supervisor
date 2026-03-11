@@ -143,6 +143,8 @@ Important fields:
 - `localReviewRoles`: explicit role labels for the local review swarm; leave empty to rely on auto-detect
 - `localReviewArtifactDir`: directory for generated local review artifacts
 - `localReviewConfidenceThreshold`: minimum confidence for a local review finding to be treated as actionable in saved artifacts
+- `localReviewPolicy`: `advisory`, `block_ready`, or `block_merge`
+- `localReviewHighSeverityAction`: `retry` or `blocked`
 - `reviewBotLogins`: bot reviewer logins that the supervisor may auto-address
 - `humanReviewBlocksMerge`: if `true`, unresolved human or unconfigured-bot review threads stop auto-merge and require manual intervention
 - `issueJournalRelativePath`: per-issue handoff journal inside each worktree
@@ -379,6 +381,17 @@ If `localReviewRoles` is empty and `localReviewAutoDetect` is enabled, the super
 Use explicit `localReviewRoles` when you want full manual control.
 
 This review is advisory by default. It does not mutate code and it does not block merge unless you later add your own gating policy around the saved artifacts.
+
+If you want stronger enforcement without giving the review swarm destructive powers, use policy gates instead of auto-closing PRs:
+
+- `advisory`: save findings only
+- `block_ready`: keep draft PRs from becoming ready when actionable findings exist
+- `block_merge`: allow the PR to become ready, but stop merge while actionable findings remain
+
+For high-severity findings, `localReviewHighSeverityAction` can either:
+
+- `retry`: send the issue back into another repair pass
+- `blocked`: require explicit human intervention
 
 ## Runtime
 

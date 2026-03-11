@@ -7,7 +7,7 @@ import { findBlockingIssue, findParentIssuesReadyToClose } from "./issue-metadat
 import { describeGsdIntegration } from "./gsd";
 import { hasMeaningfulJournalHandoff, issueJournalPath, readIssueJournal, syncIssueJournal } from "./journal";
 import { acquireFileLock, LockHandle } from "./lock";
-import { runLocalReview, shouldRunLocalReview } from "./local-review";
+import { localReviewHasActionableFindings, runLocalReview, shouldRunLocalReview } from "./local-review";
 import { syncMemoryArtifacts } from "./memory";
 import { StateStore } from "./state-store";
 import {
@@ -82,14 +82,48 @@ function trimProcessedReviewThreadIds(ids: string[]): string[] {
   return ids.slice(ids.length - MAX_PROCESSED_REVIEW_THREAD_IDS);
 }
 
-function localReviewBlocksReady(record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation">, pr: GitHubPullRequest): boolean {
+function localReviewBlocksReady(config: SupervisorConfig, record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation">, pr: GitHubPullRequest): boolean {
+  return config.localReviewPolicy === "block_ready" && localReviewHasActionableFindings(record, pr);
+}
+
+function localReviewBlocksMerge(config: SupervisorConfig, record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation">, pr: GitHubPullRequest): boolean {
+  return config.localReviewPolicy === "block_merge" && localReviewHasActionableFindings(record, pr);
+}
+
+function localReviewHighSeverityNeedsRetry(config: SupervisorConfig, record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_max_severity">, pr: GitHubPullRequest): boolean {
   return (
     record.local_review_head_sha === pr.headRefOid &&
-    (
-      record.local_review_recommendation !== "ready" ||
-      record.local_review_findings_count > 0
-    )
+    record.local_review_max_severity === "high" &&
+    config.localReviewHighSeverityAction === "retry"
   );
+}
+
+function localReviewHighSeverityNeedsBlock(config: SupervisorConfig, record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_max_severity">, pr: GitHubPullRequest): boolean {
+  return (
+    record.local_review_head_sha === pr.headRefOid &&
+    record.local_review_max_severity === "high" &&
+    config.localReviewHighSeverityAction === "blocked"
+  );
+}
+
+function localReviewFailureSummary(record: Pick<IssueRunRecord, "local_review_findings_count" | "local_review_max_severity" | "local_review_degraded">): string {
+  if (record.local_review_degraded) {
+    return "Local review completed in a degraded state.";
+  }
+
+  return `Local review found ${record.local_review_findings_count} actionable finding(s); max severity=${record.local_review_max_severity ?? "unknown"}.`;
+}
+
+function localReviewFailureContext(record: Pick<IssueRunRecord, "local_review_findings_count" | "local_review_max_severity" | "local_review_degraded" | "local_review_summary_path">): FailureContext {
+  return {
+    category: "blocked",
+    summary: localReviewFailureSummary(record),
+    signature: `local-review:${record.local_review_max_severity ?? "unknown"}:${record.local_review_findings_count}:${record.local_review_degraded ? "degraded" : "clean"}`,
+    command: null,
+    details: [record.local_review_summary_path ? `summary=${record.local_review_summary_path}` : "summary=none"],
+    url: null,
+    updated_at: nowIso(),
+  };
 }
 
 function buildAuthFailureContext(message: string): FailureContext {
@@ -595,6 +629,14 @@ function inferStateFromPullRequest(
     return "pr_open";
   }
 
+  if (localReviewHighSeverityNeedsRetry(config, record, pr)) {
+    return "stabilizing";
+  }
+
+  if (localReviewHighSeverityNeedsBlock(config, record, pr)) {
+    return "blocked";
+  }
+
   const checkSummary = summarizeChecks(checks);
   if (checkSummary.hasFailing) {
     return "repairing_ci";
@@ -609,6 +651,10 @@ function inferStateFromPullRequest(
   }
 
   if (config.humanReviewBlocksMerge && manualThreads.length > 0) {
+    return "blocked";
+  }
+
+  if (localReviewBlocksMerge(config, record, pr)) {
     return "blocked";
   }
 
@@ -1851,13 +1897,20 @@ export class Supervisor {
             local_review_findings_count: localReview.findingsCount,
             local_review_recommendation: localReview.recommendation,
             local_review_degraded: localReview.degraded,
-            blocked_reason: localReview.recommendation !== "ready" ? "verification" : null,
+            blocked_reason:
+              localReview.recommendation !== "ready" && this.config.localReviewHighSeverityAction === "blocked" && localReview.maxSeverity === "high"
+                ? "verification"
+                : null,
             last_error:
               localReview.recommendation !== "ready"
                 ? truncate(
                     localReview.degraded
-                      ? "Local review completed in a degraded state. PR will remain draft until local review succeeds cleanly."
-                      : `Local review requested changes (${localReview.findingsCount} actionable findings). PR will remain draft until the branch is updated and re-reviewed.`,
+                      ? "Local review completed in a degraded state."
+                      : localReview.maxSeverity === "high" && this.config.localReviewHighSeverityAction === "retry"
+                        ? `Local review found high-severity issues (${localReview.findingsCount} actionable findings). Codex will continue with a repair pass before the PR can proceed.`
+                        : localReview.maxSeverity === "high" && this.config.localReviewHighSeverityAction === "blocked"
+                          ? `Local review found high-severity issues (${localReview.findingsCount} actionable findings). Manual attention is required before the PR can proceed.`
+                          : `Local review requested changes (${localReview.findingsCount} actionable findings).`,
                     500,
                   )
                 : null,
@@ -1890,7 +1943,7 @@ export class Supervisor {
         configuredBotReviewThreads(this.config, refreshedReviewThreads).length === 0 &&
         (!this.config.humanReviewBlocksMerge || manualReviewThreads(this.config, refreshedReviewThreads).length === 0) &&
         !mergeConflictDetected(refreshedPr) &&
-        !localReviewBlocksReady(record, refreshedPr) &&
+        !localReviewBlocksReady(this.config, record, refreshedPr) &&
         !options.dryRun
       ) {
         await this.github.markPullRequestReady(refreshedPr.number);
@@ -1906,16 +1959,31 @@ export class Supervisor {
         postReadyReviewThreads,
       );
       const refreshedFailureContext = inferFailureContext(this.config, record, postReadyPr, postReadyChecks, postReadyReviewThreads);
+      const postReadyLocalReviewFailureContext =
+        nextState === "blocked" && localReviewHighSeverityNeedsBlock(this.config, record, postReadyPr)
+          ? localReviewFailureContext(record)
+          : nextState === "stabilizing" && localReviewHighSeverityNeedsRetry(this.config, record, postReadyPr)
+            ? localReviewFailureContext(record)
+            : null;
+      const effectiveFailureContext = refreshedFailureContext ?? postReadyLocalReviewFailureContext;
       const refreshedReviewWaitPatch = syncReviewWaitWindow(record, postReadyPr);
       record = this.stateStore.touch(record, {
         pr_number: postReadyPr.number,
         ...refreshedReviewWaitPatch,
         state: nextState,
         last_head_sha: postReadyPr.headRefOid,
-        last_error: nextState === "blocked" && refreshedFailureContext ? truncate(refreshedFailureContext.summary, 1000) : record.last_error,
-        last_failure_context: refreshedFailureContext,
-        ...applyFailureSignature(record, refreshedFailureContext),
-        blocked_reason: nextState === "blocked" ? blockedReasonFromReviewState(this.config, postReadyReviewThreads) : null,
+        last_error:
+          nextState === "blocked" && effectiveFailureContext
+            ? truncate(effectiveFailureContext.summary, 1000)
+            : nextState === "stabilizing" && localReviewHighSeverityNeedsRetry(this.config, record, postReadyPr)
+              ? truncate(localReviewFailureSummary(record), 1000)
+              : record.last_error,
+        last_failure_context: effectiveFailureContext,
+        ...applyFailureSignature(record, effectiveFailureContext),
+        blocked_reason:
+          nextState === "blocked"
+            ? blockedReasonFromReviewState(this.config, postReadyReviewThreads) ?? (localReviewHighSeverityNeedsBlock(this.config, record, postReadyPr) ? "verification" : null)
+            : null,
       });
       state.issues[String(record.issue_number)] = record;
 
