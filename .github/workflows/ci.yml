@@ -2,8 +2,13 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
+# Pull request updates already exercise CI for feature branches. Restricting `push`
+# to the default branch avoids duplicate push+PR check suites where the canceled
+# superseded run is still reported as a failed PR check.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
