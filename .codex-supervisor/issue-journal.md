@@ -26,12 +26,14 @@
 - Last focused command: `npx tsx --test src/supervisor.test.ts`
 - Files changed: `src/supervisor.ts`, `src/supervisor.test.ts`
 - Next 1-3 actions:
-  1. Review the updated status line against acceptance criteria for compactness.
-  2. Commit the focused status formatter change and tests.
-  3. Decide whether to open a draft PR from the checkpoint.
+  1. Review draft PR #43 and confirm no additional status fields are needed.
+  2. Decide whether to add broader status coverage once the unrelated `review-role-detector` test drift is addressed.
+  3. Move from reproducing to implementing/stabilizing if acceptance review passes.
 
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
 - Reproduced the issue by adding formatter tests for `block_ready` current-head gating and stale `block_merge` review state.
 - Focused verification passed with `npx tsx --test src/supervisor.test.ts` and `npm run build`.
 - `npm test -- --test-name-pattern="formatDetailedStatus shows|formatDetailedStatus marks"` still reports unrelated failure: `detectLocalReviewRoles adds prisma specialists for prisma repos`.
+- Checkpoint commit: `d6f9093` (`Improve local review gate status output`).
+- Draft PR opened: `#43` <https://github.com/TommyKammy/codex-supervisor/pull/43>.
