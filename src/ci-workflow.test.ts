@@ -3,14 +3,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
-const workflowPath = path.resolve(process.cwd(), ".github/workflows/ci.yml");
+const workflowPath = path.resolve(__dirname, "..", ".github/workflows/ci.yml");
 
 test("CI workflow cancels stale runs for the same branch or PR", async () => {
   const workflow = await fs.readFile(workflowPath, "utf8");
 
-  assert.match(workflow, /on:\n  push:\n    branches:\n      - main\n  pull_request:\n/);
+  assert.match(workflow, /on:\s*[\s\S]*push:\s*[\s\S]*branches:\s*-\s*main[\s\S]*pull_request:/);
   assert.match(
     workflow,
-    /concurrency:\n  group: \$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.head\.repo\.full_name \|\| github\.repository \}\}-\$\{\{ github\.head_ref \|\| github\.ref_name \}\}\n  cancel-in-progress: true/,
+    /concurrency:\s*group:\s*\$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.head\.repo\.full_name \|\| github\.repository \}\}-\$\{\{ github\.head_ref \|\| github\.ref_name \}\}\s*cancel-in-progress:\s*true/,
   );
 });
