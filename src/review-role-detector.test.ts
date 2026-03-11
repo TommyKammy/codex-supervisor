@@ -74,6 +74,7 @@ test("detectLocalReviewRoles adds prisma specialists for prisma repos", async (t
     "prisma_postgres_reviewer",
     "migration_invariant_reviewer",
     "contract_consistency_reviewer",
+    "portability_reviewer",
   ]);
 });
 
