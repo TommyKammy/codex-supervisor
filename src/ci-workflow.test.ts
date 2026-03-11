@@ -10,6 +10,6 @@ test("CI workflow cancels stale runs for the same branch or PR", async () => {
 
   assert.match(
     workflow,
-    /concurrency:\n  group: \$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}\n  cancel-in-progress: true/,
+    /concurrency:\n  group: \$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.head\.repo\.full_name \|\| github\.repository \}\}-\$\{\{ github\.head_ref \|\| github\.ref_name \}\}\n  cancel-in-progress: true/,
   );
 });
