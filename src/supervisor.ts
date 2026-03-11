@@ -209,6 +209,16 @@ function shouldAutoRetryBlockedVerification(record: IssueRunRecord, config: Supe
   );
 }
 
+export function shouldAutoRetryHandoffMissing(record: IssueRunRecord, config: SupervisorConfig): boolean {
+  return (
+    record.state === "blocked" &&
+    record.blocked_reason === "handoff_missing" &&
+    record.pr_number === null &&
+    record.attempt_count < config.maxCodexAttemptsPerIssue &&
+    record.repeated_failure_signature_count < config.sameFailureSignatureRepeatLimit
+  );
+}
+
 function hasAttemptBudgetRemaining(record: IssueRunRecord, config: SupervisorConfig): boolean {
   return record.attempt_count < config.maxCodexAttemptsPerIssue;
 }
@@ -222,7 +232,11 @@ function isEligibleForSelection(record: IssueRunRecord | undefined, config: Supe
     return true;
   }
 
-  return shouldAutoRetryTimeout(record, config) || shouldAutoRetryBlockedVerification(record, config);
+  return (
+    shouldAutoRetryTimeout(record, config) ||
+    shouldAutoRetryBlockedVerification(record, config) ||
+    shouldAutoRetryHandoffMissing(record, config)
+  );
 }
 
 function summarizeChecks(checks: PullRequestCheck[]): { allPassing: boolean; hasPending: boolean; hasFailing: boolean } {
@@ -1107,6 +1121,46 @@ async function reconcileStaleFailedIssueStates(
   }
 }
 
+type StateStoreLike = Pick<StateStore, "touch" | "save">;
+
+export async function reconcileRecoverableBlockedIssueStates(
+  stateStore: StateStoreLike,
+  state: SupervisorStateFile,
+  config: SupervisorConfig,
+  issues: GitHubIssue[],
+): Promise<void> {
+  let changed = false;
+  const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
+
+  for (const record of Object.values(state.issues)) {
+    if (!shouldAutoRetryHandoffMissing(record, config)) {
+      continue;
+    }
+
+    if (issueStateByNumber.get(record.issue_number) !== "OPEN") {
+      continue;
+    }
+
+    const updated = stateStore.touch(record, {
+      state: "queued",
+      blocked_reason: null,
+      last_error: null,
+      last_failure_kind: null,
+      last_failure_context: null,
+      last_blocker_signature: null,
+      codex_session_id: null,
+      review_wait_started_at: null,
+      review_wait_head_sha: null,
+    });
+    state.issues[String(record.issue_number)] = updated;
+    changed = true;
+  }
+
+  if (changed) {
+    await stateStore.save(state);
+  }
+}
+
 async function reconcileParentEpicClosures(
   github: GitHubClient,
   stateStore: StateStore,
@@ -1261,6 +1315,7 @@ export class Supervisor {
     await reconcileTrackedMergedButOpenIssues(this.github, this.stateStore, state, issues);
     await reconcileMergedIssueClosures(this.github, this.stateStore, state, issues);
     await reconcileStaleFailedIssueStates(this.github, this.stateStore, state, this.config, issues);
+    await reconcileRecoverableBlockedIssueStates(this.stateStore, state, this.config, issues);
     await reconcileParentEpicClosures(this.github, this.stateStore, state, issues);
     await cleanupExpiredDoneWorkspaces(this.config, state);
 
