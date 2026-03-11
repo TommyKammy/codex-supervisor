@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { IssueRunRecord, SupervisorStateFile } from "./types";
-import { ensureDir, nowIso, readJsonIfExists, writeJsonAtomic } from "./utils";
+import { ensureDir, nowIso, parseJson, readJsonIfExists, writeJsonAtomic } from "./utils";
 
 interface StateStoreOptions {
   backend: "json" | "sqlite";
@@ -30,6 +30,7 @@ function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
     local_review_run_at: value.local_review_run_at ?? null,
     local_review_max_severity: value.local_review_max_severity ?? null,
     local_review_findings_count: value.local_review_findings_count ?? 0,
+    local_review_recommendation: value.local_review_recommendation ?? null,
     timeout_retry_count: value.timeout_retry_count ?? 0,
     blocked_verification_retry_count: value.blocked_verification_retry_count ?? 0,
     repeated_blocker_count: value.repeated_blocker_count ?? 0,
@@ -84,9 +85,14 @@ function readSqliteState(db: DatabaseSync): SupervisorStateFile {
     .all() as Array<{ issue_number: number; record_json: string }>;
 
   const issues = Object.fromEntries(
-    rows.map((row) => {
-      const parsed = JSON.parse(row.record_json) as IssueRunRecord;
-      return [String(row.issue_number), normalizeIssueRecord(parsed)];
+    rows.flatMap((row) => {
+      try {
+        const parsed = parseJson<IssueRunRecord>(row.record_json, `sqlite issues row ${row.issue_number}`);
+        return [[String(row.issue_number), normalizeIssueRecord(parsed)]];
+      } catch (error) {
+        console.warn(error instanceof Error ? error.message : String(error));
+        return [];
+      }
     }),
   );
 
@@ -147,6 +153,10 @@ export class StateStore {
       local_review_max_severity:
         hasOwn(patch, "local_review_max_severity") ? patch.local_review_max_severity ?? null : record.local_review_max_severity ?? null,
       local_review_findings_count: patch.local_review_findings_count ?? record.local_review_findings_count ?? 0,
+      local_review_recommendation:
+        hasOwn(patch, "local_review_recommendation")
+          ? patch.local_review_recommendation ?? null
+          : record.local_review_recommendation ?? null,
       timeout_retry_count: patch.timeout_retry_count ?? record.timeout_retry_count ?? 0,
       blocked_verification_retry_count:
         patch.blocked_verification_retry_count ?? record.blocked_verification_retry_count ?? 0,
@@ -177,10 +187,15 @@ export class StateStore {
   private async loadFromJson(filePath: string): Promise<SupervisorStateFile> {
     try {
       const raw = await fs.readFile(filePath, "utf8");
-      return normalizeState(JSON.parse(raw) as SupervisorStateFile);
+      return normalizeState(parseJson<SupervisorStateFile>(raw, filePath));
     } catch (error) {
       const maybeErr = error as NodeJS.ErrnoException;
       if (maybeErr.code === "ENOENT") {
+        return this.emptyState();
+      }
+
+      if (error instanceof Error && error.cause instanceof SyntaxError) {
+        console.warn(`${error.message}. Starting with empty state.`);
         return this.emptyState();
       }
 
@@ -230,15 +245,28 @@ export class StateStore {
           ON CONFLICT(key) DO UPDATE SET value = excluded.value
         `).run("activeIssueNumber", state.activeIssueNumber === null ? "" : String(state.activeIssueNumber));
 
-        db.exec("DELETE FROM issues");
-        const insertIssue = db.prepare(`
+        const existingIssueNumbers = new Set<number>(
+          (
+            db.prepare("SELECT issue_number FROM issues").all() as Array<{ issue_number: number }>
+          ).map((row) => row.issue_number),
+        );
+        const upsertIssue = db.prepare(`
           INSERT INTO issues(issue_number, record_json, updated_at)
           VALUES (?, ?, ?)
+          ON CONFLICT(issue_number) DO UPDATE SET
+            record_json = excluded.record_json,
+            updated_at = excluded.updated_at
         `);
+        const deleteIssue = db.prepare("DELETE FROM issues WHERE issue_number = ?");
 
         for (const record of Object.values(state.issues)) {
           const normalized = normalizeIssueRecord(record);
-          insertIssue.run(normalized.issue_number, JSON.stringify(normalized), normalized.updated_at);
+          existingIssueNumbers.delete(normalized.issue_number);
+          upsertIssue.run(normalized.issue_number, JSON.stringify(normalized), normalized.updated_at);
+        }
+
+        for (const issueNumber of existingIssueNumbers) {
+          deleteIssue.run(issueNumber);
         }
 
         db.exec("COMMIT");

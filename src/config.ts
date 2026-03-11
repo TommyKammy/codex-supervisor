@@ -1,13 +1,37 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ReasoningEffort, RunState, SupervisorConfig } from "./types";
-import { resolveMaybeRelative } from "./utils";
+import { isValidGitRefName, parseJson, resolveMaybeRelative } from "./utils";
 
 const DEFAULT_CONFIG_FILE = "supervisor.config.json";
 
 function assertString(value: unknown, label: string): string {
   if (typeof value !== "string" || value.trim() === "") {
     throw new Error(`Missing or invalid config field: ${label}`);
+  }
+
+  return value;
+}
+
+function assertPattern(value: string, label: string, pattern: RegExp): string {
+  if (!pattern.test(value)) {
+    throw new Error(`Invalid config field: ${label}`);
+  }
+
+  return value;
+}
+
+function assertGitRefName(value: string, label: string): string {
+  if (!isValidGitRefName(value)) {
+    throw new Error(`Invalid config field: ${label}`);
+  }
+
+  return value;
+}
+
+function assertBranchPrefix(value: string, label: string): string {
+  if (!isValidGitRefName(`${value}1`)) {
+    throw new Error(`Invalid config field: ${label}`);
   }
 
   return value;
@@ -58,12 +82,12 @@ export function loadConfig(configPath?: string): SupervisorConfig {
     throw new Error(`Config file not found: ${resolvedPath}`);
   }
 
-  const raw = JSON.parse(fs.readFileSync(resolvedPath, "utf8")) as Record<string, unknown>;
+  const raw = parseJson<Record<string, unknown>>(fs.readFileSync(resolvedPath, "utf8"), resolvedPath);
   const configDir = path.dirname(resolvedPath);
   const config: SupervisorConfig = {
     repoPath: resolveMaybeRelative(configDir, assertString(raw.repoPath, "repoPath")),
-    repoSlug: assertString(raw.repoSlug, "repoSlug"),
-    defaultBranch: assertString(raw.defaultBranch, "defaultBranch"),
+    repoSlug: assertPattern(assertString(raw.repoSlug, "repoSlug"), "repoSlug", /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
+    defaultBranch: assertGitRefName(assertString(raw.defaultBranch, "defaultBranch"), "defaultBranch"),
     workspaceRoot: resolveMaybeRelative(configDir, assertString(raw.workspaceRoot, "workspaceRoot")),
     stateBackend:
       raw.stateBackend === "sqlite" || raw.stateBackend === "json"
@@ -150,7 +174,7 @@ export function loadConfig(configPath?: string): SupervisorConfig {
     skipTitlePrefixes: Array.isArray(raw.skipTitlePrefixes)
       ? raw.skipTitlePrefixes.filter((value): value is string => typeof value === "string")
       : [],
-    branchPrefix: assertString(raw.branchPrefix, "branchPrefix"),
+    branchPrefix: assertBranchPrefix(assertString(raw.branchPrefix, "branchPrefix"), "branchPrefix"),
     pollIntervalSeconds:
       typeof raw.pollIntervalSeconds === "number" && raw.pollIntervalSeconds > 0
         ? raw.pollIntervalSeconds

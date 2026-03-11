@@ -51,6 +51,7 @@ function createIssueRecord(config: SupervisorConfig, issueNumber: number): Issue
     local_review_run_at: null,
     local_review_max_severity: null,
     local_review_findings_count: 0,
+    local_review_recommendation: null,
     attempt_count: 0,
     timeout_retry_count: 0,
     blocked_verification_retry_count: 0,
@@ -67,6 +68,26 @@ function createIssueRecord(config: SupervisorConfig, issueNumber: number): Issue
     processed_review_thread_ids: [],
     updated_at: nowIso(),
   };
+}
+
+const MAX_PROCESSED_REVIEW_THREAD_IDS = 200;
+
+function trimProcessedReviewThreadIds(ids: string[]): string[] {
+  if (ids.length <= MAX_PROCESSED_REVIEW_THREAD_IDS) {
+    return ids;
+  }
+
+  return ids.slice(ids.length - MAX_PROCESSED_REVIEW_THREAD_IDS);
+}
+
+function localReviewBlocksReady(record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation">, pr: GitHubPullRequest): boolean {
+  return (
+    record.local_review_head_sha === pr.headRefOid &&
+    (
+      record.local_review_recommendation === "changes_requested" ||
+      record.local_review_findings_count > 0
+    )
+  );
 }
 
 function classifyFailure(message: string | null | undefined): "timeout" | "command_error" {
@@ -827,6 +848,7 @@ function doneResetPatch(
     state: "done",
     last_error: null,
     blocked_reason: null,
+    local_review_recommendation: null,
     last_failure_kind: null,
     last_failure_context: null,
     last_blocker_signature: null,
@@ -1632,7 +1654,9 @@ export class Supervisor {
       reviewThreads = pr ? await this.github.getUnresolvedReviewThreads(pr.number) : [];
       const processedReviewThreadIds =
         preRunState === "addressing_review"
-          ? Array.from(new Set([...record.processed_review_thread_ids, ...reviewThreadsToProcess.map((thread) => thread.id)]))
+          ? trimProcessedReviewThreadIds(
+              Array.from(new Set([...record.processed_review_thread_ids, ...reviewThreadsToProcess.map((thread) => thread.id)])),
+            )
           : record.processed_review_thread_ids;
       const postRunFailureContext = inferFailureContext(this.config, record, pr, checks, reviewThreads);
       const postRunReviewWaitPatch = pr ? syncReviewWaitWindow(record, pr) : {};
@@ -1701,7 +1725,15 @@ export class Supervisor {
             local_review_run_at: localReview.ranAt,
             local_review_max_severity: localReview.maxSeverity,
             local_review_findings_count: localReview.findingsCount,
-            last_error: null,
+            local_review_recommendation: localReview.recommendation,
+            blocked_reason: localReview.recommendation === "changes_requested" ? "verification" : null,
+            last_error:
+              localReview.recommendation === "changes_requested"
+                ? truncate(
+                    `Local review requested changes (${localReview.findingsCount} actionable findings). PR will remain draft until the branch is updated and re-reviewed.`,
+                    500,
+                  )
+                : null,
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -1712,6 +1744,7 @@ export class Supervisor {
             local_review_run_at: nowIso(),
             local_review_max_severity: null,
             local_review_findings_count: 0,
+            local_review_recommendation: "unknown",
             last_error: `Local review failed: ${truncate(message, 500) ?? "unknown error"}`,
           });
         }
@@ -1728,6 +1761,7 @@ export class Supervisor {
         configuredBotReviewThreads(this.config, refreshedReviewThreads).length === 0 &&
         (!this.config.humanReviewBlocksMerge || manualReviewThreads(this.config, refreshedReviewThreads).length === 0) &&
         !mergeConflictDetected(refreshedPr) &&
+        !localReviewBlocksReady(record, refreshedPr) &&
         !options.dryRun
       ) {
         await this.github.markPullRequestReady(refreshedPr.number);

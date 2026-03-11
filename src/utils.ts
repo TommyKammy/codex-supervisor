@@ -31,7 +31,7 @@ export async function writeJsonAtomic(filePath: string, value: unknown): Promise
 export async function readJsonIfExists<T>(filePath: string): Promise<T | null> {
   try {
     const raw = await fs.readFile(filePath, "utf8");
-    return JSON.parse(raw) as T;
+    return parseJson<T>(raw, filePath);
   } catch (error) {
     const maybeErr = error as NodeJS.ErrnoException;
     if (maybeErr.code === "ENOENT") {
@@ -42,8 +42,25 @@ export async function readJsonIfExists<T>(filePath: string): Promise<T | null> {
   }
 }
 
-export async function sleep(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms));
+export async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    const timeoutHandle = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+
+    const onAbort = (): void => {
+      clearTimeout(timeoutHandle);
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    };
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 export function isTerminalState(state: string): boolean {
@@ -52,6 +69,37 @@ export function isTerminalState(state: string): boolean {
 
 export function resolveMaybeRelative(baseDir: string, inputPath: string): string {
   return path.isAbsolute(inputPath) ? inputPath : path.resolve(baseDir, inputPath);
+}
+
+export function parseJson<T>(raw: string, source: string): T {
+  try {
+    return JSON.parse(raw) as T;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to parse JSON from ${source}: ${message}`, { cause: error });
+  }
+}
+
+export function isValidGitRefName(ref: string): boolean {
+  if (
+    ref.trim() === "" ||
+    ref.startsWith("-") ||
+    ref.startsWith("/") ||
+    ref.endsWith("/") ||
+    ref.endsWith(".") ||
+    ref.includes("..") ||
+    ref.includes("@{") ||
+    ref.includes("\\") ||
+    ref.includes("//")
+  ) {
+    return false;
+  }
+
+  if (/[\u0000-\u001F\u007F ~^:?*\[]/.test(ref)) {
+    return false;
+  }
+
+  return ref.split("/").every((segment) => segment !== "" && segment !== "." && segment !== ".." && !segment.endsWith(".lock"));
 }
 
 export function hoursSince(isoTimestamp: string): number {
