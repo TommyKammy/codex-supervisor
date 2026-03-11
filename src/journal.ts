@@ -49,7 +49,7 @@ function buildSupervisorSnapshot(args: {
     `- Workspace: ${record.workspace}`,
     `- Journal: ${journalPath}`,
     `- Current phase: ${record.state}`,
-    `- Attempt count: ${record.attempt_count}`,
+    `- Attempt count: ${record.attempt_count} (implementation=${record.implementation_attempt_count}, repair=${record.repair_attempt_count})`,
     `- Last head SHA: ${record.last_head_sha ?? "unknown"}`,
     `- Blocked reason: ${record.blocked_reason ?? "none"}`,
     `- Last failure signature: ${record.last_failure_signature ?? "none"}`,

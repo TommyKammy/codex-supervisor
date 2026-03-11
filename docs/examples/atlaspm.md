@@ -52,6 +52,8 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
   "copilotReviewWaitMinutes": 10,
   "codexExecTimeoutMinutes": 30,
   "maxCodexAttemptsPerIssue": 30,
+  "maxImplementationAttemptsPerIssue": 30,
+  "maxRepairAttemptsPerIssue": 30,
   "timeoutRetryLimit": 2,
   "blockedVerificationRetryLimit": 3,
   "sameBlockerRepeatLimit": 2,

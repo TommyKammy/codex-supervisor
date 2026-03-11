@@ -61,6 +61,8 @@ export interface SupervisorConfig {
   copilotReviewWaitMinutes: number;
   codexExecTimeoutMinutes: number;
   maxCodexAttemptsPerIssue: number;
+  maxImplementationAttemptsPerIssue: number;
+  maxRepairAttemptsPerIssue: number;
   timeoutRetryLimit: number;
   blockedVerificationRetryLimit: number;
   sameBlockerRepeatLimit: number;
@@ -121,6 +123,8 @@ export interface IssueRunRecord {
   local_review_recommendation: "ready" | "changes_requested" | "unknown" | null;
   local_review_degraded: boolean;
   attempt_count: number;
+  implementation_attempt_count: number;
+  repair_attempt_count: number;
   timeout_retry_count: number;
   blocked_verification_retry_count: number;
   repeated_blocker_count: number;
