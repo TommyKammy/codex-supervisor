@@ -845,7 +845,37 @@ function formatRecentRecord(record: IssueRunRecord | null): string {
   return `#${record.issue_number} state=${record.state} updated_at=${record.updated_at}`;
 }
 
-function formatDetailedStatus(args: {
+function localReviewHeadStatus(
+  record: Pick<IssueRunRecord, "local_review_head_sha">,
+  pr: Pick<GitHubPullRequest, "headRefOid"> | null,
+): "none" | "current" | "stale" | "unknown" {
+  if (!record.local_review_head_sha) {
+    return "none";
+  }
+
+  if (!pr) {
+    return "unknown";
+  }
+
+  return record.local_review_head_sha === pr.headRefOid ? "current" : "stale";
+}
+
+function localReviewIsGating(
+  config: SupervisorConfig,
+  record: Pick<
+    IssueRunRecord,
+    "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation"
+  >,
+  pr: GitHubPullRequest | null,
+): boolean {
+  if (!pr) {
+    return false;
+  }
+
+  return localReviewBlocksReady(config, record, pr) || localReviewBlocksMerge(config, record, pr);
+}
+
+export function formatDetailedStatus(args: {
   config: SupervisorConfig;
   activeRecord: IssueRunRecord | null;
   latestRecord: IssueRunRecord | null;
@@ -866,6 +896,8 @@ function formatDetailedStatus(args: {
     return lines.join("\n");
   }
 
+  const localReviewHead = localReviewHeadStatus(activeRecord, pr);
+  const localReviewGating = localReviewIsGating(config, activeRecord, pr) ? "yes" : "no";
   const lines = [
     `issue=#${activeRecord.issue_number}`,
     `state=${activeRecord.state}`,
@@ -878,7 +910,7 @@ function formatDetailedStatus(args: {
     `last_failure_kind=${activeRecord.last_failure_kind ?? "none"}`,
     `last_failure_signature=${activeRecord.last_failure_signature ?? "none"}`,
     `retries timeout=${activeRecord.timeout_retry_count} verification=${activeRecord.blocked_verification_retry_count} same_blocker=${activeRecord.repeated_blocker_count} same_failure_signature=${activeRecord.repeated_failure_signature_count}`,
-    `local_review head=${activeRecord.local_review_head_sha ?? "none"} severity=${activeRecord.local_review_max_severity ?? "none"} findings=${activeRecord.local_review_findings_count} ran_at=${activeRecord.local_review_run_at ?? "none"}`,
+    `local_review gating=${localReviewGating} policy=${config.localReviewPolicy} findings=${activeRecord.local_review_findings_count} max_severity=${activeRecord.local_review_max_severity ?? "none"} head=${localReviewHead} ran_at=${activeRecord.local_review_run_at ?? "none"}`,
   ];
 
   if (activeRecord.last_error) {

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildChecksFailureContext,
+  formatDetailedStatus,
   reconcileRecoverableBlockedIssueStates,
   shouldAutoRetryHandoffMissing,
   summarizeChecks,
@@ -239,4 +240,110 @@ test("buildChecksFailureContext ignores cancelled runs", () => {
   ];
 
   assert.equal(buildChecksFailureContext(pr, checks), null);
+});
+
+test("formatDetailedStatus shows blocking local review status for current PR head", () => {
+  const config = createConfig({ localReviewPolicy: "block_ready" });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    local_review_max_severity: "high",
+    local_review_findings_count: 3,
+    local_review_recommendation: "changes_requested",
+    local_review_run_at: "2026-03-11T14:05:00Z",
+  });
+  const pr: GitHubPullRequest = {
+    number: 42,
+    title: "Test PR",
+    url: "https://example.test/pr/42",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: true,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-42",
+    headRefOid: "deadbeef",
+    mergedAt: null,
+  };
+
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: record,
+    latestRecord: record,
+    trackedIssueCount: 1,
+    pr,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(
+    status,
+    /local_review gating=yes policy=block_ready findings=3 max_severity=high head=current ran_at=2026-03-11T14:05:00Z/,
+  );
+});
+
+test("formatDetailedStatus marks stale local review as non-gating", () => {
+  const config = createConfig({ localReviewPolicy: "block_merge" });
+  const record = createRecord({
+    local_review_head_sha: "oldhead",
+    local_review_max_severity: "medium",
+    local_review_findings_count: 2,
+    local_review_recommendation: "changes_requested",
+    local_review_run_at: "2026-03-11T14:05:00Z",
+  });
+  const pr: GitHubPullRequest = {
+    number: 42,
+    title: "Test PR",
+    url: "https://example.test/pr/42",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-42",
+    headRefOid: "newhead",
+    mergedAt: null,
+  };
+
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: record,
+    latestRecord: record,
+    trackedIssueCount: 1,
+    pr,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(
+    status,
+    /local_review gating=no policy=block_merge findings=2 max_severity=medium head=stale ran_at=2026-03-11T14:05:00Z/,
+  );
+});
+
+test("formatDetailedStatus reports unknown local review head status without a PR", () => {
+  const config = createConfig({ localReviewPolicy: "block_merge" });
+  const record = createRecord({
+    local_review_head_sha: "oldhead",
+    local_review_max_severity: "medium",
+    local_review_findings_count: 2,
+    local_review_recommendation: "changes_requested",
+    local_review_run_at: "2026-03-11T14:05:00Z",
+  });
+
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: record,
+    latestRecord: record,
+    trackedIssueCount: 1,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(
+    status,
+    /local_review gating=no policy=block_merge findings=2 max_severity=medium head=unknown ran_at=2026-03-11T14:05:00Z/,
+  );
 });
