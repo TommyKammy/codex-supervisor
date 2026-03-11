@@ -52,6 +52,8 @@ function createIssueRecord(config: SupervisorConfig, issueNumber: number): Issue
     local_review_run_at: null,
     local_review_max_severity: null,
     local_review_findings_count: 0,
+    local_review_verified_max_severity: null,
+    local_review_verified_findings_count: 0,
     local_review_recommendation: null,
     local_review_degraded: false,
     last_local_review_signature: null,
@@ -94,18 +96,22 @@ function localReviewBlocksMerge(config: SupervisorConfig, record: Pick<IssueRunR
   return !pr.isDraft && config.localReviewPolicy === "block_merge" && localReviewHasActionableFindings(record, pr);
 }
 
-function localReviewHighSeverityNeedsRetry(config: SupervisorConfig, record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_max_severity">, pr: GitHubPullRequest): boolean {
+export function localReviewHighSeverityNeedsRetry(
+  config: SupervisorConfig,
+  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_verified_max_severity">,
+  pr: GitHubPullRequest,
+): boolean {
   return (
     config.localReviewPolicy !== "advisory" &&
     record.local_review_head_sha === pr.headRefOid &&
-    record.local_review_max_severity === "high" &&
+    record.local_review_verified_max_severity === "high" &&
     config.localReviewHighSeverityAction === "retry"
   );
 }
 
 function localReviewRetryLoopStalled(
   config: SupervisorConfig,
-  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_max_severity" | "repeated_local_review_signature_count">,
+  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_verified_max_severity" | "repeated_local_review_signature_count">,
   pr: GitHubPullRequest,
 ): boolean {
   return (
@@ -114,28 +120,42 @@ function localReviewRetryLoopStalled(
   );
 }
 
-function localReviewHighSeverityNeedsBlock(config: SupervisorConfig, record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_max_severity">, pr: GitHubPullRequest): boolean {
+function localReviewHighSeverityNeedsBlock(
+  config: SupervisorConfig,
+  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_verified_max_severity">,
+  pr: GitHubPullRequest,
+): boolean {
   return (
     config.localReviewPolicy !== "advisory" &&
     record.local_review_head_sha === pr.headRefOid &&
-    record.local_review_max_severity === "high" &&
+    record.local_review_verified_max_severity === "high" &&
     config.localReviewHighSeverityAction === "blocked"
   );
 }
 
-function localReviewFailureSummary(record: Pick<IssueRunRecord, "local_review_findings_count" | "local_review_max_severity" | "local_review_degraded">): string {
+function localReviewFailureSummary(
+  record: Pick<
+    IssueRunRecord,
+    "local_review_findings_count" | "local_review_max_severity" | "local_review_verified_findings_count" | "local_review_verified_max_severity" | "local_review_degraded"
+  >,
+): string {
   if (record.local_review_degraded) {
     return "Local review completed in a degraded state.";
   }
 
-  return `Local review found ${record.local_review_findings_count} actionable finding(s); max severity=${record.local_review_max_severity ?? "unknown"}.`;
+  return `Local review found ${record.local_review_findings_count} actionable finding(s); max severity=${record.local_review_max_severity ?? "unknown"}; verified high-severity findings=${record.local_review_verified_findings_count}; verified max severity=${record.local_review_verified_max_severity ?? "none"}.`;
 }
 
-function localReviewFailureContext(record: Pick<IssueRunRecord, "local_review_findings_count" | "local_review_max_severity" | "local_review_degraded" | "local_review_summary_path">): FailureContext {
+function localReviewFailureContext(
+  record: Pick<
+    IssueRunRecord,
+    "local_review_findings_count" | "local_review_max_severity" | "local_review_verified_findings_count" | "local_review_verified_max_severity" | "local_review_degraded" | "local_review_summary_path"
+  >,
+): FailureContext {
   return {
     category: "blocked",
     summary: localReviewFailureSummary(record),
-    signature: `local-review:${record.local_review_max_severity ?? "unknown"}:${record.local_review_findings_count}:${record.local_review_degraded ? "degraded" : "clean"}`,
+    signature: `local-review:${record.local_review_max_severity ?? "unknown"}:${record.local_review_verified_max_severity ?? "none"}:${record.local_review_findings_count}:${record.local_review_verified_findings_count}:${record.local_review_degraded ? "degraded" : "clean"}`,
     command: null,
     details: [record.local_review_summary_path ? `summary=${record.local_review_summary_path}` : "summary=none"],
     url: null,
@@ -144,7 +164,16 @@ function localReviewFailureContext(record: Pick<IssueRunRecord, "local_review_fi
 }
 
 function localReviewStallFailureContext(
-  record: Pick<IssueRunRecord, "local_review_findings_count" | "local_review_max_severity" | "local_review_degraded" | "local_review_summary_path" | "repeated_local_review_signature_count">,
+  record: Pick<
+    IssueRunRecord,
+    | "local_review_findings_count"
+    | "local_review_max_severity"
+    | "local_review_verified_findings_count"
+    | "local_review_verified_max_severity"
+    | "local_review_degraded"
+    | "local_review_summary_path"
+    | "repeated_local_review_signature_count"
+  >,
 ): FailureContext {
   return {
     ...localReviewFailureContext(record),
@@ -1000,7 +1029,7 @@ export function formatDetailedStatus(args: {
     `last_failure_kind=${activeRecord.last_failure_kind ?? "none"}`,
     `last_failure_signature=${activeRecord.last_failure_signature ?? "none"}`,
     `retries timeout=${activeRecord.timeout_retry_count} verification=${activeRecord.blocked_verification_retry_count} same_blocker=${activeRecord.repeated_blocker_count} same_failure_signature=${activeRecord.repeated_failure_signature_count}`,
-    `local_review gating=${localReviewGating} policy=${config.localReviewPolicy} findings=${activeRecord.local_review_findings_count} max_severity=${activeRecord.local_review_max_severity ?? "none"} head=${localReviewHead} ran_at=${activeRecord.local_review_run_at ?? "none"} signature=${activeRecord.last_local_review_signature ?? "none"} repeated=${activeRecord.repeated_local_review_signature_count}`,
+    `local_review gating=${localReviewGating} policy=${config.localReviewPolicy} findings=${activeRecord.local_review_findings_count} max_severity=${activeRecord.local_review_max_severity ?? "none"} verified_findings=${activeRecord.local_review_verified_findings_count} verified_max_severity=${activeRecord.local_review_verified_max_severity ?? "none"} head=${localReviewHead} ran_at=${activeRecord.local_review_run_at ?? "none"} signature=${activeRecord.last_local_review_signature ?? "none"} repeated=${activeRecord.repeated_local_review_signature_count}`,
   ];
 
   if (activeRecord.last_error) {
@@ -2036,11 +2065,13 @@ export class Supervisor {
             local_review_run_at: localReview.ranAt,
             local_review_max_severity: localReview.maxSeverity,
             local_review_findings_count: localReview.findingsCount,
+            local_review_verified_max_severity: localReview.verifiedMaxSeverity,
+            local_review_verified_findings_count: localReview.verifiedFindingsCount,
             local_review_recommendation: localReview.recommendation,
             local_review_degraded: localReview.degraded,
             ...signatureTracking,
             blocked_reason:
-              localReview.recommendation !== "ready" && this.config.localReviewHighSeverityAction === "blocked" && localReview.maxSeverity === "high"
+              localReview.recommendation !== "ready" && this.config.localReviewHighSeverityAction === "blocked" && localReview.verifiedMaxSeverity === "high"
                 ? "verification"
                 : null,
             last_error:
@@ -2048,9 +2079,9 @@ export class Supervisor {
                 ? truncate(
                     localReview.degraded
                       ? "Local review completed in a degraded state."
-                      : localReview.maxSeverity === "high" && this.config.localReviewHighSeverityAction === "retry"
+                      : localReview.verifiedMaxSeverity === "high" && this.config.localReviewHighSeverityAction === "retry"
                         ? `Local review found high-severity issues (${localReview.findingsCount} actionable findings). Codex will continue with a repair pass before the PR can proceed.`
-                        : localReview.maxSeverity === "high" && this.config.localReviewHighSeverityAction === "blocked"
+                        : localReview.verifiedMaxSeverity === "high" && this.config.localReviewHighSeverityAction === "blocked"
                           ? `Local review found high-severity issues (${localReview.findingsCount} actionable findings). Manual attention is required before the PR can proceed.`
                           : `Local review requested changes (${localReview.findingsCount} actionable findings).`,
                     500,
@@ -2066,6 +2097,8 @@ export class Supervisor {
             local_review_run_at: nowIso(),
             local_review_max_severity: null,
             local_review_findings_count: 0,
+            local_review_verified_max_severity: null,
+            local_review_verified_findings_count: 0,
             local_review_recommendation: "unknown",
             local_review_degraded: true,
             last_local_review_signature: null,

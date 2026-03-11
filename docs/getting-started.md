@@ -421,6 +421,7 @@ What it does:
 - keeps the same context-budget policy as implementation turns
 - writes a Markdown summary
 - writes a structured JSON artifact
+- runs a verifier pass for actionable high-severity findings before stronger high-severity gates react
 - deduplicates findings
 - keeps only findings above the configured confidence threshold as actionable
 
@@ -429,6 +430,8 @@ What it does not do by default:
 - edit code
 - block merge by itself
 - replace GitHub branch protection
+
+The artifacts keep raw actionable findings separate from verifier-confirmed findings. `block_ready` and `block_merge` still respond to raw actionable findings. `localReviewHighSeverityAction` only escalates on verifier-confirmed high-severity findings, which reduces false positives before the supervisor triggers a repair retry or manual block.
 
 ## What to ask Codex
 

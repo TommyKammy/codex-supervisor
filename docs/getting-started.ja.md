@@ -430,6 +430,7 @@ local review swarm は、`gh pr ready` の前に走る optional review phase で
 - 実装ターンと同じ context budget policy を守る
 - Markdown summary を書く
 - structured JSON artifact を書く
+- actionable な high severity findings については、より強い gate の前に verifier pass を走らせる
 - findings を dedupe する
 - confidence threshold 以上の findings だけ actionable として扱う
 
@@ -438,6 +439,8 @@ local review swarm は、`gh pr ready` の前に走る optional review phase で
 - コード編集
 - 単独で merge を止める
 - GitHub branch protection の代替
+
+artifact では、review role が出した raw actionable findings と verifier pass が確認した findings を分けて保存します。`block_ready` と `block_merge` は引き続き raw actionable findings に反応しますが、`localReviewHighSeverityAction` による強いエスカレーションは verifier が確認した high severity findings にだけ反応します。これにより、false positive の影響を減らせます。
 
 ## Codex への指示例
 

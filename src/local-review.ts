@@ -10,11 +10,18 @@ import { ensureDir, nowIso, truncate } from "./utils";
 export type LocalReviewSeverity = "none" | "low" | "medium" | "high";
 
 type ActionableSeverity = Exclude<LocalReviewSeverity, "none">;
+type VerificationVerdict = "confirmed" | "dismissed" | "unclear";
 
 interface ParsedRoleFooter {
   summary: string;
   recommendation: "ready" | "changes_requested" | "unknown";
   findings: LocalReviewFinding[];
+}
+
+interface ParsedVerifierFooter {
+  summary: string;
+  recommendation: "ready" | "changes_requested" | "unknown";
+  findings: LocalReviewVerificationFinding[];
 }
 
 export interface LocalReviewFinding {
@@ -30,6 +37,12 @@ export interface LocalReviewFinding {
   evidence: string | null;
 }
 
+export interface LocalReviewVerificationFinding {
+  findingKey: string;
+  verdict: VerificationVerdict;
+  rationale: string;
+}
+
 export interface LocalReviewRoleResult {
   role: string;
   summary: string;
@@ -40,6 +53,72 @@ export interface LocalReviewRoleResult {
   degraded: boolean;
 }
 
+export interface LocalReviewVerifierReport {
+  role: "verifier";
+  summary: string;
+  recommendation: "ready" | "changes_requested" | "unknown";
+  findings: LocalReviewVerificationFinding[];
+  rawOutput: string;
+  exitCode: number;
+  degraded: boolean;
+}
+
+interface LocalReviewArtifact {
+  issueNumber: number;
+  prNumber: number;
+  branch: string;
+  headSha: string;
+  ranAt: string;
+  confidenceThreshold: number;
+  roles: string[];
+  summary: string;
+  recommendation: "ready" | "changes_requested" | "unknown";
+  degraded: boolean;
+  findingsCount: number;
+  maxSeverity: LocalReviewSeverity;
+  actionableFindings: LocalReviewFinding[];
+  verification: {
+    required: boolean;
+    summary: string;
+    recommendation: "ready" | "changes_requested" | "unknown";
+    degraded: boolean;
+    findingsCount: number;
+    verifiedFindingsCount: number;
+    verifiedMaxSeverity: LocalReviewSeverity;
+    findings: LocalReviewVerificationFinding[];
+  };
+  verifiedFindings: LocalReviewFinding[];
+  roleReports: Array<{
+    role: string;
+    exitCode: number;
+    degraded: boolean;
+    summary: string;
+    recommendation: "ready" | "changes_requested" | "unknown";
+    findings: LocalReviewFinding[];
+  }>;
+  verifierReport: {
+    role: "verifier";
+    exitCode: number;
+    degraded: boolean;
+    summary: string;
+    recommendation: "ready" | "changes_requested" | "unknown";
+    findings: LocalReviewVerificationFinding[];
+  } | null;
+}
+
+export interface FinalizedLocalReview {
+  summary: string;
+  recommendation: "ready" | "changes_requested" | "unknown";
+  degraded: boolean;
+  findingsCount: number;
+  maxSeverity: LocalReviewSeverity;
+  verifiedFindingsCount: number;
+  verifiedMaxSeverity: LocalReviewSeverity;
+  actionableFindings: LocalReviewFinding[];
+  verifiedFindings: LocalReviewFinding[];
+  artifact: LocalReviewArtifact;
+}
+
 export interface LocalReviewResult {
   ranAt: string;
   summaryPath: string;
@@ -47,6 +126,8 @@ export interface LocalReviewResult {
   summary: string;
   findingsCount: number;
   maxSeverity: LocalReviewSeverity;
+  verifiedFindingsCount: number;
+  verifiedMaxSeverity: LocalReviewSeverity;
   recommendation: "ready" | "changes_requested" | "unknown";
   degraded: boolean;
   rawOutput: string;
@@ -154,6 +235,35 @@ function normalizeFinding(role: string, value: unknown): LocalReviewFinding | nu
   };
 }
 
+function normalizeVerificationVerdict(value: unknown): VerificationVerdict | null {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (normalized === "confirmed" || normalized === "dismissed" || normalized === "unclear") {
+    return normalized;
+  }
+
+  return null;
+}
+
+function normalizeVerificationFinding(value: unknown): LocalReviewVerificationFinding | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const findingKey = typeof record.findingKey === "string" ? normalizeWhitespace(record.findingKey) : "";
+  const verdict = normalizeVerificationVerdict(record.verdict);
+  const rationale = typeof record.rationale === "string" ? normalizeWhitespace(record.rationale) : "";
+  if (!findingKey || !verdict || !rationale) {
+    return null;
+  }
+
+  return {
+    findingKey,
+    verdict,
+    rationale: truncate(rationale, 500) ?? rationale,
+  };
+}
+
 function parseRoleFooter(role: string, output: string): ParsedRoleFooter {
   const summaryMatch = output.match(/Review summary:\s*(.+)/i);
   const recommendationMatch = output.match(/Recommendation:\s*(ready|changes_requested)/i);
@@ -176,6 +286,33 @@ function parseRoleFooter(role: string, output: string): ParsedRoleFooter {
 
   return {
     summary: truncate(summaryMatch?.[1]?.trim() ?? `${role} review completed without a structured summary.`, 500) ?? "",
+    recommendation: (recommendationMatch?.[1]?.toLowerCase() as "ready" | "changes_requested" | undefined) ?? "unknown",
+    findings,
+  };
+}
+
+function parseVerifierFooter(output: string): ParsedVerifierFooter {
+  const summaryMatch = output.match(/Verification summary:\s*(.+)/i);
+  const recommendationMatch = output.match(/Recommendation:\s*(ready|changes_requested)/i);
+  const jsonMatch = output.match(/REVIEW_VERIFIER_JSON_START\s*([\s\S]*?)\s*REVIEW_VERIFIER_JSON_END/i);
+
+  let findings: LocalReviewVerificationFinding[] = [];
+
+  if (jsonMatch?.[1]) {
+    try {
+      const parsed = JSON.parse(jsonMatch[1]) as Record<string, unknown>;
+      if (Array.isArray(parsed.findings)) {
+        findings = parsed.findings
+          .map((item) => normalizeVerificationFinding(item))
+          .filter((item): item is LocalReviewVerificationFinding => item !== null);
+      }
+    } catch {
+      findings = [];
+    }
+  }
+
+  return {
+    summary: truncate(summaryMatch?.[1]?.trim() ?? "Verifier completed without a structured summary.", 500) ?? "",
     recommendation: (recommendationMatch?.[1]?.toLowerCase() as "ready" | "changes_requested" | undefined) ?? "unknown",
     findings,
   };
@@ -353,6 +490,16 @@ function dedupeFindings(findings: LocalReviewFinding[]): LocalReviewFinding[] {
   });
 }
 
+function findingKey(finding: LocalReviewFinding): string {
+  return [
+    finding.file ?? "",
+    finding.start ?? "",
+    finding.end ?? "",
+    finding.title.toLowerCase(),
+    finding.body.toLowerCase(),
+  ].join("|");
+}
+
 function maxSeverity(findings: LocalReviewFinding[]): LocalReviewSeverity {
   if (findings.some((finding) => finding.severity === "high")) {
     return "high";
@@ -457,6 +604,193 @@ async function runRoleReview(args: {
   };
 }
 
+async function runVerifierReview(args: {
+  config: SupervisorConfig;
+  issue: GitHubIssue;
+  branch: string;
+  workspacePath: string;
+  defaultBranch: string;
+  pr: GitHubPullRequest;
+  findings: LocalReviewFinding[];
+}): Promise<LocalReviewVerifierReport> {
+  const ref = compareRef(args.defaultBranch);
+  const findingsBlock = args.findings
+    .map((finding, index) =>
+      [
+        `- Finding ${index + 1}`,
+        `  key: ${findingKey(finding)}`,
+        `  title: ${finding.title}`,
+        `  severity: ${finding.severity}`,
+        `  file: ${finding.file ?? "none"}`,
+        `  lines: ${renderLines(finding)}`,
+        `  body: ${finding.body}`,
+        ...(finding.evidence ? [`  evidence: ${finding.evidence}`] : []),
+      ].join("\n"),
+    )
+    .join("\n");
+  const prompt = [
+    `You are performing a verifier pass for high-severity local review findings in ${args.config.repoSlug}.`,
+    `Issue: #${args.issue.number} ${args.issue.title}`,
+    `Issue URL: ${args.issue.url}`,
+    `PR: #${args.pr.number} ${args.pr.url}`,
+    `Branch: ${args.branch}`,
+    `Workspace: ${args.workspacePath}`,
+    `Compare diff against: ${ref}`,
+    "",
+    "Goal:",
+    "- Re-check only the listed high-severity findings.",
+    "- Confirm a finding only when the diff and narrowly targeted reads support the original concern.",
+    "- Dismiss findings that appear to be false positives or overstated.",
+    "- Use `unclear` when the evidence is inconclusive from the available local context.",
+    "",
+    "Constraints:",
+    "- Do not edit files, do not commit, and do not push.",
+    "- Keep reads narrow and tied to the listed findings.",
+    "",
+    "High-severity findings to verify:",
+    findingsBlock,
+    "",
+    "Respond with a concise verification and end with this exact footer:",
+    "Verification summary: <short summary>",
+    "Recommendation: <ready|changes_requested>",
+    "REVIEW_VERIFIER_JSON_START",
+    '{"findings":[{"findingKey":"exact key from prompt","verdict":"confirmed|dismissed|unclear","rationale":"short evidence-based explanation"}]}',
+    "REVIEW_VERIFIER_JSON_END",
+  ].join("\n");
+
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-review-"));
+  const messageFile = path.join(tempDir, "verifier.txt");
+  const overrideArgs = buildCodexConfigOverrideArgs(resolveCodexExecutionPolicy(args.config, "local_review"));
+  const result = await runCommand(
+    args.config.codexBinary,
+    [
+      "exec",
+      ...overrideArgs,
+      "--json",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "-C",
+      args.workspacePath,
+      "-o",
+      messageFile,
+      prompt,
+    ],
+    {
+      cwd: args.workspacePath,
+      allowExitCodes: [0, 1],
+      env: {
+        ...process.env,
+        npm_config_yes: "true",
+        CI: "1",
+      },
+      timeoutMs: args.config.codexExecTimeoutMinutes * 60_000,
+    },
+  );
+
+  let rawOutput = "";
+  try {
+    rawOutput = (await fs.readFile(messageFile, "utf8")).trim();
+  } catch {
+    rawOutput = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n").trim();
+  }
+  await fs.rm(tempDir, { recursive: true, force: true });
+
+  const parsed = parseVerifierFooter(rawOutput);
+  return {
+    role: "verifier",
+    rawOutput,
+    exitCode: result.exitCode,
+    degraded: result.exitCode !== 0,
+    ...parsed,
+  };
+}
+
+export function finalizeLocalReview(args: {
+  config: Pick<SupervisorConfig, "localReviewConfidenceThreshold">;
+  issueNumber: number;
+  prNumber: number;
+  branch: string;
+  headSha: string;
+  roleResults: LocalReviewRoleResult[];
+  verifierReport: LocalReviewVerifierReport | null;
+  ranAt: string;
+}): FinalizedLocalReview {
+  const roles = args.roleResults.map((result) => result.role);
+  const allFindings = args.roleResults.flatMap((result) => result.findings);
+  const actionableFindings = dedupeFindings(
+    allFindings.filter((finding) => finding.confidence >= args.config.localReviewConfidenceThreshold),
+  );
+  const degraded = args.roleResults.some((result) => result.degraded) || (args.verifierReport?.degraded ?? false);
+  const summary = truncate(
+    `Roles run: ${roles.join(", ")}. Actionable findings above confidence ${args.config.localReviewConfidenceThreshold.toFixed(2)}: ${actionableFindings.length}. Degraded roles: ${args.roleResults.filter((result) => result.degraded).length}.`,
+    500,
+  ) ?? "";
+  const recommendation: LocalReviewResult["recommendation"] =
+    degraded ? "unknown" : actionableFindings.length > 0 ? "changes_requested" : "ready";
+  const actionableHighSeverityFindings = actionableFindings.filter((finding) => finding.severity === "high");
+  const verificationByKey = new Map(args.verifierReport?.findings.map((finding) => [finding.findingKey, finding]) ?? []);
+  const verifiedFindings = actionableHighSeverityFindings.filter(
+    (finding) => verificationByKey.get(findingKey(finding))?.verdict === "confirmed",
+  );
+  const verifiedMaxSeverity = maxSeverity(verifiedFindings);
+  const artifact: LocalReviewArtifact = {
+    issueNumber: args.issueNumber,
+    prNumber: args.prNumber,
+    branch: args.branch,
+    headSha: args.headSha,
+    ranAt: args.ranAt,
+    confidenceThreshold: args.config.localReviewConfidenceThreshold,
+    roles,
+    summary,
+    recommendation,
+    degraded,
+    findingsCount: actionableFindings.length,
+    maxSeverity: maxSeverity(actionableFindings),
+    actionableFindings,
+    verification: {
+      required: actionableHighSeverityFindings.length > 0,
+      summary: args.verifierReport?.summary ?? (actionableHighSeverityFindings.length > 0 ? "Verification not run." : "No high-severity findings required verification."),
+      recommendation: args.verifierReport?.recommendation ?? "unknown",
+      degraded: args.verifierReport?.degraded ?? false,
+      findingsCount: args.verifierReport?.findings.length ?? 0,
+      verifiedFindingsCount: verifiedFindings.length,
+      verifiedMaxSeverity,
+      findings: args.verifierReport?.findings ?? [],
+    },
+    verifiedFindings,
+    roleReports: args.roleResults.map((result) => ({
+      role: result.role,
+      exitCode: result.exitCode,
+      degraded: result.degraded,
+      summary: result.summary,
+      recommendation: result.recommendation,
+      findings: result.findings,
+    })),
+    verifierReport: args.verifierReport
+      ? {
+          role: args.verifierReport.role,
+          exitCode: args.verifierReport.exitCode,
+          degraded: args.verifierReport.degraded,
+          summary: args.verifierReport.summary,
+          recommendation: args.verifierReport.recommendation,
+          findings: args.verifierReport.findings,
+        }
+      : null,
+  };
+
+  return {
+    summary,
+    recommendation,
+    degraded,
+    findingsCount: actionableFindings.length,
+    maxSeverity: maxSeverity(actionableFindings),
+    verifiedFindingsCount: verifiedFindings.length,
+    verifiedMaxSeverity,
+    actionableFindings,
+    verifiedFindings,
+    artifact,
+  };
+}
+
 export function shouldRunLocalReview(
   config: SupervisorConfig,
   record: { local_review_head_sha: string | null },
@@ -504,27 +838,43 @@ export async function runLocalReview(args: {
   }
 
   await Promise.all(Array.from({ length: concurrency }, () => runNextRole()));
-
-  const allFindings = roleResults.flatMap((result) => result.findings);
-  const actionableFindings = dedupeFindings(
-    allFindings.filter((finding) => finding.confidence >= args.config.localReviewConfidenceThreshold),
-  );
-  const degraded = roleResults.some((result) => result.degraded);
-  const aggregateSummary = truncate(
-    `Roles run: ${roles.join(", ")}. Actionable findings above confidence ${args.config.localReviewConfidenceThreshold.toFixed(2)}: ${actionableFindings.length}. Degraded roles: ${roleResults.filter((result) => result.degraded).length}.`,
-    500,
-  ) ?? "";
-  const aggregateRecommendation: LocalReviewResult["recommendation"] =
-    degraded ? "unknown" : actionableFindings.length > 0 ? "changes_requested" : "ready";
   const ranAt = nowIso();
   const dirPath = reviewDir(args.config, args.issue.number);
   await ensureDir(dirPath);
+  const rawActionableHighSeverityFindings = dedupeFindings(
+    roleResults
+      .flatMap((result) => result.findings)
+      .filter((finding) => finding.confidence >= args.config.localReviewConfidenceThreshold && finding.severity === "high"),
+  );
+  const verifierReport =
+    rawActionableHighSeverityFindings.length > 0
+      ? await runVerifierReview({
+          config: args.config,
+          issue: args.issue,
+          branch: args.branch,
+          workspacePath: args.workspacePath,
+          defaultBranch: args.defaultBranch,
+          pr: args.pr,
+          findings: rawActionableHighSeverityFindings,
+        })
+      : null;
+  const finalized = finalizeLocalReview({
+    config: args.config,
+    issueNumber: args.issue.number,
+    prNumber: args.pr.number,
+    branch: args.branch,
+    headSha: args.pr.headRefOid,
+    roleResults,
+    verifierReport,
+    ranAt,
+  });
 
   const baseName = `head-${args.pr.headRefOid.slice(0, 12)}`;
   const summaryPath = path.join(dirPath, `${baseName}.md`);
   const findingsPath = path.join(dirPath, `${baseName}.json`);
   const rawOutput = roleResults
     .map((result) => `## ${result.role}\n\n${result.rawOutput}`)
+    .concat(verifierReport ? [`## verifier\n\n${verifierReport.rawOutput}`] : [])
     .join("\n\n");
 
   await fs.writeFile(
@@ -538,17 +888,19 @@ export async function runLocalReview(args: {
       `- Ran at: ${ranAt}`,
       `- Roles: ${roles.join(", ")}`,
       `- Confidence threshold: ${args.config.localReviewConfidenceThreshold.toFixed(2)}`,
-      `- Actionable findings: ${actionableFindings.length}`,
-      `- Max severity: ${maxSeverity(actionableFindings)}`,
-      `- Recommendation: ${aggregateRecommendation}`,
-      `- Degraded: ${degraded ? "yes" : "no"}`,
+      `- Actionable findings: ${finalized.findingsCount}`,
+      `- Max severity: ${finalized.maxSeverity}`,
+      `- Verified findings: ${finalized.verifiedFindingsCount}`,
+      `- Verified max severity: ${finalized.verifiedMaxSeverity}`,
+      `- Recommendation: ${finalized.recommendation}`,
+      `- Degraded: ${finalized.degraded ? "yes" : "no"}`,
       "",
       "## Role summaries",
       summarizeRoles(roleResults),
       "",
       "## Actionable findings",
-      ...(actionableFindings.length > 0
-        ? actionableFindings.map((finding, index) =>
+      ...(finalized.actionableFindings.length > 0
+        ? finalized.actionableFindings.map((finding, index) =>
             [
               `### ${index + 1}. ${finding.title}`,
               `- Role: ${finding.role}`,
@@ -563,6 +915,27 @@ export async function runLocalReview(args: {
             ].join("\n"),
           )
         : ["- No actionable findings above the confidence threshold.", ""]),
+      "## High-Severity Verification",
+      `- Required: ${finalized.artifact.verification.required ? "yes" : "no"}`,
+      `- Summary: ${finalized.artifact.verification.summary}`,
+      `- Recommendation: ${finalized.artifact.verification.recommendation}`,
+      `- Degraded: ${finalized.artifact.verification.degraded ? "yes" : "no"}`,
+      `- Verified findings: ${finalized.verifiedFindingsCount}`,
+      `- Verified max severity: ${finalized.verifiedMaxSeverity}`,
+      ...(finalized.artifact.verification.findings.length > 0
+        ? [
+            "",
+            ...finalized.artifact.verification.findings.map((finding, index) =>
+              [
+                `### Verification ${index + 1}`,
+                `- Finding key: ${finding.findingKey}`,
+                `- Verdict: ${finding.verdict}`,
+                `- Rationale: ${finding.rationale}`,
+                "",
+              ].join("\n"),
+            ),
+          ]
+        : [""]),
       "## Raw role outputs",
       rawOutput,
       "",
@@ -572,33 +945,7 @@ export async function runLocalReview(args: {
 
   await fs.writeFile(
     findingsPath,
-    `${JSON.stringify(
-      {
-        issueNumber: args.issue.number,
-        prNumber: args.pr.number,
-        branch: args.branch,
-        headSha: args.pr.headRefOid,
-        ranAt,
-        confidenceThreshold: args.config.localReviewConfidenceThreshold,
-        roles,
-        summary: aggregateSummary,
-        recommendation: aggregateRecommendation,
-        degraded,
-        findingsCount: actionableFindings.length,
-        maxSeverity: maxSeverity(actionableFindings),
-        actionableFindings,
-        roleReports: roleResults.map((result) => ({
-          role: result.role,
-          exitCode: result.exitCode,
-          degraded: result.degraded,
-          summary: result.summary,
-          recommendation: result.recommendation,
-          findings: result.findings,
-        })),
-      },
-      null,
-      2,
-    )}\n`,
+    `${JSON.stringify(finalized.artifact, null, 2)}\n`,
     "utf8",
   );
 
@@ -606,11 +953,13 @@ export async function runLocalReview(args: {
     ranAt,
     summaryPath,
     findingsPath,
-    summary: aggregateSummary,
-    findingsCount: actionableFindings.length,
-    maxSeverity: maxSeverity(actionableFindings),
-    recommendation: aggregateRecommendation,
-    degraded,
+    summary: finalized.summary,
+    findingsCount: finalized.findingsCount,
+    maxSeverity: finalized.maxSeverity,
+    verifiedFindingsCount: finalized.verifiedFindingsCount,
+    verifiedMaxSeverity: finalized.verifiedMaxSeverity,
+    recommendation: finalized.recommendation,
+    degraded: finalized.degraded,
     rawOutput,
   };
 }

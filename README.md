@@ -372,6 +372,7 @@ This is designed to reduce dependence on GitHub-hosted auto review. The supervis
 - supports reviewer roles such as `reviewer`, `explorer`, `docs_researcher`, `prisma_postgres_reviewer`, `migration_invariant_reviewer`, `contract_consistency_reviewer`, `github_actions_semantics_reviewer`, `workflow_test_reviewer`, and `portability_reviewer`
 - keeps the same context-budget policy used by implementation turns: read the compact context index and issue journal first, then open durable memory files only on demand
 - saves a Markdown summary plus a structured JSON artifact (for example `head-<sha>.json`) under `localReviewArtifactDir`
+- runs a verifier pass for actionable high-severity findings before stronger high-severity gates react
 - deduplicates findings and keeps only findings at or above `localReviewConfidenceThreshold`
 - then continues the normal ready / Copilot wait flow
 
@@ -397,8 +398,10 @@ If you want stronger enforcement without giving the review swarm destructive pow
 
 For high-severity findings, `localReviewHighSeverityAction` can either:
 
-- `retry`: send the issue back into another repair pass
-- `blocked`: require explicit human intervention
+- `retry`: send the issue back into another repair pass, but only when the verifier confirms at least one high-severity finding
+- `blocked`: require explicit human intervention, but only when the verifier confirms at least one high-severity finding
+
+The review artifacts distinguish between raw actionable findings from the review roles and verified findings confirmed by the verifier pass. `block_ready` and `block_merge` still react to raw actionable findings. The stronger high-severity actions above react only to verifier-confirmed high-severity findings, which reduces false positives without hiding the original review signal.
 
 ## Runtime
 
