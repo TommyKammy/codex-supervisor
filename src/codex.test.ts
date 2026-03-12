@@ -226,6 +226,20 @@ test("buildCodexPrompt surfaces saved external review misses during addressing_r
       matchedCount: 0,
       nearMatchCount: 1,
       missedCount: 4,
+      regressionTestCandidates: [
+        {
+          id: "src/auth.ts|42|permission-guard-is-bypassed",
+          title: "Add regression coverage for Permission guard is bypassed",
+          file: "src/auth.ts",
+          line: 42,
+          summary: "Permission guard is bypassed.",
+          rationale: "This fallback skips the permission guard and lets unauthorized callers update records.",
+          sourceThreadId: "thread-1",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          sourceUrl: "https://example.test/thread-1#comment-1",
+          qualificationReasons: ["missed_by_local_review", "non_low_severity", "high_confidence", "file_scoped", "line_scoped"],
+        },
+      ],
       missedFindings: [
         {
           reviewerLogin: "copilot-pull-request-reviewer",
@@ -265,6 +279,9 @@ test("buildCodexPrompt surfaces saved external review misses during addressing_r
 
   assert.match(prompt, /External review miss context:/);
   assert.match(prompt, /matched=0 near_match=1 missed=4/);
+  assert.match(prompt, /Regression-test candidates from confirmed misses:/);
+  assert.match(prompt, /Add regression coverage for Permission guard is bypassed/);
+  assert.match(prompt, /qualified_by=missed_by_local_review, non_low_severity, high_confidence, file_scoped, line_scoped/);
   assert.match(prompt, /Permission guard is bypassed\./);
   assert.match(prompt, /copilot-pull-request-reviewer/);
   assert.match(prompt, /Additional missed findings omitted: 1/);

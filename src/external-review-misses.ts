@@ -73,6 +73,7 @@ export interface ExternalReviewMissArtifact {
   localReviewFindingsPath: string | null;
   findings: ExternalReviewMissFinding[];
   reusableMissPatterns: ExternalReviewMissPattern[];
+  regressionTestCandidates: ExternalReviewRegressionCandidate[];
   counts: {
     matched: number;
     nearMatch: number;
@@ -83,6 +84,7 @@ export interface ExternalReviewMissArtifact {
 export interface ExternalReviewMissContext {
   artifactPath: string;
   missedFindings: ExternalReviewPromptFinding[];
+  regressionTestCandidates: ExternalReviewRegressionCandidate[];
   matchedCount: number;
   nearMatchCount: number;
   missedCount: number;
@@ -98,6 +100,19 @@ export interface ExternalReviewMissPattern {
   sourceArtifactPath: string;
   sourceHeadSha: string;
   lastSeenAt: string;
+}
+
+export interface ExternalReviewRegressionCandidate {
+  id: string;
+  title: string;
+  file: string;
+  line: number;
+  summary: string;
+  rationale: string;
+  reviewerLogin: string;
+  sourceThreadId: string;
+  sourceUrl: string | null;
+  qualificationReasons: string[];
 }
 
 interface LocalComparisonCandidate {
@@ -154,6 +169,61 @@ function summarizeComment(body: string): string {
 
   const sentence = normalized.match(/^(.{1,180}?[.!?])(?:\s|$)/)?.[1] ?? normalized;
   return truncate(sentence, 180) ?? "External review finding";
+}
+
+function createRegressionCandidateId(finding: ExternalReviewMissFinding): string {
+  return [
+    finding.file ?? "",
+    finding.line ?? "",
+    normalizeWhitespace(finding.rationale).toLowerCase(),
+  ].join("|");
+}
+
+function toRegressionTestCandidate(
+  finding: ExternalReviewMissFinding,
+): ExternalReviewRegressionCandidate | null {
+  if (finding.classification !== "missed_by_local_review") {
+    return null;
+  }
+
+  const qualificationReasons: string[] = ["missed_by_local_review"];
+  if (finding.severity !== "low") {
+    qualificationReasons.push("non_low_severity");
+  }
+  if (finding.confidence >= 0.75) {
+    qualificationReasons.push("high_confidence");
+  }
+  if (typeof finding.file === "string" && finding.file.trim() !== "") {
+    qualificationReasons.push("file_scoped");
+  }
+  if (typeof finding.line === "number" && Number.isInteger(finding.line) && finding.line > 0) {
+    qualificationReasons.push("line_scoped");
+  }
+
+  if (
+    !qualificationReasons.includes("non_low_severity") ||
+    !qualificationReasons.includes("high_confidence") ||
+    !qualificationReasons.includes("file_scoped") ||
+    !qualificationReasons.includes("line_scoped") ||
+    !finding.file ||
+    finding.line == null
+  ) {
+    return null;
+  }
+
+  const trimmedSummary = finding.summary.replace(/[.!?]+$/, "");
+  return {
+    id: createRegressionCandidateId(finding),
+    title: `Add regression coverage for ${trimmedSummary}`,
+    file: finding.file,
+    line: finding.line,
+    summary: finding.summary,
+    rationale: finding.rationale,
+    reviewerLogin: finding.reviewerLogin,
+    sourceThreadId: finding.threadId,
+    sourceUrl: finding.url ?? null,
+    qualificationReasons,
+  };
 }
 
 function inferSeverity(body: string): Exclude<LocalReviewSeverity, "none"> {
@@ -410,6 +480,7 @@ interface ExternalReviewMissArtifactLike {
   generatedAt?: string;
   findings?: ExternalReviewMissFinding[];
   reusableMissPatterns?: ExternalReviewMissPattern[];
+  regressionTestCandidates?: ExternalReviewRegressionCandidate[];
 }
 
 function legacyReusableMissPatterns(
@@ -534,6 +605,7 @@ export async function writeExternalReviewMissArtifact(args: {
     localReviewFindingsPath,
     findings,
     reusableMissPatterns: [],
+    regressionTestCandidates: [],
     counts: {
       matched: findings.filter((finding) => finding.classification === "matched").length,
       nearMatch: findings.filter((finding) => finding.classification === "near_match").length,
@@ -546,11 +618,15 @@ export async function writeExternalReviewMissArtifact(args: {
   artifact.reusableMissPatterns = findings
     .filter((finding) => finding.classification === "missed_by_local_review" && typeof finding.file === "string" && finding.file.trim() !== "")
     .map((finding) => toReusableMissPattern(finding, artifactPath, args.headSha, artifact.generatedAt));
+  artifact.regressionTestCandidates = findings
+    .map((finding) => toRegressionTestCandidate(finding))
+    .filter((candidate): candidate is ExternalReviewRegressionCandidate => candidate !== null);
   await fs.writeFile(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
 
   return {
     artifactPath,
     missedFindings: findings.filter((finding) => finding.classification === "missed_by_local_review"),
+    regressionTestCandidates: artifact.regressionTestCandidates,
     matchedCount: artifact.counts.matched,
     nearMatchCount: artifact.counts.nearMatch,
     missedCount: artifact.counts.missedByLocalReview,

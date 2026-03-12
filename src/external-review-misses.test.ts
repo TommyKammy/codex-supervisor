@@ -241,6 +241,103 @@ test("writeExternalReviewMissArtifact persists missed external findings for the 
   ]);
 });
 
+test("writeExternalReviewMissArtifact derives deterministic regression-test candidates from confirmed misses", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "external-review-miss-test-"));
+  const localReviewSummaryPath = path.join(tempDir, "head-deadbeef.md");
+  const localReviewFindingsPath = path.join(tempDir, "head-deadbeef.json");
+  await fs.writeFile(localReviewSummaryPath, "# summary\n", "utf8");
+  await fs.writeFile(
+    localReviewFindingsPath,
+    `${JSON.stringify({
+      actionableFindings: [],
+      rootCauseSummaries: [],
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const context = await writeExternalReviewMissArtifact({
+    artifactDir: tempDir,
+    issueNumber: 63,
+    prNumber: 91,
+    branch: "codex/issue-63",
+    headSha: "deadbeefcafebabe",
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-strong",
+        path: "src/auth.ts",
+        line: 42,
+        comments: {
+          nodes: [
+            {
+              id: "comment-strong",
+              body: "This fallback skips the permission guard and lets unauthorized callers update records.",
+              createdAt: "2026-03-12T00:00:00Z",
+              url: "https://example.test/thread-strong#comment-1",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "thread-low",
+        path: "src/docs.ts",
+        line: 10,
+        comments: {
+          nodes: [
+            {
+              id: "comment-low",
+              body: "Nit: docs wording should be clearer here.",
+              createdAt: "2026-03-12T00:01:00Z",
+              url: "https://example.test/thread-low#comment-1",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+    localReviewSummaryPath,
+  });
+
+  assert.ok(context);
+  assert.equal(context?.regressionTestCandidates.length, 1);
+  assert.equal(context?.regressionTestCandidates[0]?.file, "src/auth.ts");
+  assert.match(context?.regressionTestCandidates[0]?.title ?? "", /permission guard/i);
+
+  const artifact = JSON.parse(
+    await fs.readFile(context?.artifactPath ?? "", "utf8"),
+  ) as {
+    regressionTestCandidates: Array<{
+      id: string;
+      file: string;
+      line: number;
+      sourceThreadId: string;
+      qualificationReasons: string[];
+    }>;
+  };
+
+  assert.deepEqual(artifact.regressionTestCandidates, [
+    {
+      id: "src/auth.ts|42|this fallback skips the permission guard and lets unauthorized callers update records.",
+      title: "Add regression coverage for This fallback skips the permission guard and lets unauthorized callers update records",
+      file: "src/auth.ts",
+      line: 42,
+      summary: "This fallback skips the permission guard and lets unauthorized callers update records.",
+      rationale: "This fallback skips the permission guard and lets unauthorized callers update records.",
+      reviewerLogin: "copilot-pull-request-reviewer",
+      sourceThreadId: "thread-strong",
+      sourceUrl: "https://example.test/thread-strong#comment-1",
+      qualificationReasons: ["missed_by_local_review", "non_low_severity", "high_confidence", "file_scoped", "line_scoped"],
+    },
+  ]);
+});
+
 test("writeExternalReviewMissArtifact skips persistence when the local review artifact is unavailable", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "external-review-miss-test-"));
 

@@ -329,6 +329,23 @@ export function buildCodexPrompt(input: {
             ? [
                 `- Artifact: ${input.externalReviewMissContext.artifactPath}`,
                 `- Classified findings: matched=${input.externalReviewMissContext.matchedCount} near_match=${input.externalReviewMissContext.nearMatchCount} missed=${input.externalReviewMissContext.missedCount}`,
+                ...(input.externalReviewMissContext.regressionTestCandidates.length > 0
+                  ? [
+                      "- Regression-test candidates from confirmed misses:",
+                      ...input.externalReviewMissContext.regressionTestCandidates.slice(0, 3).map((candidate, index) =>
+                        [
+                          `  - ${index + 1}. title=${truncate(candidate.title, 160) ?? ""}`,
+                          `    file=${candidate.file}:${candidate.line}`,
+                          `    summary=${truncate(candidate.summary, 160) ?? ""}`,
+                          `    qualified_by=${candidate.qualificationReasons.join(", ")}`,
+                          `    url=${candidate.sourceUrl ?? "n/a"}`,
+                        ].join("\n"),
+                      ),
+                      ...(input.externalReviewMissContext.regressionTestCandidates.length > 3
+                        ? [`  - Additional regression-test candidates omitted: ${input.externalReviewMissContext.regressionTestCandidates.length - 3}`]
+                        : []),
+                    ]
+                  : ["- Regression-test candidates from confirmed misses: none"]),
                 ...(input.externalReviewMissContext.missedFindings.length > 0
                   ? [
                       "- Missed-by-local-review findings to validate first:",
