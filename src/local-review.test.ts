@@ -359,3 +359,118 @@ test("finalizeLocalReview compresses overlapping findings into a root-cause summ
   assert.equal(result.artifact.rootCauseSummaries[0]?.findingsCount, 2);
   assert.equal(result.artifact.rootCauseSummaries[0]?.file, "src/supervisor.ts");
 });
+
+test("finalizeLocalReview merges root-cause groups connected by a bridging finding", () => {
+  const result = finalizeLocalReview({
+    config: createConfig({ localReviewConfidenceThreshold: 0.7 }),
+    issueNumber: 45,
+    prNumber: 19,
+    branch: "codex/issue-45",
+    headSha: "bridge123456",
+    roleResults: [
+      {
+        role: "reviewer",
+        summary: "Found repeated auth-refresh failures.",
+        recommendation: "changes_requested",
+        degraded: false,
+        exitCode: 0,
+        rawOutput: "review raw output",
+        findings: [
+          {
+            role: "reviewer",
+            title: "Auth refresh misses invalid session guard",
+            body: "The auth refresh path can continue after an invalid session token and retry stale work.",
+            file: "src/local-review.ts",
+            start: 10,
+            end: 12,
+            severity: "high",
+            confidence: 0.95,
+            category: "correctness",
+            evidence: "The auth refresh branch reuses a stale session token.",
+          },
+          {
+            role: "reviewer",
+            title: "Bridge finding links the same stale session retry path",
+            body: "The auth refresh retry path keeps using the same stale session token after invalidation.",
+            file: "src/local-review.ts",
+            start: 15,
+            end: 17,
+            severity: "high",
+            confidence: 0.9,
+            category: "correctness",
+            evidence: "The bridge finding overlaps both auth refresh ranges.",
+          },
+          {
+            role: "explorer",
+            title: "Retry loop keeps invalid session token alive",
+            body: "The auth refresh retry loop can keep an invalid session token alive and repeat stale work.",
+            file: "src/local-review.ts",
+            start: 21,
+            end: 23,
+            severity: "high",
+            confidence: 0.88,
+            category: "correctness",
+            evidence: "The retry loop reconnects to the same stale session token.",
+          },
+        ],
+      },
+    ],
+    verifierReport: null,
+    ranAt: "2026-03-12T02:10:00Z",
+  });
+
+  assert.equal(result.findingsCount, 3);
+  assert.equal(result.rootCauseCount, 1);
+  assert.equal(result.artifact.rootCauseSummaries[0]?.findingsCount, 3);
+});
+
+test("finalizeLocalReview does not compress findings without file locations", () => {
+  const result = finalizeLocalReview({
+    config: createConfig({ localReviewConfidenceThreshold: 0.7 }),
+    issueNumber: 45,
+    prNumber: 20,
+    branch: "codex/issue-45",
+    headSha: "nofile123456",
+    roleResults: [
+      {
+        role: "reviewer",
+        summary: "Found two similar unscoped concerns.",
+        recommendation: "changes_requested",
+        degraded: false,
+        exitCode: 0,
+        rawOutput: "review raw output",
+        findings: [
+          {
+            role: "reviewer",
+            title: "Retry path may reuse stale review context",
+            body: "The retry path may reuse stale review context and produce repeated repair guidance.",
+            file: null,
+            start: null,
+            end: null,
+            severity: "medium",
+            confidence: 0.91,
+            category: "correctness",
+            evidence: "This finding has no file anchor.",
+          },
+          {
+            role: "explorer",
+            title: "Repeated repair guidance from stale review context",
+            body: "Repeated repair guidance may come from stale review context in the retry path.",
+            file: null,
+            start: null,
+            end: null,
+            severity: "medium",
+            confidence: 0.9,
+            category: "correctness",
+            evidence: "This finding also has no file anchor.",
+          },
+        ],
+      },
+    ],
+    verifierReport: null,
+    ranAt: "2026-03-12T02:15:00Z",
+  });
+
+  assert.equal(result.findingsCount, 2);
+  assert.equal(result.rootCauseCount, 2);
+});

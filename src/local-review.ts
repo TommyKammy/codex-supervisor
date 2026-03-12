@@ -518,13 +518,15 @@ function findingKey(finding: LocalReviewFinding): string {
   ].join("|");
 }
 
+const FINDING_STOPWORDS = new Set(["this", "that", "with", "from", "when", "only", "still", "have", "does", "into"]);
+
 function tokenizeFindingText(value: string): Set<string> {
   const tokens = value
     .toLowerCase()
     .split(/[^a-z0-9]+/i)
     .map((token) => token.trim())
     .filter((token) => token.length >= 4)
-    .filter((token) => !new Set(["this", "that", "with", "from", "when", "only", "still", "have", "does", "into"]).has(token));
+    .filter((token) => !FINDING_STOPWORDS.has(token));
   return new Set(tokens);
 }
 
@@ -554,12 +556,12 @@ function lineDistance(left: LocalReviewFinding, right: LocalReviewFinding): numb
 }
 
 function findingsOverlap(left: LocalReviewFinding, right: LocalReviewFinding): boolean {
-  if ((left.file ?? null) !== (right.file ?? null)) {
+  if (left.file == null || right.file == null || left.file !== right.file) {
     return false;
   }
 
   const distance = lineDistance(left, right);
-  if (distance !== null && distance > 6) {
+  if (distance == null || distance > 6) {
     return false;
   }
 
@@ -606,9 +608,23 @@ function summarizeRootCause(findings: LocalReviewFinding[]): LocalReviewRootCaus
 function compressRootCauses(findings: LocalReviewFinding[]): LocalReviewRootCauseSummary[] {
   const groups: LocalReviewFinding[][] = [];
   for (const finding of findings) {
-    const group = groups.find((candidate) => candidate.some((existing) => findingsOverlap(existing, finding)));
-    if (group) {
-      group.push(finding);
+    const overlappingGroupIndexes: number[] = [];
+    for (let index = 0; index < groups.length; index += 1) {
+      const candidate = groups[index];
+      if (candidate?.some((existing) => findingsOverlap(existing, finding))) {
+        overlappingGroupIndexes.push(index);
+      }
+    }
+
+    if (overlappingGroupIndexes.length > 0) {
+      const targetGroup = groups[overlappingGroupIndexes[0]!]!;
+      targetGroup.push(finding);
+      for (let index = overlappingGroupIndexes.length - 1; index >= 1; index -= 1) {
+        const groupIndex = overlappingGroupIndexes[index]!;
+        const groupToMerge = groups[groupIndex]!;
+        targetGroup.push(...groupToMerge);
+        groups.splice(groupIndex, 1);
+      }
       continue;
     }
 
