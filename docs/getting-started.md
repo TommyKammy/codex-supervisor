@@ -428,6 +428,7 @@ What it does:
 - keeps the same context-budget policy as implementation turns
 - writes a Markdown summary
 - writes a structured JSON artifact
+- keeps older `head-<sha>` artifacts for history; `status` shows `head`, `reviewed_head_sha`, and `pr_head_sha` so you can see whether the latest actionable artifact still matches the PR
 - runs a verifier pass for actionable high-severity findings before stronger high-severity gates react
 - deduplicates findings
 - keeps only findings above the configured confidence threshold as actionable
@@ -439,6 +440,8 @@ What it does not do by default:
 - replace GitHub branch protection
 
 The artifacts keep raw actionable findings separate from verifier-confirmed findings. `block_ready` and `block_merge` still respond to raw actionable findings. `localReviewHighSeverityAction` only escalates on verifier-confirmed high-severity findings, which reduces false positives before the supervisor triggers a repair retry or manual block.
+
+Older local review artifacts remain on disk unless you clean them up explicitly. For live triage, trust the `status` output first: `head=current` means the artifact for `reviewed_head_sha` matches `pr_head_sha`, while `head=stale` means the artifact is historical and a newer PR head needs another review run.
 
 ## What to ask Codex
 

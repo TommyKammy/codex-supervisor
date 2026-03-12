@@ -531,7 +531,7 @@ test("formatDetailedStatus shows blocking local review status for current PR hea
 
   assert.match(
     status,
-    /local_review gating=yes policy=block_ready findings=3 max_severity=high verified_findings=0 verified_max_severity=none head=current ran_at=2026-03-11T14:05:00Z/,
+    /local_review gating=yes policy=block_ready findings=3 max_severity=high verified_findings=0 verified_max_severity=none head=current reviewed_head_sha=deadbeef pr_head_sha=deadbeef ran_at=2026-03-11T14:05:00Z/,
   );
 });
 
@@ -571,7 +571,7 @@ test("formatDetailedStatus marks stale local review as non-gating", () => {
 
   assert.match(
     status,
-    /local_review gating=no policy=block_merge findings=2 max_severity=medium verified_findings=0 verified_max_severity=none head=stale ran_at=2026-03-11T14:05:00Z/,
+    /local_review gating=no policy=block_merge findings=2 max_severity=medium verified_findings=0 verified_max_severity=none head=stale reviewed_head_sha=oldhead pr_head_sha=newhead ran_at=2026-03-11T14:05:00Z/,
   );
 });
 
@@ -597,7 +597,7 @@ test("formatDetailedStatus reports unknown local review head status without a PR
 
   assert.match(
     status,
-    /local_review gating=no policy=block_merge findings=2 max_severity=medium verified_findings=0 verified_max_severity=none head=unknown ran_at=2026-03-11T14:05:00Z/,
+    /local_review gating=no policy=block_merge findings=2 max_severity=medium verified_findings=0 verified_max_severity=none head=unknown reviewed_head_sha=oldhead pr_head_sha=unknown ran_at=2026-03-11T14:05:00Z/,
   );
 });
 
