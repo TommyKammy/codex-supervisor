@@ -977,6 +977,21 @@ function localReviewHeadStatus(
   return record.local_review_head_sha === pr.headRefOid ? "current" : "stale";
 }
 
+function localReviewHeadDetails(
+  record: Pick<IssueRunRecord, "local_review_head_sha">,
+  pr: Pick<GitHubPullRequest, "headRefOid"> | null,
+): {
+  status: "none" | "current" | "stale" | "unknown";
+  reviewedHeadSha: string;
+  prHeadSha: string;
+} {
+  return {
+    status: localReviewHeadStatus(record, pr),
+    reviewedHeadSha: record.local_review_head_sha ?? "none",
+    prHeadSha: pr?.headRefOid ?? "unknown",
+  };
+}
+
 function localReviewIsGating(
   config: SupervisorConfig,
   record: Pick<
@@ -1013,7 +1028,7 @@ export function formatDetailedStatus(args: {
     return lines.join("\n");
   }
 
-  const localReviewHead = localReviewHeadStatus(activeRecord, pr);
+  const localReviewHead = localReviewHeadDetails(activeRecord, pr);
   const localReviewGating = localReviewIsGating(config, activeRecord, pr) ? "yes" : "no";
   const lines = [
     `issue=#${activeRecord.issue_number}`,
@@ -1029,7 +1044,7 @@ export function formatDetailedStatus(args: {
     `last_failure_kind=${activeRecord.last_failure_kind ?? "none"}`,
     `last_failure_signature=${activeRecord.last_failure_signature ?? "none"}`,
     `retries timeout=${activeRecord.timeout_retry_count} verification=${activeRecord.blocked_verification_retry_count} same_blocker=${activeRecord.repeated_blocker_count} same_failure_signature=${activeRecord.repeated_failure_signature_count}`,
-    `local_review gating=${localReviewGating} policy=${config.localReviewPolicy} findings=${activeRecord.local_review_findings_count} max_severity=${activeRecord.local_review_max_severity ?? "none"} verified_findings=${activeRecord.local_review_verified_findings_count} verified_max_severity=${activeRecord.local_review_verified_max_severity ?? "none"} head=${localReviewHead} ran_at=${activeRecord.local_review_run_at ?? "none"} signature=${activeRecord.last_local_review_signature ?? "none"} repeated=${activeRecord.repeated_local_review_signature_count}`,
+    `local_review gating=${localReviewGating} policy=${config.localReviewPolicy} findings=${activeRecord.local_review_findings_count} max_severity=${activeRecord.local_review_max_severity ?? "none"} verified_findings=${activeRecord.local_review_verified_findings_count} verified_max_severity=${activeRecord.local_review_verified_max_severity ?? "none"} head=${localReviewHead.status} reviewed_head_sha=${localReviewHead.reviewedHeadSha} pr_head_sha=${localReviewHead.prHeadSha} ran_at=${activeRecord.local_review_run_at ?? "none"} signature=${activeRecord.last_local_review_signature ?? "none"} repeated=${activeRecord.repeated_local_review_signature_count}`,
   ];
 
   if (activeRecord.last_error) {

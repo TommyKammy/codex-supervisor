@@ -372,6 +372,7 @@ This is designed to reduce dependence on GitHub-hosted auto review. The supervis
 - supports reviewer roles such as `reviewer`, `explorer`, `docs_researcher`, `prisma_postgres_reviewer`, `migration_invariant_reviewer`, `contract_consistency_reviewer`, `github_actions_semantics_reviewer`, `workflow_test_reviewer`, and `portability_reviewer`
 - keeps the same context-budget policy used by implementation turns: read the compact context index and issue journal first, then open durable memory files only on demand
 - saves a Markdown summary plus a structured JSON artifact (for example `head-<sha>.json`) under `localReviewArtifactDir`
+- keeps older `head-<sha>` artifacts on disk for history; `status` shows both the reviewed artifact SHA and the current PR head SHA so the current-head artifact is obvious
 - runs a verifier pass for actionable high-severity findings before stronger high-severity gates react
 - deduplicates findings and keeps only findings at or above `localReviewConfidenceThreshold`
 - then continues the normal ready / Copilot wait flow
@@ -387,6 +388,8 @@ If `localReviewRoles` is empty and `localReviewAutoDetect` is enabled, the super
 - adds `portability_reviewer` for repos where shell/runtime portability is likely to matter
 
 The local review artifacts explain these choices in two forms: the Markdown summary has a concise `Auto-detected roles` section, and the JSON artifact includes machine-readable `autoDetectedRoles` entries with `kind`, `signal`, and `paths`. If you later want deterministic manual control, inspect those reasons, copy the roles you want into `localReviewRoles`, and disable `localReviewAutoDetect`.
+
+Historical local review artifacts are intentionally retained until explicit cleanup. During incident response, use `status` to compare `reviewed_head_sha` with `pr_head_sha`: `head=current` means the artifact applies to the live PR head, while `head=stale` means the artifact is only historical context.
 
 Use explicit `localReviewRoles` when you want full manual control.
 
