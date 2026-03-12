@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildRolePrompt, finalizeLocalReview, shouldRunLocalReview } from "./local-review";
+import { localReviewHasActionableFindings, shouldRunLocalReview } from "./local-review";
+import { finalizeLocalReview } from "./local-review-finalize";
+import { buildRolePrompt } from "./local-review-prompt";
 import { LocalReviewRoleSelection } from "./review-role-detector";
 import { GitHubPullRequest, SupervisorConfig } from "./types";
 
@@ -140,6 +142,34 @@ test("shouldRunLocalReview covers draft and ready policy gating combinations", (
 
     assert.equal(shouldRunLocalReview(config, record, pr), testCase.expected, testCase.name);
   }
+});
+
+test("localReviewHasActionableFindings requires the current head and a non-ready result", () => {
+  const pr = createPullRequest({ headRefOid: "newhead123" });
+
+  assert.equal(localReviewHasActionableFindings({
+    local_review_head_sha: "newhead123",
+    local_review_findings_count: 0,
+    local_review_recommendation: "ready",
+  }, pr), false);
+
+  assert.equal(localReviewHasActionableFindings({
+    local_review_head_sha: "oldhead456",
+    local_review_findings_count: 2,
+    local_review_recommendation: "changes_requested",
+  }, pr), false);
+
+  assert.equal(localReviewHasActionableFindings({
+    local_review_head_sha: "newhead123",
+    local_review_findings_count: 1,
+    local_review_recommendation: "ready",
+  }, pr), true);
+
+  assert.equal(localReviewHasActionableFindings({
+    local_review_head_sha: "newhead123",
+    local_review_findings_count: 0,
+    local_review_recommendation: "changes_requested",
+  }, pr), true);
 });
 
 test("finalizeLocalReview keeps raw high-severity findings separate from dismissed verifier results", () => {
