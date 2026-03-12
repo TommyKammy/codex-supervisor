@@ -3,6 +3,7 @@ export type RunState =
   | "planning"
   | "reproducing"
   | "implementing"
+  | "local_review_fix"
   | "stabilizing"
   | "draft_pr"
   | "local_review"

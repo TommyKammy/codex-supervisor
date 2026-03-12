@@ -274,7 +274,7 @@ test("buildChecksFailureContext ignores cancelled runs", () => {
   assert.equal(buildChecksFailureContext(pr, checks), null);
 });
 
-test("inferStateFromPullRequest forces implementing for actionable high local-review retry", () => {
+test("inferStateFromPullRequest routes actionable high local-review retry into local_review_fix", () => {
   const config = createConfig({
     localReviewEnabled: true,
     localReviewPolicy: "block_ready",
@@ -304,7 +304,7 @@ test("inferStateFromPullRequest forces implementing for actionable high local-re
     headRefOid: "head123",
   };
 
-  assert.equal(inferStateFromPullRequest(config, record, pr, [], []), "implementing");
+  assert.equal(inferStateFromPullRequest(config, record, pr, [], []), "local_review_fix");
 });
 
 test("inferStateFromPullRequest covers local review policy gating combinations", () => {
@@ -376,7 +376,7 @@ test("inferStateFromPullRequest covers local review policy gating combinations",
       expected: "ready_to_merge",
     },
     {
-      name: "retry escalates verifier-confirmed high severity findings back to implementing",
+      name: "retry escalates verifier-confirmed high severity findings into local_review_fix",
       config: {
         localReviewEnabled: true,
         localReviewPolicy: "block_merge",
@@ -393,7 +393,7 @@ test("inferStateFromPullRequest covers local review policy gating combinations",
         repeated_local_review_signature_count: 1,
       },
       pr: { isDraft: false, headRefOid: "head123" },
-      expected: "implementing",
+      expected: "local_review_fix",
     },
     {
       name: "blocked escalates verifier-confirmed high severity findings to blocked",

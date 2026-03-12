@@ -24,7 +24,7 @@ import {
   SupervisorStateFile,
   WorkspaceStatus,
 } from "./types";
-import { nowIso, truncate, isTerminalState, hoursSince } from "./utils";
+import { nowIso, truncate, isTerminalState, hoursSince, parseJson } from "./utils";
 import {
   branchNameForIssue,
   cleanupWorkspace,
@@ -108,6 +108,74 @@ export function localReviewHighSeverityNeedsRetry(
     record.local_review_verified_max_severity === "high" &&
     config.localReviewHighSeverityAction === "retry"
   );
+}
+
+interface LocalReviewRepairArtifact {
+  actionableFindings?: Array<{ file?: string | null }>;
+  rootCauseSummaries?: Array<{
+    severity?: "low" | "medium" | "high";
+    summary?: string;
+    file?: string | null;
+    start?: number | null;
+    end?: number | null;
+  }>;
+}
+
+async function loadLocalReviewRepairContext(summaryPath: string | null) {
+  if (!summaryPath) {
+    return null;
+  }
+
+  const findingsPath =
+    path.extname(summaryPath) === ".md"
+      ? `${summaryPath.slice(0, -3)}.json`
+      : null;
+  if (!findingsPath) {
+    return null;
+  }
+
+  try {
+    const raw = await fs.promises.readFile(findingsPath, "utf8");
+    const artifact = parseJson<LocalReviewRepairArtifact>(raw, findingsPath);
+    const rootCauses = (artifact.rootCauseSummaries ?? [])
+      .filter((rootCause) => typeof rootCause.summary === "string" && rootCause.summary.trim() !== "")
+      .slice(0, 5)
+      .map((rootCause) => {
+        const start = typeof rootCause.start === "number" ? rootCause.start : null;
+        const end = typeof rootCause.end === "number" ? rootCause.end : start;
+        return {
+          severity: rootCause.severity ?? "medium",
+          summary: rootCause.summary!.trim(),
+          file: rootCause.file ?? null,
+          lines:
+            start == null
+              ? null
+              : end != null && end !== start
+                ? `${start}-${end}`
+                : `${start}`,
+        };
+      });
+    const relevantFiles = [...new Set([
+      ...rootCauses.map((rootCause) => rootCause.file).filter((filePath): filePath is string => Boolean(filePath)),
+      ...(artifact.actionableFindings ?? [])
+        .map((finding) => (typeof finding.file === "string" && finding.file.trim() !== "" ? finding.file : null))
+        .filter((filePath): filePath is string => Boolean(filePath)),
+    ])].slice(0, 10);
+
+    return {
+      summaryPath,
+      findingsPath,
+      relevantFiles,
+      rootCauses,
+    };
+  } catch {
+    return {
+      summaryPath,
+      findingsPath,
+      relevantFiles: [],
+      rootCauses: [],
+    };
+  }
 }
 
 function localReviewRetryLoopStalled(
@@ -768,7 +836,7 @@ export function inferStateFromPullRequest(
   }
 
   if (localReviewHighSeverityNeedsRetry(config, record, pr)) {
-    return "implementing";
+    return "local_review_fix";
   }
 
   if (localReviewHighSeverityNeedsBlock(config, record, pr)) {
@@ -837,6 +905,7 @@ function shouldRunCodex(
     inferred === "resolving_conflict" ||
     inferred === "addressing_review" ||
     inferred === "implementing" ||
+    inferred === "local_review_fix" ||
     inferred === "reproducing" ||
     inferred === "stabilizing"
   );
@@ -1834,6 +1903,11 @@ export class Supervisor {
 
       const journalContent = await readIssueJournal(journalPath);
 
+      const localReviewRepairContext =
+        record.state === "local_review_fix"
+          ? await loadLocalReviewRepairContext(record.local_review_summary_path)
+          : null;
+
       const prompt = buildCodexPrompt({
         repoSlug: this.config.repoSlug,
         issue,
@@ -1852,6 +1926,7 @@ export class Supervisor {
         onDemandMemoryFiles: memoryArtifacts.onDemandFiles,
         gsdEnabled: this.config.gsdEnabled,
         gsdPlanningFiles: this.config.gsdPlanningFiles,
+        localReviewRepairContext,
       });
 
       const sessionLock = record.codex_session_id
@@ -2188,7 +2263,7 @@ export class Supervisor {
           ? localReviewStallFailureContext(recordForState)
           : nextState === "blocked" && localReviewHighSeverityNeedsBlock(this.config, recordForState, postReadyPr)
           ? localReviewFailureContext(recordForState)
-          : nextState === "implementing" && localReviewHighSeverityNeedsRetry(this.config, recordForState, postReadyPr)
+          : nextState === "local_review_fix" && localReviewHighSeverityNeedsRetry(this.config, recordForState, postReadyPr)
             ? localReviewFailureContext(recordForState)
             : null;
       const effectiveFailureContext = refreshedFailureContext ?? postReadyLocalReviewFailureContext;
@@ -2202,7 +2277,7 @@ export class Supervisor {
         last_error:
           nextState === "blocked" && effectiveFailureContext
             ? truncate(effectiveFailureContext.summary, 1000)
-            : nextState === "implementing" && localReviewHighSeverityNeedsRetry(this.config, recordForState, postReadyPr)
+            : nextState === "local_review_fix" && localReviewHighSeverityNeedsRetry(this.config, recordForState, postReadyPr)
               ? truncate(localReviewFailureSummary(recordForState), 1000)
               : record.last_error,
         last_failure_context: effectiveFailureContext,

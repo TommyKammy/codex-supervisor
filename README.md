@@ -86,6 +86,7 @@ If you need near-immediate reaction, lower `pollIntervalSeconds`. Do not treat i
 - `planning`
 - `reproducing`
 - `implementing`
+- `local_review_fix`
 - `stabilizing`
 - `draft_pr`
 - `pr_open`
@@ -194,6 +195,7 @@ Default reasoning policy:
 - `planning`: `low`
 - `reproducing`: `medium`
 - `implementing`: `high`
+- `local_review_fix`: `medium`
 - `stabilizing`: `medium`
 - `draft_pr`: `low`
 - `local_review`: `low`
@@ -394,6 +396,8 @@ Historical local review artifacts are intentionally retained until explicit clea
 Use explicit `localReviewRoles` when you want full manual control.
 
 This review does not mutate code. By default, `localReviewPolicy` is `block_ready`, so actionable findings keep a draft PR from becoming ready until the branch is updated and re-reviewed.
+
+When `localReviewHighSeverityAction` is `retry` and the verifier confirms at least one high-severity finding, the supervisor enters a dedicated `local_review_fix` repair mode. That prompt is narrowed to the compressed root-cause list from the local-review artifact and, when the artifact identifies affected files, it tells Codex to inspect those files first instead of treating the turn as general checkpoint maintenance.
 
 If you want stronger enforcement without giving the review swarm destructive powers, use policy gates instead of auto-closing PRs:
 
