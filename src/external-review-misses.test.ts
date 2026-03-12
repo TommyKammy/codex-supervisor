@@ -141,6 +141,14 @@ test("classifyExternalReviewFinding marks same-hunk findings as matched even wit
   const classified = classifyExternalReviewFinding(normalized, {
     actionableFindings: [
       {
+        title: "Authorization check missing in a nearby helper",
+        body: "This branch runs the fallback write before the authorization check and capability gate.",
+        file: "src/auth.ts",
+        start: 60,
+        end: 64,
+        severity: "medium",
+      },
+      {
         title: "Guard ordering bug in fallback branch",
         body: "Delay the persistence path until the capability gate passes.",
         file: "src/auth.ts",
@@ -153,8 +161,9 @@ test("classifyExternalReviewFinding marks same-hunk findings as matched even wit
   });
 
   assert.equal(classified.classification, "matched");
-  assert.equal(classified.matchedLocalReference, "actionable:1");
-  assert.match(classified.matchReason, /same_hunk/);
+  assert.equal(classified.matchedLocalReference, "actionable:2");
+  assert.match(classified.matchReason, /^same-hunk/);
+  assert.match(classified.matchReason, /\bsame_hunk=yes\b/);
 });
 
 test("writeExternalReviewMissArtifact persists missed external findings for the current review head", async () => {

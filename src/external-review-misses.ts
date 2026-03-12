@@ -278,6 +278,30 @@ function formatMatchReason(prefix: string, score: LocalMatchScore): string {
   return `${prefix} overlap=${score.overlap.toFixed(2)} line_distance=${score.distance ?? "na"} same_hunk=${score.sameHunk ? "yes" : "no"}`;
 }
 
+function isBetterMatch(candidate: LocalMatchScore, bestMatch: LocalMatchScore | null): boolean {
+  if (!bestMatch) {
+    return true;
+  }
+
+  if (candidate.sameHunk && !bestMatch.sameHunk) {
+    return true;
+  }
+
+  if (candidate.sameHunk !== bestMatch.sameHunk) {
+    return false;
+  }
+
+  if (candidate.overlap > bestMatch.overlap) {
+    return true;
+  }
+
+  if (candidate.overlap < bestMatch.overlap) {
+    return false;
+  }
+
+  return (candidate.distance ?? 9999) < (bestMatch.distance ?? 9999);
+}
+
 function buildLocalCandidates(artifact: LocalReviewArtifactLike): LocalComparisonCandidate[] {
   const actionable = (artifact.actionableFindings ?? []).map((finding, index) => ({
     reference: `actionable:${index + 1}`,
@@ -320,13 +344,9 @@ export function classifyExternalReviewFinding(
     const overlap = overlapScore(`${finding.summary} ${finding.rationale}`, candidate.text);
     const distance = lineDistance(finding, candidate);
     const sameHunk = isSameHunk(finding, candidate);
-    if (
-      !bestMatch ||
-      sameHunk !== bestMatch.sameHunk ||
-      overlap > bestMatch.overlap ||
-      (overlap === bestMatch.overlap && (distance ?? 9999) < (bestMatch.distance ?? 9999))
-    ) {
-      bestMatch = { candidate, overlap, distance, sameHunk };
+    const score = { candidate, overlap, distance, sameHunk };
+    if (isBetterMatch(score, bestMatch)) {
+      bestMatch = score;
     }
   }
 
