@@ -306,6 +306,161 @@ test("inferStateFromPullRequest forces implementing for actionable high local-re
   assert.equal(inferStateFromPullRequest(config, record, pr, [], []), "implementing");
 });
 
+test("inferStateFromPullRequest covers local review policy gating combinations", () => {
+  const cases: Array<{
+    name: string;
+    config: Partial<SupervisorConfig>;
+    record: Partial<IssueRunRecord>;
+    pr: Partial<GitHubPullRequest>;
+    expected: IssueRunRecord["state"];
+  }> = [
+    {
+      name: "block_ready keeps draft PRs in draft_pr when raw findings exist on the current head",
+      config: { localReviewEnabled: true, localReviewPolicy: "block_ready", copilotReviewWaitMinutes: 0 },
+      record: {
+        state: "draft_pr",
+        local_review_head_sha: "head123",
+        local_review_findings_count: 2,
+        local_review_recommendation: "changes_requested",
+      },
+      pr: { isDraft: true, headRefOid: "head123" },
+      expected: "draft_pr",
+    },
+    {
+      name: "block_ready does not block a ready PR after it becomes ready",
+      config: { localReviewEnabled: true, localReviewPolicy: "block_ready", copilotReviewWaitMinutes: 0 },
+      record: {
+        state: "pr_open",
+        local_review_head_sha: "head123",
+        local_review_findings_count: 2,
+        local_review_recommendation: "changes_requested",
+      },
+      pr: { isDraft: false, headRefOid: "head123" },
+      expected: "ready_to_merge",
+    },
+    {
+      name: "block_merge blocks merge for ready PRs with actionable findings on the current head",
+      config: { localReviewEnabled: true, localReviewPolicy: "block_merge", copilotReviewWaitMinutes: 0 },
+      record: {
+        state: "pr_open",
+        local_review_head_sha: "head123",
+        local_review_findings_count: 2,
+        local_review_recommendation: "changes_requested",
+      },
+      pr: { isDraft: false, headRefOid: "head123" },
+      expected: "blocked",
+    },
+    {
+      name: "block_merge stops gating once the review head becomes stale",
+      config: { localReviewEnabled: true, localReviewPolicy: "block_merge", copilotReviewWaitMinutes: 0 },
+      record: {
+        state: "pr_open",
+        local_review_head_sha: "oldhead",
+        local_review_findings_count: 2,
+        local_review_recommendation: "changes_requested",
+      },
+      pr: { isDraft: false, headRefOid: "newhead" },
+      expected: "ready_to_merge",
+    },
+    {
+      name: "advisory never blocks merge for ready PRs with raw findings",
+      config: { localReviewEnabled: true, localReviewPolicy: "advisory", copilotReviewWaitMinutes: 0 },
+      record: {
+        state: "pr_open",
+        local_review_head_sha: "head123",
+        local_review_findings_count: 2,
+        local_review_recommendation: "changes_requested",
+      },
+      pr: { isDraft: false, headRefOid: "head123" },
+      expected: "ready_to_merge",
+    },
+    {
+      name: "retry escalates verifier-confirmed high severity findings back to implementing",
+      config: {
+        localReviewEnabled: true,
+        localReviewPolicy: "block_merge",
+        localReviewHighSeverityAction: "retry",
+        copilotReviewWaitMinutes: 0,
+      },
+      record: {
+        state: "pr_open",
+        local_review_head_sha: "head123",
+        local_review_findings_count: 3,
+        local_review_recommendation: "changes_requested",
+        local_review_verified_max_severity: "high",
+        local_review_verified_findings_count: 1,
+        repeated_local_review_signature_count: 1,
+      },
+      pr: { isDraft: false, headRefOid: "head123" },
+      expected: "implementing",
+    },
+    {
+      name: "blocked escalates verifier-confirmed high severity findings to blocked",
+      config: {
+        localReviewEnabled: true,
+        localReviewPolicy: "block_merge",
+        localReviewHighSeverityAction: "blocked",
+        copilotReviewWaitMinutes: 0,
+      },
+      record: {
+        state: "pr_open",
+        local_review_head_sha: "head123",
+        local_review_findings_count: 3,
+        local_review_recommendation: "changes_requested",
+        local_review_verified_max_severity: "high",
+        local_review_verified_findings_count: 1,
+      },
+      pr: { isDraft: false, headRefOid: "head123" },
+      expected: "blocked",
+    },
+    {
+      name: "advisory suppresses high severity retry escalation",
+      config: {
+        localReviewEnabled: true,
+        localReviewPolicy: "advisory",
+        localReviewHighSeverityAction: "retry",
+        copilotReviewWaitMinutes: 0,
+      },
+      record: {
+        state: "pr_open",
+        local_review_head_sha: "head123",
+        local_review_findings_count: 3,
+        local_review_recommendation: "changes_requested",
+        local_review_verified_max_severity: "high",
+        local_review_verified_findings_count: 1,
+      },
+      pr: { isDraft: false, headRefOid: "head123" },
+      expected: "ready_to_merge",
+    },
+  ];
+
+  for (const testCase of cases) {
+    const config = createConfig(testCase.config);
+    const record = createRecord(testCase.record);
+    const pr: GitHubPullRequest = {
+      number: 44,
+      title: "Test PR",
+      url: "https://example.test/pr/44",
+      state: "OPEN",
+      createdAt: "2026-03-01T00:00:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      headRefName: "codex/issue-38",
+      headRefOid: "head123",
+      mergedAt: null,
+      ...testCase.pr,
+    };
+
+    assert.equal(
+      inferStateFromPullRequest(config, record, pr, [], []),
+      testCase.expected,
+      testCase.name,
+    );
+  }
+});
+
 test("inferStateFromPullRequest blocks stalled identical high local-review retries", () => {
   const config = createConfig({
     localReviewEnabled: true,

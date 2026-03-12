@@ -81,20 +81,65 @@ function createDetectedRoles(): LocalReviewRoleSelection[] {
   ];
 }
 
-test("shouldRunLocalReview reruns on ready PR head updates when block_merge is enabled", () => {
-  const config = createConfig({ localReviewPolicy: "block_merge" });
-  const record = { local_review_head_sha: "oldhead" };
-  const pr = createPullRequest({ isDraft: false, headRefOid: "newhead" });
+test("shouldRunLocalReview covers draft and ready policy gating combinations", () => {
+  const cases: Array<{
+    name: string;
+    config: Partial<SupervisorConfig>;
+    recordHead: string | null;
+    pr: Partial<GitHubPullRequest>;
+    expected: boolean;
+  }> = [
+    {
+      name: "draft PR runs review before first ready transition across policies",
+      config: { localReviewPolicy: "advisory" },
+      recordHead: null,
+      pr: { isDraft: true, headRefOid: "newhead" },
+      expected: true,
+    },
+    {
+      name: "draft PR does not rerun when the head sha is unchanged",
+      config: { localReviewPolicy: "block_ready" },
+      recordHead: "samehead",
+      pr: { isDraft: true, headRefOid: "samehead" },
+      expected: false,
+    },
+    {
+      name: "ready PR reruns on head updates when block_merge is enabled",
+      config: { localReviewPolicy: "block_merge" },
+      recordHead: "oldhead",
+      pr: { isDraft: false, headRefOid: "newhead" },
+      expected: true,
+    },
+    {
+      name: "ready PR does not rerun on head updates in advisory mode",
+      config: { localReviewPolicy: "advisory" },
+      recordHead: "oldhead",
+      pr: { isDraft: false, headRefOid: "newhead" },
+      expected: false,
+    },
+    {
+      name: "ready PR does not rerun on head updates in block_ready mode",
+      config: { localReviewPolicy: "block_ready" },
+      recordHead: "oldhead",
+      pr: { isDraft: false, headRefOid: "newhead" },
+      expected: false,
+    },
+    {
+      name: "local review disabled suppresses draft gating",
+      config: { localReviewEnabled: false, localReviewPolicy: "block_merge" },
+      recordHead: null,
+      pr: { isDraft: true, headRefOid: "newhead" },
+      expected: false,
+    },
+  ];
 
-  assert.equal(shouldRunLocalReview(config, record, pr), true);
-});
+  for (const testCase of cases) {
+    const config = createConfig(testCase.config);
+    const record = { local_review_head_sha: testCase.recordHead };
+    const pr = createPullRequest(testCase.pr);
 
-test("shouldRunLocalReview does not rerun on ready PR head updates in advisory mode", () => {
-  const config = createConfig({ localReviewPolicy: "advisory" });
-  const record = { local_review_head_sha: "oldhead" };
-  const pr = createPullRequest({ isDraft: false, headRefOid: "newhead" });
-
-  assert.equal(shouldRunLocalReview(config, record, pr), false);
+    assert.equal(shouldRunLocalReview(config, record, pr), testCase.expected, testCase.name);
+  }
 });
 
 test("finalizeLocalReview keeps raw high-severity findings separate from dismissed verifier results", () => {
