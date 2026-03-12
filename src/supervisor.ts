@@ -183,12 +183,10 @@ function localReviewRetryLoopCandidate(
   const checkSummary = summarizeChecks(checks);
   const manualThreads = manualReviewThreads(config, reviewThreads);
   const unresolvedBotThreads = configuredBotReviewThreads(config, reviewThreads);
-  const pendingBotThreads = pendingBotReviewThreads(config, record, reviewThreads);
   return (
     localReviewHighSeverityNeedsRetry(config, record, pr) &&
     !checkSummary.hasFailing &&
     !checkSummary.hasPending &&
-    pendingBotThreads.length === 0 &&
     unresolvedBotThreads.length === 0 &&
     (!config.humanReviewBlocksMerge || manualThreads.length === 0) &&
     !mergeConflictDetected(pr)
