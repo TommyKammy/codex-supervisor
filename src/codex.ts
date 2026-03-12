@@ -16,6 +16,18 @@ import {
   SupervisorConfig,
 } from "./types";
 
+export interface LocalReviewRepairContext {
+  summaryPath: string;
+  findingsPath: string | null;
+  relevantFiles: string[];
+  rootCauses: Array<{
+    severity: "low" | "medium" | "high";
+    summary: string;
+    file: string | null;
+    lines: string | null;
+  }>;
+}
+
 export function extractStateHint(message: string): RunState | null {
   const match = message.match(/State hint:\s*([a-z_]+)/i);
   if (!match) {
@@ -28,6 +40,7 @@ export function extractStateHint(message: string): RunState | null {
     "planning",
     "reproducing",
     "implementing",
+    "local_review_fix",
     "stabilizing",
     "draft_pr",
     "local_review",
@@ -96,6 +109,13 @@ function phaseGuidance(state: RunState): string[] {
     ];
   }
 
+  if (state === "local_review_fix") {
+    return [
+      "- Focus only on the active local-review root causes blocking the PR or merge.",
+      "- Make the smallest code change that resolves the current root cause and avoid checkpoint-maintenance work.",
+    ];
+  }
+
   if (state === "stabilizing") {
     return [
       "- You already have progress in the branch. Focus on turning current changes into a clean, reviewable checkpoint.",
@@ -157,6 +177,7 @@ export function buildCodexPrompt(input: {
   failureContext?: FailureContext | null;
   previousSummary?: string | null;
   previousError?: string | null;
+  localReviewRepairContext?: LocalReviewRepairContext | null;
 }): string {
   const checksSummary =
     input.checks.length === 0
@@ -203,6 +224,37 @@ export function buildCodexPrompt(input: {
         .join("\n")
     : "No structured failure context recorded.";
 
+  const localReviewRepairSummary =
+    input.state === "local_review_fix"
+      ? [
+          "Active local-review repair context:",
+          ...(input.localReviewRepairContext
+            ? [
+                `- Summary artifact: ${input.localReviewRepairContext.summaryPath}`,
+                input.localReviewRepairContext.findingsPath
+                  ? `- Findings artifact: ${input.localReviewRepairContext.findingsPath}`
+                  : "- Findings artifact: none",
+                ...(input.localReviewRepairContext.relevantFiles.length > 0
+                  ? [
+                      "- Relevant files to inspect first:",
+                      ...input.localReviewRepairContext.relevantFiles.map((filePath) => `  - ${filePath}`),
+                    ]
+                  : ["- Relevant files to inspect first: none identified"]),
+                ...(input.localReviewRepairContext.rootCauses.length > 0
+                  ? [
+                      "- Compressed root causes:",
+                      ...input.localReviewRepairContext.rootCauses.map((rootCause, index) =>
+                        `  - ${index + 1}. severity=${rootCause.severity} file=${rootCause.file ?? "multiple"} lines=${rootCause.lines ?? "multiple"} summary=${rootCause.summary}`,
+                      ),
+                    ]
+                  : ["- Compressed root causes: none available"]),
+              ]
+            : [
+                "- No parsed local-review repair context was available. Read the local-review summary artifact before editing code.",
+              ]),
+        ]
+      : [];
+
   return [
     `You are operating inside a dedicated worktree for ${input.repoSlug}.`,
     `Current issue: #${input.issue.number} ${input.issue.title}`,
@@ -227,6 +279,7 @@ export function buildCodexPrompt(input: {
     "",
     "Structured failure context:",
     failureSummary,
+    ...(localReviewRepairSummary.length > 0 ? ["", ...localReviewRepairSummary] : []),
     ...(input.alwaysReadFiles.length > 0
       ? [
           "",
@@ -284,7 +337,7 @@ export function buildCodexPrompt(input: {
     "",
     "Respond in this exact footer format at the end:",
     "Summary: <short summary>",
-    "State hint: <reproducing|implementing|stabilizing|draft_pr|local_review|pr_open|repairing_ci|resolving_conflict|waiting_ci|addressing_review|blocked|failed>",
+    "State hint: <reproducing|implementing|local_review_fix|stabilizing|draft_pr|local_review|pr_open|repairing_ci|resolving_conflict|waiting_ci|addressing_review|blocked|failed>",
     "Blocked reason: <requirements|permissions|secrets|verification|manual_review|unknown|none>",
     "Tests: <what you ran or not run>",
     "Failure signature: <stable short signature for the current primary failure or none>",

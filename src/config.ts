@@ -45,6 +45,7 @@ const VALID_RUN_STATES = new Set<RunState>([
   "planning",
   "reproducing",
   "implementing",
+  "local_review_fix",
   "stabilizing",
   "draft_pr",
   "local_review",

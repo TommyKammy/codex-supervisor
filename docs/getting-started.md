@@ -193,6 +193,7 @@ The important points are:
 - each role runs in a separate Codex turn
 - behavior is controlled by `localReviewPolicy`
 - `advisory` is non-blocking, `block_ready` gates draft-to-ready, and `block_merge` gates merge on ready PRs
+- verifier-confirmed high-severity findings can trigger a dedicated `local_review_fix` turn that focuses on compressed root causes and the most relevant files
 - findings are saved as Markdown and JSON artifacts
 - the same context-budget policy still applies: read the compact context index and issue journal first, then open durable memory only on demand
 
@@ -382,10 +383,13 @@ flowchart TD
   R --> S["stabilizing"]
   S --> D["draft_pr"]
   D --> L["local_review"]
+  L --> F["local_review_fix"]
+  F --> D
   L --> W["waiting_ci"]
   W --> A["addressing_review"]
   W --> C["repairing_ci"]
   W --> X["resolving_conflict"]
+  W --> F
   W --> M["ready_to_merge"]
   A --> W
   C --> W
@@ -393,7 +397,7 @@ flowchart TD
   M --> G["merging"]
   G --> O["done"]
   R --> B["blocked"]
-  S --> F["failed"]
+  S --> Z["failed"]
 ```
 
 Short interpretation:
@@ -402,6 +406,7 @@ Short interpretation:
 - `stabilizing`: move toward a clean checkpoint
 - `draft_pr`: publish early when the checkpoint is coherent
 - `local_review`: run a local advisory review swarm
+- `local_review_fix`: apply the smallest repair that clears the active compressed local-review root causes
 - `waiting_ci`: checks or review grace window
 - `addressing_review`: fix valid bot review findings
 - `repairing_ci`: fix failing checks

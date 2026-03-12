@@ -7,6 +7,7 @@ const DEFAULT_REASONING_BY_STATE: Record<RunState, ReasoningEffort> = {
   planning: "low",
   reproducing: "medium",
   implementing: "high",
+  local_review_fix: "medium",
   stabilizing: "medium",
   draft_pr: "low",
   local_review: "low",
