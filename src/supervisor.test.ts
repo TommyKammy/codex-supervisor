@@ -75,6 +75,7 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     local_review_run_at: null,
     local_review_max_severity: null,
     local_review_findings_count: 0,
+    local_review_root_cause_count: 0,
     local_review_verified_max_severity: null,
     local_review_verified_findings_count: 0,
     local_review_recommendation: null,
@@ -531,8 +532,48 @@ test("formatDetailedStatus shows blocking local review status for current PR hea
 
   assert.match(
     status,
-    /local_review gating=yes policy=block_ready findings=3 max_severity=high verified_findings=0 verified_max_severity=none head=current reviewed_head_sha=deadbeef pr_head_sha=deadbeef ran_at=2026-03-11T14:05:00Z/,
+    /local_review gating=yes policy=block_ready findings=3 root_causes=0 max_severity=high verified_findings=0 verified_max_severity=none head=current reviewed_head_sha=deadbeef pr_head_sha=deadbeef ran_at=2026-03-11T14:05:00Z/,
   );
+});
+
+test("formatDetailedStatus shows both raw and compressed local review counts", () => {
+  const config = createConfig({ localReviewPolicy: "block_ready" });
+  const record = {
+    ...createRecord({
+      local_review_head_sha: "deadbeef",
+      local_review_max_severity: "high",
+      local_review_findings_count: 3,
+      local_review_root_cause_count: 1,
+      local_review_recommendation: "changes_requested",
+      local_review_run_at: "2026-03-11T14:05:00Z",
+    }),
+  };
+  const pr: GitHubPullRequest = {
+    number: 42,
+    title: "Test PR",
+    url: "https://example.test/pr/42",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: true,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-42",
+    headRefOid: "deadbeef",
+    mergedAt: null,
+  };
+
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: record,
+    latestRecord: record,
+    trackedIssueCount: 1,
+    pr,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(status, /local_review .*findings=3 .*root_causes=1 /);
 });
 
 test("formatDetailedStatus marks stale local review as non-gating", () => {
@@ -571,7 +612,7 @@ test("formatDetailedStatus marks stale local review as non-gating", () => {
 
   assert.match(
     status,
-    /local_review gating=no policy=block_merge findings=2 max_severity=medium verified_findings=0 verified_max_severity=none head=stale reviewed_head_sha=oldhead pr_head_sha=newhead ran_at=2026-03-11T14:05:00Z/,
+    /local_review gating=no policy=block_merge findings=2 root_causes=0 max_severity=medium verified_findings=0 verified_max_severity=none head=stale reviewed_head_sha=oldhead pr_head_sha=newhead ran_at=2026-03-11T14:05:00Z/,
   );
 });
 
@@ -597,7 +638,7 @@ test("formatDetailedStatus reports unknown local review head status without a PR
 
   assert.match(
     status,
-    /local_review gating=no policy=block_merge findings=2 max_severity=medium verified_findings=0 verified_max_severity=none head=unknown reviewed_head_sha=oldhead pr_head_sha=unknown ran_at=2026-03-11T14:05:00Z/,
+    /local_review gating=no policy=block_merge findings=2 root_causes=0 max_severity=medium verified_findings=0 verified_max_severity=none head=unknown reviewed_head_sha=oldhead pr_head_sha=unknown ran_at=2026-03-11T14:05:00Z/,
   );
 });
 
@@ -634,7 +675,7 @@ test("formatDetailedStatus reports none local review head status with current PR
 
   assert.match(
     status,
-    /local_review gating=no policy=block_merge findings=0 max_severity=none verified_findings=0 verified_max_severity=none head=none reviewed_head_sha=none pr_head_sha=newhead ran_at=none/,
+    /local_review gating=no policy=block_merge findings=0 root_causes=0 max_severity=none verified_findings=0 verified_max_severity=none head=none reviewed_head_sha=none pr_head_sha=newhead ran_at=none/,
   );
 });
 
