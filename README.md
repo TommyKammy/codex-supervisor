@@ -156,7 +156,8 @@ Important fields:
 - `issueSearch`: optional GitHub issue search query
 - `skipTitlePrefixes`: optional title prefixes to exclude, for example `["Epic:"]`
 - `branchPrefix`: branch prefix, usually `codex/issue-`
-- `copilotReviewWaitMinutes`: grace period after a PR becomes ready or gets a new head SHA
+- `copilotReviewWaitMinutes`: timeout for a requested Copilot review that never arrives on the current PR head
+- `copilotReviewTimeoutAction`: fallback after that timeout, either `continue` or `block`
 - `codexExecTimeoutMinutes`: per-turn timeout
 - `maxImplementationAttemptsPerIssue`: Codex-turn budget before a PR exists
 - `maxRepairAttemptsPerIssue`: Codex-turn budget after a PR exists

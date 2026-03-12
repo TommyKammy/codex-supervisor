@@ -1,6 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
-import { LocalReviewHighSeverityAction, LocalReviewPolicy, ReasoningEffort, RunState, SupervisorConfig } from "./types";
+import {
+  CopilotReviewTimeoutAction,
+  LocalReviewHighSeverityAction,
+  LocalReviewPolicy,
+  ReasoningEffort,
+  RunState,
+  SupervisorConfig,
+} from "./types";
 import { isValidGitRefName, parseJson, resolveMaybeRelative } from "./utils";
 
 const DEFAULT_CONFIG_FILE = "supervisor.config.json";
@@ -48,6 +55,7 @@ function assertBranchPrefix(value: string, label: string): string {
 const VALID_REASONING_EFFORTS = new Set<ReasoningEffort>(["none", "low", "medium", "high", "xhigh"]);
 const VALID_LOCAL_REVIEW_POLICIES = new Set<LocalReviewPolicy>(["advisory", "block_ready", "block_merge"]);
 const VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS = new Set<LocalReviewHighSeverityAction>(["retry", "blocked"]);
+const VALID_COPILOT_REVIEW_TIMEOUT_ACTIONS = new Set<CopilotReviewTimeoutAction>(["continue", "block"]);
 const VALID_RUN_STATES = new Set<RunState>([
   "queued",
   "planning",
@@ -207,6 +215,11 @@ export function loadConfig(configPath?: string): SupervisorConfig {
       typeof raw.copilotReviewWaitMinutes === "number" && raw.copilotReviewWaitMinutes >= 0
         ? raw.copilotReviewWaitMinutes
         : 10,
+    copilotReviewTimeoutAction:
+      typeof raw.copilotReviewTimeoutAction === "string" &&
+      VALID_COPILOT_REVIEW_TIMEOUT_ACTIONS.has(raw.copilotReviewTimeoutAction as CopilotReviewTimeoutAction)
+        ? (raw.copilotReviewTimeoutAction as CopilotReviewTimeoutAction)
+        : "continue",
     codexExecTimeoutMinutes:
       typeof raw.codexExecTimeoutMinutes === "number" && raw.codexExecTimeoutMinutes > 0
         ? raw.codexExecTimeoutMinutes

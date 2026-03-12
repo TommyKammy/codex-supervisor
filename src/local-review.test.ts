@@ -38,6 +38,7 @@ function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConf
     branchPrefix: "codex/issue-",
     pollIntervalSeconds: 60,
     copilotReviewWaitMinutes: 10,
+    copilotReviewTimeoutAction: "continue",
     codexExecTimeoutMinutes: 30,
     maxCodexAttemptsPerIssue: 5,
     maxImplementationAttemptsPerIssue: 5,
