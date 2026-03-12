@@ -340,6 +340,35 @@ test("inferStateFromPullRequest does not wait for Copilot when no lifecycle sign
   assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "ready_to_merge");
 });
 
+test("inferStateFromPullRequest keeps waiting when Copilot review was explicitly requested", () => {
+  const config = createConfig({ copilotReviewWaitMinutes: 10 });
+  const record = createRecord({
+    state: "waiting_ci",
+    review_wait_started_at: "2026-03-11T00:00:00Z",
+    review_wait_head_sha: "head123",
+  });
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T00:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-38",
+    headRefOid: "head123",
+    mergedAt: null,
+    copilotReviewState: "requested",
+    copilotReviewRequestedAt: "2026-03-11T00:05:00Z",
+    copilotReviewArrivedAt: null,
+  };
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "waiting_ci");
+});
+
 test("inferStateFromPullRequest covers local review policy gating combinations", () => {
   const cases: Array<{
     name: string;
