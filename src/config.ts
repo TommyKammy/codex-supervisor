@@ -5,6 +5,14 @@ import { isValidGitRefName, parseJson, resolveMaybeRelative } from "./utils";
 
 const DEFAULT_CONFIG_FILE = "supervisor.config.json";
 
+function resolveCommandLikeValue(baseDir: string, value: string): string {
+  if (path.isAbsolute(value)) {
+    return value;
+  }
+
+  return /[\\/]/.test(value) ? resolveMaybeRelative(baseDir, value) : value;
+}
+
 function assertString(value: unknown, label: string): string {
   if (typeof value !== "string" || value.trim() === "") {
     throw new Error(`Missing or invalid config field: ${label}`);
@@ -101,7 +109,7 @@ export function loadConfig(configPath?: string): SupervisorConfig {
       typeof raw.stateBootstrapFile === "string" && raw.stateBootstrapFile.trim() !== ""
         ? resolveMaybeRelative(configDir, raw.stateBootstrapFile)
         : undefined,
-    codexBinary: resolveMaybeRelative(configDir, assertString(raw.codexBinary, "codexBinary")),
+    codexBinary: resolveCommandLikeValue(configDir, assertString(raw.codexBinary, "codexBinary")),
     codexModelStrategy:
       raw.codexModelStrategy === "fixed" || raw.codexModelStrategy === "alias" || raw.codexModelStrategy === "inherit"
         ? raw.codexModelStrategy
