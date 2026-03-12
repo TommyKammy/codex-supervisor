@@ -114,6 +114,58 @@ test("classifyExternalReviewFinding marks unmatched configured-bot feedback as m
   assert.match(classified.matchReason, /no same-file local-review match/);
 });
 
+test("classifyExternalReviewFinding marks same-hunk findings as matched even with low text overlap", () => {
+  const normalized = normalizeExternalReviewFinding(
+    createReviewThread({
+      path: "src/auth.ts",
+      line: 44,
+      comments: {
+        nodes: [
+          {
+            id: "comment-1",
+            body: "The fallback write runs before the authorization check in this branch.",
+            createdAt: "2026-03-12T00:00:00Z",
+            url: "https://example.test/thread-1#comment-1",
+            author: {
+              login: "copilot-pull-request-reviewer",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+    ["copilot-pull-request-reviewer"],
+  );
+  assert.ok(normalized);
+
+  const classified = classifyExternalReviewFinding(normalized, {
+    actionableFindings: [
+      {
+        title: "Authorization check missing in a nearby helper",
+        body: "This branch runs the fallback write before the authorization check and capability gate.",
+        file: "src/auth.ts",
+        start: 60,
+        end: 64,
+        severity: "medium",
+      },
+      {
+        title: "Guard ordering bug in fallback branch",
+        body: "Delay the persistence path until the capability gate passes.",
+        file: "src/auth.ts",
+        start: 41,
+        end: 46,
+        severity: "medium",
+      },
+    ],
+    rootCauseSummaries: [],
+  });
+
+  assert.equal(classified.classification, "matched");
+  assert.equal(classified.matchedLocalReference, "actionable:2");
+  assert.match(classified.matchReason, /^same-hunk/);
+  assert.match(classified.matchReason, /\bsame_hunk=yes\b/);
+});
+
 test("writeExternalReviewMissArtifact persists missed external findings for the current review head", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "external-review-miss-test-"));
   const localReviewSummaryPath = path.join(tempDir, "head-deadbeef.md");
