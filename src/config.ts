@@ -10,7 +10,7 @@ function resolveCommandLikeValue(baseDir: string, value: string): string {
     return value;
   }
 
-  return value.includes(path.sep) ? path.resolve(baseDir, value) : value;
+  return /[\\/]/.test(value) ? resolveMaybeRelative(baseDir, value) : value;
 }
 
 function assertString(value: unknown, label: string): string {
