@@ -23,6 +23,7 @@ export type CodexModelStrategy = "inherit" | "fixed" | "alias";
 export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
 export type LocalReviewPolicy = "advisory" | "block_ready" | "block_merge";
 export type LocalReviewHighSeverityAction = "retry" | "blocked";
+export type CopilotReviewState = "not_requested" | "requested" | "arrived";
 
 export interface SupervisorConfig {
   repoPath: string;
@@ -185,6 +186,9 @@ export interface GitHubPullRequest {
   mergeable?: string | null;
   headRefName: string;
   headRefOid: string;
+  copilotReviewState?: CopilotReviewState | null;
+  copilotReviewRequestedAt?: string | null;
+  copilotReviewArrivedAt?: string | null;
   mergedAt?: string | null;
 }
 

@@ -1,4 +1,5 @@
 import {
+  CopilotReviewState,
   GitHubIssue,
   GitHubPullRequest,
   IssueRunRecord,
@@ -23,6 +24,53 @@ interface PullRequestStatusCheckRollupResponse {
     targetUrl?: string | null;
     state?: string | null;
   }>;
+}
+
+interface ReviewActor {
+  login?: string | null;
+  slug?: string | null;
+}
+
+interface PullRequestCopilotReviewLifecycleResponse {
+  reviewRequests?: {
+    nodes?: Array<{
+      requestedReviewer?: ReviewActor | null;
+    } | null>;
+  } | null;
+  reviews?: {
+    nodes?: Array<{
+      author?: {
+        login?: string | null;
+      } | null;
+      submittedAt?: string | null;
+    } | null>;
+  } | null;
+  timelineItems?: {
+    nodes?: Array<{
+      __typename?: "ReviewRequestedEvent" | "ReviewRequestRemovedEvent" | string | null;
+      createdAt?: string | null;
+      requestedReviewer?: ReviewActor | null;
+    } | null>;
+  } | null;
+}
+
+export interface CopilotReviewLifecycleFacts {
+  reviewRequests: string[];
+  reviews: Array<{
+    authorLogin: string | null;
+    submittedAt: string | null;
+  }>;
+  timeline: Array<{
+    type: "requested" | "removed";
+    createdAt: string | null;
+    reviewerLogin: string | null;
+  }>;
+}
+
+export interface CopilotReviewLifecycle {
+  state: CopilotReviewState;
+  requestedAt: string | null;
+  arrivedAt: string | null;
 }
 
 function mapCheckBucket(args: {
@@ -62,6 +110,85 @@ function parseTimestamp(value: string | null | undefined): number {
 
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeLogin(value: string | null | undefined): string | null {
+  const trimmed = value?.trim().toLowerCase();
+  return trimmed ? trimmed : null;
+}
+
+function extractReviewerLogin(actor: ReviewActor | null | undefined): string | null {
+  return normalizeLogin(actor?.login ?? actor?.slug ?? null);
+}
+
+function latestTimestamp(values: Array<string | null | undefined>): string | null {
+  let latest: string | null = null;
+  let latestMs = 0;
+
+  for (const value of values) {
+    const parsed = parseTimestamp(value);
+    if (parsed === 0) {
+      continue;
+    }
+
+    if (!latest || parsed >= latestMs) {
+      latest = value ?? null;
+      latestMs = parsed;
+    }
+  }
+
+  return latest;
+}
+
+export function inferCopilotReviewLifecycle(
+  facts: CopilotReviewLifecycleFacts,
+  reviewBotLogins: string[],
+): CopilotReviewLifecycle {
+  const configuredReviewBots = new Set(reviewBotLogins.map((login) => normalizeLogin(login)).filter((login): login is string => Boolean(login)));
+  if (configuredReviewBots.size === 0) {
+    return { state: "not_requested", requestedAt: null, arrivedAt: null };
+  }
+
+  const matchingReviews = facts.reviews.filter((review) => {
+    const authorLogin = normalizeLogin(review.authorLogin);
+    return authorLogin ? configuredReviewBots.has(authorLogin) : false;
+  });
+  if (matchingReviews.length > 0) {
+    return {
+      state: "arrived",
+      requestedAt: latestTimestamp(
+        facts.timeline
+          .filter((event) => event.type === "requested" && event.reviewerLogin && configuredReviewBots.has(event.reviewerLogin))
+          .map((event) => event.createdAt),
+      ),
+      arrivedAt: latestTimestamp(matchingReviews.map((review) => review.submittedAt)),
+    };
+  }
+
+  const matchingRequests = facts.reviewRequests.filter((login) => configuredReviewBots.has(normalizeLogin(login) ?? ""));
+  const latestRequestedAt = latestTimestamp(
+    facts.timeline
+      .filter((event) => event.type === "requested" && event.reviewerLogin && configuredReviewBots.has(event.reviewerLogin))
+      .map((event) => event.createdAt),
+  );
+  const latestRemovedAt = latestTimestamp(
+    facts.timeline
+      .filter((event) => event.type === "removed" && event.reviewerLogin && configuredReviewBots.has(event.reviewerLogin))
+      .map((event) => event.createdAt),
+  );
+
+  if (
+    matchingRequests.length > 0 ||
+    (latestRequestedAt !== null && (latestRemovedAt === null || parseTimestamp(latestRequestedAt) > parseTimestamp(latestRemovedAt)))
+  ) {
+    return {
+      state: "requested",
+      requestedAt: latestRequestedAt,
+      arrivedAt: null,
+    };
+  }
+
+  return { state: "not_requested", requestedAt: null, arrivedAt: null };
 }
 
 function normalizeRollupChecks(rollup: PullRequestStatusCheckRollupResponse | null | undefined): PullRequestCheck[] {
@@ -133,6 +260,8 @@ function normalizeRollupChecks(rollup: PullRequestStatusCheckRollupResponse | nu
 }
 
 export class GitHubClient {
+  private readonly copilotReviewLifecycleCache = new Map<string, Promise<CopilotReviewLifecycle>>();
+
   constructor(private readonly config: SupervisorConfig) {}
 
   private repoOwnerAndName(): { owner: string; repo: string } {
@@ -240,7 +369,7 @@ export class GitHubClient {
       "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,headRefName,headRefOid,mergedAt",
     ]);
     const pullRequests = parseJson<GitHubPullRequest[]>(result.stdout, `gh pr list --head ${branch}`);
-    return pullRequests[0] ?? null;
+    return this.hydratePullRequest(pullRequests[0] ?? null);
   }
 
   async findLatestPullRequestForBranch(branch: string): Promise<GitHubPullRequest | null> {
@@ -264,7 +393,7 @@ export class GitHubClient {
       const rightTimestamp = Date.parse(right.updatedAt ?? right.createdAt);
       return rightTimestamp - leftTimestamp;
     });
-    return sorted[0] ?? null;
+    return this.hydratePullRequest(sorted[0] ?? null);
   }
 
   async getPullRequest(prNumber: number): Promise<GitHubPullRequest> {
@@ -277,7 +406,8 @@ export class GitHubClient {
       "--json",
       "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,headRefName,headRefOid,mergedAt",
     ]);
-    return parseJson<GitHubPullRequest>(result.stdout, `gh pr view #${prNumber}`);
+    const pullRequest = parseJson<GitHubPullRequest>(result.stdout, `gh pr view #${prNumber}`);
+    return (await this.hydratePullRequest(pullRequest)) as GitHubPullRequest;
   }
 
   async getPullRequestIfExists(prNumber: number): Promise<GitHubPullRequest | null> {
@@ -296,7 +426,8 @@ export class GitHubClient {
     );
 
     if (result.exitCode === 0) {
-      return parseJson<GitHubPullRequest>(result.stdout, `gh pr view #${prNumber}`);
+      const pullRequest = parseJson<GitHubPullRequest>(result.stdout, `gh pr view #${prNumber}`);
+      return this.hydratePullRequest(pullRequest);
     }
 
     const stderr = result.stderr.toLowerCase();
@@ -618,5 +749,181 @@ export class GitHubClient {
         })),
       },
     })).filter((thread) => !thread.isResolved && !thread.isOutdated);
+  }
+
+  private async hydratePullRequest(pr: GitHubPullRequest | null): Promise<GitHubPullRequest | null> {
+    if (!pr) {
+      return null;
+    }
+
+    const cacheKey = `${pr.number}:${pr.headRefOid}`;
+    const cachedLifecycle = this.copilotReviewLifecycleCache.get(cacheKey);
+    if (cachedLifecycle) {
+      const lifecycle = await cachedLifecycle;
+      return {
+        ...pr,
+        copilotReviewState: lifecycle.state,
+        copilotReviewRequestedAt: lifecycle.requestedAt,
+        copilotReviewArrivedAt: lifecycle.arrivedAt,
+      };
+    }
+
+    const lifecyclePromise = this.getCopilotReviewLifecycle(pr.number);
+    this.copilotReviewLifecycleCache.set(cacheKey, lifecyclePromise);
+
+    try {
+      const lifecycle = await lifecyclePromise;
+      return {
+        ...pr,
+        copilotReviewState: lifecycle.state,
+        copilotReviewRequestedAt: lifecycle.requestedAt,
+        copilotReviewArrivedAt: lifecycle.arrivedAt,
+      };
+    } catch (error) {
+      this.copilotReviewLifecycleCache.delete(cacheKey);
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`Failed to hydrate Copilot review lifecycle for PR #${pr.number}: ${truncate(message, 500) ?? "unknown error"}`);
+      return {
+        ...pr,
+        copilotReviewState: null,
+        copilotReviewRequestedAt: null,
+        copilotReviewArrivedAt: null,
+      };
+    }
+  }
+
+  private async getCopilotReviewLifecycle(prNumber: number): Promise<CopilotReviewLifecycle> {
+    const { owner, repo } = this.repoOwnerAndName();
+    const query = `
+      query($owner: String!, $repo: String!, $number: Int!) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $number) {
+            reviewRequests(first: 100) {
+              nodes {
+                requestedReviewer {
+                  ... on Bot {
+                    login
+                  }
+                  ... on User {
+                    login
+                  }
+                  ... on Mannequin {
+                    login
+                  }
+                  ... on Team {
+                    slug
+                  }
+                }
+              }
+            }
+            reviews(last: 100) {
+              nodes {
+                submittedAt
+                author {
+                  login
+                }
+              }
+            }
+            timelineItems(last: 100, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT]) {
+              nodes {
+                __typename
+                ... on ReviewRequestedEvent {
+                  createdAt
+                  requestedReviewer {
+                    ... on Bot {
+                      login
+                    }
+                    ... on User {
+                      login
+                    }
+                    ... on Mannequin {
+                      login
+                    }
+                    ... on Team {
+                      slug
+                    }
+                  }
+                }
+                ... on ReviewRequestRemovedEvent {
+                  createdAt
+                  requestedReviewer {
+                    ... on Bot {
+                      login
+                    }
+                    ... on User {
+                      login
+                    }
+                    ... on Mannequin {
+                      login
+                    }
+                    ... on Team {
+                      slug
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const result = await runCommand("gh", [
+      "api",
+      "graphql",
+      "-f",
+      `query=${query}`,
+      "-F",
+      `owner=${owner}`,
+      "-F",
+      `repo=${repo}`,
+      "-F",
+      `number=${prNumber}`,
+    ]);
+
+    const payload = parseJson<{
+      data?: {
+        repository?: {
+          pullRequest?: PullRequestCopilotReviewLifecycleResponse | null;
+        };
+      };
+    }>(result.stdout, `gh api graphql copilot review lifecycle pr=${prNumber}`);
+
+    const lifecycle = payload.data?.repository?.pullRequest;
+    const facts: CopilotReviewLifecycleFacts = {
+      reviewRequests:
+        lifecycle?.reviewRequests?.nodes
+          ?.map((node) => extractReviewerLogin(node?.requestedReviewer))
+          .filter((login): login is string => Boolean(login)) ?? [],
+      reviews:
+        lifecycle?.reviews?.nodes?.map((node) => ({
+          authorLogin: normalizeLogin(node?.author?.login ?? null),
+          submittedAt: node?.submittedAt ?? null,
+        })) ?? [],
+      timeline:
+        lifecycle?.timelineItems?.nodes
+          ?.map((node) => {
+            if (node?.__typename === "ReviewRequestedEvent") {
+              return {
+                type: "requested" as const,
+                createdAt: node.createdAt ?? null,
+                reviewerLogin: extractReviewerLogin(node.requestedReviewer),
+              };
+            }
+
+            if (node?.__typename === "ReviewRequestRemovedEvent") {
+              return {
+                type: "removed" as const,
+                createdAt: node.createdAt ?? null,
+                reviewerLogin: extractReviewerLogin(node.requestedReviewer),
+              };
+            }
+
+            return null;
+          })
+          .filter((event): event is CopilotReviewLifecycleFacts["timeline"][number] => event !== null) ?? [],
+    };
+
+    return inferCopilotReviewLifecycle(facts, this.config.reviewBotLogins);
   }
 }
