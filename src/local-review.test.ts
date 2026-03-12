@@ -295,3 +295,67 @@ test("finalizeLocalReview includes auto-detect reasons in the artifact", () => {
 
   assert.deepEqual(result.artifact.autoDetectedRoles, createDetectedRoles());
 });
+
+test("finalizeLocalReview compresses overlapping findings into a root-cause summary", () => {
+  const result = finalizeLocalReview({
+    config: createConfig({ localReviewConfidenceThreshold: 0.7 }),
+    issueNumber: 45,
+    prNumber: 18,
+    branch: "codex/issue-45",
+    headSha: "abc123def456",
+    roleResults: [
+      {
+        role: "reviewer",
+        summary: "Flagged missing nil handling in the same path.",
+        recommendation: "changes_requested",
+        degraded: false,
+        exitCode: 0,
+        rawOutput: "review raw output",
+        findings: [
+          {
+            role: "reviewer",
+            title: "Nil check missing before retry loop",
+            body: "The retry path dereferences the local review result before confirming a review artifact exists.",
+            file: "src/supervisor.ts",
+            start: 2090,
+            end: 2098,
+            severity: "high",
+            confidence: 0.92,
+            category: "correctness",
+            evidence: "The repair prompt path assumes review output was produced.",
+          },
+        ],
+      },
+      {
+        role: "explorer",
+        summary: "Found the same bug from the repair prompt side.",
+        recommendation: "changes_requested",
+        degraded: false,
+        exitCode: 0,
+        rawOutput: "explorer raw output",
+        findings: [
+          {
+            role: "explorer",
+            title: "Repair prompt can reference missing review output",
+            body: "When local review fails to emit output, the retry path still assumes the review artifact exists and dereferences it.",
+            file: "src/supervisor.ts",
+            start: 2092,
+            end: 2100,
+            severity: "high",
+            confidence: 0.88,
+            category: "correctness",
+            evidence: "Both findings point at the same retry-path assumption.",
+          },
+        ],
+      },
+    ],
+    verifierReport: null,
+    ranAt: "2026-03-12T02:00:00Z",
+  });
+
+  assert.equal(result.findingsCount, 2);
+  assert.equal(result.rootCauseCount, 1);
+  assert.equal(result.artifact.rootCauseSummaries.length, 1);
+  assert.equal(result.artifact.rootCauseSummaries[0]?.findingsCount, 2);
+  assert.equal(result.artifact.rootCauseSummaries[0]?.file, "src/supervisor.ts");
+});

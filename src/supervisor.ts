@@ -52,6 +52,7 @@ function createIssueRecord(config: SupervisorConfig, issueNumber: number): Issue
     local_review_run_at: null,
     local_review_max_severity: null,
     local_review_findings_count: 0,
+    local_review_root_cause_count: 0,
     local_review_verified_max_severity: null,
     local_review_verified_findings_count: 0,
     local_review_recommendation: null,
@@ -136,28 +137,43 @@ function localReviewHighSeverityNeedsBlock(
 function localReviewFailureSummary(
   record: Pick<
     IssueRunRecord,
-    "local_review_findings_count" | "local_review_max_severity" | "local_review_verified_findings_count" | "local_review_verified_max_severity" | "local_review_degraded"
+    | "local_review_findings_count"
+    | "local_review_root_cause_count"
+    | "local_review_max_severity"
+    | "local_review_verified_findings_count"
+    | "local_review_verified_max_severity"
+    | "local_review_degraded"
   >,
 ): string {
   if (record.local_review_degraded) {
     return "Local review completed in a degraded state.";
   }
 
-  return `Local review found ${record.local_review_findings_count} actionable finding(s); max severity=${record.local_review_max_severity ?? "unknown"}; verified high-severity findings=${record.local_review_verified_findings_count}; verified max severity=${record.local_review_verified_max_severity ?? "none"}.`;
+  return `Local review found ${record.local_review_findings_count} actionable finding(s) across ${record.local_review_root_cause_count} root cause(s); max severity=${record.local_review_max_severity ?? "unknown"}; verified high-severity findings=${record.local_review_verified_findings_count}; verified max severity=${record.local_review_verified_max_severity ?? "none"}.`;
 }
 
 function localReviewFailureContext(
   record: Pick<
     IssueRunRecord,
-    "local_review_findings_count" | "local_review_max_severity" | "local_review_verified_findings_count" | "local_review_verified_max_severity" | "local_review_degraded" | "local_review_summary_path"
+    | "local_review_findings_count"
+    | "local_review_root_cause_count"
+    | "local_review_max_severity"
+    | "local_review_verified_findings_count"
+    | "local_review_verified_max_severity"
+    | "local_review_degraded"
+    | "local_review_summary_path"
   >,
 ): FailureContext {
   return {
     category: "blocked",
     summary: localReviewFailureSummary(record),
-    signature: `local-review:${record.local_review_max_severity ?? "unknown"}:${record.local_review_verified_max_severity ?? "none"}:${record.local_review_findings_count}:${record.local_review_verified_findings_count}:${record.local_review_degraded ? "degraded" : "clean"}`,
+    signature: `local-review:${record.local_review_max_severity ?? "unknown"}:${record.local_review_verified_max_severity ?? "none"}:${record.local_review_root_cause_count}:${record.local_review_verified_findings_count}:${record.local_review_degraded ? "degraded" : "clean"}`,
     command: null,
-    details: [record.local_review_summary_path ? `summary=${record.local_review_summary_path}` : "summary=none"],
+    details: [
+      `findings=${record.local_review_findings_count}`,
+      `root_causes=${record.local_review_root_cause_count}`,
+      record.local_review_summary_path ? `summary=${record.local_review_summary_path}` : "summary=none",
+    ],
     url: null,
     updated_at: nowIso(),
   };
@@ -167,6 +183,7 @@ function localReviewStallFailureContext(
   record: Pick<
     IssueRunRecord,
     | "local_review_findings_count"
+    | "local_review_root_cause_count"
     | "local_review_max_severity"
     | "local_review_verified_findings_count"
     | "local_review_verified_max_severity"
@@ -181,8 +198,10 @@ function localReviewStallFailureContext(
       `Local review findings repeated without code changes ${record.repeated_local_review_signature_count} times; manual intervention is required.`,
     signature:
       `local-review-stalled:${record.local_review_max_severity ?? "unknown"}:` +
-      `${record.local_review_findings_count}:${record.local_review_degraded ? "degraded" : "clean"}`,
+      `${record.local_review_root_cause_count}:${record.local_review_degraded ? "degraded" : "clean"}`,
     details: [
+      `findings=${record.local_review_findings_count}`,
+      `root_causes=${record.local_review_root_cause_count}`,
       `repeated_local_review_signature_count=${record.repeated_local_review_signature_count}`,
       record.local_review_summary_path ? `summary=${record.local_review_summary_path}` : "summary=none",
     ],
@@ -1044,7 +1063,7 @@ export function formatDetailedStatus(args: {
     `last_failure_kind=${activeRecord.last_failure_kind ?? "none"}`,
     `last_failure_signature=${activeRecord.last_failure_signature ?? "none"}`,
     `retries timeout=${activeRecord.timeout_retry_count} verification=${activeRecord.blocked_verification_retry_count} same_blocker=${activeRecord.repeated_blocker_count} same_failure_signature=${activeRecord.repeated_failure_signature_count}`,
-    `local_review gating=${localReviewGating} policy=${config.localReviewPolicy} findings=${activeRecord.local_review_findings_count} max_severity=${activeRecord.local_review_max_severity ?? "none"} verified_findings=${activeRecord.local_review_verified_findings_count} verified_max_severity=${activeRecord.local_review_verified_max_severity ?? "none"} head=${localReviewHead.status} reviewed_head_sha=${localReviewHead.reviewedHeadSha} pr_head_sha=${localReviewHead.prHeadSha} ran_at=${activeRecord.local_review_run_at ?? "none"} signature=${activeRecord.last_local_review_signature ?? "none"} repeated=${activeRecord.repeated_local_review_signature_count}`,
+    `local_review gating=${localReviewGating} policy=${config.localReviewPolicy} findings=${activeRecord.local_review_findings_count} root_causes=${activeRecord.local_review_root_cause_count} max_severity=${activeRecord.local_review_max_severity ?? "none"} verified_findings=${activeRecord.local_review_verified_findings_count} verified_max_severity=${activeRecord.local_review_verified_max_severity ?? "none"} head=${localReviewHead.status} reviewed_head_sha=${localReviewHead.reviewedHeadSha} pr_head_sha=${localReviewHead.prHeadSha} ran_at=${activeRecord.local_review_run_at ?? "none"} signature=${activeRecord.last_local_review_signature ?? "none"} repeated=${activeRecord.repeated_local_review_signature_count}`,
   ];
 
   if (activeRecord.last_error) {
@@ -2069,7 +2088,7 @@ export class Supervisor {
           });
           const actionableSignature =
             localReview.recommendation !== "ready"
-              ? `local-review:${localReview.maxSeverity ?? "unknown"}:${localReview.findingsCount}:${localReview.degraded ? "degraded" : "clean"}`
+              ? `local-review:${localReview.maxSeverity ?? "unknown"}:${localReview.rootCauseCount}:${localReview.degraded ? "degraded" : "clean"}`
               : null;
           const signatureTracking = nextLocalReviewSignatureTracking(record, refreshedPr.headRefOid, actionableSignature);
 
@@ -2080,6 +2099,7 @@ export class Supervisor {
             local_review_run_at: localReview.ranAt,
             local_review_max_severity: localReview.maxSeverity,
             local_review_findings_count: localReview.findingsCount,
+            local_review_root_cause_count: localReview.rootCauseCount,
             local_review_verified_max_severity: localReview.verifiedMaxSeverity,
             local_review_verified_findings_count: localReview.verifiedFindingsCount,
             local_review_recommendation: localReview.recommendation,
@@ -2092,13 +2112,13 @@ export class Supervisor {
             last_error:
               localReview.recommendation !== "ready"
                 ? truncate(
-                    localReview.degraded
-                      ? "Local review completed in a degraded state."
+                      localReview.degraded
+                        ? "Local review completed in a degraded state."
                       : localReview.verifiedMaxSeverity === "high" && this.config.localReviewHighSeverityAction === "retry"
-                        ? `Local review found high-severity issues (${localReview.findingsCount} actionable findings). Codex will continue with a repair pass before the PR can proceed.`
+                        ? `Local review found high-severity issues (${localReview.findingsCount} actionable findings across ${localReview.rootCauseCount} root cause(s)). Codex will continue with a repair pass before the PR can proceed.`
                         : localReview.verifiedMaxSeverity === "high" && this.config.localReviewHighSeverityAction === "blocked"
-                          ? `Local review found high-severity issues (${localReview.findingsCount} actionable findings). Manual attention is required before the PR can proceed.`
-                          : `Local review requested changes (${localReview.findingsCount} actionable findings).`,
+                          ? `Local review found high-severity issues (${localReview.findingsCount} actionable findings across ${localReview.rootCauseCount} root cause(s)). Manual attention is required before the PR can proceed.`
+                          : `Local review requested changes (${localReview.findingsCount} actionable findings across ${localReview.rootCauseCount} root cause(s)).`,
                     500,
                   )
                 : null,
@@ -2112,6 +2132,7 @@ export class Supervisor {
             local_review_run_at: nowIso(),
             local_review_max_severity: null,
             local_review_findings_count: 0,
+            local_review_root_cause_count: 0,
             local_review_verified_max_severity: null,
             local_review_verified_findings_count: 0,
             local_review_recommendation: "unknown",

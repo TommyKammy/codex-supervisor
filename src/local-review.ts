@@ -43,6 +43,18 @@ export interface LocalReviewVerificationFinding {
   rationale: string;
 }
 
+export interface LocalReviewRootCauseSummary {
+  summary: string;
+  severity: ActionableSeverity;
+  category: string | null;
+  file: string | null;
+  start: number | null;
+  end: number | null;
+  roles: string[];
+  findingsCount: number;
+  findingKeys: string[];
+}
+
 export interface LocalReviewRoleResult {
   role: string;
   summary: string;
@@ -76,8 +88,10 @@ interface LocalReviewArtifact {
   recommendation: "ready" | "changes_requested" | "unknown";
   degraded: boolean;
   findingsCount: number;
+  rootCauseCount: number;
   maxSeverity: LocalReviewSeverity;
   actionableFindings: LocalReviewFinding[];
+  rootCauseSummaries: LocalReviewRootCauseSummary[];
   verification: {
     required: boolean;
     summary: string;
@@ -112,10 +126,12 @@ export interface FinalizedLocalReview {
   recommendation: "ready" | "changes_requested" | "unknown";
   degraded: boolean;
   findingsCount: number;
+  rootCauseCount: number;
   maxSeverity: LocalReviewSeverity;
   verifiedFindingsCount: number;
   verifiedMaxSeverity: LocalReviewSeverity;
   actionableFindings: LocalReviewFinding[];
+  rootCauseSummaries: LocalReviewRootCauseSummary[];
   verifiedFindings: LocalReviewFinding[];
   artifact: LocalReviewArtifact;
 }
@@ -126,6 +142,7 @@ export interface LocalReviewResult {
   findingsPath: string;
   summary: string;
   findingsCount: number;
+  rootCauseCount: number;
   maxSeverity: LocalReviewSeverity;
   verifiedFindingsCount: number;
   verifiedMaxSeverity: LocalReviewSeverity;
@@ -501,6 +518,115 @@ function findingKey(finding: LocalReviewFinding): string {
   ].join("|");
 }
 
+function tokenizeFindingText(value: string): Set<string> {
+  const tokens = value
+    .toLowerCase()
+    .split(/[^a-z0-9]+/i)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 4)
+    .filter((token) => !new Set(["this", "that", "with", "from", "when", "only", "still", "have", "does", "into"]).has(token));
+  return new Set(tokens);
+}
+
+function overlapCount(left: Set<string>, right: Set<string>): number {
+  let count = 0;
+  for (const token of left) {
+    if (right.has(token)) {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+function lineDistance(left: LocalReviewFinding, right: LocalReviewFinding): number | null {
+  if (left.start == null || right.start == null) {
+    return null;
+  }
+
+  const leftEnd = left.end ?? left.start;
+  const rightEnd = right.end ?? right.start;
+  if (leftEnd >= right.start && rightEnd >= left.start) {
+    return 0;
+  }
+
+  return Math.min(Math.abs(leftEnd - right.start), Math.abs(rightEnd - left.start));
+}
+
+function findingsOverlap(left: LocalReviewFinding, right: LocalReviewFinding): boolean {
+  if ((left.file ?? null) !== (right.file ?? null)) {
+    return false;
+  }
+
+  const distance = lineDistance(left, right);
+  if (distance !== null && distance > 6) {
+    return false;
+  }
+
+  if (left.category && right.category && left.category !== right.category) {
+    return false;
+  }
+
+  const leftTokens = tokenizeFindingText(`${left.title} ${left.body} ${left.evidence ?? ""}`);
+  const rightTokens = tokenizeFindingText(`${right.title} ${right.body} ${right.evidence ?? ""}`);
+  return overlapCount(leftTokens, rightTokens) >= 3;
+}
+
+function summarizeRootCause(findings: LocalReviewFinding[]): LocalReviewRootCauseSummary {
+  const sorted = [...findings].sort((left, right) => {
+    const severityDelta = severityWeight(right.severity) - severityWeight(left.severity);
+    if (severityDelta !== 0) {
+      return severityDelta;
+    }
+
+    return right.confidence - left.confidence;
+  });
+  const primary = sorted[0]!;
+  const sameFile = sorted.every((finding) => finding.file === primary.file);
+  const starts = sorted.map((finding) => finding.start).filter((value): value is number => value != null);
+  const ends = sorted.map((finding) => finding.end ?? finding.start).filter((value): value is number => value != null);
+
+  return {
+    summary: primary.body,
+    severity: sorted.some((finding) => finding.severity === "high")
+      ? "high"
+      : sorted.some((finding) => finding.severity === "medium")
+        ? "medium"
+        : "low",
+    category: primary.category,
+    file: sameFile ? primary.file : null,
+    start: sameFile && starts.length > 0 ? Math.min(...starts) : null,
+    end: sameFile && ends.length > 0 ? Math.max(...ends) : null,
+    roles: [...new Set(sorted.map((finding) => finding.role))],
+    findingsCount: sorted.length,
+    findingKeys: sorted.map((finding) => findingKey(finding)),
+  };
+}
+
+function compressRootCauses(findings: LocalReviewFinding[]): LocalReviewRootCauseSummary[] {
+  const groups: LocalReviewFinding[][] = [];
+  for (const finding of findings) {
+    const group = groups.find((candidate) => candidate.some((existing) => findingsOverlap(existing, finding)));
+    if (group) {
+      group.push(finding);
+      continue;
+    }
+
+    groups.push([finding]);
+  }
+
+  return groups
+    .map((group) => summarizeRootCause(group))
+    .sort((left, right) => {
+      const severityDelta = severityWeight(right.severity) - severityWeight(left.severity);
+      if (severityDelta !== 0) {
+        return severityDelta;
+      }
+
+      return right.findingsCount - left.findingsCount;
+    });
+}
+
 function maxSeverity(findings: LocalReviewFinding[]): LocalReviewSeverity {
   if (findings.some((finding) => finding.severity === "high")) {
     return "high";
@@ -550,7 +676,7 @@ function summarizeAutoDetectedRoles(detectedRoles: LocalReviewRoleSelection[]): 
     .map((selection) => `- ${selection.role}: ${selection.reasons.map(formatRoleSelectionReason).join("; ")}`);
 }
 
-function renderLines(finding: LocalReviewFinding): string {
+function renderLines(finding: Pick<LocalReviewFinding, "start" | "end">): string {
   if (finding.start == null) {
     return "?";
   }
@@ -746,9 +872,10 @@ export function finalizeLocalReview(args: {
   const actionableFindings = dedupeFindings(
     allFindings.filter((finding) => finding.confidence >= args.config.localReviewConfidenceThreshold),
   );
+  const rootCauseSummaries = compressRootCauses(actionableFindings);
   const degraded = args.roleResults.some((result) => result.degraded) || (args.verifierReport?.degraded ?? false);
   const summary = truncate(
-    `Roles run: ${roles.join(", ")}. Actionable findings above confidence ${args.config.localReviewConfidenceThreshold.toFixed(2)}: ${actionableFindings.length}. Degraded roles: ${args.roleResults.filter((result) => result.degraded).length}.`,
+    `Roles run: ${roles.join(", ")}. Actionable findings above confidence ${args.config.localReviewConfidenceThreshold.toFixed(2)}: ${actionableFindings.length}. Root causes: ${rootCauseSummaries.length}. Degraded roles: ${args.roleResults.filter((result) => result.degraded).length}.`,
     500,
   ) ?? "";
   const recommendation: LocalReviewResult["recommendation"] =
@@ -772,8 +899,10 @@ export function finalizeLocalReview(args: {
     recommendation,
     degraded,
     findingsCount: actionableFindings.length,
+    rootCauseCount: rootCauseSummaries.length,
     maxSeverity: maxSeverity(actionableFindings),
     actionableFindings,
+    rootCauseSummaries,
     verification: {
       required: actionableHighSeverityFindings.length > 0,
       summary: args.verifierReport?.summary ?? (actionableHighSeverityFindings.length > 0 ? "Verification not run." : "No high-severity findings required verification."),
@@ -810,10 +939,12 @@ export function finalizeLocalReview(args: {
     recommendation,
     degraded,
     findingsCount: actionableFindings.length,
+    rootCauseCount: rootCauseSummaries.length,
     maxSeverity: maxSeverity(actionableFindings),
     verifiedFindingsCount: verifiedFindings.length,
     verifiedMaxSeverity,
     actionableFindings,
+    rootCauseSummaries,
     verifiedFindings,
     artifact,
   };
@@ -922,6 +1053,7 @@ export async function runLocalReview(args: {
       `- Roles: ${roles.join(", ")}`,
       `- Confidence threshold: ${args.config.localReviewConfidenceThreshold.toFixed(2)}`,
       `- Actionable findings: ${finalized.findingsCount}`,
+      `- Root causes: ${finalized.rootCauseCount}`,
       `- Max severity: ${finalized.maxSeverity}`,
       `- Verified findings: ${finalized.verifiedFindingsCount}`,
       `- Verified max severity: ${finalized.verifiedMaxSeverity}`,
@@ -951,6 +1083,22 @@ export async function runLocalReview(args: {
             ].join("\n"),
           )
         : ["- No actionable findings above the confidence threshold.", ""]),
+      "## Root-cause summaries",
+      ...(finalized.rootCauseSummaries.length > 0
+        ? finalized.rootCauseSummaries.map((rootCause, index) =>
+            [
+              `### Root cause ${index + 1}`,
+              `- Severity: ${rootCause.severity}`,
+              `- Findings: ${rootCause.findingsCount}`,
+              `- Roles: ${rootCause.roles.join(", ")}`,
+              `- File: ${rootCause.file ?? "multiple"}`,
+              `- Lines: ${rootCause.file ? renderLines(rootCause) : "multiple"}`,
+              `- Category: ${rootCause.category ?? "none"}`,
+              `- Summary: ${rootCause.summary}`,
+              "",
+            ].join("\n"),
+          )
+        : ["- No compressed root causes.", ""]),
       "## High-Severity Verification",
       `- Required: ${finalized.artifact.verification.required ? "yes" : "no"}`,
       `- Summary: ${finalized.artifact.verification.summary}`,
@@ -991,6 +1139,7 @@ export async function runLocalReview(args: {
     findingsPath,
     summary: finalized.summary,
     findingsCount: finalized.findingsCount,
+    rootCauseCount: finalized.rootCauseCount,
     maxSeverity: finalized.maxSeverity,
     verifiedFindingsCount: finalized.verifiedFindingsCount,
     verifiedMaxSeverity: finalized.verifiedMaxSeverity,
