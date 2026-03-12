@@ -844,26 +844,6 @@ function syncReviewWaitWindow(record: IssueRunRecord, pr: GitHubPullRequest): Pa
   };
 }
 
-function copilotReviewGraceExpired(
-  record: IssueRunRecord,
-  pr: GitHubPullRequest,
-  config: SupervisorConfig,
-): boolean {
-  if (config.copilotReviewWaitMinutes <= 0) {
-    return true;
-  }
-
-  const anchor =
-    pr.copilotReviewRequestedAt ??
-    (!pr.isDraft && record.review_wait_started_at ? record.review_wait_started_at : pr.createdAt);
-  const createdAtMs = Date.parse(anchor);
-  if (Number.isNaN(createdAtMs)) {
-    return false;
-  }
-
-  return Date.now() - createdAtMs >= config.copilotReviewWaitMinutes * 60_000;
-}
-
 export function inferStateFromPullRequest(
   config: SupervisorConfig,
   record: IssueRunRecord,
@@ -932,7 +912,7 @@ export function inferStateFromPullRequest(
     return "draft_pr";
   }
 
-  if ((pr.copilotReviewState ?? "not_requested") === "requested" && !copilotReviewGraceExpired(record, pr, config)) {
+  if ((pr.copilotReviewState ?? "not_requested") === "requested") {
     return "waiting_ci";
   }
 
