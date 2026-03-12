@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { buildCodexPrompt, extractBlockedReason, extractFailureSignature, extractStateHint, runCodexTurn } from "./codex";
+import { buildCodexPrompt, ExternalReviewMissContext, extractBlockedReason, extractFailureSignature, extractStateHint, runCodexTurn } from "./codex";
 import { loadConfig } from "./config";
+import { writeExternalReviewMissArtifact } from "./external-review-misses";
 import { GitHubClient } from "./github";
 import { findBlockingIssue, findParentIssuesReadyToClose } from "./issue-metadata";
 import { describeGsdIntegration } from "./gsd";
@@ -59,6 +60,11 @@ function createIssueRecord(config: SupervisorConfig, issueNumber: number): Issue
     local_review_degraded: false,
     last_local_review_signature: null,
     repeated_local_review_signature_count: 0,
+    external_review_head_sha: null,
+    external_review_misses_path: null,
+    external_review_matched_findings_count: 0,
+    external_review_near_match_findings_count: 0,
+    external_review_missed_findings_count: 0,
     attempt_count: 0,
     implementation_attempt_count: 0,
     repair_attempt_count: 0,
@@ -1137,6 +1143,14 @@ export function formatDetailedStatus(args: {
   const localReviewGating = localReviewIsGating(config, activeRecord, pr) ? "yes" : "no";
   const localReviewStalled =
     pr && localReviewRetryLoopStalled(config, activeRecord, pr, checks, reviewThreads) ? "yes" : "no";
+  const externalReviewHeadStatus =
+    !activeRecord.external_review_head_sha
+      ? "none"
+      : pr
+        ? activeRecord.external_review_head_sha === pr.headRefOid
+          ? "current"
+          : "stale"
+        : "unknown";
   const lines = [
     `issue=#${activeRecord.issue_number}`,
     `state=${activeRecord.state}`,
@@ -1152,6 +1166,7 @@ export function formatDetailedStatus(args: {
     `last_failure_signature=${activeRecord.last_failure_signature ?? "none"}`,
     `retries timeout=${activeRecord.timeout_retry_count} verification=${activeRecord.blocked_verification_retry_count} same_blocker=${activeRecord.repeated_blocker_count} same_failure_signature=${activeRecord.repeated_failure_signature_count}`,
     `local_review gating=${localReviewGating} policy=${config.localReviewPolicy} findings=${activeRecord.local_review_findings_count} root_causes=${activeRecord.local_review_root_cause_count} max_severity=${activeRecord.local_review_max_severity ?? "none"} verified_findings=${activeRecord.local_review_verified_findings_count} verified_max_severity=${activeRecord.local_review_verified_max_severity ?? "none"} head=${localReviewHead.status} reviewed_head_sha=${localReviewHead.reviewedHeadSha} pr_head_sha=${localReviewHead.prHeadSha} ran_at=${activeRecord.local_review_run_at ?? "none"} signature=${activeRecord.last_local_review_signature ?? "none"} repeated=${activeRecord.repeated_local_review_signature_count} stalled=${localReviewStalled}`,
+    `external_review head=${externalReviewHeadStatus} reviewed_head_sha=${activeRecord.external_review_head_sha ?? "none"} matched=${activeRecord.external_review_matched_findings_count} near_match=${activeRecord.external_review_near_match_findings_count} missed=${activeRecord.external_review_missed_findings_count}`,
   ];
 
   if (activeRecord.last_error) {
@@ -1191,6 +1206,15 @@ export function formatDetailedStatus(args: {
         : path.basename(activeRecord.local_review_summary_path);
     const sanitizedSummaryPath = sanitizeStatusValue(displayedSummaryPath);
     lines.push(`local_review_summary_path=${truncate(sanitizedSummaryPath, 200)}`);
+  }
+
+  if (activeRecord.external_review_misses_path) {
+    const relativeMissesPath = path.relative(config.localReviewArtifactDir, activeRecord.external_review_misses_path);
+    const displayedMissesPath =
+      relativeMissesPath && !relativeMissesPath.startsWith("..") && !path.isAbsolute(relativeMissesPath)
+        ? relativeMissesPath
+        : path.basename(activeRecord.external_review_misses_path);
+    lines.push(`external_review_misses_path=${truncate(sanitizeStatusValue(displayedMissesPath), 200)}`);
   }
 
   return lines.join("\n");
@@ -1249,6 +1273,11 @@ function doneResetPatch(
     blocked_reason: null,
     local_review_recommendation: null,
     local_review_degraded: false,
+    external_review_head_sha: null,
+    external_review_misses_path: null,
+    external_review_matched_findings_count: 0,
+    external_review_near_match_findings_count: 0,
+    external_review_missed_findings_count: 0,
     last_failure_kind: null,
     last_failure_context: null,
     last_blocker_signature: null,
@@ -1926,6 +1955,33 @@ export class Supervisor {
         record.state === "local_review_fix"
           ? await loadLocalReviewRepairContext(record.local_review_summary_path)
           : null;
+      const externalReviewMissContext: ExternalReviewMissContext | null =
+        pr &&
+        preRunState === "addressing_review" &&
+        reviewThreadsToProcess.length > 0 &&
+        record.local_review_head_sha === pr.headRefOid &&
+        record.local_review_summary_path
+          ? await writeExternalReviewMissArtifact({
+              artifactDir: path.dirname(record.local_review_summary_path),
+              issueNumber: issue.number,
+              prNumber: pr.number,
+              branch: record.branch,
+              headSha: pr.headRefOid,
+              reviewThreads: reviewThreadsToProcess,
+              reviewBotLogins: this.config.reviewBotLogins,
+              localReviewSummaryPath: record.local_review_summary_path,
+            })
+          : null;
+      record = this.stateStore.touch(record, {
+        external_review_head_sha: externalReviewMissContext ? pr?.headRefOid ?? null : null,
+        external_review_misses_path: externalReviewMissContext?.artifactPath ?? null,
+        external_review_matched_findings_count: externalReviewMissContext?.matchedCount ?? 0,
+        external_review_near_match_findings_count: externalReviewMissContext?.nearMatchCount ?? 0,
+        external_review_missed_findings_count: externalReviewMissContext?.missedCount ?? 0,
+      });
+      state.issues[String(record.issue_number)] = record;
+      await this.stateStore.save(state);
+      await syncJournal(record);
 
       const prompt = buildCodexPrompt({
         repoSlug: this.config.repoSlug,
@@ -1946,6 +2002,7 @@ export class Supervisor {
         gsdEnabled: this.config.gsdEnabled,
         gsdPlanningFiles: this.config.gsdPlanningFiles,
         localReviewRepairContext,
+        externalReviewMissContext,
       });
 
       const sessionLock = record.codex_session_id
@@ -2199,6 +2256,11 @@ export class Supervisor {
             local_review_recommendation: localReview.recommendation,
             local_review_degraded: localReview.degraded,
             ...signatureTracking,
+            external_review_head_sha: null,
+            external_review_misses_path: null,
+            external_review_matched_findings_count: 0,
+            external_review_near_match_findings_count: 0,
+            external_review_missed_findings_count: 0,
             blocked_reason:
               localReview.recommendation !== "ready" && this.config.localReviewHighSeverityAction === "blocked" && localReview.verifiedMaxSeverity === "high"
                 ? "verification"
@@ -2233,6 +2295,11 @@ export class Supervisor {
             local_review_degraded: true,
             last_local_review_signature: null,
             repeated_local_review_signature_count: 0,
+            external_review_head_sha: null,
+            external_review_misses_path: null,
+            external_review_matched_findings_count: 0,
+            external_review_near_match_findings_count: 0,
+            external_review_missed_findings_count: 0,
             blocked_reason: "verification",
             last_error: `Local review failed: ${truncate(message, 500) ?? "unknown error"}`,
           });

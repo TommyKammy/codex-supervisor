@@ -37,6 +37,11 @@ function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
     local_review_degraded: value.local_review_degraded ?? false,
     last_local_review_signature: value.last_local_review_signature ?? null,
     repeated_local_review_signature_count: value.repeated_local_review_signature_count ?? 0,
+    external_review_head_sha: value.external_review_head_sha ?? null,
+    external_review_misses_path: value.external_review_misses_path ?? null,
+    external_review_matched_findings_count: value.external_review_matched_findings_count ?? 0,
+    external_review_near_match_findings_count: value.external_review_near_match_findings_count ?? 0,
+    external_review_missed_findings_count: value.external_review_missed_findings_count ?? 0,
     implementation_attempt_count: value.implementation_attempt_count ?? value.attempt_count ?? 0,
     repair_attempt_count: value.repair_attempt_count ?? 0,
     timeout_retry_count: value.timeout_retry_count ?? 0,
@@ -198,6 +203,20 @@ export class StateStore {
           : record.last_local_review_signature ?? null,
       repeated_local_review_signature_count:
         patch.repeated_local_review_signature_count ?? record.repeated_local_review_signature_count ?? 0,
+      external_review_head_sha:
+        hasOwn(patch, "external_review_head_sha")
+          ? patch.external_review_head_sha ?? null
+          : record.external_review_head_sha ?? null,
+      external_review_misses_path:
+        hasOwn(patch, "external_review_misses_path")
+          ? patch.external_review_misses_path ?? null
+          : record.external_review_misses_path ?? null,
+      external_review_matched_findings_count:
+        patch.external_review_matched_findings_count ?? record.external_review_matched_findings_count ?? 0,
+      external_review_near_match_findings_count:
+        patch.external_review_near_match_findings_count ?? record.external_review_near_match_findings_count ?? 0,
+      external_review_missed_findings_count:
+        patch.external_review_missed_findings_count ?? record.external_review_missed_findings_count ?? 0,
       implementation_attempt_count:
         patch.implementation_attempt_count ?? record.implementation_attempt_count ?? 0,
       repair_attempt_count:

@@ -82,6 +82,11 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     local_review_degraded: false,
     last_local_review_signature: null,
     repeated_local_review_signature_count: 0,
+    external_review_head_sha: null,
+    external_review_misses_path: null,
+    external_review_matched_findings_count: 0,
+    external_review_near_match_findings_count: 0,
+    external_review_missed_findings_count: 0,
     attempt_count: 2,
     implementation_attempt_count: 2,
     repair_attempt_count: 0,
@@ -569,6 +574,7 @@ test("formatDetailedStatus shows blocking local review status for current PR hea
     status,
     /local_review gating=yes policy=block_ready findings=3 root_causes=0 max_severity=high verified_findings=0 verified_max_severity=none head=current reviewed_head_sha=deadbeef pr_head_sha=deadbeef ran_at=2026-03-11T14:05:00Z signature=none repeated=0 stalled=no/,
   );
+  assert.match(status, /external_review head=none reviewed_head_sha=none matched=0 near_match=0 missed=0/);
 });
 
 test("formatDetailedStatus shows both raw and compressed local review counts", () => {
@@ -657,6 +663,43 @@ test("formatDetailedStatus marks stalled local-review repair loops explicitly", 
 
   assert.match(status, /local_review .* repeated=3 stalled=yes/);
   assert.match(status, /blocked_reason=verification/);
+});
+
+test("formatDetailedStatus shows saved external review miss counts for the current PR head", () => {
+  const config = createConfig();
+  const pr: GitHubPullRequest = {
+    number: 22,
+    title: "Add review learning",
+    url: "https://example.test/pr/22",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    headRefName: "codex/issue-58",
+    headRefOid: "deadbeef",
+  };
+
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: createRecord({
+      pr_number: 22,
+      state: "addressing_review",
+      external_review_head_sha: "deadbeef",
+      external_review_misses_path: "/tmp/reviews/owner-repo/issue-58/external-review-misses-head-deadbeef.json",
+      external_review_matched_findings_count: 1,
+      external_review_near_match_findings_count: 1,
+      external_review_missed_findings_count: 2,
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(status, /external_review head=current reviewed_head_sha=deadbeef matched=1 near_match=1 missed=2/);
+  assert.match(status, /external_review_misses_path=owner-repo\/issue-58\/external-review-misses-head-deadbeef\.json/);
 });
 
 test("formatDetailedStatus marks stale local review as non-gating", () => {
