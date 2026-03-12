@@ -225,24 +225,50 @@ test("buildCodexPrompt surfaces saved external review misses during addressing_r
       artifactPath: "/tmp/reviews/issue-46/external-review-misses-head-deadbeef.json",
       matchedCount: 0,
       nearMatchCount: 1,
-      missedCount: 1,
+      missedCount: 4,
       missedFindings: [
         {
           reviewerLogin: "copilot-pull-request-reviewer",
           file: "src/auth.ts",
           line: 42,
           summary: "Permission guard is bypassed.",
-          rationale: "This fallback skips the permission guard and lets unauthorized callers update records.",
+          rationale: "This fallback skips the permission guard and lets unauthorized callers update records.".repeat(20),
           url: "https://example.test/thread-1#comment-1",
+        },
+        {
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 43,
+          summary: "Second finding",
+          rationale: "Second rationale",
+          url: "https://example.test/thread-2#comment-1",
+        },
+        {
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 44,
+          summary: "Third finding",
+          rationale: "Third rationale",
+          url: "https://example.test/thread-3#comment-1",
+        },
+        {
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 45,
+          summary: "Fourth finding",
+          rationale: "Fourth rationale",
+          url: "https://example.test/thread-4#comment-1",
         },
       ],
     },
   });
 
   assert.match(prompt, /External review miss context:/);
-  assert.match(prompt, /matched=0 near_match=1 missed=1/);
+  assert.match(prompt, /matched=0 near_match=1 missed=4/);
   assert.match(prompt, /Permission guard is bypassed\./);
   assert.match(prompt, /copilot-pull-request-reviewer/);
+  assert.match(prompt, /Additional missed findings omitted: 1/);
+  assert.ok(prompt.split("This fallback skips the permission guard").length - 1 <= 3);
 });
 
 test("loadLocalReviewRepairContext derives the findings path and trims prompt context", async () => {

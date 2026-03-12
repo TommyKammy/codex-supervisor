@@ -155,7 +155,7 @@ test("writeExternalReviewMissArtifact persists missed external findings for the 
   assert.equal(context?.matchedCount, 0);
   assert.equal(context?.nearMatchCount, 0);
   assert.equal(context?.missedCount, 1);
-  assert.equal(context?.missedFindings[0]?.classification, "missed_by_local_review");
+  assert.equal(context?.missedFindings[0]?.reviewerLogin, "copilot-pull-request-reviewer");
 
   const artifactPath = context?.artifactPath ?? "";
   const artifact = JSON.parse(await fs.readFile(artifactPath, "utf8")) as {
@@ -178,4 +178,21 @@ test("writeExternalReviewMissArtifact persists missed external findings for the 
       line: 42,
     },
   ]);
+});
+
+test("writeExternalReviewMissArtifact skips persistence when the local review artifact is unavailable", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "external-review-miss-test-"));
+
+  const context = await writeExternalReviewMissArtifact({
+    artifactDir: tempDir,
+    issueNumber: 58,
+    prNumber: 91,
+    branch: "codex/issue-58",
+    headSha: "deadbeefcafebabe",
+    reviewThreads: [createReviewThread()],
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+    localReviewSummaryPath: path.join(tempDir, "missing-summary.md"),
+  });
+
+  assert.equal(context, null);
 });

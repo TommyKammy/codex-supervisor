@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { buildCodexPrompt, ExternalReviewMissContext, extractBlockedReason, extractFailureSignature, extractStateHint, runCodexTurn } from "./codex";
+import { buildCodexPrompt, extractBlockedReason, extractFailureSignature, extractStateHint, runCodexTurn } from "./codex";
 import { loadConfig } from "./config";
-import { writeExternalReviewMissArtifact } from "./external-review-misses";
+import { ExternalReviewMissContext, writeExternalReviewMissArtifact } from "./external-review-misses";
 import { GitHubClient } from "./github";
 import { findBlockingIssue, findParentIssuesReadyToClose } from "./issue-metadata";
 import { describeGsdIntegration } from "./gsd";
@@ -101,6 +101,41 @@ function localReviewBlocksReady(config: SupervisorConfig, record: Pick<IssueRunR
 
 function localReviewBlocksMerge(config: SupervisorConfig, record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation">, pr: GitHubPullRequest): boolean {
   return !pr.isDraft && config.localReviewPolicy === "block_merge" && localReviewHasActionableFindings(record, pr);
+}
+
+export function nextExternalReviewMissPatch(
+  record: Pick<
+    IssueRunRecord,
+    | "external_review_head_sha"
+    | "external_review_misses_path"
+    | "external_review_matched_findings_count"
+    | "external_review_near_match_findings_count"
+    | "external_review_missed_findings_count"
+  >,
+  pr: Pick<GitHubPullRequest, "headRefOid"> | null,
+  context: ExternalReviewMissContext | null,
+): Partial<IssueRunRecord> {
+  if (context && pr) {
+    return {
+      external_review_head_sha: pr.headRefOid,
+      external_review_misses_path: context.artifactPath,
+      external_review_matched_findings_count: context.matchedCount,
+      external_review_near_match_findings_count: context.nearMatchCount,
+      external_review_missed_findings_count: context.missedCount,
+    };
+  }
+
+  if (pr && record.external_review_head_sha && record.external_review_head_sha !== pr.headRefOid) {
+    return {
+      external_review_head_sha: null,
+      external_review_misses_path: null,
+      external_review_matched_findings_count: 0,
+      external_review_near_match_findings_count: 0,
+      external_review_missed_findings_count: 0,
+    };
+  }
+
+  return {};
 }
 
 export function localReviewHighSeverityNeedsRetry(
@@ -1972,16 +2007,13 @@ export class Supervisor {
               localReviewSummaryPath: record.local_review_summary_path,
             })
           : null;
-      record = this.stateStore.touch(record, {
-        external_review_head_sha: externalReviewMissContext ? pr?.headRefOid ?? null : null,
-        external_review_misses_path: externalReviewMissContext?.artifactPath ?? null,
-        external_review_matched_findings_count: externalReviewMissContext?.matchedCount ?? 0,
-        external_review_near_match_findings_count: externalReviewMissContext?.nearMatchCount ?? 0,
-        external_review_missed_findings_count: externalReviewMissContext?.missedCount ?? 0,
-      });
-      state.issues[String(record.issue_number)] = record;
-      await this.stateStore.save(state);
-      await syncJournal(record);
+      const externalReviewMissPatch = nextExternalReviewMissPatch(record, pr, externalReviewMissContext);
+      if (Object.keys(externalReviewMissPatch).length > 0) {
+        record = this.stateStore.touch(record, externalReviewMissPatch);
+        state.issues[String(record.issue_number)] = record;
+        await this.stateStore.save(state);
+        await syncJournal(record);
+      }
 
       const prompt = buildCodexPrompt({
         repoSlug: this.config.repoSlug,

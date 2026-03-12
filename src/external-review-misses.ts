@@ -58,6 +58,11 @@ export interface ExternalReviewMissFinding extends NormalizedExternalReviewFindi
   matchReason: string;
 }
 
+export type ExternalReviewPromptFinding = Pick<
+  ExternalReviewMissFinding,
+  "reviewerLogin" | "file" | "line" | "summary" | "rationale" | "url"
+>;
+
 export interface ExternalReviewMissArtifact {
   issueNumber: number;
   prNumber: number;
@@ -76,7 +81,7 @@ export interface ExternalReviewMissArtifact {
 
 export interface ExternalReviewMissContext {
   artifactPath: string;
-  missedFindings: ExternalReviewMissFinding[];
+  missedFindings: ExternalReviewPromptFinding[];
   matchedCount: number;
   nearMatchCount: number;
   missedCount: number;
@@ -287,9 +292,13 @@ export function classifyExternalReviewFinding(
   };
 }
 
-async function loadLocalReviewArtifact(summaryPath: string | null): Promise<{ findingsPath: string | null; artifact: LocalReviewArtifactLike | null }> {
+async function loadLocalReviewArtifact(summaryPath: string | null): Promise<{
+  findingsPath: string | null;
+  artifact: LocalReviewArtifactLike | null;
+  available: boolean;
+}> {
   if (!summaryPath || path.extname(summaryPath) !== ".md") {
-    return { findingsPath: null, artifact: null };
+    return { findingsPath: null, artifact: null, available: false };
   }
 
   const findingsPath = `${summaryPath.slice(0, -3)}.json`;
@@ -298,9 +307,10 @@ async function loadLocalReviewArtifact(summaryPath: string | null): Promise<{ fi
     return {
       findingsPath,
       artifact: parseJson<LocalReviewArtifactLike>(raw, findingsPath),
+      available: true,
     };
   } catch {
-    return { findingsPath, artifact: null };
+    return { findingsPath, artifact: null, available: false };
   }
 }
 
@@ -322,7 +332,11 @@ export async function writeExternalReviewMissArtifact(args: {
     return null;
   }
 
-  const { findingsPath: localReviewFindingsPath, artifact: localArtifact } = await loadLocalReviewArtifact(args.localReviewSummaryPath);
+  const { findingsPath: localReviewFindingsPath, artifact: localArtifact, available } = await loadLocalReviewArtifact(args.localReviewSummaryPath);
+  if (!available || !localArtifact) {
+    return null;
+  }
+
   const findings = normalizedFindings.map((finding) => classifyExternalReviewFinding(finding, localArtifact));
   const artifact: ExternalReviewMissArtifact = {
     issueNumber: args.issueNumber,

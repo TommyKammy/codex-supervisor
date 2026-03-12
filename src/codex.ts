@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { runCommand } from "./command";
 import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "./codex-policy";
+import { ExternalReviewMissContext } from "./external-review-misses";
 import {
   BlockedReason,
   CodexTurnResult,
@@ -15,6 +16,7 @@ import {
   RunState,
   SupervisorConfig,
 } from "./types";
+import { truncate } from "./utils";
 
 export interface LocalReviewRepairContext {
   summaryPath: string;
@@ -25,21 +27,6 @@ export interface LocalReviewRepairContext {
     summary: string;
     file: string | null;
     lines: string | null;
-  }>;
-}
-
-export interface ExternalReviewMissContext {
-  artifactPath: string;
-  matchedCount: number;
-  nearMatchCount: number;
-  missedCount: number;
-  missedFindings: Array<{
-    reviewerLogin: string;
-    file: string | null;
-    line: number | null;
-    summary: string;
-    rationale: string;
-    url: string | null;
   }>;
 }
 
@@ -345,14 +332,17 @@ export function buildCodexPrompt(input: {
                 ...(input.externalReviewMissContext.missedFindings.length > 0
                   ? [
                       "- Missed-by-local-review findings to validate first:",
-                      ...input.externalReviewMissContext.missedFindings.map((finding, index) =>
+                      ...input.externalReviewMissContext.missedFindings.slice(0, 3).map((finding, index) =>
                         [
                           `  - ${index + 1}. reviewer=${finding.reviewerLogin} file=${finding.file ?? "unknown"}:${finding.line ?? "?"}`,
-                          `    summary=${finding.summary}`,
-                          `    rationale=${finding.rationale}`,
+                          `    summary=${truncate(finding.summary, 160) ?? ""}`,
+                          `    rationale=${truncate(finding.rationale, 300) ?? ""}`,
                           `    url=${finding.url ?? "n/a"}`,
                         ].join("\n"),
                       ),
+                      ...(input.externalReviewMissContext.missedFindings.length > 3
+                        ? [`  - Additional missed findings omitted: ${input.externalReviewMissContext.missedFindings.length - 3}`]
+                        : []),
                     ]
                   : ["- Missed-by-local-review findings to validate first: none"]),
               ]
