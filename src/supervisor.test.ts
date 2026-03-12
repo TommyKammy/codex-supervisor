@@ -601,6 +601,43 @@ test("formatDetailedStatus reports unknown local review head status without a PR
   );
 });
 
+test("formatDetailedStatus reports none local review head status with current PR head", () => {
+  const config = createConfig({ localReviewPolicy: "block_merge" });
+  const record = createRecord({
+    local_review_head_sha: null,
+    local_review_run_at: null,
+  });
+  const pr: GitHubPullRequest = {
+    number: 42,
+    title: "Test PR",
+    url: "https://example.test/pr/42",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-42",
+    headRefOid: "newhead",
+    mergedAt: null,
+  };
+
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: record,
+    latestRecord: record,
+    trackedIssueCount: 1,
+    pr,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(
+    status,
+    /local_review gating=no policy=block_merge findings=0 max_severity=none verified_findings=0 verified_max_severity=none head=none reviewed_head_sha=none pr_head_sha=newhead ran_at=none/,
+  );
+});
+
 test("localReviewHighSeverityNeedsRetry only escalates verifier-confirmed high findings", () => {
   const config = createConfig({ localReviewPolicy: "block_ready", localReviewHighSeverityAction: "retry" });
   const pr: GitHubPullRequest = {
