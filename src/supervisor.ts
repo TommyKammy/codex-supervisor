@@ -609,7 +609,7 @@ function configuredBotReviewThreads(
 
 function pendingBotReviewThreads(
   config: SupervisorConfig,
-  record: IssueRunRecord,
+  record: Pick<IssueRunRecord, "processed_review_thread_ids">,
   reviewThreads: ReviewThread[],
 ): ReviewThread[] {
   return configuredBotReviewThreads(config, reviewThreads).filter(
