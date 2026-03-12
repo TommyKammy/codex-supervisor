@@ -120,6 +120,51 @@ test("buildCodexPrompt suppresses stale handoff next actions during local_review
   assert.match(prompt, /Prompt guidance should ignore stale checkpoint-maintenance handoff text during repair\./);
 });
 
+test("buildCodexPrompt suppresses flat next-action bullet lists during local_review_fix", () => {
+  const prompt = buildCodexPrompt({
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "local_review_fix" satisfies RunState,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+    journalExcerpt: `# Issue #46: Add a dedicated local_review_fix repair mode
+
+## Codex Working Notes
+### Current Handoff
+- Hypothesis: The repair path still carries forward stale checkpoint guidance.
+- Next 1-3 actions:
+- Leave the PR as a stable checkpoint for handoff.
+* Re-read the broad implementation plan before touching code.
+
+### Scratchpad
+- Keep this section short.`,
+    localReviewRepairContext: {
+      summaryPath: "/tmp/reviews/issue-46/head-deadbeef.md",
+      findingsPath: "/tmp/reviews/issue-46/head-deadbeef.json",
+      relevantFiles: ["src/codex.ts"],
+      rootCauses: [
+        {
+          severity: "high",
+          summary: "Prompt guidance should ignore stale checkpoint-maintenance handoff text during repair.",
+          file: "src/codex.ts",
+          lines: "1-200",
+        },
+      ],
+    },
+  });
+
+  assert.doesNotMatch(prompt, /Leave the PR as a stable checkpoint for handoff\./);
+  assert.doesNotMatch(prompt, /Re-read the broad implementation plan before touching code\./);
+  assert.match(prompt, /### Current Handoff/);
+  assert.match(prompt, /### Scratchpad/);
+});
+
 test("buildCodexPrompt keeps explicit operator overrides during local_review_fix", () => {
   const prompt = buildCodexPrompt({
     repoSlug: "owner/repo",

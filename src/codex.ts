@@ -179,11 +179,20 @@ function suppressStaleRepairHandoff(journalExcerpt: string | null | undefined, s
     if (inNextActions) {
       const trimmed = line.trim();
       if (trimmed.length === 0) {
+        inNextActions = false;
+        sanitized.push(line);
         continue;
       }
 
+      if (/^###\s/.test(trimmed)) {
+        inNextActions = false;
+        sanitized.push(line);
+        continue;
+      }
+
+      const isBulletItem = /^[-*]\s+/.test(trimmed);
       const isContinuation = /^\s/.test(line);
-      if (isContinuation) {
+      if (isBulletItem || isContinuation) {
         continue;
       }
 
