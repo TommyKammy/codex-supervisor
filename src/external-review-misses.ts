@@ -108,6 +108,13 @@ interface LocalComparisonCandidate {
   text: string;
 }
 
+interface LocalMatchScore {
+  candidate: LocalComparisonCandidate;
+  overlap: number;
+  distance: number | null;
+  sameHunk: boolean;
+}
+
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -258,6 +265,19 @@ function lineDistance(finding: NormalizedExternalReviewFinding, candidate: Local
   return Math.min(Math.abs(finding.line - candidate.start), Math.abs(finding.line - candidateEnd));
 }
 
+function isSameHunk(finding: NormalizedExternalReviewFinding, candidate: LocalComparisonCandidate): boolean {
+  if (finding.line == null || candidate.start == null) {
+    return false;
+  }
+
+  const candidateEnd = candidate.end ?? candidate.start;
+  return finding.line >= candidate.start && finding.line <= candidateEnd;
+}
+
+function formatMatchReason(prefix: string, score: LocalMatchScore): string {
+  return `${prefix} overlap=${score.overlap.toFixed(2)} line_distance=${score.distance ?? "na"} same_hunk=${score.sameHunk ? "yes" : "no"}`;
+}
+
 function buildLocalCandidates(artifact: LocalReviewArtifactLike): LocalComparisonCandidate[] {
   const actionable = (artifact.actionableFindings ?? []).map((finding, index) => ({
     reference: `actionable:${index + 1}`,
@@ -288,7 +308,7 @@ export function classifyExternalReviewFinding(
   localArtifact: LocalReviewArtifactLike | null,
 ): ExternalReviewMissFinding {
   const candidates = localArtifact ? buildLocalCandidates(localArtifact) : [];
-  let bestMatch: { candidate: LocalComparisonCandidate; overlap: number; distance: number | null } | null = null;
+  let bestMatch: LocalMatchScore | null = null;
 
   for (const candidate of candidates) {
     const sameFile =
@@ -299,18 +319,28 @@ export function classifyExternalReviewFinding(
 
     const overlap = overlapScore(`${finding.summary} ${finding.rationale}`, candidate.text);
     const distance = lineDistance(finding, candidate);
-    if (!bestMatch || overlap > bestMatch.overlap || (overlap === bestMatch.overlap && (distance ?? 9999) < (bestMatch.distance ?? 9999))) {
-      bestMatch = { candidate, overlap, distance };
+    const sameHunk = isSameHunk(finding, candidate);
+    if (
+      !bestMatch ||
+      sameHunk !== bestMatch.sameHunk ||
+      overlap > bestMatch.overlap ||
+      (overlap === bestMatch.overlap && (distance ?? 9999) < (bestMatch.distance ?? 9999))
+    ) {
+      bestMatch = { candidate, overlap, distance, sameHunk };
     }
   }
 
   if (bestMatch) {
-    if (bestMatch.overlap >= 0.28 || (bestMatch.distance !== null && bestMatch.distance <= 3 && bestMatch.overlap >= 0.18)) {
+    if (
+      bestMatch.overlap >= 0.28 ||
+      (bestMatch.distance !== null && bestMatch.distance <= 3 && bestMatch.overlap >= 0.18) ||
+      (bestMatch.sameHunk && bestMatch.overlap >= 0.08)
+    ) {
       return {
         ...finding,
         classification: "matched",
         matchedLocalReference: bestMatch.candidate.reference,
-        matchReason: `same-file overlap=${bestMatch.overlap.toFixed(2)} line_distance=${bestMatch.distance ?? "na"}`,
+        matchReason: formatMatchReason(bestMatch.sameHunk ? "same-hunk" : "same-file", bestMatch),
       };
     }
 
@@ -319,7 +349,7 @@ export function classifyExternalReviewFinding(
         ...finding,
         classification: "near_match",
         matchedLocalReference: bestMatch.candidate.reference,
-        matchReason: `same-file overlap=${bestMatch.overlap.toFixed(2)} line_distance=${bestMatch.distance ?? "na"}`,
+        matchReason: formatMatchReason(bestMatch.sameHunk ? "same-hunk" : "same-file", bestMatch),
       };
     }
   }
@@ -328,7 +358,7 @@ export function classifyExternalReviewFinding(
     ...finding,
     classification: "missed_by_local_review",
     matchedLocalReference: bestMatch?.candidate.reference ?? null,
-    matchReason: bestMatch ? `insufficient overlap=${bestMatch.overlap.toFixed(2)} line_distance=${bestMatch.distance ?? "na"}` : "no same-file local-review match",
+    matchReason: bestMatch ? formatMatchReason("insufficient", bestMatch) : "no same-file local-review match",
   };
 }
 
