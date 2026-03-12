@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { runCommand } from "./command";
 import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "./codex-policy";
+import { ExternalReviewMissContext } from "./external-review-misses";
 import {
   BlockedReason,
   CodexTurnResult,
@@ -15,6 +16,7 @@ import {
   RunState,
   SupervisorConfig,
 } from "./types";
+import { truncate } from "./utils";
 
 export interface LocalReviewRepairContext {
   summaryPath: string;
@@ -240,6 +242,7 @@ export function buildCodexPrompt(input: {
   previousSummary?: string | null;
   previousError?: string | null;
   localReviewRepairContext?: LocalReviewRepairContext | null;
+  externalReviewMissContext?: ExternalReviewMissContext | null;
 }): string {
   const journalExcerpt = suppressStaleRepairHandoff(input.journalExcerpt, input.state);
   const checksSummary =
@@ -318,6 +321,35 @@ export function buildCodexPrompt(input: {
         ]
       : [];
 
+  const externalReviewMissSummary =
+    input.state === "addressing_review"
+      ? [
+          "External review miss context:",
+          ...(input.externalReviewMissContext
+            ? [
+                `- Artifact: ${input.externalReviewMissContext.artifactPath}`,
+                `- Classified findings: matched=${input.externalReviewMissContext.matchedCount} near_match=${input.externalReviewMissContext.nearMatchCount} missed=${input.externalReviewMissContext.missedCount}`,
+                ...(input.externalReviewMissContext.missedFindings.length > 0
+                  ? [
+                      "- Missed-by-local-review findings to validate first:",
+                      ...input.externalReviewMissContext.missedFindings.slice(0, 3).map((finding, index) =>
+                        [
+                          `  - ${index + 1}. reviewer=${finding.reviewerLogin} file=${finding.file ?? "unknown"}:${finding.line ?? "?"}`,
+                          `    summary=${truncate(finding.summary, 160) ?? ""}`,
+                          `    rationale=${truncate(finding.rationale, 300) ?? ""}`,
+                          `    url=${finding.url ?? "n/a"}`,
+                        ].join("\n"),
+                      ),
+                      ...(input.externalReviewMissContext.missedFindings.length > 3
+                        ? [`  - Additional missed findings omitted: ${input.externalReviewMissContext.missedFindings.length - 3}`]
+                        : []),
+                    ]
+                  : ["- Missed-by-local-review findings to validate first: none"]),
+              ]
+            : ["- No saved external review miss artifact is available for the current PR head."]),
+        ]
+      : [];
+
   return [
     `You are operating inside a dedicated worktree for ${input.repoSlug}.`,
     `Current issue: #${input.issue.number} ${input.issue.title}`,
@@ -343,6 +375,7 @@ export function buildCodexPrompt(input: {
     "Structured failure context:",
     failureSummary,
     ...(localReviewRepairSummary.length > 0 ? ["", ...localReviewRepairSummary] : []),
+    ...(externalReviewMissSummary.length > 0 ? ["", ...externalReviewMissSummary] : []),
     ...(input.alwaysReadFiles.length > 0
       ? [
           "",

@@ -128,6 +128,11 @@ export interface IssueRunRecord {
   local_review_degraded: boolean;
   last_local_review_signature: string | null;
   repeated_local_review_signature_count: number;
+  external_review_head_sha: string | null;
+  external_review_misses_path: string | null;
+  external_review_matched_findings_count: number;
+  external_review_near_match_findings_count: number;
+  external_review_missed_findings_count: number;
   attempt_count: number;
   implementation_attempt_count: number;
   repair_attempt_count: number;

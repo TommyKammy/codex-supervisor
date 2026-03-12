@@ -208,6 +208,69 @@ test("buildCodexPrompt keeps explicit operator overrides during local_review_fix
   assert.doesNotMatch(prompt, /Leave the PR as a stable checkpoint for handoff\./);
 });
 
+test("buildCodexPrompt surfaces saved external review misses during addressing_review", () => {
+  const prompt = buildCodexPrompt({
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "addressing_review" satisfies RunState,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+    externalReviewMissContext: {
+      artifactPath: "/tmp/reviews/issue-46/external-review-misses-head-deadbeef.json",
+      matchedCount: 0,
+      nearMatchCount: 1,
+      missedCount: 4,
+      missedFindings: [
+        {
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 42,
+          summary: "Permission guard is bypassed.",
+          rationale: "This fallback skips the permission guard and lets unauthorized callers update records.".repeat(20),
+          url: "https://example.test/thread-1#comment-1",
+        },
+        {
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 43,
+          summary: "Second finding",
+          rationale: "Second rationale",
+          url: "https://example.test/thread-2#comment-1",
+        },
+        {
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 44,
+          summary: "Third finding",
+          rationale: "Third rationale",
+          url: "https://example.test/thread-3#comment-1",
+        },
+        {
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 45,
+          summary: "Fourth finding",
+          rationale: "Fourth rationale",
+          url: "https://example.test/thread-4#comment-1",
+        },
+      ],
+    },
+  });
+
+  assert.match(prompt, /External review miss context:/);
+  assert.match(prompt, /matched=0 near_match=1 missed=4/);
+  assert.match(prompt, /Permission guard is bypassed\./);
+  assert.match(prompt, /copilot-pull-request-reviewer/);
+  assert.match(prompt, /Additional missed findings omitted: 1/);
+  assert.ok(prompt.split("This fallback skips the permission guard").length - 1 <= 3);
+});
+
 test("loadLocalReviewRepairContext derives the findings path and trims prompt context", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-fix-test-"));
   const summaryPath = path.join(tempDir, "head-deadbeef.md");
