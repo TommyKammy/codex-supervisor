@@ -173,13 +173,35 @@ export async function loadLocalReviewRepairContext(summaryPath: string | null) {
   }
 }
 
-function localReviewRetryLoopStalled(
+function localReviewRetryLoopCandidate(
   config: SupervisorConfig,
-  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_verified_max_severity" | "repeated_local_review_signature_count">,
+  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_verified_max_severity" | "repeated_local_review_signature_count" | "processed_review_thread_ids">,
   pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
+  reviewThreads: ReviewThread[],
 ): boolean {
+  const checkSummary = summarizeChecks(checks);
+  const manualThreads = manualReviewThreads(config, reviewThreads);
+  const unresolvedBotThreads = configuredBotReviewThreads(config, reviewThreads);
   return (
     localReviewHighSeverityNeedsRetry(config, record, pr) &&
+    !checkSummary.hasFailing &&
+    !checkSummary.hasPending &&
+    unresolvedBotThreads.length === 0 &&
+    (!config.humanReviewBlocksMerge || manualThreads.length === 0) &&
+    !mergeConflictDetected(pr)
+  );
+}
+
+function localReviewRetryLoopStalled(
+  config: SupervisorConfig,
+  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_verified_max_severity" | "repeated_local_review_signature_count" | "processed_review_thread_ids">,
+  pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
+  reviewThreads: ReviewThread[],
+): boolean {
+  return (
+    localReviewRetryLoopCandidate(config, record, pr, checks, reviewThreads) &&
     record.repeated_local_review_signature_count >= config.sameFailureSignatureRepeatLimit
   );
 }
@@ -585,7 +607,7 @@ function configuredBotReviewThreads(
 
 function pendingBotReviewThreads(
   config: SupervisorConfig,
-  record: IssueRunRecord,
+  record: Pick<IssueRunRecord, "processed_review_thread_ids">,
   reviewThreads: ReviewThread[],
 ): ReviewThread[] {
   return configuredBotReviewThreads(config, reviewThreads).filter(
@@ -826,7 +848,7 @@ export function inferStateFromPullRequest(
     return "pr_open";
   }
 
-  if (localReviewRetryLoopStalled(config, record, pr)) {
+  if (localReviewRetryLoopStalled(config, record, pr, checks, reviewThreads)) {
     return "blocked";
   }
 
@@ -1113,6 +1135,8 @@ export function formatDetailedStatus(args: {
 
   const localReviewHead = localReviewHeadDetails(activeRecord, pr);
   const localReviewGating = localReviewIsGating(config, activeRecord, pr) ? "yes" : "no";
+  const localReviewStalled =
+    pr && localReviewRetryLoopStalled(config, activeRecord, pr, checks, reviewThreads) ? "yes" : "no";
   const lines = [
     `issue=#${activeRecord.issue_number}`,
     `state=${activeRecord.state}`,
@@ -1127,7 +1151,7 @@ export function formatDetailedStatus(args: {
     `last_failure_kind=${activeRecord.last_failure_kind ?? "none"}`,
     `last_failure_signature=${activeRecord.last_failure_signature ?? "none"}`,
     `retries timeout=${activeRecord.timeout_retry_count} verification=${activeRecord.blocked_verification_retry_count} same_blocker=${activeRecord.repeated_blocker_count} same_failure_signature=${activeRecord.repeated_failure_signature_count}`,
-    `local_review gating=${localReviewGating} policy=${config.localReviewPolicy} findings=${activeRecord.local_review_findings_count} root_causes=${activeRecord.local_review_root_cause_count} max_severity=${activeRecord.local_review_max_severity ?? "none"} verified_findings=${activeRecord.local_review_verified_findings_count} verified_max_severity=${activeRecord.local_review_verified_max_severity ?? "none"} head=${localReviewHead.status} reviewed_head_sha=${localReviewHead.reviewedHeadSha} pr_head_sha=${localReviewHead.prHeadSha} ran_at=${activeRecord.local_review_run_at ?? "none"} signature=${activeRecord.last_local_review_signature ?? "none"} repeated=${activeRecord.repeated_local_review_signature_count}`,
+    `local_review gating=${localReviewGating} policy=${config.localReviewPolicy} findings=${activeRecord.local_review_findings_count} root_causes=${activeRecord.local_review_root_cause_count} max_severity=${activeRecord.local_review_max_severity ?? "none"} verified_findings=${activeRecord.local_review_verified_findings_count} verified_max_severity=${activeRecord.local_review_verified_max_severity ?? "none"} head=${localReviewHead.status} reviewed_head_sha=${localReviewHead.reviewedHeadSha} pr_head_sha=${localReviewHead.prHeadSha} ran_at=${activeRecord.local_review_run_at ?? "none"} signature=${activeRecord.last_local_review_signature ?? "none"} repeated=${activeRecord.repeated_local_review_signature_count} stalled=${localReviewStalled}`,
   ];
 
   if (activeRecord.last_error) {
@@ -2236,11 +2260,14 @@ export class Supervisor {
       const postReadyReviewThreads = await this.github.getUnresolvedReviewThreads(pr.number);
       const repeatedLocalReviewSignatureCount =
         !ranLocalReviewThisCycle &&
-        localReviewHighSeverityNeedsRetry(this.config, record, postReadyPr) &&
+        localReviewRetryLoopCandidate(this.config, record, postReadyPr, postReadyChecks, postReadyReviewThreads) &&
         record.last_head_sha === postReadyPr.headRefOid &&
         record.local_review_head_sha === postReadyPr.headRefOid
           ? record.repeated_local_review_signature_count + 1
-          : record.repeated_local_review_signature_count;
+          : localReviewHighSeverityNeedsRetry(this.config, record, postReadyPr) &&
+              record.local_review_head_sha === postReadyPr.headRefOid
+            ? 0
+            : record.repeated_local_review_signature_count;
       const recordForState = {
         ...record,
         repeated_local_review_signature_count: repeatedLocalReviewSignatureCount,
@@ -2254,7 +2281,7 @@ export class Supervisor {
       );
       const refreshedFailureContext = inferFailureContext(this.config, record, postReadyPr, postReadyChecks, postReadyReviewThreads);
       const postReadyLocalReviewFailureContext =
-        nextState === "blocked" && localReviewRetryLoopStalled(this.config, recordForState, postReadyPr)
+        nextState === "blocked" && localReviewRetryLoopStalled(this.config, recordForState, postReadyPr, postReadyChecks, postReadyReviewThreads)
           ? localReviewStallFailureContext(recordForState)
           : nextState === "blocked" && localReviewHighSeverityNeedsBlock(this.config, recordForState, postReadyPr)
           ? localReviewFailureContext(recordForState)
@@ -2280,7 +2307,8 @@ export class Supervisor {
         blocked_reason:
           nextState === "blocked"
             ? blockedReasonFromReviewState(this.config, postReadyReviewThreads) ??
-              ((localReviewRetryLoopStalled(this.config, recordForState, postReadyPr) || localReviewHighSeverityNeedsBlock(this.config, recordForState, postReadyPr))
+              ((localReviewRetryLoopStalled(this.config, recordForState, postReadyPr, postReadyChecks, postReadyReviewThreads) ||
+                localReviewHighSeverityNeedsBlock(this.config, recordForState, postReadyPr))
                 ? "verification"
                 : null)
             : null,

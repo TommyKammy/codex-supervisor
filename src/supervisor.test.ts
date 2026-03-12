@@ -496,6 +496,41 @@ test("inferStateFromPullRequest blocks stalled identical high local-review retri
   assert.equal(inferStateFromPullRequest(config, record, pr, [], []), "blocked");
 });
 
+test("inferStateFromPullRequest does not stall local-review retries when CI adds a fresh signal", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_ready",
+    localReviewHighSeverityAction: "retry",
+    sameFailureSignatureRepeatLimit: 3,
+  });
+  const record = createRecord({
+    state: "local_review_fix",
+    pr_number: 44,
+    local_review_head_sha: "head123",
+    local_review_max_severity: "high",
+    local_review_verified_max_severity: "high",
+    local_review_verified_findings_count: 1,
+    local_review_findings_count: 3,
+    local_review_recommendation: "changes_requested",
+    repeated_local_review_signature_count: 3,
+  });
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T00:00:00Z",
+    isDraft: true,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    headRefName: "codex/issue-38",
+    headRefOid: "head123",
+  };
+  const checks: PullRequestCheck[] = [{ name: "test", state: "FAILURE", bucket: "fail", workflow: "CI" }];
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "local_review_fix");
+});
+
 test("formatDetailedStatus shows blocking local review status for current PR head", () => {
   const config = createConfig({ localReviewPolicy: "block_ready" });
   const record = createRecord({
@@ -532,7 +567,7 @@ test("formatDetailedStatus shows blocking local review status for current PR hea
 
   assert.match(
     status,
-    /local_review gating=yes policy=block_ready findings=3 root_causes=0 max_severity=high verified_findings=0 verified_max_severity=none head=current reviewed_head_sha=deadbeef pr_head_sha=deadbeef ran_at=2026-03-11T14:05:00Z/,
+    /local_review gating=yes policy=block_ready findings=3 root_causes=0 max_severity=high verified_findings=0 verified_max_severity=none head=current reviewed_head_sha=deadbeef pr_head_sha=deadbeef ran_at=2026-03-11T14:05:00Z signature=none repeated=0 stalled=no/,
   );
 });
 
@@ -573,7 +608,55 @@ test("formatDetailedStatus shows both raw and compressed local review counts", (
     reviewThreads: [],
   });
 
-  assert.match(status, /local_review .*findings=3 .*root_causes=1 /);
+  assert.match(status, /local_review .*findings=3 .*root_causes=1 .*stalled=no/);
+});
+
+test("formatDetailedStatus marks stalled local-review repair loops explicitly", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_ready",
+    localReviewHighSeverityAction: "retry",
+    sameFailureSignatureRepeatLimit: 3,
+  });
+  const record = createRecord({
+    state: "blocked",
+    blocked_reason: "verification",
+    local_review_head_sha: "deadbeef",
+    local_review_max_severity: "high",
+    local_review_verified_max_severity: "high",
+    local_review_verified_findings_count: 1,
+    local_review_findings_count: 3,
+    local_review_root_cause_count: 1,
+    local_review_recommendation: "changes_requested",
+    repeated_local_review_signature_count: 3,
+  });
+  const pr: GitHubPullRequest = {
+    number: 42,
+    title: "Test PR",
+    url: "https://example.test/pr/42",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: true,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-42",
+    headRefOid: "deadbeef",
+    mergedAt: null,
+  };
+
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: record,
+    latestRecord: record,
+    trackedIssueCount: 1,
+    pr,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(status, /local_review .* repeated=3 stalled=yes/);
+  assert.match(status, /blocked_reason=verification/);
 });
 
 test("formatDetailedStatus marks stale local review as non-gating", () => {
