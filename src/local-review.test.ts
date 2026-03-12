@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { finalizeLocalReview, shouldRunLocalReview } from "./local-review";
+import { buildRolePrompt, finalizeLocalReview, shouldRunLocalReview } from "./local-review";
 import { LocalReviewRoleSelection } from "./review-role-detector";
 import { GitHubPullRequest, SupervisorConfig } from "./types";
 
@@ -473,4 +473,72 @@ test("finalizeLocalReview does not compress findings without file locations", ()
 
   assert.equal(result.findingsCount, 2);
   assert.equal(result.rootCauseCount, 2);
+});
+
+test("buildRolePrompt includes bounded relevant prior external misses", () => {
+  const prompt = buildRolePrompt({
+    repoSlug: "owner/repo",
+    issue: {
+      number: 61,
+      title: "Teach local review from prior misses",
+      body: "",
+      url: "https://example.test/issues/61",
+      createdAt: "2026-03-12T00:00:00Z",
+      updatedAt: "2026-03-12T00:00:00Z",
+      labels: [],
+    },
+    branch: "codex/issue-61",
+    workspacePath: "/tmp/workspaces/issue-61",
+    defaultBranch: "main",
+    pr: createPullRequest({
+      number: 61,
+      url: "https://example.test/pr/61",
+      headRefOid: "newhead123",
+    }),
+    role: "reviewer",
+    alwaysReadFiles: ["/tmp/workspaces/issue-61/.codex-supervisor/issue-journal.md"],
+    onDemandFiles: ["/tmp/workspaces/issue-61/docs/architecture.md"],
+    confidenceThreshold: 0.7,
+    priorMissPatterns: [
+      {
+        fingerprint: "src/auth.ts|permission",
+        reviewerLogin: "copilot-pull-request-reviewer",
+        file: "src/auth.ts",
+        line: 42,
+        summary: "Permission guard is bypassed.",
+        rationale: "This fallback skips the permission guard and lets unauthorized callers update records.",
+        sourceArtifactPath: "/tmp/reviews/issue-61/external-review-misses-head-old.json",
+        sourceHeadSha: "oldhead123",
+        lastSeenAt: "2026-03-12T00:00:00Z",
+      },
+      {
+        fingerprint: "src/retry.ts|missing",
+        reviewerLogin: "copilot-pull-request-reviewer",
+        file: "src/retry.ts",
+        line: 15,
+        summary: "Retry path can reuse stale state.",
+        rationale: "The retry branch keeps stale cached state after the first failure.",
+        sourceArtifactPath: "/tmp/reviews/issue-61/external-review-misses-head-old-2.json",
+        sourceHeadSha: "olderhead456",
+        lastSeenAt: "2026-03-11T00:00:00Z",
+      },
+      {
+        fingerprint: "src/api.ts|contract",
+        reviewerLogin: "copilot-pull-request-reviewer",
+        file: "src/api.ts",
+        line: 88,
+        summary: "Response omits a required field.",
+        rationale: "The new response path drops the field that downstream logic still treats as required.",
+        sourceArtifactPath: "/tmp/reviews/issue-61/external-review-misses-head-old-3.json",
+        sourceHeadSha: "olderhead789",
+        lastSeenAt: "2026-03-10T00:00:00Z",
+      },
+    ],
+  });
+
+  assert.match(prompt, /Relevant prior confirmed external misses for this diff:/);
+  assert.match(prompt, /Prior miss 1: file=src\/auth\.ts:42 reviewer=copilot-pull-request-reviewer/);
+  assert.match(prompt, /Permission guard is bypassed\./);
+  assert.match(prompt, /Retry path can reuse stale state\./);
+  assert.match(prompt, /Response omits a required field\./);
 });

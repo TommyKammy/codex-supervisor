@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { runCommand } from "./command";
 import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "./codex-policy";
+import { ExternalReviewMissPattern, loadRelevantExternalReviewMissPatterns } from "./external-review-misses";
 import { detectLocalReviewRoleSelections, type LocalReviewRoleSelection } from "./review-role-detector";
 import { GitHubIssue, GitHubPullRequest, SupervisorConfig } from "./types";
 import { ensureDir, nowIso, truncate } from "./utils";
@@ -181,6 +182,7 @@ interface RolePromptArgs {
   alwaysReadFiles: string[];
   onDemandFiles: string[];
   confidenceThreshold: number;
+  priorMissPatterns: ExternalReviewMissPattern[];
 }
 
 function safeSlug(input: string): string {
@@ -411,8 +413,23 @@ function roleGoal(role: string): string[] {
   }
 }
 
-function buildRolePrompt(args: RolePromptArgs): string {
+export function buildRolePrompt(args: RolePromptArgs): string {
   const ref = compareRef(args.defaultBranch);
+  const priorMissLines =
+    args.priorMissPatterns.length > 0
+      ? [
+          "Relevant prior confirmed external misses for this diff:",
+          "- Use these as targeted checks for blind spots that local review previously missed.",
+          ...args.priorMissPatterns.map((pattern, index) =>
+            [
+              `- Prior miss ${index + 1}: file=${pattern.file}:${pattern.line ?? "?"} reviewer=${pattern.reviewerLogin}`,
+              `  summary=${pattern.summary}`,
+              `  rationale=${pattern.rationale}`,
+            ].join("\n"),
+          ),
+          "",
+        ]
+      : [];
 
   return [
     `You are performing a local pre-ready ${args.role} review for ${args.repoSlug}.`,
@@ -448,6 +465,7 @@ function buildRolePrompt(args: RolePromptArgs): string {
           "",
         ]
       : []),
+    ...priorMissLines,
     "Suggested commands:",
     `- git diff --stat ${ref}`,
     `- git diff ${ref}`,
@@ -712,6 +730,7 @@ async function runRoleReview(args: {
   role: string;
   alwaysReadFiles: string[];
   onDemandFiles: string[];
+  priorMissPatterns: ExternalReviewMissPattern[];
 }): Promise<LocalReviewRoleResult> {
   const prompt = buildRolePrompt({
     repoSlug: args.config.repoSlug,
@@ -724,6 +743,7 @@ async function runRoleReview(args: {
     alwaysReadFiles: args.alwaysReadFiles,
     onDemandFiles: args.onDemandFiles,
     confidenceThreshold: args.config.localReviewConfidenceThreshold,
+    priorMissPatterns: args.priorMissPatterns,
   });
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-review-"));
@@ -988,6 +1008,26 @@ export async function runLocalReview(args: {
   alwaysReadFiles: string[];
   onDemandFiles: string[];
 }): Promise<LocalReviewResult> {
+  const ref = compareRef(args.defaultBranch);
+  const changedFilesResult = await runCommand(
+    "git",
+    ["diff", "--name-only", ref],
+    {
+      cwd: args.workspacePath,
+      env: process.env,
+    },
+  );
+  const changedFiles = changedFilesResult.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const priorMissPatterns = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: reviewDir(args.config, args.issue.number),
+    branch: args.branch,
+    currentHeadSha: args.pr.headRefOid,
+    changedFiles,
+    limit: 3,
+  });
   const detectedRoles =
     args.config.localReviewRoles.length === 0 && args.config.localReviewAutoDetect
       ? await detectLocalReviewRoleSelections(args.config)
@@ -1012,6 +1052,7 @@ export async function runLocalReview(args: {
       roleResults[index] = await runRoleReview({
         ...args,
         role: roles[index],
+        priorMissPatterns,
       });
     }
   }
