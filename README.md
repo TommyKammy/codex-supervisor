@@ -399,6 +399,8 @@ This review does not mutate code. By default, `localReviewPolicy` is `block_read
 
 When `localReviewHighSeverityAction` is `retry` and the verifier confirms at least one high-severity finding, the supervisor enters a dedicated `local_review_fix` repair mode. That prompt is narrowed to the compressed root-cause list from the local-review artifact and, when the artifact identifies affected files, it tells Codex to inspect those files first instead of treating the turn as general checkpoint maintenance while the PR or merge is blocked.
 
+During `local_review_fix`, active local-review blockers take priority over stale issue-journal `Next 1-3 actions` handoff text. The supervisor still includes the journal excerpt for context, but it suppresses those stale next-action bullets so old checkpoint guidance does not override the live repair task. If an operator needs to force a temporary repair directive, add a line such as `- Operator override: keep the compatibility shim until the blocker is cleared.` in `### Current Handoff`; that note remains visible during repair turns.
+
 If you want stronger enforcement without giving the review swarm destructive powers, use policy gates instead of auto-closing PRs:
 
 - `advisory`: save findings only

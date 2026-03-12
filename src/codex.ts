@@ -159,6 +159,59 @@ function phaseGuidance(state: RunState): string[] {
   return [];
 }
 
+function suppressStaleRepairHandoff(journalExcerpt: string | null | undefined, state: RunState): string | null | undefined {
+  if (!journalExcerpt || state !== "local_review_fix") {
+    return journalExcerpt;
+  }
+
+  const lines = journalExcerpt.split("\n");
+  const sanitized: string[] = [];
+  let inNextActions = false;
+  let removedNextActions = false;
+
+  for (const line of lines) {
+    if (line.startsWith("- Next 1-3 actions:")) {
+      inNextActions = true;
+      removedNextActions = true;
+      continue;
+    }
+
+    if (inNextActions) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) {
+        continue;
+      }
+
+      const isContinuation = /^\s/.test(line);
+      if (isContinuation) {
+        continue;
+      }
+
+      inNextActions = false;
+    }
+
+    sanitized.push(line);
+  }
+
+  if (!removedNextActions) {
+    return journalExcerpt;
+  }
+
+  const output: string[] = [];
+  let insertedNotice = false;
+  for (const line of sanitized) {
+    output.push(line);
+    if (!insertedNotice && line.startsWith("### Current Handoff")) {
+      output.push(
+        "- Next 1-3 actions: suppressed during active local-review repair; use the local-review blocker context unless an operator override note says otherwise.",
+      );
+      insertedNotice = true;
+    }
+  }
+
+  return output.join("\n");
+}
+
 export function buildCodexPrompt(input: {
   repoSlug: string;
   issue: GitHubIssue;
@@ -179,6 +232,7 @@ export function buildCodexPrompt(input: {
   previousError?: string | null;
   localReviewRepairContext?: LocalReviewRepairContext | null;
 }): string {
+  const journalExcerpt = suppressStaleRepairHandoff(input.journalExcerpt, input.state);
   const checksSummary =
     input.checks.length === 0
       ? "No checks currently reported."
@@ -312,8 +366,8 @@ export function buildCodexPrompt(input: {
     "",
     `Issue journal path: ${input.journalPath}`,
     "Read the issue journal before making changes and update its Codex Working Notes section before ending your turn.",
-    ...(input.journalExcerpt
-      ? ["", "Issue journal excerpt:", input.journalExcerpt]
+    ...(journalExcerpt
+      ? ["", "Issue journal excerpt:", journalExcerpt]
       : []),
     ...(input.previousSummary
       ? ["", "Previous Codex summary:", input.previousSummary]
