@@ -121,7 +121,7 @@ interface LocalReviewRepairArtifact {
   }>;
 }
 
-async function loadLocalReviewRepairContext(summaryPath: string | null) {
+export async function loadLocalReviewRepairContext(summaryPath: string | null) {
   if (!summaryPath) {
     return null;
   }
@@ -169,12 +169,7 @@ async function loadLocalReviewRepairContext(summaryPath: string | null) {
       rootCauses,
     };
   } catch {
-    return {
-      summaryPath,
-      findingsPath,
-      relevantFiles: [],
-      rootCauses: [],
-    };
+    return null;
   }
 }
 

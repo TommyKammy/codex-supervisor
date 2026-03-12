@@ -111,7 +111,7 @@ function phaseGuidance(state: RunState): string[] {
 
   if (state === "local_review_fix") {
     return [
-      "- Focus only on the active local-review root causes blocking the draft PR.",
+      "- Focus only on the active local-review root causes blocking the PR or merge.",
       "- Make the smallest code change that resolves the current root cause and avoid checkpoint-maintenance work.",
     ];
   }
