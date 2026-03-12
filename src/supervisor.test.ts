@@ -805,6 +805,40 @@ test("formatDetailedStatus surfaces not_requested Copilot review lifecycle", () 
   assert.match(status, /copilot_review state=not_requested/);
 });
 
+test("formatDetailedStatus surfaces unknown Copilot review lifecycle when hydration fails", () => {
+  const config = createConfig({ copilotReviewWaitMinutes: 10 });
+  const pr: GitHubPullRequest = {
+    number: 22,
+    title: "Add review learning",
+    url: "https://example.test/pr/22",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    headRefName: "codex/issue-58",
+    headRefOid: "deadbeef",
+    copilotReviewState: null,
+    copilotReviewRequestedAt: null,
+    copilotReviewArrivedAt: null,
+  };
+
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: createRecord({
+      pr_number: 22,
+      state: "pr_open",
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(status, /copilot_review state=unknown requested_at=none arrived_at=none/);
+});
+
 test("formatDetailedStatus marks stale local review as non-gating", () => {
   const config = createConfig({ localReviewPolicy: "block_merge" });
   const record = createRecord({

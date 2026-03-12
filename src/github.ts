@@ -260,6 +260,8 @@ function normalizeRollupChecks(rollup: PullRequestStatusCheckRollupResponse | nu
 }
 
 export class GitHubClient {
+  private readonly copilotReviewLifecycleCache = new Map<string, Promise<CopilotReviewLifecycle>>();
+
   constructor(private readonly config: SupervisorConfig) {}
 
   private repoOwnerAndName(): { owner: string; repo: string } {
@@ -754,13 +756,40 @@ export class GitHubClient {
       return null;
     }
 
-    const lifecycle = await this.getCopilotReviewLifecycle(pr.number);
-    return {
-      ...pr,
-      copilotReviewState: lifecycle.state,
-      copilotReviewRequestedAt: lifecycle.requestedAt,
-      copilotReviewArrivedAt: lifecycle.arrivedAt,
-    };
+    const cacheKey = `${pr.number}:${pr.headRefOid}`;
+    const cachedLifecycle = this.copilotReviewLifecycleCache.get(cacheKey);
+    if (cachedLifecycle) {
+      const lifecycle = await cachedLifecycle;
+      return {
+        ...pr,
+        copilotReviewState: lifecycle.state,
+        copilotReviewRequestedAt: lifecycle.requestedAt,
+        copilotReviewArrivedAt: lifecycle.arrivedAt,
+      };
+    }
+
+    const lifecyclePromise = this.getCopilotReviewLifecycle(pr.number);
+    this.copilotReviewLifecycleCache.set(cacheKey, lifecyclePromise);
+
+    try {
+      const lifecycle = await lifecyclePromise;
+      return {
+        ...pr,
+        copilotReviewState: lifecycle.state,
+        copilotReviewRequestedAt: lifecycle.requestedAt,
+        copilotReviewArrivedAt: lifecycle.arrivedAt,
+      };
+    } catch (error) {
+      this.copilotReviewLifecycleCache.delete(cacheKey);
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`Failed to hydrate Copilot review lifecycle for PR #${pr.number}: ${truncate(message, 500) ?? "unknown error"}`);
+      return {
+        ...pr,
+        copilotReviewState: null,
+        copilotReviewRequestedAt: null,
+        copilotReviewArrivedAt: null,
+      };
+    }
   }
 
   private async getCopilotReviewLifecycle(prNumber: number): Promise<CopilotReviewLifecycle> {
@@ -769,7 +798,7 @@ export class GitHubClient {
       query($owner: String!, $repo: String!, $number: Int!) {
         repository(owner: $owner, name: $repo) {
           pullRequest(number: $number) {
-            reviewRequests(first: 20) {
+            reviewRequests(first: 100) {
               nodes {
                 requestedReviewer {
                   ... on Bot {
@@ -787,7 +816,7 @@ export class GitHubClient {
                 }
               }
             }
-            reviews(first: 50) {
+            reviews(last: 100) {
               nodes {
                 submittedAt
                 author {
@@ -795,7 +824,7 @@ export class GitHubClient {
                 }
               }
             }
-            timelineItems(first: 50, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT]) {
+            timelineItems(last: 100, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT]) {
               nodes {
                 __typename
                 ... on ReviewRequestedEvent {
