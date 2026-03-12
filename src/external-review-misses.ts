@@ -72,6 +72,7 @@ export interface ExternalReviewMissArtifact {
   localReviewSummaryPath: string | null;
   localReviewFindingsPath: string | null;
   findings: ExternalReviewMissFinding[];
+  reusableMissPatterns: ExternalReviewMissPattern[];
   counts: {
     matched: number;
     nearMatch: number;
@@ -87,6 +88,18 @@ export interface ExternalReviewMissContext {
   missedCount: number;
 }
 
+export interface ExternalReviewMissPattern {
+  fingerprint: string;
+  reviewerLogin: string;
+  file: string;
+  line: number | null;
+  summary: string;
+  rationale: string;
+  sourceArtifactPath: string;
+  sourceHeadSha: string;
+  lastSeenAt: string;
+}
+
 interface LocalComparisonCandidate {
   reference: string;
   file: string | null;
@@ -97,6 +110,33 @@ interface LocalComparisonCandidate {
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function createMissPatternFingerprint(finding: Pick<ExternalReviewPromptFinding, "file" | "summary" | "rationale">): string {
+  return [
+    finding.file ?? "",
+    normalizeWhitespace(finding.summary).toLowerCase(),
+    truncate(normalizeWhitespace(finding.rationale).toLowerCase(), 200) ?? "",
+  ].join("|");
+}
+
+function toReusableMissPattern(
+  finding: ExternalReviewMissFinding,
+  sourceArtifactPath: string,
+  sourceHeadSha: string,
+  lastSeenAt: string,
+): ExternalReviewMissPattern {
+  return {
+    fingerprint: createMissPatternFingerprint(finding),
+    reviewerLogin: finding.reviewerLogin,
+    file: finding.file ?? "unknown",
+    line: finding.line,
+    summary: finding.summary,
+    rationale: truncate(finding.rationale, 280) ?? finding.rationale,
+    sourceArtifactPath,
+    sourceHeadSha,
+    lastSeenAt,
+  };
 }
 
 function summarizeComment(body: string): string {
@@ -314,6 +354,102 @@ async function loadLocalReviewArtifact(summaryPath: string | null): Promise<{
   }
 }
 
+interface ExternalReviewMissArtifactLike {
+  branch?: string;
+  headSha?: string;
+  generatedAt?: string;
+  findings?: ExternalReviewMissFinding[];
+  reusableMissPatterns?: ExternalReviewMissPattern[];
+}
+
+function legacyReusableMissPatterns(
+  artifact: ExternalReviewMissArtifactLike,
+  artifactPath: string,
+): ExternalReviewMissPattern[] {
+  const generatedAt = typeof artifact.generatedAt === "string" ? artifact.generatedAt : "";
+  const headSha = typeof artifact.headSha === "string" ? artifact.headSha : "";
+  return (artifact.findings ?? [])
+    .filter((finding) => finding.classification === "missed_by_local_review" && typeof finding.file === "string" && finding.file.trim() !== "")
+    .map((finding) => toReusableMissPattern(finding, artifactPath, headSha, generatedAt));
+}
+
+export async function loadRelevantExternalReviewMissPatterns(args: {
+  artifactDir: string;
+  branch: string;
+  currentHeadSha: string;
+  changedFiles: string[];
+  limit?: number;
+}): Promise<ExternalReviewMissPattern[]> {
+  const changedFiles = [...new Set(args.changedFiles.filter((filePath) => filePath.trim() !== ""))].sort();
+  if (changedFiles.length === 0) {
+    return [];
+  }
+
+  let entries: string[];
+  try {
+    entries = await fs.readdir(args.artifactDir);
+  } catch {
+    return [];
+  }
+
+  const artifactPaths = entries
+    .filter((entry) => /^external-review-misses-head-.*\.json$/i.test(entry))
+    .sort()
+    .map((entry) => path.join(args.artifactDir, entry));
+  const changedFileSet = new Set(changedFiles);
+  const deduped = new Map<string, ExternalReviewMissPattern>();
+
+  for (const artifactPath of artifactPaths) {
+    let raw: string;
+    try {
+      raw = await fs.readFile(artifactPath, "utf8");
+    } catch {
+      continue;
+    }
+
+    const artifact = parseJson<ExternalReviewMissArtifactLike>(raw, artifactPath);
+    if (artifact.branch !== args.branch || artifact.headSha === args.currentHeadSha) {
+      continue;
+    }
+
+    const reusableMissPatterns =
+      Array.isArray(artifact.reusableMissPatterns) && artifact.reusableMissPatterns.length > 0
+        ? artifact.reusableMissPatterns
+        : legacyReusableMissPatterns(artifact, artifactPath);
+    for (const pattern of reusableMissPatterns) {
+      if (!pattern.file || !changedFileSet.has(pattern.file)) {
+        continue;
+      }
+
+      const existing = deduped.get(pattern.fingerprint);
+      if (!existing || pattern.lastSeenAt > existing.lastSeenAt) {
+        deduped.set(pattern.fingerprint, pattern);
+      }
+    }
+  }
+
+  return [...deduped.values()]
+    .sort((left, right) => {
+      const lastSeenComparison = right.lastSeenAt.localeCompare(left.lastSeenAt);
+      if (lastSeenComparison !== 0) {
+        return lastSeenComparison;
+      }
+
+      const fileComparison = left.file.localeCompare(right.file);
+      if (fileComparison !== 0) {
+        return fileComparison;
+      }
+
+      const lineComparison = (left.line ?? Number.MAX_SAFE_INTEGER) - (right.line ?? Number.MAX_SAFE_INTEGER);
+      if (lineComparison !== 0) {
+        return lineComparison;
+      }
+
+      return left.fingerprint.localeCompare(right.fingerprint);
+    })
+    .slice(0, Math.max(0, args.limit ?? 3));
+}
+
 export async function writeExternalReviewMissArtifact(args: {
   artifactDir: string;
   issueNumber: number;
@@ -347,6 +483,7 @@ export async function writeExternalReviewMissArtifact(args: {
     localReviewSummaryPath: args.localReviewSummaryPath,
     localReviewFindingsPath,
     findings,
+    reusableMissPatterns: [],
     counts: {
       matched: findings.filter((finding) => finding.classification === "matched").length,
       nearMatch: findings.filter((finding) => finding.classification === "near_match").length,
@@ -356,6 +493,9 @@ export async function writeExternalReviewMissArtifact(args: {
 
   await ensureDir(args.artifactDir);
   const artifactPath = path.join(args.artifactDir, `external-review-misses-head-${args.headSha.slice(0, 12)}.json`);
+  artifact.reusableMissPatterns = findings
+    .filter((finding) => finding.classification === "missed_by_local_review" && typeof finding.file === "string" && finding.file.trim() !== "")
+    .map((finding) => toReusableMissPattern(finding, artifactPath, args.headSha, artifact.generatedAt));
   await fs.writeFile(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
 
   return {

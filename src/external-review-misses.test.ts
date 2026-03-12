@@ -3,7 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyExternalReviewFinding, normalizeExternalReviewFinding, writeExternalReviewMissArtifact } from "./external-review-misses";
+import {
+  classifyExternalReviewFinding,
+  loadRelevantExternalReviewMissPatterns,
+  normalizeExternalReviewFinding,
+  writeExternalReviewMissArtifact,
+} from "./external-review-misses";
 import { ReviewThread } from "./types";
 
 function createReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
@@ -160,11 +165,15 @@ test("writeExternalReviewMissArtifact persists missed external findings for the 
   const artifactPath = context?.artifactPath ?? "";
   const artifact = JSON.parse(await fs.readFile(artifactPath, "utf8")) as {
     headSha: string;
+    reusableMissPatterns: Array<{ file: string; summary: string }>;
     counts: { missedByLocalReview: number };
     findings: Array<{ classification: string; reviewerLogin: string; file: string | null; line: number | null }>;
   };
   assert.equal(artifact.headSha, "deadbeefcafebabe");
   assert.equal(artifact.counts.missedByLocalReview, 1);
+  assert.equal(artifact.reusableMissPatterns.length, 1);
+  assert.equal(artifact.reusableMissPatterns[0]?.file, "src/auth.ts");
+  assert.match(artifact.reusableMissPatterns[0]?.summary ?? "", /permission guard/i);
   assert.deepEqual(artifact.findings.map((finding) => ({
     classification: finding.classification,
     reviewerLogin: finding.reviewerLogin,
@@ -195,4 +204,120 @@ test("writeExternalReviewMissArtifact skips persistence when the local review ar
   });
 
   assert.equal(context, null);
+});
+
+test("loadRelevantExternalReviewMissPatterns keeps relevant historical misses ordered and bounded", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "external-review-rubric-test-"));
+  await fs.writeFile(
+    path.join(tempDir, "external-review-misses-head-oldest.json"),
+    JSON.stringify({
+      branch: "codex/issue-61",
+      headSha: "oldesthead",
+      generatedAt: "2026-03-10T00:00:00Z",
+      reusableMissPatterns: [
+        {
+          fingerprint: "src/auth.ts|permission",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 10,
+          summary: "Old duplicate that should lose to a newer artifact.",
+          rationale: "Older duplicate rationale.",
+          sourceArtifactPath: path.join(tempDir, "external-review-misses-head-oldest.json"),
+          sourceHeadSha: "oldesthead",
+          lastSeenAt: "2026-03-10T00:00:00Z",
+        },
+      ],
+    }),
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(tempDir, "external-review-misses-head-middle.json"),
+    JSON.stringify({
+      branch: "codex/issue-61",
+      headSha: "middlehead",
+      generatedAt: "2026-03-11T00:00:00Z",
+      reusableMissPatterns: [
+        {
+          fingerprint: "src/auth.ts|permission",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 42,
+          summary: "Permission guard is bypassed.",
+          rationale: "Check the permission guard before the fallback write path.",
+          sourceArtifactPath: path.join(tempDir, "external-review-misses-head-middle.json"),
+          sourceHeadSha: "middlehead",
+          lastSeenAt: "2026-03-11T00:00:00Z",
+        },
+        {
+          fingerprint: "src/retry.ts|state",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/retry.ts",
+          line: 18,
+          summary: "Retry path can reuse stale state.",
+          rationale: "Reinitialize state on retry.",
+          sourceArtifactPath: path.join(tempDir, "external-review-misses-head-middle.json"),
+          sourceHeadSha: "middlehead",
+          lastSeenAt: "2026-03-11T00:00:00Z",
+        },
+      ],
+    }),
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(tempDir, "external-review-misses-head-newest.json"),
+    JSON.stringify({
+      branch: "codex/issue-61",
+      headSha: "newesthead",
+      generatedAt: "2026-03-12T00:00:00Z",
+      reusableMissPatterns: [
+        {
+          fingerprint: "src/api.ts|contract",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/api.ts",
+          line: 88,
+          summary: "Response omits a required field.",
+          rationale: "Preserve required fields in the API response.",
+          sourceArtifactPath: path.join(tempDir, "external-review-misses-head-newest.json"),
+          sourceHeadSha: "newesthead",
+          lastSeenAt: "2026-03-12T00:00:00Z",
+        },
+        {
+          fingerprint: "src/ignored.ts|unrelated",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/ignored.ts",
+          line: 5,
+          summary: "Unrelated miss should not be injected.",
+          rationale: "This file is not part of the current diff.",
+          sourceArtifactPath: path.join(tempDir, "external-review-misses-head-newest.json"),
+          sourceHeadSha: "newesthead",
+          lastSeenAt: "2026-03-12T00:00:00Z",
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  const patterns = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: tempDir,
+    branch: "codex/issue-61",
+    currentHeadSha: "currenthead",
+    changedFiles: ["src/api.ts", "src/auth.ts", "src/retry.ts"],
+    limit: 2,
+  });
+
+  assert.deepEqual(
+    patterns.map((pattern) => ({ file: pattern.file, summary: pattern.summary, lastSeenAt: pattern.lastSeenAt })),
+    [
+      {
+        file: "src/api.ts",
+        summary: "Response omits a required field.",
+        lastSeenAt: "2026-03-12T00:00:00Z",
+      },
+      {
+        file: "src/auth.ts",
+        summary: "Permission guard is bypassed.",
+        lastSeenAt: "2026-03-11T00:00:00Z",
+      },
+    ],
+  );
 });
