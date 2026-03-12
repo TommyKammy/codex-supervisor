@@ -853,7 +853,9 @@ function copilotReviewGraceExpired(
     return true;
   }
 
-  const anchor = !pr.isDraft && record.review_wait_started_at ? record.review_wait_started_at : pr.createdAt;
+  const anchor =
+    pr.copilotReviewRequestedAt ??
+    (!pr.isDraft && record.review_wait_started_at ? record.review_wait_started_at : pr.createdAt);
   const createdAtMs = Date.parse(anchor);
   if (Number.isNaN(createdAtMs)) {
     return false;
@@ -930,7 +932,7 @@ export function inferStateFromPullRequest(
     return "draft_pr";
   }
 
-  if (!copilotReviewGraceExpired(record, pr, config)) {
+  if ((pr.copilotReviewState ?? "not_requested") === "requested" && !copilotReviewGraceExpired(record, pr, config)) {
     return "waiting_ci";
   }
 
@@ -1210,6 +1212,9 @@ export function formatDetailedStatus(args: {
   }
 
   if (pr) {
+    lines.push(
+      `copilot_review state=${pr.copilotReviewState ?? "not_requested"} requested_at=${pr.copilotReviewRequestedAt ?? "none"} arrived_at=${pr.copilotReviewArrivedAt ?? "none"}`,
+    );
     lines.push(
       `pr_state=${pr.state} draft=${pr.isDraft ? "yes" : "no"} merge_state=${pr.mergeStateStatus ?? "unknown"} review_decision=${pr.reviewDecision ?? "none"} head_sha=${pr.headRefOid}`,
     );

@@ -313,6 +313,33 @@ test("inferStateFromPullRequest routes actionable high local-review retry into l
   assert.equal(inferStateFromPullRequest(config, record, pr, [], []), "local_review_fix");
 });
 
+test("inferStateFromPullRequest does not wait for Copilot when no lifecycle signal exists", () => {
+  const config = createConfig({ copilotReviewWaitMinutes: 10 });
+  const now = new Date().toISOString();
+  const record = createRecord({
+    state: "pr_open",
+    review_wait_started_at: now,
+    review_wait_head_sha: "head123",
+  });
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: now,
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-38",
+    headRefOid: "head123",
+    mergedAt: null,
+  };
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "ready_to_merge");
+});
+
 test("inferStateFromPullRequest covers local review policy gating combinations", () => {
   const cases: Array<{
     name: string;
@@ -743,6 +770,39 @@ test("formatDetailedStatus shows saved external review miss counts for the curre
 
   assert.match(status, /external_review head=current reviewed_head_sha=deadbeef matched=1 near_match=1 missed=2/);
   assert.match(status, /external_review_misses_path=owner-repo\/issue-58\/external-review-misses-head-deadbeef\.json/);
+});
+
+test("formatDetailedStatus surfaces not_requested Copilot review lifecycle", () => {
+  const config = createConfig({ copilotReviewWaitMinutes: 10 });
+  const pr: GitHubPullRequest = {
+    number: 22,
+    title: "Add review learning",
+    url: "https://example.test/pr/22",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    headRefName: "codex/issue-58",
+    headRefOid: "deadbeef",
+  };
+
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: createRecord({
+      pr_number: 22,
+      state: "pr_open",
+      review_wait_started_at: new Date().toISOString(),
+      review_wait_head_sha: "deadbeef",
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(status, /copilot_review state=not_requested/);
 });
 
 test("formatDetailedStatus marks stale local review as non-gating", () => {
