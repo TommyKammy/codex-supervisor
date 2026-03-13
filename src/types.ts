@@ -151,6 +151,8 @@ export interface IssueRunRecord {
   repeated_failure_signature_count: number;
   last_head_sha: string | null;
   last_codex_summary: string | null;
+  last_recovery_reason: string | null;
+  last_recovery_at: string | null;
   last_error: string | null;
   last_failure_kind: FailureKind;
   last_failure_context: FailureContext | null;

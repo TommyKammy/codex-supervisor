@@ -80,6 +80,8 @@ function createIssueRecord(config: SupervisorConfig, issueNumber: number): Issue
     repeated_failure_signature_count: 0,
     last_head_sha: null,
     last_codex_summary: null,
+    last_recovery_reason: null,
+    last_recovery_at: null,
     last_error: null,
     last_failure_kind: null,
     last_failure_context: null,
@@ -1377,6 +1379,7 @@ interface HydratedPullRequestContext {
 
 interface RestartRunOnce {
   kind: "restart";
+  recoveryEvents?: RecoveryEvent[];
 }
 
 interface CodexTurnContext {
@@ -1441,6 +1444,46 @@ function formatStatus(record: IssueRunRecord | null): string {
     `attempts=${record.attempt_count} impl=${record.implementation_attempt_count} repair=${record.repair_attempt_count}`,
     `workspace=${record.workspace}`,
   ].join(" ");
+}
+
+interface RecoveryEvent {
+  issueNumber: number;
+  reason: string;
+  at: string;
+}
+
+function buildRecoveryEvent(issueNumber: number, reason: string): RecoveryEvent {
+  return {
+    issueNumber,
+    reason,
+    at: nowIso(),
+  };
+}
+
+function applyRecoveryEvent(
+  patch: Partial<IssueRunRecord>,
+  recoveryEvent: RecoveryEvent,
+): Partial<IssueRunRecord> {
+  return {
+    ...patch,
+    last_recovery_reason: recoveryEvent.reason,
+    last_recovery_at: recoveryEvent.at,
+  };
+}
+
+function formatRecoveryLog(events: RecoveryEvent[]): string | null {
+  if (events.length === 0) {
+    return null;
+  }
+
+  return [...events]
+    .sort((left, right) => left.issueNumber - right.issueNumber || left.reason.localeCompare(right.reason))
+    .map((event) => `recovery issue=#${event.issueNumber} reason=${sanitizeStatusValue(event.reason)}`)
+    .join("; ");
+}
+
+function prependRecoveryLog(message: string, recoveryLog: string | null): string {
+  return recoveryLog ? `${recoveryLog}; ${message}` : message;
 }
 
 function sanitizeStatusValue(value: string | null | undefined): string | null {
@@ -1549,12 +1592,22 @@ export function formatDetailedStatus(args: {
   config: SupervisorConfig;
   activeRecord: IssueRunRecord | null;
   latestRecord: IssueRunRecord | null;
+  latestRecoveryRecord?: IssueRunRecord | null;
   trackedIssueCount: number;
   pr: GitHubPullRequest | null;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
 }): string {
-  const { config, activeRecord, latestRecord, trackedIssueCount, pr, checks, reviewThreads } = args;
+  const {
+    config,
+    activeRecord,
+    latestRecord,
+    latestRecoveryRecord = null,
+    trackedIssueCount,
+    pr,
+    checks,
+    reviewThreads,
+  } = args;
 
   if (!activeRecord) {
     const lines = [
@@ -1562,6 +1615,12 @@ export function formatDetailedStatus(args: {
       `tracked_issues=${trackedIssueCount}`,
       `latest_record=${formatRecentRecord(latestRecord)}`,
     ];
+
+    if (latestRecoveryRecord?.last_recovery_reason && latestRecoveryRecord.last_recovery_at) {
+      lines.push(
+        `latest_recovery issue=#${latestRecoveryRecord.issue_number} at=${latestRecoveryRecord.last_recovery_at} reason=${sanitizeStatusValue(latestRecoveryRecord.last_recovery_reason)}`,
+      );
+    }
 
     return lines.join("\n");
   }
@@ -1629,6 +1688,12 @@ export function formatDetailedStatus(args: {
   if (activeRecord.last_failure_context) {
     lines.push(
       `failure_context category=${activeRecord.last_failure_context.category ?? "none"} summary=${truncate(activeRecord.last_failure_context.summary, 200) ?? "none"}`,
+    );
+  }
+
+  if (latestRecoveryRecord?.last_recovery_reason && latestRecoveryRecord.last_recovery_at) {
+    lines.push(
+      `latest_recovery issue=#${latestRecoveryRecord.issue_number} at=${latestRecoveryRecord.last_recovery_at} reason=${sanitizeStatusValue(latestRecoveryRecord.last_recovery_reason)}`,
     );
   }
 
@@ -1740,8 +1805,9 @@ async function reconcileMergedIssueClosures(
   stateStore: StateStore,
   state: SupervisorStateFile,
   issues: GitHubIssue[],
-): Promise<void> {
+): Promise<RecoveryEvent[]> {
   let changed = false;
+  const recoveryEvents: RecoveryEvent[] = [];
   const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
 
   for (const record of Object.values(state.issues)) {
@@ -1783,18 +1849,25 @@ async function reconcileMergedIssueClosures(
       last_head_sha: satisfyingPullRequest.headRefOid,
     });
     if (needsRecordUpdate(record, patch)) {
-      const updated = stateStore.touch(record, patch);
+      const recoveryEvent = buildRecoveryEvent(
+        record.issue_number,
+        `merged_pr_convergence: merged PR #${satisfyingPullRequest.number} satisfied issue #${record.issue_number}; marked issue #${record.issue_number} done`,
+      );
+      const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
       state.issues[String(record.issue_number)] = updated;
       if (state.activeIssueNumber === record.issue_number) {
         state.activeIssueNumber = null;
       }
       changed = true;
+      recoveryEvents.push(recoveryEvent);
     }
   }
 
   if (changed) {
     await stateStore.save(state);
   }
+
+  return recoveryEvents;
 }
 
 async function reconcileTrackedMergedButOpenIssues(
@@ -1802,8 +1875,9 @@ async function reconcileTrackedMergedButOpenIssues(
   stateStore: StateStore,
   state: SupervisorStateFile,
   issues: GitHubIssue[],
-): Promise<void> {
+): Promise<RecoveryEvent[]> {
   let changed = false;
+  const recoveryEvents: RecoveryEvent[] = [];
   const issueByNumber = new Map(issues.map((issue) => [issue.number, issue]));
 
   for (const record of Object.values(state.issues)) {
@@ -1825,17 +1899,23 @@ async function reconcileTrackedMergedButOpenIssues(
       continue;
     }
 
+    const recoveryEvent = buildRecoveryEvent(
+      record.issue_number,
+      `merged_pr_convergence: tracked PR #${trackedPullRequest.number} merged; marked issue #${record.issue_number} done`,
+    );
+
     if (issue.state !== "OPEN") {
       const patch = doneResetPatch({
         pr_number: trackedPullRequest.number,
         last_head_sha: trackedPullRequest.headRefOid,
       });
-      const updated = stateStore.touch(record, patch);
+      const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
       state.issues[String(record.issue_number)] = updated;
       if (state.activeIssueNumber === record.issue_number) {
         state.activeIssueNumber = null;
       }
       changed = true;
+      recoveryEvents.push(recoveryEvent);
       continue;
     }
 
@@ -1860,17 +1940,20 @@ async function reconcileTrackedMergedButOpenIssues(
       pr_number: trackedPullRequest.number,
       last_head_sha: trackedPullRequest.headRefOid,
     });
-    const updated = stateStore.touch(record, patch);
+    const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
     state.issues[String(record.issue_number)] = updated;
     if (state.activeIssueNumber === record.issue_number) {
       state.activeIssueNumber = null;
     }
     changed = true;
+    recoveryEvents.push(recoveryEvent);
   }
 
   if (changed) {
     await stateStore.save(state);
   }
+
+  return recoveryEvents;
 }
 
 async function reconcileStaleFailedIssueStates(
@@ -1941,8 +2024,9 @@ export async function reconcileRecoverableBlockedIssueStates(
   state: SupervisorStateFile,
   config: SupervisorConfig,
   issues: GitHubIssue[],
-): Promise<void> {
+): Promise<RecoveryEvent[]> {
   let changed = false;
+  const recoveryEvents: RecoveryEvent[] = [];
   const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
 
   for (const record of Object.values(state.issues)) {
@@ -1954,6 +2038,10 @@ export async function reconcileRecoverableBlockedIssueStates(
       continue;
     }
 
+    const recoveryEvent = buildRecoveryEvent(
+      record.issue_number,
+      `stale_state_cleanup: requeued issue #${record.issue_number} after recovering a missing handoff`,
+    );
     const updated = stateStore.touch(record, {
       state: "queued",
       blocked_reason: null,
@@ -1968,14 +2056,18 @@ export async function reconcileRecoverableBlockedIssueStates(
       copilot_review_timed_out_at: null,
       copilot_review_timeout_action: null,
       copilot_review_timeout_reason: null,
+      ...applyRecoveryEvent({}, recoveryEvent),
     });
     state.issues[String(record.issue_number)] = updated;
     changed = true;
+    recoveryEvents.push(recoveryEvent);
   }
 
   if (changed) {
     await stateStore.save(state);
   }
+
+  return recoveryEvents;
 }
 
 async function reconcileParentEpicClosures(
@@ -2045,39 +2137,49 @@ export class Supervisor {
     return path.resolve(path.dirname(this.config.stateFile), "locks", kind, `${safeKey}.lock`);
   }
 
-  private async reconcileStaleActiveIssueReservation(state: SupervisorStateFile): Promise<void> {
+  private async reconcileStaleActiveIssueReservation(state: SupervisorStateFile): Promise<RecoveryEvent[]> {
+    const recoveryEvents: RecoveryEvent[] = [];
     if (state.activeIssueNumber === null) {
-      return;
+      return recoveryEvents;
     }
 
     const record = state.issues[String(state.activeIssueNumber)] ?? null;
     if (!record) {
       state.activeIssueNumber = null;
       await this.stateStore.save(state);
-      return;
+      return recoveryEvents;
     }
 
     if (!OWNER_GUARDED_ACTIVE_STATES.has(record.state)) {
-      return;
+      return recoveryEvents;
     }
 
     const issueLock = await inspectFileLock(this.lockPath("issues", `issue-${record.issue_number}`));
     if (issueLock.status === "live") {
-      return;
+      return recoveryEvents;
     }
 
+    let missingLockReason = "issue lock was missing";
     if (record.codex_session_id) {
       const sessionLock = await inspectFileLock(this.lockPath("sessions", `session-${record.codex_session_id}`));
       if (sessionLock.status === "live") {
-        return;
+        return recoveryEvents;
       }
+      missingLockReason = "issue lock and session lock were missing";
     }
 
+    const recoveryEvent = buildRecoveryEvent(
+      record.issue_number,
+      `stale_state_cleanup: cleared stale active reservation after ${missingLockReason}`,
+    );
     state.issues[String(record.issue_number)] = this.stateStore.touch(record, {
       codex_session_id: null,
+      ...applyRecoveryEvent({}, recoveryEvent),
     });
     state.activeIssueNumber = null;
     await this.stateStore.save(state);
+    recoveryEvents.push(recoveryEvent);
+    return recoveryEvents;
   }
 
   private async selectIssueRecord(
@@ -2188,15 +2290,20 @@ export class Supervisor {
       if (!resolvedPr) {
         // No current or historical PR for this branch; continue with normal branch/PR flow.
       } else if (resolvedPr.mergedAt || resolvedPr.state === "MERGED") {
+        const recoveryEvent = buildRecoveryEvent(
+          record.issue_number,
+          `merged_pr_convergence: tracked PR #${resolvedPr.number} merged; marked issue #${record.issue_number} done`,
+        );
         const doneRecord = this.stateStore.touch(record, {
           pr_number: resolvedPr.number,
           state: "done",
           last_head_sha: resolvedPr.headRefOid,
+          ...applyRecoveryEvent({}, recoveryEvent),
         });
         state.issues[String(doneRecord.issue_number)] = doneRecord;
         state.activeIssueNumber = null;
         await this.stateStore.save(state);
-        return { kind: "restart" };
+        return { kind: "restart", recoveryEvents: [recoveryEvent] };
       } else if (resolvedPr.state === "CLOSED") {
         const failureContext = buildCodexFailureContext(
           "manual",
@@ -2849,9 +2956,18 @@ export class Supervisor {
     const activeRecord =
       state.activeIssueNumber !== null ? state.issues[String(state.activeIssueNumber)] ?? null : null;
     let latestRecord: IssueRunRecord | null = null;
+    let latestRecoveryRecord: IssueRunRecord | null = null;
     for (const record of Object.values(state.issues)) {
       if (latestRecord === null || record.updated_at.localeCompare(latestRecord.updated_at) > 0) {
         latestRecord = record;
+      }
+      if (
+        record.last_recovery_reason &&
+        record.last_recovery_at &&
+        (latestRecoveryRecord === null ||
+          record.last_recovery_at.localeCompare(latestRecoveryRecord.last_recovery_at ?? "") > 0)
+      ) {
+        latestRecoveryRecord = record;
       }
     }
 
@@ -2860,6 +2976,7 @@ export class Supervisor {
         config: this.config,
         activeRecord: null,
         latestRecord,
+        latestRecoveryRecord,
         trackedIssueCount: Object.keys(state.issues).length,
         pr: null,
         checks: [],
@@ -2894,6 +3011,7 @@ export class Supervisor {
           config: this.config,
           activeRecord,
           latestRecord,
+          latestRecoveryRecord,
           trackedIssueCount: Object.keys(state.issues).length,
           pr,
         checks,
@@ -2907,6 +3025,7 @@ export class Supervisor {
       config: this.config,
       activeRecord,
       latestRecord,
+      latestRecoveryRecord,
       trackedIssueCount: Object.keys(state.issues).length,
       pr,
       checks,
@@ -2917,20 +3036,24 @@ export class Supervisor {
   }
 
   async runOnce(options: Pick<CliOptions, "dryRun">): Promise<string> {
+    let carryoverRecoveryEvents: RecoveryEvent[] = [];
     for (;;) {
       const state = await this.stateStore.load();
-      await this.reconcileStaleActiveIssueReservation(state);
+      const recoveryEvents: RecoveryEvent[] = [...carryoverRecoveryEvents];
+      carryoverRecoveryEvents = [];
+      recoveryEvents.push(...(await this.reconcileStaleActiveIssueReservation(state)));
       const authFailure = await handleAuthFailure(this.github, this.stateStore, state);
       if (authFailure) {
-        return authFailure;
+        return prependRecoveryLog(authFailure, formatRecoveryLog(recoveryEvents));
       }
       const issues = await this.github.listAllIssues();
-      await reconcileTrackedMergedButOpenIssues(this.github, this.stateStore, state, issues);
-      await reconcileMergedIssueClosures(this.github, this.stateStore, state, issues);
+      recoveryEvents.push(...(await reconcileTrackedMergedButOpenIssues(this.github, this.stateStore, state, issues)));
+      recoveryEvents.push(...(await reconcileMergedIssueClosures(this.github, this.stateStore, state, issues)));
       await reconcileStaleFailedIssueStates(this.github, this.stateStore, state, this.config, issues);
-      await reconcileRecoverableBlockedIssueStates(this.stateStore, state, this.config, issues);
+      recoveryEvents.push(...(await reconcileRecoverableBlockedIssueStates(this.stateStore, state, this.config, issues)));
       await reconcileParentEpicClosures(this.github, this.stateStore, state, issues);
       await cleanupExpiredDoneWorkspaces(this.config, state);
+      const recoveryLog = formatRecoveryLog(recoveryEvents);
 
       let record =
         state.activeIssueNumber !== null ? state.issues[String(state.activeIssueNumber)] ?? null : null;
@@ -2961,7 +3084,7 @@ export class Supervisor {
 
       const selectedIssue = await this.selectIssueRecord(state, record);
       if (typeof selectedIssue === "string") {
-        return selectedIssue;
+        return prependRecoveryLog(selectedIssue, recoveryLog);
       }
       record = selectedIssue.record;
 
@@ -2970,7 +3093,7 @@ export class Supervisor {
         `issue-${record.issue_number}`,
       );
       if (!issueLock.acquired) {
-        return `Skipped issue #${record.issue_number}: ${issueLock.reason}.`;
+        return prependRecoveryLog(`Skipped issue #${record.issue_number}: ${issueLock.reason}.`, recoveryLog);
       }
 
       let shouldRestart = false;
@@ -3028,7 +3151,10 @@ export class Supervisor {
           state.issues[String(record.issue_number)] = record;
           state.activeIssueNumber = null;
           await this.stateStore.save(state);
-          return `Issue #${record.issue_number} reached max ${budgetLaneBeforeWorkspace} Codex attempts.`;
+          return prependRecoveryLog(
+            `Issue #${record.issue_number} reached max ${budgetLaneBeforeWorkspace} Codex attempts.`,
+            recoveryLog,
+          );
         }
 
         const {
@@ -3053,9 +3179,13 @@ export class Supervisor {
           options,
         );
         if (typeof hydratedPullRequest === "string") {
-          return hydratedPullRequest;
+          return prependRecoveryLog(hydratedPullRequest, recoveryLog);
         }
         if ("kind" in hydratedPullRequest && hydratedPullRequest.kind === "restart") {
+          carryoverRecoveryEvents = [
+            ...recoveryEvents,
+            ...(hydratedPullRequest.recoveryEvents ?? []),
+          ];
           shouldRestart = true;
           continue;
         }
@@ -3103,7 +3233,10 @@ export class Supervisor {
             state.activeIssueNumber = null;
             await this.stateStore.save(state);
             await syncJournal(record);
-            return `Issue #${record.issue_number} stopped after repeated identical failure signatures.`;
+            return prependRecoveryLog(
+              `Issue #${record.issue_number} stopped after repeated identical failure signatures.`,
+              recoveryLog,
+            );
           }
         } else {
           const preserveFailureTracking = shouldPreserveNoPrFailureTracking(record);
@@ -3142,7 +3275,7 @@ export class Supervisor {
             options,
           });
           if (codexTurn.kind === "returned") {
-            return codexTurn.message;
+            return prependRecoveryLog(codexTurn.message, recoveryLog);
           }
 
           record = codexTurn.record;
@@ -3165,13 +3298,13 @@ export class Supervisor {
           });
           record = await this.handlePostTurnMergeAndCompletion(state, postTurn.record, postTurn.pr, options);
           await syncJournal(record);
-          return formatStatus(record);
+          return prependRecoveryLog(formatStatus(record), recoveryLog);
         }
 
         state.issues[String(record.issue_number)] = record;
         await this.stateStore.save(state);
         await syncJournal(record);
-        return formatStatus(record);
+        return prependRecoveryLog(formatStatus(record), recoveryLog);
       } finally {
         await issueLock.release();
       }

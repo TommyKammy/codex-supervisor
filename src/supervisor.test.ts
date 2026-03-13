@@ -109,6 +109,8 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     repeated_failure_signature_count: 1,
     last_head_sha: "abcdef1",
     last_codex_summary: null,
+    last_recovery_reason: null,
+    last_recovery_at: null,
     last_error: "Codex completed without updating the issue journal for issue #366.",
     last_failure_kind: null,
     last_failure_context: {
@@ -698,6 +700,10 @@ test("runOnce releases the current issue lock before restarting after a merged P
   };
 
   const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(
+    message,
+    /recovery issue=#91 reason=merged_pr_convergence: tracked PR #191 merged; marked issue #91 done/,
+  );
   assert.match(message, new RegExp(`Dry run: would invoke Codex for issue #${nextIssueNumber}\\.`));
 
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
@@ -775,6 +781,10 @@ test("runOnce clears a stale active issue reservation before selecting the next 
   };
 
   const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(
+    message,
+    /recovery issue=#91 reason=stale_state_cleanup: cleared stale active reservation after issue lock and session lock were missing/,
+  );
   assert.match(message, /Dry run: would invoke Codex for issue #92\./);
 
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
@@ -2178,6 +2188,54 @@ test("formatDetailedStatus surfaces Copilot review timeout outcome", () => {
 
   assert.match(status, /copilot_review state=requested requested_at=2026-03-11T14:05:00Z arrived_at=none timed_out_at=2026-03-11T14:15:00Z timeout_action=continue/);
   assert.match(status, /timeout_reason=Requested Copilot review never arrived within 10 minute\(s\) for head deadbeef\./);
+});
+
+test("formatDetailedStatus surfaces the latest recovery reason separately from the active issue", () => {
+  const config = createConfig();
+  const activeRecord = createRecord({
+    issue_number: 92,
+    state: "implementing",
+    branch: "codex/issue-92",
+    workspace: "/tmp/workspaces/issue-92",
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_failure_signature: null,
+    codex_session_id: null,
+  });
+  const latestRecoveryRecord = createRecord({
+    issue_number: 91,
+    state: "done",
+    branch: "codex/issue-91",
+    workspace: "/tmp/workspaces/issue-91",
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_failure_signature: null,
+    codex_session_id: null,
+    updated_at: "2026-03-13T00:20:00Z",
+    last_codex_summary: null,
+    last_recovery_reason: "merged_pr_convergence: tracked PR #191 merged; marked issue #91 done",
+    last_recovery_at: "2026-03-13T00:20:00Z",
+  });
+
+  const status = formatDetailedStatus({
+    config,
+    activeRecord,
+    latestRecord: latestRecoveryRecord,
+    latestRecoveryRecord,
+    trackedIssueCount: 2,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(
+    status,
+    /latest_recovery issue=#91 at=2026-03-13T00:20:00Z reason=merged_pr_convergence: tracked PR #191 merged; marked issue #91 done/,
+  );
 });
 
 test("formatDetailedStatus marks stale local review as non-gating", () => {
