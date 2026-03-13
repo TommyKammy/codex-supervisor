@@ -1091,6 +1091,13 @@ function syncCopilotReviewRequestObservation(record: IssueRunRecord, pr: GitHubP
     };
   }
 
+  if ((pr.copilotReviewState ?? "not_requested") === "requested") {
+    return {
+      copilot_review_requested_observed_at: nowIso(),
+      copilot_review_requested_head_sha: pr.headRefOid,
+    };
+  }
+
   if (hasObservedCopilotRequest(record, pr)) {
     return {
       copilot_review_requested_observed_at: record.copilot_review_requested_observed_at,
