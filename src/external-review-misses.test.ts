@@ -9,6 +9,7 @@ import {
   normalizeExternalReviewFinding,
   writeExternalReviewMissArtifact,
 } from "./external-review-misses";
+import { loadLocalReviewArtifact } from "./external-review-local-artifact-io";
 import { ReviewThread } from "./types";
 
 function createReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
@@ -209,6 +210,30 @@ test("classifyExternalReviewFinding keeps nearby same-file findings as near_matc
   assert.equal(classified.matchReason, "same-file overlap=0.11 line_distance=8 same_hunk=no");
 });
 
+test("loadLocalReviewArtifact only loads md-adjacent findings artifacts", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "external-review-local-artifact-test-"));
+  const summaryPath = path.join(tempDir, "head-deadbeef.md");
+  const findingsPath = path.join(tempDir, "head-deadbeef.json");
+  await fs.writeFile(summaryPath, "# summary\n", "utf8");
+  await fs.writeFile(
+    findingsPath,
+    `${JSON.stringify({ actionableFindings: [{ title: "A", body: "B", file: "src/auth.ts", start: 1, end: 1, severity: "medium" }] })}\n`,
+    "utf8",
+  );
+
+  const loaded = await loadLocalReviewArtifact(summaryPath);
+  assert.equal(loaded.available, true);
+  assert.equal(loaded.findingsPath, findingsPath);
+  assert.equal(loaded.artifact?.actionableFindings?.[0]?.file, "src/auth.ts");
+
+  const ignored = await loadLocalReviewArtifact(path.join(tempDir, "head-deadbeef.txt"));
+  assert.deepEqual(ignored, {
+    findingsPath: null,
+    artifact: null,
+    available: false,
+  });
+});
+
 test("writeExternalReviewMissArtifact persists missed external findings for the current review head", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "external-review-miss-test-"));
   const localReviewSummaryPath = path.join(tempDir, "head-deadbeef.md");
@@ -256,6 +281,7 @@ test("writeExternalReviewMissArtifact persists missed external findings for the 
   assert.equal(context?.nearMatchCount, 0);
   assert.equal(context?.missedCount, 1);
   assert.equal(context?.missedFindings[0]?.reviewerLogin, "copilot-pull-request-reviewer");
+  assert.equal(path.basename(context?.artifactPath ?? ""), "external-review-misses-head-deadbeefcafe.json");
 
   const artifactPath = context?.artifactPath ?? "";
   const artifact = JSON.parse(await fs.readFile(artifactPath, "utf8")) as {
