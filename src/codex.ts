@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { runCommand } from "./command";
 import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "./codex-policy";
-import { ExternalReviewMissContext } from "./external-review-misses";
+import { ExternalReviewMissContext, type ExternalReviewMissPattern } from "./external-review-misses";
 import {
   BlockedReason,
   CodexTurnResult,
@@ -28,6 +28,7 @@ export interface LocalReviewRepairContext {
     file: string | null;
     lines: string | null;
   }>;
+  priorMissPatterns: ExternalReviewMissPattern[];
 }
 
 export function extractStateHint(message: string): RunState | null {
@@ -314,6 +315,18 @@ export function buildCodexPrompt(input: {
                       ),
                     ]
                   : ["- Compressed root causes: none available"]),
+                ...(input.localReviewRepairContext.priorMissPatterns.length > 0
+                  ? [
+                      "- Committed regression-oriented guardrails:",
+                      ...input.localReviewRepairContext.priorMissPatterns.map((pattern, index) =>
+                        [
+                          `  - ${index + 1}. file=${pattern.file}:${pattern.line ?? "?"} reviewer=${pattern.reviewerLogin}`,
+                          `    summary=${truncate(pattern.summary, 160) ?? ""}`,
+                          `    follow_up=${truncate(pattern.rationale, 220) ?? ""}`,
+                        ].join("\n"),
+                      ),
+                    ]
+                  : ["- Committed regression-oriented guardrails: none identified"]),
               ]
             : [
                 "- No parsed local-review repair context was available. Read the local-review summary artifact before editing code.",

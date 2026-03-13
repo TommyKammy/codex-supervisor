@@ -62,6 +62,19 @@ test("buildCodexPrompt emphasizes compressed local-review root causes during loc
           lines: "92-101",
         },
       ],
+      priorMissPatterns: [
+        {
+          fingerprint: "src/supervisor.ts|retry-mode",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/supervisor.ts",
+          line: 761,
+          summary: "Repair retries can loop through the wrong state.",
+          rationale: "A prior external review caught a retry path that stayed in implementing instead of a dedicated repair state.",
+          sourceArtifactPath: "/tmp/reviews/issue-46/external-review-misses-head-old.json",
+          sourceHeadSha: "oldhead123",
+          lastSeenAt: "2026-03-12T00:00:00Z",
+        },
+      ],
     },
   });
 
@@ -70,6 +83,8 @@ test("buildCodexPrompt emphasizes compressed local-review root causes during loc
   assert.match(prompt, /Relevant files to inspect first:/);
   assert.match(prompt, /src\/supervisor\.ts/);
   assert.match(prompt, /State inference sends local-review retries/);
+  assert.match(prompt, /Committed regression-oriented guardrails:/);
+  assert.match(prompt, /Repair retries can loop through the wrong state\./);
 });
 
 test("buildCodexPrompt suppresses stale handoff next actions during local_review_fix", () => {
@@ -111,6 +126,7 @@ test("buildCodexPrompt suppresses stale handoff next actions during local_review
           lines: "1-200",
         },
       ],
+      priorMissPatterns: [],
     },
   });
 
@@ -156,6 +172,7 @@ test("buildCodexPrompt suppresses flat next-action bullet lists during local_rev
           lines: "1-200",
         },
       ],
+      priorMissPatterns: [],
     },
   });
 
@@ -201,6 +218,7 @@ test("buildCodexPrompt keeps explicit operator overrides during local_review_fix
           lines: "1-200",
         },
       ],
+      priorMissPatterns: [],
     },
   });
 
@@ -336,9 +354,80 @@ test("loadLocalReviewRepairContext derives the findings path and trims prompt co
       { severity: "medium", summary: "four", file: null, lines: "30-32" },
       { severity: "high", summary: "five", file: "src/file-4.ts", lines: "40" },
     ],
+    priorMissPatterns: [],
   });
 
   await fs.rm(tempDir, { recursive: true, force: true });
+});
+
+test("loadLocalReviewRepairContext loads committed guardrails when local history is absent", async () => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-fix-durable-guardrails-test-"));
+  const reviewDir = path.join(workspaceDir, "reviews");
+  const summaryPath = path.join(reviewDir, "head-deadbeef.md");
+  const findingsPath = path.join(reviewDir, "head-deadbeef.json");
+  const durableGuardrailPath = path.join(workspaceDir, "docs", "shared-memory", "external-review-guardrails.json");
+
+  await fs.mkdir(path.dirname(durableGuardrailPath), { recursive: true });
+  await fs.mkdir(reviewDir, { recursive: true });
+  await fs.writeFile(summaryPath, "# summary\n", "utf8");
+  await fs.writeFile(
+    findingsPath,
+    JSON.stringify({
+      branch: "codex/issue-46",
+      headSha: "deadbeef",
+      actionableFindings: [{ file: "src/auth.ts" }],
+      rootCauseSummaries: [
+        { severity: "high", summary: "Permission guard retry path is fragile", file: "src/auth.ts", start: 40, end: 44 },
+      ],
+    }),
+    "utf8",
+  );
+  await fs.writeFile(
+    durableGuardrailPath,
+    JSON.stringify({
+      version: 1,
+      patterns: [
+        {
+          fingerprint: "src/auth.ts|permission",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 42,
+          summary: "Permission guard is bypassed.",
+          rationale: "Add or validate regression coverage around the fallback permission check before clearing the repair.",
+          sourceArtifactPath: "/tmp/reviews/issue-46/external-review-misses-head-old.json",
+          sourceHeadSha: "oldhead123",
+          lastSeenAt: "2026-03-12T00:00:00Z",
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  const context = await loadLocalReviewRepairContext(summaryPath, workspaceDir);
+
+  assert.deepEqual(context, {
+    summaryPath,
+    findingsPath,
+    relevantFiles: ["src/auth.ts"],
+    rootCauses: [
+      { severity: "high", summary: "Permission guard retry path is fragile", file: "src/auth.ts", lines: "40-44" },
+    ],
+    priorMissPatterns: [
+      {
+        fingerprint: "src/auth.ts|permission",
+        reviewerLogin: "copilot-pull-request-reviewer",
+        file: "src/auth.ts",
+        line: 42,
+        summary: "Permission guard is bypassed.",
+        rationale: "Add or validate regression coverage around the fallback permission check before clearing the repair.",
+        sourceArtifactPath: "/tmp/reviews/issue-46/external-review-misses-head-old.json",
+        sourceHeadSha: "oldhead123",
+        lastSeenAt: "2026-03-12T00:00:00Z",
+      },
+    ],
+  });
+
+  await fs.rm(workspaceDir, { recursive: true, force: true });
 });
 
 test("loadLocalReviewRepairContext returns null when the findings artifact is missing or invalid", async () => {

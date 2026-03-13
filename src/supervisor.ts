@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { buildCodexPrompt, extractBlockedReason, extractFailureSignature, extractStateHint, runCodexTurn } from "./codex";
 import { loadConfig } from "./config";
-import { ExternalReviewMissContext, writeExternalReviewMissArtifact } from "./external-review-misses";
+import { ExternalReviewMissContext, loadRelevantExternalReviewMissPatterns, writeExternalReviewMissArtifact } from "./external-review-misses";
 import { GitHubClient } from "./github";
 import { findBlockingIssue, findParentIssuesReadyToClose } from "./issue-metadata";
 import { describeGsdIntegration } from "./gsd";
@@ -157,6 +157,8 @@ export function localReviewHighSeverityNeedsRetry(
 }
 
 interface LocalReviewRepairArtifact {
+  branch?: string;
+  headSha?: string;
   actionableFindings?: Array<{ file?: string | null }>;
   rootCauseSummaries?: Array<{
     severity?: "low" | "medium" | "high";
@@ -167,7 +169,7 @@ interface LocalReviewRepairArtifact {
   }>;
 }
 
-export async function loadLocalReviewRepairContext(summaryPath: string | null) {
+export async function loadLocalReviewRepairContext(summaryPath: string | null, workspacePath?: string) {
   if (!summaryPath) {
     return null;
   }
@@ -207,12 +209,24 @@ export async function loadLocalReviewRepairContext(summaryPath: string | null) {
         .map((finding) => (typeof finding.file === "string" && finding.file.trim() !== "" ? finding.file : null))
         .filter((filePath): filePath is string => Boolean(filePath)),
     ])].slice(0, 10);
+    const priorMissPatterns =
+      workspacePath && typeof artifact.branch === "string" && typeof artifact.headSha === "string"
+        ? await loadRelevantExternalReviewMissPatterns({
+            artifactDir: path.dirname(summaryPath),
+            branch: artifact.branch,
+            currentHeadSha: artifact.headSha,
+            changedFiles: relevantFiles,
+            limit: 3,
+            workspacePath,
+          })
+        : [];
 
     return {
       summaryPath,
       findingsPath,
       relevantFiles,
       rootCauses,
+      priorMissPatterns,
     };
   } catch {
     return null;
@@ -2216,7 +2230,7 @@ export class Supervisor {
 
       const localReviewRepairContext =
         record.state === "local_review_fix"
-          ? await loadLocalReviewRepairContext(record.local_review_summary_path)
+          ? await loadLocalReviewRepairContext(record.local_review_summary_path, workspacePath)
           : null;
       const externalReviewMissContext: ExternalReviewMissContext | null =
         pr &&
