@@ -44,6 +44,8 @@ interface IssueRunRecordLike {
   local_review_recommendation: "ready" | "changes_requested" | "unknown" | null;
 }
 
+export const LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY = "degraded local review; inspect the saved artifact";
+
 function formatBlockerLocation(args: { file: string | null; start: number | null; end: number | null }): string | null {
   if (!args.file) {
     return null;
@@ -64,7 +66,7 @@ export function buildLocalReviewBlockerSummary(
     return null;
   }
   if (review.degraded) {
-    return "degraded local review; inspect the saved artifact";
+    return LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY;
   }
 
   const primary = review.rootCauseSummaries[0];

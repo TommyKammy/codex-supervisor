@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildLocalReviewBlockerSummary, localReviewHasActionableFindings, shouldRunLocalReview } from "./local-review";
+import { buildLocalReviewBlockerSummary, localReviewHasActionableFindings, LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY, shouldRunLocalReview } from "./local-review";
 import { finalizeLocalReview } from "./local-review-finalize";
 import { buildRolePrompt, buildVerifierPrompt } from "./local-review-prompt";
 import { type VerifierGuardrailRule } from "./verifier-guardrails";
@@ -557,6 +557,45 @@ test("buildLocalReviewBlockerSummary summarizes the leading root cause compactly
   assert.equal(
     buildLocalReviewBlockerSummary(result),
     "high src/supervisor.ts:210-214 The retry path can reuse stale artifact context and keep applying the wrong repair guidance. (+1 more root cause)",
+  );
+});
+
+test("buildLocalReviewBlockerSummary returns null for ready reviews", () => {
+  assert.equal(
+    buildLocalReviewBlockerSummary({
+      recommendation: "ready",
+      degraded: false,
+      maxSeverity: "none",
+      rootCauseCount: 0,
+      rootCauseSummaries: [],
+    }),
+    null,
+  );
+});
+
+test("buildLocalReviewBlockerSummary uses the shared degraded summary", () => {
+  assert.equal(
+    buildLocalReviewBlockerSummary({
+      recommendation: "unknown",
+      degraded: true,
+      maxSeverity: "none",
+      rootCauseCount: 0,
+      rootCauseSummaries: [],
+    }),
+    LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY,
+  );
+});
+
+test("buildLocalReviewBlockerSummary falls back when no root causes are available", () => {
+  assert.equal(
+    buildLocalReviewBlockerSummary({
+      recommendation: "changes_requested",
+      degraded: false,
+      maxSeverity: "high",
+      rootCauseCount: 1,
+      rootCauseSummaries: [],
+    }),
+    "high severity local-review findings",
   );
 });
 

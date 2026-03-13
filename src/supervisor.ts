@@ -8,7 +8,7 @@ import { findBlockingIssue, findParentIssuesReadyToClose, lintExecutionReadyIssu
 import { describeGsdIntegration } from "./gsd";
 import { hasMeaningfulJournalHandoff, issueJournalPath, readIssueJournal, syncIssueJournal } from "./journal";
 import { acquireFileLock, inspectFileLock, LockHandle } from "./lock";
-import { localReviewHasActionableFindings, runLocalReview, shouldRunLocalReview } from "./local-review";
+import { localReviewHasActionableFindings, LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY, runLocalReview, shouldRunLocalReview } from "./local-review";
 import { syncMemoryArtifacts } from "./memory";
 import { StateStore } from "./state-store";
 import {
@@ -3273,7 +3273,7 @@ export class Supervisor {
         record = this.stateStore.touch(record, {
           state: "draft_pr",
           local_review_head_sha: refreshed.pr.headRefOid,
-          local_review_blocker_summary: "degraded local review; inspect the saved artifact",
+          local_review_blocker_summary: LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY,
           local_review_summary_path: null,
           local_review_run_at: nowIso(),
           local_review_max_severity: null,
