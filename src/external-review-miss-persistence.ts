@@ -12,10 +12,12 @@ import {
 } from "./external-review-normalization";
 import {
   type ExternalReviewMissArtifact,
+  type ExternalReviewDurableGuardrailCandidate,
   type ExternalReviewMissContext,
   type ExternalReviewMissPattern,
   type ExternalReviewRegressionCandidate,
 } from "./external-review-miss-artifact-types";
+import { toDurableGuardrailCandidates } from "./external-review-durable-guardrail-candidates";
 import { toReusableMissPattern } from "./external-review-miss-patterns";
 import { toRegressionTestCandidate } from "./external-review-regression-candidates";
 import { loadLocalReviewArtifact } from "./external-review-local-artifact-io";
@@ -85,6 +87,18 @@ function buildExternalReviewMissArtifact(args: {
   const reusableMissPatterns: ExternalReviewMissPattern[] = args.findings
     .filter((finding) => finding.classification === "missed_by_local_review" && typeof finding.file === "string" && finding.file.trim() !== "")
     .map((finding) => toReusableMissPattern(finding, args.artifactPath, args.headSha, generatedAt));
+  const durableGuardrailCandidates: ExternalReviewDurableGuardrailCandidate[] = args.findings.flatMap((finding) =>
+    toDurableGuardrailCandidates({
+      issueNumber: args.issueNumber,
+      prNumber: args.prNumber,
+      branch: args.branch,
+      headSha: args.headSha,
+      sourceArtifactPath: args.artifactPath,
+      localReviewSummaryPath: args.localReviewSummaryPath,
+      localReviewFindingsPath: args.localReviewFindingsPath,
+      finding,
+    }),
+  );
   const regressionTestCandidates = args.findings
     .map((finding) => toRegressionTestCandidate(finding))
     .filter((candidate): candidate is ExternalReviewRegressionCandidate => candidate !== null);
@@ -99,6 +113,7 @@ function buildExternalReviewMissArtifact(args: {
     localReviewFindingsPath: args.localReviewFindingsPath,
     findings: args.findings,
     reusableMissPatterns,
+    durableGuardrailCandidates,
     regressionTestCandidates,
     counts: {
       matched: args.findings.filter((finding) => finding.classification === "matched").length,

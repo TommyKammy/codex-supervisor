@@ -9,6 +9,7 @@ import {
   type LocalReviewArtifactLike,
 } from "./external-review-classifier";
 import {
+  type ExternalReviewDurableGuardrailCandidate,
   type ExternalReviewMissArtifact,
   type ExternalReviewMissContext,
   type ExternalReviewMissPattern,
@@ -23,6 +24,7 @@ export {
   normalizeExternalReviewFinding,
   type ExternalReviewMissArtifact,
   type ExternalReviewMatch,
+  type ExternalReviewDurableGuardrailCandidate,
   type ExternalReviewMissContext,
   type ExternalReviewMissFinding,
   type ExternalReviewMissPattern,
