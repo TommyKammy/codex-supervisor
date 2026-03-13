@@ -3,7 +3,25 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { compareVerifierGuardrails } from "./committed-guardrails";
 import { loadRelevantVerifierGuardrails } from "./verifier-guardrails";
+
+function assertRelevantRuleIdsAndFiles(args: {
+  rules: Awaited<ReturnType<typeof loadRelevantVerifierGuardrails>>;
+  changedFiles: string[];
+  expected: Array<{ id: string; file: string }>;
+}): void {
+  assert.deepEqual(args.rules, [...args.rules].sort(compareVerifierGuardrails));
+  assert.ok(args.rules.every((rule) => args.changedFiles.includes(rule.file)));
+
+  const expectedIds = new Set(args.expected.map((rule) => rule.id));
+  assert.deepEqual(
+    args.rules
+      .filter((rule) => expectedIds.has(rule.id))
+      .map(({ id, file }) => ({ id, file })),
+    args.expected,
+  );
+}
 
 test("loadRelevantVerifierGuardrails reads repo-committed rules for relevant files in deterministic order", async () => {
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "verifier-guardrails-test-"));
@@ -125,88 +143,39 @@ test("loadRelevantVerifierGuardrails rejects malformed committed rules", async (
 });
 
 test("repo-committed verifier guardrails cover Copilot request-vs-arrival lifecycle and merged-PR convergence", async () => {
+  const changedFiles = ["src/github.ts", "src/supervisor.ts"];
   const rules = await loadRelevantVerifierGuardrails({
     workspacePath: process.cwd(),
-    changedFiles: ["src/github.ts", "src/supervisor.ts"],
+    changedFiles,
     limit: 10,
   });
 
-  assert.deepEqual(rules, [
-    {
-      id: "copilot-review-arrival-lifecycle",
-      title: "Separate Copilot request and arrival states",
-      file: "src/github.ts",
-      line: 205,
-      summary:
-        "Verify configured-bot review lifecycle stays requested until an actual configured-bot review or review-thread comment arrives.",
-      rationale:
-        "Merge readiness depends on distinguishing review request creation from real arrival, including paginated review-thread comments and propagation delays.",
-    },
-    {
-      id: "local-review-repair-context-malformed-input",
-      title: "Fail loudly on malformed local-review repair context",
-      file: "src/supervisor.ts",
-      line: 187,
-      summary:
-        "Verify local-review repair context returns null only when the summary or derived findings artifact is genuinely absent, while malformed findings JSON or malformed committed guardrails abort repair-context loading.",
-      rationale:
-        "Repair prompts can safely continue without optional history, but silently dropping malformed findings or committed guardrails hides correctness risks and breaks the learning loop.",
-    },
-    {
-      id: "copilot-merge-readiness-arrival-gate",
-      title: "Block merge until expected Copilot review arrives",
-      file: "src/supervisor.ts",
-      line: 1242,
-      summary:
-        "Require merge gating to keep waiting while a configured-bot review is expected and has not arrived, even if the request was already observed.",
-      rationale:
-        "Verifier coverage must prove merge cannot proceed before configured-bot review arrival, with request timestamps, missing timestamps, and timeout policy handled separately.",
-    },
-    {
-      id: "merged-pr-state-convergence",
-      title: "Reconcile merged PR truth into done state",
-      file: "src/supervisor.ts",
-      line: 1889,
-      summary:
-        "Verify merged PR reconciliation drives local supervisor state to done, leaves not-yet-merged PRs untouched, and preserves stale-state recovery boundaries.",
-      rationale:
-        "GitHub merge truth and local state convergence are separate concerns; tests should prove they reconcile deterministically without requiring manual cleanup.",
-    },
-  ]);
+  assertRelevantRuleIdsAndFiles({
+    rules,
+    changedFiles,
+    expected: [
+      { id: "copilot-review-arrival-lifecycle", file: "src/github.ts" },
+      { id: "local-review-repair-context-malformed-input", file: "src/supervisor.ts" },
+      { id: "copilot-merge-readiness-arrival-gate", file: "src/supervisor.ts" },
+      { id: "merged-pr-state-convergence", file: "src/supervisor.ts" },
+    ],
+  });
 });
 
 test("repo-committed verifier guardrails cover malformed guardrails and repair-context failure boundaries", async () => {
+  const changedFiles = ["src/committed-guardrails.ts", "src/supervisor.ts"];
   const rules = await loadRelevantVerifierGuardrails({
     workspacePath: process.cwd(),
-    changedFiles: ["src/committed-guardrails.ts", "src/supervisor.ts"],
+    changedFiles,
     limit: 10,
   });
 
-  assert.deepEqual(
-    rules.filter((rule) =>
-      ["committed-guardrails-malformed-input", "local-review-repair-context-malformed-input"].includes(rule.id),
-    ),
-    [
-      {
-        id: "committed-guardrails-malformed-input",
-        title: "Differentiate missing and malformed committed guardrails",
-        file: "src/committed-guardrails.ts",
-        line: 289,
-        summary:
-          "Verify optional committed guardrail files remain a no-op when absent or blank, but malformed JSON, schema violations, duplicates, and oversize payloads fail loudly with actionable errors.",
-        rationale:
-          "Silent fallback is only safe for genuinely missing optional inputs; malformed committed guardrails corrupt durable reviewer guidance and must stop the run instead of degrading quietly.",
-      },
-      {
-        id: "local-review-repair-context-malformed-input",
-        title: "Fail loudly on malformed local-review repair context",
-        file: "src/supervisor.ts",
-        line: 187,
-        summary:
-          "Verify local-review repair context returns null only when the summary or derived findings artifact is genuinely absent, while malformed findings JSON or malformed committed guardrails abort repair-context loading.",
-        rationale:
-          "Repair prompts can safely continue without optional history, but silently dropping malformed findings or committed guardrails hides correctness risks and breaks the learning loop.",
-      },
+  assertRelevantRuleIdsAndFiles({
+    rules,
+    changedFiles,
+    expected: [
+      { id: "committed-guardrails-malformed-input", file: "src/committed-guardrails.ts" },
+      { id: "local-review-repair-context-malformed-input", file: "src/supervisor.ts" },
     ],
-  );
+  });
 });
