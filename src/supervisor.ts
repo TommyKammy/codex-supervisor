@@ -1801,13 +1801,31 @@ async function reconcileTrackedMergedButOpenIssues(
       continue;
     }
 
-    const issue = issueByNumber.get(record.issue_number);
-    if (!issue || issue.state !== "OPEN") {
+    const trackedPullRequest = await github.getPullRequestIfExists(record.pr_number);
+    if (!trackedPullRequest || (!trackedPullRequest.mergedAt && trackedPullRequest.state !== "MERGED")) {
       continue;
     }
 
-    const trackedPullRequest = await github.getPullRequestIfExists(record.pr_number);
-    if (!trackedPullRequest || (!trackedPullRequest.mergedAt && trackedPullRequest.state !== "MERGED")) {
+    let issue = issueByNumber.get(record.issue_number);
+    if (!issue && record.state === "merging") {
+      issue = await github.getIssue(record.issue_number);
+    }
+
+    if (!issue) {
+      continue;
+    }
+
+    if (issue.state !== "OPEN") {
+      const patch = doneResetPatch({
+        pr_number: trackedPullRequest.number,
+        last_head_sha: trackedPullRequest.headRefOid,
+      });
+      const updated = stateStore.touch(record, patch);
+      state.issues[String(record.issue_number)] = updated;
+      if (state.activeIssueNumber === record.issue_number) {
+        state.activeIssueNumber = null;
+      }
+      changed = true;
       continue;
     }
 
