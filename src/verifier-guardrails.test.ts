@@ -124,7 +124,7 @@ test("loadRelevantVerifierGuardrails rejects malformed committed rules", async (
   await fs.rm(workspaceDir, { recursive: true, force: true });
 });
 
-test("repo-committed verifier guardrails cover Copilot request-vs-arrival lifecycle and merge gating", async () => {
+test("repo-committed verifier guardrails cover Copilot request-vs-arrival lifecycle and merged-PR convergence", async () => {
   const rules = await loadRelevantVerifierGuardrails({
     workspacePath: process.cwd(),
     changedFiles: ["src/github.ts", "src/supervisor.ts"],
@@ -151,6 +151,16 @@ test("repo-committed verifier guardrails cover Copilot request-vs-arrival lifecy
         "Require merge gating to keep waiting while a configured-bot review is expected and has not arrived, even if the request was already observed.",
       rationale:
         "Verifier coverage must prove merge cannot proceed before configured-bot review arrival, with request timestamps, missing timestamps, and timeout policy handled separately.",
+    },
+    {
+      id: "merged-pr-state-convergence",
+      title: "Reconcile merged PR truth into done state",
+      file: "src/supervisor.ts",
+      line: 1889,
+      summary:
+        "Verify merged PR reconciliation drives local supervisor state to done, leaves not-yet-merged PRs untouched, and preserves stale-state recovery boundaries.",
+      rationale:
+        "GitHub merge truth and local state convergence are separate concerns; tests should prove they reconcile deterministically without requiring manual cleanup.",
     },
   ]);
 });
