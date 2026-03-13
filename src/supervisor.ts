@@ -7,7 +7,7 @@ import { GitHubClient } from "./github";
 import { findBlockingIssue, findParentIssuesReadyToClose } from "./issue-metadata";
 import { describeGsdIntegration } from "./gsd";
 import { hasMeaningfulJournalHandoff, issueJournalPath, readIssueJournal, syncIssueJournal } from "./journal";
-import { acquireFileLock, LockHandle } from "./lock";
+import { acquireFileLock, inspectFileLock, LockHandle } from "./lock";
 import { localReviewHasActionableFindings, runLocalReview, shouldRunLocalReview } from "./local-review";
 import { syncMemoryArtifacts } from "./memory";
 import { StateStore } from "./state-store";
@@ -94,6 +94,16 @@ function createIssueRecord(config: SupervisorConfig, issueNumber: number): Issue
 const MAX_PROCESSED_REVIEW_THREAD_IDS = 200;
 const COPILOT_REVIEW_PROPAGATION_GRACE_MS = 5_000;
 const COPILOT_REVIEWER_LOGIN = "copilot-pull-request-reviewer";
+const OWNER_GUARDED_ACTIVE_STATES = new Set<RunState>([
+  "planning",
+  "reproducing",
+  "implementing",
+  "local_review_fix",
+  "stabilizing",
+  "repairing_ci",
+  "resolving_conflict",
+  "addressing_review",
+]);
 
 function trimProcessedReviewThreadIds(ids: string[]): string[] {
   if (ids.length <= MAX_PROCESSED_REVIEW_THREAD_IDS) {
@@ -2035,6 +2045,41 @@ export class Supervisor {
     return path.resolve(path.dirname(this.config.stateFile), "locks", kind, `${safeKey}.lock`);
   }
 
+  private async reconcileStaleActiveIssueReservation(state: SupervisorStateFile): Promise<void> {
+    if (state.activeIssueNumber === null) {
+      return;
+    }
+
+    const record = state.issues[String(state.activeIssueNumber)] ?? null;
+    if (!record) {
+      state.activeIssueNumber = null;
+      await this.stateStore.save(state);
+      return;
+    }
+
+    if (!OWNER_GUARDED_ACTIVE_STATES.has(record.state)) {
+      return;
+    }
+
+    const issueLock = await inspectFileLock(this.lockPath("issues", `issue-${record.issue_number}`));
+    if (issueLock.status === "live") {
+      return;
+    }
+
+    if (record.codex_session_id) {
+      const sessionLock = await inspectFileLock(this.lockPath("sessions", `session-${record.codex_session_id}`));
+      if (sessionLock.status === "live") {
+        return;
+      }
+    }
+
+    state.issues[String(record.issue_number)] = this.stateStore.touch(record, {
+      codex_session_id: null,
+    });
+    state.activeIssueNumber = null;
+    await this.stateStore.save(state);
+  }
+
   private async selectIssueRecord(
     state: SupervisorStateFile,
     currentRecord: IssueRunRecord | null,
@@ -2874,6 +2919,7 @@ export class Supervisor {
   async runOnce(options: Pick<CliOptions, "dryRun">): Promise<string> {
     for (;;) {
       const state = await this.stateStore.load();
+      await this.reconcileStaleActiveIssueReservation(state);
       const authFailure = await handleAuthFailure(this.github, this.stateStore, state);
       if (authFailure) {
         return authFailure;

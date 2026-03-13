@@ -8,6 +8,11 @@ interface LockPayload {
   acquired_at: string;
 }
 
+export interface ExistingLockState {
+  status: "missing" | "live";
+  payload: LockPayload | null;
+}
+
 export interface LockHandle {
   acquired: boolean;
   reason?: string;
@@ -28,13 +33,35 @@ function isPidAlive(pid: number): boolean {
 }
 
 async function removeIfStale(lockPath: string): Promise<LockPayload | null> {
-  const payload = await readJsonIfExists<LockPayload>(lockPath);
+  let payload: LockPayload | null = null;
+  try {
+    payload = await readJsonIfExists<LockPayload>(lockPath);
+  } catch {
+    await fs.rm(lockPath, { force: true });
+    return null;
+  }
+
   if (!payload || isPidAlive(payload.pid)) {
     return payload;
   }
 
   await fs.rm(lockPath, { force: true });
   return null;
+}
+
+export async function inspectFileLock(lockPath: string): Promise<ExistingLockState> {
+  const payload = await removeIfStale(lockPath);
+  if (!payload) {
+    return {
+      status: "missing",
+      payload: null,
+    };
+  }
+
+  return {
+    status: "live",
+    payload,
+  };
 }
 
 export async function acquireFileLock(lockPath: string, label: string): Promise<LockHandle> {
@@ -66,14 +93,14 @@ export async function acquireFileLock(lockPath: string, label: string): Promise<
         throw error;
       }
 
-      const existing = await removeIfStale(lockPath);
-      if (!existing) {
+      const existing = await inspectFileLock(lockPath);
+      if (existing.status !== "live" || !existing.payload) {
         continue;
       }
 
       return {
         acquired: false,
-        reason: `lock held by pid ${existing.pid} for ${existing.label}`,
+        reason: `lock held by pid ${existing.payload.pid} for ${existing.payload.label}`,
         release: async () => {},
       };
     }
