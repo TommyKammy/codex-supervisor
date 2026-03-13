@@ -166,6 +166,49 @@ test("classifyExternalReviewFinding marks same-hunk findings as matched even wit
   assert.match(classified.matchReason, /\bsame_hunk=yes\b/);
 });
 
+test("classifyExternalReviewFinding keeps nearby same-file findings as near_match with stable match reasons", () => {
+  const normalized = normalizeExternalReviewFinding(
+    createReviewThread({
+      path: "src/auth.ts",
+      line: 42,
+      comments: {
+        nodes: [
+          {
+            id: "comment-1",
+            body: "Fallback writes bypass authorization and can update records without the guard.",
+            createdAt: "2026-03-12T00:00:00Z",
+            url: "https://example.test/thread-1#comment-1",
+            author: {
+              login: "copilot-pull-request-reviewer",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+    ["copilot-pull-request-reviewer"],
+  );
+  assert.ok(normalized);
+
+  const classified = classifyExternalReviewFinding(normalized, {
+    actionableFindings: [
+      {
+        title: "Nearby authorization concern",
+        body: "Capability gate ordering is wrong in this helper path.",
+        file: "src/auth.ts",
+        start: 50,
+        end: 54,
+        severity: "medium",
+      },
+    ],
+    rootCauseSummaries: [],
+  });
+
+  assert.equal(classified.classification, "near_match");
+  assert.equal(classified.matchedLocalReference, "actionable:1");
+  assert.equal(classified.matchReason, "same-file overlap=0.11 line_distance=8 same_hunk=no");
+});
+
 test("writeExternalReviewMissArtifact persists missed external findings for the current review head", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "external-review-miss-test-"));
   const localReviewSummaryPath = path.join(tempDir, "head-deadbeef.md");
