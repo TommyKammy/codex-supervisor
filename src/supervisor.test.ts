@@ -709,6 +709,148 @@ test("runOnce releases the current issue lock before restarting after a merged P
   assert.equal(listAllIssuesCalls, 2);
 });
 
+test("runOnce clears a stale active issue reservation before selecting the next runnable issue", async () => {
+  const fixture = await createSupervisorFixture();
+  const staleIssueNumber = 91;
+  const nextIssueNumber = 92;
+  const staleBranch = branchName(fixture.config, staleIssueNumber);
+  const nextBranch = branchName(fixture.config, nextIssueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: staleIssueNumber,
+    issues: {
+      [String(staleIssueNumber)]: createRecord({
+        issue_number: staleIssueNumber,
+        state: "implementing",
+        branch: staleBranch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${staleIssueNumber}`),
+        journal_path: null,
+        pr_number: null,
+        codex_session_id: "stale-session",
+        blocked_reason: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const staleIssue: GitHubIssue = {
+    number: staleIssueNumber,
+    title: "Previously active issue",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${staleIssueNumber}`,
+    state: "OPEN",
+  };
+  const nextIssue: GitHubIssue = {
+    number: nextIssueNumber,
+    title: "Higher-priority runnable issue",
+    body: "",
+    createdAt: "2026-03-13T00:05:00Z",
+    updatedAt: "2026-03-13T00:05:00Z",
+    url: `https://example.test/issues/${nextIssueNumber}`,
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [nextIssue, staleIssue],
+    listCandidateIssues: async () => [nextIssue, staleIssue],
+    getIssue: async (issueNumber: number) => (issueNumber === nextIssueNumber ? nextIssue : staleIssue),
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      assert.equal(branchName, nextBranch);
+      assert.equal(prNumber, null);
+      return null;
+    },
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(message, /Dry run: would invoke Codex for issue #92\./);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  assert.equal(persisted.activeIssueNumber, nextIssueNumber);
+  assert.equal(persisted.issues[String(staleIssueNumber)]?.state, "implementing");
+  assert.equal(persisted.issues[String(staleIssueNumber)]?.codex_session_id, null);
+  assert.equal(persisted.issues[String(nextIssueNumber)]?.branch, nextBranch);
+});
+
+test("runOnce preserves a live active issue reservation when its issue lock is still owned", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 91;
+  const branch = branchName(fixture.config, issueNumber);
+  const lockPath = path.join(path.dirname(fixture.stateFile), "locks", "issues", `issue-${issueNumber}.lock`);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "implementing",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: null,
+        codex_session_id: null,
+        blocked_reason: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  await fs.mkdir(path.dirname(lockPath), { recursive: true });
+  await fs.writeFile(
+    lockPath,
+    `${JSON.stringify({ pid: process.pid, label: `issue-${issueNumber}`, acquired_at: "2026-03-13T00:00:00.000Z" }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Still-active issue",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async () => {
+      throw new Error("unexpected resolvePullRequestForBranch call");
+    },
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(message, /Skipped issue #91: lock held by pid /);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  assert.equal(persisted.activeIssueNumber, issueNumber);
+  assert.equal(persisted.issues[String(issueNumber)]?.codex_session_id, null);
+});
+
 test("runOnce reconciles inactive merging records whose tracked PR already merged", async () => {
   const fixture = await createSupervisorFixture();
   const mergedIssueNumber = 91;
