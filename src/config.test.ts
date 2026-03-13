@@ -138,3 +138,16 @@ test("loadConfig accepts explicit copilotReviewTimeoutAction", async (t) => {
 
   assert.equal(config.copilotReviewTimeoutAction, "block");
 });
+
+test("shipped example configs recommend block_merge for local review gating", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  const examplePaths = [
+    path.join(rootDir, "supervisor.config.example.json"),
+    path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
+  ];
+
+  for (const examplePath of examplePaths) {
+    const raw = JSON.parse(await fs.readFile(examplePath, "utf8")) as { localReviewPolicy?: unknown };
+    assert.equal(raw.localReviewPolicy, "block_merge", `${path.relative(rootDir, examplePath)} should recommend block_merge`);
+  }
+});

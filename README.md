@@ -379,7 +379,7 @@ If you run the supervisor this way, keep the service model simple:
 
 ## Local review
 
-`codex-supervisor` can optionally run a local advisory review swarm before a draft PR is marked ready.
+`codex-supervisor` can optionally run a local review swarm as part of PR gating.
 
 This is designed to reduce dependence on GitHub-hosted auto review. The supervisor:
 
@@ -409,7 +409,7 @@ Historical local review artifacts are intentionally retained until explicit clea
 
 Use explicit `localReviewRoles` when you want full manual control.
 
-This review does not mutate code. By default, `localReviewPolicy` is `block_ready`, so actionable findings keep a draft PR from becoming ready until the branch is updated and re-reviewed.
+This review does not mutate code. The recommended starting policy is `block_merge`, so actionable findings can still block merge on the current ready PR head while the normal draft-to-ready handoff stays intact.
 
 When `localReviewHighSeverityAction` is `retry` and the verifier confirms at least one high-severity finding, the supervisor enters a dedicated `local_review_fix` repair mode. That prompt is narrowed to the compressed root-cause list from the local-review artifact and, when the artifact identifies affected files, it tells Codex to inspect those files first instead of treating the turn as general checkpoint maintenance while the PR or merge is blocked.
 
@@ -417,9 +417,9 @@ During `local_review_fix`, active local-review blockers take priority over stale
 
 If you want stronger enforcement without giving the review swarm destructive powers, use policy gates instead of auto-closing PRs:
 
-- `advisory`: save findings only
+- `block_merge`: recommended default path; allow the PR to become ready, but stop merge while actionable findings remain; the swarm can re-run after ready PR head updates
 - `block_ready`: keep draft PRs from becoming ready when actionable findings exist
-- `block_merge`: allow the PR to become ready, but stop merge while actionable findings remain; the swarm can re-run after ready PR head updates
+- `advisory`: save findings only
 
 For high-severity findings, `localReviewHighSeverityAction` can either:
 

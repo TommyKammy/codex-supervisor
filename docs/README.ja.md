@@ -128,7 +128,7 @@ flowchart TD
 - role ごとに別 Codex turn を実行
 - Markdown と JSON artifact を保存
 - confidence threshold 以上の finding を actionable として扱う
-- policy に応じて `block_ready` / `block_merge` ができる
+- 推奨パスは `block_merge` で、必要に応じて `block_ready` / `advisory` を選べる
 
 代表的な role:
 
