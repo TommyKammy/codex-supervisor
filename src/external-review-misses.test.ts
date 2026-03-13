@@ -407,9 +407,9 @@ test("writeExternalReviewMissArtifact derives deterministic regression-test cand
 
   assert.deepEqual(artifact.durableGuardrailCandidates, [
     {
-      id: "prompt_rubric|src/auth.ts|42|this fallback skips the permission guard and lets unauthorized callers update records.",
-      category: "prompt_rubric",
-      title: "Promote prompt/rubric guardrail for This fallback skips the permission guard and lets unauthorized callers update records",
+      id: "reviewer_rubric|src/auth.ts|42|this fallback skips the permission guard and lets unauthorized callers update records.",
+      category: "reviewer_rubric",
+      title: "Promote reviewer rubric guardrail for This fallback skips the permission guard and lets unauthorized callers update records",
       reviewerLogin: "copilot-pull-request-reviewer",
       file: "src/auth.ts",
       line: 42,

@@ -31,7 +31,7 @@ export interface ExternalReviewRegressionCandidate {
 }
 
 export type ExternalReviewDurableGuardrailCandidateCategory =
-  | "prompt_rubric"
+  | "reviewer_rubric"
   | "verifier"
   | "regression_test";
 
