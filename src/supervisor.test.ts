@@ -365,6 +365,77 @@ test("reconcileRecoverableBlockedIssueStates leaves closed issues blocked", asyn
   assert.equal(saveCalls, 0);
 });
 
+test("reconcileRecoverableBlockedIssueStates requeues requirements-blocked issues once metadata is execution-ready", async () => {
+  const config = createConfig();
+  const original = createRecord({
+    state: "blocked",
+    blocked_reason: "requirements",
+    last_error: "Missing required execution-ready metadata: scope, acceptance criteria, verification.",
+    last_failure_kind: null,
+    last_failure_context: {
+      category: "blocked",
+      summary: "Issue #366 is not execution-ready because it is missing: scope, acceptance criteria, verification.",
+      signature: "requirements:scope|acceptance criteria|verification",
+      command: null,
+      details: [
+        "missing_required=scope, acceptance criteria, verification",
+        "missing_recommended=depends on, execution order",
+      ],
+      url: "https://example.test/issues/366",
+      updated_at: "2026-03-11T01:50:41.997Z",
+    },
+    last_failure_signature: "requirements:scope|acceptance criteria|verification",
+    repeated_failure_signature_count: 2,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "366": original,
+    },
+  };
+  const issues: GitHubIssue[] = [
+    {
+      number: 366,
+      title: "P3: Add regression coverage",
+      body: executionReadyBody("Add regression coverage."),
+      createdAt: "2026-03-10T23:25:21Z",
+      updatedAt: "2026-03-10T23:25:21Z",
+      url: "https://example.test/issues/366",
+      state: "OPEN",
+    },
+  ];
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...record,
+        ...patch,
+        updated_at: "2026-03-11T06:33:08.821Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(stateStore, state, config, issues);
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "queued");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.last_recovery_reason, "requirements_recovered: requeued issue #366 after execution-ready metadata was added");
+  assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "requirements_recovered: requeued issue #366 after execution-ready metadata was added",
+  ]);
+});
+
 test("runOnce recovers when post-codex refresh throws after leaving a dirty worktree", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 87;
