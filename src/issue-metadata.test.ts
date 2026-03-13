@@ -118,3 +118,24 @@ Add deterministic issue-body linting for execution-ready metadata.`,
     missingRecommended: ["depends on", "execution order"],
   });
 });
+
+test("lintExecutionReadyIssueBody treats ##Heading without a space as the next section", () => {
+  const issue = createIssue({
+    body: `## Summary
+
+##Scope
+- keep scope content out of summary
+
+## Acceptance criteria
+- summary is still missing
+
+## Verification
+- npx tsx --test src/issue-metadata.test.ts`,
+  });
+
+  assert.deepEqual(lintExecutionReadyIssueBody(issue), {
+    isExecutionReady: false,
+    missingRequired: ["summary"],
+    missingRecommended: ["depends on", "execution order"],
+  });
+});

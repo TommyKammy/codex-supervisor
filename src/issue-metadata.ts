@@ -42,6 +42,10 @@ function parseList(input: string): string[] {
     .filter(Boolean);
 }
 
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function parseExecutionOrder(
   body: string,
 ): { executionOrderIndex: number; executionOrderTotal: number } | null {
@@ -68,7 +72,7 @@ function parseExecutionOrder(
 
 function findMarkdownSectionContent(body: string, title: string): string | null {
   const lines = body.split(/\r?\n/);
-  const headingPattern = new RegExp(`^\\s*##\\s*${title}\\s*$`, "i");
+  const headingPattern = new RegExp(`^\\s*##\\s*${escapeRegExp(title)}\\s*$`, "i");
 
   for (let index = 0; index < lines.length; index += 1) {
     if (!headingPattern.test(lines[index])) {
@@ -77,7 +81,7 @@ function findMarkdownSectionContent(body: string, title: string): string | null 
 
     const sectionLines: string[] = [];
     for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
-      if (/^\s*##\s+\S/.test(lines[cursor])) {
+      if (/^\s*##\s*\S/.test(lines[cursor])) {
         break;
       }
 
