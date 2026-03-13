@@ -23,8 +23,8 @@ export interface ExecutionReadyLintResult {
   isExecutionReady: boolean;
   missingRequired: string[];
   missingRecommended: string[];
-  riskyChangeClasses: string[];
-  approvedRiskyChangeClasses: string[];
+  riskyChangeClasses: RiskyChangeClass[];
+  approvedRiskyChangeClasses: RiskyChangeClass[];
 }
 
 const RISKY_CHANGE_CLASSES = ["auth", "billing", "permissions", "ci", "migrations", "secrets"] as const;
@@ -110,6 +110,11 @@ function normalizeRiskyChangeClass(input: string): RiskyChangeClass | null {
   return null;
 }
 
+function parseTouchesList(body: string): string[] {
+  const touchesMatch = body.match(/^\s*Touches:\s*(.+)\s*$/im);
+  return touchesMatch ? parseList(touchesMatch[1]) : [];
+}
+
 function parseExecutionOrder(
   body: string,
 ): { executionOrderIndex: number; executionOrderTotal: number } | null {
@@ -193,7 +198,7 @@ function detectRiskyChangeClasses(issue: Pick<GitHubIssue, "title" | "body">): R
     issue.title,
     findMarkdownSectionContent(issue.body, "Summary") ?? "",
     findMarkdownSectionContent(issue.body, "Scope") ?? "",
-    parseIssueMetadata({ ...issue, number: 0, createdAt: "", updatedAt: "", url: "", state: "OPEN" }).touches.join(", "),
+    parseTouchesList(issue.body).join(", "),
   ];
   const detected = new Set<RiskyChangeClass>();
 
@@ -211,7 +216,6 @@ export function parseIssueMetadata(issue: GitHubIssue): IssueMetadata {
   const parentMatch = issue.body.match(/^\s*Part of:?\s+#(\d+)\s*$/im);
   const dependsOnMatch = issue.body.match(/^\s*Depends on:\s*(.+)\s*$/im);
   const parallelGroupMatch = issue.body.match(/^\s*Parallel group:\s*(.+)\s*$/im);
-  const touchesMatch = issue.body.match(/^\s*Touches:\s*(.+)\s*$/im);
   const executionOrder = parseExecutionOrder(issue.body);
 
   return {
@@ -220,7 +224,7 @@ export function parseIssueMetadata(issue: GitHubIssue): IssueMetadata {
     executionOrderTotal: executionOrder?.executionOrderTotal ?? null,
     dependsOn: dependsOnMatch ? parseIssueNumberList(dependsOnMatch[1]) : [],
     parallelGroup: parallelGroupMatch ? parallelGroupMatch[1].trim() : null,
-    touches: touchesMatch ? parseList(touchesMatch[1]) : [],
+    touches: parseTouchesList(issue.body),
   };
 }
 

@@ -224,3 +224,30 @@ This issue is explicitly approved for ci changes.
     approvedRiskyChangeClasses: ["ci"],
   });
 });
+
+test("lintExecutionReadyIssueBody detects risky changes from Touches metadata", () => {
+  const issue = createIssue({
+    title: "Update rollout notes",
+    body: `## Summary
+Update rollout notes for the next deploy.
+
+## Scope
+- refresh the deployment notes
+
+Touches: secrets
+
+## Acceptance criteria
+- rollout notes are refreshed
+
+## Verification
+- npm test -- src/issue-metadata.test.ts`,
+  });
+
+  assert.deepEqual(lintExecutionReadyIssueBody(issue), {
+    isExecutionReady: false,
+    missingRequired: ["explicit opt-in for secrets"],
+    missingRecommended: ["depends on", "execution order"],
+    riskyChangeClasses: ["secrets"],
+    approvedRiskyChangeClasses: [],
+  });
+});

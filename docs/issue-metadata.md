@@ -43,7 +43,8 @@ Part of #227
 - `Parallel group`
   - いまは記法だけを予約しています。将来の並列 scheduler 用です
 - `Touches`
-  - いまは記法だけを予約しています。将来の競合回避用です
+  - 依存関係や順序を直接 enforce するものではありません
+  - ただし risky change class の検出入力には使われるため、`Touches: secrets` のような記述は explicit opt-in gate を発火させることがあります
 
 ## 推奨運用
 
