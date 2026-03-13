@@ -602,6 +602,113 @@ test("runOnce dry-run selects an issue and hydrates workspace and PR context bef
   assert.equal(reviewThreadCalls, 1);
 });
 
+test("runOnce releases the current issue lock before restarting after a merged PR", async () => {
+  const fixture = await createSupervisorFixture();
+  const mergedIssueNumber = 91;
+  const nextIssueNumber = 92;
+  const mergedBranch = branchName(fixture.config, mergedIssueNumber);
+  const nextBranch = branchName(fixture.config, nextIssueNumber);
+  const mergedIssueLockPath = path.join(
+    path.dirname(fixture.stateFile),
+    "locks",
+    "issues",
+    `issue-${mergedIssueNumber}.lock`,
+  );
+  const state: SupervisorStateFile = {
+    activeIssueNumber: mergedIssueNumber,
+    issues: {
+      [String(mergedIssueNumber)]: createRecord({
+        issue_number: mergedIssueNumber,
+        state: "pr_open",
+        branch: mergedBranch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${mergedIssueNumber}`),
+        journal_path: null,
+        pr_number: 191,
+        blocked_reason: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const mergedIssue: GitHubIssue = {
+    number: mergedIssueNumber,
+    title: "Merged PR issue",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${mergedIssueNumber}`,
+    state: "OPEN",
+  };
+  const nextIssue: GitHubIssue = {
+    number: nextIssueNumber,
+    title: "Next runnable issue",
+    body: "",
+    createdAt: "2026-03-13T00:05:00Z",
+    updatedAt: "2026-03-13T00:05:00Z",
+    url: `https://example.test/issues/${nextIssueNumber}`,
+    state: "OPEN",
+  };
+  const mergedPr: GitHubPullRequest = {
+    number: 191,
+    title: "Merged implementation",
+    url: "https://example.test/pr/191",
+    state: "MERGED",
+    createdAt: "2026-03-13T00:10:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: mergedBranch,
+    headRefOid: "merged-head-191",
+    mergedAt: "2026-03-13T00:20:00Z",
+  };
+
+  let listAllIssuesCalls = 0;
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => {
+      listAllIssuesCalls += 1;
+      if (listAllIssuesCalls === 2) {
+        await assert.rejects(fs.access(mergedIssueLockPath));
+      }
+      return [mergedIssue, nextIssue];
+    },
+    listCandidateIssues: async () => [mergedIssue, nextIssue],
+    getIssue: async (issueNumber: number) => (issueNumber === mergedIssueNumber ? mergedIssue : nextIssue),
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      if (branchName === mergedBranch) {
+        assert.equal(prNumber, 191);
+        return mergedPr;
+      }
+      assert.equal(branchName, nextBranch);
+      assert.equal(prNumber, null);
+      return null;
+    },
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(message, new RegExp(`Dry run: would invoke Codex for issue #${nextIssueNumber}\\.`));
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  assert.equal(persisted.activeIssueNumber, nextIssueNumber);
+  assert.equal(persisted.issues[String(mergedIssueNumber)]?.state, "done");
+  assert.equal(persisted.issues[String(mergedIssueNumber)]?.pr_number, 191);
+  assert.equal(persisted.issues[String(mergedIssueNumber)]?.last_head_sha, "merged-head-191");
+  assert.equal(persisted.issues[String(nextIssueNumber)]?.branch, nextBranch);
+  assert.equal(listAllIssuesCalls, 2);
+});
+
 test("runOnce marks a clean draft PR ready and enables auto-merge after the turn", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 92;

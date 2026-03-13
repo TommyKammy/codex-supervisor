@@ -1355,6 +1355,10 @@ interface HydratedPullRequestContext {
   workspaceStatus: WorkspaceStatus;
 }
 
+interface RestartRunOnce {
+  kind: "restart";
+}
+
 interface CodexTurnContext {
   state: SupervisorStateFile;
   record: IssueRunRecord;
@@ -2095,7 +2099,7 @@ export class Supervisor {
     workspaceStatus: WorkspaceStatus,
     syncJournal: IssueJournalSync,
     options: Pick<CliOptions, "dryRun">,
-  ): Promise<HydratedPullRequestContext | string> {
+  ): Promise<HydratedPullRequestContext | RestartRunOnce | string> {
     let nextWorkspaceStatus = workspaceStatus;
     if (nextWorkspaceStatus.remoteBranchExists && nextWorkspaceStatus.remoteAhead > 0) {
       await pushBranch(workspacePath, record.branch, true);
@@ -2119,7 +2123,7 @@ export class Supervisor {
         state.issues[String(doneRecord.issue_number)] = doneRecord;
         state.activeIssueNumber = null;
         await this.stateStore.save(state);
-        return await this.runOnce(options);
+        return { kind: "restart" };
       } else if (resolvedPr.state === "CLOSED") {
         const failureContext = buildCodexFailureContext(
           "manual",
@@ -2840,251 +2844,263 @@ export class Supervisor {
   }
 
   async runOnce(options: Pick<CliOptions, "dryRun">): Promise<string> {
-    const state = await this.stateStore.load();
-    const authFailure = await handleAuthFailure(this.github, this.stateStore, state);
-    if (authFailure) {
-      return authFailure;
-    }
-    const issues = await this.github.listAllIssues();
-    await reconcileTrackedMergedButOpenIssues(this.github, this.stateStore, state, issues);
-    await reconcileMergedIssueClosures(this.github, this.stateStore, state, issues);
-    await reconcileStaleFailedIssueStates(this.github, this.stateStore, state, this.config, issues);
-    await reconcileRecoverableBlockedIssueStates(this.stateStore, state, this.config, issues);
-    await reconcileParentEpicClosures(this.github, this.stateStore, state, issues);
-    await cleanupExpiredDoneWorkspaces(this.config, state);
-
-    let record =
-      state.activeIssueNumber !== null ? state.issues[String(state.activeIssueNumber)] ?? null : null;
-
-    if (record && shouldAutoRetryTimeout(record, this.config)) {
-      record = this.stateStore.touch(record, {
-        state: "queued",
-        last_error: `Auto-retrying after timeout (${record.timeout_retry_count}/${this.config.timeoutRetryLimit}).`,
-        blocked_reason: null,
-      });
-      state.issues[String(record.issue_number)] = record;
-      await this.stateStore.save(state);
-    }
-
-    if (record && shouldAutoRetryBlockedVerification(record, this.config)) {
-      record = this.stateStore.touch(record, {
-        state: "queued",
-        blocked_verification_retry_count: record.blocked_verification_retry_count + 1,
-        last_error:
-          `Auto-retrying after verification failure (` +
-          `${record.blocked_verification_retry_count + 1}/${this.config.blockedVerificationRetryLimit}). ` +
-          `Previous blocker: ${truncate(record.last_error, 1000) ?? "n/a"}`,
-        blocked_reason: "verification",
-      });
-      state.issues[String(record.issue_number)] = record;
-      await this.stateStore.save(state);
-    }
-
-    const selectedIssue = await this.selectIssueRecord(state, record);
-    if (typeof selectedIssue === "string") {
-      return selectedIssue;
-    }
-    record = selectedIssue.record;
-
-    const issueLock = await acquireFileLock(
-      this.lockPath("issues", `issue-${record.issue_number}`),
-      `issue-${record.issue_number}`,
-    );
-    if (!issueLock.acquired) {
-      return `Skipped issue #${record.issue_number}: ${issueLock.reason}.`;
-    }
-
-    try {
-      const issue = await this.github.getIssue(record.issue_number);
-      if (issue.state === "CLOSED" && record.pr_number !== null) {
-        record = this.stateStore.touch(record, { state: "done" });
-        state.issues[String(record.issue_number)] = record;
-        state.activeIssueNumber = null;
-        await this.stateStore.save(state);
-        return this.runOnce(options);
+    for (;;) {
+      const state = await this.stateStore.load();
+      const authFailure = await handleAuthFailure(this.github, this.stateStore, state);
+      if (authFailure) {
+        return authFailure;
       }
+      const issues = await this.github.listAllIssues();
+      await reconcileTrackedMergedButOpenIssues(this.github, this.stateStore, state, issues);
+      await reconcileMergedIssueClosures(this.github, this.stateStore, state, issues);
+      await reconcileStaleFailedIssueStates(this.github, this.stateStore, state, this.config, issues);
+      await reconcileRecoverableBlockedIssueStates(this.stateStore, state, this.config, issues);
+      await reconcileParentEpicClosures(this.github, this.stateStore, state, issues);
+      await cleanupExpiredDoneWorkspaces(this.config, state);
 
-      const candidateIssues = await this.github.listCandidateIssues();
-      const blockingIssue = findBlockingIssue(issue, candidateIssues, state);
-      if (blockingIssue) {
+      let record =
+        state.activeIssueNumber !== null ? state.issues[String(state.activeIssueNumber)] ?? null : null;
+
+      if (record && shouldAutoRetryTimeout(record, this.config)) {
         record = this.stateStore.touch(record, {
           state: "queued",
-          last_error: `Waiting for ${blockingIssue.reason} before continuing issue #${record.issue_number}.`,
-        });
-        state.issues[String(record.issue_number)] = record;
-        state.activeIssueNumber = null;
-        await this.stateStore.save(state);
-        return this.runOnce(options);
-      }
-
-      const budgetLaneBeforeWorkspace = attemptLane(record, null);
-      if (!hasAttemptBudgetRemaining(record, this.config, budgetLaneBeforeWorkspace)) {
-        const used = attemptsUsedForLane(record, budgetLaneBeforeWorkspace);
-        const max = attemptBudgetForLane(this.config, budgetLaneBeforeWorkspace);
-        const failureContext = buildCodexFailureContext(
-          "manual",
-          `Issue #${record.issue_number} exhausted its ${budgetLaneBeforeWorkspace} Codex attempt budget.`,
-          [
-            `attempt_lane=${budgetLaneBeforeWorkspace}`,
-            `attempts=${used}`,
-            `max=${max}`,
-            `total_attempts=${record.attempt_count}`,
-          ],
-        );
-        record = this.stateStore.touch(record, {
-          state: "failed",
-          last_failure_kind: "command_error",
-          last_error:
-            `Reached max ${budgetLaneBeforeWorkspace} Codex attempts for issue #${record.issue_number} ` +
-            `(${used}/${max}).`,
-          last_failure_context: failureContext,
-          ...applyFailureSignature(record, failureContext),
+          last_error: `Auto-retrying after timeout (${record.timeout_retry_count}/${this.config.timeoutRetryLimit}).`,
           blocked_reason: null,
         });
         state.issues[String(record.issue_number)] = record;
-        state.activeIssueNumber = null;
         await this.stateStore.save(state);
-        return `Issue #${record.issue_number} reached max ${budgetLaneBeforeWorkspace} Codex attempts.`;
       }
 
-      const {
-        previousCodexSummary,
-        previousError,
-        workspacePath,
-        journalPath,
-        syncJournal,
-        memoryArtifacts,
-        workspaceStatus: preparedWorkspaceStatus,
-        record: workspaceRecord,
-      } = await this.prepareWorkspaceContext(state, record, issue);
-      record = workspaceRecord;
-
-      const hydratedPullRequest = await this.hydratePullRequestContext(
-        state,
-        record,
-        issue,
-        workspacePath,
-        preparedWorkspaceStatus,
-        syncJournal,
-        options,
-      );
-      if (typeof hydratedPullRequest === "string") {
-        return hydratedPullRequest;
-      }
-
-      let workspaceStatus = hydratedPullRequest.workspaceStatus;
-      let pr = hydratedPullRequest.pr;
-      let checks = hydratedPullRequest.checks;
-      let reviewThreads = hydratedPullRequest.reviewThreads;
-
-      if (pr) {
-        const failureContext = inferFailureContext(this.config, record, pr, checks, reviewThreads);
-        const reviewWaitPatch = syncReviewWaitWindow(record, pr);
-        const copilotRequestObservationPatch = syncCopilotReviewRequestObservation(record, pr);
-        const recordForReviewState = {
-          ...record,
-          ...reviewWaitPatch,
-          ...copilotRequestObservationPatch,
-        };
-        const copilotTimeoutPatch = syncCopilotReviewTimeoutState(this.config, recordForReviewState, pr);
-        const nextState = inferStateFromPullRequest(this.config, recordForReviewState, pr, checks, reviewThreads);
+      if (record && shouldAutoRetryBlockedVerification(record, this.config)) {
         record = this.stateStore.touch(record, {
-          pr_number: pr.number,
-          state: nextState,
-          ...reviewWaitPatch,
-          ...copilotRequestObservationPatch,
-          ...copilotTimeoutPatch,
-          last_error: nextState === "blocked" && failureContext ? truncate(failureContext.summary, 1000) : record.last_error,
-          last_failure_context: failureContext,
-          ...applyFailureSignature(record, failureContext),
-          blocked_reason:
-            nextState === "blocked" ? blockedReasonFromReviewState(this.config, recordForReviewState, pr, reviewThreads) : null,
+          state: "queued",
+          blocked_verification_retry_count: record.blocked_verification_retry_count + 1,
+          last_error:
+            `Auto-retrying after verification failure (` +
+            `${record.blocked_verification_retry_count + 1}/${this.config.blockedVerificationRetryLimit}). ` +
+            `Previous blocker: ${truncate(record.last_error, 1000) ?? "n/a"}`,
+          blocked_reason: "verification",
         });
+        state.issues[String(record.issue_number)] = record;
+        await this.stateStore.save(state);
+      }
 
-        if (failureContext && shouldStopForRepeatedFailureSignature(record, this.config)) {
+      const selectedIssue = await this.selectIssueRecord(state, record);
+      if (typeof selectedIssue === "string") {
+        return selectedIssue;
+      }
+      record = selectedIssue.record;
+
+      const issueLock = await acquireFileLock(
+        this.lockPath("issues", `issue-${record.issue_number}`),
+        `issue-${record.issue_number}`,
+      );
+      if (!issueLock.acquired) {
+        return `Skipped issue #${record.issue_number}: ${issueLock.reason}.`;
+      }
+
+      let shouldRestart = false;
+      try {
+        const issue = await this.github.getIssue(record.issue_number);
+        if (issue.state === "CLOSED" && record.pr_number !== null) {
+          record = this.stateStore.touch(record, { state: "done" });
+          state.issues[String(record.issue_number)] = record;
+          state.activeIssueNumber = null;
+          await this.stateStore.save(state);
+          shouldRestart = true;
+        } else {
+          const candidateIssues = await this.github.listCandidateIssues();
+          const blockingIssue = findBlockingIssue(issue, candidateIssues, state);
+          if (blockingIssue) {
+            record = this.stateStore.touch(record, {
+              state: "queued",
+              last_error: `Waiting for ${blockingIssue.reason} before continuing issue #${record.issue_number}.`,
+            });
+            state.issues[String(record.issue_number)] = record;
+            state.activeIssueNumber = null;
+            await this.stateStore.save(state);
+            shouldRestart = true;
+          }
+        }
+
+        if (shouldRestart) {
+          continue;
+        }
+
+        const budgetLaneBeforeWorkspace = attemptLane(record, null);
+        if (!hasAttemptBudgetRemaining(record, this.config, budgetLaneBeforeWorkspace)) {
+          const used = attemptsUsedForLane(record, budgetLaneBeforeWorkspace);
+          const max = attemptBudgetForLane(this.config, budgetLaneBeforeWorkspace);
+          const failureContext = buildCodexFailureContext(
+            "manual",
+            `Issue #${record.issue_number} exhausted its ${budgetLaneBeforeWorkspace} Codex attempt budget.`,
+            [
+              `attempt_lane=${budgetLaneBeforeWorkspace}`,
+              `attempts=${used}`,
+              `max=${max}`,
+              `total_attempts=${record.attempt_count}`,
+            ],
+          );
           record = this.stateStore.touch(record, {
             state: "failed",
-            last_error:
-              `Repeated identical failure signature ${record.repeated_failure_signature_count} times: ` +
-              `${record.last_failure_signature ?? "unknown"}`,
             last_failure_kind: "command_error",
+            last_error:
+              `Reached max ${budgetLaneBeforeWorkspace} Codex attempts for issue #${record.issue_number} ` +
+              `(${used}/${max}).`,
+            last_failure_context: failureContext,
+            ...applyFailureSignature(record, failureContext),
             blocked_reason: null,
           });
           state.issues[String(record.issue_number)] = record;
           state.activeIssueNumber = null;
           await this.stateStore.save(state);
-          await syncJournal(record);
-          return `Issue #${record.issue_number} stopped after repeated identical failure signatures.`;
+          return `Issue #${record.issue_number} reached max ${budgetLaneBeforeWorkspace} Codex attempts.`;
         }
-      } else {
-        const preserveFailureTracking = shouldPreserveNoPrFailureTracking(record);
-        record = this.stateStore.touch(record, {
-          state: inferStateWithoutPullRequest(record, workspaceStatus),
-          copilot_review_requested_observed_at: null,
-          copilot_review_requested_head_sha: null,
-          copilot_review_timed_out_at: null,
-          copilot_review_timeout_action: null,
-          copilot_review_timeout_reason: null,
-          last_failure_context: preserveFailureTracking ? record.last_failure_context : null,
-          last_failure_signature: preserveFailureTracking ? record.last_failure_signature : null,
-          repeated_failure_signature_count: preserveFailureTracking ? record.repeated_failure_signature_count : 0,
-          blocked_reason: null,
-        });
-      }
-      state.issues[String(record.issue_number)] = record;
-      await this.stateStore.save(state);
-      await syncJournal(record);
 
-      if (shouldRunCodex(record, pr, checks, reviewThreads, this.config)) {
-        const codexTurn = await this.executeCodexTurn({
-          state,
-          record,
-          issue,
+        const {
           previousCodexSummary,
           previousError,
           workspacePath,
           journalPath,
           syncJournal,
           memoryArtifacts,
-          workspaceStatus,
-          pr,
-          checks,
-          reviewThreads,
-          options,
-        });
-        if (codexTurn.kind === "returned") {
-          return codexTurn.message;
-        }
+          workspaceStatus: preparedWorkspaceStatus,
+          record: workspaceRecord,
+        } = await this.prepareWorkspaceContext(state, record, issue);
+        record = workspaceRecord;
 
-        record = codexTurn.record;
-        workspaceStatus = codexTurn.workspaceStatus;
-        pr = codexTurn.pr;
-        checks = codexTurn.checks;
-        reviewThreads = codexTurn.reviewThreads;
-      }
-
-      if (pr) {
-        const postTurn = await this.handlePostTurnPullRequestTransitions({
+        const hydratedPullRequest = await this.hydratePullRequestContext(
           state,
           record,
           issue,
           workspacePath,
+          preparedWorkspaceStatus,
           syncJournal,
-          memoryArtifacts,
-          pr,
           options,
-        });
-        record = await this.handlePostTurnMergeAndCompletion(state, postTurn.record, postTurn.pr, options);
+        );
+        if (typeof hydratedPullRequest === "string") {
+          return hydratedPullRequest;
+        }
+        if ("kind" in hydratedPullRequest && hydratedPullRequest.kind === "restart") {
+          shouldRestart = true;
+          continue;
+        }
+
+        const hydratedPullRequestContext = hydratedPullRequest as HydratedPullRequestContext;
+        let workspaceStatus = hydratedPullRequestContext.workspaceStatus;
+        let pr = hydratedPullRequestContext.pr;
+        let checks = hydratedPullRequestContext.checks;
+        let reviewThreads = hydratedPullRequestContext.reviewThreads;
+
+        if (pr) {
+          const failureContext = inferFailureContext(this.config, record, pr, checks, reviewThreads);
+          const reviewWaitPatch = syncReviewWaitWindow(record, pr);
+          const copilotRequestObservationPatch = syncCopilotReviewRequestObservation(record, pr);
+          const recordForReviewState = {
+            ...record,
+            ...reviewWaitPatch,
+            ...copilotRequestObservationPatch,
+          };
+          const copilotTimeoutPatch = syncCopilotReviewTimeoutState(this.config, recordForReviewState, pr);
+          const nextState = inferStateFromPullRequest(this.config, recordForReviewState, pr, checks, reviewThreads);
+          record = this.stateStore.touch(record, {
+            pr_number: pr.number,
+            state: nextState,
+            ...reviewWaitPatch,
+            ...copilotRequestObservationPatch,
+            ...copilotTimeoutPatch,
+            last_error: nextState === "blocked" && failureContext ? truncate(failureContext.summary, 1000) : record.last_error,
+            last_failure_context: failureContext,
+            ...applyFailureSignature(record, failureContext),
+            blocked_reason:
+              nextState === "blocked" ? blockedReasonFromReviewState(this.config, recordForReviewState, pr, reviewThreads) : null,
+          });
+
+          if (failureContext && shouldStopForRepeatedFailureSignature(record, this.config)) {
+            record = this.stateStore.touch(record, {
+              state: "failed",
+              last_error:
+                `Repeated identical failure signature ${record.repeated_failure_signature_count} times: ` +
+                `${record.last_failure_signature ?? "unknown"}`,
+              last_failure_kind: "command_error",
+              blocked_reason: null,
+            });
+            state.issues[String(record.issue_number)] = record;
+            state.activeIssueNumber = null;
+            await this.stateStore.save(state);
+            await syncJournal(record);
+            return `Issue #${record.issue_number} stopped after repeated identical failure signatures.`;
+          }
+        } else {
+          const preserveFailureTracking = shouldPreserveNoPrFailureTracking(record);
+          record = this.stateStore.touch(record, {
+            state: inferStateWithoutPullRequest(record, workspaceStatus),
+            copilot_review_requested_observed_at: null,
+            copilot_review_requested_head_sha: null,
+            copilot_review_timed_out_at: null,
+            copilot_review_timeout_action: null,
+            copilot_review_timeout_reason: null,
+            last_failure_context: preserveFailureTracking ? record.last_failure_context : null,
+            last_failure_signature: preserveFailureTracking ? record.last_failure_signature : null,
+            repeated_failure_signature_count: preserveFailureTracking ? record.repeated_failure_signature_count : 0,
+            blocked_reason: null,
+          });
+        }
+        state.issues[String(record.issue_number)] = record;
+        await this.stateStore.save(state);
+        await syncJournal(record);
+
+        if (shouldRunCodex(record, pr, checks, reviewThreads, this.config)) {
+          const codexTurn = await this.executeCodexTurn({
+            state,
+            record,
+            issue,
+            previousCodexSummary,
+            previousError,
+            workspacePath,
+            journalPath,
+            syncJournal,
+            memoryArtifacts,
+            workspaceStatus,
+            pr,
+            checks,
+            reviewThreads,
+            options,
+          });
+          if (codexTurn.kind === "returned") {
+            return codexTurn.message;
+          }
+
+          record = codexTurn.record;
+          workspaceStatus = codexTurn.workspaceStatus;
+          pr = codexTurn.pr;
+          checks = codexTurn.checks;
+          reviewThreads = codexTurn.reviewThreads;
+        }
+
+        if (pr) {
+          const postTurn = await this.handlePostTurnPullRequestTransitions({
+            state,
+            record,
+            issue,
+            workspacePath,
+            syncJournal,
+            memoryArtifacts,
+            pr,
+            options,
+          });
+          record = await this.handlePostTurnMergeAndCompletion(state, postTurn.record, postTurn.pr, options);
+          await syncJournal(record);
+          return formatStatus(record);
+        }
+
+        state.issues[String(record.issue_number)] = record;
+        await this.stateStore.save(state);
         await syncJournal(record);
         return formatStatus(record);
+      } finally {
+        await issueLock.release();
       }
-
-      state.issues[String(record.issue_number)] = record;
-      await this.stateStore.save(state);
-      await syncJournal(record);
-      return formatStatus(record);
-    } finally {
-      await issueLock.release();
     }
   }
 }
