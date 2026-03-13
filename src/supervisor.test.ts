@@ -849,9 +849,7 @@ Add execution-ready gating.`,
     listAllIssues: async () => [issue],
     listCandidateIssues: async () => [issue],
     getIssue: async () => issue,
-    resolvePullRequestForBranch: async () => {
-      throw new Error("unexpected resolvePullRequestForBranch call");
-    },
+    resolvePullRequestForBranch: async () => null,
     getChecks: async () => [],
     getUnresolvedReviewThreads: async () => [],
     getPullRequestIfExists: async () => null,
@@ -885,6 +883,68 @@ Add execution-ready gating.`,
     "missing_required=scope, acceptance criteria, verification",
     "missing_recommended=depends on, execution order",
   ]);
+});
+
+test("runOnce blocks risky issues without explicit opt-in even when execution-ready sections are present", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 94;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Rotate production auth tokens",
+    body: `## Summary
+Rotate the production auth token flow for service-to-service requests.
+
+## Scope
+- update auth token issuance for production services
+- keep rollout audit-friendly
+
+## Acceptance criteria
+- production authentication changes are fully implemented
+- supervisor requires explicit opt-in before starting this class of work
+
+## Verification
+- npm test -- src/supervisor.test.ts`,
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.equal(message, "No matching open issue found.");
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(persisted.activeIssueNumber, null);
+  assert.equal(record.state, "blocked");
+  assert.equal(record.blocked_reason, "requirements");
+  assert.match(record.last_error ?? "", /explicit opt-in/i);
+  assert.match(record.last_failure_context?.summary ?? "", /explicit opt-in/i);
 });
 
 test("status shows readiness reasons for runnable and requirements-blocked issues", async () => {
