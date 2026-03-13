@@ -1258,6 +1258,52 @@ export function inferStateFromPullRequest(
   return "pr_open";
 }
 
+interface PullRequestLifecycleSnapshot {
+  recordForState: IssueRunRecord;
+  nextState: RunState;
+  failureContext: FailureContext | null;
+  reviewWaitPatch: Partial<Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha">>;
+  copilotRequestObservationPatch: Partial<
+    Pick<IssueRunRecord, "copilot_review_requested_observed_at" | "copilot_review_requested_head_sha">
+  >;
+  copilotTimeoutPatch: Pick<
+    IssueRunRecord,
+    "copilot_review_timed_out_at" | "copilot_review_timeout_action" | "copilot_review_timeout_reason"
+  >;
+}
+
+function derivePullRequestLifecycleSnapshot(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
+  reviewThreads: ReviewThread[],
+  recordPatch: Partial<IssueRunRecord> = {},
+): PullRequestLifecycleSnapshot {
+  const baseRecord = { ...record, ...recordPatch };
+  const reviewWaitPatch = syncReviewWaitWindow(baseRecord, pr);
+  const copilotRequestObservationPatch = syncCopilotReviewRequestObservation(baseRecord, pr);
+  const recordForState = {
+    ...baseRecord,
+    ...reviewWaitPatch,
+    ...copilotRequestObservationPatch,
+  };
+  const copilotTimeoutPatch = syncCopilotReviewTimeoutState(config, recordForState, pr);
+  const finalizedRecordForState = {
+    ...recordForState,
+    ...copilotTimeoutPatch,
+  };
+
+  return {
+    recordForState: finalizedRecordForState,
+    nextState: inferStateFromPullRequest(config, finalizedRecordForState, pr, checks, reviewThreads),
+    failureContext: inferFailureContext(config, finalizedRecordForState, pr, checks, reviewThreads),
+    reviewWaitPatch,
+    copilotRequestObservationPatch,
+    copilotTimeoutPatch,
+  };
+}
+
 function shouldRunCodex(
   record: IssueRunRecord,
   pr: GitHubPullRequest | null,
@@ -2780,38 +2826,38 @@ export class Supervisor {
               Array.from(new Set([...record.processed_review_thread_ids, ...reviewThreadsToProcess.map((thread) => thread.id)])),
             )
           : record.processed_review_thread_ids;
-      const postRunFailureContext = inferFailureContext(this.config, record, pr, checks, reviewThreads);
-      const postRunReviewWaitPatch = pr ? syncReviewWaitWindow(record, pr) : {};
-      const postRunCopilotRequestObservationPatch = pr ? syncCopilotReviewRequestObservation(record, pr) : {};
-      const postRunRecordForReviewState = pr
-        ? { ...record, ...postRunReviewWaitPatch, ...postRunCopilotRequestObservationPatch }
-        : record;
-      const postRunCopilotTimeoutPatch = pr
-        ? syncCopilotReviewTimeoutState(this.config, postRunRecordForReviewState, pr)
-        : {};
-      const postRunState = pr
-        ? inferStateFromPullRequest(
+      const postRunSnapshot = pr
+        ? derivePullRequestLifecycleSnapshot(
             this.config,
-            { ...postRunRecordForReviewState, processed_review_thread_ids: processedReviewThreadIds },
+            record,
             pr,
             checks,
             reviewThreads,
+            { processed_review_thread_ids: processedReviewThreadIds },
           )
+        : null;
+      const postRunState = postRunSnapshot
+        ? postRunSnapshot.nextState
         : hintedState ?? inferStateWithoutPullRequest(record, workspaceStatus);
       record = this.stateStore.touch(record, {
         pr_number: pr?.number ?? null,
-        ...postRunReviewWaitPatch,
-        ...postRunCopilotRequestObservationPatch,
-        ...postRunCopilotTimeoutPatch,
+        ...(postRunSnapshot?.reviewWaitPatch ?? {}),
+        ...(postRunSnapshot?.copilotRequestObservationPatch ?? {}),
+        ...(postRunSnapshot?.copilotTimeoutPatch ?? {}),
         processed_review_thread_ids: processedReviewThreadIds,
         blocked_verification_retry_count: pr ? 0 : record.blocked_verification_retry_count,
         repeated_blocker_count: 0,
         last_blocker_signature: null,
-        last_error: postRunState === "blocked" && postRunFailureContext ? truncate(postRunFailureContext.summary, 1000) : record.last_error,
-        last_failure_context: postRunFailureContext,
-        ...applyFailureSignature(record, postRunFailureContext),
+        last_error:
+          postRunState === "blocked" && postRunSnapshot?.failureContext
+            ? truncate(postRunSnapshot.failureContext.summary, 1000)
+            : record.last_error,
+        last_failure_context: postRunSnapshot?.failureContext ?? null,
+        ...applyFailureSignature(record, postRunSnapshot?.failureContext ?? null),
         blocked_reason:
-          pr && postRunState === "blocked" ? blockedReasonFromReviewState(this.config, record, pr, reviewThreads) : null,
+          pr && postRunState === "blocked"
+            ? blockedReasonFromReviewState(this.config, postRunSnapshot?.recordForState ?? record, pr, reviewThreads)
+            : null,
         state: postRunState,
       });
       state.issues[String(record.issue_number)] = record;
@@ -2864,31 +2910,26 @@ export class Supervisor {
     let reviewThreads = context.reviewThreads;
 
     if (pr) {
-      const failureContext = inferFailureContext(this.config, record, pr, checks, reviewThreads);
-      const reviewWaitPatch = syncReviewWaitWindow(record, pr);
-      const copilotRequestObservationPatch = syncCopilotReviewRequestObservation(record, pr);
-      const recordForReviewState = {
-        ...record,
-        ...reviewWaitPatch,
-        ...copilotRequestObservationPatch,
-      };
-      const copilotTimeoutPatch = syncCopilotReviewTimeoutState(this.config, recordForReviewState, pr);
-      const nextState = inferStateFromPullRequest(this.config, recordForReviewState, pr, checks, reviewThreads);
+      const lifecycle = derivePullRequestLifecycleSnapshot(this.config, record, pr, checks, reviewThreads);
       record = this.stateStore.touch(record, {
         pr_number: pr.number,
-        state: nextState,
-        ...reviewWaitPatch,
-        ...copilotRequestObservationPatch,
-        ...copilotTimeoutPatch,
+        state: lifecycle.nextState,
+        ...lifecycle.reviewWaitPatch,
+        ...lifecycle.copilotRequestObservationPatch,
+        ...lifecycle.copilotTimeoutPatch,
         last_error:
-          nextState === "blocked" && failureContext ? truncate(failureContext.summary, 1000) : record.last_error,
-        last_failure_context: failureContext,
-        ...applyFailureSignature(record, failureContext),
+          lifecycle.nextState === "blocked" && lifecycle.failureContext
+            ? truncate(lifecycle.failureContext.summary, 1000)
+            : record.last_error,
+        last_failure_context: lifecycle.failureContext,
+        ...applyFailureSignature(record, lifecycle.failureContext),
         blocked_reason:
-          nextState === "blocked" ? blockedReasonFromReviewState(this.config, recordForReviewState, pr, reviewThreads) : null,
+          lifecycle.nextState === "blocked"
+            ? blockedReasonFromReviewState(this.config, lifecycle.recordForState, pr, reviewThreads)
+            : null,
       });
 
-      if (failureContext && shouldStopForRepeatedFailureSignature(record, this.config)) {
+      if (lifecycle.failureContext && shouldStopForRepeatedFailureSignature(record, this.config)) {
         record = this.stateStore.touch(record, {
           state: "failed",
           last_error:
@@ -3117,69 +3158,67 @@ export class Supervisor {
         ? record.repeated_local_review_signature_count + 1
         : localReviewHighSeverityNeedsRetry(this.config, record, postReady.pr) &&
             record.local_review_head_sha === postReady.pr.headRefOid
-          ? 0
-          : record.repeated_local_review_signature_count;
-    const refreshedReviewWaitPatch = syncReviewWaitWindow(record, postReady.pr);
-    const refreshedCopilotRequestObservationPatch = syncCopilotReviewRequestObservation(record, postReady.pr);
-    const refreshedRecordForReviewState = {
-      ...record,
-      ...refreshedReviewWaitPatch,
-      ...refreshedCopilotRequestObservationPatch,
-    };
-    const refreshedCopilotTimeoutPatch = syncCopilotReviewTimeoutState(
+        ? 0
+        : record.repeated_local_review_signature_count;
+    const refreshedLifecycle = derivePullRequestLifecycleSnapshot(
       this.config,
-      refreshedRecordForReviewState,
-      postReady.pr,
-    );
-    const recordForState = {
-      ...refreshedRecordForReviewState,
-      ...refreshedCopilotTimeoutPatch,
-      repeated_local_review_signature_count: repeatedLocalReviewSignatureCount,
-    };
-    const nextState = inferStateFromPullRequest(
-      this.config,
-      recordForState,
+      record,
       postReady.pr,
       postReady.checks,
       postReady.reviewThreads,
-    );
-    const refreshedFailureContext = inferFailureContext(
-      this.config,
-      recordForState,
-      postReady.pr,
-      postReady.checks,
-      postReady.reviewThreads,
+      { repeated_local_review_signature_count: repeatedLocalReviewSignatureCount },
     );
     const postReadyLocalReviewFailureContext =
-      nextState === "blocked" && localReviewRetryLoopStalled(this.config, recordForState, postReady.pr, postReady.checks, postReady.reviewThreads)
-        ? localReviewStallFailureContext(recordForState)
-        : nextState === "blocked" && localReviewHighSeverityNeedsBlock(this.config, recordForState, postReady.pr)
-          ? localReviewFailureContext(recordForState)
-          : nextState === "local_review_fix" && localReviewHighSeverityNeedsRetry(this.config, recordForState, postReady.pr)
-            ? localReviewFailureContext(recordForState)
+      refreshedLifecycle.nextState === "blocked" &&
+      localReviewRetryLoopStalled(
+        this.config,
+        refreshedLifecycle.recordForState,
+        postReady.pr,
+        postReady.checks,
+        postReady.reviewThreads,
+      )
+        ? localReviewStallFailureContext(refreshedLifecycle.recordForState)
+        : refreshedLifecycle.nextState === "blocked" &&
+            localReviewHighSeverityNeedsBlock(this.config, refreshedLifecycle.recordForState, postReady.pr)
+          ? localReviewFailureContext(refreshedLifecycle.recordForState)
+          : refreshedLifecycle.nextState === "local_review_fix" &&
+              localReviewHighSeverityNeedsRetry(this.config, refreshedLifecycle.recordForState, postReady.pr)
+            ? localReviewFailureContext(refreshedLifecycle.recordForState)
             : null;
-    const effectiveFailureContext = refreshedFailureContext ?? postReadyLocalReviewFailureContext;
+    const effectiveFailureContext = refreshedLifecycle.failureContext ?? postReadyLocalReviewFailureContext;
     record = this.stateStore.touch(record, {
       pr_number: postReady.pr.number,
-      ...refreshedReviewWaitPatch,
-      ...refreshedCopilotRequestObservationPatch,
-      ...refreshedCopilotTimeoutPatch,
-      state: nextState,
+      ...refreshedLifecycle.reviewWaitPatch,
+      ...refreshedLifecycle.copilotRequestObservationPatch,
+      ...refreshedLifecycle.copilotTimeoutPatch,
+      state: refreshedLifecycle.nextState,
       last_head_sha: postReady.pr.headRefOid,
       repeated_local_review_signature_count: repeatedLocalReviewSignatureCount,
       last_error:
-        nextState === "blocked" && effectiveFailureContext
+        refreshedLifecycle.nextState === "blocked" && effectiveFailureContext
           ? truncate(effectiveFailureContext.summary, 1000)
-          : nextState === "local_review_fix" && localReviewHighSeverityNeedsRetry(this.config, recordForState, postReady.pr)
-            ? truncate(localReviewFailureSummary(recordForState), 1000)
+          : refreshedLifecycle.nextState === "local_review_fix" &&
+              localReviewHighSeverityNeedsRetry(this.config, refreshedLifecycle.recordForState, postReady.pr)
+            ? truncate(localReviewFailureSummary(refreshedLifecycle.recordForState), 1000)
             : record.last_error,
       last_failure_context: effectiveFailureContext,
       ...applyFailureSignature(record, effectiveFailureContext),
       blocked_reason:
-        nextState === "blocked"
-          ? blockedReasonFromReviewState(this.config, recordForState, postReady.pr, postReady.reviewThreads) ??
-            ((localReviewRetryLoopStalled(this.config, recordForState, postReady.pr, postReady.checks, postReady.reviewThreads) ||
-              localReviewHighSeverityNeedsBlock(this.config, recordForState, postReady.pr))
+        refreshedLifecycle.nextState === "blocked"
+          ? blockedReasonFromReviewState(
+              this.config,
+              refreshedLifecycle.recordForState,
+              postReady.pr,
+              postReady.reviewThreads,
+            ) ??
+            ((localReviewRetryLoopStalled(
+              this.config,
+              refreshedLifecycle.recordForState,
+              postReady.pr,
+              postReady.checks,
+              postReady.reviewThreads,
+            ) ||
+              localReviewHighSeverityNeedsBlock(this.config, refreshedLifecycle.recordForState, postReady.pr))
               ? "verification"
               : null)
           : null,

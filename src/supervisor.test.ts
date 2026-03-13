@@ -1334,6 +1334,120 @@ test("runOnce waits for Copilot propagation after marking a draft PR ready", asy
   assert.equal(autoMergeCalls, 0);
 });
 
+test("handlePostTurnPullRequestTransitions refreshes PR state after marking ready", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 102;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "stabilizing",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: 116,
+        blocked_reason: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Refresh post-ready PR state",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const draftPr: GitHubPullRequest = {
+    number: 116,
+    title: "Refresh after ready",
+    url: "https://example.test/pr/116",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: true,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: "head-116",
+    mergedAt: null,
+    copilotReviewState: "not_requested",
+    copilotReviewRequestedAt: null,
+    copilotReviewArrivedAt: null,
+  };
+  const readyPr: GitHubPullRequest = {
+    ...draftPr,
+    isDraft: false,
+  };
+  const initialChecks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+  const postReadyChecks: PullRequestCheck[] = [{ name: "build", state: "IN_PROGRESS", bucket: "pending", workflow: "CI" }];
+
+  let readyCalls = 0;
+  let snapshotLoads = 0;
+  let syncJournalCalls = 0;
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { loadOpenPullRequestSnapshot: (prNumber: number) => Promise<unknown> }).loadOpenPullRequestSnapshot = async (
+    prNumber: number,
+  ) => {
+    assert.equal(prNumber, 116);
+    snapshotLoads += 1;
+    return snapshotLoads === 1
+      ? { pr: draftPr, checks: initialChecks, reviewThreads: [] }
+      : { pr: readyPr, checks: postReadyChecks, reviewThreads: [] };
+  };
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    markPullRequestReady: async (prNumber: number) => {
+      assert.equal(prNumber, 116);
+      readyCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnPullRequestTransitions: (context: {
+        state: SupervisorStateFile;
+        record: IssueRunRecord;
+        issue: GitHubIssue;
+        workspacePath: string;
+        syncJournal: (record: IssueRunRecord) => Promise<void>;
+        memoryArtifacts: { alwaysReadFiles: string[]; onDemandFiles: string[] };
+        pr: GitHubPullRequest;
+        options: { dryRun: boolean };
+      }) => Promise<{
+        record: IssueRunRecord;
+        pr: GitHubPullRequest;
+        checks: PullRequestCheck[];
+        reviewThreads: ReviewThread[];
+      }>;
+    }
+  ).handlePostTurnPullRequestTransitions({
+    state,
+    record: state.issues[String(issueNumber)]!,
+    issue,
+    workspacePath: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+    syncJournal: async () => {
+      syncJournalCalls += 1;
+    },
+    memoryArtifacts: { alwaysReadFiles: [], onDemandFiles: [] },
+    pr: draftPr,
+    options: { dryRun: false },
+  });
+
+  assert.equal(result.pr.isDraft, false);
+  assert.equal(result.record.state, "waiting_ci");
+  assert.equal(result.record.review_wait_head_sha, "head-116");
+  assert.ok(result.record.review_wait_started_at);
+
+  assert.equal(readyCalls, 1);
+  assert.equal(snapshotLoads, 2);
+  assert.equal(syncJournalCalls, 0);
+});
+
 test("runOnce records an observed Copilot request time when GitHub omits the request timestamp", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 115;
