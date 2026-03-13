@@ -177,6 +177,7 @@ async function createSupervisorFixture(): Promise<{
   git(["commit", "-m", "seed"], seedPath);
   git(["remote", "add", "origin", remotePath], seedPath);
   git(["push", "-u", "origin", "main"], seedPath);
+  git(["symbolic-ref", "HEAD", "refs/heads/main"], remotePath);
   git(["clone", remotePath, repoPath]);
   git(["-C", repoPath, "branch", "--set-upstream-to=origin/main", "main"]);
 
@@ -602,6 +603,45 @@ test("runOnce dry-run selects an issue and hydrates workspace and PR context bef
   assert.equal(resolveCalls, 1);
   assert.equal(checksCalls, 1);
   assert.equal(reviewThreadCalls, 1);
+});
+
+test("runOnce returns no matching issue when no runnable candidate is available", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [],
+    listCandidateIssues: async () => [],
+    getIssue: async () => {
+      throw new Error("unexpected getIssue call");
+    },
+    resolvePullRequestForBranch: async () => {
+      throw new Error("unexpected resolvePullRequestForBranch call");
+    },
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.equal(message, "No matching open issue found.");
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  assert.equal(persisted.activeIssueNumber, null);
+  assert.deepEqual(persisted.issues, {});
 });
 
 test("runOnce releases the current issue lock before restarting after a merged PR", async () => {

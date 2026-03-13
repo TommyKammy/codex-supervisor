@@ -1369,6 +1369,13 @@ interface PreparedWorkspaceContext {
   workspaceStatus: WorkspaceStatus;
 }
 
+interface ReadyIssueContext {
+  kind: "ready";
+  record: IssueRunRecord;
+  issue: GitHubIssue;
+  issueLock: LockHandle;
+}
+
 interface HydratedPullRequestContext {
   record: IssueRunRecord;
   pr: GitHubPullRequest | null;
@@ -1377,9 +1384,15 @@ interface HydratedPullRequestContext {
   workspaceStatus: WorkspaceStatus;
 }
 
+interface PreparedIssueExecutionContext extends PreparedWorkspaceContext, HydratedPullRequestContext {}
+
 interface RestartRunOnce {
   kind: "restart";
   recoveryEvents?: RecoveryEvent[];
+}
+
+function isRestartRunOnce(result: HydratedPullRequestContext | PreparedIssueExecutionContext | RestartRunOnce): result is RestartRunOnce {
+  return "kind" in result && result.kind === "restart";
 }
 
 interface CodexTurnContext {
@@ -2266,6 +2279,99 @@ export class Supervisor {
     };
   }
 
+  private async resolveRunnableIssueContext(
+    state: SupervisorStateFile,
+    currentRecord: IssueRunRecord | null,
+  ): Promise<ReadyIssueContext | RestartRunOnce | string> {
+    const selectedIssue = await this.selectIssueRecord(state, currentRecord);
+    if (typeof selectedIssue === "string") {
+      return selectedIssue;
+    }
+
+    let record = selectedIssue.record;
+    const issueLock = await acquireFileLock(
+      this.lockPath("issues", `issue-${record.issue_number}`),
+      `issue-${record.issue_number}`,
+    );
+    if (!issueLock.acquired) {
+      return `Skipped issue #${record.issue_number}: ${issueLock.reason}.`;
+    }
+
+    let shouldReleaseIssueLock = true;
+    try {
+      const issue = await this.github.getIssue(record.issue_number);
+      if (issue.state === "CLOSED" && record.pr_number !== null) {
+        record = this.stateStore.touch(record, { state: "done" });
+        state.issues[String(record.issue_number)] = record;
+        state.activeIssueNumber = null;
+        await this.stateStore.save(state);
+        await issueLock.release();
+        shouldReleaseIssueLock = false;
+        return { kind: "restart" };
+      }
+
+      const candidateIssues = await this.github.listCandidateIssues();
+      const blockingIssue = findBlockingIssue(issue, candidateIssues, state);
+      if (blockingIssue) {
+        record = this.stateStore.touch(record, {
+          state: "queued",
+          last_error: `Waiting for ${blockingIssue.reason} before continuing issue #${record.issue_number}.`,
+        });
+        state.issues[String(record.issue_number)] = record;
+        state.activeIssueNumber = null;
+        await this.stateStore.save(state);
+        await issueLock.release();
+        shouldReleaseIssueLock = false;
+        return { kind: "restart" };
+      }
+
+      const budgetLaneBeforeWorkspace = attemptLane(record, null);
+      if (!hasAttemptBudgetRemaining(record, this.config, budgetLaneBeforeWorkspace)) {
+        const used = attemptsUsedForLane(record, budgetLaneBeforeWorkspace);
+        const max = attemptBudgetForLane(this.config, budgetLaneBeforeWorkspace);
+        const failureContext = buildCodexFailureContext(
+          "manual",
+          `Issue #${record.issue_number} exhausted its ${budgetLaneBeforeWorkspace} Codex attempt budget.`,
+          [
+            `attempt_lane=${budgetLaneBeforeWorkspace}`,
+            `attempts=${used}`,
+            `max=${max}`,
+            `total_attempts=${record.attempt_count}`,
+          ],
+        );
+        record = this.stateStore.touch(record, {
+          state: "failed",
+          last_failure_kind: "command_error",
+          last_error:
+            `Reached max ${budgetLaneBeforeWorkspace} Codex attempts for issue #${record.issue_number} ` +
+            `(${used}/${max}).`,
+          last_failure_context: failureContext,
+          ...applyFailureSignature(record, failureContext),
+          blocked_reason: null,
+        });
+        state.issues[String(record.issue_number)] = record;
+        state.activeIssueNumber = null;
+        await this.stateStore.save(state);
+        await issueLock.release();
+        shouldReleaseIssueLock = false;
+        return `Issue #${record.issue_number} reached max ${budgetLaneBeforeWorkspace} Codex attempts.`;
+      }
+
+      shouldReleaseIssueLock = false;
+      return {
+        kind: "ready",
+        record,
+        issue,
+        issueLock,
+      };
+    } catch (error) {
+      if (shouldReleaseIssueLock) {
+        await issueLock.release();
+      }
+      throw error;
+    }
+  }
+
   private async hydratePullRequestContext(
     state: SupervisorStateFile,
     record: IssueRunRecord,
@@ -2347,6 +2453,35 @@ export class Supervisor {
       checks,
       reviewThreads,
       workspaceStatus: nextWorkspaceStatus,
+    };
+  }
+
+  private async prepareIssueExecutionContext(
+    state: SupervisorStateFile,
+    record: IssueRunRecord,
+    issue: GitHubIssue,
+    options: Pick<CliOptions, "dryRun">,
+  ): Promise<PreparedIssueExecutionContext | RestartRunOnce | string> {
+    const preparedWorkspace = await this.prepareWorkspaceContext(state, record, issue);
+    const hydratedPullRequest = await this.hydratePullRequestContext(
+      state,
+      preparedWorkspace.record,
+      issue,
+      preparedWorkspace.workspacePath,
+      preparedWorkspace.workspaceStatus,
+      preparedWorkspace.syncJournal,
+      options,
+    );
+    if (typeof hydratedPullRequest === "string") {
+      return hydratedPullRequest;
+    }
+    if (isRestartRunOnce(hydratedPullRequest)) {
+      return hydratedPullRequest;
+    }
+
+    return {
+      ...preparedWorkspace,
+      ...hydratedPullRequest,
     };
   }
 
@@ -3082,81 +3217,30 @@ export class Supervisor {
         await this.stateStore.save(state);
       }
 
-      const selectedIssue = await this.selectIssueRecord(state, record);
-      if (typeof selectedIssue === "string") {
-        return prependRecoveryLog(selectedIssue, recoveryLog);
+      const runnableIssue = await this.resolveRunnableIssueContext(state, record);
+      if (typeof runnableIssue === "string") {
+        return prependRecoveryLog(runnableIssue, recoveryLog);
       }
-      record = selectedIssue.record;
-
-      const issueLock = await acquireFileLock(
-        this.lockPath("issues", `issue-${record.issue_number}`),
-        `issue-${record.issue_number}`,
-      );
-      if (!issueLock.acquired) {
-        return prependRecoveryLog(`Skipped issue #${record.issue_number}: ${issueLock.reason}.`, recoveryLog);
+      if (runnableIssue.kind === "restart") {
+        continue;
       }
 
-      let shouldRestart = false;
+      record = runnableIssue.record;
       try {
-        const issue = await this.github.getIssue(record.issue_number);
-        if (issue.state === "CLOSED" && record.pr_number !== null) {
-          record = this.stateStore.touch(record, { state: "done" });
-          state.issues[String(record.issue_number)] = record;
-          state.activeIssueNumber = null;
-          await this.stateStore.save(state);
-          shouldRestart = true;
-        } else {
-          const candidateIssues = await this.github.listCandidateIssues();
-          const blockingIssue = findBlockingIssue(issue, candidateIssues, state);
-          if (blockingIssue) {
-            record = this.stateStore.touch(record, {
-              state: "queued",
-              last_error: `Waiting for ${blockingIssue.reason} before continuing issue #${record.issue_number}.`,
-            });
-            state.issues[String(record.issue_number)] = record;
-            state.activeIssueNumber = null;
-            await this.stateStore.save(state);
-            shouldRestart = true;
-          }
+        const issue = runnableIssue.issue;
+        const preparedIssue = await this.prepareIssueExecutionContext(state, record, issue, options);
+        if (typeof preparedIssue === "string") {
+          return prependRecoveryLog(preparedIssue, recoveryLog);
         }
-
-        if (shouldRestart) {
+        if (isRestartRunOnce(preparedIssue)) {
+          carryoverRecoveryEvents = [
+            ...recoveryEvents,
+            ...(preparedIssue.recoveryEvents ?? []),
+          ];
           continue;
         }
 
-        const budgetLaneBeforeWorkspace = attemptLane(record, null);
-        if (!hasAttemptBudgetRemaining(record, this.config, budgetLaneBeforeWorkspace)) {
-          const used = attemptsUsedForLane(record, budgetLaneBeforeWorkspace);
-          const max = attemptBudgetForLane(this.config, budgetLaneBeforeWorkspace);
-          const failureContext = buildCodexFailureContext(
-            "manual",
-            `Issue #${record.issue_number} exhausted its ${budgetLaneBeforeWorkspace} Codex attempt budget.`,
-            [
-              `attempt_lane=${budgetLaneBeforeWorkspace}`,
-              `attempts=${used}`,
-              `max=${max}`,
-              `total_attempts=${record.attempt_count}`,
-            ],
-          );
-          record = this.stateStore.touch(record, {
-            state: "failed",
-            last_failure_kind: "command_error",
-            last_error:
-              `Reached max ${budgetLaneBeforeWorkspace} Codex attempts for issue #${record.issue_number} ` +
-              `(${used}/${max}).`,
-            last_failure_context: failureContext,
-            ...applyFailureSignature(record, failureContext),
-            blocked_reason: null,
-          });
-          state.issues[String(record.issue_number)] = record;
-          state.activeIssueNumber = null;
-          await this.stateStore.save(state);
-          return prependRecoveryLog(
-            `Issue #${record.issue_number} reached max ${budgetLaneBeforeWorkspace} Codex attempts.`,
-            recoveryLog,
-          );
-        }
-
+        const preparedIssueContext = preparedIssue;
         const {
           previousCodexSummary,
           previousError,
@@ -3164,95 +3248,74 @@ export class Supervisor {
           journalPath,
           syncJournal,
           memoryArtifacts,
-          workspaceStatus: preparedWorkspaceStatus,
-          record: workspaceRecord,
-        } = await this.prepareWorkspaceContext(state, record, issue);
-        record = workspaceRecord;
+          record: preparedRecord,
+        } = preparedIssueContext;
+        let currentRecord: IssueRunRecord = preparedRecord;
 
-        const hydratedPullRequest = await this.hydratePullRequestContext(
-          state,
-          record,
-          issue,
-          workspacePath,
-          preparedWorkspaceStatus,
-          syncJournal,
-          options,
-        );
-        if (typeof hydratedPullRequest === "string") {
-          return prependRecoveryLog(hydratedPullRequest, recoveryLog);
-        }
-        if ("kind" in hydratedPullRequest && hydratedPullRequest.kind === "restart") {
-          carryoverRecoveryEvents = [
-            ...recoveryEvents,
-            ...(hydratedPullRequest.recoveryEvents ?? []),
-          ];
-          shouldRestart = true;
-          continue;
-        }
-
-        const hydratedPullRequestContext = hydratedPullRequest as HydratedPullRequestContext;
-        let workspaceStatus = hydratedPullRequestContext.workspaceStatus;
-        let pr = hydratedPullRequestContext.pr;
-        let checks = hydratedPullRequestContext.checks;
-        let reviewThreads = hydratedPullRequestContext.reviewThreads;
+        let workspaceStatus = preparedIssueContext.workspaceStatus;
+        let pr = preparedIssueContext.pr;
+        let checks = preparedIssueContext.checks;
+        let reviewThreads = preparedIssueContext.reviewThreads;
 
         if (pr) {
-          const failureContext = inferFailureContext(this.config, record, pr, checks, reviewThreads);
-          const reviewWaitPatch = syncReviewWaitWindow(record, pr);
-          const copilotRequestObservationPatch = syncCopilotReviewRequestObservation(record, pr);
+          const failureContext = inferFailureContext(this.config, currentRecord, pr, checks, reviewThreads);
+          const reviewWaitPatch = syncReviewWaitWindow(currentRecord, pr);
+          const copilotRequestObservationPatch = syncCopilotReviewRequestObservation(currentRecord, pr);
           const recordForReviewState = {
-            ...record,
+            ...currentRecord,
             ...reviewWaitPatch,
             ...copilotRequestObservationPatch,
           };
           const copilotTimeoutPatch = syncCopilotReviewTimeoutState(this.config, recordForReviewState, pr);
           const nextState = inferStateFromPullRequest(this.config, recordForReviewState, pr, checks, reviewThreads);
-          record = this.stateStore.touch(record, {
+          currentRecord = this.stateStore.touch(currentRecord, {
             pr_number: pr.number,
             state: nextState,
             ...reviewWaitPatch,
             ...copilotRequestObservationPatch,
             ...copilotTimeoutPatch,
-            last_error: nextState === "blocked" && failureContext ? truncate(failureContext.summary, 1000) : record.last_error,
+            last_error:
+              nextState === "blocked" && failureContext ? truncate(failureContext.summary, 1000) : currentRecord.last_error,
             last_failure_context: failureContext,
-            ...applyFailureSignature(record, failureContext),
+            ...applyFailureSignature(currentRecord, failureContext),
             blocked_reason:
               nextState === "blocked" ? blockedReasonFromReviewState(this.config, recordForReviewState, pr, reviewThreads) : null,
           });
 
-          if (failureContext && shouldStopForRepeatedFailureSignature(record, this.config)) {
-            record = this.stateStore.touch(record, {
+          if (failureContext && shouldStopForRepeatedFailureSignature(currentRecord, this.config)) {
+            currentRecord = this.stateStore.touch(currentRecord, {
               state: "failed",
               last_error:
-                `Repeated identical failure signature ${record.repeated_failure_signature_count} times: ` +
-                `${record.last_failure_signature ?? "unknown"}`,
+                `Repeated identical failure signature ${currentRecord.repeated_failure_signature_count} times: ` +
+                `${currentRecord.last_failure_signature ?? "unknown"}`,
               last_failure_kind: "command_error",
               blocked_reason: null,
             });
-            state.issues[String(record.issue_number)] = record;
+            state.issues[String(currentRecord.issue_number)] = currentRecord;
             state.activeIssueNumber = null;
             await this.stateStore.save(state);
-            await syncJournal(record);
+            await syncJournal(currentRecord);
             return prependRecoveryLog(
-              `Issue #${record.issue_number} stopped after repeated identical failure signatures.`,
+              `Issue #${currentRecord.issue_number} stopped after repeated identical failure signatures.`,
               recoveryLog,
             );
           }
         } else {
-          const preserveFailureTracking = shouldPreserveNoPrFailureTracking(record);
-          record = this.stateStore.touch(record, {
-            state: inferStateWithoutPullRequest(record, workspaceStatus),
+          const preserveFailureTracking = shouldPreserveNoPrFailureTracking(currentRecord);
+          currentRecord = this.stateStore.touch(currentRecord, {
+            state: inferStateWithoutPullRequest(currentRecord, workspaceStatus),
             copilot_review_requested_observed_at: null,
             copilot_review_requested_head_sha: null,
             copilot_review_timed_out_at: null,
             copilot_review_timeout_action: null,
             copilot_review_timeout_reason: null,
-            last_failure_context: preserveFailureTracking ? record.last_failure_context : null,
-            last_failure_signature: preserveFailureTracking ? record.last_failure_signature : null,
-            repeated_failure_signature_count: preserveFailureTracking ? record.repeated_failure_signature_count : 0,
+            last_failure_context: preserveFailureTracking ? currentRecord.last_failure_context : null,
+            last_failure_signature: preserveFailureTracking ? currentRecord.last_failure_signature : null,
+            repeated_failure_signature_count: preserveFailureTracking ? currentRecord.repeated_failure_signature_count : 0,
             blocked_reason: null,
           });
         }
+        record = currentRecord;
         state.issues[String(record.issue_number)] = record;
         await this.stateStore.save(state);
         await syncJournal(record);
@@ -3306,7 +3369,7 @@ export class Supervisor {
         await syncJournal(record);
         return prependRecoveryLog(formatStatus(record), recoveryLog);
       } finally {
-        await issueLock.release();
+        await runnableIssue.issueLock.release();
       }
     }
   }
