@@ -539,3 +539,191 @@ test("loadRelevantExternalReviewMissPatterns keeps relevant historical misses or
     ],
   );
 });
+
+test("loadRelevantExternalReviewMissPatterns reads repo-committed durable guardrails when local artifacts are absent", async () => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "external-review-durable-guardrails-test-"));
+  const durableGuardrailPath = path.join(workspaceDir, "docs", "shared-memory", "external-review-guardrails.json");
+  await fs.mkdir(path.dirname(durableGuardrailPath), { recursive: true });
+  await fs.writeFile(
+    durableGuardrailPath,
+    JSON.stringify({
+      version: 1,
+      patterns: [
+        {
+          fingerprint: "src/auth.ts|permission",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 42,
+          summary: "Permission guard is bypassed.",
+          rationale: "Check the permission guard before the fallback write path.",
+          sourceArtifactPath: "external-review-misses-head-middle.json",
+          sourceHeadSha: "middlehead",
+          lastSeenAt: "2026-03-11T00:00:00Z",
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  const patterns = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: path.join(workspaceDir, ".local", "reviews"),
+    branch: "codex/issue-61",
+    currentHeadSha: "currenthead",
+    changedFiles: ["src/auth.ts"],
+    limit: 3,
+    workspacePath: workspaceDir,
+  });
+
+  assert.deepEqual(
+    patterns.map((pattern) => ({ file: pattern.file, summary: pattern.summary, lastSeenAt: pattern.lastSeenAt })),
+    [
+      {
+        file: "src/auth.ts",
+        summary: "Permission guard is bypassed.",
+        lastSeenAt: "2026-03-11T00:00:00Z",
+      },
+    ],
+  );
+});
+
+test("loadRelevantExternalReviewMissPatterns returns an empty list when durable guardrail files are absent or blank", async () => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "external-review-durable-guardrails-empty-test-"));
+
+  const absent = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: path.join(workspaceDir, ".local", "reviews"),
+    branch: "codex/issue-61",
+    currentHeadSha: "currenthead",
+    changedFiles: ["src/auth.ts"],
+    workspacePath: workspaceDir,
+  });
+  assert.deepEqual(absent, []);
+
+  const durableGuardrailPath = path.join(workspaceDir, "docs", "shared-memory", "external-review-guardrails.json");
+  await fs.mkdir(path.dirname(durableGuardrailPath), { recursive: true });
+  await fs.writeFile(durableGuardrailPath, "", "utf8");
+
+  const blank = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: path.join(workspaceDir, ".local", "reviews"),
+    branch: "codex/issue-61",
+    currentHeadSha: "currenthead",
+    changedFiles: ["src/auth.ts"],
+    workspacePath: workspaceDir,
+  });
+  assert.deepEqual(blank, []);
+});
+
+test("loadRelevantExternalReviewMissPatterns validates and orders durable guardrails deterministically", async () => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "external-review-durable-guardrails-ordered-test-"));
+  const durableGuardrailPath = path.join(workspaceDir, "docs", "shared-memory", "external-review-guardrails.json");
+  await fs.mkdir(path.dirname(durableGuardrailPath), { recursive: true });
+  await fs.writeFile(
+    durableGuardrailPath,
+    JSON.stringify({
+      version: 1,
+      patterns: [
+        {
+          fingerprint: "src/retry.ts|later",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/retry.ts",
+          line: 15,
+          summary: "Retry loop never stops on fatal errors.",
+          rationale: "Exit the retry loop once the fatal predicate matches.",
+          sourceArtifactPath: "external-review-misses-head-newer.json",
+          sourceHeadSha: "newerhead",
+          lastSeenAt: "2026-03-09T00:00:00Z",
+        },
+        {
+          fingerprint: "src/auth.ts|permission",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 42,
+          summary: "Permission guard is bypassed.",
+          rationale: "Check the permission guard before the fallback write path.",
+          sourceArtifactPath: "external-review-misses-head-old.json",
+          sourceHeadSha: "oldhead",
+          lastSeenAt: "2026-03-10T00:00:00Z",
+        },
+        {
+          fingerprint: "src/auth.ts|permission",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 42,
+          summary: "Permission guard is bypassed.",
+          rationale: "Check the permission guard before the fallback write path.",
+          sourceArtifactPath: "external-review-misses-head-new.json",
+          sourceHeadSha: "newhead",
+          lastSeenAt: "2026-03-11T00:00:00Z",
+        },
+        {
+          fingerprint: "src/api.ts|required-field",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/api.ts",
+          line: 8,
+          summary: "Response omits a required field.",
+          rationale: "Return the required field from the success response.",
+          sourceArtifactPath: "external-review-misses-head-middle.json",
+          sourceHeadSha: "middlehead",
+          lastSeenAt: "2026-03-10T00:00:00Z",
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  const patterns = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: path.join(workspaceDir, ".local", "reviews"),
+    branch: "codex/issue-61",
+    currentHeadSha: "currenthead",
+    changedFiles: ["src/api.ts", "src/auth.ts", "src/retry.ts"],
+    limit: 2,
+    workspacePath: workspaceDir,
+  });
+
+  assert.deepEqual(
+    patterns.map((pattern) => ({
+      fingerprint: pattern.fingerprint,
+      file: pattern.file,
+      lastSeenAt: pattern.lastSeenAt,
+      sourceHeadSha: pattern.sourceHeadSha,
+    })),
+    [
+      {
+        fingerprint: "src/auth.ts|permission",
+        file: "src/auth.ts",
+        lastSeenAt: "2026-03-11T00:00:00Z",
+        sourceHeadSha: "newhead",
+      },
+      {
+        fingerprint: "src/api.ts|required-field",
+        file: "src/api.ts",
+        lastSeenAt: "2026-03-10T00:00:00Z",
+        sourceHeadSha: "middlehead",
+      },
+    ],
+  );
+});
+
+test("loadRelevantExternalReviewMissPatterns rejects durable guardrails with an unsupported schema version", async () => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "external-review-durable-guardrails-invalid-test-"));
+  const durableGuardrailPath = path.join(workspaceDir, "docs", "shared-memory", "external-review-guardrails.json");
+  await fs.mkdir(path.dirname(durableGuardrailPath), { recursive: true });
+  await fs.writeFile(
+    durableGuardrailPath,
+    JSON.stringify({
+      version: 2,
+      patterns: [],
+    }),
+    "utf8",
+  );
+
+  await assert.rejects(
+    () => loadRelevantExternalReviewMissPatterns({
+      artifactDir: path.join(workspaceDir, ".local", "reviews"),
+      branch: "codex/issue-61",
+      currentHeadSha: "currenthead",
+      changedFiles: ["src/auth.ts"],
+      workspacePath: workspaceDir,
+    }),
+    /version must be 1/,
+  );
+});

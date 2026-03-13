@@ -192,6 +192,7 @@ export async function runLocalReview(args: {
     currentHeadSha: args.pr.headRefOid,
     changedFiles,
     limit: 3,
+    workspacePath: args.workspacePath,
   });
   const detectedRoles =
     args.config.localReviewRoles.length === 0 && args.config.localReviewAutoDetect
