@@ -3,6 +3,7 @@ import { type GitHubIssue, type GitHubPullRequest } from "./types";
 import { truncate } from "./utils";
 import { renderLines } from "./local-review-artifacts";
 import { findingKey } from "./local-review-finalize";
+import { type VerifierGuardrailRule } from "./verifier-guardrails";
 import {
   type LocalReviewFinding,
   type LocalReviewVerificationFinding,
@@ -37,6 +38,25 @@ function renderPriorMissLines(patterns: ExternalReviewMissPattern[]): string[] {
         `- Prior miss ${index + 1}: file=${pattern.file}:${pattern.line ?? "?"} reviewer=${pattern.reviewerLogin}`,
         `  summary=${pattern.summary}`,
         `  rationale=${pattern.rationale}`,
+      ].join("\n"),
+    ),
+    "",
+  ];
+}
+
+function renderVerifierGuardrailLines(rules: VerifierGuardrailRule[]): string[] {
+  if (rules.length === 0) {
+    return [];
+  }
+
+  return [
+    "Committed verifier guardrails for this diff:",
+    "- Treat these as durable verifier cross-checks before dismissing similar findings.",
+    ...rules.map((rule, index) =>
+      [
+        `- Guardrail ${index + 1}: file=${rule.file}:${rule.line ?? "?"} title=${rule.title}`,
+        `  summary=${rule.summary}`,
+        `  rationale=${rule.rationale}`,
       ].join("\n"),
     ),
     "",
@@ -326,9 +346,11 @@ export function buildVerifierPrompt(args: {
   pr: GitHubPullRequest;
   findings: LocalReviewFinding[];
   priorMissPatterns: ExternalReviewMissPattern[];
+  verifierGuardrails: VerifierGuardrailRule[];
 }): string {
   const ref = compareRef(args.defaultBranch);
   const priorMissLines = renderPriorMissLines(args.priorMissPatterns);
+  const verifierGuardrailLines = renderVerifierGuardrailLines(args.verifierGuardrails);
   const findingsBlock = args.findings
     .map((finding, index) =>
       [
@@ -364,6 +386,7 @@ export function buildVerifierPrompt(args: {
     "- Keep reads narrow and tied to the listed findings.",
     "",
     ...priorMissLines,
+    ...verifierGuardrailLines,
     "High-severity findings to verify:",
     findingsBlock,
     "",

@@ -3,6 +3,7 @@ import test from "node:test";
 import { localReviewHasActionableFindings, shouldRunLocalReview } from "./local-review";
 import { finalizeLocalReview } from "./local-review-finalize";
 import { buildRolePrompt, buildVerifierPrompt } from "./local-review-prompt";
+import { type VerifierGuardrailRule } from "./verifier-guardrails";
 import { LocalReviewRoleSelection } from "./review-role-detector";
 import { GitHubPullRequest, SupervisorConfig } from "./types";
 
@@ -632,10 +633,74 @@ test("buildVerifierPrompt includes bounded relevant prior external misses", () =
         lastSeenAt: "2026-03-11T00:00:00Z",
       },
     ],
+    verifierGuardrails: [],
   });
 
   assert.match(prompt, /Relevant prior confirmed external misses for this diff:/);
   assert.match(prompt, /Prior miss 1: file=src\/auth\.ts:42 reviewer=copilot-pull-request-reviewer/);
   assert.match(prompt, /Permission guard is bypassed\./);
   assert.match(prompt, /Retry path can reuse stale state\./);
+});
+
+test("buildVerifierPrompt includes committed verifier guardrails", () => {
+  const verifierGuardrails: VerifierGuardrailRule[] = [
+    {
+      id: "permission-fallback",
+      title: "Re-check permission fallback invariants",
+      file: "src/auth.ts",
+      line: 42,
+      summary: "Verify that every fallback path still enforces the permission guard before returning privileged data.",
+      rationale: "A prior confirmed miss cleared a similar fallback too early; require a direct read of the guard path before dismissing the finding.",
+    },
+    {
+      id: "retry-state",
+      title: "Inspect retry state reuse",
+      file: "src/retry.ts",
+      line: 15,
+      summary: "Confirm retries rebuild mutable state instead of reusing stale cached state.",
+      rationale: "Verifier should not dismiss retry-loop findings without checking the state reset path.",
+    },
+  ];
+
+  const prompt = buildVerifierPrompt({
+    repoSlug: "owner/repo",
+    issue: {
+      number: 61,
+      title: "Teach verifier from committed guardrails",
+      body: "",
+      url: "https://example.test/issues/61",
+      createdAt: "2026-03-12T00:00:00Z",
+      updatedAt: "2026-03-12T00:00:00Z",
+      labels: [],
+    },
+    branch: "codex/issue-61",
+    workspacePath: "/tmp/workspaces/issue-61",
+    defaultBranch: "main",
+    pr: createPullRequest({
+      number: 61,
+      url: "https://example.test/pr/61",
+      headRefOid: "newhead123",
+    }),
+    findings: [
+      {
+        role: "reviewer",
+        title: "Potential permission bypass",
+        body: "The fallback path may skip the permission guard.",
+        file: "src/auth.ts",
+        start: 42,
+        end: 44,
+        severity: "high",
+        confidence: 0.95,
+        category: "correctness",
+        evidence: "The fallback returns the privileged branch without the permission check.",
+      },
+    ],
+    priorMissPatterns: [],
+    verifierGuardrails,
+  });
+
+  assert.match(prompt, /Committed verifier guardrails for this diff:/);
+  assert.match(prompt, /Guardrail 1: file=src\/auth\.ts:42 title=Re-check permission fallback invariants/);
+  assert.match(prompt, /Guardrail 2: file=src\/retry\.ts:15 title=Inspect retry state reuse/);
+  assert.match(prompt, /Verifier should not dismiss retry-loop findings without checking the state reset path\./);
 });

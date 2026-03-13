@@ -17,6 +17,7 @@ import {
   SupervisorConfig,
 } from "./types";
 import { truncate } from "./utils";
+import { type VerifierGuardrailRule } from "./verifier-guardrails";
 
 export interface LocalReviewRepairContext {
   summaryPath: string;
@@ -29,6 +30,7 @@ export interface LocalReviewRepairContext {
     lines: string | null;
   }>;
   priorMissPatterns: ExternalReviewMissPattern[];
+  verifierGuardrails: VerifierGuardrailRule[];
 }
 
 export function extractStateHint(message: string): RunState | null {
@@ -327,6 +329,18 @@ export function buildCodexPrompt(input: {
                       ),
                     ]
                   : ["- Committed regression-oriented guardrails: none identified"]),
+                ...(input.localReviewRepairContext.verifierGuardrails.length > 0
+                  ? [
+                      "- Committed verifier guardrails:",
+                      ...input.localReviewRepairContext.verifierGuardrails.map((rule, index) =>
+                        [
+                          `  - ${index + 1}. file=${rule.file}:${rule.line ?? "?"} title=${truncate(rule.title, 160) ?? ""}`,
+                          `    summary=${truncate(rule.summary, 160) ?? ""}`,
+                          `    follow_up=${truncate(rule.rationale, 220) ?? ""}`,
+                        ].join("\n"),
+                      ),
+                    ]
+                  : ["- Committed verifier guardrails: none identified"]),
               ]
             : [
                 "- No parsed local-review repair context was available. Read the local-review summary artifact before editing code.",

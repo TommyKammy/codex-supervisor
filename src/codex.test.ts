@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { buildCodexPrompt, extractStateHint } from "./codex";
 import { loadLocalReviewRepairContext } from "./supervisor";
 import { FailureContext, GitHubIssue, RunState } from "./types";
+import { type VerifierGuardrailRule } from "./verifier-guardrails";
 
 const issue: GitHubIssue = {
   number: 46,
@@ -75,6 +76,16 @@ test("buildCodexPrompt emphasizes compressed local-review root causes during loc
           lastSeenAt: "2026-03-12T00:00:00Z",
         },
       ],
+      verifierGuardrails: [
+        {
+          id: "retry-mode",
+          title: "Re-check retry mode state handoff",
+          file: "src/supervisor.ts",
+          line: 761,
+          summary: "Confirm the repair retry path enters the dedicated local_review_fix state instead of implementing.",
+          rationale: "A prior verifier miss cleared a retry transition without checking the state update branch directly.",
+        },
+      ],
     },
   });
 
@@ -85,6 +96,8 @@ test("buildCodexPrompt emphasizes compressed local-review root causes during loc
   assert.match(prompt, /State inference sends local-review retries/);
   assert.match(prompt, /Committed regression-oriented guardrails:/);
   assert.match(prompt, /Repair retries can loop through the wrong state\./);
+  assert.match(prompt, /Committed verifier guardrails:/);
+  assert.match(prompt, /Re-check retry mode state handoff/);
 });
 
 test("buildCodexPrompt suppresses stale handoff next actions during local_review_fix", () => {
@@ -127,6 +140,7 @@ test("buildCodexPrompt suppresses stale handoff next actions during local_review
         },
       ],
       priorMissPatterns: [],
+      verifierGuardrails: [],
     },
   });
 
@@ -173,6 +187,7 @@ test("buildCodexPrompt suppresses flat next-action bullet lists during local_rev
         },
       ],
       priorMissPatterns: [],
+      verifierGuardrails: [],
     },
   });
 
@@ -219,6 +234,7 @@ test("buildCodexPrompt keeps explicit operator overrides during local_review_fix
         },
       ],
       priorMissPatterns: [],
+      verifierGuardrails: [],
     },
   });
 
@@ -355,6 +371,7 @@ test("loadLocalReviewRepairContext derives the findings path and trims prompt co
       { severity: "high", summary: "five", file: "src/file-4.ts", lines: "40" },
     ],
     priorMissPatterns: [],
+    verifierGuardrails: [],
   });
 
   await fs.rm(tempDir, { recursive: true, force: true });
@@ -366,6 +383,7 @@ test("loadLocalReviewRepairContext loads committed guardrails when local history
   const summaryPath = path.join(reviewDir, "head-deadbeef.md");
   const findingsPath = path.join(reviewDir, "head-deadbeef.json");
   const durableGuardrailPath = path.join(workspaceDir, "docs", "shared-memory", "external-review-guardrails.json");
+  const verifierGuardrailPath = path.join(workspaceDir, "docs", "shared-memory", "verifier-guardrails.json");
 
   await fs.mkdir(path.dirname(durableGuardrailPath), { recursive: true });
   await fs.mkdir(reviewDir, { recursive: true });
@@ -402,6 +420,23 @@ test("loadLocalReviewRepairContext loads committed guardrails when local history
     }),
     "utf8",
   );
+  await fs.writeFile(
+    verifierGuardrailPath,
+    JSON.stringify({
+      version: 1,
+      rules: [
+        {
+          id: "permission-fallback",
+          title: "Re-check permission fallback invariants",
+          file: "src/auth.ts",
+          line: 42,
+          summary: "Verify that every fallback path still enforces the permission guard before returning privileged data.",
+          rationale: "A prior confirmed verifier miss cleared a similar fallback too early; require a direct read of the guard path before dismissing the finding.",
+        },
+      ],
+    }),
+    "utf8",
+  );
 
   const context = await loadLocalReviewRepairContext(summaryPath, workspaceDir);
 
@@ -423,6 +458,16 @@ test("loadLocalReviewRepairContext loads committed guardrails when local history
         sourceArtifactPath: "/tmp/reviews/issue-46/external-review-misses-head-old.json",
         sourceHeadSha: "oldhead123",
         lastSeenAt: "2026-03-12T00:00:00Z",
+      },
+    ],
+    verifierGuardrails: [
+      {
+        id: "permission-fallback",
+        title: "Re-check permission fallback invariants",
+        file: "src/auth.ts",
+        line: 42,
+        summary: "Verify that every fallback path still enforces the permission guard before returning privileged data.",
+        rationale: "A prior confirmed verifier miss cleared a similar fallback too early; require a direct read of the guard path before dismissing the finding.",
       },
     ],
   });
@@ -488,6 +533,54 @@ test("loadLocalReviewRepairContext surfaces malformed committed durable guardrai
   await assert.rejects(
     loadLocalReviewRepairContext(summaryPath, workspaceDir),
     /Invalid durable external review guardrails in .*external-review-guardrails\.json: version must be 1\./,
+  );
+
+  await fs.rm(workspaceDir, { recursive: true, force: true });
+});
+
+test("loadLocalReviewRepairContext surfaces malformed committed verifier guardrails", async () => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-fix-invalid-verifier-guardrails-test-"));
+  const reviewDir = path.join(workspaceDir, "reviews");
+  const summaryPath = path.join(reviewDir, "head-deadbeef.md");
+  const findingsPath = path.join(reviewDir, "head-deadbeef.json");
+  const verifierGuardrailPath = path.join(workspaceDir, "docs", "shared-memory", "verifier-guardrails.json");
+
+  await fs.mkdir(path.dirname(verifierGuardrailPath), { recursive: true });
+  await fs.mkdir(reviewDir, { recursive: true });
+  await fs.writeFile(summaryPath, "# summary\n", "utf8");
+  await fs.writeFile(
+    findingsPath,
+    JSON.stringify({
+      branch: "codex/issue-46",
+      headSha: "deadbeef",
+      actionableFindings: [{ file: "src/auth.ts" }],
+      rootCauseSummaries: [
+        { severity: "high", summary: "Permission guard retry path is fragile", file: "src/auth.ts", start: 40, end: 44 },
+      ],
+    }),
+    "utf8",
+  );
+  await fs.writeFile(
+    verifierGuardrailPath,
+    JSON.stringify({
+      version: 1,
+      rules: [
+        {
+          id: "permission-fallback",
+          title: "",
+          file: "src/auth.ts",
+          line: 42,
+          summary: "Verify the permission guard path.",
+          rationale: "Read the guard path directly before dismissing the finding.",
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  await assert.rejects(
+    loadLocalReviewRepairContext(summaryPath, workspaceDir),
+    /Invalid verifier guardrails in .*verifier-guardrails\.json: rules\[0\]\.title must be a non-empty string\./,
   );
 
   await fs.rm(workspaceDir, { recursive: true, force: true });

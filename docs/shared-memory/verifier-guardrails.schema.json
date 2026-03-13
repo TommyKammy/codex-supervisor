@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/verifier-guardrails.schema.json",
+  "title": "Verifier Guardrails",
+  "description": "Repo-committed durable verifier guidance promoted from confirmed misses.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "rules"],
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "Schema version for committed verifier guardrails."
+    },
+    "rules": {
+      "type": "array",
+      "description": "Verifier-specific guardrails applied during repair and verifier turns.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "file", "line", "summary", "rationale"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "file": { "type": "string", "minLength": 1 },
+          "line": {
+            "type": ["integer", "null"],
+            "minimum": 1
+          },
+          "summary": { "type": "string", "minLength": 1 },
+          "rationale": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}
