@@ -37,7 +37,7 @@ function parseList(input: string): string[] {
 }
 
 export function parseIssueMetadata(issue: GitHubIssue): IssueMetadata {
-  const parentMatch = issue.body.match(/^\s*Part of #(\d+)\s*$/im);
+  const parentMatch = issue.body.match(/^\s*Part of:?\s+#(\d+)\s*$/im);
   const orderMatch = issue.body.match(/^\s*##\s*Execution order\s*$[\r\n]+^\s*(\d+)\s+of\s+(\d+)\s*$/im);
   const dependsOnMatch = issue.body.match(/^\s*Depends on:\s*(.+)\s*$/im);
   const parallelGroupMatch = issue.body.match(/^\s*Parallel group:\s*(.+)\s*$/im);
