@@ -91,6 +91,8 @@ function createIssueRecord(config: SupervisorConfig, issueNumber: number): Issue
 }
 
 const MAX_PROCESSED_REVIEW_THREAD_IDS = 200;
+const COPILOT_REVIEW_PROPAGATION_GRACE_MS = 5_000;
+const COPILOT_REVIEWER_LOGIN = "copilot-pull-request-reviewer";
 
 function trimProcessedReviewThreadIds(ids: string[]): string[] {
   if (ids.length <= MAX_PROCESSED_REVIEW_THREAD_IDS) {
@@ -933,6 +935,42 @@ function determineCopilotReviewTimeout(
   };
 }
 
+function repoExpectsCopilotReview(config: SupervisorConfig): boolean {
+  return config.reviewBotLogins.includes(COPILOT_REVIEWER_LOGIN);
+}
+
+function shouldWaitForCopilotReviewPropagation(
+  config: SupervisorConfig,
+  record: Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha">,
+  pr: GitHubPullRequest,
+): boolean {
+  if (
+    !repoExpectsCopilotReview(config) ||
+    config.copilotReviewWaitMinutes <= 0 ||
+    pr.isDraft ||
+    pr.headRefOid !== record.review_wait_head_sha
+  ) {
+    return false;
+  }
+
+  const lifecycleState = pr.copilotReviewState ?? "not_requested";
+  if (lifecycleState === "requested" || lifecycleState === "arrived") {
+    return false;
+  }
+
+  const startedAt = record.review_wait_started_at;
+  if (!startedAt) {
+    return false;
+  }
+
+  const startedAtMs = Date.parse(startedAt);
+  if (Number.isNaN(startedAtMs)) {
+    return false;
+  }
+
+  return Date.now() < startedAtMs + COPILOT_REVIEW_PROPAGATION_GRACE_MS;
+}
+
 function buildCopilotReviewTimeoutFailureContext(
   config: SupervisorConfig,
   record: IssueRunRecord,
@@ -1140,6 +1178,10 @@ export function inferStateFromPullRequest(
   const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
   if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
     return "blocked";
+  }
+
+  if (shouldWaitForCopilotReviewPropagation(config, record, pr)) {
+    return "waiting_ci";
   }
 
   if ((pr.copilotReviewState ?? "not_requested") === "requested" && !copilotTimeout.timedOut) {
