@@ -2305,8 +2305,8 @@ export class Supervisor {
         state.issues[String(record.issue_number)] = record;
         state.activeIssueNumber = null;
         await this.stateStore.save(state);
-        await issueLock.release();
         shouldReleaseIssueLock = false;
+        await issueLock.release();
         return { kind: "restart" };
       }
 
@@ -2320,8 +2320,8 @@ export class Supervisor {
         state.issues[String(record.issue_number)] = record;
         state.activeIssueNumber = null;
         await this.stateStore.save(state);
-        await issueLock.release();
         shouldReleaseIssueLock = false;
+        await issueLock.release();
         return { kind: "restart" };
       }
 
@@ -2352,8 +2352,8 @@ export class Supervisor {
         state.issues[String(record.issue_number)] = record;
         state.activeIssueNumber = null;
         await this.stateStore.save(state);
-        await issueLock.release();
         shouldReleaseIssueLock = false;
+        await issueLock.release();
         return `Issue #${record.issue_number} reached max ${budgetLaneBeforeWorkspace} Codex attempts.`;
       }
 
