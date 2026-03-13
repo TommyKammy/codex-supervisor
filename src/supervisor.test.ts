@@ -131,6 +131,20 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
   };
 }
 
+function executionReadyBody(summary: string): string {
+  return `## Summary
+${summary}
+
+## Scope
+- keep the test fixture execution-ready
+
+## Acceptance criteria
+- supervisor treats this issue as runnable
+
+## Verification
+- npm test -- src/supervisor.test.ts`;
+}
+
 function withStubbedDateNow<T>(nowIso: string, run: () => T): T {
   const originalDateNow = Date.now;
   Date.now = () => Date.parse(nowIso);
@@ -381,7 +395,7 @@ test("runOnce recovers when post-codex refresh throws after leaving a dirty work
   const issue: GitHubIssue = {
     number: issueNumber,
     title: "Reproduce dirty worktree recovery",
-    body: "",
+    body: executionReadyBody("Reproduce dirty worktree recovery."),
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
@@ -619,7 +633,7 @@ test("runOnce dry-run selects an issue and hydrates workspace and PR context bef
   const issue: GitHubIssue = {
     number: issueNumber,
     title: "Extract supervisor setup helpers",
-    body: "",
+    body: executionReadyBody("Extract supervisor setup helpers."),
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
@@ -738,6 +752,193 @@ test("runOnce returns no matching issue when no runnable candidate is available"
   assert.deepEqual(persisted.issues, {});
 });
 
+test("runOnce moves a non-ready issue into blocked(requirements) with missing requirements", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 91;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Underspecified issue",
+    body: `## Summary
+Add execution-ready gating.`,
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async () => {
+      throw new Error("unexpected resolvePullRequestForBranch call");
+    },
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.equal(message, "No matching open issue found.");
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(persisted.activeIssueNumber, null);
+  assert.equal(record.state, "blocked");
+  assert.equal(record.blocked_reason, "requirements");
+  assert.match(
+    record.last_error ?? "",
+    /missing required execution-ready metadata: scope, acceptance criteria, verification/i,
+  );
+  assert.equal(record.last_failure_context?.category, "blocked");
+  assert.match(
+    record.last_failure_context?.summary ?? "",
+    /issue #91 is not execution-ready because it is missing: scope, acceptance criteria, verification/i,
+  );
+  assert.deepEqual(record.last_failure_context?.details ?? [], [
+    "missing_required=scope, acceptance criteria, verification",
+    "missing_recommended=depends on, execution order",
+  ]);
+});
+
+test("runOnce still prefers a ready issue over dependency-blocked candidates", async () => {
+  const fixture = await createSupervisorFixture();
+  const dependencyIssueNumber = 91;
+  const blockedIssueNumber = 92;
+  const readyIssueNumber = 93;
+  const readyBranch = branchName(fixture.config, readyIssueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(dependencyIssueNumber)]: createRecord({
+        issue_number: dependencyIssueNumber,
+        state: "failed",
+        branch: branchName(fixture.config, dependencyIssueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${dependencyIssueNumber}`),
+        journal_path: null,
+        blocked_reason: null,
+        last_failure_kind: "command_error",
+        last_error: "previous failure",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const dependencyIssue: GitHubIssue = {
+    number: dependencyIssueNumber,
+    title: "Step 1",
+    body: `## Summary
+Do the first step.
+
+## Scope
+- implement the dependency
+
+## Acceptance criteria
+- dependency lands first
+
+## Verification
+- npm test -- src/supervisor.test.ts
+
+Part of: #150
+Execution order: 1 of 2`,
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${dependencyIssueNumber}`,
+    state: "OPEN",
+  };
+  const dependencyBlockedIssue: GitHubIssue = {
+    number: blockedIssueNumber,
+    title: "Step 2",
+    body: `## Summary
+Do the second step.
+
+## Scope
+- wait for the first step
+
+## Acceptance criteria
+- execution order respected
+
+## Verification
+- npm test -- src/supervisor.test.ts
+
+Part of: #150
+Execution order: 2 of 2`,
+    createdAt: "2026-03-13T00:05:00Z",
+    updatedAt: "2026-03-13T00:05:00Z",
+    url: `https://example.test/issues/${blockedIssueNumber}`,
+    state: "OPEN",
+  };
+  const readyIssue: GitHubIssue = {
+    number: readyIssueNumber,
+    title: "Independent ready issue",
+    body: `## Summary
+Ship the ready issue.
+
+## Scope
+- implement the ready issue
+
+## Acceptance criteria
+- dry run selects this issue
+
+## Verification
+- npm test -- src/supervisor.test.ts`,
+    createdAt: "2026-03-13T00:10:00Z",
+    updatedAt: "2026-03-13T00:10:00Z",
+    url: `https://example.test/issues/${readyIssueNumber}`,
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [dependencyIssue, dependencyBlockedIssue, readyIssue],
+    listCandidateIssues: async () => [dependencyIssue, dependencyBlockedIssue, readyIssue],
+    getIssue: async (issueNumber: number) => {
+      assert.equal(issueNumber, readyIssueNumber);
+      return readyIssue;
+    },
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      assert.equal(branchName, readyBranch);
+      assert.equal(prNumber, null);
+      return null;
+    },
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(message, /Dry run: would invoke Codex for issue #93\./);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  assert.equal(persisted.activeIssueNumber, readyIssueNumber);
+  assert.equal(persisted.issues[String(readyIssueNumber)]?.branch, readyBranch);
+  assert.equal(persisted.issues[String(blockedIssueNumber)], undefined);
+  assert.equal(persisted.issues[String(dependencyIssueNumber)]?.state, "failed");
+});
+
 test("runOnce releases the current issue lock before restarting after a merged PR", async () => {
   const fixture = await createSupervisorFixture();
   const mergedIssueNumber = 91;
@@ -769,7 +970,7 @@ test("runOnce releases the current issue lock before restarting after a merged P
   const mergedIssue: GitHubIssue = {
     number: mergedIssueNumber,
     title: "Merged PR issue",
-    body: "",
+    body: executionReadyBody("Merged PR issue."),
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${mergedIssueNumber}`,
@@ -778,7 +979,7 @@ test("runOnce releases the current issue lock before restarting after a merged P
   const nextIssue: GitHubIssue = {
     number: nextIssueNumber,
     title: "Next runnable issue",
-    body: "",
+    body: executionReadyBody("Next runnable issue."),
     createdAt: "2026-03-13T00:05:00Z",
     updatedAt: "2026-03-13T00:05:00Z",
     url: `https://example.test/issues/${nextIssueNumber}`,
@@ -875,7 +1076,7 @@ test("runOnce clears a stale active issue reservation before selecting the next 
   const staleIssue: GitHubIssue = {
     number: staleIssueNumber,
     title: "Previously active issue",
-    body: "",
+    body: executionReadyBody("Previously active issue."),
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${staleIssueNumber}`,
@@ -884,7 +1085,7 @@ test("runOnce clears a stale active issue reservation before selecting the next 
   const nextIssue: GitHubIssue = {
     number: nextIssueNumber,
     title: "Higher-priority runnable issue",
-    body: "",
+    body: executionReadyBody("Higher-priority runnable issue."),
     createdAt: "2026-03-13T00:05:00Z",
     updatedAt: "2026-03-13T00:05:00Z",
     url: `https://example.test/issues/${nextIssueNumber}`,
@@ -1020,7 +1221,7 @@ test("runOnce reconciles inactive merging records whose tracked PR already merge
   const nextIssue: GitHubIssue = {
     number: nextIssueNumber,
     title: "Next runnable issue",
-    body: "",
+    body: executionReadyBody("Next runnable issue."),
     createdAt: "2026-03-13T00:05:00Z",
     updatedAt: "2026-03-13T00:05:00Z",
     url: `https://example.test/issues/${nextIssueNumber}`,
@@ -1465,7 +1666,7 @@ test("runOnce records an observed Copilot request time when GitHub omits the req
   const issue: GitHubIssue = {
     number: issueNumber,
     title: "Persist observed Copilot request time",
-    body: "",
+    body: executionReadyBody("Persist observed Copilot request time."),
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,

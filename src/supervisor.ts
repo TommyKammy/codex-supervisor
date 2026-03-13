@@ -4,7 +4,7 @@ import { buildCodexPrompt, extractBlockedReason, extractFailureSignature, extrac
 import { loadConfig } from "./config";
 import { ExternalReviewMissContext, loadRelevantExternalReviewMissPatterns, writeExternalReviewMissArtifact } from "./external-review-misses";
 import { GitHubClient } from "./github";
-import { findBlockingIssue, findParentIssuesReadyToClose } from "./issue-metadata";
+import { findBlockingIssue, findParentIssuesReadyToClose, lintExecutionReadyIssueBody } from "./issue-metadata";
 import { describeGsdIntegration } from "./gsd";
 import { hasMeaningfulJournalHandoff, issueJournalPath, readIssueJournal, syncIssueJournal } from "./journal";
 import { acquireFileLock, inspectFileLock, LockHandle } from "./lock";
@@ -417,6 +417,34 @@ function buildAuthFailureContext(message: string): FailureContext {
   };
 }
 
+function formatExecutionReadyMissingFields(fields: string[]): string {
+  return fields.join(", ");
+}
+
+function buildExecutionReadyFailureContext(
+  issue: Pick<GitHubIssue, "number" | "url">,
+  missingRequired: string[],
+  missingRecommended: string[],
+): FailureContext {
+  const missingRequiredText = formatExecutionReadyMissingFields(missingRequired);
+  return {
+    category: "blocked",
+    summary:
+      `Issue #${issue.number} is not execution-ready because it is missing: ` +
+      `${missingRequiredText}.`,
+    signature: `requirements:${missingRequired.join("|")}`,
+    command: null,
+    details: [
+      `missing_required=${missingRequiredText}`,
+      `missing_recommended=${
+        missingRecommended.length > 0 ? formatExecutionReadyMissingFields(missingRecommended) : "none"
+      }`,
+    ],
+    url: issue.url,
+    updated_at: nowIso(),
+  };
+}
+
 async function handleAuthFailure(
   github: GitHubClient,
   stateStore: StateStore,
@@ -616,6 +644,10 @@ function hasAttemptBudgetRemaining(
   lane: AttemptLane,
 ): boolean {
   return attemptsUsedForLane(record, lane) < attemptBudgetForLane(config, lane);
+}
+
+function shouldEnforceExecutionReady(record: Pick<IssueRunRecord, "attempt_count" | "pr_number"> | undefined | null): boolean {
+  return (record?.pr_number ?? null) === null && (record?.attempt_count ?? 0) === 0;
 }
 
 function incrementAttemptCounters(
@@ -1372,13 +1404,23 @@ async function buildReadinessSummary(
       continue;
     }
 
+    const existing = state.issues[String(issue.number)];
+    if (shouldEnforceExecutionReady(existing)) {
+      const readiness = lintExecutionReadyIssueBody(issue);
+      if (!readiness.isExecutionReady) {
+        blocked.push(
+          `#${issue.number} blocked_by=requirements:${formatExecutionReadyMissingFields(readiness.missingRequired)}`,
+        );
+        continue;
+      }
+    }
+
     const blockingIssue = findBlockingIssue(issue, issues, state);
     if (blockingIssue) {
       blocked.push(`#${issue.number} blocked_by=${blockingIssue.reason}`);
       continue;
     }
 
-    const existing = state.issues[String(issue.number)];
     if (!isEligibleForSelection(existing, config)) {
       blocked.push(
         `#${issue.number} blocked_by=local_state:${existing?.state ?? "unknown"}`,
@@ -2092,40 +2134,66 @@ export async function reconcileRecoverableBlockedIssueStates(
 ): Promise<RecoveryEvent[]> {
   let changed = false;
   const recoveryEvents: RecoveryEvent[] = [];
-  const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
+  const issuesByNumber = new Map(issues.map((issue) => [issue.number, issue]));
 
   for (const record of Object.values(state.issues)) {
-    if (!shouldAutoRetryHandoffMissing(record, config)) {
+    const issue = issuesByNumber.get(record.issue_number);
+    if (!issue || issue.state !== "OPEN") {
       continue;
     }
 
-    if (issueStateByNumber.get(record.issue_number) !== "OPEN") {
+    if (shouldAutoRetryHandoffMissing(record, config)) {
+      const recoveryEvent = buildRecoveryEvent(
+        record.issue_number,
+        `stale_state_cleanup: requeued issue #${record.issue_number} after recovering a missing handoff`,
+      );
+      const updated = stateStore.touch(record, {
+        state: "queued",
+        blocked_reason: null,
+        last_error: null,
+        last_failure_kind: null,
+        last_blocker_signature: null,
+        codex_session_id: null,
+        review_wait_started_at: null,
+        review_wait_head_sha: null,
+        copilot_review_requested_observed_at: null,
+        copilot_review_requested_head_sha: null,
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+        ...applyRecoveryEvent({}, recoveryEvent),
+      });
+      state.issues[String(record.issue_number)] = updated;
+      changed = true;
+      recoveryEvents.push(recoveryEvent);
       continue;
     }
 
-    const recoveryEvent = buildRecoveryEvent(
-      record.issue_number,
-      `stale_state_cleanup: requeued issue #${record.issue_number} after recovering a missing handoff`,
-    );
-    const updated = stateStore.touch(record, {
-      state: "queued",
-      blocked_reason: null,
-      last_error: null,
-      last_failure_kind: null,
-      last_blocker_signature: null,
-      codex_session_id: null,
-      review_wait_started_at: null,
-      review_wait_head_sha: null,
-      copilot_review_requested_observed_at: null,
-      copilot_review_requested_head_sha: null,
-      copilot_review_timed_out_at: null,
-      copilot_review_timeout_action: null,
-      copilot_review_timeout_reason: null,
-      ...applyRecoveryEvent({}, recoveryEvent),
-    });
-    state.issues[String(record.issue_number)] = updated;
-    changed = true;
-    recoveryEvents.push(recoveryEvent);
+    if (record.state === "blocked" && record.blocked_reason === "requirements") {
+      const readiness = lintExecutionReadyIssueBody(issue);
+      if (!readiness.isExecutionReady) {
+        continue;
+      }
+
+      const recoveryEvent = buildRecoveryEvent(
+        record.issue_number,
+        `requirements_recovered: requeued issue #${record.issue_number} after execution-ready metadata was added`,
+      );
+      const updated = stateStore.touch(record, {
+        state: "queued",
+        blocked_reason: null,
+        last_error: null,
+        last_failure_kind: null,
+        last_failure_context: null,
+        last_blocker_signature: null,
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+        ...applyRecoveryEvent({}, recoveryEvent),
+      });
+      state.issues[String(record.issue_number)] = updated;
+      changed = true;
+      recoveryEvents.push(recoveryEvent);
+    }
   }
 
   if (changed) {
@@ -2360,6 +2428,42 @@ export class Supervisor {
         shouldReleaseIssueLock = false;
         await issueLock.release();
         return { kind: "restart" };
+      }
+
+      if (shouldEnforceExecutionReady(record)) {
+        const readiness = lintExecutionReadyIssueBody(issue);
+        if (!readiness.isExecutionReady) {
+          const failureContext = buildExecutionReadyFailureContext(
+            issue,
+            readiness.missingRequired,
+            readiness.missingRecommended,
+          );
+          const blockedRecord = this.stateStore.touch(record, {
+            state: "blocked",
+            last_error: truncate(
+              `Missing required execution-ready metadata: ${formatExecutionReadyMissingFields(readiness.missingRequired)}.`,
+              1000,
+            ),
+            last_failure_kind: null,
+            last_failure_context: failureContext,
+            ...applyFailureSignature(record, failureContext),
+            blocked_reason: "requirements",
+          });
+          state.issues[String(blockedRecord.issue_number)] = blockedRecord;
+          state.activeIssueNumber = null;
+          await this.stateStore.save(state);
+          if (blockedRecord.journal_path) {
+            await syncIssueJournal({
+              issue,
+              record: blockedRecord,
+              journalPath: blockedRecord.journal_path,
+              maxChars: this.config.issueJournalMaxChars,
+            });
+          }
+          shouldReleaseIssueLock = false;
+          await issueLock.release();
+          return { kind: "restart" };
+        }
       }
 
       const candidateIssues = await this.github.listCandidateIssues();
