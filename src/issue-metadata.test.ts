@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { findParentIssuesReadyToClose, parseIssueMetadata } from "./issue-metadata";
+import { findParentIssuesReadyToClose, lintExecutionReadyIssueBody, parseIssueMetadata } from "./issue-metadata";
 import { GitHubIssue } from "./types";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
@@ -47,4 +47,95 @@ test("findParentIssuesReadyToClose treats both parent metadata formats as the sa
       },
     ],
   );
+});
+
+test("parseIssueMetadata accepts both execution order metadata formats", () => {
+  const headingFormat = createIssue({
+    body: "## Execution order\n2 of 4",
+  });
+  const singleLineFormat = createIssue({
+    body: "Execution order: 3 of 5",
+  });
+
+  assert.deepEqual(
+    {
+      executionOrderIndex: parseIssueMetadata(headingFormat).executionOrderIndex,
+      executionOrderTotal: parseIssueMetadata(headingFormat).executionOrderTotal,
+    },
+    {
+      executionOrderIndex: 2,
+      executionOrderTotal: 4,
+    },
+  );
+  assert.deepEqual(
+    {
+      executionOrderIndex: parseIssueMetadata(singleLineFormat).executionOrderIndex,
+      executionOrderTotal: parseIssueMetadata(singleLineFormat).executionOrderTotal,
+    },
+    {
+      executionOrderIndex: 3,
+      executionOrderTotal: 5,
+    },
+  );
+});
+
+test("lintExecutionReadyIssueBody accepts a complete execution-ready issue body", () => {
+  const issue = createIssue({
+    body: `## Summary
+Add deterministic issue-body linting for execution-ready metadata.
+
+## Scope
+- lint execution-ready metadata
+- keep output deterministic
+
+Depends on: none
+Execution order: 1 of 4
+
+## Acceptance criteria
+- valid issues pass linting
+- invalid issues report missing metadata
+
+## Verification
+- npm test -- src/issue-metadata.test.ts`,
+  });
+
+  assert.deepEqual(lintExecutionReadyIssueBody(issue), {
+    isExecutionReady: true,
+    missingRequired: [],
+    missingRecommended: [],
+  });
+});
+
+test("lintExecutionReadyIssueBody reports missing required and recommended metadata deterministically", () => {
+  const issue = createIssue({
+    body: `## Summary
+Add deterministic issue-body linting for execution-ready metadata.`,
+  });
+
+  assert.deepEqual(lintExecutionReadyIssueBody(issue), {
+    isExecutionReady: false,
+    missingRequired: ["scope", "acceptance criteria", "verification"],
+    missingRecommended: ["depends on", "execution order"],
+  });
+});
+
+test("lintExecutionReadyIssueBody treats ##Heading without a space as the next section", () => {
+  const issue = createIssue({
+    body: `## Summary
+
+##Scope
+- keep scope content out of summary
+
+## Acceptance criteria
+- summary is still missing
+
+## Verification
+- npx tsx --test src/issue-metadata.test.ts`,
+  });
+
+  assert.deepEqual(lintExecutionReadyIssueBody(issue), {
+    isExecutionReady: false,
+    missingRequired: ["summary"],
+    missingRecommended: ["depends on", "execution order"],
+  });
 });
