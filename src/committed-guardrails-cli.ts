@@ -2,7 +2,6 @@ import path from "node:path";
 import {
   formatCommittedGuardrails,
   syncCommittedGuardrails,
-  validateCommittedGuardrails,
 } from "./committed-guardrails";
 
 type Command = "check" | "fix";
@@ -49,7 +48,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  await validateCommittedGuardrails(workspacePath);
   const formatted = await formatCommittedGuardrails(workspacePath);
   const driftedPaths = [formatted.verifier, formatted.externalReview].filter((entry) => entry.updated).map((entry) => entry.path);
   if (driftedPaths.length > 0) {

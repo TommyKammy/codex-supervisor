@@ -12,6 +12,18 @@ interface DurableVerifierGuardrails {
   rules: VerifierGuardrailRule[];
 }
 
+interface FormattedGuardrailFile<TDocument> {
+  path: string;
+  document: TDocument;
+  contents: string;
+  updated: boolean;
+}
+
+interface FormattedCommittedGuardrails {
+  verifier: FormattedGuardrailFile<DurableVerifierGuardrails>;
+  externalReview: FormattedGuardrailFile<DurableExternalReviewGuardrails>;
+}
+
 export const VERIFIER_GUARDRAILS_PATH = path.join("docs", "shared-memory", "verifier-guardrails.json");
 export const EXTERNAL_REVIEW_GUARDRAILS_PATH = path.join("docs", "shared-memory", "external-review-guardrails.json");
 const VERIFIER_GUARDRAILS_VERSION = 1;
@@ -308,39 +320,31 @@ export async function loadCommittedExternalReviewGuardrails(workspacePath: strin
 }
 
 export async function validateCommittedGuardrails(workspacePath: string): Promise<void> {
-  await Promise.all([
-    loadCommittedVerifierGuardrails(workspacePath),
-    loadCommittedExternalReviewGuardrails(workspacePath),
-  ]);
+  await formatCommittedGuardrails(workspacePath);
 }
 
-export async function formatCommittedGuardrails(workspacePath: string): Promise<{
-  verifier: { path: string; contents: string; updated: boolean };
-  externalReview: { path: string; contents: string; updated: boolean };
-}> {
+export async function formatCommittedGuardrails(workspacePath: string): Promise<FormattedCommittedGuardrails> {
   const verifierPath = path.join(workspacePath, VERIFIER_GUARDRAILS_PATH);
   const externalReviewPath = path.join(workspacePath, EXTERNAL_REVIEW_GUARDRAILS_PATH);
-  const [verifierRaw, externalReviewRaw] = await Promise.all([
-    readGuardrailDocument(verifierPath),
-    readGuardrailDocument(externalReviewPath),
-  ]);
-
+  const verifierRaw = await readGuardrailDocument(verifierPath);
   const verifier = parseVerifierGuardrails(verifierRaw, verifierPath);
   verifier.rules.sort(compareVerifierGuardrails);
+  const verifierContents = `${JSON.stringify(verifier, null, 2)}\n`;
+  const externalReviewRaw = await readGuardrailDocument(externalReviewPath);
   const externalReview = parseExternalReviewGuardrails(externalReviewRaw, externalReviewPath);
   externalReview.patterns.sort(compareExternalReviewPatterns);
-
-  const verifierContents = `${JSON.stringify(verifier, null, 2)}\n`;
   const externalReviewContents = `${JSON.stringify(externalReview, null, 2)}\n`;
 
   return {
     verifier: {
       path: verifierPath,
+      document: verifier,
       contents: verifierContents,
       updated: verifierRaw !== verifierContents,
     },
     externalReview: {
       path: externalReviewPath,
+      document: externalReview,
       contents: externalReviewContents,
       updated: externalReviewRaw !== externalReviewContents,
     },
@@ -353,10 +357,10 @@ export async function syncCommittedGuardrails(workspacePath: string): Promise<{
 }> {
   const formatted = await formatCommittedGuardrails(workspacePath);
   if (formatted.verifier.updated) {
-    await writeJsonAtomic(formatted.verifier.path, JSON.parse(formatted.verifier.contents));
+    await writeJsonAtomic(formatted.verifier.path, formatted.verifier.document);
   }
   if (formatted.externalReview.updated) {
-    await writeJsonAtomic(formatted.externalReview.path, JSON.parse(formatted.externalReview.contents));
+    await writeJsonAtomic(formatted.externalReview.path, formatted.externalReview.document);
   }
 
   return {

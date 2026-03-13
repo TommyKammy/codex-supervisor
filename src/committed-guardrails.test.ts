@@ -102,6 +102,77 @@ test("validateCommittedGuardrails rejects duplicate committed verifier ids and d
   await fs.rm(workspaceDir, { recursive: true, force: true });
 });
 
+test("validateCommittedGuardrails reports verifier failures before external-review failures in a stable order", async () => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "committed-guardrails-stable-errors-test-"));
+  const sharedMemoryDir = path.join(workspaceDir, "docs", "shared-memory");
+  await fs.mkdir(sharedMemoryDir, { recursive: true });
+
+  await fs.writeFile(
+    path.join(sharedMemoryDir, "verifier-guardrails.json"),
+    JSON.stringify({
+      version: 1,
+      rules: [
+        {
+          id: "duplicate-id",
+          title: "First verifier rule",
+          file: "src/retry.ts",
+          line: 15,
+          summary: "First rule.",
+          rationale: "Keep ids unique.",
+        },
+        {
+          id: " duplicate-id ",
+          title: "Second verifier rule",
+          file: "src/retry.ts",
+          line: 16,
+          summary: "Second rule.",
+          rationale: "This should fail first.",
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  await fs.writeFile(
+    path.join(sharedMemoryDir, "external-review-guardrails.json"),
+    JSON.stringify({
+      version: 1,
+      patterns: [
+        {
+          fingerprint: "src/auth.ts|permission",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 42,
+          summary: "Permission guard is bypassed.",
+          rationale: "Keep fingerprints unique.",
+          sourceArtifactPath: "external-review-misses-head-old.json",
+          sourceHeadSha: "oldhead",
+          lastSeenAt: "2026-03-10T00:00:00Z",
+        },
+        {
+          fingerprint: " src/auth.ts|permission ",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 43,
+          summary: "Duplicate fingerprint.",
+          rationale: "This should fail second.",
+          sourceArtifactPath: "external-review-misses-head-new.json",
+          sourceHeadSha: "newhead",
+          lastSeenAt: "2026-03-11T00:00:00Z",
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  await assert.rejects(
+    validateCommittedGuardrails(workspaceDir),
+    /Duplicate verifier guardrail id "duplicate-id" in .*verifier-guardrails\.json at rules\[1\]\./,
+  );
+
+  await fs.rm(workspaceDir, { recursive: true, force: true });
+});
+
 test("formatCommittedGuardrails rewrites committed guardrails into canonical sorted JSON", async () => {
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "committed-guardrails-format-test-"));
   const sharedMemoryDir = path.join(workspaceDir, "docs", "shared-memory");
