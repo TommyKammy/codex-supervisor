@@ -887,6 +887,73 @@ Add execution-ready gating.`,
   ]);
 });
 
+test("status shows readiness reasons for runnable and requirements-blocked issues", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "91": createRecord({
+        issue_number: 91,
+        state: "done",
+        branch: branchName(fixture.config, 91),
+        workspace: path.join(fixture.workspaceRoot, "issue-91"),
+        journal_path: null,
+        blocked_reason: null,
+        last_error: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const runnableIssue: GitHubIssue = {
+    number: 92,
+    title: "Step 2",
+    body: `## Summary
+Ship the second step.
+
+## Scope
+- build on the completed dependency
+
+## Acceptance criteria
+- supervisor can explain why this issue is runnable
+
+## Verification
+- npm test -- src/supervisor.test.ts
+
+Depends on: #91`,
+    createdAt: "2026-03-13T00:05:00Z",
+    updatedAt: "2026-03-13T00:05:00Z",
+    url: "https://example.test/issues/92",
+    state: "OPEN",
+  };
+  const missingMetadataIssue: GitHubIssue = {
+    number: 93,
+    title: "Underspecified issue",
+    body: `## Summary
+Missing execution-ready metadata.`,
+    createdAt: "2026-03-13T00:10:00Z",
+    updatedAt: "2026-03-13T00:10:00Z",
+    url: "https://example.test/issues/93",
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [runnableIssue, missingMetadataIssue],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const status = await supervisor.status();
+
+  assert.match(status, /runnable_issues=#92 ready=execution_ready\+depends_on_satisfied:91/);
+  assert.match(
+    status,
+    /blocked_issues=#93 blocked_by=requirements:scope, acceptance criteria, verification/,
+  );
+});
+
 test("runOnce still prefers a ready issue over dependency-blocked candidates", async () => {
   const fixture = await createSupervisorFixture();
   const dependencyIssueNumber = 91;
