@@ -800,7 +800,7 @@ export class GitHubClient {
                 isOutdated
                 path
                 line
-                comments(first: 20) {
+                comments(first: 100) {
                   nodes {
                     id
                     body
@@ -936,7 +936,7 @@ export class GitHubClient {
             }
             reviewThreads(first: 100) {
               nodes {
-                comments(first: 20) {
+                comments(first: 100) {
                   nodes {
                     createdAt
                     author {

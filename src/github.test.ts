@@ -152,6 +152,91 @@ test("inferCopilotReviewLifecycle returns arrived when Copilot comments on a rev
   });
 });
 
+test("GitHubClient hydrates Copilot arrival from long review threads without truncating comments to 20", async () => {
+  const config = createConfig();
+  let lifecycleQuery: string | null = null;
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "pr" && args[1] === "view") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          number: 44,
+          title: "Long review thread",
+          url: "https://example.test/pr/44",
+          state: "OPEN",
+          createdAt: "2026-03-13T00:00:00Z",
+          updatedAt: "2026-03-13T00:00:00Z",
+          isDraft: false,
+          reviewDecision: null,
+          mergeStateStatus: "CLEAN",
+          mergeable: "MERGEABLE",
+          headRefName: "codex/issue-113",
+          headRefOid: "head-44",
+          mergedAt: null,
+        }),
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "graphql") {
+      lifecycleQuery = args.find((arg) => arg.startsWith("query=")) ?? null;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: {
+                  nodes: [],
+                },
+                reviews: {
+                  nodes: [],
+                },
+                reviewThreads: {
+                  nodes: [
+                    {
+                      comments: {
+                        nodes: Array.from({ length: 25 }, (_, index) => ({
+                          createdAt: `2026-03-13T02:${String(index).padStart(2, "0")}:00Z`,
+                          author: {
+                            login: index === 24 ? "copilot-pull-request-reviewer" : "octocat",
+                          },
+                        })),
+                      },
+                    },
+                  ],
+                },
+                timelineItems: {
+                  nodes: [
+                    {
+                      __typename: "ReviewRequestedEvent",
+                      createdAt: "2026-03-13T01:02:03Z",
+                      requestedReviewer: {
+                        login: "copilot-pull-request-reviewer",
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const pr = await client.getPullRequest(44);
+
+  assert.ok(lifecycleQuery);
+  assert.match(lifecycleQuery, /comments\(first:\s*100\)/);
+  assert.equal(pr.copilotReviewState, "arrived");
+  assert.equal(pr.copilotReviewRequestedAt, "2026-03-13T01:02:03Z");
+  assert.equal(pr.copilotReviewArrivedAt, "2026-03-13T02:24:00Z");
+});
+
 test("isTransientGitHubCommandFailure matches connection reset GraphQL failures", () => {
   assert.equal(
     isTransientGitHubCommandFailure(

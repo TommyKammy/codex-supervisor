@@ -843,6 +843,99 @@ test("runOnce waits for Copilot propagation after marking a draft PR ready", asy
   assert.equal(autoMergeCalls, 0);
 });
 
+test("runOnce records an observed Copilot request time when GitHub omits the request timestamp", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 115;
+  const branch = branchName(fixture.config, issueNumber);
+  const config = createConfig({
+    ...fixture.config,
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Persist observed Copilot request time",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: 115,
+    title: "Missing Copilot request timestamp",
+    url: "https://example.test/pr/115",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: "head-115",
+    mergedAt: null,
+    copilotReviewState: "requested",
+    copilotReviewRequestedAt: null,
+    copilotReviewArrivedAt: null,
+  };
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      assert.equal(branchName, branch);
+      assert.equal(prNumber, null);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return checks;
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return [];
+    },
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return pr;
+    },
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse("2026-03-13T06:26:22Z");
+  try {
+    const message = await supervisor.runOnce({ dryRun: true });
+    assert.match(message, /state=waiting_ci/);
+  } finally {
+    Date.now = originalDateNow;
+  }
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(record.state, "waiting_ci");
+  assert.equal(record.pr_number, 115);
+  assert.equal(record.copilot_review_requested_head_sha, "head-115");
+  assert.ok(record.copilot_review_requested_observed_at);
+  assert.equal(Number.isNaN(Date.parse(record.copilot_review_requested_observed_at ?? "")), false);
+});
+
 function branchName(config: SupervisorConfig, issueNumber: number): string {
   return `${config.branchPrefix}${issueNumber}`;
 }
