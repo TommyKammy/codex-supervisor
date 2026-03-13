@@ -9,7 +9,7 @@ import { loadRelevantVerifierGuardrails } from "./verifier-guardrails";
 function assertRelevantRuleIdsAndFiles(args: {
   rules: Awaited<ReturnType<typeof loadRelevantVerifierGuardrails>>;
   changedFiles: string[];
-  expected: Array<{ id: string; file: string }>;
+  expected: Array<{ id: string; file: string; line?: number | null }>;
 }): void {
   assert.deepEqual(args.rules, [...args.rules].sort(compareVerifierGuardrails));
   assert.ok(args.rules.every((rule) => args.changedFiles.includes(rule.file)));
@@ -18,13 +18,19 @@ function assertRelevantRuleIdsAndFiles(args: {
     "repo-backed verifier guardrail line hints must stay optional or positive integers",
   );
 
-  const byFileAndId = (left: { id: string; file: string }, right: { id: string; file: string }): number =>
+  const byFileAndId = (
+    left: { id: string; file: string; line?: number | null },
+    right: { id: string; file: string; line?: number | null },
+  ): number =>
     `${left.file}:${left.id}`.localeCompare(`${right.file}:${right.id}`);
-  const expectedIds = new Set(args.expected.map((rule) => rule.id));
+  const expectedById = new Map(args.expected.map((rule) => [rule.id, rule]));
   assert.deepEqual(
     args.rules
-      .filter((rule) => expectedIds.has(rule.id))
-      .map(({ id, file }) => ({ id, file }))
+      .filter((rule) => expectedById.has(rule.id))
+      .map(({ id, file, line }) => {
+        const expectedRule = expectedById.get(id);
+        return { id, file, ...(expectedRule?.line !== undefined ? { line } : {}) };
+      })
       .sort(byFileAndId),
     [...args.expected].sort(byFileAndId),
   );
@@ -214,7 +220,7 @@ test("repo-committed verifier guardrails cover Copilot request-vs-arrival lifecy
       { id: "copilot-review-arrival-lifecycle", file: "src/github.ts" },
       { id: "local-review-repair-context-malformed-input", file: "src/supervisor.ts" },
       { id: "copilot-merge-readiness-arrival-gate", file: "src/supervisor.ts" },
-      { id: "merged-pr-state-convergence", file: "src/supervisor.ts" },
+      { id: "merged-pr-state-convergence", file: "src/supervisor.ts", line: 1929 },
     ],
   });
 });

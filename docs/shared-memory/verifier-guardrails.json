@@ -37,7 +37,7 @@
       "id": "merged-pr-state-convergence",
       "title": "Reconcile merged PR truth into done state",
       "file": "src/supervisor.ts",
-      "line": 1889,
+      "line": 1929,
       "summary": "Verify merged PR reconciliation drives local supervisor state to done, leaves not-yet-merged PRs untouched, and preserves stale-state recovery boundaries.",
       "rationale": "GitHub merge truth and local state convergence are separate concerns; tests should prove they reconcile deterministically without requiring manual cleanup."
     }
