@@ -417,6 +417,61 @@ function classifyFailure(message: string | null | undefined): "timeout" | "comma
   return message?.includes("Command timed out after") ? "timeout" : "command_error";
 }
 
+async function recoverUnexpectedCodexTurnFailure(args: {
+  stateStore: StateStore;
+  state: SupervisorStateFile;
+  record: IssueRunRecord;
+  issue: GitHubIssue;
+  journalSync: (record: IssueRunRecord) => Promise<void>;
+  error: unknown;
+  workspaceStatus: Pick<WorkspaceStatus, "hasUncommittedChanges" | "headSha"> | null;
+  pr: Pick<GitHubPullRequest, "number" | "headRefOid"> | null;
+}): Promise<IssueRunRecord> {
+  const { stateStore, state, record, issue, journalSync, error, workspaceStatus, pr } = args;
+  const message = error instanceof Error ? error.stack ?? error.message : String(error);
+  const failureKind = classifyFailure(message);
+  const failureContext = buildCodexFailureContext(
+    "codex",
+    `Supervisor failed while recovering a Codex turn for issue #${record.issue_number}.`,
+    [
+      `previous_state=${record.state}`,
+      `workspace_dirty=${workspaceStatus?.hasUncommittedChanges ? "yes" : "no"}`,
+      `workspace_head=${workspaceStatus?.headSha ?? record.last_head_sha ?? "unknown"}`,
+      `pr_number=${pr?.number ?? "none"}`,
+      `pr_head=${pr?.headRefOid ?? "none"}`,
+      `codex_session_id=${record.codex_session_id ?? "none"}`,
+      truncate(message, 2000) ?? "Unknown failure",
+    ],
+  );
+
+  const updated = stateStore.touch(record, {
+    state: "failed",
+    last_error: truncate(message),
+    last_failure_kind: failureKind,
+    last_failure_context: failureContext,
+    ...applyFailureSignature(record, failureContext),
+    blocked_reason: null,
+    timeout_retry_count:
+      failureKind === "timeout" ? record.timeout_retry_count + 1 : record.timeout_retry_count,
+  });
+  state.issues[String(record.issue_number)] = updated;
+  if (state.activeIssueNumber === record.issue_number) {
+    state.activeIssueNumber = null;
+  }
+  await stateStore.save(state);
+
+  try {
+    await journalSync(updated);
+  } catch (journalError) {
+    const journalMessage = journalError instanceof Error ? journalError.message : String(journalError);
+    console.warn(
+      `Failed to sync issue journal after unexpected Codex turn failure for issue #${issue.number}: ${journalMessage}`,
+    );
+  }
+
+  return updated;
+}
+
 function shouldAutoRetryTimeout(record: IssueRunRecord, config: SupervisorConfig): boolean {
   return (
     record.state === "failed" &&
@@ -2129,6 +2184,7 @@ export class Supervisor {
       await syncJournal(record);
 
       if (shouldRunCodex(record, pr, checks, reviewThreads, this.config)) {
+      try {
       const reviewThreadsToProcess = pendingBotReviewThreads(this.config, record, reviewThreads);
 
       if (options.dryRun) {
@@ -2417,6 +2473,20 @@ export class Supervisor {
       state.issues[String(record.issue_number)] = record;
       await this.stateStore.save(state);
       await syncJournal(record);
+      }
+      catch (error) {
+        record = await recoverUnexpectedCodexTurnFailure({
+          stateStore: this.stateStore,
+          state,
+          record,
+          issue,
+          journalSync: syncJournal,
+          error,
+          workspaceStatus,
+          pr,
+        });
+        return `Recovered from unexpected Codex turn failure for issue #${record.issue_number}.`;
+      }
       }
 
       if (pr) {
