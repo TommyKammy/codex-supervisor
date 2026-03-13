@@ -123,3 +123,34 @@ test("loadRelevantVerifierGuardrails rejects malformed committed rules", async (
 
   await fs.rm(workspaceDir, { recursive: true, force: true });
 });
+
+test("repo-committed verifier guardrails cover Copilot request-vs-arrival lifecycle and merge gating", async () => {
+  const rules = await loadRelevantVerifierGuardrails({
+    workspacePath: process.cwd(),
+    changedFiles: ["src/github.ts", "src/supervisor.ts"],
+    limit: 10,
+  });
+
+  assert.deepEqual(rules, [
+    {
+      id: "copilot-review-arrival-lifecycle",
+      title: "Separate Copilot request and arrival states",
+      file: "src/github.ts",
+      line: 205,
+      summary:
+        "Verify configured-bot review lifecycle stays requested until an actual configured-bot review or review-thread comment arrives.",
+      rationale:
+        "Merge readiness depends on distinguishing review request creation from real arrival, including paginated review-thread comments and propagation delays.",
+    },
+    {
+      id: "copilot-merge-readiness-arrival-gate",
+      title: "Block merge until expected Copilot review arrives",
+      file: "src/supervisor.ts",
+      line: 1242,
+      summary:
+        "Require merge gating to keep waiting while a configured-bot review is expected and has not arrived, even if the request was already observed.",
+      rationale:
+        "Verifier coverage must prove merge cannot proceed before configured-bot review arrival, with request timestamps, missing timestamps, and timeout policy handled separately.",
+    },
+  ]);
+});
