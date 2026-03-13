@@ -535,6 +535,74 @@ test("inferStateFromPullRequest does not wait for Copilot when no lifecycle sign
   assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "ready_to_merge");
 });
 
+test("inferStateFromPullRequest waits briefly after ready-for-review for Copilot request propagation", () => {
+  withStubbedDateNow("2026-03-13T05:42:40Z", () => {
+    const config = createConfig({
+      copilotReviewWaitMinutes: 10,
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    });
+    const record = createRecord({
+      state: "pr_open",
+      review_wait_started_at: "2026-03-13T05:42:36Z",
+      review_wait_head_sha: "head123",
+    });
+    const pr: GitHubPullRequest = {
+      number: 44,
+      title: "Test PR",
+      url: "https://example.test/pr/44",
+      state: "OPEN",
+      createdAt: "2026-03-13T05:40:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      headRefName: "codex/issue-38",
+      headRefOid: "head123",
+      mergedAt: null,
+      copilotReviewState: "not_requested",
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+    };
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "waiting_ci");
+  });
+});
+
+test("inferStateFromPullRequest allows merge after the Copilot propagation grace window expires", () => {
+  withStubbedDateNow("2026-03-13T05:42:42Z", () => {
+    const config = createConfig({
+      copilotReviewWaitMinutes: 10,
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    });
+    const record = createRecord({
+      state: "pr_open",
+      review_wait_started_at: "2026-03-13T05:42:36Z",
+      review_wait_head_sha: "head123",
+    });
+    const pr: GitHubPullRequest = {
+      number: 44,
+      title: "Test PR",
+      url: "https://example.test/pr/44",
+      state: "OPEN",
+      createdAt: "2026-03-13T05:40:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      headRefName: "codex/issue-38",
+      headRefOid: "head123",
+      mergedAt: null,
+      copilotReviewState: "not_requested",
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+    };
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "ready_to_merge");
+  });
+});
+
 test("inferStateFromPullRequest keeps waiting when Copilot review was explicitly requested", () => {
   withStubbedDateNow("2026-03-11T00:10:00Z", () => {
     const config = createConfig({ copilotReviewWaitMinutes: 10 });
