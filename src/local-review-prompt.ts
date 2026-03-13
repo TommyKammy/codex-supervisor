@@ -24,6 +24,25 @@ interface RolePromptArgs {
   priorMissPatterns: ExternalReviewMissPattern[];
 }
 
+function renderPriorMissLines(patterns: ExternalReviewMissPattern[]): string[] {
+  if (patterns.length === 0) {
+    return [];
+  }
+
+  return [
+    "Relevant prior confirmed external misses for this diff:",
+    "- Use these as targeted checks for blind spots that local review previously missed.",
+    ...patterns.map((pattern, index) =>
+      [
+        `- Prior miss ${index + 1}: file=${pattern.file}:${pattern.line ?? "?"} reviewer=${pattern.reviewerLogin}`,
+        `  summary=${pattern.summary}`,
+        `  rationale=${pattern.rationale}`,
+      ].join("\n"),
+    ),
+    "",
+  ];
+}
+
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -246,21 +265,7 @@ function roleGoal(role: string): string[] {
 
 export function buildRolePrompt(args: RolePromptArgs): string {
   const ref = compareRef(args.defaultBranch);
-  const priorMissLines =
-    args.priorMissPatterns.length > 0
-      ? [
-          "Relevant prior confirmed external misses for this diff:",
-          "- Use these as targeted checks for blind spots that local review previously missed.",
-          ...args.priorMissPatterns.map((pattern, index) =>
-            [
-              `- Prior miss ${index + 1}: file=${pattern.file}:${pattern.line ?? "?"} reviewer=${pattern.reviewerLogin}`,
-              `  summary=${pattern.summary}`,
-              `  rationale=${pattern.rationale}`,
-            ].join("\n"),
-          ),
-          "",
-        ]
-      : [];
+  const priorMissLines = renderPriorMissLines(args.priorMissPatterns);
 
   return [
     `You are performing a local pre-ready ${args.role} review for ${args.repoSlug}.`,
@@ -320,8 +325,10 @@ export function buildVerifierPrompt(args: {
   defaultBranch: string;
   pr: GitHubPullRequest;
   findings: LocalReviewFinding[];
+  priorMissPatterns: ExternalReviewMissPattern[];
 }): string {
   const ref = compareRef(args.defaultBranch);
+  const priorMissLines = renderPriorMissLines(args.priorMissPatterns);
   const findingsBlock = args.findings
     .map((finding, index) =>
       [
@@ -356,6 +363,7 @@ export function buildVerifierPrompt(args: {
     "- Do not edit files, do not commit, and do not push.",
     "- Keep reads narrow and tied to the listed findings.",
     "",
+    ...priorMissLines,
     "High-severity findings to verify:",
     findingsBlock,
     "",
@@ -367,4 +375,3 @@ export function buildVerifierPrompt(args: {
     "REVIEW_VERIFIER_JSON_END",
   ].join("\n");
 }
-

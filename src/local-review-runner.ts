@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { runCommand } from "./command";
 import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "./codex-policy";
-import { type ExternalReviewMissPattern } from "./external-review-misses";
+import { loadRelevantExternalReviewMissPatterns, type ExternalReviewMissPattern } from "./external-review-misses";
+import { reviewDir } from "./local-review-artifacts";
 import { buildRolePrompt, buildVerifierPrompt, parseRoleFooter, parseVerifierFooter } from "./local-review-prompt";
 import { type LocalReviewFinding, type LocalReviewRoleResult, type LocalReviewVerifierReport } from "./local-review-types";
 import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "./types";
@@ -111,6 +112,19 @@ export async function runVerifierReview(args: {
   pr: GitHubPullRequest;
   findings: LocalReviewFinding[];
 }): Promise<LocalReviewVerifierReport> {
+  const changedFiles = [...new Set(
+    args.findings
+      .map((finding) => (typeof finding.file === "string" && finding.file.trim() !== "" ? finding.file : null))
+      .filter((filePath): filePath is string => Boolean(filePath)),
+  )];
+  const priorMissPatterns = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: reviewDir(args.config, args.issue.number),
+    branch: args.branch,
+    currentHeadSha: args.pr.headRefOid,
+    changedFiles,
+    limit: 3,
+    workspacePath: args.workspacePath,
+  });
   const prompt = buildVerifierPrompt({
     repoSlug: args.config.repoSlug,
     issue: args.issue,
@@ -119,6 +133,7 @@ export async function runVerifierReview(args: {
     defaultBranch: args.defaultBranch,
     pr: args.pr,
     findings: args.findings,
+    priorMissPatterns,
   });
   const result = await runCodexReviewTurn({
     config: args.config,

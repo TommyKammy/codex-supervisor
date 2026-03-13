@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { localReviewHasActionableFindings, shouldRunLocalReview } from "./local-review";
 import { finalizeLocalReview } from "./local-review-finalize";
-import { buildRolePrompt } from "./local-review-prompt";
+import { buildRolePrompt, buildVerifierPrompt } from "./local-review-prompt";
 import { LocalReviewRoleSelection } from "./review-role-detector";
 import { GitHubPullRequest, SupervisorConfig } from "./types";
 
@@ -572,4 +572,70 @@ test("buildRolePrompt includes bounded relevant prior external misses", () => {
   assert.match(prompt, /Permission guard is bypassed\./);
   assert.match(prompt, /Retry path can reuse stale state\./);
   assert.match(prompt, /Response omits a required field\./);
+});
+
+test("buildVerifierPrompt includes bounded relevant prior external misses", () => {
+  const prompt = buildVerifierPrompt({
+    repoSlug: "owner/repo",
+    issue: {
+      number: 61,
+      title: "Teach verifier from prior misses",
+      body: "",
+      url: "https://example.test/issues/61",
+      createdAt: "2026-03-12T00:00:00Z",
+      updatedAt: "2026-03-12T00:00:00Z",
+      labels: [],
+    },
+    branch: "codex/issue-61",
+    workspacePath: "/tmp/workspaces/issue-61",
+    defaultBranch: "main",
+    pr: createPullRequest({
+      number: 61,
+      url: "https://example.test/pr/61",
+      headRefOid: "newhead123",
+    }),
+    findings: [
+      {
+        role: "reviewer",
+        title: "Potential permission bypass",
+        body: "The fallback path may skip the permission guard.",
+        file: "src/auth.ts",
+        start: 42,
+        end: 44,
+        severity: "high",
+        confidence: 0.95,
+        category: "correctness",
+        evidence: "The fallback returns the privileged branch without the permission check.",
+      },
+    ],
+    priorMissPatterns: [
+      {
+        fingerprint: "src/auth.ts|permission",
+        reviewerLogin: "copilot-pull-request-reviewer",
+        file: "src/auth.ts",
+        line: 42,
+        summary: "Permission guard is bypassed.",
+        rationale: "This fallback skips the permission guard and lets unauthorized callers update records.",
+        sourceArtifactPath: "/tmp/reviews/issue-61/external-review-misses-head-old.json",
+        sourceHeadSha: "oldhead123",
+        lastSeenAt: "2026-03-12T00:00:00Z",
+      },
+      {
+        fingerprint: "src/retry.ts|missing",
+        reviewerLogin: "copilot-pull-request-reviewer",
+        file: "src/retry.ts",
+        line: 15,
+        summary: "Retry path can reuse stale state.",
+        rationale: "The retry branch keeps stale cached state after the first failure.",
+        sourceArtifactPath: "/tmp/reviews/issue-61/external-review-misses-head-old-2.json",
+        sourceHeadSha: "olderhead456",
+        lastSeenAt: "2026-03-11T00:00:00Z",
+      },
+    ],
+  });
+
+  assert.match(prompt, /Relevant prior confirmed external misses for this diff:/);
+  assert.match(prompt, /Prior miss 1: file=src\/auth\.ts:42 reviewer=copilot-pull-request-reviewer/);
+  assert.match(prompt, /Permission guard is bypassed\./);
+  assert.match(prompt, /Retry path can reuse stale state\./);
 });
