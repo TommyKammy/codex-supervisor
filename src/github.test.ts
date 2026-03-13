@@ -502,6 +502,8 @@ test("GitHubClient does not retry non-transient gh failures", async () => {
           repeated_failure_signature_count: 0,
           last_head_sha: "deadbeef",
           last_codex_summary: null,
+          last_recovery_reason: null,
+          last_recovery_at: null,
           last_error: null,
           last_failure_kind: null,
           last_failure_context: null,
