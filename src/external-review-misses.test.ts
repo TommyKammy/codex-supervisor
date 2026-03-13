@@ -792,3 +792,81 @@ test("loadRelevantExternalReviewMissPatterns rejects durable guardrails with an 
     /version must be 1/,
   );
 });
+
+test("loadRelevantExternalReviewMissPatterns rejects malformed durable guardrail fields and trims identifier-like strings", async () => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "external-review-durable-guardrails-strict-test-"));
+  const durableGuardrailPath = path.join(workspaceDir, "docs", "shared-memory", "external-review-guardrails.json");
+  await fs.mkdir(path.dirname(durableGuardrailPath), { recursive: true });
+
+  const buildPattern = (overrides: Record<string, unknown> = {}) => ({
+    fingerprint: " src/auth.ts|permission ",
+    reviewerLogin: " copilot-pull-request-reviewer ",
+    file: " src/auth.ts ",
+    line: 42,
+    summary: "Permission guard is bypassed.",
+    rationale: "Check the permission guard before the fallback write path.",
+    sourceArtifactPath: " external-review-misses-head-new.json ",
+    sourceHeadSha: " newhead ",
+    lastSeenAt: "2026-03-11T00:00:00Z",
+    ...overrides,
+  });
+
+  const expectInvalidPattern = async (pattern: Record<string, unknown>, message: RegExp) => {
+    await fs.writeFile(
+      durableGuardrailPath,
+      JSON.stringify({
+        version: 1,
+        patterns: [pattern],
+      }),
+      "utf8",
+    );
+
+    await assert.rejects(
+      () => loadRelevantExternalReviewMissPatterns({
+        artifactDir: path.join(workspaceDir, ".local", "reviews"),
+        branch: "codex/issue-61",
+        currentHeadSha: "currenthead",
+        changedFiles: ["src/auth.ts"],
+        workspacePath: workspaceDir,
+      }),
+      message,
+    );
+  };
+
+  await expectInvalidPattern(buildPattern({ line: 0 }), /patterns\[0\]\.line must be an integer >= 1 or null/);
+  await expectInvalidPattern(buildPattern({ line: -1 }), /patterns\[0\]\.line must be an integer >= 1 or null/);
+  await expectInvalidPattern(buildPattern({ line: 1.5 }), /patterns\[0\]\.line must be an integer >= 1 or null/);
+  await expectInvalidPattern(buildPattern({ lastSeenAt: "not-an-iso-timestamp" }), /patterns\[0\]\.lastSeenAt must be an ISO-8601 timestamp/);
+  await expectInvalidPattern(buildPattern({ lastSeenAt: "2026-03-11 00:00:00Z" }), /patterns\[0\]\.lastSeenAt must be an ISO-8601 timestamp/);
+
+  await fs.writeFile(
+    durableGuardrailPath,
+    JSON.stringify({
+      version: 1,
+      patterns: [buildPattern()],
+    }),
+    "utf8",
+  );
+
+  const patterns = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: path.join(workspaceDir, ".local", "reviews"),
+    branch: "codex/issue-61",
+    currentHeadSha: "currenthead",
+    changedFiles: ["src/auth.ts"],
+    workspacePath: workspaceDir,
+  });
+
+  assert.deepEqual(patterns, [
+    {
+      fingerprint: "src/auth.ts|permission",
+      reviewerLogin: "copilot-pull-request-reviewer",
+      file: "src/auth.ts",
+      line: 42,
+      summary: "Permission guard is bypassed.",
+      rationale: "Check the permission guard before the fallback write path.",
+      sourceArtifactPath: "external-review-misses-head-new.json",
+      sourceHeadSha: "newhead",
+      lastSeenAt: "2026-03-11T00:00:00Z",
+    },
+  ]);
+});
