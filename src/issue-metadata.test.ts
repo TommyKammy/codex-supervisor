@@ -103,6 +103,8 @@ Execution order: 1 of 4
     isExecutionReady: true,
     missingRequired: [],
     missingRecommended: [],
+    riskyChangeClasses: [],
+    approvedRiskyChangeClasses: [],
   });
 });
 
@@ -116,6 +118,8 @@ Add deterministic issue-body linting for execution-ready metadata.`,
     isExecutionReady: false,
     missingRequired: ["scope", "acceptance criteria", "verification"],
     missingRecommended: ["depends on", "execution order"],
+    riskyChangeClasses: [],
+    approvedRiskyChangeClasses: [],
   });
 });
 
@@ -137,5 +141,86 @@ test("lintExecutionReadyIssueBody treats ##Heading without a space as the next s
     isExecutionReady: false,
     missingRequired: ["summary"],
     missingRecommended: ["depends on", "execution order"],
+    riskyChangeClasses: [],
+    approvedRiskyChangeClasses: [],
+  });
+});
+
+test("lintExecutionReadyIssueBody requires explicit approval for detected risky auth changes", () => {
+  const issue = createIssue({
+    title: "Rotate production auth tokens",
+    body: `## Summary
+Rotate production auth tokens for service-to-service traffic.
+
+## Scope
+- update auth token issuance in production
+
+## Acceptance criteria
+- production authentication changes are fully implemented
+
+## Verification
+- npm test -- src/issue-metadata.test.ts`,
+  });
+
+  assert.deepEqual(lintExecutionReadyIssueBody(issue), {
+    isExecutionReady: false,
+    missingRequired: ["explicit opt-in for auth"],
+    missingRecommended: ["depends on", "execution order"],
+    riskyChangeClasses: ["auth"],
+    approvedRiskyChangeClasses: [],
+  });
+});
+
+test("lintExecutionReadyIssueBody accepts risky changes with explicit metadata approval", () => {
+  const issue = createIssue({
+    title: "Update billing webhooks",
+    body: `## Summary
+Adjust billing webhook handling for invoice retries.
+
+## Scope
+- update invoice retry handling
+
+Risky change approval: billing
+
+## Acceptance criteria
+- billing retry handling is updated
+
+## Verification
+- npm test -- src/issue-metadata.test.ts`,
+  });
+
+  assert.deepEqual(lintExecutionReadyIssueBody(issue), {
+    isExecutionReady: true,
+    missingRequired: [],
+    missingRecommended: ["depends on", "execution order"],
+    riskyChangeClasses: ["billing"],
+    approvedRiskyChangeClasses: ["billing"],
+  });
+});
+
+test("lintExecutionReadyIssueBody accepts risky changes with explicit approval wording", () => {
+  const issue = createIssue({
+    title: "Refresh CI workflow cache keys",
+    body: `## Summary
+Update the GitHub Actions workflow cache keys.
+
+## Scope
+- adjust CI workflow cache behavior
+
+This issue is explicitly approved for ci changes.
+
+## Acceptance criteria
+- workflow cache behavior is updated
+
+## Verification
+- npm test -- src/issue-metadata.test.ts`,
+  });
+
+  assert.deepEqual(lintExecutionReadyIssueBody(issue), {
+    isExecutionReady: true,
+    missingRequired: [],
+    missingRecommended: ["depends on", "execution order"],
+    riskyChangeClasses: ["ci"],
+    approvedRiskyChangeClasses: ["ci"],
   });
 });

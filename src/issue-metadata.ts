@@ -23,7 +23,62 @@ export interface ExecutionReadyLintResult {
   isExecutionReady: boolean;
   missingRequired: string[];
   missingRecommended: string[];
+  riskyChangeClasses: string[];
+  approvedRiskyChangeClasses: string[];
 }
+
+const RISKY_CHANGE_CLASSES = ["auth", "billing", "permissions", "ci", "migrations", "secrets"] as const;
+
+type RiskyChangeClass = (typeof RISKY_CHANGE_CLASSES)[number];
+
+const RISKY_CHANGE_SIGNALS: Record<RiskyChangeClass, RegExp[]> = {
+  auth: [
+    /\bauth\b/i,
+    /\bauthentication\b/i,
+    /\boauth\b/i,
+    /\blogin\b/i,
+    /\bpasswords?\b/i,
+    /\bsessions?\b/i,
+    /\btokens?\b/i,
+    /\bsso\b/i,
+  ],
+  billing: [
+    /\bbilling\b/i,
+    /\binvoices?\b/i,
+    /\bsubscriptions?\b/i,
+    /\bpayments?\b/i,
+    /\bcharges?\b/i,
+    /\bstripe\b/i,
+  ],
+  permissions: [
+    /\bpermission(s)?\b/i,
+    /\brbac\b/i,
+    /\baccess control\b/i,
+    /\bacl\b/i,
+    /\brole(s)?\b/i,
+  ],
+  ci: [
+    /\bci\b/i,
+    /\bgithub actions\b/i,
+    /\bworkflow(s)?\b/i,
+    /\bpipeline(s)?\b/i,
+  ],
+  migrations: [
+    /\bmigration(s)?\b/i,
+    /\bmigrate\b/i,
+    /\bprisma migrate\b/i,
+    /\bdatabase schema\b/i,
+    /\bschema change(s)?\b/i,
+    /\bddl\b/i,
+  ],
+  secrets: [
+    /\bsecret(s)?\b/i,
+    /\bcredential(s)?\b/i,
+    /\bapi key(s)?\b/i,
+    /\bprivate key(s)?\b/i,
+    /\bsigning key(s)?\b/i,
+  ],
+};
 
 function parseIssueNumberList(input: string): number[] {
   return Array.from(
@@ -44,6 +99,15 @@ function parseList(input: string): string[] {
 
 function escapeRegExp(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeRiskyChangeClass(input: string): RiskyChangeClass | null {
+  const normalized = input.trim().toLowerCase();
+  if ((RISKY_CHANGE_CLASSES as readonly string[]).includes(normalized)) {
+    return normalized as RiskyChangeClass;
+  }
+
+  return null;
 }
 
 function parseExecutionOrder(
@@ -95,6 +159,54 @@ function findMarkdownSectionContent(body: string, title: string): string | null 
   return null;
 }
 
+function parseRiskyChangeApprovalList(body: string): RiskyChangeClass[] {
+  const approved = new Set<RiskyChangeClass>();
+  const metadataMatches = body.matchAll(
+    /^\s*(?:Risky change approval|Risky changes approved|Risky change opt-in):\s*(.+)\s*$/gim,
+  );
+  for (const match of metadataMatches) {
+    for (const value of parseList(match[1])) {
+      const riskyClass = normalizeRiskyChangeClass(value);
+      if (riskyClass) {
+        approved.add(riskyClass);
+      }
+    }
+  }
+
+  const lowerBody = body.toLowerCase();
+  for (const riskyClass of RISKY_CHANGE_CLASSES) {
+    const sentencePatterns = [
+      `explicitly approved for ${riskyClass} changes`,
+      `explicitly authorize ${riskyClass} changes`,
+      `explicitly opt in to ${riskyClass} changes`,
+    ];
+    if (sentencePatterns.some((pattern) => lowerBody.includes(pattern))) {
+      approved.add(riskyClass);
+    }
+  }
+
+  return [...approved].sort();
+}
+
+function detectRiskyChangeClasses(issue: Pick<GitHubIssue, "title" | "body">): RiskyChangeClass[] {
+  const detectionInputs = [
+    issue.title,
+    findMarkdownSectionContent(issue.body, "Summary") ?? "",
+    findMarkdownSectionContent(issue.body, "Scope") ?? "",
+    parseIssueMetadata({ ...issue, number: 0, createdAt: "", updatedAt: "", url: "", state: "OPEN" }).touches.join(", "),
+  ];
+  const detected = new Set<RiskyChangeClass>();
+
+  for (const riskyClass of RISKY_CHANGE_CLASSES) {
+    const patterns = RISKY_CHANGE_SIGNALS[riskyClass];
+    if (detectionInputs.some((input) => patterns.some((pattern) => pattern.test(input)))) {
+      detected.add(riskyClass);
+    }
+  }
+
+  return [...detected].sort();
+}
+
 export function parseIssueMetadata(issue: GitHubIssue): IssueMetadata {
   const parentMatch = issue.body.match(/^\s*Part of:?\s+#(\d+)\s*$/im);
   const dependsOnMatch = issue.body.match(/^\s*Depends on:\s*(.+)\s*$/im);
@@ -113,8 +225,10 @@ export function parseIssueMetadata(issue: GitHubIssue): IssueMetadata {
 }
 
 export function lintExecutionReadyIssueBody(
-  issue: Pick<GitHubIssue, "body">,
+  issue: Pick<GitHubIssue, "title" | "body">,
 ): ExecutionReadyLintResult {
+  const riskyChangeClasses = detectRiskyChangeClasses(issue);
+  const approvedRiskyChangeClasses = parseRiskyChangeApprovalList(issue.body);
   const requiredChecks: Array<{ key: string; present: boolean }> = [
     {
       key: "summary",
@@ -132,6 +246,10 @@ export function lintExecutionReadyIssueBody(
       key: "verification",
       present: findMarkdownSectionContent(issue.body, "Verification") !== null,
     },
+    ...riskyChangeClasses.map((riskyClass) => ({
+      key: `explicit opt-in for ${riskyClass}`,
+      present: approvedRiskyChangeClasses.includes(riskyClass),
+    })),
   ];
   const recommendedChecks: Array<{ key: string; present: boolean }> = [
     {
@@ -155,6 +273,8 @@ export function lintExecutionReadyIssueBody(
     isExecutionReady: missingRequired.length === 0,
     missingRequired,
     missingRecommended,
+    riskyChangeClasses,
+    approvedRiskyChangeClasses,
   };
 }
 

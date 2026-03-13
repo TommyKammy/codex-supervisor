@@ -16,6 +16,7 @@ issue 本文に次の行を追加します。
 Depends on: #232, #240
 Parallel group: timeline-layout
 Touches: web-ui, core-api, prisma
+Risky change opt-in: auth, ci
 ```
 
 既存の順序情報も引き続き使えます。
@@ -33,6 +34,9 @@ Part of #227
   - 指定した issue が open の間、その issue には着手しません
 - `Part of` + `Execution order`
   - 同じ parent issue 配下で、先行番号が終わるまで後続番号には着手しません
+- risky change classes (`auth`, `billing`, `permissions`, `ci`, `migrations`, `secrets`)
+  - title / `Summary` / `Scope` / `Touches` から決定的に検出した場合、対応する `Risky change opt-in` がない限り着手しません
+  - 本文に `This issue is explicitly approved for auth changes.` のような明示文でも許可できます
 
 ## 現在は advisory のもの
 
@@ -55,6 +59,7 @@ Part of #227
 Depends on: #232
 Parallel group: timeline-layout
 Touches: web-ui, core-api, prisma
+Risky change opt-in: migrations
 
 ## Execution order
 7 of 15
