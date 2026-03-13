@@ -326,6 +326,36 @@ function normalizeRollupChecks(rollup: PullRequestStatusCheckRollupResponse | nu
   return checks;
 }
 
+function summarizeGhArgs(args: string[]): string {
+  const visibleArgs = args.slice(0, 2);
+  const omittedCount = Math.max(args.length - visibleArgs.length, 0);
+  const summary = ["gh", ...visibleArgs].join(" ");
+  return omittedCount > 0 ? `${summary} +${omittedCount} arg${omittedCount === 1 ? "" : "s"}` : summary;
+}
+
+function sanitizeGhCommandMessage(message: string, args: string[]): string {
+  const commandSummary = summarizeGhArgs(args);
+  return message
+    .split("\n")
+    .map((line) => {
+      if (line.startsWith("Command failed: gh ")) {
+        return `Command failed: ${commandSummary}`;
+      }
+
+      if (line.startsWith("Command timed out: gh ")) {
+        return `Command timed out: ${commandSummary}`;
+      }
+
+      const timedOutAfterMarker = ": gh ";
+      if (line.startsWith("Command timed out after ") && line.includes(timedOutAfterMarker)) {
+        return `${line.slice(0, line.indexOf(timedOutAfterMarker) + 2)}${commandSummary}`;
+      }
+
+      return line;
+    })
+    .join("\n");
+}
+
 export class GitHubClient {
   private readonly copilotReviewLifecycleCache = new Map<string, Promise<CopilotReviewLifecycle>>();
 
@@ -337,6 +367,7 @@ export class GitHubClient {
 
   private async runGhCommand(args: string[], options: CommandOptions = {}): Promise<CommandResult> {
     let lastTransientMessage: string | null = null;
+    const commandSummary = summarizeGhArgs(args);
 
     for (let attempt = 0; attempt <= TRANSIENT_GITHUB_RETRY_LIMIT; attempt += 1) {
       try {
@@ -355,7 +386,7 @@ export class GitHubClient {
           throw error;
         }
 
-        lastTransientMessage = truncate(message, 500);
+        lastTransientMessage = truncate(sanitizeGhCommandMessage(message, args), 500);
       }
 
       const nextAttempt = attempt + 1;
@@ -363,15 +394,13 @@ export class GitHubClient {
         break;
       }
 
-      console.warn(
-        `Transient GitHub CLI failure for gh ${args.join(" ")}; retry ${nextAttempt}/${TRANSIENT_GITHUB_RETRY_LIMIT}.`,
-      );
+      console.warn(`Transient GitHub CLI failure for ${commandSummary}; retry ${nextAttempt}/${TRANSIENT_GITHUB_RETRY_LIMIT}.`);
       await this.delay(TRANSIENT_GITHUB_RETRY_BASE_DELAY_MS * nextAttempt);
     }
 
     throw new Error(
       [
-        `Transient GitHub CLI failure after ${TRANSIENT_GITHUB_RETRY_LIMIT + 1} attempts: gh ${args.join(" ")}`,
+        `Transient GitHub CLI failure after ${TRANSIENT_GITHUB_RETRY_LIMIT + 1} attempts: ${commandSummary}`,
         lastTransientMessage ?? "Unknown transient GitHub failure.",
       ]
         .filter(Boolean)
