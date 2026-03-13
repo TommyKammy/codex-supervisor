@@ -30,6 +30,11 @@ export interface ExternalReviewRegressionCandidate {
   qualificationReasons: string[];
 }
 
+export interface DurableExternalReviewGuardrails {
+  version: 1;
+  patterns: ExternalReviewMissPattern[];
+}
+
 export interface ExternalReviewMissArtifact {
   issueNumber: number;
   prNumber: number;

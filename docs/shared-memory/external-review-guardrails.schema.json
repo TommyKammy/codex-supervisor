@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/external-review-guardrails.schema.json",
+  "title": "Durable External Review Guardrails",
+  "description": "Repo-committed durable memory for promoted external-review lessons.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "patterns"],
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "Schema version for durable external-review guardrails."
+    },
+    "patterns": {
+      "type": "array",
+      "description": "Promoted reusable miss patterns consumed as durable guardrails during local review.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fingerprint",
+          "reviewerLogin",
+          "file",
+          "line",
+          "summary",
+          "rationale",
+          "sourceArtifactPath",
+          "sourceHeadSha",
+          "lastSeenAt"
+        ],
+        "properties": {
+          "fingerprint": { "type": "string", "minLength": 1 },
+          "reviewerLogin": { "type": "string", "minLength": 1 },
+          "file": { "type": "string", "minLength": 1 },
+          "line": {
+            "type": ["integer", "null"],
+            "minimum": 1
+          },
+          "summary": { "type": "string", "minLength": 1 },
+          "rationale": { "type": "string", "minLength": 1 },
+          "sourceArtifactPath": { "type": "string", "minLength": 1 },
+          "sourceHeadSha": { "type": "string", "minLength": 1 },
+          "lastSeenAt": {
+            "type": "string",
+            "minLength": 1,
+            "description": "ISO-8601 timestamp used for deterministic ordering."
+          }
+        }
+      }
+    }
+  }
+}
