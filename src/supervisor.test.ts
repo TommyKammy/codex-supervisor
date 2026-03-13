@@ -602,6 +602,119 @@ test("runOnce dry-run selects an issue and hydrates workspace and PR context bef
   assert.equal(reviewThreadCalls, 1);
 });
 
+test("runOnce marks a clean draft PR ready and enables auto-merge after the turn", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 92;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "stabilizing",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: 113,
+        blocked_reason: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Extract post-turn PR transitions",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const draftPr: GitHubPullRequest = {
+    number: 113,
+    title: "Post-turn transition refactor",
+    url: "https://example.test/pr/113",
+    state: "OPEN",
+    createdAt: "2026-03-13T00:10:00Z",
+    isDraft: true,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: "head-113",
+    mergedAt: null,
+  };
+  const readyPr: GitHubPullRequest = {
+    ...draftPr,
+    isDraft: false,
+  };
+
+  let readyCalls = 0;
+  let autoMergeCalls = 0;
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { executeCodexTurn: typeof supervisor["executeCodexTurn"] }).executeCodexTurn = async (context) => ({
+    kind: "completed",
+    record: context.record,
+    workspaceStatus: context.workspaceStatus,
+    pr: context.pr,
+    checks: context.checks,
+    reviewThreads: context.reviewThreads,
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      assert.equal(branchName, branch);
+      assert.equal(prNumber, 113);
+      return draftPr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 113);
+      return [];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 113);
+      return [];
+    },
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 113);
+      return readyCalls === 0 ? draftPr : readyPr;
+    },
+    markPullRequestReady: async (prNumber: number) => {
+      assert.equal(prNumber, 113);
+      readyCalls += 1;
+    },
+    enableAutoMerge: async (prNumber: number, headSha: string) => {
+      assert.equal(prNumber, 113);
+      assert.equal(headSha, "head-113");
+      autoMergeCalls += 1;
+    },
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: false });
+  assert.match(message, /state=merging/);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(record.pr_number, 113);
+  assert.equal(record.state, "merging");
+  assert.equal(record.last_head_sha, "head-113");
+  assert.equal(record.blocked_reason, null);
+  assert.equal(readyCalls, 1);
+  assert.equal(autoMergeCalls, 1);
+});
+
 function branchName(config: SupervisorConfig, issueNumber: number): string {
   return `${config.branchPrefix}${issueNumber}`;
 }
