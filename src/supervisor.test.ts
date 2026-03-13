@@ -954,6 +954,119 @@ Missing execution-ready metadata.`,
   );
 });
 
+test("status marks skipped readiness checks explicitly and uses non-conflicting inner separators", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "91": createRecord({
+        issue_number: 91,
+        state: "done",
+        branch: branchName(fixture.config, 91),
+        workspace: path.join(fixture.workspaceRoot, "issue-91"),
+        journal_path: null,
+        blocked_reason: null,
+        last_error: null,
+      }),
+      "92": createRecord({
+        issue_number: 92,
+        state: "done",
+        branch: branchName(fixture.config, 92),
+        workspace: path.join(fixture.workspaceRoot, "issue-92"),
+        journal_path: null,
+        blocked_reason: null,
+        last_error: null,
+      }),
+      "93": createRecord({
+        issue_number: 93,
+        state: "queued",
+        branch: branchName(fixture.config, 93),
+        workspace: path.join(fixture.workspaceRoot, "issue-93"),
+        journal_path: null,
+        blocked_reason: null,
+        last_error: null,
+        attempt_count: 1,
+        implementation_attempt_count: 1,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const predecessorOne: GitHubIssue = {
+    number: 91,
+    title: "Step 1",
+    body: `## Summary
+Finish step 1.
+
+## Scope
+- start the execution order chain
+
+## Acceptance criteria
+- step 1 completes first
+
+## Verification
+- npm test -- src/supervisor.test.ts
+
+Part of: #150
+Execution order: 1 of 3`,
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: "https://example.test/issues/91",
+    state: "CLOSED",
+  };
+  const predecessorTwo: GitHubIssue = {
+    number: 92,
+    title: "Step 2",
+    body: `## Summary
+Finish step 2.
+
+## Scope
+- land after step 1
+
+## Acceptance criteria
+- step 2 completes after step 1
+
+## Verification
+- npm test -- src/supervisor.test.ts
+
+Part of: #150
+Execution order: 2 of 3`,
+    createdAt: "2026-03-13T00:05:00Z",
+    updatedAt: "2026-03-13T00:05:00Z",
+    url: "https://example.test/issues/92",
+    state: "CLOSED",
+  };
+  const skippedRequirementsIssue: GitHubIssue = {
+    number: 93,
+    title: "Step 3",
+    body: `## Summary
+Existing in-flight issue with missing readiness metadata.
+
+Depends on: #91, #92
+Part of: #150
+Execution order: 3 of 3`,
+    createdAt: "2026-03-13T00:10:00Z",
+    updatedAt: "2026-03-13T00:10:00Z",
+    url: "https://example.test/issues/93",
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [predecessorOne, predecessorTwo, skippedRequirementsIssue],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const status = await supervisor.status();
+
+  assert.match(
+    status,
+    /runnable_issues=#93 ready=requirements_skipped\+depends_on_satisfied:91\|92\+execution_order_satisfied:91\|92/,
+  );
+});
+
 test("runOnce still prefers a ready issue over dependency-blocked candidates", async () => {
   const fixture = await createSupervisorFixture();
   const dependencyIssueNumber = 91;

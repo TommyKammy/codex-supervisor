@@ -1405,14 +1405,12 @@ async function buildReadinessSummary(
     }
 
     const existing = state.issues[String(issue.number)];
-    if (shouldEnforceExecutionReady(existing)) {
-      const readiness = lintExecutionReadyIssueBody(issue);
-      if (!readiness.isExecutionReady) {
-        blocked.push(
-          `#${issue.number} blocked_by=requirements:${formatExecutionReadyMissingFields(readiness.missingRequired)}`,
-        );
-        continue;
-      }
+    const readiness = lintExecutionReadyIssueBody(issue);
+    if (shouldEnforceExecutionReady(existing) && !readiness.isExecutionReady) {
+      blocked.push(
+        `#${issue.number} blocked_by=requirements:${formatExecutionReadyMissingFields(readiness.missingRequired)}`,
+      );
+      continue;
     }
 
     const blockingIssue = findBlockingIssue(issue, issues, state);
@@ -1428,7 +1426,7 @@ async function buildReadinessSummary(
       continue;
     }
 
-    runnable.push(`#${issue.number} ready=${formatRunnableReadinessReason(issue, issues, state)}`);
+    runnable.push(`#${issue.number} ready=${formatRunnableReadinessReason(issue, issues, state, readiness.isExecutionReady)}`);
   }
 
   return [
@@ -1441,9 +1439,10 @@ function formatRunnableReadinessReason(
   issue: GitHubIssue,
   issues: GitHubIssue[],
   state: SupervisorStateFile,
+  isExecutionReady: boolean,
 ): string {
   const metadata = parseIssueMetadata(issue);
-  const reasons = ["execution_ready"];
+  const reasons = [isExecutionReady ? "execution_ready" : "requirements_skipped"];
 
   if (metadata.dependsOn.length > 0) {
     const satisfiedDependencies = metadata.dependsOn.filter(
@@ -1451,7 +1450,7 @@ function formatRunnableReadinessReason(
     );
 
     if (satisfiedDependencies.length > 0) {
-      reasons.push(`depends_on_satisfied:${satisfiedDependencies.join(",")}`);
+      reasons.push(`depends_on_satisfied:${satisfiedDependencies.join("|")}`);
     }
   }
 
@@ -1481,7 +1480,7 @@ function formatRunnableReadinessReason(
       .filter((predecessorNumber) => state.issues[String(predecessorNumber)]?.state === "done");
 
     if (clearedPredecessors.length > 0) {
-      reasons.push(`execution_order_satisfied:${clearedPredecessors.join(",")}`);
+      reasons.push(`execution_order_satisfied:${clearedPredecessors.join("|")}`);
     }
   }
 
