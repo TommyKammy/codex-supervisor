@@ -55,6 +55,7 @@ function createIssueRecord(config: SupervisorConfig, issueNumber: number): Issue
     copilot_review_timeout_reason: null,
     codex_session_id: null,
     local_review_head_sha: null,
+    local_review_blocker_summary: null,
     local_review_summary_path: null,
     local_review_run_at: null,
     local_review_max_severity: null,
@@ -1814,7 +1815,7 @@ export function formatDetailedStatus(args: {
     `last_failure_kind=${activeRecord.last_failure_kind ?? "none"}`,
     `last_failure_signature=${activeRecord.last_failure_signature ?? "none"}`,
     `retries timeout=${activeRecord.timeout_retry_count} verification=${activeRecord.blocked_verification_retry_count} same_blocker=${activeRecord.repeated_blocker_count} same_failure_signature=${activeRecord.repeated_failure_signature_count}`,
-    `local_review gating=${localReviewGating} policy=${config.localReviewPolicy} findings=${activeRecord.local_review_findings_count} root_causes=${activeRecord.local_review_root_cause_count} max_severity=${activeRecord.local_review_max_severity ?? "none"} verified_findings=${activeRecord.local_review_verified_findings_count} verified_max_severity=${activeRecord.local_review_verified_max_severity ?? "none"} head=${localReviewHead.status} reviewed_head_sha=${localReviewHead.reviewedHeadSha} pr_head_sha=${localReviewHead.prHeadSha} ran_at=${activeRecord.local_review_run_at ?? "none"}${localReviewHead.driftSuffix} signature=${activeRecord.last_local_review_signature ?? "none"} repeated=${activeRecord.repeated_local_review_signature_count} stalled=${localReviewStalled}`,
+    `local_review gating=${localReviewGating} policy=${config.localReviewPolicy} findings=${activeRecord.local_review_findings_count} root_causes=${activeRecord.local_review_root_cause_count} max_severity=${activeRecord.local_review_max_severity ?? "none"} verified_findings=${activeRecord.local_review_verified_findings_count} verified_max_severity=${activeRecord.local_review_verified_max_severity ?? "none"} head=${localReviewHead.status} reviewed_head_sha=${localReviewHead.reviewedHeadSha} pr_head_sha=${localReviewHead.prHeadSha} ran_at=${activeRecord.local_review_run_at ?? "none"}${localReviewGating === "yes" && activeRecord.local_review_blocker_summary ? ` blocker_summary=${truncate(sanitizeStatusValue(activeRecord.local_review_blocker_summary), 160)}` : ""}${localReviewHead.driftSuffix} signature=${activeRecord.last_local_review_signature ?? "none"} repeated=${activeRecord.repeated_local_review_signature_count} stalled=${localReviewStalled}`,
     `external_review head=${externalReviewHeadStatus} reviewed_head_sha=${activeRecord.external_review_head_sha ?? "none"} matched=${activeRecord.external_review_matched_findings_count} near_match=${activeRecord.external_review_near_match_findings_count} missed=${activeRecord.external_review_missed_findings_count}`,
   ];
 
@@ -1933,6 +1934,7 @@ function doneResetPatch(
     state: "done",
     last_error: null,
     blocked_reason: null,
+    local_review_blocker_summary: null,
     local_review_recommendation: null,
     local_review_degraded: false,
     external_review_head_sha: null,
@@ -3232,6 +3234,7 @@ export class Supervisor {
         record = this.stateStore.touch(record, {
           state: "draft_pr",
           local_review_head_sha: refreshed.pr.headRefOid,
+          local_review_blocker_summary: localReview.blockerSummary,
           local_review_summary_path: localReview.summaryPath,
           local_review_run_at: localReview.ranAt,
           local_review_max_severity: localReview.maxSeverity,
@@ -3270,6 +3273,7 @@ export class Supervisor {
         record = this.stateStore.touch(record, {
           state: "draft_pr",
           local_review_head_sha: refreshed.pr.headRefOid,
+          local_review_blocker_summary: "degraded local review; inspect the saved artifact",
           local_review_summary_path: null,
           local_review_run_at: nowIso(),
           local_review_max_severity: null,

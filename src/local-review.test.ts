@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { localReviewHasActionableFindings, shouldRunLocalReview } from "./local-review";
+import { buildLocalReviewBlockerSummary, localReviewHasActionableFindings, shouldRunLocalReview } from "./local-review";
 import { finalizeLocalReview } from "./local-review-finalize";
 import { buildRolePrompt, buildVerifierPrompt } from "./local-review-prompt";
 import { type VerifierGuardrailRule } from "./verifier-guardrails";
@@ -505,6 +505,59 @@ test("finalizeLocalReview does not compress findings without file locations", ()
 
   assert.equal(result.findingsCount, 2);
   assert.equal(result.rootCauseCount, 2);
+});
+
+test("buildLocalReviewBlockerSummary summarizes the leading root cause compactly", () => {
+  const result = finalizeLocalReview({
+    config: createConfig({ localReviewConfidenceThreshold: 0.7 }),
+    issueNumber: 45,
+    prNumber: 20,
+    branch: "codex/issue-45",
+    headSha: "summary123456",
+    roleResults: [
+      {
+        role: "reviewer",
+        summary: "Found two retry-path defects.",
+        recommendation: "changes_requested",
+        degraded: false,
+        exitCode: 0,
+        rawOutput: "review raw output",
+        findings: [
+          {
+            role: "reviewer",
+            title: "Retry path reuses stale artifact context",
+            body: "The retry path can reuse stale artifact context and keep applying the wrong repair guidance.",
+            file: "src/supervisor.ts",
+            start: 210,
+            end: 214,
+            severity: "high",
+            confidence: 0.95,
+            category: "correctness",
+            evidence: "The repair step reads stale context after the PR head changes.",
+          },
+          {
+            role: "explorer",
+            title: "Second root cause without a file anchor",
+            body: "Stale retry metadata can also survive across repeated repair attempts.",
+            file: null,
+            start: null,
+            end: null,
+            severity: "medium",
+            confidence: 0.9,
+            category: "correctness",
+            evidence: "No file anchor for the second root cause.",
+          },
+        ],
+      },
+    ],
+    verifierReport: null,
+    ranAt: "2026-03-12T02:20:00Z",
+  });
+
+  assert.equal(
+    buildLocalReviewBlockerSummary(result),
+    "high src/supervisor.ts:210-214 The retry path can reuse stale artifact context and keep applying the wrong repair guidance. (+1 more root cause)",
+  );
 });
 
 test("buildRolePrompt includes bounded relevant prior external misses", () => {

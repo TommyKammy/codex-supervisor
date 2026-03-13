@@ -84,6 +84,7 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     copilot_review_timeout_reason: null,
     codex_session_id: "session-1",
     local_review_head_sha: null,
+    local_review_blocker_summary: null,
     local_review_summary_path: null,
     local_review_run_at: null,
     local_review_max_severity: null,
@@ -2682,6 +2683,7 @@ test("formatDetailedStatus shows blocking local review status for current PR hea
   const config = createConfig({ localReviewPolicy: "block_ready" });
   const record = createRecord({
     local_review_head_sha: "deadbeef",
+    local_review_blocker_summary: "high src/supervisor.ts:210-214 stale artifact context drives the wrong repair path.",
     local_review_max_severity: "high",
     local_review_findings_count: 3,
     local_review_recommendation: "changes_requested",
@@ -2714,7 +2716,7 @@ test("formatDetailedStatus shows blocking local review status for current PR hea
 
   assert.match(
     status,
-    /local_review gating=yes policy=block_ready findings=3 root_causes=0 max_severity=high verified_findings=0 verified_max_severity=none head=current reviewed_head_sha=deadbeef pr_head_sha=deadbeef ran_at=2026-03-11T14:05:00Z signature=none repeated=0 stalled=no/,
+    /local_review gating=yes policy=block_ready findings=3 root_causes=0 max_severity=high verified_findings=0 verified_max_severity=none head=current reviewed_head_sha=deadbeef pr_head_sha=deadbeef ran_at=2026-03-11T14:05:00Z blocker_summary=high src\/supervisor\.ts:210-214 stale artifact context drives the wrong repair path\. signature=none repeated=0 stalled=no/,
   );
   assert.doesNotMatch(status, /needs_review_run=/);
   assert.match(status, /external_review head=none reviewed_head_sha=none matched=0 near_match=0 missed=0/);
@@ -3100,6 +3102,7 @@ test("formatDetailedStatus reports none local review head status with current PR
     status,
     /local_review gating=no policy=block_merge findings=0 root_causes=0 max_severity=none verified_findings=0 verified_max_severity=none head=none reviewed_head_sha=none pr_head_sha=newhead ran_at=none/,
   );
+  assert.doesNotMatch(status, /blocker_summary=/);
 });
 
 test("localReviewHighSeverityNeedsRetry only escalates verifier-confirmed high findings", () => {

@@ -605,6 +605,7 @@ test("GitHubClient does not retry non-transient gh failures", async () => {
           copilot_review_timeout_reason: null,
           codex_session_id: null,
           local_review_head_sha: null,
+          local_review_blocker_summary: null,
           local_review_summary_path: null,
           local_review_run_at: null,
           local_review_max_severity: null,

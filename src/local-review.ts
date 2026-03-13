@@ -1,7 +1,7 @@
 import { detectLocalReviewRoleSelections } from "./review-role-detector";
 import { runCommand } from "./command";
 import { loadRelevantExternalReviewMissPatterns } from "./external-review-misses";
-import { ensureDir, nowIso } from "./utils";
+import { ensureDir, nowIso, truncate } from "./utils";
 import { compareRef } from "./local-review-prompt";
 import { dedupeFindings, finalizeLocalReview } from "./local-review-finalize";
 import { reviewDir, writeLocalReviewArtifacts } from "./local-review-artifacts";
@@ -42,6 +42,51 @@ interface IssueRunRecordLike {
   local_review_head_sha: string | null;
   local_review_findings_count: number;
   local_review_recommendation: "ready" | "changes_requested" | "unknown" | null;
+}
+
+function formatBlockerLocation(args: { file: string | null; start: number | null; end: number | null }): string | null {
+  if (!args.file) {
+    return null;
+  }
+  if (args.start == null) {
+    return args.file;
+  }
+
+  return args.end != null && args.end !== args.start
+    ? `${args.file}:${args.start}-${args.end}`
+    : `${args.file}:${args.start}`;
+}
+
+export function buildLocalReviewBlockerSummary(
+  review: Pick<FinalizedLocalReview, "recommendation" | "degraded" | "maxSeverity" | "rootCauseCount" | "rootCauseSummaries">,
+): string | null {
+  if (review.recommendation === "ready") {
+    return null;
+  }
+  if (review.degraded) {
+    return "degraded local review; inspect the saved artifact";
+  }
+
+  const primary = review.rootCauseSummaries[0];
+  if (!primary) {
+    return review.rootCauseCount > 0 || review.maxSeverity !== "none"
+      ? `${review.maxSeverity} severity local-review findings`
+      : null;
+  }
+
+  const location = formatBlockerLocation(primary);
+  const extraCount = Math.max(review.rootCauseSummaries.length - 1, 0);
+  return truncate(
+    [
+      primary.severity,
+      location,
+      primary.summary,
+      extraCount > 0 ? `(+${extraCount} more root cause${extraCount === 1 ? "" : "s"})` : null,
+    ]
+      .filter((part): part is string => Boolean(part))
+      .join(" "),
+    160,
+  );
 }
 
 function selectLocalReviewRoles(args: {
@@ -140,6 +185,7 @@ function formatLocalReviewResult(args: {
     summaryPath: args.artifacts.summaryPath,
     findingsPath: args.artifacts.findingsPath,
     summary: args.finalized.summary,
+    blockerSummary: buildLocalReviewBlockerSummary(args.finalized),
     findingsCount: args.finalized.findingsCount,
     rootCauseCount: args.finalized.rootCauseCount,
     maxSeverity: args.finalized.maxSeverity,
