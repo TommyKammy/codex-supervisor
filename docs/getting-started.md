@@ -450,6 +450,17 @@ Older local review artifacts remain on disk unless you clean them up explicitly.
 
 If the supervisor sends the issue into `local_review_fix`, treat the active local-review blocker as the top priority. The repair prompt suppresses stale issue-journal `Next 1-3 actions` bullets so older checkpoint advice does not compete with the current blocker. If you need to force a temporary repair instruction anyway, write it explicitly in the journal as `- Operator override: ...`; that override remains visible in repair prompts.
 
+Committed Local Review Swarm guardrails are maintained under `docs/shared-memory/`:
+
+- `verifier-guardrails.json`
+- `external-review-guardrails.json`
+
+When you add or update an entry, follow the deterministic repo workflow:
+
+1. Edit the committed JSON in `docs/shared-memory/`.
+2. Run `npm run guardrails:fix` to normalize ordering and formatting.
+3. Run `npm run guardrails:check` to catch malformed updates, duplicate verifier `id` values, duplicate external-review `fingerprint` values, or formatting drift before committing.
+
 ## What to ask Codex
 
 ### To use the supervisor
