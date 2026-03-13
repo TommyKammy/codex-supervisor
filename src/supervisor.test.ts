@@ -709,6 +709,104 @@ test("runOnce releases the current issue lock before restarting after a merged P
   assert.equal(listAllIssuesCalls, 2);
 });
 
+test("runOnce reconciles inactive merging records whose tracked PR already merged", async () => {
+  const fixture = await createSupervisorFixture();
+  const mergedIssueNumber = 91;
+  const nextIssueNumber = 92;
+  const mergedBranch = branchName(fixture.config, mergedIssueNumber);
+  const nextBranch = branchName(fixture.config, nextIssueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(mergedIssueNumber)]: createRecord({
+        issue_number: mergedIssueNumber,
+        state: "merging",
+        branch: mergedBranch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${mergedIssueNumber}`),
+        journal_path: null,
+        pr_number: 191,
+        blocked_reason: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const nextIssue: GitHubIssue = {
+    number: nextIssueNumber,
+    title: "Next runnable issue",
+    body: "",
+    createdAt: "2026-03-13T00:05:00Z",
+    updatedAt: "2026-03-13T00:05:00Z",
+    url: `https://example.test/issues/${nextIssueNumber}`,
+    state: "OPEN",
+  };
+  const mergedIssue: GitHubIssue = {
+    number: mergedIssueNumber,
+    title: "Merged implementation issue",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:21:00Z",
+    url: `https://example.test/issues/${mergedIssueNumber}`,
+    state: "CLOSED",
+  };
+  const mergedPr: GitHubPullRequest = {
+    number: 191,
+    title: "Merged implementation",
+    url: "https://example.test/pr/191",
+    state: "MERGED",
+    createdAt: "2026-03-13T00:10:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: mergedBranch,
+    headRefOid: "merged-head-191",
+    mergedAt: "2026-03-13T00:20:00Z",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [nextIssue],
+    listCandidateIssues: async () => [nextIssue],
+    getIssue: async (issueNumber: number) => {
+      if (issueNumber === mergedIssueNumber) {
+        return mergedIssue;
+      }
+      assert.equal(issueNumber, nextIssueNumber);
+      return nextIssue;
+    },
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      assert.equal(branchName, nextBranch);
+      assert.equal(prNumber, null);
+      return null;
+    },
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async (prNumber: number) => {
+      assert.equal(prNumber, 191);
+      return mergedPr;
+    },
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(message, new RegExp(`Dry run: would invoke Codex for issue #${nextIssueNumber}\\.`));
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  assert.equal(persisted.activeIssueNumber, nextIssueNumber);
+  assert.equal(persisted.issues[String(mergedIssueNumber)]?.state, "done");
+  assert.equal(persisted.issues[String(mergedIssueNumber)]?.pr_number, 191);
+  assert.equal(persisted.issues[String(mergedIssueNumber)]?.last_head_sha, "merged-head-191");
+  assert.equal(persisted.issues[String(nextIssueNumber)]?.branch, nextBranch);
+});
+
 test("runOnce marks a clean draft PR ready and enables auto-merge after the turn", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 92;
