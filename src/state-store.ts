@@ -24,6 +24,8 @@ function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
     journal_path: value.journal_path ?? null,
     review_wait_started_at: value.review_wait_started_at ?? null,
     review_wait_head_sha: value.review_wait_head_sha ?? null,
+    copilot_review_requested_observed_at: value.copilot_review_requested_observed_at ?? null,
+    copilot_review_requested_head_sha: value.copilot_review_requested_head_sha ?? null,
     copilot_review_timed_out_at: value.copilot_review_timed_out_at ?? null,
     copilot_review_timeout_action: value.copilot_review_timeout_action ?? null,
     copilot_review_timeout_reason: value.copilot_review_timeout_reason ?? null,
@@ -173,6 +175,14 @@ export class StateStore {
         hasOwn(patch, "review_wait_started_at") ? patch.review_wait_started_at ?? null : record.review_wait_started_at ?? null,
       review_wait_head_sha:
         hasOwn(patch, "review_wait_head_sha") ? patch.review_wait_head_sha ?? null : record.review_wait_head_sha ?? null,
+      copilot_review_requested_observed_at:
+        hasOwn(patch, "copilot_review_requested_observed_at")
+          ? patch.copilot_review_requested_observed_at ?? null
+          : record.copilot_review_requested_observed_at ?? null,
+      copilot_review_requested_head_sha:
+        hasOwn(patch, "copilot_review_requested_head_sha")
+          ? patch.copilot_review_requested_head_sha ?? null
+          : record.copilot_review_requested_head_sha ?? null,
       copilot_review_timed_out_at:
         hasOwn(patch, "copilot_review_timed_out_at")
           ? patch.copilot_review_timed_out_at ?? null

@@ -47,6 +47,8 @@ function createIssueRecord(config: SupervisorConfig, issueNumber: number): Issue
     journal_path: null,
     review_wait_started_at: null,
     review_wait_head_sha: null,
+    copilot_review_requested_observed_at: null,
+    copilot_review_requested_head_sha: null,
     copilot_review_timed_out_at: null,
     copilot_review_timeout_action: null,
     copilot_review_timeout_reason: null,
@@ -823,8 +825,8 @@ function copilotReviewTimeoutStart(record: IssueRunRecord, pr: GitHubPullRequest
     return pr.copilotReviewRequestedAt;
   }
 
-  if (record.review_wait_head_sha === pr.headRefOid) {
-    return record.review_wait_started_at;
+  if (record.copilot_review_requested_head_sha === pr.headRefOid) {
+    return record.copilot_review_requested_observed_at;
   }
 
   return null;
@@ -941,13 +943,46 @@ function syncReviewWaitWindow(record: IssueRunRecord, pr: GitHubPullRequest): Pa
   };
 }
 
+function syncCopilotReviewRequestObservation(record: IssueRunRecord, pr: GitHubPullRequest): Partial<IssueRunRecord> {
+  if (pr.isDraft || (pr.copilotReviewState ?? "not_requested") !== "requested") {
+    return {
+      copilot_review_requested_observed_at: null,
+      copilot_review_requested_head_sha: null,
+    };
+  }
+
+  if (pr.copilotReviewRequestedAt) {
+    return {
+      copilot_review_requested_observed_at: pr.copilotReviewRequestedAt,
+      copilot_review_requested_head_sha: pr.headRefOid,
+    };
+  }
+
+  if (
+    record.copilot_review_requested_observed_at &&
+    record.copilot_review_requested_head_sha === pr.headRefOid
+  ) {
+    return {
+      copilot_review_requested_observed_at: record.copilot_review_requested_observed_at,
+      copilot_review_requested_head_sha: record.copilot_review_requested_head_sha,
+    };
+  }
+
+  return {
+    copilot_review_requested_observed_at: nowIso(),
+    copilot_review_requested_head_sha: pr.headRefOid,
+  };
+}
+
 function syncCopilotReviewTimeoutState(
   config: SupervisorConfig,
   record: IssueRunRecord,
   pr: GitHubPullRequest,
 ): Pick<
   IssueRunRecord,
-  "copilot_review_timed_out_at" | "copilot_review_timeout_action" | "copilot_review_timeout_reason"
+  | "copilot_review_timed_out_at"
+  | "copilot_review_timeout_action"
+  | "copilot_review_timeout_reason"
 > {
   const timeout = determineCopilotReviewTimeout(config, record, pr);
   if (!timeout.timedOut || !timeout.action) {
@@ -1618,6 +1653,7 @@ async function reconcileStaleFailedIssueStates(
       pr_number: pr.number,
       last_head_sha: pr.headRefOid,
       ...syncReviewWaitWindow(record, pr),
+      ...syncCopilotReviewRequestObservation(record, pr),
       ...syncCopilotReviewTimeoutState(config, record, pr),
     };
 
@@ -1660,6 +1696,8 @@ export async function reconcileRecoverableBlockedIssueStates(
       codex_session_id: null,
       review_wait_started_at: null,
       review_wait_head_sha: null,
+      copilot_review_requested_observed_at: null,
+      copilot_review_requested_head_sha: null,
       copilot_review_timed_out_at: null,
       copilot_review_timeout_action: null,
       copilot_review_timeout_reason: null,
@@ -2035,18 +2073,25 @@ export class Supervisor {
       if (pr) {
         const failureContext = inferFailureContext(this.config, record, pr, checks, reviewThreads);
         const reviewWaitPatch = syncReviewWaitWindow(record, pr);
-        const copilotTimeoutPatch = syncCopilotReviewTimeoutState(this.config, record, pr);
-        const nextState = inferStateFromPullRequest(this.config, record, pr, checks, reviewThreads);
+        const copilotRequestObservationPatch = syncCopilotReviewRequestObservation(record, pr);
+        const recordForReviewState = {
+          ...record,
+          ...reviewWaitPatch,
+          ...copilotRequestObservationPatch,
+        };
+        const copilotTimeoutPatch = syncCopilotReviewTimeoutState(this.config, recordForReviewState, pr);
+        const nextState = inferStateFromPullRequest(this.config, recordForReviewState, pr, checks, reviewThreads);
         record = this.stateStore.touch(record, {
           pr_number: pr.number,
           state: nextState,
           ...reviewWaitPatch,
+          ...copilotRequestObservationPatch,
           ...copilotTimeoutPatch,
           last_error: nextState === "blocked" && failureContext ? truncate(failureContext.summary, 1000) : record.last_error,
           last_failure_context: failureContext,
           ...applyFailureSignature(record, failureContext),
           blocked_reason:
-            nextState === "blocked" ? blockedReasonFromReviewState(this.config, record, pr, reviewThreads) : null,
+            nextState === "blocked" ? blockedReasonFromReviewState(this.config, recordForReviewState, pr, reviewThreads) : null,
         });
 
         if (failureContext && shouldStopForRepeatedFailureSignature(record, this.config)) {
@@ -2068,6 +2113,8 @@ export class Supervisor {
         const preserveFailureTracking = shouldPreserveNoPrFailureTracking(record);
         record = this.stateStore.touch(record, {
           state: inferStateWithoutPullRequest(record, workspaceStatus),
+          copilot_review_requested_observed_at: null,
+          copilot_review_requested_head_sha: null,
           copilot_review_timed_out_at: null,
           copilot_review_timeout_action: null,
           copilot_review_timeout_reason: null,
@@ -2335,11 +2382,17 @@ export class Supervisor {
           : record.processed_review_thread_ids;
       const postRunFailureContext = inferFailureContext(this.config, record, pr, checks, reviewThreads);
       const postRunReviewWaitPatch = pr ? syncReviewWaitWindow(record, pr) : {};
-      const postRunCopilotTimeoutPatch = pr ? syncCopilotReviewTimeoutState(this.config, record, pr) : {};
+      const postRunCopilotRequestObservationPatch = pr ? syncCopilotReviewRequestObservation(record, pr) : {};
+      const postRunRecordForReviewState = pr
+        ? { ...record, ...postRunReviewWaitPatch, ...postRunCopilotRequestObservationPatch }
+        : record;
+      const postRunCopilotTimeoutPatch = pr
+        ? syncCopilotReviewTimeoutState(this.config, postRunRecordForReviewState, pr)
+        : {};
       const postRunState = pr
         ? inferStateFromPullRequest(
             this.config,
-            { ...record, processed_review_thread_ids: processedReviewThreadIds },
+            { ...postRunRecordForReviewState, processed_review_thread_ids: processedReviewThreadIds },
             pr,
             checks,
             reviewThreads,
@@ -2348,6 +2401,7 @@ export class Supervisor {
       record = this.stateStore.touch(record, {
         pr_number: pr?.number ?? null,
         ...postRunReviewWaitPatch,
+        ...postRunCopilotRequestObservationPatch,
         ...postRunCopilotTimeoutPatch,
         processed_review_thread_ids: processedReviewThreadIds,
         blocked_verification_retry_count: pr ? 0 : record.blocked_verification_retry_count,
@@ -2517,10 +2571,21 @@ export class Supervisor {
             : null;
       const effectiveFailureContext = refreshedFailureContext ?? postReadyLocalReviewFailureContext;
       const refreshedReviewWaitPatch = syncReviewWaitWindow(record, postReadyPr);
-      const refreshedCopilotTimeoutPatch = syncCopilotReviewTimeoutState(this.config, record, postReadyPr);
+      const refreshedCopilotRequestObservationPatch = syncCopilotReviewRequestObservation(record, postReadyPr);
+      const refreshedRecordForReviewState = {
+        ...record,
+        ...refreshedReviewWaitPatch,
+        ...refreshedCopilotRequestObservationPatch,
+      };
+      const refreshedCopilotTimeoutPatch = syncCopilotReviewTimeoutState(
+        this.config,
+        refreshedRecordForReviewState,
+        postReadyPr,
+      );
       record = this.stateStore.touch(record, {
         pr_number: postReadyPr.number,
         ...refreshedReviewWaitPatch,
+        ...refreshedCopilotRequestObservationPatch,
         ...refreshedCopilotTimeoutPatch,
         state: nextState,
         last_head_sha: postReadyPr.headRefOid,
