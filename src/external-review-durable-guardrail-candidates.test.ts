@@ -36,9 +36,9 @@ test("toDurableGuardrailCandidates emits explicit categories with deterministic 
 
   assert.deepEqual(candidates, [
     {
-      id: "prompt_rubric|src/auth.ts|42|this fallback skips the permission guard and lets unauthorized callers update records.",
-      category: "prompt_rubric",
-      title: "Promote prompt/rubric guardrail for This fallback skips the permission guard and lets unauthorized callers update records",
+      id: "reviewer_rubric|src/auth.ts|42|this fallback skips the permission guard and lets unauthorized callers update records.",
+      category: "reviewer_rubric",
+      title: "Promote reviewer rubric guardrail for This fallback skips the permission guard and lets unauthorized callers update records",
       reviewerLogin: "copilot-pull-request-reviewer",
       file: "src/auth.ts",
       line: 42,
@@ -140,7 +140,7 @@ test("toDurableGuardrailCandidates rejects weak or ambiguous misses deterministi
         severity: "medium",
       }),
     }).map((candidate) => candidate.category),
-    ["prompt_rubric", "regression_test"],
+    ["reviewer_rubric", "regression_test"],
   );
 
   assert.deepEqual(
@@ -172,6 +172,6 @@ test("toDurableGuardrailCandidates rejects weak or ambiguous misses deterministi
         line: null,
       }),
     }).map((candidate) => candidate.category),
-    ["prompt_rubric"],
+    ["reviewer_rubric"],
   );
 });

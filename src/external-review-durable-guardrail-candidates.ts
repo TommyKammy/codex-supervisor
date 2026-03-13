@@ -33,8 +33,8 @@ const COMMON_RULES: CandidateQualificationRule[] = [
 
 const CANDIDATE_SPECS: CandidateSpec[] = [
   {
-    category: "prompt_rubric",
-    titlePrefix: "Promote prompt/rubric guardrail for",
+    category: "reviewer_rubric",
+    titlePrefix: "Promote reviewer rubric guardrail for",
     rules: [
       ...COMMON_RULES,
       {
