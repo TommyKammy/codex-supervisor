@@ -30,6 +30,36 @@ export interface ExternalReviewRegressionCandidate {
   qualificationReasons: string[];
 }
 
+export type ExternalReviewDurableGuardrailCandidateCategory =
+  | "prompt_rubric"
+  | "verifier"
+  | "regression_test";
+
+export interface ExternalReviewDurableGuardrailCandidate {
+  id: string;
+  category: ExternalReviewDurableGuardrailCandidateCategory;
+  title: string;
+  reviewerLogin: string;
+  file: string;
+  line: number | null;
+  summary: string;
+  rationale: string;
+  qualificationReasons: string[];
+  provenance: {
+    issueNumber: number;
+    prNumber: number;
+    branch: string;
+    headSha: string;
+    sourceThreadId: string;
+    sourceUrl: string | null;
+    sourceArtifactPath: string;
+    localReviewSummaryPath: string | null;
+    localReviewFindingsPath: string | null;
+    matchedLocalReference: string | null;
+    matchReason: string;
+  };
+}
+
 export interface DurableExternalReviewGuardrails {
   version: 1;
   patterns: ExternalReviewMissPattern[];
@@ -45,6 +75,7 @@ export interface ExternalReviewMissArtifact {
   localReviewFindingsPath: string | null;
   findings: ExternalReviewMissFinding[];
   reusableMissPatterns: ExternalReviewMissPattern[];
+  durableGuardrailCandidates: ExternalReviewDurableGuardrailCandidate[];
   regressionTestCandidates: ExternalReviewRegressionCandidate[];
   counts: {
     matched: number;
