@@ -31,6 +31,7 @@ function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
     copilot_review_timeout_reason: value.copilot_review_timeout_reason ?? null,
     codex_session_id: value.codex_session_id ?? null,
     local_review_head_sha: value.local_review_head_sha ?? null,
+    local_review_blocker_summary: value.local_review_blocker_summary ?? null,
     local_review_summary_path: value.local_review_summary_path ?? null,
     local_review_run_at: value.local_review_run_at ?? null,
     local_review_max_severity: value.local_review_max_severity ?? null,
@@ -201,6 +202,10 @@ export class StateStore {
         hasOwn(patch, "codex_session_id") ? patch.codex_session_id ?? null : record.codex_session_id ?? null,
       local_review_head_sha:
         hasOwn(patch, "local_review_head_sha") ? patch.local_review_head_sha ?? null : record.local_review_head_sha ?? null,
+      local_review_blocker_summary:
+        hasOwn(patch, "local_review_blocker_summary")
+          ? patch.local_review_blocker_summary ?? null
+          : record.local_review_blocker_summary ?? null,
       local_review_summary_path:
         hasOwn(patch, "local_review_summary_path") ? patch.local_review_summary_path ?? null : record.local_review_summary_path ?? null,
       local_review_run_at:

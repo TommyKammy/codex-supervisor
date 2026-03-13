@@ -134,6 +134,7 @@ export interface LocalReviewResult {
   summaryPath: string;
   findingsPath: string;
   summary: string;
+  blockerSummary: string | null;
   findingsCount: number;
   rootCauseCount: number;
   maxSeverity: LocalReviewSeverity;
@@ -143,4 +144,3 @@ export interface LocalReviewResult {
   degraded: boolean;
   rawOutput: string;
 }
-

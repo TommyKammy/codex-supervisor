@@ -126,6 +126,7 @@ export interface IssueRunRecord {
   copilot_review_timeout_reason: string | null;
   codex_session_id: string | null;
   local_review_head_sha: string | null;
+  local_review_blocker_summary: string | null;
   local_review_summary_path: string | null;
   local_review_run_at: string | null;
   local_review_max_severity: "none" | "low" | "medium" | "high" | null;
