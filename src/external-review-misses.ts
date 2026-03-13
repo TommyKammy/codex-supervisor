@@ -1,9 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { ensureDir, nowIso, parseJson, truncate } from "./utils";
+import { ensureDir, nowIso, parseJson } from "./utils";
 import {
-  createExternalReviewMissPatternFingerprint,
-  createExternalReviewRegressionCandidateId,
   normalizeExternalReviewFinding,
   type NormalizedExternalReviewFinding,
 } from "./external-review-normalization";
@@ -13,138 +11,16 @@ import {
   type ExternalReviewMissFinding,
   type LocalReviewArtifactLike,
 } from "./external-review-classifier";
+import {
+  type ExternalReviewMissArtifact,
+  type ExternalReviewMissContext,
+  type ExternalReviewMissPattern,
+  type ExternalReviewPromptFinding,
+  type ExternalReviewRegressionCandidate,
+} from "./external-review-miss-artifact-types";
+import { legacyReusableMissPatterns, toReusableMissPattern } from "./external-review-miss-patterns";
+import { toRegressionTestCandidate } from "./external-review-regression-candidates";
 import { type ReviewThread } from "./types";
-
-export type ExternalReviewPromptFinding = Pick<
-  ExternalReviewMissFinding,
-  "reviewerLogin" | "file" | "line" | "summary" | "rationale" | "url"
->;
-
-export interface ExternalReviewMissArtifact {
-  issueNumber: number;
-  prNumber: number;
-  branch: string;
-  headSha: string;
-  generatedAt: string;
-  localReviewSummaryPath: string | null;
-  localReviewFindingsPath: string | null;
-  findings: ExternalReviewMissFinding[];
-  reusableMissPatterns: ExternalReviewMissPattern[];
-  regressionTestCandidates: ExternalReviewRegressionCandidate[];
-  counts: {
-    matched: number;
-    nearMatch: number;
-    missedByLocalReview: number;
-  };
-}
-
-export interface ExternalReviewMissContext {
-  artifactPath: string;
-  missedFindings: ExternalReviewPromptFinding[];
-  regressionTestCandidates: ExternalReviewRegressionCandidate[];
-  matchedCount: number;
-  nearMatchCount: number;
-  missedCount: number;
-}
-
-export interface ExternalReviewMissPattern {
-  fingerprint: string;
-  reviewerLogin: string;
-  file: string;
-  line: number | null;
-  summary: string;
-  rationale: string;
-  sourceArtifactPath: string;
-  sourceHeadSha: string;
-  lastSeenAt: string;
-}
-
-export interface ExternalReviewRegressionCandidate {
-  id: string;
-  title: string;
-  file: string;
-  line: number;
-  summary: string;
-  rationale: string;
-  reviewerLogin: string;
-  sourceThreadId: string;
-  sourceUrl: string | null;
-  qualificationReasons: string[];
-}
-
-function createMissPatternFingerprint(finding: Pick<ExternalReviewPromptFinding, "file" | "summary" | "rationale">): string {
-  return createExternalReviewMissPatternFingerprint(finding);
-}
-
-function toReusableMissPattern(
-  finding: ExternalReviewMissFinding,
-  sourceArtifactPath: string,
-  sourceHeadSha: string,
-  lastSeenAt: string,
-): ExternalReviewMissPattern {
-  return {
-    fingerprint: createMissPatternFingerprint(finding),
-    reviewerLogin: finding.reviewerLogin,
-    file: finding.file ?? "unknown",
-    line: finding.line,
-    summary: finding.summary,
-    rationale: truncate(finding.rationale, 280) ?? finding.rationale,
-    sourceArtifactPath,
-    sourceHeadSha,
-    lastSeenAt,
-  };
-}
-
-function createRegressionCandidateId(finding: ExternalReviewMissFinding): string {
-  return createExternalReviewRegressionCandidateId(finding);
-}
-
-function toRegressionTestCandidate(
-  finding: ExternalReviewMissFinding,
-): ExternalReviewRegressionCandidate | null {
-  if (finding.classification !== "missed_by_local_review") {
-    return null;
-  }
-
-  const qualificationReasons: string[] = ["missed_by_local_review"];
-  if (finding.severity !== "low") {
-    qualificationReasons.push("non_low_severity");
-  }
-  if (finding.confidence >= 0.75) {
-    qualificationReasons.push("high_confidence");
-  }
-  if (typeof finding.file === "string" && finding.file.trim() !== "") {
-    qualificationReasons.push("file_scoped");
-  }
-  if (typeof finding.line === "number" && Number.isInteger(finding.line) && finding.line > 0) {
-    qualificationReasons.push("line_scoped");
-  }
-
-  if (
-    !qualificationReasons.includes("non_low_severity") ||
-    !qualificationReasons.includes("high_confidence") ||
-    !qualificationReasons.includes("file_scoped") ||
-    !qualificationReasons.includes("line_scoped") ||
-    !finding.file ||
-    finding.line == null
-  ) {
-    return null;
-  }
-
-  const trimmedSummary = finding.summary.replace(/[.!?]+$/, "");
-  return {
-    id: createRegressionCandidateId(finding),
-    title: `Add regression coverage for ${trimmedSummary}`,
-    file: finding.file,
-    line: finding.line,
-    summary: finding.summary,
-    rationale: finding.rationale,
-    reviewerLogin: finding.reviewerLogin,
-    sourceThreadId: finding.threadId,
-    sourceUrl: finding.url ?? null,
-    qualificationReasons,
-  };
-}
 
 async function loadLocalReviewArtifact(summaryPath: string | null): Promise<{
   findingsPath: string | null;
@@ -175,17 +51,6 @@ interface ExternalReviewMissArtifactLike {
   findings?: ExternalReviewMissFinding[];
   reusableMissPatterns?: ExternalReviewMissPattern[];
   regressionTestCandidates?: ExternalReviewRegressionCandidate[];
-}
-
-function legacyReusableMissPatterns(
-  artifact: ExternalReviewMissArtifactLike,
-  artifactPath: string,
-): ExternalReviewMissPattern[] {
-  const generatedAt = typeof artifact.generatedAt === "string" ? artifact.generatedAt : "";
-  const headSha = typeof artifact.headSha === "string" ? artifact.headSha : "";
-  return (artifact.findings ?? [])
-    .filter((finding) => finding.classification === "missed_by_local_review" && typeof finding.file === "string" && finding.file.trim() !== "")
-    .map((finding) => toReusableMissPattern(finding, artifactPath, headSha, generatedAt));
 }
 
 export async function loadRelevantExternalReviewMissPatterns(args: {
@@ -330,8 +195,13 @@ export async function writeExternalReviewMissArtifact(args: {
 export {
   classifyExternalReviewFinding,
   normalizeExternalReviewFinding,
+  type ExternalReviewMissArtifact,
   type ExternalReviewMatch,
+  type ExternalReviewMissContext,
   type ExternalReviewMissFinding,
+  type ExternalReviewMissPattern,
+  type ExternalReviewPromptFinding,
+  type ExternalReviewRegressionCandidate,
   type LocalReviewArtifactLike,
   type NormalizedExternalReviewFinding,
 };
