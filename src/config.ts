@@ -183,7 +183,7 @@ export function loadConfig(configPath?: string): SupervisorConfig {
       typeof raw.localReviewHighSeverityAction === "string" &&
       VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS.has(raw.localReviewHighSeverityAction as LocalReviewHighSeverityAction)
         ? (raw.localReviewHighSeverityAction as LocalReviewHighSeverityAction)
-        : "retry",
+        : "blocked",
     reviewBotLogins: Array.isArray(raw.reviewBotLogins)
       ? raw.reviewBotLogins
           .filter((value): value is string => typeof value === "string" && value.trim() !== "")

@@ -423,8 +423,8 @@ If you want stronger enforcement without giving the review swarm destructive pow
 
 For high-severity findings, `localReviewHighSeverityAction` can either:
 
-- `retry`: send the issue back into another repair pass, but only when the verifier confirms at least one high-severity finding
-- `blocked`: require explicit human intervention, but only when the verifier confirms at least one high-severity finding
+- `blocked`: safer default for solo operators; stop the merge and require explicit human intervention, but only when the verifier confirms at least one high-severity finding
+- `retry`: deterministic override for teams that want another repair pass automatically after the verifier confirms at least one high-severity finding
 
 The review artifacts distinguish between raw actionable findings from the review roles and verified findings confirmed by the verifier pass. `block_ready` and `block_merge` still react to raw actionable findings. The stronger high-severity actions above react only to verifier-confirmed high-severity findings, which reduces false positives without hiding the original review signal.
 
