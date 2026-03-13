@@ -57,6 +57,7 @@ test("inferCopilotReviewLifecycle returns not_requested when no Copilot signal e
     {
       reviewRequests: [],
       reviews: [],
+      comments: [],
       timeline: [],
     },
     ["copilot-pull-request-reviewer"],
@@ -74,6 +75,7 @@ test("inferCopilotReviewLifecycle returns requested when Copilot was requested b
     {
       reviewRequests: ["copilot-pull-request-reviewer"],
       reviews: [],
+      comments: [],
       timeline: [
         {
           type: "requested",
@@ -102,6 +104,7 @@ test("inferCopilotReviewLifecycle returns arrived when Copilot review exists", (
           submittedAt: "2026-03-13T02:03:04Z",
         },
       ],
+      comments: [],
       timeline: [
         {
           type: "requested",
@@ -117,6 +120,35 @@ test("inferCopilotReviewLifecycle returns arrived when Copilot review exists", (
     state: "arrived",
     requestedAt: "2026-03-13T01:02:03Z",
     arrivedAt: "2026-03-13T02:03:04Z",
+  });
+});
+
+test("inferCopilotReviewLifecycle returns arrived when Copilot comments on a review thread", () => {
+  const lifecycle = inferCopilotReviewLifecycle(
+    {
+      reviewRequests: [],
+      reviews: [],
+      comments: [
+        {
+          authorLogin: "copilot-pull-request-reviewer",
+          createdAt: "2026-03-13T02:04:05Z",
+        },
+      ],
+      timeline: [
+        {
+          type: "requested",
+          createdAt: "2026-03-13T01:02:03Z",
+          reviewerLogin: "copilot-pull-request-reviewer",
+        },
+      ],
+    },
+    ["copilot-pull-request-reviewer"],
+  );
+
+  assert.deepEqual(lifecycle, {
+    state: "arrived",
+    requestedAt: "2026-03-13T01:02:03Z",
+    arrivedAt: "2026-03-13T02:04:05Z",
   });
 });
 

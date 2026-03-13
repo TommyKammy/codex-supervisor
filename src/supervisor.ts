@@ -887,8 +887,24 @@ interface CopilotReviewTimeoutStatus {
   reason: string | null;
 }
 
+function copilotReviewArrived(pr: GitHubPullRequest): boolean {
+  return (pr.copilotReviewState ?? "not_requested") === "arrived" || Boolean(pr.copilotReviewArrivedAt);
+}
+
+function hasObservedCopilotRequest(record: IssueRunRecord, pr: GitHubPullRequest): boolean {
+  return Boolean(record.copilot_review_requested_observed_at && record.copilot_review_requested_head_sha === pr.headRefOid);
+}
+
+function copilotReviewPending(record: IssueRunRecord, pr: GitHubPullRequest): boolean {
+  if (pr.isDraft || copilotReviewArrived(pr)) {
+    return false;
+  }
+
+  return (pr.copilotReviewState ?? "not_requested") === "requested" || hasObservedCopilotRequest(record, pr);
+}
+
 function copilotReviewTimeoutStart(record: IssueRunRecord, pr: GitHubPullRequest): string | null {
-  if (pr.isDraft || (pr.copilotReviewState ?? "not_requested") !== "requested") {
+  if (!copilotReviewPending(record, pr)) {
     return null;
   }
 
@@ -1051,7 +1067,7 @@ function syncReviewWaitWindow(record: IssueRunRecord, pr: GitHubPullRequest): Pa
 }
 
 function syncCopilotReviewRequestObservation(record: IssueRunRecord, pr: GitHubPullRequest): Partial<IssueRunRecord> {
-  if (pr.isDraft || (pr.copilotReviewState ?? "not_requested") !== "requested") {
+  if (pr.isDraft || copilotReviewArrived(pr)) {
     return {
       copilot_review_requested_observed_at: null,
       copilot_review_requested_head_sha: null,
@@ -1075,9 +1091,16 @@ function syncCopilotReviewRequestObservation(record: IssueRunRecord, pr: GitHubP
     };
   }
 
+  if (hasObservedCopilotRequest(record, pr)) {
+    return {
+      copilot_review_requested_observed_at: record.copilot_review_requested_observed_at,
+      copilot_review_requested_head_sha: record.copilot_review_requested_head_sha,
+    };
+  }
+
   return {
-    copilot_review_requested_observed_at: nowIso(),
-    copilot_review_requested_head_sha: pr.headRefOid,
+    copilot_review_requested_observed_at: null,
+    copilot_review_requested_head_sha: null,
   };
 }
 
@@ -1184,7 +1207,7 @@ export function inferStateFromPullRequest(
     return "waiting_ci";
   }
 
-  if ((pr.copilotReviewState ?? "not_requested") === "requested" && !copilotTimeout.timedOut) {
+  if (copilotReviewPending(record, pr) && !copilotTimeout.timedOut) {
     return "waiting_ci";
   }
 

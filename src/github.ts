@@ -91,6 +91,18 @@ interface PullRequestCopilotReviewLifecycleResponse {
       submittedAt?: string | null;
     } | null>;
   } | null;
+  reviewThreads?: {
+    nodes?: Array<{
+      comments?: {
+        nodes?: Array<{
+          createdAt?: string | null;
+          author?: {
+            login?: string | null;
+          } | null;
+        } | null>;
+      } | null;
+    } | null>;
+  } | null;
   timelineItems?: {
     nodes?: Array<{
       __typename?: "ReviewRequestedEvent" | "ReviewRequestRemovedEvent" | string | null;
@@ -105,6 +117,10 @@ export interface CopilotReviewLifecycleFacts {
   reviews: Array<{
     authorLogin: string | null;
     submittedAt: string | null;
+  }>;
+  comments: Array<{
+    authorLogin: string | null;
+    createdAt: string | null;
   }>;
   timeline: Array<{
     type: "requested" | "removed";
@@ -195,11 +211,16 @@ export function inferCopilotReviewLifecycle(
     return { state: "not_requested", requestedAt: null, arrivedAt: null };
   }
 
-  const matchingReviews = facts.reviews.filter((review) => {
+  const matchingReviewTimes = facts.reviews.flatMap((review) => {
     const authorLogin = normalizeLogin(review.authorLogin);
-    return authorLogin ? configuredReviewBots.has(authorLogin) : false;
+    return authorLogin && configuredReviewBots.has(authorLogin) ? [review.submittedAt] : [];
   });
-  if (matchingReviews.length > 0) {
+  const matchingCommentTimes = facts.comments.flatMap((comment) => {
+    const authorLogin = normalizeLogin(comment.authorLogin);
+    return authorLogin && configuredReviewBots.has(authorLogin) ? [comment.createdAt] : [];
+  });
+  const arrivedAt = latestTimestamp([...matchingReviewTimes, ...matchingCommentTimes]);
+  if (arrivedAt) {
     return {
       state: "arrived",
       requestedAt: latestTimestamp(
@@ -207,7 +228,7 @@ export function inferCopilotReviewLifecycle(
           .filter((event) => event.type === "requested" && event.reviewerLogin && configuredReviewBots.has(event.reviewerLogin))
           .map((event) => event.createdAt),
       ),
-      arrivedAt: latestTimestamp(matchingReviews.map((review) => review.submittedAt)),
+      arrivedAt,
     };
   }
 
@@ -913,6 +934,18 @@ export class GitHubClient {
                 }
               }
             }
+            reviewThreads(first: 100) {
+              nodes {
+                comments(first: 20) {
+                  nodes {
+                    createdAt
+                    author {
+                      login
+                    }
+                  }
+                }
+              }
+            }
             timelineItems(last: 100, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT]) {
               nodes {
                 __typename
@@ -989,6 +1022,13 @@ export class GitHubClient {
           authorLogin: normalizeLogin(node?.author?.login ?? null),
           submittedAt: node?.submittedAt ?? null,
         })) ?? [],
+      comments:
+        lifecycle?.reviewThreads?.nodes?.flatMap((thread) =>
+          (thread?.comments?.nodes ?? []).map((comment) => ({
+            authorLogin: normalizeLogin(comment?.author?.login ?? null),
+            createdAt: comment?.createdAt ?? null,
+          })),
+        ) ?? [],
       timeline:
         lifecycle?.timelineItems?.nodes
           ?.map((node) => {
