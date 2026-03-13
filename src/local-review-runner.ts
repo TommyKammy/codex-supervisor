@@ -8,6 +8,7 @@ import { reviewDir } from "./local-review-artifacts";
 import { buildRolePrompt, buildVerifierPrompt, parseRoleFooter, parseVerifierFooter } from "./local-review-prompt";
 import { type LocalReviewFinding, type LocalReviewRoleResult, type LocalReviewVerifierReport } from "./local-review-types";
 import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "./types";
+import { loadRelevantVerifierGuardrails } from "./verifier-guardrails";
 
 function safeSlug(input: string): string {
   return input.replace(/[^a-zA-Z0-9._-]+/g, "-");
@@ -125,6 +126,11 @@ export async function runVerifierReview(args: {
     limit: 3,
     workspacePath: args.workspacePath,
   });
+  const verifierGuardrails = await loadRelevantVerifierGuardrails({
+    workspacePath: args.workspacePath,
+    changedFiles,
+    limit: 3,
+  });
   const prompt = buildVerifierPrompt({
     repoSlug: args.config.repoSlug,
     issue: args.issue,
@@ -134,6 +140,7 @@ export async function runVerifierReview(args: {
     pr: args.pr,
     findings: args.findings,
     priorMissPatterns,
+    verifierGuardrails,
   });
   const result = await runCodexReviewTurn({
     config: args.config,

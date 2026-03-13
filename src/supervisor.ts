@@ -26,6 +26,7 @@ import {
   WorkspaceStatus,
 } from "./types";
 import { nowIso, truncate, isTerminalState, hoursSince, parseJson } from "./utils";
+import { loadRelevantVerifierGuardrails } from "./verifier-guardrails";
 import {
   branchNameForIssue,
   cleanupWorkspace,
@@ -232,6 +233,14 @@ export async function loadLocalReviewRepairContext(summaryPath: string | null, w
           workspacePath,
         })
       : [];
+  const verifierGuardrails =
+    workspacePath
+      ? await loadRelevantVerifierGuardrails({
+          workspacePath,
+          changedFiles: relevantFiles,
+          limit: 3,
+        })
+      : [];
 
   return {
     summaryPath,
@@ -239,6 +248,7 @@ export async function loadLocalReviewRepairContext(summaryPath: string | null, w
     relevantFiles,
     rootCauses,
     priorMissPatterns,
+    verifierGuardrails,
   };
 }
 
