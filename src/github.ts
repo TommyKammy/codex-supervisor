@@ -7,8 +7,54 @@ import {
   ReviewThread,
   SupervisorConfig,
 } from "./types";
-import { runCommand } from "./command";
+import { CommandOptions, CommandResult, runCommand } from "./command";
 import { parseJson, truncate } from "./utils";
+
+const TRANSIENT_GITHUB_RETRY_LIMIT = 2;
+const TRANSIENT_GITHUB_RETRY_BASE_DELAY_MS = 200;
+
+export type GitHubCommandRunner = (
+  command: string,
+  args: string[],
+  options?: CommandOptions,
+) => Promise<CommandResult>;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function isTransientGitHubCommandFailure(message: string | null | undefined): boolean {
+  if (!message) {
+    return false;
+  }
+
+  const lower = message.toLowerCase();
+  const githubRelated =
+    lower.includes("api.github.com") ||
+    lower.includes("github.com") ||
+    lower.includes("graphql") ||
+    lower.includes("gh ");
+  const transientSignal =
+    lower.includes("connection reset by peer") ||
+    lower.includes("unexpected eof") ||
+    lower.includes("eof") ||
+    lower.includes("tls handshake timeout") ||
+    lower.includes("i/o timeout") ||
+    lower.includes("timeout awaiting response headers") ||
+    lower.includes("temporary failure in name resolution") ||
+    lower.includes("no such host") ||
+    lower.includes("connection refused") ||
+    lower.includes("network is unreachable") ||
+    lower.includes("server closed idle connection") ||
+    lower.includes("http2: client connection lost") ||
+    lower.includes("stream error") ||
+    lower.includes("internal server error") ||
+    lower.includes("bad gateway") ||
+    lower.includes("service unavailable") ||
+    lower.includes("gateway timeout");
+
+  return githubRelated && transientSignal;
+}
 
 interface PullRequestStatusCheckRollupResponse {
   statusCheckRollup?: Array<{
@@ -262,7 +308,55 @@ function normalizeRollupChecks(rollup: PullRequestStatusCheckRollupResponse | nu
 export class GitHubClient {
   private readonly copilotReviewLifecycleCache = new Map<string, Promise<CopilotReviewLifecycle>>();
 
-  constructor(private readonly config: SupervisorConfig) {}
+  constructor(
+    private readonly config: SupervisorConfig,
+    private readonly commandRunner: GitHubCommandRunner = runCommand,
+    private readonly delay: (ms: number) => Promise<void> = sleep,
+  ) {}
+
+  private async runGhCommand(args: string[], options: CommandOptions = {}): Promise<CommandResult> {
+    let lastTransientMessage: string | null = null;
+
+    for (let attempt = 0; attempt <= TRANSIENT_GITHUB_RETRY_LIMIT; attempt += 1) {
+      try {
+        const result = await this.commandRunner("gh", args, options);
+        if (result.exitCode === 0 || !isTransientGitHubCommandFailure(`${result.stderr}\n${result.stdout}`)) {
+          return result;
+        }
+
+        lastTransientMessage = truncate(
+          [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n"),
+          500,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!isTransientGitHubCommandFailure(message)) {
+          throw error;
+        }
+
+        lastTransientMessage = truncate(message, 500);
+      }
+
+      const nextAttempt = attempt + 1;
+      if (nextAttempt > TRANSIENT_GITHUB_RETRY_LIMIT) {
+        break;
+      }
+
+      console.warn(
+        `Transient GitHub CLI failure for gh ${args.join(" ")}; retry ${nextAttempt}/${TRANSIENT_GITHUB_RETRY_LIMIT}.`,
+      );
+      await this.delay(TRANSIENT_GITHUB_RETRY_BASE_DELAY_MS * nextAttempt);
+    }
+
+    throw new Error(
+      [
+        `Transient GitHub CLI failure after ${TRANSIENT_GITHUB_RETRY_LIMIT + 1} attempts: gh ${args.join(" ")}`,
+        lastTransientMessage ?? "Unknown transient GitHub failure.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+  }
 
   private repoOwnerAndName(): { owner: string; repo: string } {
     const [owner, repo] = this.config.repoSlug.split("/", 2);
@@ -275,8 +369,7 @@ export class GitHubClient {
 
   async authStatus(): Promise<{ ok: boolean; message: string | null }> {
     try {
-      const result = await runCommand(
-        "gh",
+      const result = await this.runGhCommand(
         ["auth", "status", "--hostname", "github.com"],
         { allowExitCodes: [0, 1] },
       );
@@ -298,7 +391,7 @@ export class GitHubClient {
   }
 
   async listAllIssues(): Promise<GitHubIssue[]> {
-    const result = await runCommand("gh", [
+    const result = await this.runGhCommand([
       "issue",
       "list",
       "--repo",
@@ -335,13 +428,13 @@ export class GitHubClient {
       args.push("--search", this.config.issueSearch);
     }
 
-    const result = await runCommand("gh", args);
+    const result = await this.runGhCommand(args);
     const issues = parseJson<GitHubIssue[]>(result.stdout, "gh issue list --candidate");
     return issues.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   }
 
   async getIssue(issueNumber: number): Promise<GitHubIssue> {
-    const result = await runCommand("gh", [
+    const result = await this.runGhCommand([
       "issue",
       "view",
       String(issueNumber),
@@ -354,7 +447,7 @@ export class GitHubClient {
   }
 
   async findOpenPullRequest(branch: string): Promise<GitHubPullRequest | null> {
-    const result = await runCommand("gh", [
+    const result = await this.runGhCommand([
       "pr",
       "list",
       "--repo",
@@ -373,7 +466,7 @@ export class GitHubClient {
   }
 
   async findLatestPullRequestForBranch(branch: string): Promise<GitHubPullRequest | null> {
-    const result = await runCommand("gh", [
+    const result = await this.runGhCommand([
       "pr",
       "list",
       "--repo",
@@ -397,7 +490,7 @@ export class GitHubClient {
   }
 
   async getPullRequest(prNumber: number): Promise<GitHubPullRequest> {
-    const result = await runCommand("gh", [
+    const result = await this.runGhCommand([
       "pr",
       "view",
       String(prNumber),
@@ -411,8 +504,7 @@ export class GitHubClient {
   }
 
   async getPullRequestIfExists(prNumber: number): Promise<GitHubPullRequest | null> {
-    const result = await runCommand(
-      "gh",
+    const result = await this.runGhCommand(
       [
         "pr",
         "view",
@@ -491,7 +583,7 @@ export class GitHubClient {
       }
     `;
 
-    const result = await runCommand("gh", [
+    const result = await this.runGhCommand([
       "api",
       "graphql",
       "-f",
@@ -523,8 +615,7 @@ export class GitHubClient {
   }
 
   async getChecks(prNumber: number): Promise<PullRequestCheck[]> {
-    const result = await runCommand(
-      "gh",
+    const result = await this.runGhCommand(
       [
         "pr",
         "checks",
@@ -546,8 +637,7 @@ export class GitHubClient {
       }
     }
 
-    const fallback = await runCommand(
-      "gh",
+    const fallback = await this.runGhCommand(
       [
         "pr",
         "view",
@@ -590,7 +680,7 @@ export class GitHubClient {
       .filter(Boolean)
       .join("\n");
 
-    await runCommand("gh", [
+    await this.runGhCommand([
       "pr",
       "create",
       "--repo",
@@ -622,7 +712,7 @@ export class GitHubClient {
           ? "--rebase"
           : "--squash";
 
-    await runCommand("gh", [
+    await this.runGhCommand([
       "pr",
       "merge",
       String(prNumber),
@@ -637,8 +727,7 @@ export class GitHubClient {
   }
 
   async markPullRequestReady(prNumber: number): Promise<void> {
-    await runCommand(
-      "gh",
+    await this.runGhCommand(
       ["pr", "ready", String(prNumber), "--repo", this.config.repoSlug],
       { allowExitCodes: [0, 1] },
     );
@@ -657,7 +746,7 @@ export class GitHubClient {
       args.push("--comment", comment);
     }
 
-    await runCommand("gh", args, { allowExitCodes: [0, 1] });
+    await this.runGhCommand(args, { allowExitCodes: [0, 1] });
   }
 
   async closePullRequest(prNumber: number, comment?: string): Promise<void> {
@@ -673,7 +762,7 @@ export class GitHubClient {
       args.push("--comment", comment);
     }
 
-    await runCommand("gh", args, { allowExitCodes: [0, 1] });
+    await this.runGhCommand(args, { allowExitCodes: [0, 1] });
   }
 
   async getUnresolvedReviewThreads(prNumber: number): Promise<ReviewThread[]> {
@@ -709,7 +798,7 @@ export class GitHubClient {
       }
     `;
 
-    const result = await runCommand("gh", [
+    const result = await this.runGhCommand([
       "api",
       "graphql",
       "-f",
@@ -868,7 +957,7 @@ export class GitHubClient {
       }
     `;
 
-    const result = await runCommand("gh", [
+    const result = await this.runGhCommand([
       "api",
       "graphql",
       "-f",
