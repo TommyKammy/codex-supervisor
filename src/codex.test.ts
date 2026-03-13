@@ -430,18 +430,65 @@ test("loadLocalReviewRepairContext loads committed guardrails when local history
   await fs.rm(workspaceDir, { recursive: true, force: true });
 });
 
-test("loadLocalReviewRepairContext returns null when the findings artifact is missing or invalid", async () => {
+test("loadLocalReviewRepairContext returns null when the findings artifact is missing", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-fix-test-"));
   const missingSummaryPath = path.join(tempDir, "head-missing.md");
-  const invalidSummaryPath = path.join(tempDir, "head-invalid.md");
-  const invalidFindingsPath = path.join(tempDir, "head-invalid.json");
 
   await fs.writeFile(missingSummaryPath, "# summary\n", "utf8");
-  await fs.writeFile(invalidSummaryPath, "# summary\n", "utf8");
-  await fs.writeFile(invalidFindingsPath, "{not json}\n", "utf8");
 
   assert.equal(await loadLocalReviewRepairContext(missingSummaryPath), null);
-  assert.equal(await loadLocalReviewRepairContext(invalidSummaryPath), null);
 
   await fs.rm(tempDir, { recursive: true, force: true });
+});
+
+test("loadLocalReviewRepairContext surfaces malformed findings artifacts", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-fix-invalid-findings-test-"));
+  const summaryPath = path.join(tempDir, "head-invalid.md");
+  const findingsPath = path.join(tempDir, "head-invalid.json");
+
+  await fs.writeFile(summaryPath, "# summary\n", "utf8");
+  await fs.writeFile(findingsPath, "{not json}\n", "utf8");
+
+  await assert.rejects(loadLocalReviewRepairContext(summaryPath), /Failed to parse JSON from .*head-invalid\.json/);
+
+  await fs.rm(tempDir, { recursive: true, force: true });
+});
+
+test("loadLocalReviewRepairContext surfaces malformed committed durable guardrails", async () => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-fix-invalid-durable-guardrails-test-"));
+  const reviewDir = path.join(workspaceDir, "reviews");
+  const summaryPath = path.join(reviewDir, "head-deadbeef.md");
+  const findingsPath = path.join(reviewDir, "head-deadbeef.json");
+  const durableGuardrailPath = path.join(workspaceDir, "docs", "shared-memory", "external-review-guardrails.json");
+
+  await fs.mkdir(path.dirname(durableGuardrailPath), { recursive: true });
+  await fs.mkdir(reviewDir, { recursive: true });
+  await fs.writeFile(summaryPath, "# summary\n", "utf8");
+  await fs.writeFile(
+    findingsPath,
+    JSON.stringify({
+      branch: "codex/issue-46",
+      headSha: "deadbeef",
+      actionableFindings: [{ file: "src/auth.ts" }],
+      rootCauseSummaries: [
+        { severity: "high", summary: "Permission guard retry path is fragile", file: "src/auth.ts", start: 40, end: 44 },
+      ],
+    }),
+    "utf8",
+  );
+  await fs.writeFile(
+    durableGuardrailPath,
+    JSON.stringify({
+      version: 2,
+      patterns: [],
+    }),
+    "utf8",
+  );
+
+  await assert.rejects(
+    loadLocalReviewRepairContext(summaryPath, workspaceDir),
+    /Invalid durable external review guardrails in .*external-review-guardrails\.json: version must be 1\./,
+  );
+
+  await fs.rm(workspaceDir, { recursive: true, force: true });
 });

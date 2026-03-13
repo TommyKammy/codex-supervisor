@@ -184,55 +184,62 @@ export async function loadLocalReviewRepairContext(summaryPath: string | null, w
     return null;
   }
 
+  let raw: string;
   try {
-    const raw = await fs.promises.readFile(findingsPath, "utf8");
-    const artifact = parseJson<LocalReviewRepairArtifact>(raw, findingsPath);
-    const rootCauses = (artifact.rootCauseSummaries ?? [])
-      .filter((rootCause) => typeof rootCause.summary === "string" && rootCause.summary.trim() !== "")
-      .slice(0, 5)
-      .map((rootCause) => {
-        const start = typeof rootCause.start === "number" ? rootCause.start : null;
-        const end = typeof rootCause.end === "number" ? rootCause.end : start;
-        return {
-          severity: rootCause.severity ?? "medium",
-          summary: rootCause.summary!.trim(),
-          file: rootCause.file ?? null,
-          lines:
-            start == null
-              ? null
-              : end != null && end !== start
-                ? `${start}-${end}`
-                : `${start}`,
-        };
-      });
-    const relevantFiles = [...new Set([
-      ...rootCauses.map((rootCause) => rootCause.file).filter((filePath): filePath is string => Boolean(filePath)),
-      ...(artifact.actionableFindings ?? [])
-        .map((finding) => (typeof finding.file === "string" && finding.file.trim() !== "" ? finding.file : null))
-        .filter((filePath): filePath is string => Boolean(filePath)),
-    ])].slice(0, 10);
-    const priorMissPatterns =
-      workspacePath && typeof artifact.branch === "string" && typeof artifact.headSha === "string"
-        ? await loadRelevantExternalReviewMissPatterns({
-            artifactDir: path.dirname(summaryPath),
-            branch: artifact.branch,
-            currentHeadSha: artifact.headSha,
-            changedFiles: relevantFiles,
-            limit: 3,
-            workspacePath,
-          })
-        : [];
+    raw = await fs.promises.readFile(findingsPath, "utf8");
+  } catch (error) {
+    const maybeErr = error as NodeJS.ErrnoException;
+    if (maybeErr.code === "ENOENT") {
+      return null;
+    }
 
-    return {
-      summaryPath,
-      findingsPath,
-      relevantFiles,
-      rootCauses,
-      priorMissPatterns,
-    };
-  } catch {
-    return null;
+    throw error;
   }
+
+  const artifact = parseJson<LocalReviewRepairArtifact>(raw, findingsPath);
+  const rootCauses = (artifact.rootCauseSummaries ?? [])
+    .filter((rootCause) => typeof rootCause.summary === "string" && rootCause.summary.trim() !== "")
+    .slice(0, 5)
+    .map((rootCause) => {
+      const start = typeof rootCause.start === "number" ? rootCause.start : null;
+      const end = typeof rootCause.end === "number" ? rootCause.end : start;
+      return {
+        severity: rootCause.severity ?? "medium",
+        summary: rootCause.summary!.trim(),
+        file: rootCause.file ?? null,
+        lines:
+          start == null
+            ? null
+            : end != null && end !== start
+              ? `${start}-${end}`
+              : `${start}`,
+      };
+    });
+  const relevantFiles = [...new Set([
+    ...rootCauses.map((rootCause) => rootCause.file).filter((filePath): filePath is string => Boolean(filePath)),
+    ...(artifact.actionableFindings ?? [])
+      .map((finding) => (typeof finding.file === "string" && finding.file.trim() !== "" ? finding.file : null))
+      .filter((filePath): filePath is string => Boolean(filePath)),
+  ])].slice(0, 10);
+  const priorMissPatterns =
+    workspacePath && typeof artifact.branch === "string" && typeof artifact.headSha === "string"
+      ? await loadRelevantExternalReviewMissPatterns({
+          artifactDir: path.dirname(summaryPath),
+          branch: artifact.branch,
+          currentHeadSha: artifact.headSha,
+          changedFiles: relevantFiles,
+          limit: 3,
+          workspacePath,
+        })
+      : [];
+
+  return {
+    summaryPath,
+    findingsPath,
+    relevantFiles,
+    rootCauses,
+    priorMissPatterns,
+  };
 }
 
 function localReviewRetryLoopCandidate(
