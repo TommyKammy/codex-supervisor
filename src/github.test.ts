@@ -231,10 +231,77 @@ test("GitHubClient hydrates Copilot arrival from long review threads without tru
   const pr = await client.getPullRequest(44);
 
   assert.ok(lifecycleQuery);
-  assert.match(lifecycleQuery, /comments\(first:\s*100\)/);
+  assert.match(lifecycleQuery, /comments\(last:\s*100\)/);
   assert.equal(pr.copilotReviewState, "arrived");
   assert.equal(pr.copilotReviewRequestedAt, "2026-03-13T01:02:03Z");
   assert.equal(pr.copilotReviewArrivedAt, "2026-03-13T02:24:00Z");
+});
+
+test("GitHubClient fetches the newest unresolved review thread comments", async () => {
+  const config = createConfig();
+  let reviewThreadQuery: string | null = null;
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      reviewThreadQuery = args.find((arg) => arg.startsWith("query=")) ?? null;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewThreads: {
+                  nodes: [
+                    {
+                      id: "thread-1",
+                      isResolved: false,
+                      isOutdated: false,
+                      path: "src/github.ts",
+                      line: 803,
+                      comments: {
+                        nodes: [
+                          {
+                            id: "comment-99",
+                            body: "older retained comment",
+                            createdAt: "2026-03-13T02:23:00Z",
+                            url: "https://example.test/comments/99",
+                            author: {
+                              login: "octocat",
+                              __typename: "User",
+                            },
+                          },
+                          {
+                            id: "comment-100",
+                            body: "newest retained comment",
+                            createdAt: "2026-03-13T02:24:00Z",
+                            url: "https://example.test/comments/100",
+                            author: {
+                              login: "copilot-pull-request-reviewer",
+                              __typename: "Bot",
+                            },
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const threads = await client.getUnresolvedReviewThreads(44);
+
+  assert.ok(reviewThreadQuery);
+  assert.match(reviewThreadQuery, /comments\(last:\s*100\)/);
+  assert.equal(threads.length, 1);
+  assert.equal(threads[0]?.comments.nodes.at(-1)?.id, "comment-100");
+  assert.equal(threads[0]?.comments.nodes.at(-1)?.author?.typeName, "Bot");
 });
 
 test("isTransientGitHubCommandFailure matches connection reset GraphQL failures", () => {
