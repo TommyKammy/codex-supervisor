@@ -1429,7 +1429,7 @@ interface CodexTurnShortCircuit {
 interface PreparedIssueRunContext extends PreparedIssueExecutionContext {
   state: SupervisorStateFile;
   options: Pick<CliOptions, "dryRun">;
-  recoveryLog: string;
+  recoveryLog: string | null;
 }
 
 interface PostTurnPullRequestContext {
