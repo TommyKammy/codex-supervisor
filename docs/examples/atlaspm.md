@@ -39,7 +39,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
   "localReviewRoles": [],
   "localReviewArtifactDir": "/Users/yourname/Dev/codex-supervisor/.local/reviews",
   "localReviewConfidenceThreshold": 0.7,
-  "localReviewPolicy": "block_ready",
+  "localReviewPolicy": "block_merge",
   "localReviewHighSeverityAction": "retry",
   "reviewBotLogins": ["copilot-pull-request-reviewer"],
   "humanReviewBlocksMerge": true,
@@ -71,9 +71,10 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
 - `atlaspm` uses `Part of #...`, `Depends on: ...`, and `## Execution order`, so the built-in sequencing logic is enough.
 - If you use GSD for upstream planning, enable `gsdEnabled` and point `gsdPlanningFiles` at `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, and `STATE.md`.
 - Copilot review is expected to start automatically after the PR is marked ready.
-- A local advisory review swarm can run before `gh pr ready`, with Markdown (`head-<sha>.md`) and JSON (`head-<sha>.json`) artifacts written under the supervisor's `.local/reviews` directory.
+- A local review swarm should usually run with `localReviewPolicy: "block_merge"` so it acts as a practical merge gate, with Markdown (`head-<sha>.md`) and JSON (`head-<sha>.json`) artifacts written under the supervisor's `.local/reviews` directory.
 - Leaving `localReviewRoles` empty while `localReviewAutoDetect` is `true` lets the supervisor add repo-specific specialists such as `prisma_postgres_reviewer`, `migration_invariant_reviewer`, `contract_consistency_reviewer`, and workflow-oriented roles like `github_actions_semantics_reviewer`, `workflow_test_reviewer`, and `portability_reviewer` when the repo shape suggests them.
-- `localReviewPolicy: "block_ready"` keeps actionable local-review findings from advancing a draft PR to ready. `block_merge` allows the PR to become ready but still stops merge until the findings are resolved.
+- `localReviewPolicy: "block_merge"` is the recommended starting point because it allows normal ready-for-review flow while still blocking merge until actionable findings are resolved.
+- Use `block_ready` when you want the swarm to stop draft PRs before `gh pr ready`, and `advisory` when you only want saved findings without merge gating.
 - `localReviewHighSeverityAction: "retry"` sends high-severity local-review findings back into another implementation pass instead of allowing the PR to progress.
 - Findings below the configured confidence threshold stay in the raw role reports but are not counted as actionable.
 - Even with multiple local review roles, the reviewer turn should still read the generated context index and issue journal first, then open durable memory files only on demand.

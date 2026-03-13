@@ -42,7 +42,7 @@
   "localReviewRoles": [],
   "localReviewArtifactDir": "/Users/yourname/Dev/codex-supervisor/.local/reviews",
   "localReviewConfidenceThreshold": 0.7,
-  "localReviewPolicy": "block_ready",
+  "localReviewPolicy": "block_merge",
   "localReviewHighSeverityAction": "retry",
   "reviewBotLogins": [
     "copilot-pull-request-reviewer"

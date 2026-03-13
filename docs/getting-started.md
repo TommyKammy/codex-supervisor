@@ -186,13 +186,15 @@ The supervisor reads a compact context index first, then opens durable memory fi
 
 ## Local review swarm
 
-`codex-supervisor` can run a local review swarm on pull requests. By default, `localReviewPolicy` is `block_ready`, so the swarm runs before a draft PR is marked ready. If you set `localReviewPolicy` to `block_merge`, it can also re-run on ready PR head updates.
+`codex-supervisor` can run a local review swarm on pull requests. The recommended starting policy is `block_merge`, because it keeps the normal ready-for-review flow while still making the swarm a practical merge gate on the current PR head.
 
 The important points are:
 
 - each role runs in a separate Codex turn
 - behavior is controlled by `localReviewPolicy`
-- `advisory` is non-blocking, `block_ready` gates draft-to-ready, and `block_merge` gates merge on ready PRs
+- `block_merge` is the recommended default path: it gates merge on ready PRs and re-runs on ready PR head updates
+- `block_ready` is stricter earlier in the flow: it gates draft-to-ready instead of merge
+- `advisory` is non-blocking and best when you want saved findings without automation gates
 - verifier-confirmed high-severity findings can trigger a dedicated `local_review_fix` turn that focuses on compressed root causes and the most relevant files
 - findings are saved as Markdown and JSON artifacts
 - the same context-budget policy still applies: read the compact context index and issue journal first, then open durable memory only on demand
