@@ -451,6 +451,8 @@ local review swarm は、`gh pr ready` の前に走る optional review phase で
 
 artifact では、review role が出した raw actionable findings と verifier pass が確認した findings を分けて保存します。`block_ready` と `block_merge` は引き続き raw actionable findings に反応しますが、`localReviewHighSeverityAction` による強いエスカレーションは verifier が確認した high severity findings にだけ反応します。これにより、false positive の影響を減らせます。
 
+solo operator を前提にするなら、`localReviewHighSeverityAction: "blocked"` を基本にするのが安全です。verifier-confirmed な high severity findings が出たら merge を止めて、人が次の一手を明示的に決めてください。自動で repair pass をもう一度回したいチームだけ、明示的に `retry` を選びます。
+
 ## Codex への指示例
 
 ### supervisor を使う時

@@ -40,7 +40,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
   "localReviewArtifactDir": "/Users/yourname/Dev/codex-supervisor/.local/reviews",
   "localReviewConfidenceThreshold": 0.7,
   "localReviewPolicy": "block_merge",
-  "localReviewHighSeverityAction": "retry",
+  "localReviewHighSeverityAction": "blocked",
   "reviewBotLogins": ["copilot-pull-request-reviewer"],
   "humanReviewBlocksMerge": true,
   "issueJournalRelativePath": ".codex-supervisor/issue-journal.md",
@@ -75,7 +75,8 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
 - Leaving `localReviewRoles` empty while `localReviewAutoDetect` is `true` lets the supervisor add repo-specific specialists such as `prisma_postgres_reviewer`, `migration_invariant_reviewer`, `contract_consistency_reviewer`, and workflow-oriented roles like `github_actions_semantics_reviewer`, `workflow_test_reviewer`, and `portability_reviewer` when the repo shape suggests them.
 - `localReviewPolicy: "block_merge"` is the recommended starting point because it allows normal ready-for-review flow while still blocking merge until actionable findings are resolved.
 - Use `block_ready` when you want the swarm to stop draft PRs before `gh pr ready`, and `advisory` when you only want saved findings without merge gating.
-- `localReviewHighSeverityAction: "retry"` sends high-severity local-review findings back into another implementation pass instead of allowing the PR to progress.
+- `localReviewHighSeverityAction: "blocked"` is the safer default for solo operators because verifier-confirmed high-severity findings stop the merge until a human decides the next step.
+- Switch to `localReviewHighSeverityAction: "retry"` when your team explicitly wants the supervisor to start another repair pass automatically after verifier-confirmed high-severity findings.
 - Findings below the configured confidence threshold stay in the raw role reports but are not counted as actionable.
 - Even with multiple local review roles, the reviewer turn should still read the generated context index and issue journal first, then open durable memory files only on demand.
 - `codexModelStrategy: "inherit"` means the supervisor follows the Codex CLI/App default model automatically. In practice, set the Codex default model to `GPT-5.4` and let the supervisor inherit it.

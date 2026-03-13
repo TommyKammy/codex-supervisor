@@ -139,6 +139,32 @@ test("loadConfig accepts explicit copilotReviewTimeoutAction", async (t) => {
   assert.equal(config.copilotReviewTimeoutAction, "block");
 });
 
+test("loadConfig defaults localReviewHighSeverityAction to blocked", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+
+  assert.equal(config.localReviewHighSeverityAction, "blocked");
+});
+
 test("shipped example configs recommend block_merge for local review gating", async () => {
   const rootDir = path.resolve(__dirname, "..");
   const examplePaths = [
@@ -149,5 +175,22 @@ test("shipped example configs recommend block_merge for local review gating", as
   for (const examplePath of examplePaths) {
     const raw = JSON.parse(await fs.readFile(examplePath, "utf8")) as { localReviewPolicy?: unknown };
     assert.equal(raw.localReviewPolicy, "block_merge", `${path.relative(rootDir, examplePath)} should recommend block_merge`);
+  }
+});
+
+test("shipped example configs recommend blocked for high-severity local review findings", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  const examplePaths = [
+    path.join(rootDir, "supervisor.config.example.json"),
+    path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
+  ];
+
+  for (const examplePath of examplePaths) {
+    const raw = JSON.parse(await fs.readFile(examplePath, "utf8")) as { localReviewHighSeverityAction?: unknown };
+    assert.equal(
+      raw.localReviewHighSeverityAction,
+      "blocked",
+      `${path.relative(rootDir, examplePath)} should recommend blocked for high-severity local review findings`,
+    );
   }
 });
