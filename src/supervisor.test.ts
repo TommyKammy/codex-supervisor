@@ -12,6 +12,7 @@ import {
   nextExternalReviewMissPatch,
   inferStateFromPullRequest,
   reconcileRecoverableBlockedIssueStates,
+  recoverUnexpectedCodexTurnFailure,
   shouldAutoRetryHandoffMissing,
   summarizeChecks,
 } from "./supervisor";
@@ -433,6 +434,79 @@ test("runOnce recovers when post-codex refresh throws after leaving a dirty work
 
   const issueLockPath = path.join(path.dirname(fixture.stateFile), "locks", "issues", `issue-${issueNumber}.lock`);
   await assert.rejects(fs.access(issueLockPath));
+});
+
+test("recoverUnexpectedCodexTurnFailure preserves dirty recovery context and timeout bookkeeping", async () => {
+  const issueNumber = 88;
+  const record = createRecord({
+    issue_number: issueNumber,
+    state: "stabilizing",
+    timeout_retry_count: 1,
+    codex_session_id: "thread-456",
+    last_head_sha: "abc1234",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: record,
+    },
+  };
+  let saveCalls = 0;
+  let syncedRecord: IssueRunRecord | null = null;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return { ...current, ...patch, updated_at: "2026-03-13T00:00:00.000Z" };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const updated = await recoverUnexpectedCodexTurnFailure({
+    stateStore: stateStore as unknown as Parameters<typeof recoverUnexpectedCodexTurnFailure>[0]["stateStore"],
+    state,
+    record,
+    issue: {
+      number: issueNumber,
+      title: "Timeout while recovering dirty worktree",
+      body: "",
+      createdAt: "2026-03-13T00:00:00Z",
+      updatedAt: "2026-03-13T00:00:00Z",
+      url: `https://example.test/issues/${issueNumber}`,
+      state: "OPEN",
+    },
+    journalSync: async (nextRecord) => {
+      syncedRecord = nextRecord;
+    },
+    error: new Error("Command timed out after 1800000ms: codex exec resume thread-456"),
+    workspaceStatus: {
+      hasUncommittedChanges: true,
+      headSha: "deadbee",
+    },
+    pr: {
+      number: 55,
+      headRefOid: "feed123",
+    },
+  });
+
+  assert.equal(saveCalls, 1);
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(updated.state, "failed");
+  assert.equal(updated.last_failure_kind, "timeout");
+  assert.equal(updated.timeout_retry_count, 2);
+  assert.equal(updated.blocked_reason, null);
+  assert.match(updated.last_error ?? "", /Command timed out after 1800000ms/);
+  assert.match(updated.last_failure_context?.summary ?? "", /Supervisor failed while recovering a Codex turn/);
+  assert.deepEqual(updated.last_failure_context?.details.slice(0, 6), [
+    "previous_state=stabilizing",
+    "workspace_dirty=yes",
+    "workspace_head=deadbee",
+    "pr_number=55",
+    "pr_head=feed123",
+    "codex_session_id=thread-456",
+  ]);
+  assert.equal(state.issues[String(issueNumber)], updated);
+  assert.equal(syncedRecord, updated);
 });
 
 test("runOnce dry-run selects an issue and hydrates workspace and PR context before Codex", async () => {
