@@ -155,7 +155,9 @@ function git(args: string[], cwd?: string): string {
   }).trim();
 }
 
-async function createSupervisorFixture(): Promise<{
+async function createSupervisorFixture(options: {
+  codexScriptLines?: string[];
+} = {}): Promise<{
   config: SupervisorConfig;
   repoPath: string;
   stateFile: string;
@@ -181,34 +183,31 @@ async function createSupervisorFixture(): Promise<{
   git(["clone", remotePath, repoPath]);
   git(["-C", repoPath, "branch", "--set-upstream-to=origin/main", "main"]);
 
-  await fs.writeFile(
-    codexBinary,
-    [
-      "#!/bin/sh",
-      "set -eu",
-      'out=""',
-      'while [ "$#" -gt 0 ]; do',
-      '  case "$1" in',
-      '    -o) out="$2"; shift 2 ;;',
-      '    *) shift ;;',
-      '  esac',
-      "done",
-      'printf \'{"type":"thread.started","thread_id":"thread-123"}\\n\'',
-      "cat <<'EOF' > \"$out\"",
-      "Summary: created a dirty checkpoint",
-      "State hint: stabilizing",
-      "Blocked reason: none",
-      "Tests: not run",
-      "Failure signature: none",
-      "Next action: inspect the dirty worktree and finish recovery",
-      "EOF",
-      "printf '\\n- Scratchpad note: codex wrote a dirty change for reproduction.\\n' >> .codex-supervisor/issue-journal.md",
-      "printf 'dirty change\\n' >> dirty.txt",
-      "exit 0",
-      "",
-    ].join("\n"),
-    "utf8",
-  );
+  const codexScriptLines = options.codexScriptLines ?? [
+    "#!/bin/sh",
+    "set -eu",
+    'out=""',
+    'while [ "$#" -gt 0 ]; do',
+    '  case "$1" in',
+    '    -o) out="$2"; shift 2 ;;',
+    '    *) shift ;;',
+    '  esac',
+    "done",
+    'printf \'{"type":"thread.started","thread_id":"thread-123"}\\n\'',
+    "cat <<'EOF' > \"$out\"",
+    "Summary: created a dirty checkpoint",
+    "State hint: stabilizing",
+    "Blocked reason: none",
+    "Tests: not run",
+    "Failure signature: none",
+    "Next action: inspect the dirty worktree and finish recovery",
+    "EOF",
+    "printf '\\n- Scratchpad note: codex wrote a dirty change for reproduction.\\n' >> .codex-supervisor/issue-journal.md",
+    "printf 'dirty change\\n' >> dirty.txt",
+    "exit 0",
+    "",
+  ];
+  await fs.writeFile(codexBinary, codexScriptLines.join("\n"), "utf8");
   await fs.chmod(codexBinary, 0o755);
 
   return {
@@ -437,6 +436,101 @@ test("runOnce recovers when post-codex refresh throws after leaving a dirty work
 
   const issueLockPath = path.join(path.dirname(fixture.stateFile), "locks", "issues", `issue-${issueNumber}.lock`);
   await assert.rejects(fs.access(issueLockPath));
+});
+
+test("runOnce records timeout bookkeeping when Codex exits non-zero", async () => {
+  const fixture = await createSupervisorFixture({
+    codexScriptLines: [
+      "#!/bin/sh",
+      "set -eu",
+      'out=""',
+      'while [ "$#" -gt 0 ]; do',
+      '  case "$1" in',
+      '    -o) out="$2"; shift 2 ;;',
+      '    *) shift ;;',
+      '  esac',
+      "done",
+      'printf \'{"type":"thread.started","thread_id":"thread-timeout"}\\n\'',
+      "cat <<'EOF' > \"$out\"",
+      "Summary: timed out while running focused verification",
+      "State hint: stabilizing",
+      "Blocked reason: none",
+      "Tests: npm test -- --grep timeout",
+      "Failure signature: none",
+      "Next action: retry the timed out verification command",
+      "EOF",
+      "printf 'Command timed out after 1800000ms: codex exec\\n' >&2",
+      "exit 1",
+      "",
+    ],
+  });
+  const issueNumber = 89;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "stabilizing",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        codex_session_id: null,
+        timeout_retry_count: 0,
+        blocked_reason: null,
+        last_error: null,
+        last_failure_kind: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Capture timeout failure bookkeeping",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: false });
+  assert.match(message, /Codex turn failed for issue #89\./);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(persisted.activeIssueNumber, issueNumber);
+  assert.equal(record.state, "failed");
+  assert.equal(record.last_failure_kind, "timeout");
+  assert.equal(record.timeout_retry_count, 1);
+  assert.equal(record.codex_session_id, "thread-timeout");
+  assert.equal(record.blocked_reason, null);
+  assert.match(record.last_error ?? "", /Command timed out after 1800000ms: codex exec/);
+  assert.match(record.last_failure_context?.summary ?? "", /Codex exited non-zero for issue #89/);
+  assert.match(record.last_failure_context?.details[0] ?? "", /Command timed out after 1800000ms: codex exec/);
 });
 
 test("recoverUnexpectedCodexTurnFailure preserves dirty recovery context and timeout bookkeeping", async () => {

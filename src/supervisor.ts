@@ -1426,6 +1426,12 @@ interface CodexTurnShortCircuit {
   message: string;
 }
 
+interface PreparedIssueRunContext extends PreparedIssueExecutionContext {
+  state: SupervisorStateFile;
+  options: Pick<CliOptions, "dryRun">;
+  recoveryLog: string | null;
+}
+
 interface PostTurnPullRequestContext {
   state: SupervisorStateFile;
   record: IssueRunRecord;
@@ -2838,6 +2844,137 @@ export class Supervisor {
     }
   }
 
+  private async runPreparedIssue(context: PreparedIssueRunContext): Promise<string> {
+    const {
+      state,
+      issue,
+      previousCodexSummary,
+      previousError,
+      workspacePath,
+      journalPath,
+      syncJournal,
+      memoryArtifacts,
+      options,
+      recoveryLog,
+    } = context;
+    let record = context.record;
+    let workspaceStatus = context.workspaceStatus;
+    let pr = context.pr;
+    let checks = context.checks;
+    let reviewThreads = context.reviewThreads;
+
+    if (pr) {
+      const failureContext = inferFailureContext(this.config, record, pr, checks, reviewThreads);
+      const reviewWaitPatch = syncReviewWaitWindow(record, pr);
+      const copilotRequestObservationPatch = syncCopilotReviewRequestObservation(record, pr);
+      const recordForReviewState = {
+        ...record,
+        ...reviewWaitPatch,
+        ...copilotRequestObservationPatch,
+      };
+      const copilotTimeoutPatch = syncCopilotReviewTimeoutState(this.config, recordForReviewState, pr);
+      const nextState = inferStateFromPullRequest(this.config, recordForReviewState, pr, checks, reviewThreads);
+      record = this.stateStore.touch(record, {
+        pr_number: pr.number,
+        state: nextState,
+        ...reviewWaitPatch,
+        ...copilotRequestObservationPatch,
+        ...copilotTimeoutPatch,
+        last_error:
+          nextState === "blocked" && failureContext ? truncate(failureContext.summary, 1000) : record.last_error,
+        last_failure_context: failureContext,
+        ...applyFailureSignature(record, failureContext),
+        blocked_reason:
+          nextState === "blocked" ? blockedReasonFromReviewState(this.config, recordForReviewState, pr, reviewThreads) : null,
+      });
+
+      if (failureContext && shouldStopForRepeatedFailureSignature(record, this.config)) {
+        record = this.stateStore.touch(record, {
+          state: "failed",
+          last_error:
+            `Repeated identical failure signature ${record.repeated_failure_signature_count} times: ` +
+            `${record.last_failure_signature ?? "unknown"}`,
+          last_failure_kind: "command_error",
+          blocked_reason: null,
+        });
+        state.issues[String(record.issue_number)] = record;
+        state.activeIssueNumber = null;
+        await this.stateStore.save(state);
+        await syncJournal(record);
+        return prependRecoveryLog(
+          `Issue #${record.issue_number} stopped after repeated identical failure signatures.`,
+          recoveryLog,
+        );
+      }
+    } else {
+      const preserveFailureTracking = shouldPreserveNoPrFailureTracking(record);
+      record = this.stateStore.touch(record, {
+        state: inferStateWithoutPullRequest(record, workspaceStatus),
+        copilot_review_requested_observed_at: null,
+        copilot_review_requested_head_sha: null,
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+        last_failure_context: preserveFailureTracking ? record.last_failure_context : null,
+        last_failure_signature: preserveFailureTracking ? record.last_failure_signature : null,
+        repeated_failure_signature_count: preserveFailureTracking ? record.repeated_failure_signature_count : 0,
+        blocked_reason: null,
+      });
+    }
+    state.issues[String(record.issue_number)] = record;
+    await this.stateStore.save(state);
+    await syncJournal(record);
+
+    if (shouldRunCodex(record, pr, checks, reviewThreads, this.config)) {
+      const codexTurn = await this.executeCodexTurn({
+        state,
+        record,
+        issue,
+        previousCodexSummary,
+        previousError,
+        workspacePath,
+        journalPath,
+        syncJournal,
+        memoryArtifacts,
+        workspaceStatus,
+        pr,
+        checks,
+        reviewThreads,
+        options,
+      });
+      if (codexTurn.kind === "returned") {
+        return prependRecoveryLog(codexTurn.message, recoveryLog);
+      }
+
+      record = codexTurn.record;
+      workspaceStatus = codexTurn.workspaceStatus;
+      pr = codexTurn.pr;
+      checks = codexTurn.checks;
+      reviewThreads = codexTurn.reviewThreads;
+    }
+
+    if (pr) {
+      const postTurn = await this.handlePostTurnPullRequestTransitions({
+        state,
+        record,
+        issue,
+        workspacePath,
+        syncJournal,
+        memoryArtifacts,
+        pr,
+        options,
+      });
+      record = await this.handlePostTurnMergeAndCompletion(state, postTurn.record, postTurn.pr, options);
+      await syncJournal(record);
+      return prependRecoveryLog(formatStatus(record), recoveryLog);
+    }
+
+    state.issues[String(record.issue_number)] = record;
+    await this.stateStore.save(state);
+    await syncJournal(record);
+    return prependRecoveryLog(formatStatus(record), recoveryLog);
+  }
+
   private async loadOpenPullRequestSnapshot(prNumber: number): Promise<{
     pr: GitHubPullRequest;
     checks: PullRequestCheck[];
@@ -3240,134 +3377,12 @@ export class Supervisor {
           continue;
         }
 
-        const preparedIssueContext = preparedIssue;
-        const {
-          previousCodexSummary,
-          previousError,
-          workspacePath,
-          journalPath,
-          syncJournal,
-          memoryArtifacts,
-          record: preparedRecord,
-        } = preparedIssueContext;
-        let currentRecord: IssueRunRecord = preparedRecord;
-
-        let workspaceStatus = preparedIssueContext.workspaceStatus;
-        let pr = preparedIssueContext.pr;
-        let checks = preparedIssueContext.checks;
-        let reviewThreads = preparedIssueContext.reviewThreads;
-
-        if (pr) {
-          const failureContext = inferFailureContext(this.config, currentRecord, pr, checks, reviewThreads);
-          const reviewWaitPatch = syncReviewWaitWindow(currentRecord, pr);
-          const copilotRequestObservationPatch = syncCopilotReviewRequestObservation(currentRecord, pr);
-          const recordForReviewState = {
-            ...currentRecord,
-            ...reviewWaitPatch,
-            ...copilotRequestObservationPatch,
-          };
-          const copilotTimeoutPatch = syncCopilotReviewTimeoutState(this.config, recordForReviewState, pr);
-          const nextState = inferStateFromPullRequest(this.config, recordForReviewState, pr, checks, reviewThreads);
-          currentRecord = this.stateStore.touch(currentRecord, {
-            pr_number: pr.number,
-            state: nextState,
-            ...reviewWaitPatch,
-            ...copilotRequestObservationPatch,
-            ...copilotTimeoutPatch,
-            last_error:
-              nextState === "blocked" && failureContext ? truncate(failureContext.summary, 1000) : currentRecord.last_error,
-            last_failure_context: failureContext,
-            ...applyFailureSignature(currentRecord, failureContext),
-            blocked_reason:
-              nextState === "blocked" ? blockedReasonFromReviewState(this.config, recordForReviewState, pr, reviewThreads) : null,
-          });
-
-          if (failureContext && shouldStopForRepeatedFailureSignature(currentRecord, this.config)) {
-            currentRecord = this.stateStore.touch(currentRecord, {
-              state: "failed",
-              last_error:
-                `Repeated identical failure signature ${currentRecord.repeated_failure_signature_count} times: ` +
-                `${currentRecord.last_failure_signature ?? "unknown"}`,
-              last_failure_kind: "command_error",
-              blocked_reason: null,
-            });
-            state.issues[String(currentRecord.issue_number)] = currentRecord;
-            state.activeIssueNumber = null;
-            await this.stateStore.save(state);
-            await syncJournal(currentRecord);
-            return prependRecoveryLog(
-              `Issue #${currentRecord.issue_number} stopped after repeated identical failure signatures.`,
-              recoveryLog,
-            );
-          }
-        } else {
-          const preserveFailureTracking = shouldPreserveNoPrFailureTracking(currentRecord);
-          currentRecord = this.stateStore.touch(currentRecord, {
-            state: inferStateWithoutPullRequest(currentRecord, workspaceStatus),
-            copilot_review_requested_observed_at: null,
-            copilot_review_requested_head_sha: null,
-            copilot_review_timed_out_at: null,
-            copilot_review_timeout_action: null,
-            copilot_review_timeout_reason: null,
-            last_failure_context: preserveFailureTracking ? currentRecord.last_failure_context : null,
-            last_failure_signature: preserveFailureTracking ? currentRecord.last_failure_signature : null,
-            repeated_failure_signature_count: preserveFailureTracking ? currentRecord.repeated_failure_signature_count : 0,
-            blocked_reason: null,
-          });
-        }
-        record = currentRecord;
-        state.issues[String(record.issue_number)] = record;
-        await this.stateStore.save(state);
-        await syncJournal(record);
-
-        if (shouldRunCodex(record, pr, checks, reviewThreads, this.config)) {
-          const codexTurn = await this.executeCodexTurn({
-            state,
-            record,
-            issue,
-            previousCodexSummary,
-            previousError,
-            workspacePath,
-            journalPath,
-            syncJournal,
-            memoryArtifacts,
-            workspaceStatus,
-            pr,
-            checks,
-            reviewThreads,
-            options,
-          });
-          if (codexTurn.kind === "returned") {
-            return prependRecoveryLog(codexTurn.message, recoveryLog);
-          }
-
-          record = codexTurn.record;
-          workspaceStatus = codexTurn.workspaceStatus;
-          pr = codexTurn.pr;
-          checks = codexTurn.checks;
-          reviewThreads = codexTurn.reviewThreads;
-        }
-
-        if (pr) {
-          const postTurn = await this.handlePostTurnPullRequestTransitions({
-            state,
-            record,
-            issue,
-            workspacePath,
-            syncJournal,
-            memoryArtifacts,
-            pr,
-            options,
-          });
-          record = await this.handlePostTurnMergeAndCompletion(state, postTurn.record, postTurn.pr, options);
-          await syncJournal(record);
-          return prependRecoveryLog(formatStatus(record), recoveryLog);
-        }
-
-        state.issues[String(record.issue_number)] = record;
-        await this.stateStore.save(state);
-        await syncJournal(record);
-        return prependRecoveryLog(formatStatus(record), recoveryLog);
+        return await this.runPreparedIssue({
+          ...preparedIssue,
+          state,
+          options,
+          recoveryLog,
+        });
       } finally {
         await runnableIssue.issueLock.release();
       }
