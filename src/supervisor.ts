@@ -4,7 +4,7 @@ import { buildCodexPrompt, extractBlockedReason, extractFailureSignature, extrac
 import { loadConfig } from "./config";
 import { ExternalReviewMissContext, loadRelevantExternalReviewMissPatterns, writeExternalReviewMissArtifact } from "./external-review-misses";
 import { GitHubClient } from "./github";
-import { findBlockingIssue, findParentIssuesReadyToClose, lintExecutionReadyIssueBody } from "./issue-metadata";
+import { findBlockingIssue, findParentIssuesReadyToClose, lintExecutionReadyIssueBody, parseIssueMetadata } from "./issue-metadata";
 import { describeGsdIntegration } from "./gsd";
 import { hasMeaningfulJournalHandoff, issueJournalPath, readIssueJournal, syncIssueJournal } from "./journal";
 import { acquireFileLock, inspectFileLock, LockHandle } from "./lock";
@@ -1405,14 +1405,12 @@ async function buildReadinessSummary(
     }
 
     const existing = state.issues[String(issue.number)];
-    if (shouldEnforceExecutionReady(existing)) {
-      const readiness = lintExecutionReadyIssueBody(issue);
-      if (!readiness.isExecutionReady) {
-        blocked.push(
-          `#${issue.number} blocked_by=requirements:${formatExecutionReadyMissingFields(readiness.missingRequired)}`,
-        );
-        continue;
-      }
+    const readiness = lintExecutionReadyIssueBody(issue);
+    if (shouldEnforceExecutionReady(existing) && !readiness.isExecutionReady) {
+      blocked.push(
+        `#${issue.number} blocked_by=requirements:${formatExecutionReadyMissingFields(readiness.missingRequired)}`,
+      );
+      continue;
     }
 
     const blockingIssue = findBlockingIssue(issue, issues, state);
@@ -1428,13 +1426,65 @@ async function buildReadinessSummary(
       continue;
     }
 
-    runnable.push(`#${issue.number}`);
+    runnable.push(`#${issue.number} ready=${formatRunnableReadinessReason(issue, issues, state, readiness.isExecutionReady)}`);
   }
 
   return [
     `runnable_issues=${runnable.length > 0 ? runnable.join(",") : "none"}`,
     `blocked_issues=${blocked.length > 0 ? blocked.join("; ") : "none"}`,
   ];
+}
+
+function formatRunnableReadinessReason(
+  issue: GitHubIssue,
+  issues: GitHubIssue[],
+  state: SupervisorStateFile,
+  isExecutionReady: boolean,
+): string {
+  const metadata = parseIssueMetadata(issue);
+  const reasons = [isExecutionReady ? "execution_ready" : "requirements_skipped"];
+
+  if (metadata.dependsOn.length > 0) {
+    const satisfiedDependencies = metadata.dependsOn.filter(
+      (dependencyNumber) => state.issues[String(dependencyNumber)]?.state === "done",
+    );
+
+    if (satisfiedDependencies.length > 0) {
+      reasons.push(`depends_on_satisfied:${satisfiedDependencies.join("|")}`);
+    }
+  }
+
+  if (
+    metadata.parentIssueNumber !== null &&
+    metadata.executionOrderIndex !== null &&
+    metadata.executionOrderIndex > 1
+  ) {
+    const clearedPredecessors = issues
+      .filter((candidate) => candidate.number !== issue.number)
+      .map((candidate) => ({
+        issue: candidate,
+        metadata: parseIssueMetadata(candidate),
+      }))
+      .filter(
+        ({ metadata: candidateMetadata }) =>
+          candidateMetadata.parentIssueNumber === metadata.parentIssueNumber &&
+          candidateMetadata.executionOrderIndex !== null &&
+          candidateMetadata.executionOrderIndex < metadata.executionOrderIndex!,
+      )
+      .sort(
+        (left, right) =>
+          (left.metadata.executionOrderIndex ?? Number.MAX_SAFE_INTEGER) -
+          (right.metadata.executionOrderIndex ?? Number.MAX_SAFE_INTEGER),
+      )
+      .map(({ issue: predecessorIssue }) => predecessorIssue.number)
+      .filter((predecessorNumber) => state.issues[String(predecessorNumber)]?.state === "done");
+
+    if (clearedPredecessors.length > 0) {
+      reasons.push(`execution_order_satisfied:${clearedPredecessors.join("|")}`);
+    }
+  }
+
+  return reasons.join("+");
 }
 
 type IssueJournalSync = (record: IssueRunRecord) => Promise<void>;
