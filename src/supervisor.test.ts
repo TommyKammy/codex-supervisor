@@ -715,6 +715,134 @@ test("runOnce marks a clean draft PR ready and enables auto-merge after the turn
   assert.equal(autoMergeCalls, 1);
 });
 
+test("runOnce waits for Copilot propagation after marking a draft PR ready", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 101;
+  const branch = branchName(fixture.config, issueNumber);
+  const config = createConfig({
+    ...fixture.config,
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "stabilizing",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: 114,
+        blocked_reason: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Honor the refreshed review-wait snapshot after ready for review",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const draftPr: GitHubPullRequest = {
+    number: 114,
+    title: "Propagate Copilot wait state",
+    url: "https://example.test/pr/114",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: true,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: "head-114",
+    mergedAt: null,
+    copilotReviewState: "not_requested",
+    copilotReviewRequestedAt: null,
+    copilotReviewArrivedAt: null,
+  };
+  const postReadyPr: GitHubPullRequest = {
+    ...draftPr,
+    isDraft: false,
+  };
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+  let readyCalls = 0;
+  let autoMergeCalls = 0;
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { executeCodexTurn: typeof supervisor["executeCodexTurn"] }).executeCodexTurn = async (context) => ({
+    kind: "completed",
+    record: context.record,
+    workspaceStatus: context.workspaceStatus,
+    pr: context.pr,
+    checks: context.checks,
+    reviewThreads: context.reviewThreads,
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      assert.equal(branchName, branch);
+      assert.equal(prNumber, 114);
+      return draftPr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 114);
+      return checks;
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 114);
+      return [];
+    },
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 114);
+      return readyCalls === 0 ? draftPr : postReadyPr;
+    },
+    markPullRequestReady: async (prNumber: number) => {
+      assert.equal(prNumber, 114);
+      readyCalls += 1;
+    },
+    enableAutoMerge: async () => {
+      autoMergeCalls += 1;
+    },
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse("2026-03-13T06:26:22Z");
+  try {
+    const message = await supervisor.runOnce({ dryRun: false });
+    assert.match(message, /state=waiting_ci/);
+  } finally {
+    Date.now = originalDateNow;
+  }
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(record.pr_number, 114);
+  assert.equal(record.state, "waiting_ci");
+  assert.equal(record.last_head_sha, "head-114");
+  assert.equal(record.review_wait_head_sha, "head-114");
+  assert.ok(record.review_wait_started_at);
+  assert.equal(Number.isNaN(Date.parse(record.review_wait_started_at ?? "")), false);
+  assert.equal(record.blocked_reason, null);
+  assert.equal(readyCalls, 1);
+  assert.equal(autoMergeCalls, 0);
+});
+
 function branchName(config: SupervisorConfig, issueNumber: number): string {
   return `${config.branchPrefix}${issueNumber}`;
 }
