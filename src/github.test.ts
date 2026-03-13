@@ -359,6 +359,82 @@ test("GitHubClient retries transient gh failures and succeeds on a later attempt
   assert.equal(delayCalls, 2);
 });
 
+test("GitHubClient retry warnings redact raw gh arguments", async () => {
+  const config = createConfig();
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message?: unknown, ...args: unknown[]) => {
+    warnings.push([message, ...args].map((value) => String(value)).join(" "));
+  };
+
+  try {
+    let calls = 0;
+    const client = new GitHubClient(
+      config,
+      async (_command, args) => {
+        calls += 1;
+        if (args[0] === "api" && args[1] === "graphql" && calls === 1) {
+          throw new Error(
+            'Command failed: gh api graphql -f query=query { viewer { login secretField } }\nexitCode=1\nPost "https://api.github.com/graphql": read tcp 127.0.0.1:12345->140.82.112.6:443: read: connection reset by peer',
+          );
+        }
+
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            data: {
+              repository: {
+                issue: {
+                  closedByPullRequestsReferences: {
+                    nodes: [],
+                  },
+                },
+              },
+            },
+          }),
+          stderr: "",
+        };
+      },
+      async () => undefined,
+    );
+
+    await client.getMergedPullRequestsClosingIssue(105);
+
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0] ?? "", /Transient GitHub CLI failure for gh api graphql/);
+    assert.match(warnings[0] ?? "", /\+\d+ arg/);
+    assert.doesNotMatch(warnings[0] ?? "", /secretField/);
+    assert.doesNotMatch(warnings[0] ?? "", /query=query/);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
+test("GitHubClient terminal transient failure redacts raw gh arguments", async () => {
+  const config = createConfig();
+  const client = new GitHubClient(
+    config,
+    async () => {
+      throw new Error(
+        'Command failed: gh api graphql -f query=query { viewer { login secretField } }\nexitCode=1\nPost "https://api.github.com/graphql": read tcp 127.0.0.1:12345->140.82.112.6:443: read: connection reset by peer',
+      );
+    },
+    async () => undefined,
+  );
+
+  await assert.rejects(
+    () => client.getMergedPullRequestsClosingIssue(44),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /Transient GitHub CLI failure after 3 attempts: gh api graphql/);
+      assert.match(error.message, /\+\d+ arg/);
+      assert.doesNotMatch(error.message, /secretField/);
+      assert.doesNotMatch(error.message, /query=query/);
+      return true;
+    },
+  );
+});
+
 test("GitHubClient does not retry non-transient gh failures", async () => {
   const config = createConfig();
   let calls = 0;
