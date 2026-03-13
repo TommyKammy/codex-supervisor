@@ -13,6 +13,10 @@ function assertRelevantRuleIdsAndFiles(args: {
 }): void {
   assert.deepEqual(args.rules, [...args.rules].sort(compareVerifierGuardrails));
   assert.ok(args.rules.every((rule) => args.changedFiles.includes(rule.file)));
+  assert.ok(
+    args.rules.every((rule) => rule.line === null || (Number.isInteger(rule.line) && rule.line >= 1)),
+    "repo-backed verifier guardrail line hints must stay optional or positive integers",
+  );
 
   const byFileAndId = (left: { id: string; file: string }, right: { id: string; file: string }): number =>
     `${left.file}:${left.id}`.localeCompare(`${right.file}:${right.id}`);
@@ -86,6 +90,56 @@ test("loadRelevantVerifierGuardrails reads repo-committed rules for relevant fil
       line: 15,
       summary: "Confirm retries rebuild mutable state instead of reusing stale cached state.",
       rationale: "Verifier should not dismiss retry-loop findings without checking the state reset path.",
+    },
+  ]);
+
+  await fs.rm(workspaceDir, { recursive: true, force: true });
+});
+
+test("loadRelevantVerifierGuardrails preserves null committed line hints for relevant rules", async () => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "verifier-guardrails-null-line-test-"));
+  const guardrailPath = path.join(workspaceDir, "docs", "shared-memory", "verifier-guardrails.json");
+  await fs.mkdir(path.dirname(guardrailPath), { recursive: true });
+  await fs.writeFile(
+    guardrailPath,
+    JSON.stringify({
+      version: 1,
+      rules: [
+        {
+          id: "null-line-hint",
+          title: "Allow optional line hints",
+          file: "src/auth.ts",
+          line: null,
+          summary: "Keep committed verifier guardrails loadable even when the line pointer is intentionally omitted.",
+          rationale: "Committed line references are human-oriented hints and should not be required for durable rule matching.",
+        },
+        {
+          id: "other-file",
+          title: "Ignore other files",
+          file: "src/other.ts",
+          line: 9,
+          summary: "This rule should be filtered out.",
+          rationale: "The changed files do not include this path.",
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  const rules = await loadRelevantVerifierGuardrails({
+    workspacePath: workspaceDir,
+    changedFiles: ["src/auth.ts"],
+    limit: 5,
+  });
+
+  assert.deepEqual(rules, [
+    {
+      id: "null-line-hint",
+      title: "Allow optional line hints",
+      file: "src/auth.ts",
+      line: null,
+      summary: "Keep committed verifier guardrails loadable even when the line pointer is intentionally omitted.",
+      rationale: "Committed line references are human-oriented hints and should not be required for durable rule matching.",
     },
   ]);
 
