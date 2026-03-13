@@ -1290,6 +1290,34 @@ async function buildReadinessSummary(
   ];
 }
 
+type IssueJournalSync = (record: IssueRunRecord) => Promise<void>;
+type MemoryArtifacts = Awaited<ReturnType<typeof syncMemoryArtifacts>>;
+
+interface SelectedIssueResult {
+  kind: "selected";
+  record: IssueRunRecord;
+}
+
+interface PreparedWorkspaceContext {
+  record: IssueRunRecord;
+  issue: GitHubIssue;
+  previousCodexSummary: string | null;
+  previousError: string | null;
+  workspacePath: string;
+  journalPath: string;
+  syncJournal: IssueJournalSync;
+  memoryArtifacts: MemoryArtifacts;
+  workspaceStatus: WorkspaceStatus;
+}
+
+interface HydratedPullRequestContext {
+  record: IssueRunRecord;
+  pr: GitHubPullRequest | null;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  workspaceStatus: WorkspaceStatus;
+}
+
 function formatStatus(record: IssueRunRecord | null): string {
   if (!record) {
     return "No active issue.";
@@ -1889,6 +1917,169 @@ export class Supervisor {
     return path.resolve(path.dirname(this.config.stateFile), "locks", kind, `${safeKey}.lock`);
   }
 
+  private async selectIssueRecord(
+    state: SupervisorStateFile,
+    currentRecord: IssueRunRecord | null,
+  ): Promise<SelectedIssueResult | string> {
+    let record = currentRecord;
+
+    if (!record || !isEligibleForSelection(record, this.config)) {
+      record = await selectNextIssue(this.github, this.config, state);
+      if (!record) {
+        state.activeIssueNumber = null;
+        await this.stateStore.save(state);
+        return "No matching open issue found.";
+      }
+
+      state.activeIssueNumber = record.issue_number;
+      state.issues[String(record.issue_number)] = record;
+      await this.stateStore.save(state);
+    }
+
+    if (!record) {
+      throw new Error("Invariant violation: active issue record is missing after selection.");
+    }
+
+    return {
+      kind: "selected",
+      record,
+    };
+  }
+
+  private async prepareWorkspaceContext(
+    state: SupervisorStateFile,
+    record: IssueRunRecord,
+    issue: GitHubIssue,
+  ): Promise<PreparedWorkspaceContext> {
+    const previousCodexSummary = record.last_codex_summary;
+    const previousError = record.last_error;
+    const workspacePath = await ensureWorkspace(this.config, record.issue_number, record.branch);
+    const journalPath = issueJournalPath(workspacePath, this.config.issueJournalRelativePath);
+    const syncJournal: IssueJournalSync = async (currentRecord: IssueRunRecord): Promise<void> => {
+      await syncIssueJournal({
+        issue,
+        record: currentRecord,
+        journalPath,
+        maxChars: this.config.issueJournalMaxChars,
+      });
+    };
+
+    const preparedRecord = this.stateStore.touch(record, {
+      workspace: workspacePath,
+      journal_path: journalPath,
+      state: record.implementation_attempt_count === 0 ? "planning" : record.state,
+      last_error: null,
+      last_failure_kind: null,
+      blocked_reason: null,
+    });
+    state.issues[String(preparedRecord.issue_number)] = preparedRecord;
+    await this.stateStore.save(state);
+    await syncJournal(preparedRecord);
+
+    const memoryArtifacts = await syncMemoryArtifacts({
+      config: this.config,
+      issueNumber: preparedRecord.issue_number,
+      workspacePath,
+      journalPath,
+    });
+
+    const workspaceStatus = await getWorkspaceStatus(workspacePath, preparedRecord.branch, this.config.defaultBranch);
+    const hydratedRecord = this.stateStore.touch(preparedRecord, { last_head_sha: workspaceStatus.headSha });
+    state.issues[String(hydratedRecord.issue_number)] = hydratedRecord;
+    await this.stateStore.save(state);
+
+    return {
+      record: hydratedRecord,
+      issue,
+      previousCodexSummary,
+      previousError,
+      workspacePath,
+      journalPath,
+      syncJournal,
+      memoryArtifacts,
+      workspaceStatus,
+    };
+  }
+
+  private async hydratePullRequestContext(
+    state: SupervisorStateFile,
+    record: IssueRunRecord,
+    issue: GitHubIssue,
+    workspacePath: string,
+    workspaceStatus: WorkspaceStatus,
+    syncJournal: IssueJournalSync,
+    options: Pick<CliOptions, "dryRun">,
+  ): Promise<HydratedPullRequestContext | string> {
+    let nextWorkspaceStatus = workspaceStatus;
+    if (nextWorkspaceStatus.remoteBranchExists && nextWorkspaceStatus.remoteAhead > 0) {
+      await pushBranch(workspacePath, record.branch, true);
+      nextWorkspaceStatus = await getWorkspaceStatus(workspacePath, record.branch, this.config.defaultBranch);
+    }
+
+    const resolvedPr = await this.github.resolvePullRequestForBranch(record.branch, record.pr_number);
+    let pr = isOpenPullRequest(resolvedPr) ? resolvedPr : null;
+    let checks = pr ? await this.github.getChecks(pr.number) : [];
+    let reviewThreads = pr ? await this.github.getUnresolvedReviewThreads(pr.number) : [];
+
+    if (!pr) {
+      if (!resolvedPr) {
+        // No current or historical PR for this branch; continue with normal branch/PR flow.
+      } else if (resolvedPr.mergedAt || resolvedPr.state === "MERGED") {
+        const doneRecord = this.stateStore.touch(record, {
+          pr_number: resolvedPr.number,
+          state: "done",
+          last_head_sha: resolvedPr.headRefOid,
+        });
+        state.issues[String(doneRecord.issue_number)] = doneRecord;
+        state.activeIssueNumber = null;
+        await this.stateStore.save(state);
+        return await this.runOnce(options);
+      } else if (resolvedPr.state === "CLOSED") {
+        const failureContext = buildCodexFailureContext(
+          "manual",
+          `PR #${resolvedPr.number} was closed without merge.`,
+          ["Manual intervention is required before the supervisor can continue this issue."],
+        );
+        const blockedRecord = this.stateStore.touch(record, {
+          pr_number: resolvedPr.number,
+          state: "blocked",
+          last_error:
+            `PR #${resolvedPr.number} was closed without merge. ` +
+            `Manual intervention is required before issue #${record.issue_number} can continue.`,
+          last_failure_kind: null,
+          last_failure_context: failureContext,
+          ...applyFailureSignature(record, failureContext),
+          blocked_reason: "manual_pr_closed",
+        });
+        state.issues[String(blockedRecord.issue_number)] = blockedRecord;
+        state.activeIssueNumber = null;
+        await this.stateStore.save(state);
+        await syncJournal(blockedRecord);
+        return `Issue #${blockedRecord.issue_number} blocked because PR #${resolvedPr.number} was closed without merge.`;
+      }
+    }
+
+    if (
+      !pr &&
+      nextWorkspaceStatus.baseAhead > 0 &&
+      !nextWorkspaceStatus.hasUncommittedChanges &&
+      record.implementation_attempt_count >= this.config.draftPrAfterAttempt
+    ) {
+      await pushBranch(workspacePath, record.branch, nextWorkspaceStatus.remoteBranchExists);
+      pr = await this.github.createPullRequest(issue, record, { draft: true });
+      checks = await this.github.getChecks(pr.number);
+      reviewThreads = await this.github.getUnresolvedReviewThreads(pr.number);
+    }
+
+    return {
+      record,
+      pr,
+      checks,
+      reviewThreads,
+      workspaceStatus: nextWorkspaceStatus,
+    };
+  }
+
   async acquireSupervisorLock(label: "loop" | "run-once"): Promise<LockHandle> {
     return acquireFileLock(this.lockPath("supervisor", "run"), `supervisor-${label}`);
   }
@@ -2007,22 +2198,11 @@ export class Supervisor {
       await this.stateStore.save(state);
     }
 
-    if (!record || !isEligibleForSelection(record, this.config)) {
-      record = await selectNextIssue(this.github, this.config, state);
-      if (!record) {
-        state.activeIssueNumber = null;
-        await this.stateStore.save(state);
-        return "No matching open issue found.";
-      }
-
-      state.activeIssueNumber = record.issue_number;
-      state.issues[String(record.issue_number)] = record;
-      await this.stateStore.save(state);
+    const selectedIssue = await this.selectIssueRecord(state, record);
+    if (typeof selectedIssue === "string") {
+      return selectedIssue;
     }
-
-    if (!record) {
-      throw new Error("Invariant violation: active issue record is missing after selection.");
-    }
+    record = selectedIssue.record;
 
     const issueLock = await acquireFileLock(
       this.lockPath("issues", `issue-${record.issue_number}`),
@@ -2041,9 +2221,6 @@ export class Supervisor {
         await this.stateStore.save(state);
         return this.runOnce(options);
       }
-
-      const previousCodexSummary = record.last_codex_summary;
-      const previousError = record.last_error;
 
       const candidateIssues = await this.github.listCandidateIssues();
       const blockingIssue = findBlockingIssue(issue, candidateIssues, state);
@@ -2088,98 +2265,35 @@ export class Supervisor {
         return `Issue #${record.issue_number} reached max ${budgetLaneBeforeWorkspace} Codex attempts.`;
       }
 
-      const workspacePath = await ensureWorkspace(this.config, record.issue_number, record.branch);
-      const journalPath = issueJournalPath(workspacePath, this.config.issueJournalRelativePath);
-      const syncJournal = async (currentRecord: IssueRunRecord): Promise<void> => {
-        await syncIssueJournal({
-          issue,
-          record: currentRecord,
-          journalPath,
-          maxChars: this.config.issueJournalMaxChars,
-        });
-      };
-      record = this.stateStore.touch(record, {
-        workspace: workspacePath,
-        journal_path: journalPath,
-        state: record.implementation_attempt_count === 0 ? "planning" : record.state,
-        last_error: null,
-        last_failure_kind: null,
-        blocked_reason: null,
-      });
-      state.issues[String(record.issue_number)] = record;
-      await this.stateStore.save(state);
-      await syncJournal(record);
-      const memoryArtifacts = await syncMemoryArtifacts({
-        config: this.config,
-        issueNumber: record.issue_number,
+      const {
+        previousCodexSummary,
+        previousError,
         workspacePath,
         journalPath,
-      });
+        syncJournal,
+        memoryArtifacts,
+        workspaceStatus: preparedWorkspaceStatus,
+        record: workspaceRecord,
+      } = await this.prepareWorkspaceContext(state, record, issue);
+      record = workspaceRecord;
 
-      let workspaceStatus = await getWorkspaceStatus(workspacePath, record.branch, this.config.defaultBranch);
-      record = this.stateStore.touch(record, { last_head_sha: workspaceStatus.headSha });
-      state.issues[String(record.issue_number)] = record;
-      await this.stateStore.save(state);
-
-      if (workspaceStatus.remoteBranchExists && workspaceStatus.remoteAhead > 0) {
-        await pushBranch(workspacePath, record.branch, true);
-        workspaceStatus = await getWorkspaceStatus(workspacePath, record.branch, this.config.defaultBranch);
+      const hydratedPullRequest = await this.hydratePullRequestContext(
+        state,
+        record,
+        issue,
+        workspacePath,
+        preparedWorkspaceStatus,
+        syncJournal,
+        options,
+      );
+      if (typeof hydratedPullRequest === "string") {
+        return hydratedPullRequest;
       }
 
-      let resolvedPr = await this.github.resolvePullRequestForBranch(record.branch, record.pr_number);
-      let pr = isOpenPullRequest(resolvedPr) ? resolvedPr : null;
-      let checks = pr ? await this.github.getChecks(pr.number) : [];
-      let reviewThreads = pr ? await this.github.getUnresolvedReviewThreads(pr.number) : [];
-
-      if (!pr) {
-        if (!resolvedPr) {
-          // No current or historical PR for this branch; continue with normal branch/PR flow.
-        } else if (resolvedPr.mergedAt || resolvedPr.state === "MERGED") {
-          record = this.stateStore.touch(record, {
-            pr_number: resolvedPr.number,
-            state: "done",
-            last_head_sha: resolvedPr.headRefOid,
-          });
-          state.issues[String(record.issue_number)] = record;
-          state.activeIssueNumber = null;
-          await this.stateStore.save(state);
-          return this.runOnce(options);
-        } else if (resolvedPr.state === "CLOSED") {
-          const failureContext = buildCodexFailureContext(
-            "manual",
-            `PR #${resolvedPr.number} was closed without merge.`,
-            ["Manual intervention is required before the supervisor can continue this issue."],
-          );
-          record = this.stateStore.touch(record, {
-            pr_number: resolvedPr.number,
-            state: "blocked",
-            last_error:
-              `PR #${resolvedPr.number} was closed without merge. ` +
-              `Manual intervention is required before issue #${record.issue_number} can continue.`,
-            last_failure_kind: null,
-            last_failure_context: failureContext,
-            ...applyFailureSignature(record, failureContext),
-            blocked_reason: "manual_pr_closed",
-          });
-          state.issues[String(record.issue_number)] = record;
-          state.activeIssueNumber = null;
-          await this.stateStore.save(state);
-          await syncJournal(record);
-          return `Issue #${record.issue_number} blocked because PR #${resolvedPr.number} was closed without merge.`;
-        }
-      }
-
-      if (
-        !pr &&
-        workspaceStatus.baseAhead > 0 &&
-        !workspaceStatus.hasUncommittedChanges &&
-        record.implementation_attempt_count >= this.config.draftPrAfterAttempt
-      ) {
-        await pushBranch(workspacePath, record.branch, workspaceStatus.remoteBranchExists);
-        pr = await this.github.createPullRequest(issue, record, { draft: true });
-        checks = await this.github.getChecks(pr.number);
-        reviewThreads = await this.github.getUnresolvedReviewThreads(pr.number);
-      }
+      let workspaceStatus = hydratedPullRequest.workspaceStatus;
+      let pr = hydratedPullRequest.pr;
+      let checks = hydratedPullRequest.checks;
+      let reviewThreads = hydratedPullRequest.reviewThreads;
 
       if (pr) {
         const failureContext = inferFailureContext(this.config, record, pr, checks, reviewThreads);
@@ -2473,8 +2587,8 @@ export class Supervisor {
         workspaceStatus = await getWorkspaceStatus(workspacePath, record.branch, this.config.defaultBranch);
       }
 
-      resolvedPr = await this.github.resolvePullRequestForBranch(record.branch, record.pr_number);
-      pr = isOpenPullRequest(resolvedPr) ? resolvedPr : null;
+      const refreshedResolvedPr = await this.github.resolvePullRequestForBranch(record.branch, record.pr_number);
+      pr = isOpenPullRequest(refreshedResolvedPr) ? refreshedResolvedPr : null;
       if (
         !pr &&
         workspaceStatus.baseAhead > 0 &&

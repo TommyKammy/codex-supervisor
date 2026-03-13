@@ -15,7 +15,7 @@ import {
   shouldAutoRetryHandoffMissing,
   summarizeChecks,
 } from "./supervisor";
-import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, SupervisorConfig, SupervisorStateFile } from "./types";
+import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig, SupervisorStateFile } from "./types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
@@ -433,6 +433,99 @@ test("runOnce recovers when post-codex refresh throws after leaving a dirty work
 
   const issueLockPath = path.join(path.dirname(fixture.stateFile), "locks", "issues", `issue-${issueNumber}.lock`);
   await assert.rejects(fs.access(issueLockPath));
+});
+
+test("runOnce dry-run selects an issue and hydrates workspace and PR context before Codex", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 91;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Extract supervisor setup helpers",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: 112,
+    title: "Draft setup refactor",
+    url: "https://example.test/pr/112",
+    state: "OPEN",
+    createdAt: "2026-03-13T00:10:00Z",
+    isDraft: true,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: "head-112",
+    mergedAt: null,
+  };
+  const checks: PullRequestCheck[] = [];
+  const reviewThreads: ReviewThread[] = [];
+
+  let resolveCalls = 0;
+  let checksCalls = 0;
+  let reviewThreadCalls = 0;
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      resolveCalls += 1;
+      assert.equal(branchName, branch);
+      assert.equal(prNumber, null);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      checksCalls += 1;
+      assert.equal(prNumber, pr.number);
+      return checks;
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      reviewThreadCalls += 1;
+      assert.equal(prNumber, pr.number);
+      return reviewThreads;
+    },
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(message, /Dry run: would invoke Codex for issue #91\./);
+  assert.match(message, /state=draft_pr/);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(persisted.activeIssueNumber, issueNumber);
+  assert.equal(record.issue_number, issueNumber);
+  assert.equal(record.branch, branch);
+  assert.equal(record.pr_number, pr.number);
+  assert.equal(record.state, "draft_pr");
+  assert.equal(record.blocked_reason, null);
+  assert.equal(record.workspace, path.join(fixture.workspaceRoot, `issue-${issueNumber}`));
+  assert.equal(record.journal_path, path.join(record.workspace, ".codex-supervisor", "issue-journal.md"));
+  assert.ok(record.last_head_sha);
+  await fs.access(record.workspace);
+  await fs.access(record.journal_path ?? "");
+  assert.equal(resolveCalls, 1);
+  assert.equal(checksCalls, 1);
+  assert.equal(reviewThreadCalls, 1);
 });
 
 function branchName(config: SupervisorConfig, issueNumber: number): string {
