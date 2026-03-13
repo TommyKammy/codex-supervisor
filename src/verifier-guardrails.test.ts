@@ -14,12 +14,15 @@ function assertRelevantRuleIdsAndFiles(args: {
   assert.deepEqual(args.rules, [...args.rules].sort(compareVerifierGuardrails));
   assert.ok(args.rules.every((rule) => args.changedFiles.includes(rule.file)));
 
+  const byFileAndId = (left: { id: string; file: string }, right: { id: string; file: string }): number =>
+    `${left.file}:${left.id}`.localeCompare(`${right.file}:${right.id}`);
   const expectedIds = new Set(args.expected.map((rule) => rule.id));
   assert.deepEqual(
     args.rules
       .filter((rule) => expectedIds.has(rule.id))
-      .map(({ id, file }) => ({ id, file })),
-    args.expected,
+      .map(({ id, file }) => ({ id, file }))
+      .sort(byFileAndId),
+    [...args.expected].sort(byFileAndId),
   );
 }
 
