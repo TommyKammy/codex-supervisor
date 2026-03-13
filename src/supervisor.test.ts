@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import {
+  Supervisor,
   buildChecksFailureContext,
   formatDetailedStatus,
   localReviewHighSeverityNeedsRetry,
@@ -133,6 +138,89 @@ function withStubbedDateNow<T>(nowIso: string, run: () => T): T {
   }
 }
 
+function git(args: string[], cwd?: string): string {
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Codex",
+      GIT_AUTHOR_EMAIL: "codex@example.com",
+      GIT_COMMITTER_NAME: "Codex",
+      GIT_COMMITTER_EMAIL: "codex@example.com",
+    },
+  }).trim();
+}
+
+async function createSupervisorFixture(): Promise<{
+  config: SupervisorConfig;
+  repoPath: string;
+  stateFile: string;
+  workspaceRoot: string;
+}> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-issue-87-"));
+  const remotePath = path.join(root, "remote.git");
+  const seedPath = path.join(root, "seed");
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const stateFile = path.join(root, "state.json");
+  const codexBinary = path.join(root, "fake-codex.sh");
+
+  git(["init", "--bare", remotePath]);
+  await fs.mkdir(seedPath, { recursive: true });
+  git(["init", "-b", "main"], seedPath);
+  await fs.writeFile(path.join(seedPath, "README.md"), "# fixture\n", "utf8");
+  git(["add", "README.md"], seedPath);
+  git(["commit", "-m", "seed"], seedPath);
+  git(["remote", "add", "origin", remotePath], seedPath);
+  git(["push", "-u", "origin", "main"], seedPath);
+  git(["clone", remotePath, repoPath]);
+  git(["-C", repoPath, "branch", "--set-upstream-to=origin/main", "main"]);
+
+  await fs.writeFile(
+    codexBinary,
+    [
+      "#!/bin/sh",
+      "set -eu",
+      'out=""',
+      'while [ "$#" -gt 0 ]; do',
+      '  case "$1" in',
+      '    -o) out="$2"; shift 2 ;;',
+      '    *) shift ;;',
+      '  esac',
+      "done",
+      'printf \'{"type":"thread.started","thread_id":"thread-123"}\\n\'',
+      "cat <<'EOF' > \"$out\"",
+      "Summary: created a dirty checkpoint",
+      "State hint: stabilizing",
+      "Blocked reason: none",
+      "Tests: not run",
+      "Failure signature: none",
+      "Next action: inspect the dirty worktree and finish recovery",
+      "EOF",
+      "printf '\\n- Scratchpad note: codex wrote a dirty change for reproduction.\\n' >> .codex-supervisor/issue-journal.md",
+      "printf 'dirty change\\n' >> dirty.txt",
+      "exit 0",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await fs.chmod(codexBinary, 0o755);
+
+  return {
+    repoPath,
+    stateFile,
+    workspaceRoot,
+    config: createConfig({
+      repoPath,
+      workspaceRoot,
+      stateFile,
+      codexBinary,
+      issueJournalMaxChars: 12000,
+    }),
+  };
+}
+
 test("shouldAutoRetryHandoffMissing only retries recoverable blocked handoffs", () => {
   const config = createConfig({
     maxImplementationAttemptsPerIssue: 3,
@@ -259,6 +347,97 @@ test("reconcileRecoverableBlockedIssueStates leaves closed issues blocked", asyn
   assert.deepEqual(state.issues["366"], original);
   assert.equal(saveCalls, 0);
 });
+
+test("runOnce recovers when post-codex refresh throws after leaving a dirty worktree", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 87;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "stabilizing",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        attempt_count: 1,
+        implementation_attempt_count: 1,
+        repair_attempt_count: 0,
+        last_error: null,
+        last_failure_kind: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+        blocked_reason: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Reproduce dirty worktree recovery",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+
+  let resolveCalls = 0;
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async () => {
+      resolveCalls += 1;
+      if (resolveCalls === 1) {
+        return null;
+      }
+      throw new Error("post-turn refresh blew up");
+    },
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: false });
+  assert.match(message, /Recovered from unexpected Codex turn failure/);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(persisted.activeIssueNumber, null);
+  assert.equal(record.state, "failed");
+  assert.equal(record.last_failure_kind, "command_error");
+  assert.match(record.last_error ?? "", /post-turn refresh blew up/);
+  assert.equal(record.codex_session_id, "thread-123");
+  assert.match(record.last_codex_summary ?? "", /created a dirty checkpoint/);
+  assert.equal(record.blocked_reason, null);
+  assert.match(record.last_failure_context?.summary ?? "", /Supervisor failed while recovering a Codex turn/);
+  assert.deepEqual(record.last_failure_context?.details.slice(0, 4), [
+    "previous_state=stabilizing",
+    "workspace_dirty=yes",
+    `workspace_head=${record.last_head_sha}`,
+    "pr_number=none",
+  ]);
+
+  const worktreeStatus = git(["-C", path.join(fixture.workspaceRoot, `issue-${issueNumber}`), "status", "--short"]);
+  assert.match(worktreeStatus, /dirty\.txt/);
+
+  const issueLockPath = path.join(path.dirname(fixture.stateFile), "locks", "issues", `issue-${issueNumber}.lock`);
+  await assert.rejects(fs.access(issueLockPath));
+});
+
+function branchName(config: SupervisorConfig, issueNumber: number): string {
+  return `${config.branchPrefix}${issueNumber}`;
+}
 
 test("summarizeChecks treats cancelled runs as waiting, not failing", () => {
   const checks: PullRequestCheck[] = [
