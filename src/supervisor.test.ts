@@ -1043,6 +1043,39 @@ test("inferStateFromPullRequest keeps waiting when Copilot review was explicitly
   });
 });
 
+test("inferStateFromPullRequest keeps waiting when a Copilot request was observed on the current head but has not arrived", () => {
+  withStubbedDateNow("2026-03-11T00:10:00Z", () => {
+    const config = createConfig({ copilotReviewWaitMinutes: 10 });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-03-11T00:00:00Z",
+      review_wait_head_sha: "head123",
+      copilot_review_requested_observed_at: "2026-03-11T00:05:00Z",
+      copilot_review_requested_head_sha: "head123",
+    });
+    const pr: GitHubPullRequest = {
+      number: 44,
+      title: "Test PR",
+      url: "https://example.test/pr/44",
+      state: "OPEN",
+      createdAt: "2026-03-11T00:00:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      headRefName: "codex/issue-38",
+      headRefOid: "head123",
+      mergedAt: null,
+      copilotReviewState: "not_requested",
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+    };
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "waiting_ci");
+  });
+});
+
 test("inferStateFromPullRequest does not start Copilot timeout from the generic review wait window", () => {
   withStubbedDateNow("2026-03-11T00:30:00Z", () => {
     const config = createConfig({ copilotReviewWaitMinutes: 10, copilotReviewTimeoutAction: "block" });
