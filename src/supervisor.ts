@@ -2626,8 +2626,21 @@ export class Supervisor {
             record.local_review_head_sha === postReady.pr.headRefOid
           ? 0
           : record.repeated_local_review_signature_count;
-    const recordForState = {
+    const refreshedReviewWaitPatch = syncReviewWaitWindow(record, postReady.pr);
+    const refreshedCopilotRequestObservationPatch = syncCopilotReviewRequestObservation(record, postReady.pr);
+    const refreshedRecordForReviewState = {
       ...record,
+      ...refreshedReviewWaitPatch,
+      ...refreshedCopilotRequestObservationPatch,
+    };
+    const refreshedCopilotTimeoutPatch = syncCopilotReviewTimeoutState(
+      this.config,
+      refreshedRecordForReviewState,
+      postReady.pr,
+    );
+    const recordForState = {
+      ...refreshedRecordForReviewState,
+      ...refreshedCopilotTimeoutPatch,
       repeated_local_review_signature_count: repeatedLocalReviewSignatureCount,
     };
     const nextState = inferStateFromPullRequest(
@@ -2639,7 +2652,7 @@ export class Supervisor {
     );
     const refreshedFailureContext = inferFailureContext(
       this.config,
-      record,
+      recordForState,
       postReady.pr,
       postReady.checks,
       postReady.reviewThreads,
@@ -2653,18 +2666,6 @@ export class Supervisor {
             ? localReviewFailureContext(recordForState)
             : null;
     const effectiveFailureContext = refreshedFailureContext ?? postReadyLocalReviewFailureContext;
-    const refreshedReviewWaitPatch = syncReviewWaitWindow(record, postReady.pr);
-    const refreshedCopilotRequestObservationPatch = syncCopilotReviewRequestObservation(record, postReady.pr);
-    const refreshedRecordForReviewState = {
-      ...record,
-      ...refreshedReviewWaitPatch,
-      ...refreshedCopilotRequestObservationPatch,
-    };
-    const refreshedCopilotTimeoutPatch = syncCopilotReviewTimeoutState(
-      this.config,
-      refreshedRecordForReviewState,
-      postReady.pr,
-    );
     record = this.stateStore.touch(record, {
       pr_number: postReady.pr.number,
       ...refreshedReviewWaitPatch,
