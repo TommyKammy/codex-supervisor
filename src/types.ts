@@ -24,6 +24,7 @@ export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
 export type LocalReviewPolicy = "advisory" | "block_ready" | "block_merge";
 export type LocalReviewHighSeverityAction = "retry" | "blocked";
 export type CopilotReviewState = "not_requested" | "requested" | "arrived";
+export type CopilotReviewTimeoutAction = "continue" | "block";
 
 export interface SupervisorConfig {
   repoPath: string;
@@ -61,6 +62,7 @@ export interface SupervisorConfig {
   branchPrefix: string;
   pollIntervalSeconds: number;
   copilotReviewWaitMinutes: number;
+  copilotReviewTimeoutAction: CopilotReviewTimeoutAction;
   codexExecTimeoutMinutes: number;
   maxCodexAttemptsPerIssue: number;
   maxImplementationAttemptsPerIssue: number;
@@ -91,6 +93,7 @@ export type BlockedReason =
   | "permissions"
   | "secrets"
   | "verification"
+  | "copilot_timeout"
   | "manual_review"
   | "manual_pr_closed"
   | "handoff_missing"
@@ -116,6 +119,11 @@ export interface IssueRunRecord {
   journal_path: string | null;
   review_wait_started_at: string | null;
   review_wait_head_sha: string | null;
+  copilot_review_requested_observed_at: string | null;
+  copilot_review_requested_head_sha: string | null;
+  copilot_review_timed_out_at: string | null;
+  copilot_review_timeout_action: CopilotReviewTimeoutAction | null;
+  copilot_review_timeout_reason: string | null;
   codex_session_id: string | null;
   local_review_head_sha: string | null;
   local_review_summary_path: string | null;

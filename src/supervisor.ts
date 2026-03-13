@@ -47,6 +47,11 @@ function createIssueRecord(config: SupervisorConfig, issueNumber: number): Issue
     journal_path: null,
     review_wait_started_at: null,
     review_wait_head_sha: null,
+    copilot_review_requested_observed_at: null,
+    copilot_review_requested_head_sha: null,
+    copilot_review_timed_out_at: null,
+    copilot_review_timeout_action: null,
+    copilot_review_timeout_reason: null,
     codex_session_id: null,
     local_review_head_sha: null,
     local_review_summary_path: null,
@@ -764,6 +769,11 @@ function inferFailureContext(
       return checksContext;
     }
 
+    const copilotTimeoutContext = buildCopilotReviewTimeoutFailureContext(config, record, pr);
+    if (copilotTimeoutContext) {
+      return copilotTimeoutContext;
+    }
+
     const manualReviewContext =
       config.humanReviewBlocksMerge ? buildManualReviewFailureContext(manualReviewThreads(config, reviewThreads)) : null;
     if (manualReviewContext) {
@@ -798,6 +808,88 @@ function mergeConflictDetected(pr: GitHubPullRequest): boolean {
   return pr.mergeStateStatus === "DIRTY";
 }
 
+interface CopilotReviewTimeoutStatus {
+  timedOut: boolean;
+  action: SupervisorConfig["copilotReviewTimeoutAction"] | null;
+  startedAt: string | null;
+  timedOutAt: string | null;
+  reason: string | null;
+}
+
+function copilotReviewTimeoutStart(record: IssueRunRecord, pr: GitHubPullRequest): string | null {
+  if (pr.isDraft || (pr.copilotReviewState ?? "not_requested") !== "requested") {
+    return null;
+  }
+
+  if (pr.copilotReviewRequestedAt) {
+    return pr.copilotReviewRequestedAt;
+  }
+
+  if (record.copilot_review_requested_head_sha === pr.headRefOid) {
+    return record.copilot_review_requested_observed_at;
+  }
+
+  return null;
+}
+
+function determineCopilotReviewTimeout(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+): CopilotReviewTimeoutStatus {
+  const startedAt = copilotReviewTimeoutStart(record, pr);
+  if (!startedAt) {
+    return { timedOut: false, action: null, startedAt: null, timedOutAt: null, reason: null };
+  }
+
+  const startedAtMs = Date.parse(startedAt);
+  if (Number.isNaN(startedAtMs)) {
+    return { timedOut: false, action: null, startedAt, timedOutAt: null, reason: null };
+  }
+
+  const timeoutMs = config.copilotReviewWaitMinutes * 60_000;
+  if (Date.now() < startedAtMs + timeoutMs) {
+    return { timedOut: false, action: null, startedAt, timedOutAt: null, reason: null };
+  }
+
+  const timedOutAt = new Date(startedAtMs + timeoutMs).toISOString();
+  return {
+    timedOut: true,
+    action: config.copilotReviewTimeoutAction,
+    startedAt,
+    timedOutAt,
+    reason:
+      `Requested Copilot review never arrived within ${config.copilotReviewWaitMinutes} minute(s) ` +
+      `for head ${pr.headRefOid}.`,
+  };
+}
+
+function buildCopilotReviewTimeoutFailureContext(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+): FailureContext | null {
+  const timeout = determineCopilotReviewTimeout(config, record, pr);
+  if (!timeout.timedOut || timeout.action !== "block") {
+    return null;
+  }
+
+  return {
+    category: "blocked",
+    summary: `PR #${pr.number} is blocked after a requested Copilot review timed out.`,
+    signature: `copilot-timeout:${pr.headRefOid}:${timeout.action}`,
+    command: null,
+    details: [
+      `requested_at=${timeout.startedAt ?? "none"}`,
+      `timed_out_at=${timeout.timedOutAt ?? "none"}`,
+      `timeout_minutes=${config.copilotReviewWaitMinutes}`,
+      timeout.reason ?? "Requested Copilot review timed out.",
+    ],
+    url: pr.url,
+    updated_at: nowIso(),
+  };
+}
+
 function mergeConditionsSatisfied(pr: GitHubPullRequest, checks: PullRequestCheck[]): boolean {
   const checkSummary = summarizeChecks(checks);
   return (
@@ -811,8 +903,15 @@ function mergeConditionsSatisfied(pr: GitHubPullRequest, checks: PullRequestChec
 
 function blockedReasonFromReviewState(
   config: SupervisorConfig,
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
   reviewThreads: ReviewThread[],
 ): Exclude<BlockedReason, null> | null {
+  const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
+  if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
+    return "copilot_timeout";
+  }
+
   if (
     manualReviewThreads(config, reviewThreads).length > 0 ||
     configuredBotReviewThreads(config, reviewThreads).length > 0
@@ -841,6 +940,63 @@ function syncReviewWaitWindow(record: IssueRunRecord, pr: GitHubPullRequest): Pa
   return {
     review_wait_started_at: record.review_wait_started_at,
     review_wait_head_sha: record.review_wait_head_sha,
+  };
+}
+
+function syncCopilotReviewRequestObservation(record: IssueRunRecord, pr: GitHubPullRequest): Partial<IssueRunRecord> {
+  if (pr.isDraft || (pr.copilotReviewState ?? "not_requested") !== "requested") {
+    return {
+      copilot_review_requested_observed_at: null,
+      copilot_review_requested_head_sha: null,
+    };
+  }
+
+  if (pr.copilotReviewRequestedAt) {
+    return {
+      copilot_review_requested_observed_at: pr.copilotReviewRequestedAt,
+      copilot_review_requested_head_sha: pr.headRefOid,
+    };
+  }
+
+  if (
+    record.copilot_review_requested_observed_at &&
+    record.copilot_review_requested_head_sha === pr.headRefOid
+  ) {
+    return {
+      copilot_review_requested_observed_at: record.copilot_review_requested_observed_at,
+      copilot_review_requested_head_sha: record.copilot_review_requested_head_sha,
+    };
+  }
+
+  return {
+    copilot_review_requested_observed_at: nowIso(),
+    copilot_review_requested_head_sha: pr.headRefOid,
+  };
+}
+
+function syncCopilotReviewTimeoutState(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+): Pick<
+  IssueRunRecord,
+  | "copilot_review_timed_out_at"
+  | "copilot_review_timeout_action"
+  | "copilot_review_timeout_reason"
+> {
+  const timeout = determineCopilotReviewTimeout(config, record, pr);
+  if (!timeout.timedOut || !timeout.action) {
+    return {
+      copilot_review_timed_out_at: null,
+      copilot_review_timeout_action: null,
+      copilot_review_timeout_reason: null,
+    };
+  }
+
+  return {
+    copilot_review_timed_out_at: timeout.timedOutAt,
+    copilot_review_timeout_action: timeout.action,
+    copilot_review_timeout_reason: timeout.reason,
   };
 }
 
@@ -912,7 +1068,12 @@ export function inferStateFromPullRequest(
     return "draft_pr";
   }
 
-  if ((pr.copilotReviewState ?? "not_requested") === "requested") {
+  const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
+  if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
+    return "blocked";
+  }
+
+  if ((pr.copilotReviewState ?? "not_requested") === "requested" && !copilotTimeout.timedOut) {
     return "waiting_ci";
   }
 
@@ -1194,8 +1355,11 @@ export function formatDetailedStatus(args: {
   if (pr) {
     const copilotReviewState = pr.copilotReviewState === null ? "unknown" : (pr.copilotReviewState ?? "not_requested");
     lines.push(
-      `copilot_review state=${copilotReviewState} requested_at=${pr.copilotReviewRequestedAt ?? "none"} arrived_at=${pr.copilotReviewArrivedAt ?? "none"}`,
+      `copilot_review state=${copilotReviewState} requested_at=${pr.copilotReviewRequestedAt ?? "none"} arrived_at=${pr.copilotReviewArrivedAt ?? "none"} timed_out_at=${activeRecord.copilot_review_timed_out_at ?? "none"} timeout_action=${activeRecord.copilot_review_timeout_action ?? "none"}`,
     );
+    if (activeRecord.copilot_review_timeout_reason) {
+      lines.push(`timeout_reason=${sanitizeStatusValue(activeRecord.copilot_review_timeout_reason)}`);
+    }
     lines.push(
       `pr_state=${pr.state} draft=${pr.isDraft ? "yes" : "no"} merge_state=${pr.mergeStateStatus ?? "unknown"} review_decision=${pr.reviewDecision ?? "none"} head_sha=${pr.headRefOid}`,
     );
@@ -1489,6 +1653,8 @@ async function reconcileStaleFailedIssueStates(
       pr_number: pr.number,
       last_head_sha: pr.headRefOid,
       ...syncReviewWaitWindow(record, pr),
+      ...syncCopilotReviewRequestObservation(record, pr),
+      ...syncCopilotReviewTimeoutState(config, record, pr),
     };
 
     const updated = stateStore.touch(record, patch);
@@ -1530,6 +1696,11 @@ export async function reconcileRecoverableBlockedIssueStates(
       codex_session_id: null,
       review_wait_started_at: null,
       review_wait_head_sha: null,
+      copilot_review_requested_observed_at: null,
+      copilot_review_requested_head_sha: null,
+      copilot_review_timed_out_at: null,
+      copilot_review_timeout_action: null,
+      copilot_review_timeout_reason: null,
     });
     state.issues[String(record.issue_number)] = updated;
     changed = true;
@@ -1902,15 +2073,25 @@ export class Supervisor {
       if (pr) {
         const failureContext = inferFailureContext(this.config, record, pr, checks, reviewThreads);
         const reviewWaitPatch = syncReviewWaitWindow(record, pr);
-        const nextState = inferStateFromPullRequest(this.config, record, pr, checks, reviewThreads);
+        const copilotRequestObservationPatch = syncCopilotReviewRequestObservation(record, pr);
+        const recordForReviewState = {
+          ...record,
+          ...reviewWaitPatch,
+          ...copilotRequestObservationPatch,
+        };
+        const copilotTimeoutPatch = syncCopilotReviewTimeoutState(this.config, recordForReviewState, pr);
+        const nextState = inferStateFromPullRequest(this.config, recordForReviewState, pr, checks, reviewThreads);
         record = this.stateStore.touch(record, {
           pr_number: pr.number,
           state: nextState,
           ...reviewWaitPatch,
+          ...copilotRequestObservationPatch,
+          ...copilotTimeoutPatch,
           last_error: nextState === "blocked" && failureContext ? truncate(failureContext.summary, 1000) : record.last_error,
           last_failure_context: failureContext,
           ...applyFailureSignature(record, failureContext),
-          blocked_reason: nextState === "blocked" ? blockedReasonFromReviewState(this.config, reviewThreads) : null,
+          blocked_reason:
+            nextState === "blocked" ? blockedReasonFromReviewState(this.config, recordForReviewState, pr, reviewThreads) : null,
         });
 
         if (failureContext && shouldStopForRepeatedFailureSignature(record, this.config)) {
@@ -1932,6 +2113,11 @@ export class Supervisor {
         const preserveFailureTracking = shouldPreserveNoPrFailureTracking(record);
         record = this.stateStore.touch(record, {
           state: inferStateWithoutPullRequest(record, workspaceStatus),
+          copilot_review_requested_observed_at: null,
+          copilot_review_requested_head_sha: null,
+          copilot_review_timed_out_at: null,
+          copilot_review_timeout_action: null,
+          copilot_review_timeout_reason: null,
           last_failure_context: preserveFailureTracking ? record.last_failure_context : null,
           last_failure_signature: preserveFailureTracking ? record.last_failure_signature : null,
           repeated_failure_signature_count: preserveFailureTracking ? record.repeated_failure_signature_count : 0,
@@ -2196,10 +2382,17 @@ export class Supervisor {
           : record.processed_review_thread_ids;
       const postRunFailureContext = inferFailureContext(this.config, record, pr, checks, reviewThreads);
       const postRunReviewWaitPatch = pr ? syncReviewWaitWindow(record, pr) : {};
+      const postRunCopilotRequestObservationPatch = pr ? syncCopilotReviewRequestObservation(record, pr) : {};
+      const postRunRecordForReviewState = pr
+        ? { ...record, ...postRunReviewWaitPatch, ...postRunCopilotRequestObservationPatch }
+        : record;
+      const postRunCopilotTimeoutPatch = pr
+        ? syncCopilotReviewTimeoutState(this.config, postRunRecordForReviewState, pr)
+        : {};
       const postRunState = pr
         ? inferStateFromPullRequest(
             this.config,
-            { ...record, processed_review_thread_ids: processedReviewThreadIds },
+            { ...postRunRecordForReviewState, processed_review_thread_ids: processedReviewThreadIds },
             pr,
             checks,
             reviewThreads,
@@ -2208,6 +2401,8 @@ export class Supervisor {
       record = this.stateStore.touch(record, {
         pr_number: pr?.number ?? null,
         ...postRunReviewWaitPatch,
+        ...postRunCopilotRequestObservationPatch,
+        ...postRunCopilotTimeoutPatch,
         processed_review_thread_ids: processedReviewThreadIds,
         blocked_verification_retry_count: pr ? 0 : record.blocked_verification_retry_count,
         repeated_blocker_count: 0,
@@ -2215,7 +2410,8 @@ export class Supervisor {
         last_error: postRunState === "blocked" && postRunFailureContext ? truncate(postRunFailureContext.summary, 1000) : record.last_error,
         last_failure_context: postRunFailureContext,
         ...applyFailureSignature(record, postRunFailureContext),
-        blocked_reason: pr && postRunState === "blocked" ? blockedReasonFromReviewState(this.config, reviewThreads) : null,
+        blocked_reason:
+          pr && postRunState === "blocked" ? blockedReasonFromReviewState(this.config, record, pr, reviewThreads) : null,
         state: postRunState,
       });
       state.issues[String(record.issue_number)] = record;
@@ -2375,9 +2571,22 @@ export class Supervisor {
             : null;
       const effectiveFailureContext = refreshedFailureContext ?? postReadyLocalReviewFailureContext;
       const refreshedReviewWaitPatch = syncReviewWaitWindow(record, postReadyPr);
+      const refreshedCopilotRequestObservationPatch = syncCopilotReviewRequestObservation(record, postReadyPr);
+      const refreshedRecordForReviewState = {
+        ...record,
+        ...refreshedReviewWaitPatch,
+        ...refreshedCopilotRequestObservationPatch,
+      };
+      const refreshedCopilotTimeoutPatch = syncCopilotReviewTimeoutState(
+        this.config,
+        refreshedRecordForReviewState,
+        postReadyPr,
+      );
       record = this.stateStore.touch(record, {
         pr_number: postReadyPr.number,
         ...refreshedReviewWaitPatch,
+        ...refreshedCopilotRequestObservationPatch,
+        ...refreshedCopilotTimeoutPatch,
         state: nextState,
         last_head_sha: postReadyPr.headRefOid,
         repeated_local_review_signature_count: repeatedLocalReviewSignatureCount,
@@ -2391,7 +2600,7 @@ export class Supervisor {
         ...applyFailureSignature(record, effectiveFailureContext),
         blocked_reason:
           nextState === "blocked"
-            ? blockedReasonFromReviewState(this.config, postReadyReviewThreads) ??
+            ? blockedReasonFromReviewState(this.config, recordForState, postReadyPr, postReadyReviewThreads) ??
               ((localReviewRetryLoopStalled(this.config, recordForState, postReadyPr, postReadyChecks, postReadyReviewThreads) ||
                 localReviewHighSeverityNeedsBlock(this.config, recordForState, postReadyPr))
                 ? "verification"

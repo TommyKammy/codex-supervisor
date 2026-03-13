@@ -44,6 +44,7 @@ function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConf
     branchPrefix: "codex/reopen-issue-",
     pollIntervalSeconds: 60,
     copilotReviewWaitMinutes: 10,
+    copilotReviewTimeoutAction: "continue",
     codexExecTimeoutMinutes: 30,
     maxCodexAttemptsPerIssue: 5,
     maxImplementationAttemptsPerIssue: 5,
@@ -70,6 +71,11 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     journal_path: "/tmp/workspaces/issue-366/.codex-supervisor/issue-journal.md",
     review_wait_started_at: null,
     review_wait_head_sha: null,
+    copilot_review_requested_observed_at: null,
+    copilot_review_requested_head_sha: null,
+    copilot_review_timed_out_at: null,
+    copilot_review_timeout_action: null,
+    copilot_review_timeout_reason: null,
     codex_session_id: "session-1",
     local_review_head_sha: null,
     local_review_summary_path: null,
@@ -115,6 +121,16 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     updated_at: "2026-03-11T01:50:41.997Z",
     ...overrides,
   };
+}
+
+function withStubbedDateNow<T>(nowIso: string, run: () => T): T {
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse(nowIso);
+  try {
+    return run();
+  } finally {
+    Date.now = originalDateNow;
+  }
 }
 
 test("shouldAutoRetryHandoffMissing only retries recoverable blocked handoffs", () => {
@@ -341,32 +357,161 @@ test("inferStateFromPullRequest does not wait for Copilot when no lifecycle sign
 });
 
 test("inferStateFromPullRequest keeps waiting when Copilot review was explicitly requested", () => {
-  const config = createConfig({ copilotReviewWaitMinutes: 10 });
-  const record = createRecord({
-    state: "waiting_ci",
-    review_wait_started_at: "2026-03-11T00:00:00Z",
-    review_wait_head_sha: "head123",
-  });
-  const pr: GitHubPullRequest = {
-    number: 44,
-    title: "Test PR",
-    url: "https://example.test/pr/44",
-    state: "OPEN",
-    createdAt: "2026-03-11T00:00:00Z",
-    isDraft: false,
-    reviewDecision: null,
-    mergeStateStatus: "CLEAN",
-    mergeable: "MERGEABLE",
-    headRefName: "codex/issue-38",
-    headRefOid: "head123",
-    mergedAt: null,
-    copilotReviewState: "requested",
-    copilotReviewRequestedAt: "2026-03-11T00:05:00Z",
-    copilotReviewArrivedAt: null,
-  };
-  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+  withStubbedDateNow("2026-03-11T00:10:00Z", () => {
+    const config = createConfig({ copilotReviewWaitMinutes: 10 });
+    const requestedAt = "2026-03-11T00:05:00Z";
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: requestedAt,
+      review_wait_head_sha: "head123",
+    });
+    const pr: GitHubPullRequest = {
+      number: 44,
+      title: "Test PR",
+      url: "https://example.test/pr/44",
+      state: "OPEN",
+      createdAt: "2026-03-11T00:00:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      headRefName: "codex/issue-38",
+      headRefOid: "head123",
+      mergedAt: null,
+      copilotReviewState: "requested",
+      copilotReviewRequestedAt: requestedAt,
+      copilotReviewArrivedAt: null,
+    };
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
 
-  assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "waiting_ci");
+    assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "waiting_ci");
+  });
+});
+
+test("inferStateFromPullRequest does not start Copilot timeout from the generic review wait window", () => {
+  withStubbedDateNow("2026-03-11T00:30:00Z", () => {
+    const config = createConfig({ copilotReviewWaitMinutes: 10, copilotReviewTimeoutAction: "block" });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-03-11T00:00:00Z",
+      review_wait_head_sha: "head123",
+    });
+    const pr: GitHubPullRequest = {
+      number: 44,
+      title: "Test PR",
+      url: "https://example.test/pr/44",
+      state: "OPEN",
+      createdAt: "2026-03-11T00:00:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      headRefName: "codex/issue-38",
+      headRefOid: "head123",
+      mergedAt: null,
+      copilotReviewState: "requested",
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+    };
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "waiting_ci");
+  });
+});
+
+test("inferStateFromPullRequest can time out from the observed Copilot request timestamp when GitHub omits one", () => {
+  withStubbedDateNow("2026-03-11T00:30:00Z", () => {
+    const config = createConfig({ copilotReviewWaitMinutes: 10, copilotReviewTimeoutAction: "block" });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-03-11T00:00:00Z",
+      review_wait_head_sha: "head123",
+      copilot_review_requested_observed_at: "2026-03-11T00:15:00Z",
+      copilot_review_requested_head_sha: "head123",
+    });
+    const pr: GitHubPullRequest = {
+      number: 44,
+      title: "Test PR",
+      url: "https://example.test/pr/44",
+      state: "OPEN",
+      createdAt: "2026-03-11T00:00:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      headRefName: "codex/issue-38",
+      headRefOid: "head123",
+      mergedAt: null,
+      copilotReviewState: "requested",
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+    };
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "blocked");
+  });
+});
+
+test("inferStateFromPullRequest times out requested Copilot reviews and continues by default", () => {
+  withStubbedDateNow("2026-03-11T00:30:00Z", () => {
+    const config = createConfig({ copilotReviewWaitMinutes: 10, copilotReviewTimeoutAction: "continue" });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-03-11T00:00:00Z",
+      review_wait_head_sha: "head123",
+    });
+    const pr: GitHubPullRequest = {
+      number: 44,
+      title: "Test PR",
+      url: "https://example.test/pr/44",
+      state: "OPEN",
+      createdAt: "2026-03-11T00:00:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      headRefName: "codex/issue-38",
+      headRefOid: "head123",
+      mergedAt: null,
+      copilotReviewState: "requested",
+      copilotReviewRequestedAt: "2026-03-11T00:05:00Z",
+      copilotReviewArrivedAt: null,
+    };
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "ready_to_merge");
+  });
+});
+
+test("inferStateFromPullRequest can block when a requested Copilot review times out", () => {
+  withStubbedDateNow("2026-03-11T00:30:00Z", () => {
+    const config = createConfig({ copilotReviewWaitMinutes: 10, copilotReviewTimeoutAction: "block" });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-03-11T00:00:00Z",
+      review_wait_head_sha: "head123",
+    });
+    const pr: GitHubPullRequest = {
+      number: 44,
+      title: "Test PR",
+      url: "https://example.test/pr/44",
+      state: "OPEN",
+      createdAt: "2026-03-11T00:00:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      headRefName: "codex/issue-38",
+      headRefOid: "head123",
+      mergedAt: null,
+      copilotReviewState: "requested",
+      copilotReviewRequestedAt: "2026-03-11T00:05:00Z",
+      copilotReviewArrivedAt: null,
+    };
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "blocked");
+  });
 });
 
 test("inferStateFromPullRequest covers local review policy gating combinations", () => {
@@ -866,6 +1011,45 @@ test("formatDetailedStatus surfaces unknown Copilot review lifecycle when hydrat
   });
 
   assert.match(status, /copilot_review state=unknown requested_at=none arrived_at=none/);
+});
+
+test("formatDetailedStatus surfaces Copilot review timeout outcome", () => {
+  const config = createConfig({ copilotReviewWaitMinutes: 10, copilotReviewTimeoutAction: "continue" });
+  const pr: GitHubPullRequest = {
+    number: 22,
+    title: "Add review learning",
+    url: "https://example.test/pr/22",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    headRefName: "codex/issue-58",
+    headRefOid: "deadbeef",
+    copilotReviewState: "requested",
+    copilotReviewRequestedAt: "2026-03-11T14:05:00Z",
+    copilotReviewArrivedAt: null,
+  };
+
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: createRecord({
+      pr_number: 22,
+      state: "ready_to_merge",
+      copilot_review_timed_out_at: "2026-03-11T14:15:00Z",
+      copilot_review_timeout_action: "continue",
+      copilot_review_timeout_reason:
+        "Requested Copilot review never arrived within 10 minute(s) for head deadbeef.",
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(status, /copilot_review state=requested requested_at=2026-03-11T14:05:00Z arrived_at=none timed_out_at=2026-03-11T14:15:00Z timeout_action=continue/);
+  assert.match(status, /timeout_reason=Requested Copilot review never arrived within 10 minute\(s\) for head deadbeef\./);
 });
 
 test("formatDetailedStatus marks stale local review as non-gating", () => {

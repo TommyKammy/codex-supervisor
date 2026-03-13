@@ -50,6 +50,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
   "branchPrefix": "codex/issue-",
   "pollIntervalSeconds": 120,
   "copilotReviewWaitMinutes": 10,
+  "copilotReviewTimeoutAction": "continue",
   "codexExecTimeoutMinutes": 30,
   "maxCodexAttemptsPerIssue": 30,
   "maxImplementationAttemptsPerIssue": 30,
