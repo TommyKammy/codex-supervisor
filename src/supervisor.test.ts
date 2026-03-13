@@ -2716,6 +2716,7 @@ test("formatDetailedStatus shows blocking local review status for current PR hea
     status,
     /local_review gating=yes policy=block_ready findings=3 root_causes=0 max_severity=high verified_findings=0 verified_max_severity=none head=current reviewed_head_sha=deadbeef pr_head_sha=deadbeef ran_at=2026-03-11T14:05:00Z signature=none repeated=0 stalled=no/,
   );
+  assert.doesNotMatch(status, /needs_review_run=/);
   assert.match(status, /external_review head=none reviewed_head_sha=none matched=0 near_match=0 missed=0/);
 });
 
@@ -3034,7 +3035,7 @@ test("formatDetailedStatus marks stale local review as non-gating", () => {
 
   assert.match(
     status,
-    /local_review gating=no policy=block_merge findings=2 root_causes=0 max_severity=medium verified_findings=0 verified_max_severity=none head=stale reviewed_head_sha=oldhead pr_head_sha=newhead ran_at=2026-03-11T14:05:00Z/,
+    /local_review gating=no policy=block_merge findings=2 root_causes=0 max_severity=medium verified_findings=0 verified_max_severity=none head=stale reviewed_head_sha=oldhead pr_head_sha=newhead ran_at=2026-03-11T14:05:00Z needs_review_run=yes drift=oldhead->newhead/,
   );
 });
 
