@@ -19,6 +19,12 @@ export interface ParentIssueClosureCandidate {
   childIssues: GitHubIssue[];
 }
 
+export interface ExecutionReadyLintResult {
+  isExecutionReady: boolean;
+  missingRequired: string[];
+  missingRecommended: string[];
+}
+
 function parseIssueNumberList(input: string): number[] {
   return Array.from(
     new Set(
@@ -36,20 +42,115 @@ function parseList(input: string): string[] {
     .filter(Boolean);
 }
 
+function parseExecutionOrder(
+  body: string,
+): { executionOrderIndex: number; executionOrderTotal: number } | null {
+  const headingMatch = body.match(
+    /^\s*##\s*Execution order\s*$[\r\n]+^\s*(\d+)\s+of\s+(\d+)\s*$/im,
+  );
+  if (headingMatch) {
+    return {
+      executionOrderIndex: Number(headingMatch[1]),
+      executionOrderTotal: Number(headingMatch[2]),
+    };
+  }
+
+  const singleLineMatch = body.match(/^\s*Execution order:\s*(\d+)\s+of\s+(\d+)\s*$/im);
+  if (!singleLineMatch) {
+    return null;
+  }
+
+  return {
+    executionOrderIndex: Number(singleLineMatch[1]),
+    executionOrderTotal: Number(singleLineMatch[2]),
+  };
+}
+
+function findMarkdownSectionContent(body: string, title: string): string | null {
+  const lines = body.split(/\r?\n/);
+  const headingPattern = new RegExp(`^\\s*##\\s*${title}\\s*$`, "i");
+
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!headingPattern.test(lines[index])) {
+      continue;
+    }
+
+    const sectionLines: string[] = [];
+    for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+      if (/^\s*##\s+\S/.test(lines[cursor])) {
+        break;
+      }
+
+      sectionLines.push(lines[cursor]);
+    }
+
+    const content = sectionLines.join("\n").trim();
+    return content.length > 0 ? content : null;
+  }
+
+  return null;
+}
+
 export function parseIssueMetadata(issue: GitHubIssue): IssueMetadata {
   const parentMatch = issue.body.match(/^\s*Part of:?\s+#(\d+)\s*$/im);
-  const orderMatch = issue.body.match(/^\s*##\s*Execution order\s*$[\r\n]+^\s*(\d+)\s+of\s+(\d+)\s*$/im);
   const dependsOnMatch = issue.body.match(/^\s*Depends on:\s*(.+)\s*$/im);
   const parallelGroupMatch = issue.body.match(/^\s*Parallel group:\s*(.+)\s*$/im);
   const touchesMatch = issue.body.match(/^\s*Touches:\s*(.+)\s*$/im);
+  const executionOrder = parseExecutionOrder(issue.body);
 
   return {
     parentIssueNumber: parentMatch ? Number(parentMatch[1]) : null,
-    executionOrderIndex: orderMatch ? Number(orderMatch[1]) : null,
-    executionOrderTotal: orderMatch ? Number(orderMatch[2]) : null,
+    executionOrderIndex: executionOrder?.executionOrderIndex ?? null,
+    executionOrderTotal: executionOrder?.executionOrderTotal ?? null,
     dependsOn: dependsOnMatch ? parseIssueNumberList(dependsOnMatch[1]) : [],
     parallelGroup: parallelGroupMatch ? parallelGroupMatch[1].trim() : null,
     touches: touchesMatch ? parseList(touchesMatch[1]) : [],
+  };
+}
+
+export function lintExecutionReadyIssueBody(
+  issue: Pick<GitHubIssue, "body">,
+): ExecutionReadyLintResult {
+  const requiredChecks: Array<{ key: string; present: boolean }> = [
+    {
+      key: "summary",
+      present: findMarkdownSectionContent(issue.body, "Summary") !== null,
+    },
+    {
+      key: "scope",
+      present: findMarkdownSectionContent(issue.body, "Scope") !== null,
+    },
+    {
+      key: "acceptance criteria",
+      present: findMarkdownSectionContent(issue.body, "Acceptance criteria") !== null,
+    },
+    {
+      key: "verification",
+      present: findMarkdownSectionContent(issue.body, "Verification") !== null,
+    },
+  ];
+  const recommendedChecks: Array<{ key: string; present: boolean }> = [
+    {
+      key: "depends on",
+      present: /^\s*Depends on:\s*.+$/im.test(issue.body),
+    },
+    {
+      key: "execution order",
+      present: parseExecutionOrder(issue.body) !== null,
+    },
+  ];
+
+  const missingRequired = requiredChecks
+    .filter((check) => !check.present)
+    .map((check) => check.key);
+  const missingRecommended = recommendedChecks
+    .filter((check) => !check.present)
+    .map((check) => check.key);
+
+  return {
+    isExecutionReady: missingRequired.length === 0,
+    missingRequired,
+    missingRecommended,
   };
 }
 
