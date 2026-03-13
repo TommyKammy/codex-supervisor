@@ -246,6 +246,19 @@ Template shared-memory files are included here:
 - [docs/shared-memory/workflow.example.md](./docs/shared-memory/workflow.example.md)
 - [docs/shared-memory/decisions.example.md](./docs/shared-memory/decisions.example.md)
 
+Committed Local Review Swarm guardrails also live under `docs/shared-memory/`:
+
+- `docs/shared-memory/verifier-guardrails.json`
+- `docs/shared-memory/external-review-guardrails.json`
+
+Maintain them through the repo-managed workflow:
+
+1. Edit the committed JSON entry in `docs/shared-memory/`.
+2. Run `npm run guardrails:fix` to normalize ordering, trimming, and formatting.
+3. Run `npm run guardrails:check` to fail on malformed or drifted updates.
+
+The check command rejects duplicate verifier `id` values and duplicate external-review `fingerprint` values so committed guardrails stay deterministic to load and audit.
+
 ## State backends
 
 The default state backend is JSON, but SQLite is also supported.
