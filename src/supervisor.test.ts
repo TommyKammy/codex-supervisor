@@ -1338,10 +1338,6 @@ test("handlePostTurnPullRequestTransitions refreshes PR state after marking read
   const fixture = await createSupervisorFixture();
   const issueNumber = 102;
   const branch = branchName(fixture.config, issueNumber);
-  const config = createConfig({
-    ...fixture.config,
-    reviewBotLogins: ["copilot-pull-request-reviewer"],
-  });
   const state: SupervisorStateFile = {
     activeIssueNumber: issueNumber,
     issues: {
@@ -1388,20 +1384,21 @@ test("handlePostTurnPullRequestTransitions refreshes PR state after marking read
     ...draftPr,
     isDraft: false,
   };
-  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+  const initialChecks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+  const postReadyChecks: PullRequestCheck[] = [{ name: "build", state: "IN_PROGRESS", bucket: "pending", workflow: "CI" }];
 
   let readyCalls = 0;
   let snapshotLoads = 0;
   let syncJournalCalls = 0;
-  const supervisor = new Supervisor(config);
+  const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { loadOpenPullRequestSnapshot: (prNumber: number) => Promise<unknown> }).loadOpenPullRequestSnapshot = async (
     prNumber: number,
   ) => {
     assert.equal(prNumber, 116);
     snapshotLoads += 1;
     return snapshotLoads === 1
-      ? { pr: draftPr, checks, reviewThreads: [] }
-      : { pr: readyPr, checks, reviewThreads: [] };
+      ? { pr: draftPr, checks: initialChecks, reviewThreads: [] }
+      : { pr: readyPr, checks: postReadyChecks, reviewThreads: [] };
   };
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     markPullRequestReady: async (prNumber: number) => {
@@ -1410,47 +1407,41 @@ test("handlePostTurnPullRequestTransitions refreshes PR state after marking read
     },
   };
 
-  const originalDateNow = Date.now;
-  Date.now = () => Date.parse("2026-03-13T06:26:22Z");
-  try {
-    const result = await (
-      supervisor as unknown as {
-        handlePostTurnPullRequestTransitions: (context: {
-          state: SupervisorStateFile;
-          record: IssueRunRecord;
-          issue: GitHubIssue;
-          workspacePath: string;
-          syncJournal: (record: IssueRunRecord) => Promise<void>;
-          memoryArtifacts: { alwaysReadFiles: string[]; onDemandFiles: string[] };
-          pr: GitHubPullRequest;
-          options: { dryRun: boolean };
-        }) => Promise<{
-          record: IssueRunRecord;
-          pr: GitHubPullRequest;
-          checks: PullRequestCheck[];
-          reviewThreads: ReviewThread[];
-        }>;
-      }
-    ).handlePostTurnPullRequestTransitions({
-      state,
-      record: state.issues[String(issueNumber)]!,
-      issue,
-      workspacePath: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
-      syncJournal: async () => {
-        syncJournalCalls += 1;
-      },
-      memoryArtifacts: { alwaysReadFiles: [], onDemandFiles: [] },
-      pr: draftPr,
-      options: { dryRun: false },
-    });
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnPullRequestTransitions: (context: {
+        state: SupervisorStateFile;
+        record: IssueRunRecord;
+        issue: GitHubIssue;
+        workspacePath: string;
+        syncJournal: (record: IssueRunRecord) => Promise<void>;
+        memoryArtifacts: { alwaysReadFiles: string[]; onDemandFiles: string[] };
+        pr: GitHubPullRequest;
+        options: { dryRun: boolean };
+      }) => Promise<{
+        record: IssueRunRecord;
+        pr: GitHubPullRequest;
+        checks: PullRequestCheck[];
+        reviewThreads: ReviewThread[];
+      }>;
+    }
+  ).handlePostTurnPullRequestTransitions({
+    state,
+    record: state.issues[String(issueNumber)]!,
+    issue,
+    workspacePath: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+    syncJournal: async () => {
+      syncJournalCalls += 1;
+    },
+    memoryArtifacts: { alwaysReadFiles: [], onDemandFiles: [] },
+    pr: draftPr,
+    options: { dryRun: false },
+  });
 
-    assert.equal(result.pr.isDraft, false);
-    assert.equal(result.record.state, "waiting_ci");
-    assert.equal(result.record.review_wait_head_sha, "head-116");
-    assert.ok(result.record.review_wait_started_at);
-  } finally {
-    Date.now = originalDateNow;
-  }
+  assert.equal(result.pr.isDraft, false);
+  assert.equal(result.record.state, "waiting_ci");
+  assert.equal(result.record.review_wait_head_sha, "head-116");
+  assert.ok(result.record.review_wait_started_at);
 
   assert.equal(readyCalls, 1);
   assert.equal(snapshotLoads, 2);
