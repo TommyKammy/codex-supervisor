@@ -12,6 +12,8 @@ import { parseJson, truncate } from "./utils";
 
 const TRANSIENT_GITHUB_RETRY_LIMIT = 2;
 const TRANSIENT_GITHUB_RETRY_BASE_DELAY_MS = 200;
+const COPILOT_REVIEW_TRANSITION_CACHE_TTL_MS = 30_000;
+const COPILOT_REVIEW_CACHE_MAX_ENTRIES = 128;
 
 export type GitHubCommandRunner = (
   command: string,
@@ -133,6 +135,12 @@ export interface CopilotReviewLifecycle {
   state: CopilotReviewState;
   requestedAt: string | null;
   arrivedAt: string | null;
+}
+
+interface CachedCopilotReviewLifecycleEntry {
+  fetchedAtMs: number;
+  state: CopilotReviewState | null;
+  promise: Promise<CopilotReviewLifecycle>;
 }
 
 function mapCheckBucket(args: {
@@ -357,12 +365,13 @@ function sanitizeGhCommandMessage(message: string, args: string[]): string {
 }
 
 export class GitHubClient {
-  private readonly copilotReviewLifecycleCache = new Map<string, Promise<CopilotReviewLifecycle>>();
+  private readonly copilotReviewLifecycleCache = new Map<string, CachedCopilotReviewLifecycleEntry>();
 
   constructor(
     private readonly config: SupervisorConfig,
     private readonly commandRunner: GitHubCommandRunner = runCommand,
     private readonly delay: (ms: number) => Promise<void> = sleep,
+    private readonly now: () => number = Date.now,
   ) {}
 
   private async runGhCommand(args: string[], options: CommandOptions = {}): Promise<CommandResult> {
@@ -603,6 +612,71 @@ export class GitHubClient {
     }
 
     return this.findLatestPullRequestForBranch(branch);
+  }
+
+  private getCachedCopilotReviewLifecycle(
+    cacheKey: string,
+    nowMs: number,
+  ): Promise<CopilotReviewLifecycle> | null {
+    const cachedLifecycle = this.copilotReviewLifecycleCache.get(cacheKey);
+    if (!cachedLifecycle) {
+      return null;
+    }
+
+    if (cachedLifecycle.state === null) {
+      this.copilotReviewLifecycleCache.delete(cacheKey);
+      this.copilotReviewLifecycleCache.set(cacheKey, cachedLifecycle);
+      return cachedLifecycle.promise;
+    }
+
+    if (cachedLifecycle.state === "arrived") {
+      this.copilotReviewLifecycleCache.delete(cacheKey);
+      this.copilotReviewLifecycleCache.set(cacheKey, cachedLifecycle);
+      return cachedLifecycle.promise;
+    }
+
+    if (nowMs - cachedLifecycle.fetchedAtMs < COPILOT_REVIEW_TRANSITION_CACHE_TTL_MS) {
+      this.copilotReviewLifecycleCache.delete(cacheKey);
+      this.copilotReviewLifecycleCache.set(cacheKey, cachedLifecycle);
+      return cachedLifecycle.promise;
+    }
+
+    this.copilotReviewLifecycleCache.delete(cacheKey);
+    return null;
+  }
+
+  private setCachedCopilotReviewLifecycle(
+    cacheKey: string,
+    lifecyclePromiseFactory: () => Promise<CopilotReviewLifecycle>,
+  ): Promise<CopilotReviewLifecycle> {
+    const cacheEntry: CachedCopilotReviewLifecycleEntry = {
+      fetchedAtMs: this.now(),
+      state: null,
+      promise: Promise.resolve({ state: "not_requested", requestedAt: null, arrivedAt: null }),
+    };
+    const lifecyclePromise = lifecyclePromiseFactory()
+      .then((lifecycle) => {
+        cacheEntry.fetchedAtMs = this.now();
+        cacheEntry.state = lifecycle.state;
+        return lifecycle;
+      })
+      .catch((error) => {
+        this.copilotReviewLifecycleCache.delete(cacheKey);
+        throw error;
+      });
+    cacheEntry.promise = lifecyclePromise;
+    this.copilotReviewLifecycleCache.delete(cacheKey);
+    this.copilotReviewLifecycleCache.set(cacheKey, cacheEntry);
+
+    while (this.copilotReviewLifecycleCache.size > COPILOT_REVIEW_CACHE_MAX_ENTRIES) {
+      const oldestKey = this.copilotReviewLifecycleCache.keys().next().value;
+      if (!oldestKey) {
+        break;
+      }
+      this.copilotReviewLifecycleCache.delete(oldestKey);
+    }
+
+    return lifecyclePromise;
   }
 
   async getMergedPullRequestsClosingIssue(issueNumber: number): Promise<GitHubPullRequest[]> {
@@ -896,7 +970,7 @@ export class GitHubClient {
     }
 
     const cacheKey = `${pr.number}:${pr.headRefOid}`;
-    const cachedLifecycle = this.copilotReviewLifecycleCache.get(cacheKey);
+    const cachedLifecycle = this.getCachedCopilotReviewLifecycle(cacheKey, this.now());
     if (cachedLifecycle) {
       const lifecycle = await cachedLifecycle;
       return {
@@ -907,8 +981,10 @@ export class GitHubClient {
       };
     }
 
-    const lifecyclePromise = this.getCopilotReviewLifecycle(pr.number);
-    this.copilotReviewLifecycleCache.set(cacheKey, lifecyclePromise);
+    const lifecyclePromise = this.setCachedCopilotReviewLifecycle(
+      cacheKey,
+      () => this.getCopilotReviewLifecycle(pr.number),
+    );
 
     try {
       const lifecycle = await lifecyclePromise;
@@ -919,7 +995,6 @@ export class GitHubClient {
         copilotReviewArrivedAt: lifecycle.arrivedAt,
       };
     } catch (error) {
-      this.copilotReviewLifecycleCache.delete(cacheKey);
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`Failed to hydrate Copilot review lifecycle for PR #${pr.number}: ${truncate(message, 500) ?? "unknown error"}`);
       return {

@@ -237,6 +237,134 @@ test("GitHubClient hydrates Copilot arrival from long review threads without tru
   assert.equal(pr.copilotReviewArrivedAt, "2026-03-13T02:24:00Z");
 });
 
+test("GitHubClient refreshes same-head Copilot lifecycle transitions from not_requested to requested to arrived", async () => {
+  const config = createConfig();
+  let nowMs = Date.parse("2026-03-13T01:00:00Z");
+  const lifecycleResponses = [
+    {
+      reviewRequests: { nodes: [] },
+      reviews: { nodes: [] },
+      reviewThreads: { nodes: [] },
+      timelineItems: { nodes: [] },
+    },
+    {
+      reviewRequests: {
+        nodes: [
+          {
+            requestedReviewer: {
+              login: "copilot-pull-request-reviewer",
+            },
+          },
+        ],
+      },
+      reviews: { nodes: [] },
+      reviewThreads: { nodes: [] },
+      timelineItems: {
+        nodes: [
+          {
+            __typename: "ReviewRequestedEvent",
+            createdAt: "2026-03-13T01:02:03Z",
+            requestedReviewer: {
+              login: "copilot-pull-request-reviewer",
+            },
+          },
+        ],
+      },
+    },
+    {
+      reviewRequests: { nodes: [] },
+      reviews: {
+        nodes: [
+          {
+            submittedAt: "2026-03-13T01:03:04Z",
+            author: {
+              login: "copilot-pull-request-reviewer",
+            },
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+      timelineItems: {
+        nodes: [
+          {
+            __typename: "ReviewRequestedEvent",
+            createdAt: "2026-03-13T01:02:03Z",
+            requestedReviewer: {
+              login: "copilot-pull-request-reviewer",
+            },
+          },
+        ],
+      },
+    },
+  ];
+  let lifecycleCallCount = 0;
+  const client = new GitHubClient(
+    config,
+    async (_command, args) => {
+      if (args[0] === "pr" && args[1] === "view") {
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            number: 44,
+            title: "Same head lifecycle transition",
+            url: "https://example.test/pr/44",
+            state: "OPEN",
+            createdAt: "2026-03-13T00:00:00Z",
+            updatedAt: "2026-03-13T00:00:00Z",
+            isDraft: false,
+            reviewDecision: null,
+            mergeStateStatus: "CLEAN",
+            mergeable: "MERGEABLE",
+            headRefName: "codex/issue-141",
+            headRefOid: "head-44",
+            mergedAt: null,
+          }),
+          stderr: "",
+        };
+      }
+
+      if (args[0] === "api" && args[1] === "graphql") {
+        const lifecycle = lifecycleResponses[lifecycleCallCount] ?? lifecycleResponses.at(-1);
+        lifecycleCallCount += 1;
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            data: {
+              repository: {
+                pullRequest: lifecycle,
+              },
+            },
+          }),
+          stderr: "",
+        };
+      }
+
+      throw new Error(`Unexpected args: ${args.join(" ")}`);
+    },
+    async () => {},
+    () => nowMs,
+  );
+
+  const first = await client.getPullRequest(44);
+  nowMs += 31_000;
+  const second = await client.getPullRequest(44);
+  nowMs += 31_000;
+  const third = await client.getPullRequest(44);
+
+  assert.equal(first.copilotReviewState, "not_requested");
+  assert.equal(first.copilotReviewRequestedAt, null);
+  assert.equal(first.copilotReviewArrivedAt, null);
+
+  assert.equal(second.copilotReviewState, "requested");
+  assert.equal(second.copilotReviewRequestedAt, "2026-03-13T01:02:03Z");
+  assert.equal(second.copilotReviewArrivedAt, null);
+
+  assert.equal(third.copilotReviewState, "arrived");
+  assert.equal(third.copilotReviewRequestedAt, "2026-03-13T01:02:03Z");
+  assert.equal(third.copilotReviewArrivedAt, "2026-03-13T01:03:04Z");
+  assert.equal(lifecycleCallCount, 3);
+});
+
 test("GitHubClient fetches the newest unresolved review thread comments", async () => {
   const config = createConfig();
   let reviewThreadQuery: string | null = null;
