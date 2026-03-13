@@ -25,13 +25,57 @@ const DURABLE_EXTERNAL_REVIEW_GUARDRAILS_PATH = path.join(
 );
 const DURABLE_EXTERNAL_REVIEW_GUARDRAILS_VERSION = 1;
 const DURABLE_EXTERNAL_REVIEW_GUARDRAILS_MAX_BYTES = 256 * 1024;
+const DURABLE_MISS_PATTERN_KEYS = [
+  "fingerprint",
+  "reviewerLogin",
+  "file",
+  "line",
+  "summary",
+  "rationale",
+  "sourceArtifactPath",
+  "sourceHeadSha",
+  "lastSeenAt",
+] as const;
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim() !== "";
 }
 
-function isNullableNumber(value: unknown): value is number | null {
-  return value === null || typeof value === "number";
+function normalizeRequiredString(
+  value: unknown,
+  source: string,
+  index: number,
+  field: (typeof DURABLE_MISS_PATTERN_KEYS)[number],
+): string {
+  if (!isNonEmptyString(value)) {
+    throw new Error(
+      `Invalid durable external review guardrails in ${source}: patterns[${index}].${field} must be a non-empty string.`,
+    );
+  }
+
+  return value.trim();
+}
+
+function isPositiveIntegerOrNull(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value >= 1);
+}
+
+function isIso8601Timestamp(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) {
+    return false;
+  }
+
+  const timestampMs = Date.parse(value);
+  return !Number.isNaN(timestampMs);
+}
+
+function assertNoUnexpectedPatternFields(pattern: Record<string, unknown>, source: string, index: number): void {
+  const allowedKeys = new Set<string>(DURABLE_MISS_PATTERN_KEYS);
+  for (const key of Object.keys(pattern)) {
+    if (!allowedKeys.has(key)) {
+      throw new Error(`Invalid durable external review guardrails in ${source}: patterns[${index}].${key} is not allowed.`);
+    }
+  }
 }
 
 function compareMissPatternPriority(left: ExternalReviewMissPattern, right: ExternalReviewMissPattern): number {
@@ -69,44 +113,31 @@ function validateDurableMissPattern(value: unknown, source: string, index: numbe
   }
 
   const pattern = value as Record<string, unknown>;
-  if (!isNonEmptyString(pattern.fingerprint)) {
-    throw new Error(`Invalid durable external review guardrails in ${source}: patterns[${index}].fingerprint must be a non-empty string.`);
+  assertNoUnexpectedPatternFields(pattern, source, index);
+
+  if (!isPositiveIntegerOrNull(pattern.line)) {
+    throw new Error(
+      `Invalid durable external review guardrails in ${source}: patterns[${index}].line must be an integer >= 1 or null.`,
+    );
   }
-  if (!isNonEmptyString(pattern.reviewerLogin)) {
-    throw new Error(`Invalid durable external review guardrails in ${source}: patterns[${index}].reviewerLogin must be a non-empty string.`);
-  }
-  if (!isNonEmptyString(pattern.file)) {
-    throw new Error(`Invalid durable external review guardrails in ${source}: patterns[${index}].file must be a non-empty string.`);
-  }
-  if (!isNullableNumber(pattern.line)) {
-    throw new Error(`Invalid durable external review guardrails in ${source}: patterns[${index}].line must be a number or null.`);
-  }
-  if (!isNonEmptyString(pattern.summary)) {
-    throw new Error(`Invalid durable external review guardrails in ${source}: patterns[${index}].summary must be a non-empty string.`);
-  }
-  if (!isNonEmptyString(pattern.rationale)) {
-    throw new Error(`Invalid durable external review guardrails in ${source}: patterns[${index}].rationale must be a non-empty string.`);
-  }
-  if (!isNonEmptyString(pattern.sourceArtifactPath)) {
-    throw new Error(`Invalid durable external review guardrails in ${source}: patterns[${index}].sourceArtifactPath must be a non-empty string.`);
-  }
-  if (!isNonEmptyString(pattern.sourceHeadSha)) {
-    throw new Error(`Invalid durable external review guardrails in ${source}: patterns[${index}].sourceHeadSha must be a non-empty string.`);
-  }
-  if (!isNonEmptyString(pattern.lastSeenAt)) {
-    throw new Error(`Invalid durable external review guardrails in ${source}: patterns[${index}].lastSeenAt must be a non-empty string.`);
+
+  const lastSeenAt = normalizeRequiredString(pattern.lastSeenAt, source, index, "lastSeenAt");
+  if (!isIso8601Timestamp(lastSeenAt)) {
+    throw new Error(
+      `Invalid durable external review guardrails in ${source}: patterns[${index}].lastSeenAt must be an ISO-8601 timestamp.`,
+    );
   }
 
   return {
-    fingerprint: pattern.fingerprint,
-    reviewerLogin: pattern.reviewerLogin,
-    file: pattern.file,
+    fingerprint: normalizeRequiredString(pattern.fingerprint, source, index, "fingerprint"),
+    reviewerLogin: normalizeRequiredString(pattern.reviewerLogin, source, index, "reviewerLogin"),
+    file: normalizeRequiredString(pattern.file, source, index, "file"),
     line: pattern.line,
-    summary: pattern.summary,
-    rationale: pattern.rationale,
-    sourceArtifactPath: pattern.sourceArtifactPath,
-    sourceHeadSha: pattern.sourceHeadSha,
-    lastSeenAt: pattern.lastSeenAt,
+    summary: normalizeRequiredString(pattern.summary, source, index, "summary"),
+    rationale: normalizeRequiredString(pattern.rationale, source, index, "rationale"),
+    sourceArtifactPath: normalizeRequiredString(pattern.sourceArtifactPath, source, index, "sourceArtifactPath"),
+    sourceHeadSha: normalizeRequiredString(pattern.sourceHeadSha, source, index, "sourceHeadSha"),
+    lastSeenAt,
   };
 }
 
@@ -143,6 +174,11 @@ async function loadDurableExternalReviewGuardrails(workspacePath: string): Promi
     throw new Error(
       `Invalid durable external review guardrails in ${guardrailPath}: version must be ${DURABLE_EXTERNAL_REVIEW_GUARDRAILS_VERSION}.`,
     );
+  }
+  for (const key of Object.keys(parsed)) {
+    if (key !== "version" && key !== "patterns") {
+      throw new Error(`Invalid durable external review guardrails in ${guardrailPath}: ${key} is not allowed.`);
+    }
   }
   if (!Array.isArray(parsed.patterns)) {
     throw new Error(`Invalid durable external review guardrails in ${guardrailPath}: patterns must be an array.`);
