@@ -99,6 +99,7 @@ export type BlockedReason =
   | "permissions"
   | "secrets"
   | "verification"
+  | "review_bot_timeout"
   | "copilot_timeout"
   | "manual_review"
   | "manual_pr_closed"

@@ -2972,6 +2972,40 @@ test("inferStateFromPullRequest waits briefly after ready-for-review for Copilot
   });
 });
 
+test("inferStateFromPullRequest waits briefly after ready-for-review for configured bot request propagation", () => {
+  withStubbedDateNow("2026-03-13T05:42:40Z", () => {
+    const config = createConfig({
+      copilotReviewWaitMinutes: 10,
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    });
+    const record = createRecord({
+      state: "pr_open",
+      review_wait_started_at: "2026-03-13T05:42:36Z",
+      review_wait_head_sha: "head123",
+    });
+    const pr: GitHubPullRequest = {
+      number: 44,
+      title: "Test PR",
+      url: "https://example.test/pr/44",
+      state: "OPEN",
+      createdAt: "2026-03-13T05:40:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      headRefName: "codex/issue-38",
+      headRefOid: "head123",
+      mergedAt: null,
+      copilotReviewState: "not_requested",
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+    };
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "waiting_ci");
+  });
+});
+
 test("inferStateFromPullRequest allows merge after the Copilot propagation grace window expires", () => {
   withStubbedDateNow("2026-03-13T05:42:42Z", () => {
     const config = createConfig({
@@ -3003,6 +3037,77 @@ test("inferStateFromPullRequest allows merge after the Copilot propagation grace
     const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
 
     assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "ready_to_merge");
+  });
+});
+
+test("inferStateFromPullRequest keeps waiting when a configured bot request was observed on the current head but has not arrived", () => {
+  withStubbedDateNow("2026-03-11T00:10:00Z", () => {
+    const config = createConfig({
+      copilotReviewWaitMinutes: 10,
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-03-11T00:00:00Z",
+      review_wait_head_sha: "head123",
+      copilot_review_requested_observed_at: "2026-03-11T00:05:00Z",
+      copilot_review_requested_head_sha: "head123",
+    });
+    const pr: GitHubPullRequest = {
+      number: 44,
+      title: "Test PR",
+      url: "https://example.test/pr/44",
+      state: "OPEN",
+      createdAt: "2026-03-11T00:00:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      headRefName: "codex/issue-38",
+      headRefOid: "head123",
+      mergedAt: null,
+      copilotReviewState: "not_requested",
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+    };
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "waiting_ci");
+  });
+});
+
+test("inferStateFromPullRequest waits when mixed configured bots include Copilot lifecycle state", () => {
+  withStubbedDateNow("2026-03-11T00:10:00Z", () => {
+    const config = createConfig({
+      copilotReviewWaitMinutes: 10,
+      reviewBotLogins: ["chatgpt-codex-connector", "copilot-pull-request-reviewer"],
+    });
+    const requestedAt = "2026-03-11T00:05:00Z";
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: requestedAt,
+      review_wait_head_sha: "head123",
+    });
+    const pr: GitHubPullRequest = {
+      number: 44,
+      title: "Test PR",
+      url: "https://example.test/pr/44",
+      state: "OPEN",
+      createdAt: "2026-03-11T00:00:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      headRefName: "codex/issue-38",
+      headRefOid: "head123",
+      mergedAt: null,
+      copilotReviewState: "requested",
+      copilotReviewRequestedAt: requestedAt,
+      copilotReviewArrivedAt: null,
+    };
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "waiting_ci");
   });
 });
 
@@ -3105,6 +3210,43 @@ test("inferStateFromPullRequest does not start Copilot timeout from the generic 
 test("inferStateFromPullRequest can time out from the observed Copilot request timestamp when GitHub omits one", () => {
   withStubbedDateNow("2026-03-11T00:30:00Z", () => {
     const config = createConfig({ copilotReviewWaitMinutes: 10, copilotReviewTimeoutAction: "block" });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-03-11T00:00:00Z",
+      review_wait_head_sha: "head123",
+      copilot_review_requested_observed_at: "2026-03-11T00:15:00Z",
+      copilot_review_requested_head_sha: "head123",
+    });
+    const pr: GitHubPullRequest = {
+      number: 44,
+      title: "Test PR",
+      url: "https://example.test/pr/44",
+      state: "OPEN",
+      createdAt: "2026-03-11T00:00:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      headRefName: "codex/issue-38",
+      headRefOid: "head123",
+      mergedAt: null,
+      copilotReviewState: "requested",
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+    };
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "blocked");
+  });
+});
+
+test("inferStateFromPullRequest can block when a configured bot review times out from the observed request timestamp", () => {
+  withStubbedDateNow("2026-03-11T00:30:00Z", () => {
+    const config = createConfig({
+      copilotReviewWaitMinutes: 10,
+      copilotReviewTimeoutAction: "block",
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    });
     const record = createRecord({
       state: "waiting_ci",
       review_wait_started_at: "2026-03-11T00:00:00Z",
@@ -3863,6 +4005,55 @@ test("formatDetailedStatus surfaces Copilot review timeout outcome", () => {
 
   assert.match(status, /copilot_review state=requested requested_at=2026-03-11T14:05:00Z arrived_at=none timed_out_at=2026-03-11T14:15:00Z timeout_action=continue/);
   assert.match(status, /timeout_reason=Requested Copilot review never arrived within 10 minute\(s\) for head deadbeef\./);
+});
+
+test("formatDetailedStatus surfaces configured bot review timeout outcome with generic wording", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-38",
+    headRefOid: "deadbeef",
+    mergedAt: null,
+    copilotReviewState: "requested",
+    copilotReviewRequestedAt: "2026-03-11T14:05:00Z",
+    copilotReviewArrivedAt: null,
+  };
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: createRecord({
+      pr_number: 44,
+      state: "blocked",
+      blocked_reason: "review_bot_timeout",
+      copilot_review_timed_out_at: "2026-03-11T14:15:00Z",
+      copilot_review_timeout_action: "continue",
+      copilot_review_timeout_reason:
+        "Requested configured review bot (chatgpt-codex-connector) review never arrived within 10 minute(s) for head deadbeef.",
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr,
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [],
+  });
+
+  assert.match(
+    status,
+    /configured_bot_review state=requested reviewers=chatgpt-codex-connector requested_at=2026-03-11T14:05:00Z arrived_at=none timed_out_at=2026-03-11T14:15:00Z timeout_action=continue/,
+  );
+  assert.match(
+    status,
+    /timeout_reason=Requested configured review bot \(chatgpt-codex-connector\) review never arrived within 10 minute\(s\) for head deadbeef\./,
+  );
 });
 
 test("formatDetailedStatus surfaces the latest recovery reason separately from the active issue", () => {

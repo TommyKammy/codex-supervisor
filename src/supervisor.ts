@@ -1015,6 +1015,24 @@ interface CopilotReviewTimeoutStatus {
   reason: string | null;
 }
 
+function configuredReviewBotLabel(config: SupervisorConfig): string {
+  const bots = config.reviewBotLogins.filter((login) => login.trim() !== "");
+  if (bots.length === 1) {
+    return `configured review bot (${bots[0]})`;
+  }
+  if (bots.length > 1) {
+    return `configured review bots (${bots.join(", ")})`;
+  }
+  return "configured review bot";
+}
+
+function configuredReviewStatusLabel(config: SupervisorConfig): string {
+  return config.reviewBotLogins.length === 0 ||
+    (config.reviewBotLogins.length === 1 && config.reviewBotLogins[0] === COPILOT_REVIEWER_LOGIN)
+    ? "copilot_review"
+    : "configured_bot_review";
+}
+
 function copilotReviewArrived(pr: GitHubPullRequest): boolean {
   return (pr.copilotReviewState ?? "not_requested") === "arrived" || Boolean(pr.copilotReviewArrivedAt);
 }
@@ -1074,13 +1092,13 @@ function determineCopilotReviewTimeout(
     startedAt,
     timedOutAt,
     reason:
-      `Requested Copilot review never arrived within ${config.copilotReviewWaitMinutes} minute(s) ` +
+      `Requested ${configuredReviewBotLabel(config)} review never arrived within ${config.copilotReviewWaitMinutes} minute(s) ` +
       `for head ${pr.headRefOid}.`,
   };
 }
 
-function repoExpectsCopilotReview(config: SupervisorConfig): boolean {
-  return config.reviewBotLogins.includes(COPILOT_REVIEWER_LOGIN);
+function repoExpectsConfiguredBotReview(config: SupervisorConfig): boolean {
+  return config.reviewBotLogins.length > 0;
 }
 
 function shouldWaitForCopilotReviewPropagation(
@@ -1089,7 +1107,7 @@ function shouldWaitForCopilotReviewPropagation(
   pr: GitHubPullRequest,
 ): boolean {
   if (
-    !repoExpectsCopilotReview(config) ||
+    !repoExpectsConfiguredBotReview(config) ||
     config.copilotReviewWaitMinutes <= 0 ||
     pr.isDraft ||
     pr.headRefOid !== record.review_wait_head_sha
@@ -1127,14 +1145,14 @@ function buildCopilotReviewTimeoutFailureContext(
 
   return {
     category: "blocked",
-    summary: `PR #${pr.number} is blocked after a requested Copilot review timed out.`,
-    signature: `copilot-timeout:${pr.headRefOid}:${timeout.action}`,
+    summary: `PR #${pr.number} is blocked after a requested ${configuredReviewBotLabel(config)} review timed out.`,
+    signature: `review-bot-timeout:${pr.headRefOid}:${timeout.action}`,
     command: null,
     details: [
       `requested_at=${timeout.startedAt ?? "none"}`,
       `timed_out_at=${timeout.timedOutAt ?? "none"}`,
       `timeout_minutes=${config.copilotReviewWaitMinutes}`,
-      timeout.reason ?? "Requested Copilot review timed out.",
+      timeout.reason ?? `Requested ${configuredReviewBotLabel(config)} review timed out.`,
     ],
     url: pr.url,
     updated_at: nowIso(),
@@ -1160,7 +1178,7 @@ function blockedReasonFromReviewState(
 ): Exclude<BlockedReason, null> | null {
   const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
   if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
-    return "copilot_timeout";
+    return "review_bot_timeout";
   }
 
   if (
@@ -2034,8 +2052,10 @@ export function formatDetailedStatus(args: {
 
   if (pr) {
     const copilotReviewState = pr.copilotReviewState === null ? "unknown" : (pr.copilotReviewState ?? "not_requested");
+    const reviewStatusLabel = configuredReviewStatusLabel(config);
+    const reviewersSuffix = config.reviewBotLogins.length > 0 ? ` reviewers=${config.reviewBotLogins.join(",")}` : "";
     lines.push(
-      `copilot_review state=${copilotReviewState} requested_at=${pr.copilotReviewRequestedAt ?? "none"} arrived_at=${pr.copilotReviewArrivedAt ?? "none"} timed_out_at=${activeRecord.copilot_review_timed_out_at ?? "none"} timeout_action=${activeRecord.copilot_review_timeout_action ?? "none"}`,
+      `${reviewStatusLabel} state=${copilotReviewState}${reviewersSuffix} requested_at=${pr.copilotReviewRequestedAt ?? "none"} arrived_at=${pr.copilotReviewArrivedAt ?? "none"} timed_out_at=${activeRecord.copilot_review_timed_out_at ?? "none"} timeout_action=${activeRecord.copilot_review_timeout_action ?? "none"}`,
     );
     if (activeRecord.copilot_review_timeout_reason) {
       lines.push(`timeout_reason=${sanitizeStatusValue(activeRecord.copilot_review_timeout_reason)}`);

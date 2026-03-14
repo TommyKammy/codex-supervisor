@@ -162,6 +162,43 @@ test("inferCopilotReviewLifecycle returns arrived when Copilot comments on a rev
   });
 });
 
+test("inferCopilotReviewLifecycle treats configured review bots generically for Codex-only and mixed configurations", () => {
+  const facts = {
+    reviewRequests: ["chatgpt-codex-connector"],
+    reviews: [
+      {
+        authorLogin: "chatgpt-codex-connector",
+        submittedAt: "2026-03-13T02:03:04Z",
+      },
+    ],
+    comments: [],
+    timeline: [
+      {
+        type: "requested" as const,
+        createdAt: "2026-03-13T01:02:03Z",
+        reviewerLogin: "chatgpt-codex-connector",
+      },
+      {
+        type: "requested" as const,
+        createdAt: "2026-03-13T01:00:00Z",
+        reviewerLogin: "copilot-pull-request-reviewer",
+      },
+    ],
+  };
+
+  assert.deepEqual(inferCopilotReviewLifecycle(facts, ["chatgpt-codex-connector"]), {
+    state: "arrived",
+    requestedAt: "2026-03-13T01:02:03Z",
+    arrivedAt: "2026-03-13T02:03:04Z",
+  });
+
+  assert.deepEqual(inferCopilotReviewLifecycle(facts, ["copilot-pull-request-reviewer", "chatgpt-codex-connector"]), {
+    state: "arrived",
+    requestedAt: "2026-03-13T01:02:03Z",
+    arrivedAt: "2026-03-13T02:03:04Z",
+  });
+});
+
 test("GitHubClient hydrates Copilot arrival from long review threads without truncating comments to 20", async () => {
   const config = createConfig();
   let lifecycleQuery: string | null = null;
