@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCodexPrompt, buildCodexResumePrompt, extractStateHint } from "./codex";
+import { buildCodexPrompt, buildCodexResumePrompt, extractStateHint, shouldUseCompactResumePrompt } from "./codex";
 import { loadLocalReviewRepairContext } from "./supervisor";
 import { FailureContext, GitHubIssue, RunState } from "./types";
 import { type VerifierGuardrailRule } from "./verifier-guardrails";
@@ -19,6 +19,19 @@ const issue: GitHubIssue = {
 
 test("extractStateHint accepts local_review_fix", () => {
   assert.equal(extractStateHint("State hint: local_review_fix"), "local_review_fix");
+});
+
+test("shouldUseCompactResumePrompt only enables compact resume guidance for handoff-driven states", () => {
+  assert.equal(shouldUseCompactResumePrompt("planning"), true);
+  assert.equal(shouldUseCompactResumePrompt("reproducing"), true);
+  assert.equal(shouldUseCompactResumePrompt("implementing"), true);
+  assert.equal(shouldUseCompactResumePrompt("stabilizing"), true);
+  assert.equal(shouldUseCompactResumePrompt("draft_pr"), true);
+  assert.equal(shouldUseCompactResumePrompt("repairing_ci"), false);
+  assert.equal(shouldUseCompactResumePrompt("local_review_fix"), false);
+  assert.equal(shouldUseCompactResumePrompt("addressing_review"), false);
+  assert.equal(shouldUseCompactResumePrompt("resolving_conflict"), false);
+  assert.equal(shouldUseCompactResumePrompt("local_review"), false);
 });
 
 test("buildCodexResumePrompt emits a compact state-and-handoff restart prompt", () => {

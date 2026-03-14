@@ -7,6 +7,7 @@ import {
   extractFailureSignature,
   extractStateHint,
   runCodexTurn,
+  shouldUseCompactResumePrompt,
 } from "./codex";
 import { loadConfig } from "./config";
 import { ExternalReviewMissContext, loadRelevantExternalReviewMissPatterns, writeExternalReviewMissArtifact } from "./external-review-misses";
@@ -2797,7 +2798,7 @@ export class Supervisor {
         await syncJournal(record);
       }
 
-      const prompt = record.codex_session_id
+      const prompt = record.codex_session_id && shouldUseCompactResumePrompt(record.state)
         ? buildCodexResumePrompt({
             repoSlug: this.config.repoSlug,
             issue,

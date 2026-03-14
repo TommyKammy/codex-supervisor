@@ -40,6 +40,8 @@ const LIVE_BLOCKER_HANDOFF_SUPPRESSION_STATES = new Set<RunState>([
   "addressing_review",
 ]);
 
+const COMPACT_RESUME_PROMPT_STATES = new Set<RunState>(["planning", "reproducing", "implementing", "stabilizing", "draft_pr"]);
+
 export function extractStateHint(message: string): RunState | null {
   const match = message.match(/State hint:\s*([a-z_]+)/i);
   if (!match) {
@@ -104,6 +106,10 @@ export function extractFailureSignature(message: string): string | null {
   }
 
   return value.slice(0, 500);
+}
+
+export function shouldUseCompactResumePrompt(state: RunState): boolean {
+  return COMPACT_RESUME_PROMPT_STATES.has(state);
 }
 
 function phaseGuidance(state: RunState): string[] {
