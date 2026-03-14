@@ -1048,6 +1048,140 @@ function configuredReviewStatusLabel(config: SupervisorConfig): string {
     : "configured_bot_review";
 }
 
+type ReviewBotProfileId = "none" | "copilot" | "codex" | "coderabbit" | "custom";
+
+interface ReviewBotProfileSummary {
+  profile: ReviewBotProfileId;
+  provider: string;
+  reviewers: string[];
+  signalSource: string;
+}
+
+interface ReviewBotDiagnostics {
+  status: string;
+  observedReview: string;
+  nextCheck: string;
+}
+
+function inferReviewBotProfile(config: SupervisorConfig): ReviewBotProfileSummary {
+  const reviewers = configuredReviewBots(config);
+  const normalized = reviewers.map((reviewer) => reviewer.toLowerCase());
+
+  if (normalized.length === 0) {
+    return {
+      profile: "none",
+      provider: "none",
+      reviewers,
+      signalSource: "none",
+    };
+  }
+
+  if (normalized.length === 1 && normalized[0] === COPILOT_REVIEWER_LOGIN) {
+    return {
+      profile: "copilot",
+      provider: COPILOT_REVIEWER_LOGIN,
+      reviewers,
+      signalSource: "copilot_lifecycle",
+    };
+  }
+
+  if (normalized.length === 1 && normalized[0] === "chatgpt-codex-connector") {
+    return {
+      profile: "codex",
+      provider: "chatgpt-codex-connector",
+      reviewers,
+      signalSource: "review_threads",
+    };
+  }
+
+  if (
+    normalized.length === 2 &&
+    normalized[0] === "coderabbitai" &&
+    normalized[1] === "coderabbitai[bot]"
+  ) {
+    return {
+      profile: "coderabbit",
+      provider: "coderabbitai",
+      reviewers,
+      signalSource: "review_threads",
+    };
+  }
+
+  return {
+    profile: "custom",
+    provider: reviewers.join(",") || "custom",
+    reviewers,
+    signalSource: normalized.includes(COPILOT_REVIEWER_LOGIN) ? "copilot_lifecycle+review_threads" : "review_threads",
+  };
+}
+
+function summarizeObservedReviewSignal(
+  config: SupervisorConfig,
+  activeRecord: IssueRunRecord,
+  pr: GitHubPullRequest,
+  reviewThreads: ReviewThread[],
+): { observedReview: string; hasSignal: boolean } {
+  const configuredThreads = configuredBotReviewThreads(config, reviewThreads);
+  if (configuredThreads.length > 0) {
+    return { observedReview: "review_thread", hasSignal: true };
+  }
+
+  if (activeRecord.external_review_head_sha === pr.headRefOid) {
+    return { observedReview: "external_review_record", hasSignal: true };
+  }
+
+  const lifecycleState = pr.copilotReviewState ?? "not_requested";
+  if (lifecycleState === "arrived") {
+    return { observedReview: "copilot_arrived", hasSignal: true };
+  }
+  if (lifecycleState === "requested") {
+    return { observedReview: "copilot_requested", hasSignal: false };
+  }
+  if (pr.copilotReviewState === null) {
+    return { observedReview: "unknown", hasSignal: false };
+  }
+
+  return { observedReview: "none", hasSignal: false };
+}
+
+function reviewBotDiagnostics(
+  config: SupervisorConfig,
+  activeRecord: IssueRunRecord,
+  pr: GitHubPullRequest,
+  reviewThreads: ReviewThread[],
+): ReviewBotDiagnostics {
+  if (!repoExpectsConfiguredBotReview(config)) {
+    return {
+      status: "disabled",
+      observedReview: "none",
+      nextCheck: "none",
+    };
+  }
+
+  const observed = summarizeObservedReviewSignal(config, activeRecord, pr, reviewThreads);
+  if (observed.hasSignal) {
+    return {
+      status: "review_signal_observed",
+      observedReview: observed.observedReview,
+      nextCheck: "none",
+    };
+  }
+
+  if (observed.observedReview === "copilot_requested") {
+    return {
+      status: "waiting_for_provider_review",
+      observedReview: observed.observedReview,
+      nextCheck: "provider_delivery",
+    };
+  }
+
+  return {
+    status: "missing_provider_signal",
+    observedReview: observed.observedReview,
+    nextCheck: "provider_setup_or_delivery",
+  };
+}
+
 function copilotReviewArrived(pr: GitHubPullRequest): boolean {
   return (pr.copilotReviewState ?? "not_requested") === "arrived" || Boolean(pr.copilotReviewArrivedAt);
 }
@@ -2074,11 +2208,19 @@ export function formatDetailedStatus(args: {
   }
 
   if (pr) {
+    const reviewBotProfile = inferReviewBotProfile(config);
+    const reviewBotStatus = reviewBotDiagnostics(config, activeRecord, pr, reviewThreads);
     const copilotReviewState = pr.copilotReviewState === null ? "unknown" : (pr.copilotReviewState ?? "not_requested");
     const reviewStatusLabel = configuredReviewStatusLabel(config);
     const reviewers = configuredReviewBots(config);
     const reviewersSuffix =
       reviewStatusLabel === "configured_bot_review" && reviewers.length > 0 ? ` reviewers=${reviewers.join(",")}` : "";
+    lines.push(
+      `review_bot_profile profile=${reviewBotProfile.profile} provider=${reviewBotProfile.provider} reviewers=${reviewBotProfile.reviewers.length > 0 ? reviewBotProfile.reviewers.join(",") : "none"} signal_source=${reviewBotProfile.signalSource}`,
+    );
+    lines.push(
+      `review_bot_diagnostics status=${reviewBotStatus.status} observed_review=${reviewBotStatus.observedReview} expected_reviewers=${reviewBotProfile.reviewers.length > 0 ? reviewBotProfile.reviewers.join(",") : "none"} next_check=${reviewBotStatus.nextCheck}`,
+    );
     lines.push(
       `${reviewStatusLabel} state=${copilotReviewState}${reviewersSuffix} requested_at=${pr.copilotReviewRequestedAt ?? "none"} arrived_at=${pr.copilotReviewArrivedAt ?? "none"} timed_out_at=${activeRecord.copilot_review_timed_out_at ?? "none"} timeout_action=${activeRecord.copilot_review_timeout_action ?? "none"}`,
     );

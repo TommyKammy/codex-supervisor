@@ -4111,6 +4111,59 @@ test("formatDetailedStatus surfaces configured bot review timeout outcome with g
   );
 });
 
+test("formatDetailedStatus surfaces active review-bot profile and missing external signal for Codex profile", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: false,
+    reviewDecision: "REVIEW_REQUIRED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-38",
+    headRefOid: "deadbeef",
+    mergedAt: null,
+    copilotReviewState: "not_requested",
+    copilotReviewRequestedAt: null,
+    copilotReviewArrivedAt: null,
+  };
+
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: createRecord({
+      pr_number: 44,
+      state: "pr_open",
+      blocked_reason: null,
+      external_review_head_sha: null,
+      external_review_matched_findings_count: 0,
+      external_review_near_match_findings_count: 0,
+      external_review_missed_findings_count: 0,
+      copilot_review_timed_out_at: null,
+      copilot_review_timeout_action: null,
+      copilot_review_timeout_reason: null,
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr,
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [],
+  });
+
+  assert.match(
+    status,
+    /review_bot_profile profile=codex provider=chatgpt-codex-connector reviewers=chatgpt-codex-connector signal_source=review_threads/,
+  );
+  assert.match(
+    status,
+    /review_bot_diagnostics status=missing_provider_signal observed_review=none expected_reviewers=chatgpt-codex-connector next_check=provider_setup_or_delivery/,
+  );
+});
+
 test("formatDetailedStatus preserves Copilot-specific timeout wording for Copilot-only repos", () => {
   const config = createConfig({
     reviewBotLogins: ["copilot-pull-request-reviewer"],
