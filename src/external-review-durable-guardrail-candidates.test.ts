@@ -312,6 +312,10 @@ test("toDurableGuardrailCandidates treats whitespace-only file values as unancho
 
   assert.equal(candidates.length, 1);
   assert.equal(candidates[0]?.category, "reviewer_rubric");
+  assert.equal(
+    candidates[0]?.id,
+    "reviewer_rubric|top_level_review|bug: retries can reuse stale state and mask the latest failure.",
+  );
   assert.deepEqual(candidates[0]?.qualificationReasons, [
     "missed_by_local_review",
     "high_confidence",

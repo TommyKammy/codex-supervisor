@@ -126,7 +126,7 @@ function createDurableGuardrailCandidateId(
   category: ExternalReviewDurableGuardrailCandidateCategory,
   finding: ExternalReviewMissFinding,
 ): string {
-  if (finding.file) {
+  if (typeof finding.file === "string" && finding.file.trim() !== "") {
     return `${category}|${createExternalReviewRegressionCandidateId(finding)}`;
   }
 
