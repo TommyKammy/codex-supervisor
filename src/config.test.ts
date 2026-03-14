@@ -302,3 +302,16 @@ test("shipped config profiles declare the intended review bot logins", async () 
     );
   }
 });
+
+test("README documents provider-side setup and verification for shipped review-bot profiles", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  const readme = await fs.readFile(path.join(rootDir, "README.md"), "utf8");
+
+  assert.match(readme, /Copilot profile/i);
+  assert.match(readme, /Codex Connector profile/i);
+  assert.match(readme, /CodeRabbit profile/i);
+  assert.match(readme, /supervisor-side/i);
+  assert.match(readme, /provider-side/i);
+  assert.match(readme, /\.coderabbit\.yaml/i);
+  assert.match(readme, /usable review signal/i);
+});
