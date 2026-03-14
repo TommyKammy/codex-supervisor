@@ -130,6 +130,31 @@ Provider-specific starting points are also shipped:
 
 `supervisor.config.json` remains the active file that the supervisor loads. The provider-specific files are explicit templates: copy the one you want into `supervisor.config.json` or diff against it when switching review bots. The base example and Copilot profile preserve the existing safe Copilot-oriented defaults. The CodeRabbit profile includes both the app slug and bot login so request lifecycle events and review comments match the same configured provider.
 
+### Provider profile setup
+
+Each shipped profile only covers the supervisor-side configuration. You still need the matching provider-side setup in GitHub or in the managed repository before the supervisor can observe usable review signals.
+
+- Copilot profile
+  - Supervisor-side: use `supervisor.config.copilot.json` or copy its `reviewBotLogins` entry into `supervisor.config.json`.
+  - Provider-side: install and enable GitHub Copilot code review for the repository or organization, and make sure the PR flow you use actually requests or auto-triggers Copilot review after the PR is ready.
+  - Verify: open a small test PR, mark it ready, then confirm GitHub shows a Copilot review or review-thread comment from `copilot-pull-request-reviewer`. If the supervisor stays in a Copilot wait state but no Copilot review ever appears, fix the GitHub-side Copilot setup first.
+- Codex Connector profile
+  - Supervisor-side: use `supervisor.config.codex.json`, which tells the supervisor to watch for `chatgpt-codex-connector`.
+  - Provider-side: connect the repository to Codex in ChatGPT/OpenAI and enable whatever repo-level review flow your Codex Connector setup requires. `supervisor.config.json` does not create or authorize that connector for you.
+  - Verify: trigger a PR that should receive Codex review and confirm the review arrives in a usable review signal form on GitHub: a bot review, a review summary, or actionable review-thread comments from `chatgpt-codex-connector` that the supervisor can later address. If Codex only posts outside the PR review surface, treat the connector setup as incomplete for supervisor use.
+- CodeRabbit profile
+  - Supervisor-side: use `supervisor.config.coderabbit.json`, which tracks both `coderabbitai` and `coderabbitai[bot]`.
+  - Provider-side: install CodeRabbit on the repository and commit any required repo-side config such as `.coderabbit.yaml` when your policy or review mode depends on it. `supervisor.config.json` only tells the supervisor which bot identities to trust after CodeRabbit is already configured.
+  - Verify: open a PR and confirm CodeRabbit posts a normal PR review or unresolved review-thread comments under one of the configured bot identities. If CodeRabbit is installed but never comments on the PR, fix the repo or GitHub app configuration before relying on the profile.
+
+Short checklist:
+
+1. Copy the chosen profile into `supervisor.config.json` and verify `reviewBotLogins` matches the provider you expect.
+2. Confirm the provider is installed or connected on the target repository outside the supervisor.
+3. Open a test PR and wait for the provider to post review output on the PR itself.
+4. Run `node dist/index.js status --config /path/to/supervisor.config.json` and confirm the provider is no longer invisible to the supervisor.
+5. Only treat the profile as working when the provider produces a usable review signal on GitHub that you can see and the supervisor can react to.
+
 Important fields:
 
 - `repoPath`: absolute path to the managed repository
