@@ -4,6 +4,7 @@ import {
   type ExternalReviewDurableGuardrailCandidate,
   type ExternalReviewDurableGuardrailCandidateCategory,
 } from "./external-review-miss-artifact-types";
+import { type ExternalReviewSignalSourceKind } from "./external-review-normalization";
 
 interface CandidateQualificationRule {
   reason: string;
@@ -13,6 +14,7 @@ interface CandidateQualificationRule {
 interface CandidateSpec {
   category: ExternalReviewDurableGuardrailCandidateCategory;
   titlePrefix: string;
+  allowedSourceKinds: readonly ExternalReviewSignalSourceKind[];
   rules: CandidateQualificationRule[];
 }
 
@@ -31,6 +33,7 @@ const CANDIDATE_SPECS: CandidateSpec[] = [
   {
     category: "reviewer_rubric",
     titlePrefix: "Promote reviewer rubric guardrail for",
+    allowedSourceKinds: ["review_thread", "top_level_review"],
     rules: [
       ...COMMON_RULES,
       {
@@ -42,6 +45,7 @@ const CANDIDATE_SPECS: CandidateSpec[] = [
   {
     category: "verifier",
     titlePrefix: "Promote verifier guardrail for",
+    allowedSourceKinds: ["review_thread"],
     rules: [
       ...COMMON_RULES,
       {
@@ -61,6 +65,7 @@ const CANDIDATE_SPECS: CandidateSpec[] = [
   {
     category: "regression_test",
     titlePrefix: "Promote regression-test guardrail for",
+    allowedSourceKinds: ["review_thread"],
     rules: [
       ...COMMON_RULES,
       {
@@ -83,6 +88,13 @@ function qualifies(
   finding: ExternalReviewMissFinding,
   spec: CandidateSpec,
 ): { qualified: boolean; qualificationReasons: string[] } {
+  if (!spec.allowedSourceKinds.includes(finding.sourceKind)) {
+    return {
+      qualified: false,
+      qualificationReasons: [],
+    };
+  }
+
   const qualificationReasons: string[] = [];
 
   for (const rule of spec.rules) {

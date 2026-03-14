@@ -68,4 +68,28 @@ test("toRegressionTestCandidate rejects misses that do not meet the durable regr
     ),
     null,
   );
+  assert.equal(
+    toRegressionTestCandidate(
+      createMissFinding({
+        sourceKind: "top_level_review",
+        sourceId: "review-1",
+        sourceUrl: "https://example.test/pr/1#pullrequestreview-1",
+        threadId: null,
+        url: "https://example.test/pr/1#pullrequestreview-1",
+      }),
+    ),
+    null,
+  );
+  assert.equal(
+    toRegressionTestCandidate(
+      createMissFinding({
+        sourceKind: "issue_comment",
+        sourceId: "issue-comment-1",
+        sourceUrl: "https://example.test/pr/1#issuecomment-1",
+        threadId: null,
+        url: "https://example.test/pr/1#issuecomment-1",
+      }),
+    ),
+    null,
+  );
 });

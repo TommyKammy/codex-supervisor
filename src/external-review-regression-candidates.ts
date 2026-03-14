@@ -9,7 +9,7 @@ export function createRegressionCandidateId(finding: ExternalReviewMissFinding):
 export function toRegressionTestCandidate(
   finding: ExternalReviewMissFinding,
 ): ExternalReviewRegressionCandidate | null {
-  if (finding.classification !== "missed_by_local_review") {
+  if (finding.classification !== "missed_by_local_review" || finding.sourceKind !== "review_thread") {
     return null;
   }
 
