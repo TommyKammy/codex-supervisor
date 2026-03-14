@@ -557,6 +557,70 @@ async function cleanupRecordWorkspace(config: SupervisorConfig, record: IssueRun
   await cleanupWorkspace(config.repoPath, record.workspace, record.branch);
 }
 
+function parseIssueNumberFromWorkspaceName(workspaceName: string): number | null {
+  const match = /^issue-(\d+)$/.exec(workspaceName);
+  if (!match) {
+    return null;
+  }
+
+  const issueNumber = Number.parseInt(match[1] ?? "", 10);
+  return Number.isInteger(issueNumber) && issueNumber > 0 ? issueNumber : null;
+}
+
+async function cleanupOrphanedIssueWorkspaces(
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+): Promise<RecoveryEvent[]> {
+  if (!fs.existsSync(config.workspaceRoot)) {
+    return [];
+  }
+
+  const referencedWorkspaces = new Set(
+    Object.values(state.issues).map((record) => path.resolve(record.workspace)),
+  );
+  const recoveryEvents: RecoveryEvent[] = [];
+  const workspaceEntries = fs.readdirSync(config.workspaceRoot, { withFileTypes: true });
+
+  for (const entry of workspaceEntries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const issueNumber = parseIssueNumberFromWorkspaceName(entry.name);
+    if (issueNumber === null) {
+      continue;
+    }
+
+    const workspacePath = path.join(config.workspaceRoot, entry.name);
+    if (referencedWorkspaces.has(path.resolve(workspacePath))) {
+      continue;
+    }
+
+    if (!fs.existsSync(path.join(workspacePath, ".git"))) {
+      continue;
+    }
+
+    let branch: string;
+    try {
+      branch = branchNameForIssue(config, issueNumber);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`Skipped orphaned workspace cleanup for ${workspacePath}: ${message}`);
+      continue;
+    }
+
+    if (!isSafeCleanupTarget(config, workspacePath, branch)) {
+      console.warn(`Skipped unsafe orphaned workspace cleanup target workspace=${workspacePath} branch=${branch}.`);
+      continue;
+    }
+
+    await cleanupWorkspace(config.repoPath, workspacePath, branch);
+    recoveryEvents.push(buildRecoveryEvent(issueNumber, `pruned orphaned worktree ${entry.name}`));
+  }
+
+  return recoveryEvents;
+}
+
 function classifyFailure(message: string | null | undefined): "timeout" | "command_error" {
   return message?.includes("Command timed out after") ? "timeout" : "command_error";
 }
@@ -2295,10 +2359,12 @@ export function formatDetailedStatus(args: {
 async function cleanupExpiredDoneWorkspaces(
   config: SupervisorConfig,
   state: SupervisorStateFile,
-): Promise<void> {
+): Promise<RecoveryEvent[]> {
   if (config.cleanupDoneWorkspacesAfterHours < 0 && config.maxDoneWorkspaces < 0) {
-    return;
+    return [];
   }
+
+  const recoveryEvents = await cleanupOrphanedIssueWorkspaces(config, state);
 
   const doneRecords = Object.values(state.issues)
     .filter((record) => record.state === "done")
@@ -2320,7 +2386,7 @@ async function cleanupExpiredDoneWorkspaces(
   }
 
   if (config.cleanupDoneWorkspacesAfterHours < 0) {
-    return;
+    return recoveryEvents;
   }
 
   for (const record of doneRecords) {
@@ -2334,6 +2400,8 @@ async function cleanupExpiredDoneWorkspaces(
 
     await cleanupRecordWorkspace(config, record);
   }
+
+  return recoveryEvents;
 }
 
 function doneResetPatch(
@@ -4049,7 +4117,7 @@ export class Supervisor {
       await reconcileStaleFailedIssueStates(this.github, this.stateStore, state, this.config, issues);
       recoveryEvents.push(...(await reconcileRecoverableBlockedIssueStates(this.stateStore, state, this.config, issues)));
       await reconcileParentEpicClosures(this.github, this.stateStore, state, issues);
-      await cleanupExpiredDoneWorkspaces(this.config, state);
+      recoveryEvents.push(...(await cleanupExpiredDoneWorkspaces(this.config, state)));
       const recoveryLog = formatRecoveryLog(recoveryEvents);
 
       let record =
