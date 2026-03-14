@@ -210,7 +210,7 @@ test("toDurableGuardrailCandidates allows unanchored actionable top-level review
 
   assert.deepEqual(candidates, [
     {
-      id: "reviewer_rubric|top_level_review|review-7|bug: retries can reuse stale state and mask the latest failure.",
+      id: "reviewer_rubric|top_level_review|bug: retries can reuse stale state and mask the latest failure.",
       category: "reviewer_rubric",
       title: "Promote reviewer rubric guardrail for Bug: retries can reuse stale state and mask the latest failure",
       reviewerLogin: "copilot-pull-request-reviewer",
@@ -236,4 +236,53 @@ test("toDurableGuardrailCandidates allows unanchored actionable top-level review
       },
     },
   ]);
+});
+
+test("toDurableGuardrailCandidates keeps unanchored durable ids stable across PR-local source ids", () => {
+  const findingA = createMissFinding({
+    sourceKind: "top_level_review",
+    sourceId: "review-7",
+    sourceUrl: "https://example.test/pr/1#pullrequestreview-7",
+    threadId: null,
+    file: null,
+    line: null,
+    rationale: "Bug: retries can reuse stale state and mask the latest failure.",
+    severity: "medium",
+    url: "https://example.test/pr/1#pullrequestreview-7",
+  });
+  const findingB = createMissFinding({
+    sourceKind: "top_level_review",
+    sourceId: "review-99",
+    sourceUrl: "https://example.test/pr/2#pullrequestreview-99",
+    threadId: null,
+    file: null,
+    line: null,
+    rationale: "  Bug: retries can reuse stale state and mask the latest failure.\n",
+    severity: "medium",
+    url: "https://example.test/pr/2#pullrequestreview-99",
+  });
+
+  const candidateA = toDurableGuardrailCandidates({
+    issueNumber: 85,
+    prNumber: 144,
+    branch: "codex/issue-85",
+    headSha: "deadbeefcafebabe",
+    sourceArtifactPath: "/tmp/external-review-misses-head-deadbeef.json",
+    localReviewSummaryPath: "/tmp/head-deadbeef.md",
+    localReviewFindingsPath: "/tmp/head-deadbeef.json",
+    finding: findingA,
+  });
+  const candidateB = toDurableGuardrailCandidates({
+    issueNumber: 86,
+    prNumber: 145,
+    branch: "codex/issue-86",
+    headSha: "feedfacecafebabe",
+    sourceArtifactPath: "/tmp/external-review-misses-head-feedface.json",
+    localReviewSummaryPath: "/tmp/head-feedface.md",
+    localReviewFindingsPath: "/tmp/head-feedface.json",
+    finding: findingB,
+  });
+
+  assert.equal(candidateA[0]?.id, "reviewer_rubric|top_level_review|bug: retries can reuse stale state and mask the latest failure.");
+  assert.equal(candidateA[0]?.id, candidateB[0]?.id);
 });

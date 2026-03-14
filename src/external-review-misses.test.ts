@@ -599,7 +599,7 @@ test("writeExternalReviewMissArtifact derives reviewer-grade findings from actio
     })),
     [
       {
-        id: "reviewer_rubric|top_level_review|review-actionable|bug: retries can reuse stale state and mask the latest failure.",
+        id: "reviewer_rubric|top_level_review|bug: retries can reuse stale state and mask the latest failure.",
         category: "reviewer_rubric",
         file: null,
         line: null,

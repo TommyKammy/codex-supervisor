@@ -118,6 +118,10 @@ function formatTitle(prefix: string, summary: string): string {
   return `${prefix} ${summary.replace(/[.!?]+$/, "")}`;
 }
 
+function normalizeCandidateText(text: string): string {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 function createDurableGuardrailCandidateId(
   category: ExternalReviewDurableGuardrailCandidateCategory,
   finding: ExternalReviewMissFinding,
@@ -126,7 +130,7 @@ function createDurableGuardrailCandidateId(
     return `${category}|${createExternalReviewRegressionCandidateId(finding)}`;
   }
 
-  return `${category}|${finding.sourceKind}|${finding.sourceId}|${finding.rationale.trim().toLowerCase()}`;
+  return `${category}|${finding.sourceKind}|${normalizeCandidateText(finding.rationale)}`;
 }
 
 export function toDurableGuardrailCandidates(args: {
