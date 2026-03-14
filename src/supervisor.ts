@@ -3497,20 +3497,20 @@ export class Supervisor {
         reviewThreads = await this.github.getUnresolvedReviewThreads(pr.number);
       }
     } catch (error) {
-        const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
-        return [gsdSummary, `${formatDetailedStatus({
-          config: this.config,
-          activeRecord,
-          latestRecord,
-          latestRecoveryRecord,
-          trackedIssueCount: Object.keys(state.issues).length,
-          pr,
-          checks,
-          reviewThreads,
-          handoffSummary,
-        })}\nstatus_warning=${truncate(message, 200)}`]
-          .filter(Boolean)
-          .join("\n");
+      const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
+      return [gsdSummary, `${formatDetailedStatus({
+        config: this.config,
+        activeRecord,
+        latestRecord,
+        latestRecoveryRecord,
+        trackedIssueCount: Object.keys(state.issues).length,
+        pr,
+        checks,
+        reviewThreads,
+        handoffSummary,
+      })}\nstatus_warning=${truncate(message, 200)}`]
+        .filter(Boolean)
+        .join("\n");
     }
 
     return [gsdSummary, formatDetailedStatus({
