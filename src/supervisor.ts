@@ -30,6 +30,7 @@ import {
 } from "./journal";
 import { acquireFileLock, inspectFileLock, LockHandle } from "./lock";
 import { localReviewHasActionableFindings, LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY, runLocalReview, shouldRunLocalReview } from "./local-review";
+import { reviewDir } from "./local-review-artifacts";
 import { syncMemoryArtifacts } from "./memory";
 import { StateStore } from "./state-store";
 import {
@@ -1681,14 +1682,19 @@ function displayStatusArtifactPath(config: SupervisorConfig, filePath: string): 
 }
 
 async function loadStatusChangedFiles(config: SupervisorConfig, workspacePath: string): Promise<string[]> {
-  const result = await runCommand(
-    "git",
-    ["diff", "--name-only", `origin/${config.defaultBranch}...HEAD`],
-    {
-      cwd: workspacePath,
-      env: process.env,
-    },
-  );
+  let result;
+  try {
+    result = await runCommand(
+      "git",
+      ["diff", "--name-only", `origin/${config.defaultBranch}...HEAD`],
+      {
+        cwd: workspacePath,
+        env: process.env,
+      },
+    );
+  } catch {
+    return [];
+  }
 
   return [...new Set(
     result.stdout
@@ -1716,24 +1722,40 @@ async function buildDurableGuardrailStatusLine(args: {
   });
   const committedExternalReviewPatterns = (await loadCommittedExternalReviewGuardrails(args.activeRecord.workspace))
     .filter((pattern) => changedFileSet.has(pattern.file))
-    .sort(compareExternalReviewPatterns)
-    .slice(0, 3);
+    .sort(compareExternalReviewPatterns);
   const runtimeExternalReviewPatterns = await loadRelevantExternalReviewMissPatterns({
-    artifactDir: path.join(
-      args.config.localReviewArtifactDir,
-      args.config.repoSlug.replace(/\//g, "-"),
-      `issue-${args.activeRecord.issue_number}`,
-    ),
+    artifactDir: reviewDir(args.config, args.activeRecord.issue_number),
     branch: args.activeRecord.branch,
     currentHeadSha: args.pr?.headRefOid ?? args.activeRecord.last_head_sha ?? "",
     changedFiles,
-    limit: 3,
+    limit: Number.MAX_SAFE_INTEGER,
   });
+  const activeExternalReviewPatterns = new Map<string, {
+    sourceType: "committed" | "runtime";
+    pattern: (typeof committedExternalReviewPatterns)[number];
+  }>();
+  for (const pattern of committedExternalReviewPatterns) {
+    activeExternalReviewPatterns.set(pattern.fingerprint, {
+      sourceType: "committed",
+      pattern,
+    });
+  }
+  for (const pattern of runtimeExternalReviewPatterns) {
+    const existing = activeExternalReviewPatterns.get(pattern.fingerprint);
+    if (!existing || compareExternalReviewPatterns(pattern, existing.pattern) < 0) {
+      activeExternalReviewPatterns.set(pattern.fingerprint, {
+        sourceType: "runtime",
+        pattern,
+      });
+    }
+  }
+  const activeExternalReviewWinners = [...activeExternalReviewPatterns.values()]
+    .sort((left, right) => compareExternalReviewPatterns(left.pattern, right.pattern))
+    .slice(0, 3);
 
   if (
     verifierGuardrails.length === 0 &&
-    committedExternalReviewPatterns.length === 0 &&
-    runtimeExternalReviewPatterns.length === 0
+    activeExternalReviewWinners.length === 0
   ) {
     return null;
   }
@@ -1743,13 +1765,19 @@ async function buildDurableGuardrailStatusLine(args: {
       ? `committed:${VERIFIER_GUARDRAILS_PATH}#${verifierGuardrails.length}`
       : "none";
   const externalReviewSources: string[] = [];
-  if (committedExternalReviewPatterns.length > 0) {
-    externalReviewSources.push(`committed:${EXTERNAL_REVIEW_GUARDRAILS_PATH}#${committedExternalReviewPatterns.length}`);
-  }
+  let committedCount = 0;
   const runtimeCounts = new Map<string, number>();
-  for (const pattern of runtimeExternalReviewPatterns) {
-    const sourcePath = displayStatusArtifactPath(args.config, pattern.sourceArtifactPath);
+  for (const winner of activeExternalReviewWinners) {
+    if (winner.sourceType === "committed") {
+      committedCount += 1;
+      continue;
+    }
+
+    const sourcePath = displayStatusArtifactPath(args.config, winner.pattern.sourceArtifactPath);
     runtimeCounts.set(sourcePath, (runtimeCounts.get(sourcePath) ?? 0) + 1);
+  }
+  if (committedCount > 0) {
+    externalReviewSources.push(`committed:${EXTERNAL_REVIEW_GUARDRAILS_PATH}#${committedCount}`);
   }
   for (const sourcePath of [...runtimeCounts.keys()].sort()) {
     externalReviewSources.push(`runtime:${sourcePath}#${runtimeCounts.get(sourcePath)}`);
