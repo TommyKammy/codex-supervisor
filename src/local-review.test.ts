@@ -912,7 +912,7 @@ test("buildRolePrompt teaches reviewer to flag unrelated cleanup but allow requi
     priorMissPatterns: [],
   });
 
-  assert.match(prompt, /Prefer narrowly scoped changes that stay inside the issue boundary\./);
+  assert.match(prompt, /Prefer narrowly scoped changes that stay inside the issue scope\./);
   assert.match(prompt, /Flag unrelated cleanup, opportunistic refactors, or incidental file churn when they are not required for correctness or tests\./);
   assert.match(prompt, /Do not treat minimal supporting changes as scope drift when they are necessary to make the issue fix correct, testable, or buildable\./);
 });
@@ -1085,7 +1085,7 @@ test("buildVerifierPrompt teaches verifier to detect scope drift without blockin
     verifierGuardrails: [],
   });
 
-  assert.match(prompt, /Treat unrelated cleanup or opportunistic refactors outside the issue scope as potential confirmed findings when the diff does not need them for correctness\./);
+  assert.match(prompt, /When a listed finding is about scope drift, confirm it only when unrelated cleanup or opportunistic refactors fall outside the issue scope and are not required to keep the issue fix correct, testable, or buildable\./);
   assert.match(prompt, /Do not treat narrow supporting edits as scope drift when they are required to keep the issue fix correct, testable, or buildable\./);
   assert.match(prompt, /Prefer the smallest explanation that distinguishes required support work from unrelated churn\./);
 });

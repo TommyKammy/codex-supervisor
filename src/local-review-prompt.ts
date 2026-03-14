@@ -224,7 +224,7 @@ function roleGoal(role: string): string[] {
       return [
         "- Focus on correctness, regressions, edge cases, and missing tests in the changed code paths.",
         "- Prefer the smallest correct implementation when it satisfies the issue.",
-        "- Prefer narrowly scoped changes that stay inside the issue boundary.",
+        "- Prefer narrowly scoped changes that stay inside the issue scope.",
         "- Flag speculative abstraction, premature generalization, or unnecessary indirection only when it adds concrete maintenance or correctness risk.",
         "- Flag unrelated cleanup, opportunistic refactors, or incidental file churn when they are not required for correctness or tests.",
         "- Do not treat minimal supporting changes as scope drift when they are necessary to make the issue fix correct, testable, or buildable.",
@@ -383,7 +383,7 @@ export function buildVerifierPrompt(args: {
     "Goal:",
     "- Re-check only the listed high-severity findings.",
     "- Confirm a finding only when the diff and narrowly targeted reads support the original concern.",
-    "- Treat unrelated cleanup or opportunistic refactors outside the issue scope as potential confirmed findings when the diff does not need them for correctness.",
+    "- When a listed finding is about scope drift, confirm it only when unrelated cleanup or opportunistic refactors fall outside the issue scope and are not required to keep the issue fix correct, testable, or buildable.",
     "- Dismiss findings that appear to be false positives or overstated.",
     "- Do not treat narrow supporting edits as scope drift when they are required to keep the issue fix correct, testable, or buildable.",
     "- Use `unclear` when the evidence is inconclusive from the available local context.",
