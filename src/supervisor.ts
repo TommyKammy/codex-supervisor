@@ -1,6 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
-import { buildCodexPrompt, extractBlockedReason, extractFailureSignature, extractStateHint, runCodexTurn } from "./codex";
+import {
+  buildCodexPrompt,
+  buildCodexResumePrompt,
+  extractBlockedReason,
+  extractFailureSignature,
+  extractStateHint,
+  runCodexTurn,
+  shouldUseCompactResumePrompt,
+} from "./codex";
 import { loadConfig } from "./config";
 import { ExternalReviewMissContext, loadRelevantExternalReviewMissPatterns, writeExternalReviewMissArtifact } from "./external-review-misses";
 import { GitHubClient } from "./github";
@@ -2790,27 +2798,40 @@ export class Supervisor {
         await syncJournal(record);
       }
 
-      const prompt = buildCodexPrompt({
-        repoSlug: this.config.repoSlug,
-        issue,
-        branch: record.branch,
-        workspacePath,
-        state: record.state,
-        pr,
-        checks,
-        reviewThreads: reviewThreadsToProcess,
-        journalPath,
-        journalExcerpt: truncate(journalContent, 5000),
-        failureContext: record.last_failure_context,
-        previousSummary: previousCodexSummary,
-        previousError,
-        alwaysReadFiles: memoryArtifacts.alwaysReadFiles,
-        onDemandMemoryFiles: memoryArtifacts.onDemandFiles,
-        gsdEnabled: this.config.gsdEnabled,
-        gsdPlanningFiles: this.config.gsdPlanningFiles,
-        localReviewRepairContext,
-        externalReviewMissContext,
-      });
+      const prompt = record.codex_session_id && shouldUseCompactResumePrompt(record.state)
+        ? buildCodexResumePrompt({
+            repoSlug: this.config.repoSlug,
+            issue,
+            branch: record.branch,
+            workspacePath,
+            state: record.state,
+            journalPath,
+            journalExcerpt: truncate(journalContent, 5000),
+            failureContext: record.last_failure_context,
+            previousSummary: previousCodexSummary,
+            previousError,
+          })
+        : buildCodexPrompt({
+            repoSlug: this.config.repoSlug,
+            issue,
+            branch: record.branch,
+            workspacePath,
+            state: record.state,
+            pr,
+            checks,
+            reviewThreads: reviewThreadsToProcess,
+            journalPath,
+            journalExcerpt: truncate(journalContent, 5000),
+            failureContext: record.last_failure_context,
+            previousSummary: previousCodexSummary,
+            previousError,
+            alwaysReadFiles: memoryArtifacts.alwaysReadFiles,
+            onDemandMemoryFiles: memoryArtifacts.onDemandFiles,
+            gsdEnabled: this.config.gsdEnabled,
+            gsdPlanningFiles: this.config.gsdPlanningFiles,
+            localReviewRepairContext,
+            externalReviewMissContext,
+          });
 
       const sessionLock = record.codex_session_id
         ? await acquireFileLock(

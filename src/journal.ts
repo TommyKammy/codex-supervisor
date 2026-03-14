@@ -17,6 +17,17 @@ const HANDOFF_FIELDS = [
 type HandoffField = (typeof HANDOFF_FIELDS)[number];
 const HANDOFF_NO_VALUE_PATTERN = /^(none|none\.|no blocker|no blocker\.|n\/a|na|unknown)$/i;
 
+export interface IssueJournalHandoff {
+  hypothesis: string | null;
+  whatChanged: string | null;
+  currentBlocker: string | null;
+  nextExactStep: string | null;
+  verificationGap: string | null;
+  filesTouched: string | null;
+  rollbackConcern: string | null;
+  lastFocusedCommand: string | null;
+}
+
 const LEGACY_HANDOFF_FIELD_MAP: Record<string, HandoffField> = {
   Hypothesis: "Hypothesis",
   "What changed": "What changed",
@@ -212,6 +223,20 @@ export function summarizeIssueJournalHandoff(content: string | null): string | n
   }
 
   return summaryParts.length > 0 ? summaryParts.join(" | ") : null;
+}
+
+export function extractIssueJournalHandoff(content: string | null): IssueJournalHandoff {
+  const values = parseCurrentHandoffValues(content);
+  return {
+    hypothesis: normalizeHandoffSummaryValue(values.get("Hypothesis")),
+    whatChanged: normalizeHandoffSummaryValue(values.get("What changed")),
+    currentBlocker: normalizeHandoffSummaryValue(values.get("Current blocker")),
+    nextExactStep: normalizeHandoffSummaryValue(values.get("Next exact step")),
+    verificationGap: normalizeHandoffSummaryValue(values.get("Verification gap")),
+    filesTouched: normalizeHandoffSummaryValue(values.get("Files touched")),
+    rollbackConcern: normalizeHandoffSummaryValue(values.get("Rollback concern")),
+    lastFocusedCommand: normalizeHandoffSummaryValue(values.get("Last focused command")),
+  };
 }
 
 function buildSupervisorSnapshot(args: {
