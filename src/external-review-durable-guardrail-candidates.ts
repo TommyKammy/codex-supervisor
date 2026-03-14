@@ -93,7 +93,8 @@ function qualifies(
     qualificationReasons.push(rule.reason);
   }
 
-  const hasFileScoped = typeof finding.file === "string" && finding.file.trim() !== "";
+  const normalizedFile = normalizeCandidateFile(finding.file);
+  const hasFileScoped = normalizedFile !== null;
   const hasTopLevelReviewUnanchored = finding.sourceKind === "top_level_review" && !hasFileScoped && finding.line == null;
 
   if (spec.category === "reviewer_rubric") {
@@ -118,6 +119,15 @@ function formatTitle(prefix: string, summary: string): string {
   return `${prefix} ${summary.replace(/[.!?]+$/, "")}`;
 }
 
+function normalizeCandidateFile(file: ExternalReviewMissFinding["file"]): string | null {
+  if (typeof file !== "string") {
+    return null;
+  }
+
+  const normalized = file.trim();
+  return normalized === "" ? null : normalized;
+}
+
 function normalizeCandidateText(text: string): string {
   return text.replace(/\s+/g, " ").trim().toLowerCase();
 }
@@ -126,8 +136,13 @@ function createDurableGuardrailCandidateId(
   category: ExternalReviewDurableGuardrailCandidateCategory,
   finding: ExternalReviewMissFinding,
 ): string {
-  if (typeof finding.file === "string" && finding.file.trim() !== "") {
-    return `${category}|${createExternalReviewRegressionCandidateId(finding)}`;
+  const normalizedFile = normalizeCandidateFile(finding.file);
+  if (normalizedFile !== null) {
+    return `${category}|${createExternalReviewRegressionCandidateId({
+      file: normalizedFile,
+      line: finding.line,
+      rationale: finding.rationale,
+    })}`;
   }
 
   return `${category}|${finding.sourceKind}|${normalizeCandidateText(finding.rationale)}`;
@@ -148,13 +163,14 @@ export function toDurableGuardrailCandidates(args: {
     if (!qualified) {
       return [];
     }
+    const normalizedFile = normalizeCandidateFile(args.finding.file);
 
     return [{
       id: createDurableGuardrailCandidateId(spec.category, args.finding),
       category: spec.category,
       title: formatTitle(spec.titlePrefix, args.finding.summary),
       reviewerLogin: args.finding.reviewerLogin,
-      file: args.finding.file,
+      file: normalizedFile,
       line: args.finding.line,
       summary: args.finding.summary,
       rationale: args.finding.rationale,

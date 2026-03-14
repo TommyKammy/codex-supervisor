@@ -287,6 +287,26 @@ test("toDurableGuardrailCandidates keeps unanchored durable ids stable across PR
   assert.equal(candidateA[0]?.id, candidateB[0]?.id);
 });
 
+test("toDurableGuardrailCandidates trims anchored file values before emitting ids and payloads", () => {
+  const candidates = toDurableGuardrailCandidates({
+    issueNumber: 85,
+    prNumber: 144,
+    branch: "codex/issue-85",
+    headSha: "deadbeefcafebabe",
+    sourceArtifactPath: "/tmp/external-review-misses-head-deadbeef.json",
+    localReviewSummaryPath: "/tmp/head-deadbeef.md",
+    localReviewFindingsPath: "/tmp/head-deadbeef.json",
+    finding: createMissFinding({
+      file: " src/auth.ts ",
+      line: 42,
+      severity: "medium",
+    }),
+  });
+
+  assert.equal(candidates[0]?.id, "reviewer_rubric|src/auth.ts|42|this fallback skips the permission guard and lets unauthorized callers update records.");
+  assert.equal(candidates[0]?.file, "src/auth.ts");
+});
+
 test("toDurableGuardrailCandidates treats whitespace-only file values as unanchored for top-level reviews", () => {
   const candidates = toDurableGuardrailCandidates({
     issueNumber: 85,
