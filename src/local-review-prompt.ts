@@ -223,6 +223,8 @@ function roleGoal(role: string): string[] {
     case "reviewer":
       return [
         "- Focus on correctness, regressions, edge cases, and missing tests in the changed code paths.",
+        "- Prefer the smallest correct implementation when it satisfies the issue.",
+        "- Flag speculative abstraction, premature generalization, or unnecessary indirection only when it adds concrete maintenance or correctness risk.",
         "- Prefer precise findings tied to a specific file and line whenever possible.",
         "- Ignore style nits unless they could hide a bug or maintenance trap.",
       ];
