@@ -43,6 +43,7 @@ import { acquireFileLock, inspectFileLock, LockHandle } from "./lock";
 import { localReviewHasActionableFindings, LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY, runLocalReview, shouldRunLocalReview } from "./local-review";
 import { reviewDir } from "./local-review-artifacts";
 import { syncMemoryArtifacts } from "./memory";
+import { RecoveryEvent, runOnceCyclePrelude } from "./run-once-cycle-prelude";
 import { StateStore } from "./state-store";
 import {
   BlockedReason,
@@ -1966,12 +1967,6 @@ function formatStatus(record: IssueRunRecord | null): string {
     `attempts=${record.attempt_count} impl=${record.implementation_attempt_count} repair=${record.repair_attempt_count}`,
     `workspace=${record.workspace}`,
   ].join(" ");
-}
-
-interface RecoveryEvent {
-  issueNumber: number;
-  reason: string;
-  at: string;
 }
 
 function buildRecoveryEvent(issueNumber: number, reason: string): RecoveryEvent {
@@ -4152,26 +4147,32 @@ export class Supervisor {
   }
 
   private async startRunOnceCycle(carryoverRecoveryEvents: RecoveryEvent[]): Promise<RunOnceCycleContext | string> {
-    const state = await this.stateStore.load();
-    const recoveryEvents: RecoveryEvent[] = [...carryoverRecoveryEvents];
-    recoveryEvents.push(...(await this.reconcileStaleActiveIssueReservation(state)));
-    const authFailure = await handleAuthFailure(this.github, this.stateStore, state);
-    if (authFailure) {
-      return prependRecoveryLog(authFailure, formatRecoveryLog(recoveryEvents));
+    const prelude = await runOnceCyclePrelude({
+      stateStore: this.stateStore,
+      carryoverRecoveryEvents,
+      reconcileStaleActiveIssueReservation: (state) => this.reconcileStaleActiveIssueReservation(state),
+      handleAuthFailure: (state) => handleAuthFailure(this.github, this.stateStore, state),
+      listAllIssues: () => this.github.listAllIssues(),
+      reconcileTrackedMergedButOpenIssues: (state, issues) =>
+        reconcileTrackedMergedButOpenIssues(this.github, this.stateStore, state, issues),
+      reconcileMergedIssueClosures: (state, issues) =>
+        reconcileMergedIssueClosures(this.github, this.stateStore, state, issues),
+      reconcileStaleFailedIssueStates: (state, issues) =>
+        reconcileStaleFailedIssueStates(this.github, this.stateStore, state, this.config, issues),
+      reconcileRecoverableBlockedIssueStates: (state, issues) =>
+        reconcileRecoverableBlockedIssueStates(this.stateStore, state, this.config, issues),
+      reconcileParentEpicClosures: (state, issues) =>
+        reconcileParentEpicClosures(this.github, this.stateStore, state, issues),
+      cleanupExpiredDoneWorkspaces: (state) => cleanupExpiredDoneWorkspaces(this.config, state),
+    });
+    if ("kind" in prelude) {
+      return prependRecoveryLog(prelude.message, formatRecoveryLog(prelude.recoveryEvents));
     }
 
-    const issues = await this.github.listAllIssues();
-    recoveryEvents.push(...(await reconcileTrackedMergedButOpenIssues(this.github, this.stateStore, state, issues)));
-    recoveryEvents.push(...(await reconcileMergedIssueClosures(this.github, this.stateStore, state, issues)));
-    await reconcileStaleFailedIssueStates(this.github, this.stateStore, state, this.config, issues);
-    recoveryEvents.push(...(await reconcileRecoverableBlockedIssueStates(this.stateStore, state, this.config, issues)));
-    await reconcileParentEpicClosures(this.github, this.stateStore, state, issues);
-    recoveryEvents.push(...(await cleanupExpiredDoneWorkspaces(this.config, state)));
-
     return {
-      state,
-      recoveryEvents,
-      recoveryLog: formatRecoveryLog(recoveryEvents),
+      state: prelude.state,
+      recoveryEvents: prelude.recoveryEvents,
+      recoveryLog: formatRecoveryLog(prelude.recoveryEvents),
     };
   }
 
