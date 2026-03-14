@@ -225,6 +225,81 @@ This issue is explicitly approved for ci changes.
   });
 });
 
+test("lintExecutionReadyIssueBody does not treat generic workflow prose as CI work", () => {
+  const issue = createIssue({
+    title: "Clarify operator handoff language",
+    body: `## Summary
+Document CLI-first workflows for operator handoffs.
+
+## Scope
+- clarify CLI-first workflows in docs
+
+## Acceptance criteria
+- issue prose mentioning workflows alone remains execution-ready
+
+## Verification
+- npm test -- src/issue-metadata.test.ts`,
+  });
+
+  assert.deepEqual(lintExecutionReadyIssueBody(issue), {
+    isExecutionReady: true,
+    missingRequired: [],
+    missingRecommended: ["depends on", "execution order"],
+    riskyChangeClasses: [],
+    approvedRiskyChangeClasses: [],
+  });
+});
+
+test("lintExecutionReadyIssueBody detects CI work from .github/workflows paths", () => {
+  const issue = createIssue({
+    title: "Adjust cache restore behavior",
+    body: `## Summary
+Update .github/workflows/ci.yml to use narrower cache restore keys.
+
+## Scope
+- edit the workflow file for cache restore behavior
+
+## Acceptance criteria
+- GitHub workflow path changes still require CI opt-in
+
+## Verification
+- npm test -- src/issue-metadata.test.ts`,
+  });
+
+  assert.deepEqual(lintExecutionReadyIssueBody(issue), {
+    isExecutionReady: false,
+    missingRequired: ["explicit opt-in for ci"],
+    missingRecommended: ["depends on", "execution order"],
+    riskyChangeClasses: ["ci"],
+    approvedRiskyChangeClasses: [],
+  });
+});
+
+test("lintExecutionReadyIssueBody detects CI work from uppercase .GITHUB/WORKFLOWS paths", () => {
+  const issue = createIssue({
+    title: "Adjust workflow cache restore behavior",
+    body: `## Summary
+Update .GITHUB/WORKFLOWS/CI.YML to use narrower cache restore keys.
+
+## Scope
+- edit the workflow file path reference in issue prose
+
+## Acceptance criteria
+- mixed-case GitHub workflow paths still require CI opt-in
+
+## Verification
+- npm test -- src/issue-metadata.test.ts`,
+  });
+
+  assert.deepEqual(lintExecutionReadyIssueBody(issue), {
+    isExecutionReady: false,
+    missingRequired: ["explicit opt-in for ci"],
+    missingRecommended: ["depends on", "execution order"],
+    riskyChangeClasses: ["ci"],
+    approvedRiskyChangeClasses: [],
+  });
+});
+
 test("lintExecutionReadyIssueBody detects risky changes from Touches metadata", () => {
   const issue = createIssue({
     title: "Update rollout notes",
