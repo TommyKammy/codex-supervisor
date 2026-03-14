@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { extractIssueJournalHandoff } from "./journal";
 import { runCommand } from "./command";
 import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "./codex-policy";
 import { ExternalReviewMissContext, type ExternalReviewMissPattern } from "./external-review-misses";
@@ -503,6 +504,77 @@ export function buildCodexPrompt(input: {
     "Failure signature: <stable short signature for the current primary failure or none>",
     "Next action: <next supervisor-relevant action>",
   ].join("\n");
+}
+
+export function buildCodexResumePrompt(input: {
+  repoSlug: string;
+  issue: GitHubIssue;
+  branch: string;
+  workspacePath: string;
+  state: RunState;
+  journalPath: string;
+  journalExcerpt?: string | null;
+  failureContext?: FailureContext | null;
+  previousSummary?: string | null;
+  previousError?: string | null;
+}): string {
+  const handoff = extractIssueJournalHandoff(input.journalExcerpt ?? null);
+  const currentBlocker = handoff.currentBlocker ?? input.failureContext?.summary ?? input.previousError ?? null;
+  const nextExactStep = handoff.nextExactStep ?? "Review the current journal handoff, inspect the live workspace state, and continue from there.";
+  const summary = handoff.whatChanged ?? input.previousSummary ?? null;
+  const failureLines =
+    input.failureContext && input.failureContext.summary !== currentBlocker
+      ? [
+          "Structured failure context:",
+          `- Category: ${input.failureContext.category ?? "unknown"}`,
+          `- Summary: ${input.failureContext.summary}`,
+          input.failureContext.command ? `- Command/source: ${input.failureContext.command}` : null,
+          ...(input.failureContext.details.length > 0
+            ? input.failureContext.details.map((detail) => `- Detail: ${detail}`)
+            : []),
+        ].filter(Boolean)
+      : input.failureContext?.command
+        ? ["Structured failure context:", `- Command/source: ${input.failureContext.command}`]
+        : [];
+
+  const resumeLines = [
+    `You are resuming work inside the existing Codex session for ${input.repoSlug}.`,
+    `Current issue: #${input.issue.number} ${input.issue.title}`,
+    `Issue URL: ${input.issue.url}`,
+    `Branch: ${input.branch}`,
+    `Workspace: ${input.workspacePath}`,
+    `Supervisor state: ${input.state}`,
+    "",
+    "Resume only from the current durable state below. Do not rely on stale broad history if it conflicts with this handoff.",
+    ...(summary ? [`- What changed: ${summary}`] : []),
+    ...(handoff.hypothesis ? [`- Hypothesis: ${handoff.hypothesis}`] : []),
+    ...(currentBlocker ? [`- Current blocker: ${currentBlocker}`] : []),
+    `- Next exact step: ${nextExactStep}`,
+    ...(handoff.verificationGap ? [`- Verification gap: ${handoff.verificationGap}`] : []),
+    ...(handoff.filesTouched ? [`- Files touched: ${handoff.filesTouched}`] : []),
+    ...(handoff.lastFocusedCommand ? [`- Last focused command: ${handoff.lastFocusedCommand}`] : []),
+    ...(handoff.rollbackConcern ? [`- Rollback concern: ${handoff.rollbackConcern}`] : []),
+    ...(failureLines.length > 0 ? ["", ...failureLines] : []),
+    "",
+    `Issue journal path: ${input.journalPath}`,
+    "Update the Codex Working Notes handoff before ending the turn.",
+    "",
+    "Constraints:",
+    `- Never push to ${input.repoSlug}:main directly.`,
+    `- Work only on branch ${input.branch}.`,
+    "- Keep changes tightly scoped to the live blocker and next step.",
+    "- Run focused verification for the change you make and record any remaining gap in the journal.",
+    "",
+    "Respond in this exact footer format at the end:",
+    "Summary: <short summary>",
+    "State hint: <reproducing|implementing|local_review_fix|stabilizing|draft_pr|local_review|pr_open|repairing_ci|resolving_conflict|waiting_ci|addressing_review|blocked|failed>",
+    "Blocked reason: <requirements|permissions|secrets|verification|manual_review|unknown|none>",
+    "Tests: <what you ran or not run>",
+    "Failure signature: <stable short signature for the current primary failure or none>",
+    "Next action: <next supervisor-relevant action>",
+  ];
+
+  return resumeLines.join("\n");
 }
 
 export async function runCodexTurn(
