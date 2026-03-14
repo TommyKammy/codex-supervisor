@@ -970,6 +970,59 @@ test("runOnce ignores non-canonical orphan workspace names", async () => {
   assert.match(git(["-C", fixture.repoPath, "branch", "--list", orphanBranch]), new RegExp(orphanBranch));
 });
 
+test("runOnce skips orphan cleanup when workspaceRoot cannot be listed", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.maxDoneWorkspaces = 1;
+  fixture.config.cleanupDoneWorkspacesAfterHours = -1;
+
+  const workspaceRootFile = path.join(path.dirname(fixture.stateFile), "workspace-root-file");
+  await fs.writeFile(workspaceRootFile, "not a directory\n", "utf8");
+  fixture.config.workspaceRoot = workspaceRootFile;
+
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [],
+    listCandidateIssues: async () => [],
+    getIssue: async () => {
+      throw new Error("unexpected getIssue call");
+    },
+    resolvePullRequestForBranch: async () => {
+      throw new Error("unexpected resolvePullRequestForBranch call");
+    },
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message?: unknown, ...args: unknown[]) => {
+    warnings.push([message, ...args].map((value) => String(value)).join(" "));
+  };
+  try {
+    const message = await supervisor.runOnce({ dryRun: true });
+    assert.equal(message, "No matching open issue found.");
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.match(warnings.join("\n"), /Skipped orphaned workspace cleanup: unable to read workspace root/);
+});
+
 test("runOnce moves a non-ready issue into blocked(requirements) with missing requirements", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 91;

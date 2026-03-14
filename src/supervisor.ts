@@ -570,15 +570,22 @@ async function cleanupOrphanedIssueWorkspaces(
   config: SupervisorConfig,
   state: SupervisorStateFile,
 ): Promise<RecoveryEvent[]> {
-  if (!fs.existsSync(config.workspaceRoot)) {
-    return [];
-  }
-
   const referencedWorkspaces = new Set(
     Object.values(state.issues).map((record) => path.resolve(record.workspace)),
   );
   const recoveryEvents: RecoveryEvent[] = [];
-  const workspaceEntries = fs.readdirSync(config.workspaceRoot, { withFileTypes: true });
+  let workspaceEntries: fs.Dirent[];
+  try {
+    workspaceEntries = fs.readdirSync(config.workspaceRoot, { withFileTypes: true });
+  } catch (error) {
+    const maybeErr = error as NodeJS.ErrnoException;
+    if (maybeErr.code !== "ENOENT") {
+      console.warn(
+        `Skipped orphaned workspace cleanup: unable to read workspace root ${config.workspaceRoot} (${maybeErr.message}).`,
+      );
+    }
+    return recoveryEvents;
+  }
 
   for (const entry of workspaceEntries) {
     if (!entry.isDirectory()) {
