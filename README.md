@@ -122,6 +122,14 @@ If you need near-immediate reaction, lower `pollIntervalSeconds`. Do not treat i
 
 Create `supervisor.config.json` from [supervisor.config.example.json](./supervisor.config.example.json).
 
+Provider-specific starting points are also shipped:
+
+- [supervisor.config.copilot.json](./supervisor.config.copilot.json)
+- [supervisor.config.codex.json](./supervisor.config.codex.json)
+- [supervisor.config.coderabbit.json](./supervisor.config.coderabbit.json)
+
+`supervisor.config.json` remains the active file that the supervisor loads. The provider-specific files are explicit templates: copy the one you want into `supervisor.config.json` or diff against it when switching review bots. The base example and Copilot profile preserve the existing safe Copilot-oriented defaults. The CodeRabbit profile includes both the app slug and bot login so request lifecycle events and review comments match the same configured provider.
+
 Important fields:
 
 - `repoPath`: absolute path to the managed repository
