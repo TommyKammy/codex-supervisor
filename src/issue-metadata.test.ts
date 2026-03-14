@@ -275,6 +275,31 @@ Update .github/workflows/ci.yml to use narrower cache restore keys.
   });
 });
 
+test("lintExecutionReadyIssueBody detects CI work from uppercase .GITHUB/WORKFLOWS paths", () => {
+  const issue = createIssue({
+    title: "Adjust workflow cache restore behavior",
+    body: `## Summary
+Update .GITHUB/WORKFLOWS/CI.YML to use narrower cache restore keys.
+
+## Scope
+- edit the workflow file path reference in issue prose
+
+## Acceptance criteria
+- mixed-case GitHub workflow paths still require CI opt-in
+
+## Verification
+- npm test -- src/issue-metadata.test.ts`,
+  });
+
+  assert.deepEqual(lintExecutionReadyIssueBody(issue), {
+    isExecutionReady: false,
+    missingRequired: ["explicit opt-in for ci"],
+    missingRecommended: ["depends on", "execution order"],
+    riskyChangeClasses: ["ci"],
+    approvedRiskyChangeClasses: [],
+  });
+});
+
 test("lintExecutionReadyIssueBody detects risky changes from Touches metadata", () => {
   const issue = createIssue({
     title: "Update rollout notes",
