@@ -156,6 +156,33 @@ test("collectExternalReviewSignals normalizes thread, top-level review, and issu
   );
 });
 
+test("collectExternalReviewSignals preserves actionable top-level reviews that only expose review state", () => {
+  const signals = collectExternalReviewSignals({
+    reviews: [
+      createTopLevelReview({
+        id: "review-state-only",
+        body: null,
+        state: "CHANGES_REQUESTED",
+        url: "https://example.test/pr/1#pullrequestreview-2",
+      }),
+    ],
+    reviewBotLogins: ["coderabbitai[bot]"],
+  });
+
+  assert.deepEqual(signals, [
+    {
+      sourceKind: "top_level_review",
+      sourceId: "review-state-only",
+      sourceUrl: "https://example.test/pr/1#pullrequestreview-2",
+      reviewerLogin: "coderabbitai[bot]",
+      body: "CHANGES_REQUESTED",
+      file: null,
+      line: null,
+      threadId: null,
+    },
+  ]);
+});
+
 test("classifyExternalReviewFinding marks unmatched configured-bot feedback as missed_by_local_review", () => {
   const normalized = normalizeExternalReviewFinding(createReviewThread(), ["copilot-pull-request-reviewer"]);
   assert.ok(normalized);
@@ -417,13 +444,33 @@ test("writeExternalReviewMissArtifact carries source-aware signals through downs
   assert.deepEqual(
     context?.missedFindings.map((finding) => ({
       sourceKind: finding.sourceKind,
+      sourceId: finding.sourceId,
+      sourceUrl: finding.sourceUrl,
       file: finding.file,
       line: finding.line,
     })),
     [
-      { sourceKind: "review_thread", file: "src/auth.ts", line: 42 },
-      { sourceKind: "top_level_review", file: null, line: null },
-      { sourceKind: "issue_comment", file: null, line: null },
+      {
+        sourceKind: "review_thread",
+        sourceId: "thread-1",
+        sourceUrl: "https://example.test/thread-1#comment-1",
+        file: "src/auth.ts",
+        line: 42,
+      },
+      {
+        sourceKind: "top_level_review",
+        sourceId: "review-1",
+        sourceUrl: "https://example.test/pr/1#pullrequestreview-1",
+        file: null,
+        line: null,
+      },
+      {
+        sourceKind: "issue_comment",
+        sourceId: "issue-comment-1",
+        sourceUrl: "https://example.test/pr/1#issuecomment-1",
+        file: null,
+        line: null,
+      },
     ],
   );
 });

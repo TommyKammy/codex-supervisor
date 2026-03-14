@@ -118,7 +118,7 @@ export function toExternalTopLevelReviewSignal(
     return null;
   }
 
-  const body = review.body?.trim();
+  const body = review.body?.trim() || review.state?.trim();
   if (!body) {
     return null;
   }

@@ -363,6 +363,8 @@ test("buildCodexPrompt suppresses stale handoff next actions during addressing_r
       missedFindings: [
         {
           sourceKind: "review_thread",
+          sourceId: "thread-1",
+          sourceUrl: "https://example.test/thread-1#comment-1",
           reviewerLogin: "copilot-pull-request-reviewer",
           file: "src/codex.ts",
           line: 180,
@@ -413,6 +415,8 @@ test("buildCodexPrompt keeps explicit operator overrides during addressing_revie
       missedFindings: [
         {
           sourceKind: "review_thread",
+          sourceId: "thread-1",
+          sourceUrl: "https://example.test/thread-1#comment-1",
           reviewerLogin: "copilot-pull-request-reviewer",
           file: "src/codex.ts",
           line: 180,
@@ -540,6 +544,8 @@ test("buildCodexPrompt surfaces saved external review misses during addressing_r
       missedFindings: [
         {
           sourceKind: "review_thread",
+          sourceId: "thread-1",
+          sourceUrl: "https://example.test/thread-1#comment-1",
           reviewerLogin: "copilot-pull-request-reviewer",
           file: "src/auth.ts",
           line: 42,
@@ -549,6 +555,8 @@ test("buildCodexPrompt surfaces saved external review misses during addressing_r
         },
         {
           sourceKind: "review_thread",
+          sourceId: "thread-2",
+          sourceUrl: "https://example.test/thread-2#comment-1",
           reviewerLogin: "copilot-pull-request-reviewer",
           file: "src/auth.ts",
           line: 43,
@@ -558,6 +566,8 @@ test("buildCodexPrompt surfaces saved external review misses during addressing_r
         },
         {
           sourceKind: "review_thread",
+          sourceId: "thread-3",
+          sourceUrl: "https://example.test/thread-3#comment-1",
           reviewerLogin: "copilot-pull-request-reviewer",
           file: "src/auth.ts",
           line: 44,
@@ -567,6 +577,8 @@ test("buildCodexPrompt surfaces saved external review misses during addressing_r
         },
         {
           sourceKind: "review_thread",
+          sourceId: "thread-4",
+          sourceUrl: "https://example.test/thread-4#comment-1",
           reviewerLogin: "copilot-pull-request-reviewer",
           file: "src/auth.ts",
           line: 45,

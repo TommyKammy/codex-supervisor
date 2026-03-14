@@ -3,7 +3,7 @@ import { type ExternalReviewSignalSourceKind } from "./external-review-normaliza
 
 export type ExternalReviewPromptFinding = Pick<
   ExternalReviewMissFinding,
-  "sourceKind" | "reviewerLogin" | "file" | "line" | "summary" | "rationale" | "url"
+  "sourceKind" | "sourceId" | "sourceUrl" | "reviewerLogin" | "file" | "line" | "summary" | "rationale" | "url"
 >;
 
 export interface ExternalReviewMissPattern {
