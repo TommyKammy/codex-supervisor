@@ -363,9 +363,11 @@ test("finalizeLocalReview uses stricter confidence thresholds for specialist rev
       localReviewReviewerThresholds: {
         generic: {
           confidenceThreshold: 0.9,
+          minimumSeverity: "low",
         },
         specialist: {
           confidenceThreshold: 0.8,
+          minimumSeverity: "low",
         },
       },
     }),
