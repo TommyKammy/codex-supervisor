@@ -125,6 +125,14 @@ test("loadRelevantVerifierGuardrails reads repo-committed rules for relevant fil
     rationale:
       "A prior confirmed verifier miss cleared a similar fallback too early; require a direct read of the guard path before dismissing the finding.",
   });
+  assertContainsRelevantRule(rules, {
+    id: "retry-state",
+    title: "Inspect retry state reuse",
+    file: "src/retry.ts",
+    line: 15,
+    summary: "Confirm retries rebuild mutable state instead of reusing stale cached state.",
+    rationale: "Verifier should not dismiss retry-loop findings without checking the state reset path.",
+  });
 
   await fs.rm(workspaceDir, { recursive: true, force: true });
 });
