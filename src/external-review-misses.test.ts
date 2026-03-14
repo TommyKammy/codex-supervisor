@@ -475,6 +475,145 @@ test("writeExternalReviewMissArtifact carries source-aware signals through downs
   );
 });
 
+test("writeExternalReviewMissArtifact derives reviewer-grade findings from actionable top-level reviews only", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "external-review-top-level-review-test-"));
+  const localReviewSummaryPath = path.join(tempDir, "head-deadbeef.md");
+  const localReviewFindingsPath = path.join(tempDir, "head-deadbeef.json");
+  await fs.writeFile(localReviewSummaryPath, "# summary\n", "utf8");
+  await fs.writeFile(
+    localReviewFindingsPath,
+    `${JSON.stringify({
+      actionableFindings: [],
+      rootCauseSummaries: [],
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const context = await writeExternalReviewMissArtifact({
+    artifactDir: tempDir,
+    issueNumber: 58,
+    prNumber: 91,
+    branch: "codex/issue-58",
+    headSha: "deadbeefcafebabe",
+    reviewSignals: collectExternalReviewSignals({
+      reviews: [
+        createTopLevelReview({
+          id: "review-actionable",
+          body: "Bug: retries can reuse stale state and mask the latest failure.",
+          url: "https://example.test/pr/1#pullrequestreview-actionable",
+        }),
+        createTopLevelReview({
+          id: "review-informational",
+          body: "## Summary\nCodeRabbit reviewed this pull request and found no actionable issues.",
+          url: "https://example.test/pr/1#pullrequestreview-informational",
+        }),
+      ],
+      reviewBotLogins: ["coderabbitai[bot]"],
+    }),
+    reviewBotLogins: ["coderabbitai[bot]"],
+    localReviewSummaryPath,
+  });
+
+  assert.ok(context);
+  assert.equal(context?.missedCount, 1);
+  assert.equal(context?.matchedCount, 0);
+  assert.equal(context?.nearMatchCount, 0);
+  assert.deepEqual(
+    context?.missedFindings.map((finding) => ({
+      sourceKind: finding.sourceKind,
+      sourceId: finding.sourceId,
+      sourceUrl: finding.sourceUrl,
+      reviewerLogin: finding.reviewerLogin,
+      file: finding.file,
+      line: finding.line,
+      summary: finding.summary,
+      rationale: finding.rationale,
+      url: finding.url,
+    })),
+    [
+      {
+        sourceKind: "top_level_review",
+        sourceId: "review-actionable",
+        sourceUrl: "https://example.test/pr/1#pullrequestreview-actionable",
+        reviewerLogin: "coderabbitai[bot]",
+        file: null,
+        line: null,
+        summary: "Bug: retries can reuse stale state and mask the latest failure.",
+        rationale: "Bug: retries can reuse stale state and mask the latest failure.",
+        url: "https://example.test/pr/1#pullrequestreview-actionable",
+      },
+    ],
+  );
+  assert.equal(context?.regressionTestCandidates.length, 0);
+
+  const artifact = JSON.parse(
+    await fs.readFile(context?.artifactPath ?? "", "utf8"),
+  ) as {
+    findings: Array<{
+      sourceKind: string;
+      sourceId: string;
+      summary: string;
+      file: string | null;
+      line: number | null;
+    }>;
+    durableGuardrailCandidates: Array<{
+      id: string;
+      category: string;
+      file: string | null;
+      line: number | null;
+      qualificationReasons: string[];
+      provenance: {
+        sourceKind: string;
+        sourceId: string;
+      };
+    }>;
+    regressionTestCandidates: Array<unknown>;
+  };
+
+  assert.deepEqual(artifact.findings.map((finding) => ({
+    sourceKind: finding.sourceKind,
+    sourceId: finding.sourceId,
+    summary: finding.summary,
+    file: finding.file,
+    line: finding.line,
+  })), [
+    {
+      sourceKind: "top_level_review",
+      sourceId: "review-actionable",
+      summary: "Bug: retries can reuse stale state and mask the latest failure.",
+      file: null,
+      line: null,
+    },
+  ]);
+  assert.deepEqual(
+    artifact.durableGuardrailCandidates.map((candidate) => ({
+      id: candidate.id,
+      category: candidate.category,
+      file: candidate.file,
+      line: candidate.line,
+      qualificationReasons: candidate.qualificationReasons,
+      provenance: {
+        sourceKind: candidate.provenance.sourceKind,
+        sourceId: candidate.provenance.sourceId,
+      },
+    })),
+    [
+      {
+        id: "reviewer_rubric|top_level_review|bug: retries can reuse stale state and mask the latest failure.",
+        category: "reviewer_rubric",
+        file: null,
+        line: null,
+        qualificationReasons: ["missed_by_local_review", "high_confidence", "top_level_review_unanchored", "non_low_severity"],
+        provenance: {
+          sourceKind: "top_level_review",
+          sourceId: "review-actionable",
+        },
+      },
+    ],
+  );
+  assert.deepEqual(artifact.regressionTestCandidates, []);
+});
+
 test("writeExternalReviewMissArtifact derives deterministic regression-test candidates from confirmed misses", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "external-review-miss-test-"));
   const localReviewSummaryPath = path.join(tempDir, "head-deadbeef.md");
