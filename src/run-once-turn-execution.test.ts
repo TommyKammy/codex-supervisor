@@ -170,7 +170,7 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking
   const postReadyChecks: PullRequestCheck[] = [{ name: "build", state: "IN_PROGRESS", bucket: "pending", workflow: "CI" }];
   const state: SupervisorStateFile = {
     activeIssueNumber: 102,
-    issues: { "102": createRecord() },
+    issues: { "102": createRecord({ last_head_sha: "head-115" }) },
   };
 
   let readyCalls = 0;

@@ -447,6 +447,7 @@ interface ExecuteCodexTurnPhaseArgs {
     "resolvePullRequestForBranch" | "createPullRequest" | "getChecks" | "getUnresolvedReviewThreads" | "getExternalReviewSurface"
   >;
   context: CodexTurnContext;
+  sessionLock?: LockHandle | null;
   acquireSessionLock: (sessionId: string) => Promise<LockHandle | null>;
   classifyFailure: (message: string | null | undefined) => "timeout" | "command_error";
   buildCodexFailureContext: (
@@ -548,7 +549,7 @@ export async function executeCodexTurnPhase(
       };
     }
 
-    const journalContent = await fs.promises.readFile(journalPath, "utf8").catch(() => "");
+    const journalContent = (await readIssueJournalImpl(journalPath)) ?? "";
     const preRunState = record.state;
     const reviewThreadsToProcess = preRunState === "addressing_review"
       ? reviewThreads.filter((thread) => !record.processed_review_thread_ids.includes(thread.id))
@@ -630,9 +631,9 @@ export async function executeCodexTurnPhase(
           externalReviewMissContext,
         });
 
-    const sessionLock = record.codex_session_id
-      ? await args.acquireSessionLock(record.codex_session_id)
-      : null;
+    const sessionLock =
+      args.sessionLock ??
+      (record.codex_session_id ? await args.acquireSessionLock(record.codex_session_id) : null);
     if (sessionLock && !sessionLock.acquired) {
       return {
         kind: "returned",

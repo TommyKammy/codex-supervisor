@@ -2522,54 +2522,73 @@ export class Supervisor {
       };
     }
 
-    const preRunAttemptLane = attemptLane(record, pr);
-    record = this.stateStore.touch(record, {
-      state: nextState,
-      ...incrementAttemptCounters(record, preRunAttemptLane),
-      last_failure_context: inferFailureContext(this.config, record, pr, checks, reviewThreads),
-      blocked_reason: null,
-    });
-    state.issues[String(record.issue_number)] = record;
-    await this.stateStore.save(state);
-    await syncJournal(record);
+    const sessionLock = record.codex_session_id
+      ? await acquireFileLock(
+          this.lockPath("sessions", `session-${record.codex_session_id}`),
+          `session-${record.codex_session_id}`,
+        )
+      : null;
+    if (sessionLock && !sessionLock.acquired) {
+      return {
+        kind: "returned",
+        message: `Skipped issue #${record.issue_number}: ${sessionLock.reason}.`,
+      };
+    }
 
-    const reviewThreadsToProcess = pr ? pendingBotReviewThreads(this.config, record, pr, reviewThreads) : [];
-    return executeCodexTurnPhase({
-      config: this.config,
-      stateStore: this.stateStore,
-      github: this.github,
-      context: {
-        ...context,
-        record,
-        reviewThreads: reviewThreadsToProcess,
-      },
-      acquireSessionLock: async (sessionId) => acquireFileLock(
-        this.lockPath("sessions", `session-${sessionId}`),
-        `session-${sessionId}`,
-      ),
-      classifyFailure,
-      buildCodexFailureContext,
-      applyFailureSignature,
-      normalizeBlockerSignature,
-      isVerificationBlockedMessage,
-      derivePullRequestLifecycleSnapshot: (phaseRecord, phasePr, phaseChecks, phaseReviewThreads, recordPatch = {}) =>
-        derivePullRequestLifecycleSnapshot(
-          this.config,
-          phaseRecord,
-          phasePr,
-          phaseChecks,
-          phaseReviewThreads,
-          recordPatch,
+    try {
+      const preRunAttemptLane = attemptLane(record, pr);
+      record = this.stateStore.touch(record, {
+        state: nextState,
+        ...incrementAttemptCounters(record, preRunAttemptLane),
+        last_failure_context: inferFailureContext(this.config, record, pr, checks, reviewThreads),
+        blocked_reason: null,
+      });
+      state.issues[String(record.issue_number)] = record;
+      await this.stateStore.save(state);
+      await syncJournal(record);
+
+      const reviewThreadsToProcess = pr ? pendingBotReviewThreads(this.config, record, pr, reviewThreads) : [];
+      return executeCodexTurnPhase({
+        config: this.config,
+        stateStore: this.stateStore,
+        github: this.github,
+        context: {
+          ...context,
+          record,
+          reviewThreads: reviewThreadsToProcess,
+        },
+        sessionLock,
+        acquireSessionLock: async (sessionId) => acquireFileLock(
+          this.lockPath("sessions", `session-${sessionId}`),
+          `session-${sessionId}`,
         ),
-      inferStateWithoutPullRequest,
-      blockedReasonFromReviewState: (phaseRecord, phasePr, phaseReviewThreads) =>
-        blockedReasonFromReviewState(this.config, phaseRecord, phasePr, phaseReviewThreads),
-      recoverUnexpectedCodexTurnFailure: (args) =>
-        recoverUnexpectedCodexTurnFailure({
-          ...args,
-          stateStore: this.stateStore,
-        }),
-    });
+        classifyFailure,
+        buildCodexFailureContext,
+        applyFailureSignature,
+        normalizeBlockerSignature,
+        isVerificationBlockedMessage,
+        derivePullRequestLifecycleSnapshot: (phaseRecord, phasePr, phaseChecks, phaseReviewThreads, recordPatch = {}) =>
+          derivePullRequestLifecycleSnapshot(
+            this.config,
+            phaseRecord,
+            phasePr,
+            phaseChecks,
+            phaseReviewThreads,
+            recordPatch,
+          ),
+        inferStateWithoutPullRequest,
+        blockedReasonFromReviewState: (phaseRecord, phasePr, phaseReviewThreads) =>
+          blockedReasonFromReviewState(this.config, phaseRecord, phasePr, phaseReviewThreads),
+        recoverUnexpectedCodexTurnFailure: (args) =>
+          recoverUnexpectedCodexTurnFailure({
+            ...args,
+            stateStore: this.stateStore,
+          }),
+      });
+    } catch (error) {
+      await sessionLock?.release();
+      throw error;
+    }
   }
 
   private async runPreparedIssue(context: PreparedIssueRunContext): Promise<string> {
