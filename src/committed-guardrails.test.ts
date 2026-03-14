@@ -216,6 +216,20 @@ test("validateCommittedGuardrails accepts schema version 1 and rejects missing o
   await fs.writeFile(
     verifierPath,
     JSON.stringify({
+      version: "1",
+      rules: [],
+    }),
+    "utf8",
+  );
+
+  await assert.rejects(
+    validateCommittedGuardrails(workspaceDir),
+    /Invalid verifier guardrails in .*verifier-guardrails\.json: schema version must be a positive integer; expected version 1\./,
+  );
+
+  await fs.writeFile(
+    verifierPath,
+    JSON.stringify({
       version: 1,
       rules: [],
     }),
