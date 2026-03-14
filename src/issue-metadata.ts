@@ -60,7 +60,9 @@ const RISKY_CHANGE_SIGNALS: Record<RiskyChangeClass, RegExp[]> = {
   ci: [
     /\bci\b/i,
     /\bgithub actions\b/i,
-    /\bworkflow(s)?\b/i,
+    /\.github\/workflows\b/i,
+    /\bci workflows?\b/i,
+    /\bworkflow files?\b/i,
     /\bpipeline(s)?\b/i,
   ],
   migrations: [
