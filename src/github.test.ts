@@ -68,6 +68,7 @@ test("inferCopilotReviewLifecycle returns not_requested when no Copilot signal e
       reviewRequests: [],
       reviews: [],
       comments: [],
+      issueComments: [],
       timeline: [],
     },
     ["copilot-pull-request-reviewer"],
@@ -86,6 +87,7 @@ test("inferCopilotReviewLifecycle returns requested when Copilot was requested b
       reviewRequests: ["copilot-pull-request-reviewer"],
       reviews: [],
       comments: [],
+      issueComments: [],
       timeline: [
         {
           type: "requested",
@@ -115,6 +117,7 @@ test("inferCopilotReviewLifecycle returns arrived when Copilot review exists", (
         },
       ],
       comments: [],
+      issueComments: [],
       timeline: [
         {
           type: "requested",
@@ -144,6 +147,7 @@ test("inferCopilotReviewLifecycle returns arrived when Copilot comments on a rev
           createdAt: "2026-03-13T02:04:05Z",
         },
       ],
+      issueComments: [],
       timeline: [
         {
           type: "requested",
@@ -169,9 +173,12 @@ test("inferCopilotReviewLifecycle treats configured review bots generically for 
       {
         authorLogin: "chatgpt-codex-connector",
         submittedAt: "2026-03-13T02:03:04Z",
+        state: "COMMENTED",
+        body: "Nitpick: the fallback path still skips the auth guard.",
       },
     ],
     comments: [],
+    issueComments: [],
     timeline: [
       {
         type: "requested" as const,
@@ -193,6 +200,74 @@ test("inferCopilotReviewLifecycle treats configured review bots generically for 
   });
 
   assert.deepEqual(inferCopilotReviewLifecycle(facts, ["copilot-pull-request-reviewer", "chatgpt-codex-connector"]), {
+    state: "arrived",
+    requestedAt: "2026-03-13T01:02:03Z",
+    arrivedAt: "2026-03-13T02:03:04Z",
+  });
+});
+
+test("inferCopilotReviewLifecycle ignores summary-only and draft-skip issue comments from configured bots", () => {
+  const lifecycle = inferCopilotReviewLifecycle(
+    {
+      reviewRequests: ["coderabbitai[bot]"],
+      reviews: [],
+      comments: [],
+      issueComments: [
+        {
+          authorLogin: "coderabbitai[bot]",
+          createdAt: "2026-03-13T02:04:05Z",
+          body: "## Summary\nCodeRabbit reviewed this pull request and found no actionable issues.",
+        },
+        {
+          authorLogin: "coderabbitai[bot]",
+          createdAt: "2026-03-13T02:05:05Z",
+          body: "Skipping review because this pull request is still in draft.",
+        },
+      ],
+      timeline: [
+        {
+          type: "requested",
+          createdAt: "2026-03-13T01:02:03Z",
+          reviewerLogin: "coderabbitai[bot]",
+        },
+      ],
+    },
+    ["coderabbitai[bot]"],
+  );
+
+  assert.deepEqual(lifecycle, {
+    state: "requested",
+    requestedAt: "2026-03-13T01:02:03Z",
+    arrivedAt: null,
+  });
+});
+
+test("inferCopilotReviewLifecycle treats actionable configured-bot top-level reviews as arrived", () => {
+  const lifecycle = inferCopilotReviewLifecycle(
+    {
+      reviewRequests: ["coderabbitai[bot]"],
+      reviews: [
+        {
+          authorLogin: "coderabbitai[bot]",
+          submittedAt: "2026-03-13T02:03:04Z",
+          state: "COMMENTED",
+          body: "Nitpick: this nil check is inverted and can mask the error path.",
+        },
+      ],
+      comments: [],
+      issueComments: [],
+      timeline: [
+        {
+          type: "requested",
+          createdAt: "2026-03-13T01:02:03Z",
+          reviewerLogin: "coderabbitai[bot]",
+        },
+      ],
+    },
+    ["coderabbitai[bot]"],
+  );
+
+  assert.deepEqual(lifecycle, {
     state: "arrived",
     requestedAt: "2026-03-13T01:02:03Z",
     arrivedAt: "2026-03-13T02:03:04Z",
@@ -410,6 +485,191 @@ test("GitHubClient refreshes same-head Copilot lifecycle transitions from not_re
   assert.equal(third.copilotReviewRequestedAt, "2026-03-13T01:02:03Z");
   assert.equal(third.copilotReviewArrivedAt, "2026-03-13T01:03:04Z");
   assert.equal(lifecycleCallCount, 3);
+});
+
+test("GitHubClient hydrates arrived lifecycle from actionable configured-bot issue comments", async () => {
+  const config = createConfig({ reviewBotLogins: ["coderabbitai[bot]"] });
+  let lifecycleQuery: string | null = null;
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "pr" && args[1] === "view") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          number: 44,
+          title: "Issue comment lifecycle transition",
+          url: "https://example.test/pr/44",
+          state: "OPEN",
+          createdAt: "2026-03-13T00:00:00Z",
+          updatedAt: "2026-03-13T00:00:00Z",
+          isDraft: false,
+          reviewDecision: null,
+          mergeStateStatus: "CLEAN",
+          mergeable: "MERGEABLE",
+          headRefName: "codex/issue-141",
+          headRefOid: "head-44",
+          mergedAt: null,
+        }),
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "graphql") {
+      lifecycleQuery = args.find((arg) => arg.startsWith("query=")) ?? null;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: {
+                  nodes: [
+                    {
+                      requestedReviewer: {
+                        login: "coderabbitai[bot]",
+                      },
+                    },
+                  ],
+                },
+                reviews: {
+                  nodes: [],
+                },
+                comments: {
+                  nodes: [
+                    {
+                      createdAt: "2026-03-13T02:24:00Z",
+                      body: "Nitpick: this guard should return early before mutating shared state.",
+                      author: {
+                        login: "coderabbitai[bot]",
+                      },
+                    },
+                  ],
+                },
+                reviewThreads: {
+                  nodes: [],
+                },
+                timelineItems: {
+                  nodes: [
+                    {
+                      __typename: "ReviewRequestedEvent",
+                      createdAt: "2026-03-13T01:02:03Z",
+                      requestedReviewer: {
+                        login: "coderabbitai[bot]",
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const pr = await client.getPullRequest(44);
+
+  assert.ok(lifecycleQuery);
+  assert.match(lifecycleQuery, /comments\(last:\s*100\)/);
+  assert.equal(pr.copilotReviewState, "arrived");
+  assert.equal(pr.copilotReviewRequestedAt, "2026-03-13T01:02:03Z");
+  assert.equal(pr.copilotReviewArrivedAt, "2026-03-13T02:24:00Z");
+});
+
+test("GitHubClient ignores summary-only and draft-skip configured-bot issue comments", async () => {
+  const config = createConfig({ reviewBotLogins: ["coderabbitai[bot]"] });
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "pr" && args[1] === "view") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          number: 44,
+          title: "Summary-only issue comment lifecycle",
+          url: "https://example.test/pr/44",
+          state: "OPEN",
+          createdAt: "2026-03-13T00:00:00Z",
+          updatedAt: "2026-03-13T00:00:00Z",
+          isDraft: false,
+          reviewDecision: null,
+          mergeStateStatus: "CLEAN",
+          mergeable: "MERGEABLE",
+          headRefName: "codex/issue-141",
+          headRefOid: "head-44",
+          mergedAt: null,
+        }),
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "graphql") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: {
+                  nodes: [
+                    {
+                      requestedReviewer: {
+                        login: "coderabbitai[bot]",
+                      },
+                    },
+                  ],
+                },
+                reviews: {
+                  nodes: [],
+                },
+                comments: {
+                  nodes: [
+                    {
+                      createdAt: "2026-03-13T02:24:00Z",
+                      body: "## Summary\nCodeRabbit reviewed this pull request and found no actionable issues.",
+                      author: {
+                        login: "coderabbitai[bot]",
+                      },
+                    },
+                    {
+                      createdAt: "2026-03-13T02:25:00Z",
+                      body: "Skipping review because this pull request is still in draft.",
+                      author: {
+                        login: "coderabbitai[bot]",
+                      },
+                    },
+                  ],
+                },
+                reviewThreads: {
+                  nodes: [],
+                },
+                timelineItems: {
+                  nodes: [
+                    {
+                      __typename: "ReviewRequestedEvent",
+                      createdAt: "2026-03-13T01:02:03Z",
+                      requestedReviewer: {
+                        login: "coderabbitai[bot]",
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const pr = await client.getPullRequest(44);
+
+  assert.equal(pr.copilotReviewState, "requested");
+  assert.equal(pr.copilotReviewRequestedAt, "2026-03-13T01:02:03Z");
+  assert.equal(pr.copilotReviewArrivedAt, null);
 });
 
 test("GitHubClient fetches the newest unresolved review thread comments", async () => {
