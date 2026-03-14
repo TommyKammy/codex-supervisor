@@ -1,3 +1,10 @@
+import path from "node:path";
+import {
+  compareExternalReviewPatterns,
+  EXTERNAL_REVIEW_GUARDRAILS_PATH,
+  loadCommittedExternalReviewGuardrails,
+  VERIFIER_GUARDRAILS_PATH,
+} from "./committed-guardrails";
 import { detectLocalReviewRoleSelections } from "./review-role-detector";
 import { runCommand } from "./command";
 import { loadRelevantExternalReviewMissPatterns } from "./external-review-misses";
@@ -104,6 +111,13 @@ function selectLocalReviewRoles(args: {
   }
 
   return ["reviewer", "explorer"];
+}
+
+function displayGuardrailArtifactPath(config: SupervisorConfig, filePath: string): string {
+  const relativePath = path.relative(config.localReviewArtifactDir, filePath);
+  return relativePath && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)
+    ? relativePath
+    : path.basename(filePath);
 }
 
 async function runLocalReviewRoles(args: {
@@ -242,6 +256,18 @@ export async function runLocalReview(args: {
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
+  const changedFileSet = new Set(changedFiles);
+  const committedExternalReviewPatterns = (await loadCommittedExternalReviewGuardrails(args.workspacePath))
+    .filter((pattern) => changedFileSet.has(pattern.file))
+    .sort(compareExternalReviewPatterns)
+    .slice(0, 3);
+  const runtimeExternalReviewPatterns = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: reviewDir(args.config, args.issue.number),
+    branch: args.branch,
+    currentHeadSha: args.pr.headRefOid,
+    changedFiles,
+    limit: 3,
+  });
   const priorMissPatterns = await loadRelevantExternalReviewMissPatterns({
     artifactDir: reviewDir(args.config, args.issue.number),
     branch: args.branch,
@@ -280,6 +306,23 @@ export async function runLocalReview(args: {
     roleResults,
     verifierReport,
     ranAt,
+    guardrailProvenance: {
+      verifier: {
+        committedPath:
+          (verifierReport?.verifierGuardrails?.length ?? 0) > 0 ? VERIFIER_GUARDRAILS_PATH : null,
+        committedCount: verifierReport?.verifierGuardrails?.length ?? 0,
+      },
+      externalReview: {
+        committedPath: committedExternalReviewPatterns.length > 0 ? EXTERNAL_REVIEW_GUARDRAILS_PATH : null,
+        committedCount: committedExternalReviewPatterns.length,
+        runtimeSources: [...new Set(runtimeExternalReviewPatterns.map((pattern) => pattern.sourceArtifactPath))]
+          .sort()
+          .map((sourcePath) => ({
+            path: displayGuardrailArtifactPath(args.config, sourcePath),
+            count: runtimeExternalReviewPatterns.filter((pattern) => pattern.sourceArtifactPath === sourcePath).length,
+          })),
+      },
+    },
   });
   const artifacts = await writeLocalReviewArtifacts({
     config: args.config,

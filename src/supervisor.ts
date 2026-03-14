@@ -1,5 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
+import { runCommand } from "./command";
+import {
+  compareExternalReviewPatterns,
+  EXTERNAL_REVIEW_GUARDRAILS_PATH,
+  loadCommittedExternalReviewGuardrails,
+  VERIFIER_GUARDRAILS_PATH,
+} from "./committed-guardrails";
 import {
   buildCodexPrompt,
   buildCodexResumePrompt,
@@ -1666,6 +1673,91 @@ function sanitizeStatusValue(value: string | null | undefined): string | null {
   return value.replace(/\r?\n/g, "\\n");
 }
 
+function displayStatusArtifactPath(config: SupervisorConfig, filePath: string): string {
+  const relativePath = path.relative(config.localReviewArtifactDir, filePath);
+  return relativePath && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)
+    ? relativePath
+    : path.basename(filePath);
+}
+
+async function loadStatusChangedFiles(config: SupervisorConfig, workspacePath: string): Promise<string[]> {
+  const result = await runCommand(
+    "git",
+    ["diff", "--name-only", `origin/${config.defaultBranch}...HEAD`],
+    {
+      cwd: workspacePath,
+      env: process.env,
+    },
+  );
+
+  return [...new Set(
+    result.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0),
+  )].sort();
+}
+
+async function buildDurableGuardrailStatusLine(args: {
+  config: SupervisorConfig;
+  activeRecord: Pick<IssueRunRecord, "branch" | "issue_number" | "last_head_sha" | "workspace">;
+  pr: Pick<GitHubPullRequest, "headRefOid"> | null;
+}): Promise<string | null> {
+  const changedFiles = await loadStatusChangedFiles(args.config, args.activeRecord.workspace);
+  if (changedFiles.length === 0) {
+    return null;
+  }
+
+  const changedFileSet = new Set(changedFiles);
+  const verifierGuardrails = await loadRelevantVerifierGuardrails({
+    workspacePath: args.activeRecord.workspace,
+    changedFiles,
+    limit: 3,
+  });
+  const committedExternalReviewPatterns = (await loadCommittedExternalReviewGuardrails(args.activeRecord.workspace))
+    .filter((pattern) => changedFileSet.has(pattern.file))
+    .sort(compareExternalReviewPatterns)
+    .slice(0, 3);
+  const runtimeExternalReviewPatterns = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: path.join(
+      args.config.localReviewArtifactDir,
+      args.config.repoSlug.replace(/\//g, "-"),
+      `issue-${args.activeRecord.issue_number}`,
+    ),
+    branch: args.activeRecord.branch,
+    currentHeadSha: args.pr?.headRefOid ?? args.activeRecord.last_head_sha ?? "",
+    changedFiles,
+    limit: 3,
+  });
+
+  if (
+    verifierGuardrails.length === 0 &&
+    committedExternalReviewPatterns.length === 0 &&
+    runtimeExternalReviewPatterns.length === 0
+  ) {
+    return null;
+  }
+
+  const verifierSummary =
+    verifierGuardrails.length > 0
+      ? `committed:${VERIFIER_GUARDRAILS_PATH}#${verifierGuardrails.length}`
+      : "none";
+  const externalReviewSources: string[] = [];
+  if (committedExternalReviewPatterns.length > 0) {
+    externalReviewSources.push(`committed:${EXTERNAL_REVIEW_GUARDRAILS_PATH}#${committedExternalReviewPatterns.length}`);
+  }
+  const runtimeCounts = new Map<string, number>();
+  for (const pattern of runtimeExternalReviewPatterns) {
+    const sourcePath = displayStatusArtifactPath(args.config, pattern.sourceArtifactPath);
+    runtimeCounts.set(sourcePath, (runtimeCounts.get(sourcePath) ?? 0) + 1);
+  }
+  for (const sourcePath of [...runtimeCounts.keys()].sort()) {
+    externalReviewSources.push(`runtime:${sourcePath}#${runtimeCounts.get(sourcePath)}`);
+  }
+
+  return `durable_guardrails verifier=${verifierSummary} external_review=${externalReviewSources.length > 0 ? externalReviewSources.join("|") : "none"}`;
+}
+
 function summarizeCheckBuckets(checks: PullRequestCheck[]): string {
   if (checks.length === 0) {
     return "none";
@@ -1776,6 +1868,7 @@ export function formatDetailedStatus(args: {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
   handoffSummary?: string | null;
+  durableGuardrailSummary?: string | null;
 }): string {
   const {
     config,
@@ -1787,6 +1880,7 @@ export function formatDetailedStatus(args: {
     checks,
     reviewThreads,
     handoffSummary = null,
+    durableGuardrailSummary = null,
   } = args;
 
   if (!activeRecord) {
@@ -1873,6 +1967,10 @@ export function formatDetailedStatus(args: {
 
   if (handoffSummary) {
     lines.push(`handoff_summary=${truncate(sanitizeStatusValue(handoffSummary), 200)}`);
+  }
+
+  if (durableGuardrailSummary) {
+    lines.push(truncate(sanitizeStatusValue(durableGuardrailSummary), 300) ?? "");
   }
 
   if (latestRecoveryRecord?.last_recovery_reason && latestRecoveryRecord.last_recovery_at) {
@@ -3507,6 +3605,7 @@ export class Supervisor {
     let checks: PullRequestCheck[] = [];
     let reviewThreads: ReviewThread[] = [];
     let handoffSummary: string | null = null;
+    let durableGuardrailSummary: string | null = null;
 
     try {
       if (activeRecord.journal_path) {
@@ -3517,6 +3616,11 @@ export class Supervisor {
         checks = await this.github.getChecks(pr.number);
         reviewThreads = await this.github.getUnresolvedReviewThreads(pr.number);
       }
+      durableGuardrailSummary = await buildDurableGuardrailStatusLine({
+        config: this.config,
+        activeRecord,
+        pr,
+      });
     } catch (error) {
       const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
       return [gsdSummary, `${formatDetailedStatus({
@@ -3529,6 +3633,7 @@ export class Supervisor {
         checks,
         reviewThreads,
         handoffSummary,
+        durableGuardrailSummary,
       })}\nstatus_warning=${truncate(message, 200)}`]
         .filter(Boolean)
         .join("\n");
@@ -3544,6 +3649,7 @@ export class Supervisor {
       checks,
       reviewThreads,
       handoffSummary,
+      durableGuardrailSummary,
     })]
       .filter(Boolean)
       .join("\n");

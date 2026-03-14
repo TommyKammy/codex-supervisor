@@ -155,6 +155,7 @@ export async function runVerifierReview(args: {
     rawOutput: result.rawOutput,
     exitCode: result.exitCode,
     degraded: result.exitCode !== 0,
+    verifierGuardrails,
     ...parsed,
   };
 }
