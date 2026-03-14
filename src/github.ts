@@ -2,7 +2,9 @@ import {
   CopilotReviewState,
   GitHubIssue,
   GitHubPullRequest,
+  IssueComment,
   IssueRunRecord,
+  PullRequestReview,
   PullRequestCheck,
   ReviewThread,
   SupervisorConfig,
@@ -987,6 +989,136 @@ export class GitHubClient {
         })),
       },
     })).filter((thread) => !thread.isResolved && !thread.isOutdated);
+  }
+
+  async getExternalReviewSurface(prNumber: number): Promise<{
+    reviews: PullRequestReview[];
+    issueComments: IssueComment[];
+  }> {
+    const { owner, repo } = this.repoOwnerAndName();
+    const query = `
+      query($owner: String!, $repo: String!, $number: Int!) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $number) {
+            reviews(last: 100) {
+              nodes {
+                id
+                body
+                submittedAt
+                url
+                state
+                author {
+                  login
+                  __typename
+                }
+              }
+            }
+            comments(last: 100) {
+              nodes {
+                id
+                body
+                createdAt
+                url
+                author {
+                  login
+                  __typename
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const result = await this.runGhCommand([
+      "api",
+      "graphql",
+      "-f",
+      `query=${query}`,
+      "-F",
+      `owner=${owner}`,
+      "-F",
+      `repo=${repo}`,
+      "-F",
+      `number=${prNumber}`,
+    ]);
+
+    const payload = parseJson<{
+      data?: {
+        repository?: {
+          pullRequest?: {
+            reviews?: {
+              nodes?: Array<{
+                id?: string | null;
+                body?: string | null;
+                submittedAt?: string | null;
+                url?: string | null;
+                state?: string | null;
+                author?: {
+                  login?: string | null;
+                  __typename?: string | null;
+                } | null;
+              }>;
+            };
+            comments?: {
+              nodes?: Array<{
+                id?: string | null;
+                body?: string | null;
+                createdAt?: string | null;
+                url?: string | null;
+                author?: {
+                  login?: string | null;
+                  __typename?: string | null;
+                } | null;
+              }>;
+            };
+          } | null;
+        };
+      };
+    }>(result.stdout, `gh api graphql external review surface pr=${prNumber}`);
+
+    const pullRequest = payload.data?.repository?.pullRequest;
+    return {
+      reviews:
+        pullRequest?.reviews?.nodes?.flatMap((review) =>
+          review?.id
+            ? [
+                {
+                  id: review.id,
+                  body: review.body ?? null,
+                  submittedAt: review.submittedAt ?? null,
+                  url: review.url ?? null,
+                  state: review.state ?? null,
+                  author: review.author
+                    ? {
+                        login: review.author.login ?? null,
+                        typeName: review.author.__typename ?? null,
+                      }
+                    : null,
+                },
+              ]
+            : [],
+        ) ?? [],
+      issueComments:
+        pullRequest?.comments?.nodes?.flatMap((comment) =>
+          comment?.id
+            ? [
+                {
+                  id: comment.id,
+                  body: comment.body ?? "",
+                  createdAt: comment.createdAt ?? "",
+                  url: comment.url ?? null,
+                  author: comment.author
+                    ? {
+                        login: comment.author.login ?? null,
+                        typeName: comment.author.__typename ?? null,
+                      }
+                    : null,
+                },
+              ]
+            : [],
+        ) ?? [],
+    };
   }
 
   private async hydratePullRequest(pr: GitHubPullRequest | null): Promise<GitHubPullRequest | null> {

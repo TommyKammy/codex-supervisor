@@ -17,7 +17,12 @@ import {
   shouldUseCompactResumePrompt,
 } from "./codex";
 import { loadConfig } from "./config";
-import { ExternalReviewMissContext, loadRelevantExternalReviewMissPatterns, writeExternalReviewMissArtifact } from "./external-review-misses";
+import {
+  collectExternalReviewSignals,
+  ExternalReviewMissContext,
+  loadRelevantExternalReviewMissPatterns,
+  writeExternalReviewMissArtifact,
+} from "./external-review-misses";
 import { GitHubClient } from "./github";
 import {
   findBlockingIssue,
@@ -3219,6 +3224,14 @@ export class Supervisor {
         record.state === "local_review_fix"
           ? await loadLocalReviewRepairContext(record.local_review_summary_path, workspacePath)
           : null;
+      const externalReviewSurface =
+        pr &&
+        preRunState === "addressing_review" &&
+        reviewThreadsToProcess.length > 0 &&
+        record.local_review_head_sha === pr.headRefOid &&
+        record.local_review_summary_path
+          ? await this.github.getExternalReviewSurface(pr.number)
+          : null;
       const externalReviewMissContext: ExternalReviewMissContext | null =
         pr &&
         preRunState === "addressing_review" &&
@@ -3231,7 +3244,12 @@ export class Supervisor {
               prNumber: pr.number,
               branch: record.branch,
               headSha: pr.headRefOid,
-              reviewThreads: reviewThreadsToProcess,
+              reviewSignals: collectExternalReviewSignals({
+                reviewThreads: reviewThreadsToProcess,
+                reviews: externalReviewSurface?.reviews ?? [],
+                issueComments: externalReviewSurface?.issueComments ?? [],
+                reviewBotLogins: this.config.reviewBotLogins,
+              }),
               reviewBotLogins: this.config.reviewBotLogins,
               localReviewSummaryPath: record.local_review_summary_path,
             })
