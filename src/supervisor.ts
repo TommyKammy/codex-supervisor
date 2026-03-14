@@ -1,5 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
+import { runCommand } from "./command";
+import {
+  compareExternalReviewPatterns,
+  EXTERNAL_REVIEW_GUARDRAILS_PATH,
+  loadCommittedExternalReviewGuardrails,
+  VERIFIER_GUARDRAILS_PATH,
+} from "./committed-guardrails";
 import {
   buildCodexPrompt,
   buildCodexResumePrompt,
@@ -23,6 +30,7 @@ import {
 } from "./journal";
 import { acquireFileLock, inspectFileLock, LockHandle } from "./lock";
 import { localReviewHasActionableFindings, LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY, runLocalReview, shouldRunLocalReview } from "./local-review";
+import { reviewDir } from "./local-review-artifacts";
 import { syncMemoryArtifacts } from "./memory";
 import { StateStore } from "./state-store";
 import {
@@ -1666,6 +1674,118 @@ function sanitizeStatusValue(value: string | null | undefined): string | null {
   return value.replace(/\r?\n/g, "\\n");
 }
 
+function displayStatusArtifactPath(config: SupervisorConfig, filePath: string): string {
+  const relativePath = path.relative(config.localReviewArtifactDir, filePath);
+  return relativePath && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)
+    ? relativePath
+    : path.basename(filePath);
+}
+
+async function loadStatusChangedFiles(config: SupervisorConfig, workspacePath: string): Promise<string[]> {
+  let result;
+  try {
+    result = await runCommand(
+      "git",
+      ["diff", "--name-only", `origin/${config.defaultBranch}...HEAD`],
+      {
+        cwd: workspacePath,
+        env: process.env,
+      },
+    );
+  } catch {
+    return [];
+  }
+
+  return [...new Set(
+    result.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0),
+  )].sort();
+}
+
+async function buildDurableGuardrailStatusLine(args: {
+  config: SupervisorConfig;
+  activeRecord: Pick<IssueRunRecord, "branch" | "issue_number" | "last_head_sha" | "workspace">;
+  pr: Pick<GitHubPullRequest, "headRefOid"> | null;
+}): Promise<string | null> {
+  const changedFiles = await loadStatusChangedFiles(args.config, args.activeRecord.workspace);
+  if (changedFiles.length === 0) {
+    return null;
+  }
+
+  const changedFileSet = new Set(changedFiles);
+  const verifierGuardrails = await loadRelevantVerifierGuardrails({
+    workspacePath: args.activeRecord.workspace,
+    changedFiles,
+    limit: 3,
+  });
+  const committedExternalReviewPatterns = (await loadCommittedExternalReviewGuardrails(args.activeRecord.workspace))
+    .filter((pattern) => changedFileSet.has(pattern.file))
+    .sort(compareExternalReviewPatterns);
+  const runtimeExternalReviewPatterns = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: reviewDir(args.config, args.activeRecord.issue_number),
+    branch: args.activeRecord.branch,
+    currentHeadSha: args.pr?.headRefOid ?? args.activeRecord.last_head_sha ?? "",
+    changedFiles,
+    limit: Number.MAX_SAFE_INTEGER,
+  });
+  const activeExternalReviewPatterns = new Map<string, {
+    sourceType: "committed" | "runtime";
+    pattern: (typeof committedExternalReviewPatterns)[number];
+  }>();
+  for (const pattern of committedExternalReviewPatterns) {
+    activeExternalReviewPatterns.set(pattern.fingerprint, {
+      sourceType: "committed",
+      pattern,
+    });
+  }
+  for (const pattern of runtimeExternalReviewPatterns) {
+    const existing = activeExternalReviewPatterns.get(pattern.fingerprint);
+    if (!existing || compareExternalReviewPatterns(pattern, existing.pattern) < 0) {
+      activeExternalReviewPatterns.set(pattern.fingerprint, {
+        sourceType: "runtime",
+        pattern,
+      });
+    }
+  }
+  const activeExternalReviewWinners = [...activeExternalReviewPatterns.values()]
+    .sort((left, right) => compareExternalReviewPatterns(left.pattern, right.pattern))
+    .slice(0, 3);
+
+  if (
+    verifierGuardrails.length === 0 &&
+    activeExternalReviewWinners.length === 0
+  ) {
+    return null;
+  }
+
+  const verifierSummary =
+    verifierGuardrails.length > 0
+      ? `committed:${VERIFIER_GUARDRAILS_PATH}#${verifierGuardrails.length}`
+      : "none";
+  const externalReviewSources: string[] = [];
+  let committedCount = 0;
+  const runtimeCounts = new Map<string, number>();
+  for (const winner of activeExternalReviewWinners) {
+    if (winner.sourceType === "committed") {
+      committedCount += 1;
+      continue;
+    }
+
+    const sourcePath = displayStatusArtifactPath(args.config, winner.pattern.sourceArtifactPath);
+    runtimeCounts.set(sourcePath, (runtimeCounts.get(sourcePath) ?? 0) + 1);
+  }
+  if (committedCount > 0) {
+    externalReviewSources.push(`committed:${EXTERNAL_REVIEW_GUARDRAILS_PATH}#${committedCount}`);
+  }
+  for (const sourcePath of [...runtimeCounts.keys()].sort()) {
+    externalReviewSources.push(`runtime:${sourcePath}#${runtimeCounts.get(sourcePath)}`);
+  }
+
+  return `durable_guardrails verifier=${verifierSummary} external_review=${externalReviewSources.length > 0 ? externalReviewSources.join("|") : "none"}`;
+}
+
 function summarizeCheckBuckets(checks: PullRequestCheck[]): string {
   if (checks.length === 0) {
     return "none";
@@ -1776,6 +1896,7 @@ export function formatDetailedStatus(args: {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
   handoffSummary?: string | null;
+  durableGuardrailSummary?: string | null;
 }): string {
   const {
     config,
@@ -1787,6 +1908,7 @@ export function formatDetailedStatus(args: {
     checks,
     reviewThreads,
     handoffSummary = null,
+    durableGuardrailSummary = null,
   } = args;
 
   if (!activeRecord) {
@@ -1873,6 +1995,10 @@ export function formatDetailedStatus(args: {
 
   if (handoffSummary) {
     lines.push(`handoff_summary=${truncate(sanitizeStatusValue(handoffSummary), 200)}`);
+  }
+
+  if (durableGuardrailSummary) {
+    lines.push(truncate(sanitizeStatusValue(durableGuardrailSummary), 300) ?? "");
   }
 
   if (latestRecoveryRecord?.last_recovery_reason && latestRecoveryRecord.last_recovery_at) {
@@ -3507,6 +3633,7 @@ export class Supervisor {
     let checks: PullRequestCheck[] = [];
     let reviewThreads: ReviewThread[] = [];
     let handoffSummary: string | null = null;
+    let durableGuardrailSummary: string | null = null;
 
     try {
       if (activeRecord.journal_path) {
@@ -3517,6 +3644,11 @@ export class Supervisor {
         checks = await this.github.getChecks(pr.number);
         reviewThreads = await this.github.getUnresolvedReviewThreads(pr.number);
       }
+      durableGuardrailSummary = await buildDurableGuardrailStatusLine({
+        config: this.config,
+        activeRecord,
+        pr,
+      });
     } catch (error) {
       const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
       return [gsdSummary, `${formatDetailedStatus({
@@ -3529,6 +3661,7 @@ export class Supervisor {
         checks,
         reviewThreads,
         handoffSummary,
+        durableGuardrailSummary,
       })}\nstatus_warning=${truncate(message, 200)}`]
         .filter(Boolean)
         .join("\n");
@@ -3544,6 +3677,7 @@ export class Supervisor {
       checks,
       reviewThreads,
       handoffSummary,
+      durableGuardrailSummary,
     })]
       .filter(Boolean)
       .join("\n");

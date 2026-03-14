@@ -4,6 +4,7 @@ import { truncate } from "./utils";
 import { findingMeetsReviewerThreshold, reviewerTypeForRole, thresholdsForReviewerType } from "./local-review-thresholds";
 import {
   type FinalizedLocalReview,
+  type LocalReviewGuardrailProvenance,
   type LocalReviewArtifact,
   type LocalReviewFinding,
   type LocalReviewResult,
@@ -217,6 +218,7 @@ export function finalizeLocalReview(args: {
   roleResults: LocalReviewRoleResult[];
   verifierReport: LocalReviewVerifierReport | null;
   ranAt: string;
+  guardrailProvenance?: LocalReviewGuardrailProvenance;
 }): FinalizedLocalReview {
   const roles = args.roleResults.map((result) => result.role);
   const allFindings = args.roleResults.flatMap((result) => result.findings);
@@ -273,6 +275,17 @@ export function finalizeLocalReview(args: {
     (finding) => verificationByKey.get(findingKey(finding))?.verdict === "confirmed",
   );
   const verifiedMaxSeverity = maxSeverity(verifiedFindings);
+  const guardrailProvenance: LocalReviewGuardrailProvenance = args.guardrailProvenance ?? {
+    verifier: {
+      committedPath: null,
+      committedCount: 0,
+    },
+    externalReview: {
+      committedPath: null,
+      committedCount: 0,
+      runtimeSources: [],
+    },
+  };
   const artifact: LocalReviewArtifact = {
     issueNumber: args.issueNumber,
     prNumber: args.prNumber,
@@ -302,6 +315,7 @@ export function finalizeLocalReview(args: {
       findings: args.verifierReport?.findings ?? [],
     },
     verifiedFindings,
+    guardrailProvenance,
     roleReports,
     verifierReport: args.verifierReport
       ? {

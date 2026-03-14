@@ -1,4 +1,5 @@
 import { type LocalReviewRoleSelection } from "./review-role-detector";
+import { type VerifierGuardrailRule } from "./verifier-guardrails";
 
 export type LocalReviewSeverity = "none" | "low" | "medium" | "high";
 
@@ -72,6 +73,22 @@ export interface LocalReviewVerifierReport {
   rawOutput: string;
   exitCode: number;
   degraded: boolean;
+  verifierGuardrails?: VerifierGuardrailRule[];
+}
+
+export interface LocalReviewGuardrailProvenance {
+  verifier: {
+    committedPath: string | null;
+    committedCount: number;
+  };
+  externalReview: {
+    committedPath: string | null;
+    committedCount: number;
+    runtimeSources: Array<{
+      path: string;
+      count: number;
+    }>;
+  };
 }
 
 export interface LocalReviewArtifact {
@@ -103,6 +120,7 @@ export interface LocalReviewArtifact {
     findings: LocalReviewVerificationFinding[];
   };
   verifiedFindings: LocalReviewFinding[];
+  guardrailProvenance: LocalReviewGuardrailProvenance;
   roleReports: Array<{
     role: string;
     reviewerType: LocalReviewReviewerType;

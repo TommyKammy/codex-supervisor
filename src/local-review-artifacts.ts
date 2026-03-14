@@ -47,6 +47,24 @@ function summarizeAutoDetectedRoles(detectedRoles: LocalReviewRoleSelection[]): 
     .map((selection) => `- ${selection.role}: ${selection.reasons.map(formatRoleSelectionReason).join("; ")}`);
 }
 
+function summarizeGuardrailProvenance(provenance: FinalizedLocalReview["artifact"]["guardrailProvenance"]): string[] {
+  const lines: string[] = [];
+
+  if (provenance.verifier.committedCount > 0 && provenance.verifier.committedPath) {
+    lines.push(`- Verifier committed: ${provenance.verifier.committedCount} from ${provenance.verifier.committedPath}`);
+  }
+  if (provenance.externalReview.committedCount > 0 && provenance.externalReview.committedPath) {
+    lines.push(
+      `- External review committed: ${provenance.externalReview.committedCount} from ${provenance.externalReview.committedPath}`,
+    );
+  }
+  for (const source of provenance.externalReview.runtimeSources) {
+    lines.push(`- External review runtime: ${source.count} from ${source.path}`);
+  }
+
+  return lines.length > 0 ? lines : ["- No active durable guardrails matched this review."];
+}
+
 export function renderLines(finding: Pick<LocalReviewFinding, "start" | "end">): string {
   if (finding.start == null) {
     return "?";
@@ -77,6 +95,7 @@ export async function writeLocalReviewArtifacts(args: {
     .map((result) => `## ${result.role}\n\n${result.rawOutput}`)
     .concat(args.verifierReport ? [`## verifier\n\n${args.verifierReport.rawOutput}`] : [])
     .join("\n\n");
+  await fs.mkdir(dirPath, { recursive: true });
 
   await fs.writeFile(
     summaryPath,
@@ -107,6 +126,9 @@ export async function writeLocalReviewArtifacts(args: {
       ...args.finalized.artifact.roleReports.map((report) =>
         `- ${report.role}: type=${report.reviewerType} confidence>=${report.confidenceThreshold.toFixed(2)} severity>=${report.minimumSeverity} actionable=${report.actionableFindingsCount}`,
       ),
+      "",
+      "## Durable guardrails",
+      ...summarizeGuardrailProvenance(args.finalized.artifact.guardrailProvenance),
       "",
       "## Actionable findings",
       ...(args.finalized.actionableFindings.length > 0
