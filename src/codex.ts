@@ -165,7 +165,8 @@ function phaseGuidance(state: RunState): string[] {
 }
 
 function suppressStaleRepairHandoff(journalExcerpt: string | null | undefined, state: RunState): string | null | undefined {
-  if (!journalExcerpt || state !== "local_review_fix") {
+  const liveBlockerStates = new Set<RunState>(["local_review_fix", "repairing_ci", "addressing_review"]);
+  if (!journalExcerpt || !liveBlockerStates.has(state)) {
     return journalExcerpt;
   }
 
@@ -224,8 +225,14 @@ function suppressStaleRepairHandoff(journalExcerpt: string | null | undefined, s
   for (const line of sanitized) {
     output.push(line);
     if (!insertedNotice && line.startsWith("### Current Handoff")) {
+      const suppressionReason =
+        state === "local_review_fix"
+          ? "active local-review repair"
+          : state === "repairing_ci"
+            ? "active CI repair"
+            : "active review-thread handling";
       output.push(
-        `- ${removedNextActionsLabel}: suppressed during active local-review repair; use the local-review blocker context unless an operator override note says otherwise.`,
+        `- ${removedNextActionsLabel}: suppressed during ${suppressionReason}; use the live blocker context unless an operator override note says otherwise.`,
       );
       insertedNotice = true;
     }
