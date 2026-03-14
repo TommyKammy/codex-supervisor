@@ -144,6 +144,23 @@ function trimProcessedReviewThreadIds(ids: string[]): string[] {
   return ids.slice(ids.length - MAX_PROCESSED_REVIEW_THREAD_IDS);
 }
 
+function processedReviewThreadKey(threadId: string, headSha: string): string {
+  return `${threadId}@${headSha}`;
+}
+
+function hasProcessedReviewThread(
+  record: Pick<IssueRunRecord, "processed_review_thread_ids" | "last_head_sha">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  threadId: string,
+): boolean {
+  const processedKeys = record.processed_review_thread_ids ?? [];
+  if (processedKeys.includes(processedReviewThreadKey(threadId, pr.headRefOid))) {
+    return true;
+  }
+
+  return record.last_head_sha === pr.headRefOid && processedKeys.includes(threadId);
+}
+
 function localReviewBlocksReady(config: SupervisorConfig, record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation">, pr: GitHubPullRequest): boolean {
   return config.localReviewPolicy === "block_ready" && localReviewHasActionableFindings(record, pr);
 }
@@ -834,11 +851,12 @@ function configuredBotReviewThreads(
 
 function pendingBotReviewThreads(
   config: SupervisorConfig,
-  record: Pick<IssueRunRecord, "processed_review_thread_ids">,
+  record: Pick<IssueRunRecord, "processed_review_thread_ids" | "last_head_sha">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
   reviewThreads: ReviewThread[],
 ): ReviewThread[] {
   return configuredBotReviewThreads(config, reviewThreads).filter(
-    (thread) => !record.processed_review_thread_ids.includes(thread.id),
+    (thread) => !hasProcessedReviewThread(record, pr, thread.id),
   );
 }
 
@@ -961,7 +979,7 @@ function inferFailureContext(
       return manualReviewContext;
     }
 
-    const reviewContext = buildReviewFailureContext(pendingBotReviewThreads(config, record, reviewThreads));
+    const reviewContext = buildReviewFailureContext(pendingBotReviewThreads(config, record, pr, reviewThreads));
     if (reviewContext) {
       return reviewContext;
     }
@@ -1256,7 +1274,7 @@ export function inferStateFromPullRequest(
 ): RunState {
   const manualThreads = manualReviewThreads(config, reviewThreads);
   const unresolvedBotThreads = configuredBotReviewThreads(config, reviewThreads);
-  const botThreads = pendingBotReviewThreads(config, record, reviewThreads);
+  const botThreads = pendingBotReviewThreads(config, record, pr, reviewThreads);
 
   if (pr.mergedAt || pr.state === "MERGED") {
     return "done";
@@ -2035,7 +2053,7 @@ export function formatDetailedStatus(args: {
       lines.push(`pending_checks=${pendingChecks}`);
     }
     lines.push(
-      `review_threads bot_pending=${pendingBotReviewThreads(config, activeRecord, reviewThreads).length} bot_unresolved=${configuredBotReviewThreads(config, reviewThreads).length} manual=${manualReviewThreads(config, reviewThreads).length}`,
+      `review_threads bot_pending=${pendingBotReviewThreads(config, activeRecord, pr, reviewThreads).length} bot_unresolved=${configuredBotReviewThreads(config, reviewThreads).length} manual=${manualReviewThreads(config, reviewThreads).length}`,
     );
   }
 
@@ -2978,7 +2996,7 @@ export class Supervisor {
     } = context;
 
     try {
-      const reviewThreadsToProcess = pendingBotReviewThreads(this.config, record, reviewThreads);
+      const reviewThreadsToProcess = pr ? pendingBotReviewThreads(this.config, record, pr, reviewThreads) : [];
 
       if (options.dryRun) {
         record = this.stateStore.touch(record, {
@@ -3236,6 +3254,7 @@ export class Supervisor {
 
       workspaceStatus = await getWorkspaceStatus(workspacePath, record.branch, this.config.defaultBranch);
       record = this.stateStore.touch(record, { last_head_sha: workspaceStatus.headSha });
+      const evaluatedReviewHeadSha = workspaceStatus.headSha;
 
       if ((workspaceStatus.remoteAhead > 0 || !workspaceStatus.remoteBranchExists) && !workspaceStatus.hasUncommittedChanges) {
         await pushBranch(workspacePath, record.branch, workspaceStatus.remoteBranchExists);
@@ -3255,10 +3274,20 @@ export class Supervisor {
 
       checks = pr ? await this.github.getChecks(pr.number) : [];
       reviewThreads = pr ? await this.github.getUnresolvedReviewThreads(pr.number) : [];
+      const currentPr = pr;
+      const processedReviewThreadKeysForCurrentHead =
+        preRunState === "addressing_review" && currentPr && currentPr.headRefOid === evaluatedReviewHeadSha
+          ? reviewThreadsToProcess.map((thread) => processedReviewThreadKey(thread.id, evaluatedReviewHeadSha))
+          : [];
       const processedReviewThreadIds =
-        preRunState === "addressing_review"
+        processedReviewThreadKeysForCurrentHead.length > 0
           ? trimProcessedReviewThreadIds(
-              Array.from(new Set([...record.processed_review_thread_ids, ...reviewThreadsToProcess.map((thread) => thread.id)])),
+              Array.from(
+                new Set([
+                  ...record.processed_review_thread_ids,
+                  ...processedReviewThreadKeysForCurrentHead,
+                ]),
+              ),
             )
           : record.processed_review_thread_ids;
       const postRunSnapshot = pr
