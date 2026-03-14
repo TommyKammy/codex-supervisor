@@ -15,7 +15,12 @@ import {
   shouldAutoRetryHandoffMissing,
   summarizeChecks,
 } from "./supervisor";
-import { formatRecoveryLog, reconcileRecoverableBlockedIssueStates, reconcileStaleActiveIssueReservation } from "./recovery-reconciliation";
+import {
+  formatRecoveryLog,
+  reconcileRecoverableBlockedIssueStates,
+  reconcileStaleActiveIssueReservation,
+  reconcileTrackedMergedButOpenIssues,
+} from "./recovery-reconciliation";
 import { StateStore } from "./state-store";
 import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig, SupervisorStateFile } from "./types";
 
@@ -520,6 +525,194 @@ test("reconcileStaleActiveIssueReservation clears a stale reservation and emits 
     formatRecoveryLog(recoveryEvents) ?? "",
     /recovery issue=#366 reason=stale_state_cleanup: cleared stale active reservation after issue lock and session lock were missing/,
   );
+});
+
+test("reconcileTrackedMergedButOpenIssues fetches missing issue snapshots for non-merging merged records", async () => {
+  const record = createRecord({
+    issue_number: 366,
+    state: "ready_to_merge",
+    pr_number: 191,
+    blocked_reason: null,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "366": record,
+    },
+  };
+  const mergedPr: GitHubPullRequest = {
+    number: 191,
+    title: "Merged implementation",
+    url: "https://example.test/pr/191",
+    state: "MERGED",
+    createdAt: "2026-03-13T00:10:00Z",
+    updatedAt: "2026-03-13T00:20:00Z",
+    isDraft: false,
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "merged-head-191",
+    mergeStateStatus: "CLEAN",
+    reviewDecision: "APPROVED",
+    mergedAt: "2026-03-13T00:20:00Z",
+    copilotReviewState: null,
+    copilotReviewRequestedAt: null,
+    copilotReviewArrivedAt: null,
+  };
+  const closedIssue: GitHubIssue = {
+    number: 366,
+    title: "Merged implementation issue",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:21:00Z",
+    url: "https://example.test/issues/366",
+    state: "CLOSED",
+  };
+
+  let getIssueCalls = 0;
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileTrackedMergedButOpenIssues(
+    {
+      getPullRequestIfExists: async () => mergedPr,
+      getIssue: async () => {
+        getIssueCalls += 1;
+        return closedIssue;
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getChecks: async () => [],
+      getMergedPullRequestsClosingIssue: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore,
+    state,
+    [],
+  );
+
+  assert.equal(getIssueCalls, 1);
+  assert.equal(saveCalls, 1);
+  assert.equal(state.issues["366"]?.state, "done");
+  assert.equal(state.issues["366"]?.pr_number, 191);
+  assert.equal(state.issues["366"]?.last_head_sha, "merged-head-191");
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "merged_pr_convergence: tracked PR #191 merged; marked issue #366 done",
+  ]);
+});
+
+test("reconcileTrackedMergedButOpenIssues does not rewrite recovery metadata when the done state is already current", async () => {
+  const original = createRecord({
+    issue_number: 366,
+    state: "done",
+    pr_number: 191,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_blocker_signature: null,
+    last_failure_signature: null,
+    timeout_retry_count: 0,
+    blocked_verification_retry_count: 0,
+    repeated_blocker_count: 0,
+    repeated_failure_signature_count: 0,
+    last_head_sha: "merged-head-191",
+    local_review_blocker_summary: null,
+    local_review_recommendation: null,
+    local_review_degraded: false,
+    external_review_head_sha: null,
+    external_review_misses_path: null,
+    external_review_matched_findings_count: 0,
+    external_review_near_match_findings_count: 0,
+    external_review_missed_findings_count: 0,
+    last_recovery_reason: "existing recovery reason",
+    last_recovery_at: "2026-03-13T00:30:00Z",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "366": original,
+    },
+  };
+  const mergedPr: GitHubPullRequest = {
+    number: 191,
+    title: "Merged implementation",
+    url: "https://example.test/pr/191",
+    state: "MERGED",
+    createdAt: "2026-03-13T00:10:00Z",
+    updatedAt: "2026-03-13T00:20:00Z",
+    isDraft: false,
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "merged-head-191",
+    mergeStateStatus: "CLEAN",
+    reviewDecision: "APPROVED",
+    mergedAt: "2026-03-13T00:20:00Z",
+    copilotReviewState: null,
+    copilotReviewRequestedAt: null,
+    copilotReviewArrivedAt: null,
+  };
+  const closedIssue: GitHubIssue = {
+    number: 366,
+    title: "Merged implementation issue",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:21:00Z",
+    url: "https://example.test/issues/366",
+    state: "CLOSED",
+  };
+
+  let touchCalls = 0;
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      touchCalls += 1;
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:35:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileTrackedMergedButOpenIssues(
+    {
+      getPullRequestIfExists: async () => mergedPr,
+      getIssue: async () => closedIssue,
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getChecks: async () => [],
+      getMergedPullRequestsClosingIssue: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore,
+    state,
+    [closedIssue],
+  );
+
+  assert.equal(touchCalls, 0);
+  assert.equal(saveCalls, 0);
+  assert.deepEqual(recoveryEvents, []);
+  assert.deepEqual(state.issues["366"], original);
 });
 
 test("runOnce recovers when post-codex refresh throws after leaving a dirty worktree", async () => {

@@ -239,7 +239,7 @@ export async function cleanupExpiredDoneWorkspaces(
 
 export async function reconcileMergedIssueClosures(
   github: RecoveryGitHubLike,
-  stateStore: StateStore,
+  stateStore: StateStoreLike,
   state: SupervisorStateFile,
   issues: GitHubIssue[],
 ): Promise<RecoveryEvent[]> {
@@ -309,7 +309,7 @@ export async function reconcileMergedIssueClosures(
 
 export async function reconcileTrackedMergedButOpenIssues(
   github: RecoveryGitHubLike,
-  stateStore: StateStore,
+  stateStore: StateStoreLike,
   state: SupervisorStateFile,
   issues: GitHubIssue[],
 ): Promise<RecoveryEvent[]> {
@@ -328,7 +328,7 @@ export async function reconcileTrackedMergedButOpenIssues(
     }
 
     let issue = issueByNumber.get(record.issue_number);
-    if (!issue && record.state === "merging") {
+    if (!issue) {
       issue = await github.getIssue(record.issue_number);
     }
 
@@ -346,13 +346,16 @@ export async function reconcileTrackedMergedButOpenIssues(
         pr_number: trackedPullRequest.number,
         last_head_sha: trackedPullRequest.headRefOid,
       });
-      const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
-      state.issues[String(record.issue_number)] = updated;
+      if (needsRecordUpdate(record, patch)) {
+        const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
+        state.issues[String(record.issue_number)] = updated;
+        changed = true;
+        recoveryEvents.push(recoveryEvent);
+      }
       if (state.activeIssueNumber === record.issue_number) {
         state.activeIssueNumber = null;
+        changed = true;
       }
-      changed = true;
-      recoveryEvents.push(recoveryEvent);
       continue;
     }
 
@@ -393,7 +396,7 @@ export async function reconcileTrackedMergedButOpenIssues(
 
 export async function reconcileStaleFailedIssueStates(
   github: RecoveryGitHubLike,
-  stateStore: StateStore,
+  stateStore: StateStoreLike,
   state: SupervisorStateFile,
   config: SupervisorConfig,
   issues: GitHubIssue[],
@@ -586,7 +589,7 @@ export async function reconcileRecoverableBlockedIssueStates(
 
 export async function reconcileParentEpicClosures(
   github: RecoveryGitHubLike,
-  stateStore: StateStore,
+  stateStore: StateStoreLike,
   state: SupervisorStateFile,
   issues: GitHubIssue[],
 ): Promise<void> {
