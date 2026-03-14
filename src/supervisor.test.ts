@@ -821,6 +821,127 @@ test("runOnce dry-run selects an issue and hydrates workspace and PR context bef
   assert.equal(reviewThreadCalls, 1);
 });
 
+test("executeCodexTurn does not consume attempts when the Codex session lock is already held", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 120;
+  const branch = branchName(fixture.config, issueNumber);
+  const workspacePath = path.join(fixture.workspaceRoot, `issue-${issueNumber}`);
+  const initialRecord = createRecord({
+    issue_number: issueNumber,
+    state: "stabilizing",
+    branch,
+    workspace: workspacePath,
+    journal_path: path.join(workspacePath, ".codex-supervisor/issue-journal.md"),
+    codex_session_id: "session-1",
+    attempt_count: 4,
+    implementation_attempt_count: 3,
+    repair_attempt_count: 1,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: initialRecord,
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const lockPath = path.join(path.dirname(fixture.stateFile), "locks", "sessions", "session-session-1.lock");
+  await fs.mkdir(path.dirname(lockPath), { recursive: true });
+  await fs.writeFile(
+    lockPath,
+    `${JSON.stringify({ pid: process.pid, label: "session-session-1", acquired_at: "2026-03-13T00:00:00Z" }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const supervisor = new Supervisor(fixture.config);
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Preserve attempt budget on session lock contention",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      executeCodexTurn: (context: {
+        state: SupervisorStateFile;
+        record: IssueRunRecord;
+        issue: GitHubIssue;
+        previousCodexSummary: string | null;
+        previousError: string | null;
+        workspacePath: string;
+        journalPath: string;
+        syncJournal: (record: IssueRunRecord) => Promise<void>;
+        memoryArtifacts: {
+          alwaysReadFiles: string[];
+          onDemandFiles: string[];
+          contextIndexPath: string;
+          agentsPath: string;
+        };
+        workspaceStatus: {
+          branch: string;
+          headSha: string;
+          hasUncommittedChanges: boolean;
+          baseAhead: number;
+          baseBehind: number;
+          remoteBranchExists: boolean;
+          remoteAhead: number;
+          remoteBehind: number;
+        };
+        pr: GitHubPullRequest | null;
+        checks: PullRequestCheck[];
+        reviewThreads: ReviewThread[];
+        options: { dryRun: boolean };
+      }) => Promise<{ kind: "returned"; message: string }>;
+    }
+  ).executeCodexTurn({
+    state,
+    record: initialRecord,
+    issue,
+    previousCodexSummary: null,
+    previousError: null,
+    workspacePath,
+    journalPath: initialRecord.journal_path ?? path.join(workspacePath, ".codex-supervisor/issue-journal.md"),
+    syncJournal: async () => {
+      throw new Error("syncJournal should not run when the session lock is held");
+    },
+    memoryArtifacts: {
+      alwaysReadFiles: [],
+      onDemandFiles: [],
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+    },
+    workspaceStatus: {
+      branch,
+      headSha: "head-120",
+      hasUncommittedChanges: false,
+      baseAhead: 0,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    },
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    options: { dryRun: false },
+  });
+
+  assert.equal(result.kind, "returned");
+  assert.match(result.message, /Skipped issue #120: lock held by pid/);
+  assert.equal(state.issues[String(issueNumber)]?.attempt_count, 4);
+  assert.equal(state.issues[String(issueNumber)]?.implementation_attempt_count, 3);
+  assert.equal(state.issues[String(issueNumber)]?.repair_attempt_count, 1);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  assert.equal(persisted.issues[String(issueNumber)]?.attempt_count, 4);
+  assert.equal(persisted.issues[String(issueNumber)]?.implementation_attempt_count, 3);
+  assert.equal(persisted.issues[String(issueNumber)]?.repair_attempt_count, 1);
+});
+
 test("runOnce returns no matching issue when no runnable candidate is available", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {
