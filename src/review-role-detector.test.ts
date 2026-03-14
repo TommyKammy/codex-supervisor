@@ -28,6 +28,16 @@ function createConfig(repoPath: string, overrides: Partial<SupervisorConfig> = {
     localReviewRoles: [],
     localReviewArtifactDir: "/tmp/reviews",
     localReviewConfidenceThreshold: 0.7,
+    localReviewReviewerThresholds: {
+      generic: {
+        confidenceThreshold: 0.7,
+        minimumSeverity: "low",
+      },
+      specialist: {
+        confidenceThreshold: 0.7,
+        minimumSeverity: "low",
+      },
+    },
     localReviewPolicy: "block_ready",
     localReviewHighSeverityAction: "retry",
     reviewBotLogins: [],

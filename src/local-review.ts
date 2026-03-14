@@ -4,6 +4,7 @@ import { loadRelevantExternalReviewMissPatterns } from "./external-review-misses
 import { ensureDir, nowIso, truncate } from "./utils";
 import { compareRef } from "./local-review-prompt";
 import { dedupeFindings, finalizeLocalReview } from "./local-review-finalize";
+import { findingMeetsReviewerThreshold, reviewerTypeForRole } from "./local-review-thresholds";
 import { reviewDir, writeLocalReviewArtifacts } from "./local-review-artifacts";
 import { runRoleReview, runVerifierReview } from "./local-review-runner";
 import { GitHubIssue, GitHubPullRequest, SupervisorConfig } from "./types";
@@ -159,7 +160,14 @@ async function runLocalReviewVerifier(args: {
   const rawActionableHighSeverityFindings = dedupeFindings(
     args.roleResults
       .flatMap((result) => result.findings)
-      .filter((finding) => finding.confidence >= args.config.localReviewConfidenceThreshold && finding.severity === "high"),
+      .filter((finding) =>
+        finding.severity === "high" &&
+        findingMeetsReviewerThreshold({
+          finding,
+          reviewerType: reviewerTypeForRole({ role: finding.role }),
+          config: args.config,
+        }),
+      ),
   );
 
   if (rawActionableHighSeverityFindings.length === 0) {

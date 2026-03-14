@@ -44,6 +44,16 @@
   "localReviewRoles": [],
   "localReviewArtifactDir": "./.local/reviews",
   "localReviewConfidenceThreshold": 0.7,
+  "localReviewReviewerThresholds": {
+    "generic": {
+      "confidenceThreshold": 0.7,
+      "minimumSeverity": "low"
+    },
+    "specialist": {
+      "confidenceThreshold": 0.7,
+      "minimumSeverity": "low"
+    }
+  },
   "localReviewPolicy": "block_merge",
   "localReviewHighSeverityAction": "blocked",
   "reviewBotLogins": [

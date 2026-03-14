@@ -438,7 +438,7 @@ What it does:
 - keeps older `head-<sha>` artifacts for history; `status` shows `head`, `reviewed_head_sha`, and `pr_head_sha` so you can see whether the latest actionable artifact still matches the PR
 - runs a verifier pass for actionable high-severity findings before stronger high-severity gates react
 - deduplicates findings
-- keeps only findings above the configured confidence threshold as actionable
+- keeps only findings that meet the configured reviewer-type confidence/severity thresholds as actionable
 
 What it does not do by default:
 
@@ -447,6 +447,8 @@ What it does not do by default:
 - replace GitHub branch protection
 
 The artifacts keep raw actionable findings separate from verifier-confirmed findings. `block_ready` and `block_merge` still respond to raw actionable findings. `localReviewHighSeverityAction` only escalates on verifier-confirmed high-severity findings, which reduces false positives before the supervisor triggers a repair retry or manual block.
+
+Baseline `reviewer` and `explorer` turns are treated as `generic` reviewers. Every other role is treated as a `specialist`. You can tune these two reviewer types independently with `localReviewReviewerThresholds`: each type has its own `confidenceThreshold` and `minimumSeverity`. Leaving that field unset preserves the old behavior by inheriting `localReviewConfidenceThreshold` and a `low` severity floor for both types.
 
 For most solo-operator setups, prefer `localReviewHighSeverityAction: "blocked"` so verifier-confirmed high-severity findings stop the merge and force an explicit decision. Switch to `retry` only when you intentionally want the supervisor to launch another repair pass automatically.
 

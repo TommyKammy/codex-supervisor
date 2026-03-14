@@ -4,6 +4,8 @@ import {
   CopilotReviewTimeoutAction,
   LocalReviewHighSeverityAction,
   LocalReviewPolicy,
+  LocalReviewReviewerThresholdConfig,
+  LocalReviewReviewerType,
   ReasoningEffort,
   RunState,
   SupervisorConfig,
@@ -56,6 +58,7 @@ const VALID_REASONING_EFFORTS = new Set<ReasoningEffort>(["none", "low", "medium
 const VALID_LOCAL_REVIEW_POLICIES = new Set<LocalReviewPolicy>(["advisory", "block_ready", "block_merge"]);
 const VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS = new Set<LocalReviewHighSeverityAction>(["retry", "blocked"]);
 const VALID_COPILOT_REVIEW_TIMEOUT_ACTIONS = new Set<CopilotReviewTimeoutAction>(["continue", "block"]);
+const VALID_LOCAL_REVIEW_MINIMUM_SEVERITIES = new Set<LocalReviewReviewerThresholdConfig["minimumSeverity"]>(["low", "medium", "high"]);
 const VALID_RUN_STATES = new Set<RunState>([
   "queued",
   "planning",
@@ -76,6 +79,46 @@ const VALID_RUN_STATES = new Set<RunState>([
   "blocked",
   "failed",
 ]);
+
+function parseReviewerThresholdConfig(
+  value: unknown,
+  defaults: LocalReviewReviewerThresholdConfig,
+): LocalReviewReviewerThresholdConfig {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return defaults;
+  }
+
+  const raw = value as Record<string, unknown>;
+  return {
+    confidenceThreshold:
+      typeof raw.confidenceThreshold === "number" &&
+      Number.isFinite(raw.confidenceThreshold) &&
+      raw.confidenceThreshold >= 0 &&
+      raw.confidenceThreshold <= 1
+        ? raw.confidenceThreshold
+        : defaults.confidenceThreshold,
+    minimumSeverity:
+      typeof raw.minimumSeverity === "string" &&
+      VALID_LOCAL_REVIEW_MINIMUM_SEVERITIES.has(raw.minimumSeverity as LocalReviewReviewerThresholdConfig["minimumSeverity"])
+        ? (raw.minimumSeverity as LocalReviewReviewerThresholdConfig["minimumSeverity"])
+        : defaults.minimumSeverity,
+  };
+}
+
+function parseReviewerThresholds(
+  value: unknown,
+  defaults: Record<LocalReviewReviewerType, LocalReviewReviewerThresholdConfig>,
+): Record<LocalReviewReviewerType, LocalReviewReviewerThresholdConfig> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return defaults;
+  }
+
+  const raw = value as Record<string, unknown>;
+  return {
+    generic: parseReviewerThresholdConfig(raw.generic, defaults.generic),
+    specialist: parseReviewerThresholdConfig(raw.specialist, defaults.specialist),
+  };
+}
 
 function parseReasoningPolicy(value: unknown): Partial<Record<RunState, ReasoningEffort>> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -103,6 +146,13 @@ export function loadConfig(configPath?: string): SupervisorConfig {
 
   const raw = parseJson<Record<string, unknown>>(fs.readFileSync(resolvedPath, "utf8"), resolvedPath);
   const configDir = path.dirname(resolvedPath);
+  const defaultLocalReviewConfidenceThreshold =
+    typeof raw.localReviewConfidenceThreshold === "number" &&
+    Number.isFinite(raw.localReviewConfidenceThreshold) &&
+    raw.localReviewConfidenceThreshold >= 0 &&
+    raw.localReviewConfidenceThreshold <= 1
+      ? raw.localReviewConfidenceThreshold
+      : 0.7;
   const config: SupervisorConfig = {
     repoPath: resolveMaybeRelative(configDir, assertString(raw.repoPath, "repoPath")),
     repoSlug: assertPattern(assertString(raw.repoSlug, "repoSlug"), "repoSlug", /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
@@ -168,13 +218,17 @@ export function loadConfig(configPath?: string): SupervisorConfig {
       typeof raw.localReviewArtifactDir === "string" && raw.localReviewArtifactDir.trim() !== ""
         ? resolveMaybeRelative(configDir, raw.localReviewArtifactDir)
         : path.join(path.dirname(resolveMaybeRelative(configDir, assertString(raw.stateFile, "stateFile"))), "reviews"),
-    localReviewConfidenceThreshold:
-      typeof raw.localReviewConfidenceThreshold === "number" &&
-      Number.isFinite(raw.localReviewConfidenceThreshold) &&
-      raw.localReviewConfidenceThreshold >= 0 &&
-      raw.localReviewConfidenceThreshold <= 1
-        ? raw.localReviewConfidenceThreshold
-        : 0.7,
+    localReviewConfidenceThreshold: defaultLocalReviewConfidenceThreshold,
+    localReviewReviewerThresholds: parseReviewerThresholds(raw.localReviewReviewerThresholds, {
+      generic: {
+        confidenceThreshold: defaultLocalReviewConfidenceThreshold,
+        minimumSeverity: "low",
+      },
+      specialist: {
+        confidenceThreshold: defaultLocalReviewConfidenceThreshold,
+        minimumSeverity: "low",
+      },
+    }),
     localReviewPolicy:
       typeof raw.localReviewPolicy === "string" && VALID_LOCAL_REVIEW_POLICIES.has(raw.localReviewPolicy as LocalReviewPolicy)
         ? (raw.localReviewPolicy as LocalReviewPolicy)

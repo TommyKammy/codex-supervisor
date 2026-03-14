@@ -165,6 +165,88 @@ test("loadConfig defaults localReviewHighSeverityAction to blocked", async (t) =
   assert.equal(config.localReviewHighSeverityAction, "blocked");
 });
 
+test("loadConfig defaults reviewer-type local review thresholds from the global confidence threshold", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      localReviewConfidenceThreshold: 0.72,
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+
+  assert.deepEqual(config.localReviewReviewerThresholds, {
+    generic: {
+      confidenceThreshold: 0.72,
+      minimumSeverity: "low",
+    },
+    specialist: {
+      confidenceThreshold: 0.72,
+      minimumSeverity: "low",
+    },
+  });
+});
+
+test("loadConfig accepts reviewer-type local review thresholds", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      localReviewConfidenceThreshold: 0.7,
+      localReviewReviewerThresholds: {
+        generic: {
+          confidenceThreshold: 0.9,
+          minimumSeverity: "high",
+        },
+        specialist: {
+          confidenceThreshold: 0.8,
+          minimumSeverity: "medium",
+        },
+      },
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+
+  assert.deepEqual(config.localReviewReviewerThresholds, {
+    generic: {
+      confidenceThreshold: 0.9,
+      minimumSeverity: "high",
+    },
+    specialist: {
+      confidenceThreshold: 0.8,
+      minimumSeverity: "medium",
+    },
+  });
+});
+
 test("shipped example configs recommend block_merge for local review gating", async () => {
   const rootDir = path.resolve(__dirname, "..");
   const examplePaths = [

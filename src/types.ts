@@ -25,6 +25,12 @@ export type LocalReviewPolicy = "advisory" | "block_ready" | "block_merge";
 export type LocalReviewHighSeverityAction = "retry" | "blocked";
 export type CopilotReviewState = "not_requested" | "requested" | "arrived";
 export type CopilotReviewTimeoutAction = "continue" | "block";
+export type LocalReviewReviewerType = "generic" | "specialist";
+
+export interface LocalReviewReviewerThresholdConfig {
+  confidenceThreshold: number;
+  minimumSeverity: "low" | "medium" | "high";
+}
 
 export interface SupervisorConfig {
   repoPath: string;
@@ -50,6 +56,7 @@ export interface SupervisorConfig {
   localReviewRoles: string[];
   localReviewArtifactDir: string;
   localReviewConfidenceThreshold: number;
+  localReviewReviewerThresholds: Record<LocalReviewReviewerType, LocalReviewReviewerThresholdConfig>;
   localReviewPolicy: LocalReviewPolicy;
   localReviewHighSeverityAction: LocalReviewHighSeverityAction;
   reviewBotLogins: string[];
