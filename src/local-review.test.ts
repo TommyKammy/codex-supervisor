@@ -922,6 +922,39 @@ test("buildRolePrompt teaches reviewer to avoid drift-prone line coupling unless
   );
 });
 
+test("buildRolePrompt teaches reviewer to anchor findings to the actual behavioral boundary", () => {
+  const prompt = buildRolePrompt({
+    repoSlug: "owner/repo",
+    issue: {
+      number: 204,
+      title: "Anchor reviewer guidance to decisive boundaries",
+      body: "",
+      url: "https://example.test/issues/204",
+      createdAt: "2026-03-14T00:00:00Z",
+      updatedAt: "2026-03-14T00:00:00Z",
+      labels: [],
+    },
+    branch: "codex/issue-204",
+    workspacePath: "/tmp/workspaces/issue-204",
+    defaultBranch: "main",
+    pr: createPullRequest({
+      number: 204,
+      url: "https://example.test/pr/204",
+      headRefOid: "head204",
+    }),
+    role: "reviewer",
+    alwaysReadFiles: [],
+    onDemandFiles: [],
+    confidenceThreshold: 0.7,
+    priorMissPatterns: [],
+  });
+
+  assert.match(
+    prompt,
+    /Anchor findings and promoted guardrails to the decisive behavioral boundary or invariant, not an earlier or merely adjacent implementation location\./,
+  );
+});
+
 test("buildRolePrompt teaches reviewer to flag unrelated cleanup but allow required support changes", () => {
   const prompt = buildRolePrompt({
     repoSlug: "owner/repo",
@@ -1141,6 +1174,10 @@ test("buildVerifierPrompt distinguishes drift-prone and legitimate line-sensitiv
   assert.match(
     prompt,
     /When a test or guardrail could anchor to stable behavior, identifiers, or nearby intent instead of a hard-coded line number, prefer that more stable reading\./,
+  );
+  assert.match(
+    prompt,
+    /Prefer the real transition or invariant boundary under review over a nearby setup step or incidental code location when deciding whether a finding still holds\./,
   );
 });
 
