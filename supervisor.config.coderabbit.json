@@ -1,0 +1,84 @@
+{
+  "repoPath": "/absolute/path/to/managed-repo",
+  "repoSlug": "OWNER/REPO",
+  "defaultBranch": "main",
+  "workspaceRoot": "/absolute/path/to/worktrees",
+  "stateBackend": "json",
+  "stateFile": "./.local/state.json",
+  "stateBootstrapFile": "",
+  "codexBinary": "/absolute/path/to/codex",
+  "codexModelStrategy": "inherit",
+  "codexModel": "",
+  "codexReasoningEffortByState": {
+    "planning": "low",
+    "reproducing": "medium",
+    "implementing": "high",
+    "local_review_fix": "medium",
+    "stabilizing": "medium",
+    "draft_pr": "low",
+    "local_review": "low",
+    "repairing_ci": "medium",
+    "resolving_conflict": "high",
+    "addressing_review": "medium"
+  },
+  "codexReasoningEscalateOnRepeatedFailure": true,
+  "sharedMemoryFiles": [
+    "README.md",
+    "docs/architecture.md",
+    "docs/constitution.md",
+    "docs/workflow.md",
+    "docs/decisions.md"
+  ],
+  "gsdEnabled": false,
+  "gsdAutoInstall": false,
+  "gsdInstallScope": "global",
+  "gsdCodexConfigDir": "",
+  "gsdPlanningFiles": [
+    "PROJECT.md",
+    "REQUIREMENTS.md",
+    "ROADMAP.md",
+    "STATE.md"
+  ],
+  "localReviewEnabled": false,
+  "localReviewAutoDetect": true,
+  "localReviewRoles": [],
+  "localReviewArtifactDir": "./.local/reviews",
+  "localReviewConfidenceThreshold": 0.7,
+  "localReviewReviewerThresholds": {
+    "generic": {
+      "confidenceThreshold": 0.7,
+      "minimumSeverity": "low"
+    },
+    "specialist": {
+      "confidenceThreshold": 0.7,
+      "minimumSeverity": "low"
+    }
+  },
+  "localReviewPolicy": "block_merge",
+  "localReviewHighSeverityAction": "blocked",
+  "reviewBotLogins": [
+    "coderabbitai",
+    "coderabbitai[bot]"
+  ],
+  "humanReviewBlocksMerge": true,
+  "issueJournalRelativePath": ".codex-supervisor/issue-journal.md",
+  "issueJournalMaxChars": 6000,
+  "issueLabel": "codex",
+  "skipTitlePrefixes": [],
+  "branchPrefix": "codex/issue-",
+  "pollIntervalSeconds": 120,
+  "copilotReviewWaitMinutes": 10,
+  "copilotReviewTimeoutAction": "continue",
+  "codexExecTimeoutMinutes": 30,
+  "maxCodexAttemptsPerIssue": 30,
+  "maxImplementationAttemptsPerIssue": 30,
+  "maxRepairAttemptsPerIssue": 30,
+  "timeoutRetryLimit": 2,
+  "blockedVerificationRetryLimit": 3,
+  "sameBlockerRepeatLimit": 2,
+  "sameFailureSignatureRepeatLimit": 3,
+  "maxDoneWorkspaces": 24,
+  "cleanupDoneWorkspacesAfterHours": 24,
+  "mergeMethod": "squash",
+  "draftPrAfterAttempt": 1
+}

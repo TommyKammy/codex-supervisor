@@ -251,6 +251,9 @@ test("shipped example configs recommend block_merge for local review gating", as
   const rootDir = path.resolve(__dirname, "..");
   const examplePaths = [
     path.join(rootDir, "supervisor.config.example.json"),
+    path.join(rootDir, "supervisor.config.copilot.json"),
+    path.join(rootDir, "supervisor.config.codex.json"),
+    path.join(rootDir, "supervisor.config.coderabbit.json"),
     path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
   ];
 
@@ -264,6 +267,9 @@ test("shipped example configs recommend blocked for high-severity local review f
   const rootDir = path.resolve(__dirname, "..");
   const examplePaths = [
     path.join(rootDir, "supervisor.config.example.json"),
+    path.join(rootDir, "supervisor.config.copilot.json"),
+    path.join(rootDir, "supervisor.config.codex.json"),
+    path.join(rootDir, "supervisor.config.coderabbit.json"),
     path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
   ];
 
@@ -273,6 +279,26 @@ test("shipped example configs recommend blocked for high-severity local review f
       raw.localReviewHighSeverityAction,
       "blocked",
       `${path.relative(rootDir, examplePath)} should recommend blocked for high-severity local review findings`,
+    );
+  }
+});
+
+test("shipped config profiles declare the intended review bot logins", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  const expectedProfiles = new Map<string, string[]>([
+    ["supervisor.config.example.json", ["copilot-pull-request-reviewer"]],
+    ["supervisor.config.copilot.json", ["copilot-pull-request-reviewer"]],
+    ["supervisor.config.codex.json", ["chatgpt-codex-connector"]],
+    ["supervisor.config.coderabbit.json", ["coderabbitai", "coderabbitai[bot]"]],
+  ]);
+
+  for (const [relativePath, expectedReviewBotLogins] of expectedProfiles) {
+    const profilePath = path.join(rootDir, relativePath);
+    const raw = JSON.parse(await fs.readFile(profilePath, "utf8")) as { reviewBotLogins?: unknown };
+    assert.deepEqual(
+      raw.reviewBotLogins,
+      expectedReviewBotLogins,
+      `${relativePath} should declare the expected reviewBotLogins`,
     );
   }
 });
