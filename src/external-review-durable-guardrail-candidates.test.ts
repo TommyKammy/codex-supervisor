@@ -238,6 +238,49 @@ test("toDurableGuardrailCandidates allows unanchored actionable top-level review
   ]);
 });
 
+test("toDurableGuardrailCandidates restricts file-scoped top-level reviews to reviewer_rubric", () => {
+  const candidates = toDurableGuardrailCandidates({
+    issueNumber: 85,
+    prNumber: 144,
+    branch: "codex/issue-85",
+    headSha: "deadbeefcafebabe",
+    sourceArtifactPath: "/tmp/external-review-misses-head-deadbeef.json",
+    localReviewSummaryPath: "/tmp/head-deadbeef.md",
+    localReviewFindingsPath: "/tmp/head-deadbeef.json",
+    finding: createMissFinding({
+      sourceKind: "top_level_review",
+      sourceId: "review-7",
+      sourceUrl: "https://example.test/pr/1#pullrequestreview-7",
+      threadId: null,
+      severity: "high",
+      url: "https://example.test/pr/1#pullrequestreview-7",
+    }),
+  });
+
+  assert.deepEqual(candidates.map((candidate) => candidate.category), ["reviewer_rubric"]);
+});
+
+test("toDurableGuardrailCandidates does not durably promote issue comments by default", () => {
+  const candidates = toDurableGuardrailCandidates({
+    issueNumber: 85,
+    prNumber: 144,
+    branch: "codex/issue-85",
+    headSha: "deadbeefcafebabe",
+    sourceArtifactPath: "/tmp/external-review-misses-head-deadbeef.json",
+    localReviewSummaryPath: "/tmp/head-deadbeef.md",
+    localReviewFindingsPath: "/tmp/head-deadbeef.json",
+    finding: createMissFinding({
+      sourceKind: "issue_comment",
+      sourceId: "issue-comment-7",
+      sourceUrl: "https://example.test/pr/1#issuecomment-7",
+      threadId: null,
+      url: "https://example.test/pr/1#issuecomment-7",
+    }),
+  });
+
+  assert.deepEqual(candidates, []);
+});
+
 test("toDurableGuardrailCandidates keeps unanchored durable ids stable across PR-local source ids", () => {
   const findingA = createMissFinding({
     sourceKind: "top_level_review",
