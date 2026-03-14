@@ -8,21 +8,9 @@ import {
   VERIFIER_GUARDRAILS_PATH,
 } from "./committed-guardrails";
 import {
-  buildCodexPrompt,
-  buildCodexResumePrompt,
-  extractBlockedReason,
-  extractFailureSignature,
-  extractStateHint,
-  runCodexTurn,
-  shouldUseCompactResumePrompt,
 } from "./codex";
 import { loadConfig } from "./config";
-import {
-  collectExternalReviewSignals,
-  ExternalReviewMissContext,
-  loadRelevantExternalReviewMissPatterns,
-  writeExternalReviewMissArtifact,
-} from "./external-review-misses";
+import { loadRelevantExternalReviewMissPatterns } from "./external-review-misses";
 import { GitHubClient } from "./github";
 import {
   findBlockingIssue,
@@ -33,13 +21,11 @@ import {
 } from "./issue-metadata";
 import { describeGsdIntegration } from "./gsd";
 import {
-  hasMeaningfulJournalHandoff,
   issueJournalPath,
   readIssueJournal,
   summarizeIssueJournalHandoff,
 } from "./journal";
 import { acquireFileLock, inspectFileLock, LockHandle } from "./lock";
-import { localReviewHasActionableFindings, LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY, runLocalReview, shouldRunLocalReview } from "./local-review";
 import { reviewDir } from "./local-review-artifacts";
 import {
   isRestartRunOnce,
@@ -48,6 +34,27 @@ import {
   prepareIssueExecutionContext,
   PreparedIssueExecutionContext,
 } from "./run-once-issue-preparation";
+import {
+  CodexTurnContext,
+  CodexTurnResult,
+  CodexTurnShortCircuit,
+  executeCodexTurnPhase,
+  handlePostTurnPullRequestTransitionsPhase,
+  loadLocalReviewRepairContext,
+  localReviewBlocksMerge,
+  localReviewBlocksReady,
+  localReviewFailureContext,
+  localReviewFailureSummary,
+  localReviewHighSeverityNeedsBlock,
+  localReviewHighSeverityNeedsRetry,
+  localReviewRetryLoopCandidate,
+  localReviewRetryLoopStalled,
+  localReviewStallFailureContext,
+  nextExternalReviewMissPatch,
+  nextLocalReviewSignatureTracking,
+  PostTurnPullRequestContext,
+  PostTurnPullRequestResult,
+} from "./run-once-turn-execution";
 import {
   resolveRunnableIssueContext as resolveIssueSelectionContext,
   RestartRunOnce as SelectionRestartRunOnce,
@@ -68,7 +75,7 @@ import {
   SupervisorStateFile,
   WorkspaceStatus,
 } from "./types";
-import { nowIso, truncate, isTerminalState, hoursSince, parseJson } from "./utils";
+import { nowIso, truncate, isTerminalState, hoursSince } from "./utils";
 import { loadRelevantVerifierGuardrails } from "./verifier-guardrails";
 import {
   branchNameForIssue,
@@ -78,6 +85,12 @@ import {
   isSafeCleanupTarget,
   pushBranch,
 } from "./workspace";
+
+export {
+  loadLocalReviewRepairContext,
+  localReviewHighSeverityNeedsRetry,
+  nextExternalReviewMissPatch,
+} from "./run-once-turn-execution";
 
 const MAX_PROCESSED_REVIEW_THREAD_IDS = 200;
 const COPILOT_REVIEW_PROPAGATION_GRACE_MS = 5_000;
@@ -116,296 +129,6 @@ function hasProcessedReviewThread(
   }
 
   return record.last_head_sha === pr.headRefOid && processedKeys.includes(threadId);
-}
-
-function localReviewBlocksReady(config: SupervisorConfig, record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation">, pr: GitHubPullRequest): boolean {
-  return config.localReviewPolicy === "block_ready" && localReviewHasActionableFindings(record, pr);
-}
-
-function localReviewBlocksMerge(config: SupervisorConfig, record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation">, pr: GitHubPullRequest): boolean {
-  return !pr.isDraft && config.localReviewPolicy === "block_merge" && localReviewHasActionableFindings(record, pr);
-}
-
-export function nextExternalReviewMissPatch(
-  record: Pick<
-    IssueRunRecord,
-    | "external_review_head_sha"
-    | "external_review_misses_path"
-    | "external_review_matched_findings_count"
-    | "external_review_near_match_findings_count"
-    | "external_review_missed_findings_count"
-  >,
-  pr: Pick<GitHubPullRequest, "headRefOid"> | null,
-  context: ExternalReviewMissContext | null,
-): Partial<IssueRunRecord> {
-  if (context && pr) {
-    return {
-      external_review_head_sha: pr.headRefOid,
-      external_review_misses_path: context.artifactPath,
-      external_review_matched_findings_count: context.matchedCount,
-      external_review_near_match_findings_count: context.nearMatchCount,
-      external_review_missed_findings_count: context.missedCount,
-    };
-  }
-
-  if (pr && record.external_review_head_sha && record.external_review_head_sha !== pr.headRefOid) {
-    return {
-      external_review_head_sha: null,
-      external_review_misses_path: null,
-      external_review_matched_findings_count: 0,
-      external_review_near_match_findings_count: 0,
-      external_review_missed_findings_count: 0,
-    };
-  }
-
-  return {};
-}
-
-export function localReviewHighSeverityNeedsRetry(
-  config: SupervisorConfig,
-  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_verified_max_severity">,
-  pr: GitHubPullRequest,
-): boolean {
-  return (
-    config.localReviewPolicy !== "advisory" &&
-    record.local_review_head_sha === pr.headRefOid &&
-    record.local_review_verified_max_severity === "high" &&
-    config.localReviewHighSeverityAction === "retry"
-  );
-}
-
-interface LocalReviewRepairArtifact {
-  branch?: string;
-  headSha?: string;
-  actionableFindings?: Array<{ file?: string | null }>;
-  rootCauseSummaries?: Array<{
-    severity?: "low" | "medium" | "high";
-    summary?: string;
-    file?: string | null;
-    start?: number | null;
-    end?: number | null;
-  }>;
-}
-
-export async function loadLocalReviewRepairContext(summaryPath: string | null, workspacePath?: string) {
-  if (!summaryPath) {
-    return null;
-  }
-
-  const findingsPath =
-    path.extname(summaryPath) === ".md"
-      ? `${summaryPath.slice(0, -3)}.json`
-      : null;
-  if (!findingsPath) {
-    return null;
-  }
-
-  let raw: string;
-  try {
-    raw = await fs.promises.readFile(findingsPath, "utf8");
-  } catch (error) {
-    const maybeErr = error as NodeJS.ErrnoException;
-    if (maybeErr.code === "ENOENT") {
-      return null;
-    }
-
-    throw error;
-  }
-
-  const artifact = parseJson<LocalReviewRepairArtifact>(raw, findingsPath);
-  const rootCauses = (artifact.rootCauseSummaries ?? [])
-    .filter((rootCause) => typeof rootCause.summary === "string" && rootCause.summary.trim() !== "")
-    .slice(0, 5)
-    .map((rootCause) => {
-      const start = typeof rootCause.start === "number" ? rootCause.start : null;
-      const end = typeof rootCause.end === "number" ? rootCause.end : start;
-      return {
-        severity: rootCause.severity ?? "medium",
-        summary: rootCause.summary!.trim(),
-        file: rootCause.file ?? null,
-        lines:
-          start == null
-            ? null
-            : end != null && end !== start
-              ? `${start}-${end}`
-              : `${start}`,
-      };
-    });
-  const relevantFiles = [...new Set([
-    ...rootCauses.map((rootCause) => rootCause.file).filter((filePath): filePath is string => Boolean(filePath)),
-    ...(artifact.actionableFindings ?? [])
-      .map((finding) => (typeof finding.file === "string" && finding.file.trim() !== "" ? finding.file : null))
-      .filter((filePath): filePath is string => Boolean(filePath)),
-  ])].slice(0, 10);
-  const priorMissPatterns =
-    workspacePath && typeof artifact.branch === "string" && typeof artifact.headSha === "string"
-      ? await loadRelevantExternalReviewMissPatterns({
-          artifactDir: path.dirname(summaryPath),
-          branch: artifact.branch,
-          currentHeadSha: artifact.headSha,
-          changedFiles: relevantFiles,
-          limit: 3,
-          workspacePath,
-        })
-      : [];
-  const verifierGuardrails =
-    workspacePath
-      ? await loadRelevantVerifierGuardrails({
-          workspacePath,
-          changedFiles: relevantFiles,
-          limit: 3,
-        })
-      : [];
-
-  return {
-    summaryPath,
-    findingsPath,
-    relevantFiles,
-    rootCauses,
-    priorMissPatterns,
-    verifierGuardrails,
-  };
-}
-
-function localReviewRetryLoopCandidate(
-  config: SupervisorConfig,
-  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_verified_max_severity" | "repeated_local_review_signature_count" | "processed_review_thread_ids">,
-  pr: GitHubPullRequest,
-  checks: PullRequestCheck[],
-  reviewThreads: ReviewThread[],
-): boolean {
-  const checkSummary = summarizeChecks(checks);
-  const manualThreads = manualReviewThreads(config, reviewThreads);
-  const unresolvedBotThreads = configuredBotReviewThreads(config, reviewThreads);
-  return (
-    localReviewHighSeverityNeedsRetry(config, record, pr) &&
-    !checkSummary.hasFailing &&
-    !checkSummary.hasPending &&
-    unresolvedBotThreads.length === 0 &&
-    (!config.humanReviewBlocksMerge || manualThreads.length === 0) &&
-    !mergeConflictDetected(pr)
-  );
-}
-
-function localReviewRetryLoopStalled(
-  config: SupervisorConfig,
-  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_verified_max_severity" | "repeated_local_review_signature_count" | "processed_review_thread_ids">,
-  pr: GitHubPullRequest,
-  checks: PullRequestCheck[],
-  reviewThreads: ReviewThread[],
-): boolean {
-  return (
-    localReviewRetryLoopCandidate(config, record, pr, checks, reviewThreads) &&
-    record.repeated_local_review_signature_count >= config.sameFailureSignatureRepeatLimit
-  );
-}
-
-function localReviewHighSeverityNeedsBlock(
-  config: SupervisorConfig,
-  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_verified_max_severity">,
-  pr: GitHubPullRequest,
-): boolean {
-  return (
-    config.localReviewPolicy !== "advisory" &&
-    record.local_review_head_sha === pr.headRefOid &&
-    record.local_review_verified_max_severity === "high" &&
-    config.localReviewHighSeverityAction === "blocked"
-  );
-}
-
-function localReviewFailureSummary(
-  record: Pick<
-    IssueRunRecord,
-    | "local_review_findings_count"
-    | "local_review_root_cause_count"
-    | "local_review_max_severity"
-    | "local_review_verified_findings_count"
-    | "local_review_verified_max_severity"
-    | "local_review_degraded"
-  >,
-): string {
-  if (record.local_review_degraded) {
-    return "Local review completed in a degraded state.";
-  }
-
-  return `Local review found ${record.local_review_findings_count} actionable finding(s) across ${record.local_review_root_cause_count} root cause(s); max severity=${record.local_review_max_severity ?? "unknown"}; verified high-severity findings=${record.local_review_verified_findings_count}; verified max severity=${record.local_review_verified_max_severity ?? "none"}.`;
-}
-
-function localReviewFailureContext(
-  record: Pick<
-    IssueRunRecord,
-    | "local_review_findings_count"
-    | "local_review_root_cause_count"
-    | "local_review_max_severity"
-    | "local_review_verified_findings_count"
-    | "local_review_verified_max_severity"
-    | "local_review_degraded"
-    | "local_review_summary_path"
-  >,
-): FailureContext {
-  return {
-    category: "blocked",
-    summary: localReviewFailureSummary(record),
-    signature: `local-review:${record.local_review_max_severity ?? "unknown"}:${record.local_review_verified_max_severity ?? "none"}:${record.local_review_root_cause_count}:${record.local_review_verified_findings_count}:${record.local_review_degraded ? "degraded" : "clean"}`,
-    command: null,
-    details: [
-      `findings=${record.local_review_findings_count}`,
-      `root_causes=${record.local_review_root_cause_count}`,
-      record.local_review_summary_path ? `summary=${record.local_review_summary_path}` : "summary=none",
-    ],
-    url: null,
-    updated_at: nowIso(),
-  };
-}
-
-function localReviewStallFailureContext(
-  record: Pick<
-    IssueRunRecord,
-    | "local_review_findings_count"
-    | "local_review_root_cause_count"
-    | "local_review_max_severity"
-    | "local_review_verified_findings_count"
-    | "local_review_verified_max_severity"
-    | "local_review_degraded"
-    | "local_review_summary_path"
-    | "repeated_local_review_signature_count"
-  >,
-): FailureContext {
-  return {
-    ...localReviewFailureContext(record),
-    summary:
-      `Local review findings repeated without code changes ${record.repeated_local_review_signature_count} times; manual intervention is required.`,
-    signature:
-      `local-review-stalled:${record.local_review_max_severity ?? "unknown"}:` +
-      `${record.local_review_root_cause_count}:${record.local_review_degraded ? "degraded" : "clean"}`,
-    details: [
-      `findings=${record.local_review_findings_count}`,
-      `root_causes=${record.local_review_root_cause_count}`,
-      `repeated_local_review_signature_count=${record.repeated_local_review_signature_count}`,
-      record.local_review_summary_path ? `summary=${record.local_review_summary_path}` : "summary=none",
-    ],
-  };
-}
-
-function nextLocalReviewSignatureTracking(
-  record: Pick<IssueRunRecord, "local_review_head_sha" | "last_local_review_signature" | "repeated_local_review_signature_count">,
-  prHeadSha: string,
-  actionableSignature: string | null,
-): Pick<IssueRunRecord, "last_local_review_signature" | "repeated_local_review_signature_count"> {
-  if (!actionableSignature) {
-    return {
-      last_local_review_signature: null,
-      repeated_local_review_signature_count: 0,
-    };
-  }
-
-  const sameHead = record.local_review_head_sha === prHeadSha;
-  const sameSignature = record.last_local_review_signature === actionableSignature;
-  return {
-    last_local_review_signature: actionableSignature,
-    repeated_local_review_signature_count:
-      sameHead && sameSignature ? record.repeated_local_review_signature_count + 1 : 1,
-  };
 }
 
 function buildAuthFailureContext(message: string): FailureContext {
@@ -1451,7 +1174,19 @@ export function inferStateFromPullRequest(
     return "pr_open";
   }
 
-  if (localReviewRetryLoopStalled(config, record, pr, checks, reviewThreads)) {
+  if (
+    localReviewRetryLoopStalled(
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+      manualReviewThreads,
+      configuredBotReviewThreads,
+      summarizeChecks,
+      mergeConflictDetected,
+    )
+  ) {
     return "blocked";
   }
 
@@ -1720,37 +1455,6 @@ async function ensureRecordJournalContext(
   };
 }
 
-interface CodexTurnContext {
-  state: SupervisorStateFile;
-  record: IssueRunRecord;
-  issue: GitHubIssue;
-  previousCodexSummary: string | null;
-  previousError: string | null;
-  workspacePath: string;
-  journalPath: string;
-  syncJournal: IssueJournalSync;
-  memoryArtifacts: MemoryArtifacts;
-  workspaceStatus: WorkspaceStatus;
-  pr: GitHubPullRequest | null;
-  checks: PullRequestCheck[];
-  reviewThreads: ReviewThread[];
-  options: Pick<CliOptions, "dryRun">;
-}
-
-interface CodexTurnResult {
-  kind: "completed";
-  record: IssueRunRecord;
-  workspaceStatus: WorkspaceStatus;
-  pr: GitHubPullRequest | null;
-  checks: PullRequestCheck[];
-  reviewThreads: ReviewThread[];
-}
-
-interface CodexTurnShortCircuit {
-  kind: "returned";
-  message: string;
-}
-
 interface PreparedIssueRunContext extends PreparedIssueExecutionContext {
   state: SupervisorStateFile;
   options: Pick<CliOptions, "dryRun">;
@@ -1776,24 +1480,6 @@ interface RunOnceContinue {
 interface RunOnceReturn {
   kind: "return";
   message: string;
-}
-
-interface PostTurnPullRequestContext {
-  state: SupervisorStateFile;
-  record: IssueRunRecord;
-  issue: GitHubIssue;
-  workspacePath: string;
-  syncJournal: IssueJournalSync;
-  memoryArtifacts: MemoryArtifacts;
-  pr: GitHubPullRequest;
-  options: Pick<CliOptions, "dryRun">;
-}
-
-interface PostTurnPullRequestResult {
-  record: IssueRunRecord;
-  pr: GitHubPullRequest;
-  checks: PullRequestCheck[];
-  reviewThreads: ReviewThread[];
 }
 
 function formatStatus(record: IssueRunRecord | null): string {
@@ -2109,7 +1795,20 @@ export function formatDetailedStatus(args: {
   const localReviewHead = localReviewHeadDetails(activeRecord, pr);
   const localReviewGating = localReviewIsGating(config, activeRecord, pr) ? "yes" : "no";
   const localReviewStalled =
-    pr && localReviewRetryLoopStalled(config, activeRecord, pr, checks, reviewThreads) ? "yes" : "no";
+    pr &&
+    localReviewRetryLoopStalled(
+      config,
+      activeRecord,
+      pr,
+      checks,
+      reviewThreads,
+      manualReviewThreads,
+      configuredBotReviewThreads,
+      summarizeChecks,
+      mergeConflictDetected,
+    )
+      ? "yes"
+      : "no";
   const externalReviewHeadStatus =
     !activeRecord.external_review_head_sha
       ? "none"
@@ -2808,393 +2507,69 @@ export class Supervisor {
   }
 
   private async executeCodexTurn(context: CodexTurnContext): Promise<CodexTurnResult | CodexTurnShortCircuit> {
-    let {
-      state,
-      record,
-      issue,
-      previousCodexSummary,
-      previousError,
-      workspacePath,
-      journalPath,
-      syncJournal,
-      memoryArtifacts,
-      workspaceStatus,
-      pr,
-      checks,
-      reviewThreads,
-      options,
-    } = context;
+    let { state, record, pr, checks, reviewThreads, workspaceStatus, syncJournal, options } = context;
+    const nextState = pr
+      ? inferStateFromPullRequest(this.config, record, pr, checks, reviewThreads)
+      : inferStateWithoutPullRequest(record, workspaceStatus);
 
-    try {
-      const reviewThreadsToProcess = pr ? pendingBotReviewThreads(this.config, record, pr, reviewThreads) : [];
-
-      if (options.dryRun) {
-        record = this.stateStore.touch(record, {
-          state: pr
-            ? inferStateFromPullRequest(this.config, record, pr, checks, reviewThreads)
-            : inferStateWithoutPullRequest(record, workspaceStatus),
-        });
-        state.issues[String(record.issue_number)] = record;
-        await this.stateStore.save(state);
-        return {
-          kind: "returned",
-          message: `Dry run: would invoke Codex for issue #${record.issue_number}. ${formatStatus(record)}`,
-        };
-      }
-
-      const preRunState: RunState = pr
-        ? inferStateFromPullRequest(this.config, record, pr, checks, reviewThreads)
-        : inferStateWithoutPullRequest(record, workspaceStatus);
-      const preRunAttemptLane = attemptLane(record, pr);
-      record = this.stateStore.touch(record, {
-        state: preRunState,
-        ...incrementAttemptCounters(record, preRunAttemptLane),
-        last_failure_context: inferFailureContext(this.config, record, pr, checks, reviewThreads),
-        blocked_reason: null,
-      });
+    if (options.dryRun) {
+      record = this.stateStore.touch(record, { state: nextState });
       state.issues[String(record.issue_number)] = record;
       await this.stateStore.save(state);
-      await syncJournal(record);
-
-      const journalContent = await readIssueJournal(journalPath);
-      const localReviewRepairContext =
-        record.state === "local_review_fix"
-          ? await loadLocalReviewRepairContext(record.local_review_summary_path, workspacePath)
-          : null;
-      const externalReviewSurface =
-        pr &&
-        preRunState === "addressing_review" &&
-        reviewThreadsToProcess.length > 0 &&
-        record.local_review_head_sha === pr.headRefOid &&
-        record.local_review_summary_path
-          ? await this.github.getExternalReviewSurface(pr.number)
-          : null;
-      const externalReviewMissContext: ExternalReviewMissContext | null =
-        pr &&
-        preRunState === "addressing_review" &&
-        reviewThreadsToProcess.length > 0 &&
-        record.local_review_head_sha === pr.headRefOid &&
-        record.local_review_summary_path
-          ? await writeExternalReviewMissArtifact({
-              artifactDir: path.dirname(record.local_review_summary_path),
-              issueNumber: issue.number,
-              prNumber: pr.number,
-              branch: record.branch,
-              headSha: pr.headRefOid,
-              reviewSignals: collectExternalReviewSignals({
-                reviewThreads: reviewThreadsToProcess,
-                reviews: externalReviewSurface?.reviews ?? [],
-                issueComments: externalReviewSurface?.issueComments ?? [],
-                reviewBotLogins: this.config.reviewBotLogins,
-              }),
-              reviewBotLogins: this.config.reviewBotLogins,
-              localReviewSummaryPath: record.local_review_summary_path,
-            })
-          : null;
-      const externalReviewMissPatch = nextExternalReviewMissPatch(record, pr, externalReviewMissContext);
-      if (Object.keys(externalReviewMissPatch).length > 0) {
-        record = this.stateStore.touch(record, externalReviewMissPatch);
-        state.issues[String(record.issue_number)] = record;
-        await this.stateStore.save(state);
-        await syncJournal(record);
-      }
-
-      const prompt = record.codex_session_id && shouldUseCompactResumePrompt(record.state)
-        ? buildCodexResumePrompt({
-            repoSlug: this.config.repoSlug,
-            issue,
-            branch: record.branch,
-            workspacePath,
-            state: record.state,
-            journalPath,
-            journalExcerpt: truncate(journalContent, 5000),
-            failureContext: record.last_failure_context,
-            previousSummary: previousCodexSummary,
-            previousError,
-          })
-        : buildCodexPrompt({
-            repoSlug: this.config.repoSlug,
-            issue,
-            branch: record.branch,
-            workspacePath,
-            state: record.state,
-            pr,
-            checks,
-            reviewThreads: reviewThreadsToProcess,
-            journalPath,
-            journalExcerpt: truncate(journalContent, 5000),
-            failureContext: record.last_failure_context,
-            previousSummary: previousCodexSummary,
-            previousError,
-            alwaysReadFiles: memoryArtifacts.alwaysReadFiles,
-            onDemandMemoryFiles: memoryArtifacts.onDemandFiles,
-            gsdEnabled: this.config.gsdEnabled,
-            gsdPlanningFiles: this.config.gsdPlanningFiles,
-            localReviewRepairContext,
-            externalReviewMissContext,
-          });
-
-      const sessionLock = record.codex_session_id
-        ? await acquireFileLock(
-            this.lockPath("sessions", `session-${record.codex_session_id}`),
-            `session-${record.codex_session_id}`,
-          )
-        : null;
-      if (sessionLock && !sessionLock.acquired) {
-        return {
-          kind: "returned",
-          message: `Skipped issue #${record.issue_number}: ${sessionLock.reason}.`,
-        };
-      }
-
-      let codexResult;
-      try {
-        codexResult = await runCodexTurn(
-          this.config,
-          workspacePath,
-          prompt,
-          record.state,
-          record,
-          record.codex_session_id,
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.stack ?? error.message : String(error);
-        const failureKind = classifyFailure(message);
-        const failureContext = buildCodexFailureContext(
-          "codex",
-          `Codex turn execution failed for issue #${record.issue_number}.`,
-          [truncate(message, 2000) ?? "Unknown failure"],
-        );
-        record = this.stateStore.touch(record, {
-          state: "failed",
-          last_error: truncate(message),
-          last_failure_kind: failureKind,
-          last_failure_context: failureContext,
-          ...applyFailureSignature(record, failureContext),
-          blocked_reason: null,
-          timeout_retry_count:
-            failureKind === "timeout" ? record.timeout_retry_count + 1 : record.timeout_retry_count,
-        });
-        state.issues[String(record.issue_number)] = record;
-        await this.stateStore.save(state);
-        await syncJournal(record);
-        return {
-          kind: "returned",
-          message: `Codex turn failed for issue #${record.issue_number}.`,
-        };
-      } finally {
-        await sessionLock?.release();
-      }
-
-      const hintedState = extractStateHint(codexResult.lastMessage);
-      const hintedBlockedReason = extractBlockedReason(codexResult.lastMessage);
-      const hintedFailureSignature = extractFailureSignature(codexResult.lastMessage);
-      const journalAfterRun = await readIssueJournal(journalPath);
-      record = this.stateStore.touch(record, {
-        codex_session_id: codexResult.sessionId,
-        last_codex_summary: truncate(codexResult.lastMessage),
-        last_failure_kind: null,
-        last_error:
-          codexResult.exitCode === 0
-            ? null
-            : truncate([codexResult.stderr.trim(), codexResult.stdout.trim()].filter(Boolean).join("\n")),
-      });
-
-      if (
-        codexResult.exitCode === 0 &&
-        (!journalAfterRun ||
-          journalAfterRun === journalContent ||
-          !hasMeaningfulJournalHandoff(journalAfterRun))
-      ) {
-        const failureContext = buildCodexFailureContext(
-          "blocked",
-          `Codex completed without updating the issue journal for issue #${record.issue_number}.`,
-          ["Update the Codex Working Notes section before ending the turn."],
-        );
-        record = this.stateStore.touch(record, {
-          state: "blocked",
-          last_error: truncate(failureContext.summary),
-          last_failure_kind: null,
-          last_failure_context: failureContext,
-          ...applyFailureSignature(record, failureContext),
-          blocked_reason: "handoff_missing",
-        });
-        state.issues[String(record.issue_number)] = record;
-        await this.stateStore.save(state);
-        await syncJournal(record);
-        return {
-          kind: "returned",
-          message: `Codex turn for issue #${record.issue_number} was rejected because no journal handoff was written.`,
-        };
-      }
-
-      if (codexResult.exitCode !== 0) {
-        const failureOutput = [codexResult.lastMessage, codexResult.stderr, codexResult.stdout]
-          .filter(Boolean)
-          .join("\n");
-        const failureKind = classifyFailure(failureOutput) === "timeout" ? "timeout" : "codex_exit";
-        const failureContext = buildCodexFailureContext(
-          "codex",
-          `Codex exited non-zero for issue #${record.issue_number}.`,
-          [truncate(failureOutput, 2000) ?? "Unknown failure output"],
-        );
-        record = this.stateStore.touch(record, {
-          state: "failed",
-          last_error: truncate(failureOutput),
-          last_failure_kind: failureKind,
-          last_failure_context: failureContext,
-          ...applyFailureSignature(record, failureContext),
-          blocked_reason: null,
-          timeout_retry_count:
-            failureKind === "timeout" ? record.timeout_retry_count + 1 : record.timeout_retry_count,
-        });
-        state.issues[String(record.issue_number)] = record;
-        await this.stateStore.save(state);
-        await syncJournal(record);
-        return {
-          kind: "returned",
-          message: `Codex turn failed for issue #${record.issue_number}.`,
-        };
-      }
-
-      if (hintedState === "blocked" || hintedState === "failed") {
-        const blockerSignature = hintedState === "blocked" ? normalizeBlockerSignature(codexResult.lastMessage) : null;
-        const repeatedBlockerCount =
-          hintedState === "blocked" && blockerSignature && blockerSignature === record.last_blocker_signature
-            ? record.repeated_blocker_count + 1
-            : hintedState === "blocked"
-              ? 1
-              : 0;
-        const failureContext = buildCodexFailureContext(
-          hintedState === "failed" ? "codex" : "blocked",
-          `Codex reported ${hintedState} for issue #${record.issue_number}.`,
-          [truncate(codexResult.lastMessage, 2000) ?? "No additional summary."],
-        );
-        if (hintedFailureSignature) {
-          failureContext.signature = hintedFailureSignature;
-        }
-        record = this.stateStore.touch(record, {
-          state: hintedState,
-          last_error: truncate(codexResult.lastMessage),
-          last_failure_kind: hintedState === "failed" ? "codex_failed" : null,
-          last_failure_context: failureContext,
-          ...applyFailureSignature(record, failureContext),
-          repeated_blocker_count: repeatedBlockerCount,
-          last_blocker_signature: blockerSignature,
-          blocked_reason:
-            hintedState === "blocked"
-              ? hintedBlockedReason ?? (isVerificationBlockedMessage(codexResult.lastMessage) ? "verification" : "unknown")
-              : null,
-        });
-        state.issues[String(record.issue_number)] = record;
-        await this.stateStore.save(state);
-        await syncJournal(record);
-        return {
-          kind: "returned",
-          message: `Codex reported ${hintedState} for issue #${record.issue_number}.`,
-        };
-      }
-
-      workspaceStatus = await getWorkspaceStatus(workspacePath, record.branch, this.config.defaultBranch);
-      record = this.stateStore.touch(record, { last_head_sha: workspaceStatus.headSha });
-      const evaluatedReviewHeadSha = workspaceStatus.headSha;
-
-      if ((workspaceStatus.remoteAhead > 0 || !workspaceStatus.remoteBranchExists) && !workspaceStatus.hasUncommittedChanges) {
-        await pushBranch(workspacePath, record.branch, workspaceStatus.remoteBranchExists);
-        workspaceStatus = await getWorkspaceStatus(workspacePath, record.branch, this.config.defaultBranch);
-      }
-
-      const refreshedResolvedPr = await this.github.resolvePullRequestForBranch(record.branch, record.pr_number);
-      pr = isOpenPullRequest(refreshedResolvedPr) ? refreshedResolvedPr : null;
-      if (
-        !pr &&
-        workspaceStatus.baseAhead > 0 &&
-        !workspaceStatus.hasUncommittedChanges &&
-        record.implementation_attempt_count >= this.config.draftPrAfterAttempt
-      ) {
-        pr = await this.github.createPullRequest(issue, record, { draft: true });
-      }
-
-      checks = pr ? await this.github.getChecks(pr.number) : [];
-      reviewThreads = pr ? await this.github.getUnresolvedReviewThreads(pr.number) : [];
-      const currentPr = pr;
-      const processedReviewThreadKeysForCurrentHead =
-        preRunState === "addressing_review" && currentPr && currentPr.headRefOid === evaluatedReviewHeadSha
-          ? reviewThreadsToProcess.map((thread) => processedReviewThreadKey(thread.id, evaluatedReviewHeadSha))
-          : [];
-      const processedReviewThreadIds =
-        processedReviewThreadKeysForCurrentHead.length > 0
-          ? trimProcessedReviewThreadIds(
-              Array.from(
-                new Set([
-                  ...record.processed_review_thread_ids,
-                  ...processedReviewThreadKeysForCurrentHead,
-                ]),
-              ),
-            )
-          : record.processed_review_thread_ids;
-      const postRunSnapshot = pr
-        ? derivePullRequestLifecycleSnapshot(
-            this.config,
-            record,
-            pr,
-            checks,
-            reviewThreads,
-            { processed_review_thread_ids: processedReviewThreadIds },
-          )
-        : null;
-      const postRunState = postRunSnapshot
-        ? postRunSnapshot.nextState
-        : hintedState ?? inferStateWithoutPullRequest(record, workspaceStatus);
-      record = this.stateStore.touch(record, {
-        pr_number: pr?.number ?? null,
-        ...(postRunSnapshot?.reviewWaitPatch ?? {}),
-        ...(postRunSnapshot?.copilotRequestObservationPatch ?? {}),
-        ...(postRunSnapshot?.copilotTimeoutPatch ?? {}),
-        processed_review_thread_ids: processedReviewThreadIds,
-        blocked_verification_retry_count: pr ? 0 : record.blocked_verification_retry_count,
-        repeated_blocker_count: 0,
-        last_blocker_signature: null,
-        last_error:
-          postRunState === "blocked" && postRunSnapshot?.failureContext
-            ? truncate(postRunSnapshot.failureContext.summary, 1000)
-            : record.last_error,
-        last_failure_context: postRunSnapshot?.failureContext ?? null,
-        ...applyFailureSignature(record, postRunSnapshot?.failureContext ?? null),
-        blocked_reason:
-          pr && postRunState === "blocked"
-            ? blockedReasonFromReviewState(this.config, postRunSnapshot?.recordForState ?? record, pr, reviewThreads)
-            : null,
-        state: postRunState,
-      });
-      state.issues[String(record.issue_number)] = record;
-      await this.stateStore.save(state);
-      await syncJournal(record);
-
-      return {
-        kind: "completed",
-        record,
-        workspaceStatus,
-        pr,
-        checks,
-        reviewThreads,
-      };
-    } catch (error) {
-      record = await recoverUnexpectedCodexTurnFailure({
-        stateStore: this.stateStore,
-        state,
-        record,
-        issue,
-        journalSync: syncJournal,
-        error,
-        workspaceStatus,
-        pr,
-      });
       return {
         kind: "returned",
-        message: `Recovered from unexpected Codex turn failure for issue #${record.issue_number}.`,
+        message: `Dry run: would invoke Codex for issue #${record.issue_number}. ${formatStatus(record)}`,
       };
     }
+
+    const preRunAttemptLane = attemptLane(record, pr);
+    record = this.stateStore.touch(record, {
+      state: nextState,
+      ...incrementAttemptCounters(record, preRunAttemptLane),
+      last_failure_context: inferFailureContext(this.config, record, pr, checks, reviewThreads),
+      blocked_reason: null,
+    });
+    state.issues[String(record.issue_number)] = record;
+    await this.stateStore.save(state);
+    await syncJournal(record);
+
+    const reviewThreadsToProcess = pr ? pendingBotReviewThreads(this.config, record, pr, reviewThreads) : [];
+    return executeCodexTurnPhase({
+      config: this.config,
+      stateStore: this.stateStore,
+      github: this.github,
+      context: {
+        ...context,
+        record,
+        reviewThreads: reviewThreadsToProcess,
+      },
+      acquireSessionLock: async (sessionId) => acquireFileLock(
+        this.lockPath("sessions", `session-${sessionId}`),
+        `session-${sessionId}`,
+      ),
+      classifyFailure,
+      buildCodexFailureContext,
+      applyFailureSignature,
+      normalizeBlockerSignature,
+      isVerificationBlockedMessage,
+      derivePullRequestLifecycleSnapshot: (phaseRecord, phasePr, phaseChecks, phaseReviewThreads, recordPatch = {}) =>
+        derivePullRequestLifecycleSnapshot(
+          this.config,
+          phaseRecord,
+          phasePr,
+          phaseChecks,
+          phaseReviewThreads,
+          recordPatch,
+        ),
+      inferStateWithoutPullRequest,
+      blockedReasonFromReviewState: (phaseRecord, phasePr, phaseReviewThreads) =>
+        blockedReasonFromReviewState(this.config, phaseRecord, phasePr, phaseReviewThreads),
+      recoverUnexpectedCodexTurnFailure: (args) =>
+        recoverUnexpectedCodexTurnFailure({
+          ...args,
+          stateStore: this.stateStore,
+        }),
+    });
   }
 
   private async runPreparedIssue(context: PreparedIssueRunContext): Promise<string> {
@@ -3337,210 +2712,22 @@ export class Supervisor {
   private async handlePostTurnPullRequestTransitions(
     context: PostTurnPullRequestContext,
   ): Promise<PostTurnPullRequestResult> {
-    const { state, issue, workspacePath, syncJournal, memoryArtifacts, options } = context;
-    let { record, pr } = context;
-
-    let ranLocalReviewThisCycle = false;
-    const refreshed = await this.loadOpenPullRequestSnapshot(pr.number);
-    const refreshedCheckSummary = summarizeChecks(refreshed.checks);
-
-    if (
-      shouldRunLocalReview(this.config, record, refreshed.pr) &&
-      !refreshedCheckSummary.hasPending &&
-      !refreshedCheckSummary.hasFailing &&
-      configuredBotReviewThreads(this.config, refreshed.reviewThreads).length === 0 &&
-      (!this.config.humanReviewBlocksMerge || manualReviewThreads(this.config, refreshed.reviewThreads).length === 0) &&
-      !mergeConflictDetected(refreshed.pr) &&
-      !options.dryRun
-    ) {
-      ranLocalReviewThisCycle = true;
-      record = this.stateStore.touch(record, { state: "local_review" });
-      state.issues[String(record.issue_number)] = record;
-      await this.stateStore.save(state);
-      await syncJournal(record);
-
-      try {
-        const localReview = await runLocalReview({
-          config: this.config,
-          issue,
-          branch: record.branch,
-          workspacePath,
-          defaultBranch: this.config.defaultBranch,
-          pr: refreshed.pr,
-          alwaysReadFiles: memoryArtifacts.alwaysReadFiles,
-          onDemandFiles: memoryArtifacts.onDemandFiles,
-        });
-        const actionableSignature =
-          localReview.recommendation !== "ready"
-            ? `local-review:${localReview.maxSeverity ?? "unknown"}:${localReview.rootCauseCount}:${localReview.degraded ? "degraded" : "clean"}`
-            : null;
-        const signatureTracking = nextLocalReviewSignatureTracking(record, refreshed.pr.headRefOid, actionableSignature);
-
-        record = this.stateStore.touch(record, {
-          state: "draft_pr",
-          local_review_head_sha: refreshed.pr.headRefOid,
-          local_review_blocker_summary: localReview.blockerSummary,
-          local_review_summary_path: localReview.summaryPath,
-          local_review_run_at: localReview.ranAt,
-          local_review_max_severity: localReview.maxSeverity,
-          local_review_findings_count: localReview.findingsCount,
-          local_review_root_cause_count: localReview.rootCauseCount,
-          local_review_verified_max_severity: localReview.verifiedMaxSeverity,
-          local_review_verified_findings_count: localReview.verifiedFindingsCount,
-          local_review_recommendation: localReview.recommendation,
-          local_review_degraded: localReview.degraded,
-          ...signatureTracking,
-          external_review_head_sha: null,
-          external_review_misses_path: null,
-          external_review_matched_findings_count: 0,
-          external_review_near_match_findings_count: 0,
-          external_review_missed_findings_count: 0,
-          blocked_reason:
-            localReview.recommendation !== "ready" && this.config.localReviewHighSeverityAction === "blocked" && localReview.verifiedMaxSeverity === "high"
-              ? "verification"
-              : null,
-          last_error:
-            localReview.recommendation !== "ready"
-              ? truncate(
-                  localReview.degraded
-                    ? "Local review completed in a degraded state."
-                    : localReview.verifiedMaxSeverity === "high" && this.config.localReviewHighSeverityAction === "retry"
-                      ? `Local review found high-severity issues (${localReview.findingsCount} actionable findings across ${localReview.rootCauseCount} root cause(s)). Codex will continue with a repair pass before the PR can proceed.`
-                      : localReview.verifiedMaxSeverity === "high" && this.config.localReviewHighSeverityAction === "blocked"
-                        ? `Local review found high-severity issues (${localReview.findingsCount} actionable findings across ${localReview.rootCauseCount} root cause(s)). Manual attention is required before the PR can proceed.`
-                        : `Local review requested changes (${localReview.findingsCount} actionable findings across ${localReview.rootCauseCount} root cause(s)).`,
-                  500,
-                )
-              : null,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        record = this.stateStore.touch(record, {
-          state: "draft_pr",
-          local_review_head_sha: refreshed.pr.headRefOid,
-          local_review_blocker_summary: LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY,
-          local_review_summary_path: null,
-          local_review_run_at: nowIso(),
-          local_review_max_severity: null,
-          local_review_findings_count: 0,
-          local_review_root_cause_count: 0,
-          local_review_verified_max_severity: null,
-          local_review_verified_findings_count: 0,
-          local_review_recommendation: "unknown",
-          local_review_degraded: true,
-          last_local_review_signature: null,
-          repeated_local_review_signature_count: 0,
-          external_review_head_sha: null,
-          external_review_misses_path: null,
-          external_review_matched_findings_count: 0,
-          external_review_near_match_findings_count: 0,
-          external_review_missed_findings_count: 0,
-          blocked_reason: "verification",
-          last_error: `Local review failed: ${truncate(message, 500) ?? "unknown error"}`,
-        });
-      }
-
-      state.issues[String(record.issue_number)] = record;
-      await this.stateStore.save(state);
-      await syncJournal(record);
-    }
-
-    if (
-      refreshed.pr.isDraft &&
-      !refreshedCheckSummary.hasPending &&
-      !refreshedCheckSummary.hasFailing &&
-      configuredBotReviewThreads(this.config, refreshed.reviewThreads).length === 0 &&
-      (!this.config.humanReviewBlocksMerge || manualReviewThreads(this.config, refreshed.reviewThreads).length === 0) &&
-      !mergeConflictDetected(refreshed.pr) &&
-      !localReviewBlocksReady(this.config, record, refreshed.pr) &&
-      !options.dryRun
-    ) {
-      await this.github.markPullRequestReady(refreshed.pr.number);
-    }
-
-    const postReady = await this.loadOpenPullRequestSnapshot(pr.number);
-    const repeatedLocalReviewSignatureCount =
-      !ranLocalReviewThisCycle &&
-      localReviewRetryLoopCandidate(this.config, record, postReady.pr, postReady.checks, postReady.reviewThreads) &&
-      record.last_head_sha === postReady.pr.headRefOid &&
-      record.local_review_head_sha === postReady.pr.headRefOid
-        ? record.repeated_local_review_signature_count + 1
-        : localReviewHighSeverityNeedsRetry(this.config, record, postReady.pr) &&
-            record.local_review_head_sha === postReady.pr.headRefOid
-        ? 0
-        : record.repeated_local_review_signature_count;
-    const refreshedLifecycle = derivePullRequestLifecycleSnapshot(
-      this.config,
-      record,
-      postReady.pr,
-      postReady.checks,
-      postReady.reviewThreads,
-      { repeated_local_review_signature_count: repeatedLocalReviewSignatureCount },
-    );
-    const postReadyLocalReviewFailureContext =
-      refreshedLifecycle.nextState === "blocked" &&
-      localReviewRetryLoopStalled(
-        this.config,
-        refreshedLifecycle.recordForState,
-        postReady.pr,
-        postReady.checks,
-        postReady.reviewThreads,
-      )
-        ? localReviewStallFailureContext(refreshedLifecycle.recordForState)
-        : refreshedLifecycle.nextState === "blocked" &&
-            localReviewHighSeverityNeedsBlock(this.config, refreshedLifecycle.recordForState, postReady.pr)
-          ? localReviewFailureContext(refreshedLifecycle.recordForState)
-          : refreshedLifecycle.nextState === "local_review_fix" &&
-              localReviewHighSeverityNeedsRetry(this.config, refreshedLifecycle.recordForState, postReady.pr)
-            ? localReviewFailureContext(refreshedLifecycle.recordForState)
-            : null;
-    const effectiveFailureContext = refreshedLifecycle.failureContext ?? postReadyLocalReviewFailureContext;
-    record = this.stateStore.touch(record, {
-      pr_number: postReady.pr.number,
-      ...refreshedLifecycle.reviewWaitPatch,
-      ...refreshedLifecycle.copilotRequestObservationPatch,
-      ...refreshedLifecycle.copilotTimeoutPatch,
-      state: refreshedLifecycle.nextState,
-      last_head_sha: postReady.pr.headRefOid,
-      repeated_local_review_signature_count: repeatedLocalReviewSignatureCount,
-      last_error:
-        refreshedLifecycle.nextState === "blocked" && effectiveFailureContext
-          ? truncate(effectiveFailureContext.summary, 1000)
-          : refreshedLifecycle.nextState === "local_review_fix" &&
-              localReviewHighSeverityNeedsRetry(this.config, refreshedLifecycle.recordForState, postReady.pr)
-            ? truncate(localReviewFailureSummary(refreshedLifecycle.recordForState), 1000)
-            : record.last_error,
-      last_failure_context: effectiveFailureContext,
-      ...applyFailureSignature(record, effectiveFailureContext),
-      blocked_reason:
-        refreshedLifecycle.nextState === "blocked"
-          ? blockedReasonFromReviewState(
-              this.config,
-              refreshedLifecycle.recordForState,
-              postReady.pr,
-              postReady.reviewThreads,
-            ) ??
-            ((localReviewRetryLoopStalled(
-              this.config,
-              refreshedLifecycle.recordForState,
-              postReady.pr,
-              postReady.checks,
-              postReady.reviewThreads,
-            ) ||
-              localReviewHighSeverityNeedsBlock(this.config, refreshedLifecycle.recordForState, postReady.pr))
-              ? "verification"
-              : null)
-          : null,
+    return handlePostTurnPullRequestTransitionsPhase({
+      config: this.config,
+      stateStore: this.stateStore,
+      github: this.github,
+      context,
+      derivePullRequestLifecycleSnapshot: (record, pr, checks, reviewThreads, recordPatch = {}) =>
+        derivePullRequestLifecycleSnapshot(this.config, record, pr, checks, reviewThreads, recordPatch),
+      applyFailureSignature,
+      blockedReasonFromReviewState: (record, pr, reviewThreads) =>
+        blockedReasonFromReviewState(this.config, record, pr, reviewThreads),
+      summarizeChecks,
+      configuredBotReviewThreads,
+      manualReviewThreads,
+      mergeConflictDetected,
+      loadOpenPullRequestSnapshot: (prNumber) => this.loadOpenPullRequestSnapshot(prNumber),
     });
-    state.issues[String(record.issue_number)] = record;
-    await this.stateStore.save(state);
-
-    return {
-      record,
-      pr: postReady.pr,
-      checks: postReady.checks,
-      reviewThreads: postReady.reviewThreads,
-    };
   }
 
   private async handlePostTurnMergeAndCompletion(
