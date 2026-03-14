@@ -91,6 +91,17 @@ interface PullRequestCopilotReviewLifecycleResponse {
         login?: string | null;
       } | null;
       submittedAt?: string | null;
+      state?: string | null;
+      body?: string | null;
+    } | null>;
+  } | null;
+  comments?: {
+    nodes?: Array<{
+      createdAt?: string | null;
+      body?: string | null;
+      author?: {
+        login?: string | null;
+      } | null;
     } | null>;
   } | null;
   reviewThreads?: {
@@ -119,10 +130,17 @@ export interface CopilotReviewLifecycleFacts {
   reviews: Array<{
     authorLogin: string | null;
     submittedAt: string | null;
+    state?: string | null;
+    body?: string | null;
   }>;
   comments: Array<{
     authorLogin: string | null;
     createdAt: string | null;
+  }>;
+  issueComments: Array<{
+    authorLogin: string | null;
+    createdAt: string | null;
+    body: string | null;
   }>;
   timeline: Array<{
     type: "requested" | "removed";
@@ -210,6 +228,52 @@ function latestTimestamp(values: Array<string | null | undefined>): string | nul
   return latest;
 }
 
+function normalizeReviewText(value: string | null | undefined): string {
+  return value?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
+}
+
+function isInformationalReviewText(value: string | null | undefined): boolean {
+  const normalized = normalizeReviewText(value);
+  if (!normalized) {
+    return false;
+  }
+
+  return (
+    (normalized.includes("summary") && normalized.includes("no actionable")) ||
+    normalized.includes("no actionable issues") ||
+    normalized.includes("no actionable comments") ||
+    normalized.includes("skipping review") ||
+    normalized.includes("skip review") ||
+    normalized.includes("still in draft") ||
+    normalized.includes("pull request is in draft") ||
+    normalized.includes("pull request is still in draft")
+  );
+}
+
+function hasActionableReviewText(value: string | null | undefined): boolean {
+  const normalized = normalizeReviewText(value);
+  if (!normalized || isInformationalReviewText(normalized)) {
+    return false;
+  }
+
+  return /\b(nit|nitpick|suggestion|consider|should|could|bug|issue|error|warning|fix|missing|fails?|incorrect|unsafe|please)\b/.test(
+    normalized,
+  );
+}
+
+function isActionableTopLevelReview(review: CopilotReviewLifecycleFacts["reviews"][number]): boolean {
+  const state = normalizeReviewText(review.state);
+  if (state === "changes_requested") {
+    return true;
+  }
+
+  if (!review.body && !review.state) {
+    return true;
+  }
+
+  return hasActionableReviewText(review.body);
+}
+
 export function inferCopilotReviewLifecycle(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
@@ -221,13 +285,19 @@ export function inferCopilotReviewLifecycle(
 
   const matchingReviewTimes = facts.reviews.flatMap((review) => {
     const authorLogin = normalizeLogin(review.authorLogin);
-    return authorLogin && configuredReviewBots.has(authorLogin) ? [review.submittedAt] : [];
+    return authorLogin && configuredReviewBots.has(authorLogin) && isActionableTopLevelReview(review) ? [review.submittedAt] : [];
   });
   const matchingCommentTimes = facts.comments.flatMap((comment) => {
     const authorLogin = normalizeLogin(comment.authorLogin);
     return authorLogin && configuredReviewBots.has(authorLogin) ? [comment.createdAt] : [];
   });
-  const arrivedAt = latestTimestamp([...matchingReviewTimes, ...matchingCommentTimes]);
+  const matchingIssueCommentTimes = facts.issueComments.flatMap((comment) => {
+    const authorLogin = normalizeLogin(comment.authorLogin);
+    return authorLogin && configuredReviewBots.has(authorLogin) && hasActionableReviewText(comment.body)
+      ? [comment.createdAt]
+      : [];
+  });
+  const arrivedAt = latestTimestamp([...matchingReviewTimes, ...matchingCommentTimes, ...matchingIssueCommentTimes]);
   if (arrivedAt) {
     return {
       state: "arrived",
@@ -1033,6 +1103,17 @@ export class GitHubClient {
             reviews(last: 100) {
               nodes {
                 submittedAt
+                state
+                body
+                author {
+                  login
+                }
+              }
+            }
+            comments(last: 100) {
+              nodes {
+                createdAt
+                body
                 author {
                   login
                 }
@@ -1125,6 +1206,8 @@ export class GitHubClient {
         lifecycle?.reviews?.nodes?.map((node) => ({
           authorLogin: normalizeLogin(node?.author?.login ?? null),
           submittedAt: node?.submittedAt ?? null,
+          state: node?.state ?? null,
+          body: node?.body ?? null,
         })) ?? [],
       comments:
         lifecycle?.reviewThreads?.nodes?.flatMap((thread) =>
@@ -1133,6 +1216,12 @@ export class GitHubClient {
             createdAt: comment?.createdAt ?? null,
           })),
         ) ?? [],
+      issueComments:
+        lifecycle?.comments?.nodes?.map((comment) => ({
+          authorLogin: normalizeLogin(comment?.author?.login ?? null),
+          createdAt: comment?.createdAt ?? null,
+          body: comment?.body ?? null,
+        })) ?? [],
       timeline:
         lifecycle?.timelineItems?.nodes
           ?.map((node) => {
