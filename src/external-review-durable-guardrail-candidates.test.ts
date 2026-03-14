@@ -184,3 +184,56 @@ test("toDurableGuardrailCandidates rejects weak or ambiguous misses deterministi
     ["reviewer_rubric"],
   );
 });
+
+test("toDurableGuardrailCandidates allows unanchored actionable top-level reviews only for reviewer_rubric", () => {
+  const candidates = toDurableGuardrailCandidates({
+    issueNumber: 85,
+    prNumber: 144,
+    branch: "codex/issue-85",
+    headSha: "deadbeefcafebabe",
+    sourceArtifactPath: "/tmp/external-review-misses-head-deadbeef.json",
+    localReviewSummaryPath: "/tmp/head-deadbeef.md",
+    localReviewFindingsPath: "/tmp/head-deadbeef.json",
+    finding: createMissFinding({
+      sourceKind: "top_level_review",
+      sourceId: "review-7",
+      sourceUrl: "https://example.test/pr/1#pullrequestreview-7",
+      threadId: null,
+      file: null,
+      line: null,
+      summary: "Bug: retries can reuse stale state and mask the latest failure.",
+      rationale: "Bug: retries can reuse stale state and mask the latest failure.",
+      severity: "medium",
+      url: "https://example.test/pr/1#pullrequestreview-7",
+    }),
+  });
+
+  assert.deepEqual(candidates, [
+    {
+      id: "reviewer_rubric|top_level_review|review-7|bug: retries can reuse stale state and mask the latest failure.",
+      category: "reviewer_rubric",
+      title: "Promote reviewer rubric guardrail for Bug: retries can reuse stale state and mask the latest failure",
+      reviewerLogin: "copilot-pull-request-reviewer",
+      file: null,
+      line: null,
+      summary: "Bug: retries can reuse stale state and mask the latest failure.",
+      rationale: "Bug: retries can reuse stale state and mask the latest failure.",
+      qualificationReasons: ["missed_by_local_review", "high_confidence", "top_level_review_unanchored", "non_low_severity"],
+      provenance: {
+        issueNumber: 85,
+        prNumber: 144,
+        branch: "codex/issue-85",
+        headSha: "deadbeefcafebabe",
+        sourceKind: "top_level_review",
+        sourceId: "review-7",
+        sourceThreadId: null,
+        sourceUrl: "https://example.test/pr/1#pullrequestreview-7",
+        sourceArtifactPath: "/tmp/external-review-misses-head-deadbeef.json",
+        localReviewSummaryPath: "/tmp/head-deadbeef.md",
+        localReviewFindingsPath: "/tmp/head-deadbeef.json",
+        matchedLocalReference: null,
+        matchReason: "no same-file local-review match",
+      },
+    },
+  ]);
+});

@@ -43,7 +43,7 @@ export interface ExternalReviewDurableGuardrailCandidate {
   category: ExternalReviewDurableGuardrailCandidateCategory;
   title: string;
   reviewerLogin: string;
-  file: string;
+  file: string | null;
   line: number | null;
   summary: string;
   rationale: string;

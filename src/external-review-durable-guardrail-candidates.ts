@@ -25,10 +25,6 @@ const COMMON_RULES: CandidateQualificationRule[] = [
     reason: "high_confidence",
     passes: (finding) => finding.confidence >= 0.75,
   },
-  {
-    reason: "file_scoped",
-    passes: (finding) => typeof finding.file === "string" && finding.file.trim() !== "",
-  },
 ];
 
 const CANDIDATE_SPECS: CandidateSpec[] = [
@@ -49,6 +45,10 @@ const CANDIDATE_SPECS: CandidateSpec[] = [
     rules: [
       ...COMMON_RULES,
       {
+        reason: "file_scoped",
+        passes: (finding) => typeof finding.file === "string" && finding.file.trim() !== "",
+      },
+      {
         reason: "high_severity",
         passes: (finding) => finding.severity === "high",
       },
@@ -63,6 +63,10 @@ const CANDIDATE_SPECS: CandidateSpec[] = [
     titlePrefix: "Promote regression-test guardrail for",
     rules: [
       ...COMMON_RULES,
+      {
+        reason: "file_scoped",
+        passes: (finding) => typeof finding.file === "string" && finding.file.trim() !== "",
+      },
       {
         reason: "non_low_severity",
         passes: (finding) => finding.severity !== "low",
@@ -79,18 +83,50 @@ function qualifies(
   finding: ExternalReviewMissFinding,
   spec: CandidateSpec,
 ): { qualified: boolean; qualificationReasons: string[] } {
-  const qualificationReasons = spec.rules
-    .filter((rule) => rule.passes(finding))
-    .map((rule) => rule.reason);
+  const qualificationReasons: string[] = [];
+
+  for (const rule of spec.rules) {
+    if (!rule.passes(finding)) {
+      continue;
+    }
+
+    qualificationReasons.push(rule.reason);
+  }
+
+  const hasFileScoped = typeof finding.file === "string" && finding.file.trim() !== "";
+  const hasTopLevelReviewUnanchored = finding.sourceKind === "top_level_review" && !finding.file && finding.line == null;
+
+  if (spec.category === "reviewer_rubric") {
+    if (hasFileScoped) {
+      qualificationReasons.splice(2, 0, "file_scoped");
+    } else if (hasTopLevelReviewUnanchored) {
+      qualificationReasons.splice(2, 0, "top_level_review_unanchored");
+    }
+  }
 
   return {
-    qualified: qualificationReasons.length === spec.rules.length,
+    qualified:
+      spec.category === "reviewer_rubric"
+        ? qualificationReasons.length === spec.rules.length + 1 &&
+          (hasFileScoped || hasTopLevelReviewUnanchored)
+        : qualificationReasons.length === spec.rules.length,
     qualificationReasons,
   };
 }
 
 function formatTitle(prefix: string, summary: string): string {
   return `${prefix} ${summary.replace(/[.!?]+$/, "")}`;
+}
+
+function createDurableGuardrailCandidateId(
+  category: ExternalReviewDurableGuardrailCandidateCategory,
+  finding: ExternalReviewMissFinding,
+): string {
+  if (finding.file) {
+    return `${category}|${createExternalReviewRegressionCandidateId(finding)}`;
+  }
+
+  return `${category}|${finding.sourceKind}|${finding.sourceId}|${finding.rationale.trim().toLowerCase()}`;
 }
 
 export function toDurableGuardrailCandidates(args: {
@@ -105,12 +141,12 @@ export function toDurableGuardrailCandidates(args: {
 }): ExternalReviewDurableGuardrailCandidate[] {
   return CANDIDATE_SPECS.flatMap((spec) => {
     const { qualified, qualificationReasons } = qualifies(args.finding, spec);
-    if (!qualified || !args.finding.file) {
+    if (!qualified) {
       return [];
     }
 
     return [{
-      id: `${spec.category}|${createExternalReviewRegressionCandidateId(args.finding)}`,
+      id: createDurableGuardrailCandidateId(spec.category, args.finding),
       category: spec.category,
       title: formatTitle(spec.titlePrefix, args.finding.summary),
       reviewerLogin: args.finding.reviewerLogin,
