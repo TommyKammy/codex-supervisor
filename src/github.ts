@@ -2,12 +2,15 @@ import {
   CopilotReviewState,
   GitHubIssue,
   GitHubPullRequest,
+  IssueComment,
   IssueRunRecord,
+  PullRequestReview,
   PullRequestCheck,
   ReviewThread,
   SupervisorConfig,
 } from "./types";
 import { CommandOptions, CommandResult, runCommand } from "./command";
+import { hasActionableReviewText, isActionableTopLevelReview } from "./external-review-signal-heuristics";
 import { parseJson, truncate } from "./utils";
 
 const TRANSIENT_GITHUB_RETRY_LIMIT = 2;
@@ -226,52 +229,6 @@ function latestTimestamp(values: Array<string | null | undefined>): string | nul
   }
 
   return latest;
-}
-
-function normalizeReviewText(value: string | null | undefined): string {
-  return value?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
-}
-
-function isInformationalReviewText(value: string | null | undefined): boolean {
-  const normalized = normalizeReviewText(value);
-  if (!normalized) {
-    return false;
-  }
-
-  return (
-    (normalized.includes("summary") && normalized.includes("no actionable")) ||
-    normalized.includes("no actionable issues") ||
-    normalized.includes("no actionable comments") ||
-    normalized.includes("skipping review") ||
-    normalized.includes("skip review") ||
-    normalized.includes("still in draft") ||
-    normalized.includes("pull request is in draft") ||
-    normalized.includes("pull request is still in draft")
-  );
-}
-
-function hasActionableReviewText(value: string | null | undefined): boolean {
-  const normalized = normalizeReviewText(value);
-  if (!normalized || isInformationalReviewText(normalized)) {
-    return false;
-  }
-
-  return /\b(nit|nitpick|suggestion|consider|should|could|bug|issue|error|warning|fix|missing|fails?|incorrect|unsafe|please)\b/.test(
-    normalized,
-  );
-}
-
-function isActionableTopLevelReview(review: CopilotReviewLifecycleFacts["reviews"][number]): boolean {
-  const state = normalizeReviewText(review.state);
-  if (state === "changes_requested") {
-    return true;
-  }
-
-  if (!review.body && !review.state) {
-    return true;
-  }
-
-  return hasActionableReviewText(review.body);
 }
 
 export function inferCopilotReviewLifecycle(
@@ -1032,6 +989,136 @@ export class GitHubClient {
         })),
       },
     })).filter((thread) => !thread.isResolved && !thread.isOutdated);
+  }
+
+  async getExternalReviewSurface(prNumber: number): Promise<{
+    reviews: PullRequestReview[];
+    issueComments: IssueComment[];
+  }> {
+    const { owner, repo } = this.repoOwnerAndName();
+    const query = `
+      query($owner: String!, $repo: String!, $number: Int!) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $number) {
+            reviews(last: 100) {
+              nodes {
+                id
+                body
+                submittedAt
+                url
+                state
+                author {
+                  login
+                  __typename
+                }
+              }
+            }
+            comments(last: 100) {
+              nodes {
+                id
+                body
+                createdAt
+                url
+                author {
+                  login
+                  __typename
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const result = await this.runGhCommand([
+      "api",
+      "graphql",
+      "-f",
+      `query=${query}`,
+      "-F",
+      `owner=${owner}`,
+      "-F",
+      `repo=${repo}`,
+      "-F",
+      `number=${prNumber}`,
+    ]);
+
+    const payload = parseJson<{
+      data?: {
+        repository?: {
+          pullRequest?: {
+            reviews?: {
+              nodes?: Array<{
+                id?: string | null;
+                body?: string | null;
+                submittedAt?: string | null;
+                url?: string | null;
+                state?: string | null;
+                author?: {
+                  login?: string | null;
+                  __typename?: string | null;
+                } | null;
+              }>;
+            };
+            comments?: {
+              nodes?: Array<{
+                id?: string | null;
+                body?: string | null;
+                createdAt?: string | null;
+                url?: string | null;
+                author?: {
+                  login?: string | null;
+                  __typename?: string | null;
+                } | null;
+              }>;
+            };
+          } | null;
+        };
+      };
+    }>(result.stdout, `gh api graphql external review surface pr=${prNumber}`);
+
+    const pullRequest = payload.data?.repository?.pullRequest;
+    return {
+      reviews:
+        pullRequest?.reviews?.nodes?.flatMap((review) =>
+          review?.id
+            ? [
+                {
+                  id: review.id,
+                  body: review.body ?? null,
+                  submittedAt: review.submittedAt ?? null,
+                  url: review.url ?? null,
+                  state: review.state ?? null,
+                  author: review.author
+                    ? {
+                        login: review.author.login ?? null,
+                        typeName: review.author.__typename ?? null,
+                      }
+                    : null,
+                },
+              ]
+            : [],
+        ) ?? [],
+      issueComments:
+        pullRequest?.comments?.nodes?.flatMap((comment) =>
+          comment?.id
+            ? [
+                {
+                  id: comment.id,
+                  body: comment.body ?? "",
+                  createdAt: comment.createdAt ?? "",
+                  url: comment.url ?? null,
+                  author: comment.author
+                    ? {
+                        login: comment.author.login ?? null,
+                        typeName: comment.author.__typename ?? null,
+                      }
+                    : null,
+                },
+              ]
+            : [],
+        ) ?? [],
+    };
   }
 
   private async hydratePullRequest(pr: GitHubPullRequest | null): Promise<GitHubPullRequest | null> {

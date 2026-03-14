@@ -1,6 +1,10 @@
 import {
+  collectExternalReviewSignals,
   normalizeExternalReviewFinding,
+  normalizeExternalReviewSignal,
   type NormalizedExternalReviewFinding,
+  type ExternalReviewSignalEnvelope,
+  type ExternalReviewSignalSourceKind,
 } from "./external-review-normalization";
 import {
   classifyExternalReviewFinding,
@@ -21,7 +25,9 @@ export { writeExternalReviewMissArtifact } from "./external-review-miss-persiste
 
 export {
   classifyExternalReviewFinding,
+  collectExternalReviewSignals,
   normalizeExternalReviewFinding,
+  normalizeExternalReviewSignal,
   type ExternalReviewMissArtifact,
   type ExternalReviewMatch,
   type ExternalReviewDurableGuardrailCandidate,
@@ -30,6 +36,8 @@ export {
   type ExternalReviewMissPattern,
   type ExternalReviewPromptFinding,
   type ExternalReviewRegressionCandidate,
+  type ExternalReviewSignalEnvelope,
+  type ExternalReviewSignalSourceKind,
   type LocalReviewArtifactLike,
   type NormalizedExternalReviewFinding,
 };

@@ -1,8 +1,9 @@
 import { type ExternalReviewMissFinding } from "./external-review-classifier";
+import { type ExternalReviewSignalSourceKind } from "./external-review-normalization";
 
 export type ExternalReviewPromptFinding = Pick<
   ExternalReviewMissFinding,
-  "reviewerLogin" | "file" | "line" | "summary" | "rationale" | "url"
+  "sourceKind" | "sourceId" | "sourceUrl" | "reviewerLogin" | "file" | "line" | "summary" | "rationale" | "url"
 >;
 
 export interface ExternalReviewMissPattern {
@@ -25,7 +26,9 @@ export interface ExternalReviewRegressionCandidate {
   summary: string;
   rationale: string;
   reviewerLogin: string;
-  sourceThreadId: string;
+  sourceKind: ExternalReviewSignalSourceKind;
+  sourceId: string;
+  sourceThreadId: string | null;
   sourceUrl: string | null;
   qualificationReasons: string[];
 }
@@ -50,7 +53,9 @@ export interface ExternalReviewDurableGuardrailCandidate {
     prNumber: number;
     branch: string;
     headSha: string;
-    sourceThreadId: string;
+    sourceKind: ExternalReviewSignalSourceKind;
+    sourceId: string;
+    sourceThreadId: string | null;
     sourceUrl: string | null;
     sourceArtifactPath: string;
     localReviewSummaryPath: string | null;

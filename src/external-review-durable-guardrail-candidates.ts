@@ -124,6 +124,8 @@ export function toDurableGuardrailCandidates(args: {
         prNumber: args.prNumber,
         branch: args.branch,
         headSha: args.headSha,
+        sourceKind: args.finding.sourceKind,
+        sourceId: args.finding.sourceId,
         sourceThreadId: args.finding.threadId,
         sourceUrl: args.finding.url ?? null,
         sourceArtifactPath: args.sourceArtifactPath,

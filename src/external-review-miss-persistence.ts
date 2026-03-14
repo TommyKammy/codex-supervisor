@@ -7,8 +7,10 @@ import {
   type LocalReviewArtifactLike,
 } from "./external-review-classifier";
 import {
-  normalizeExternalReviewFinding,
+  collectExternalReviewSignals,
+  normalizeExternalReviewSignal,
   type NormalizedExternalReviewFinding,
+  type ExternalReviewSignalEnvelope,
 } from "./external-review-normalization";
 import {
   type ExternalReviewMissArtifact,
@@ -29,12 +31,17 @@ export async function writeExternalReviewMissArtifact(args: {
   prNumber: number;
   branch: string;
   headSha: string;
-  reviewThreads: ReviewThread[];
+  reviewThreads?: ReviewThread[];
+  reviewSignals?: ExternalReviewSignalEnvelope[];
   reviewBotLogins: string[];
   localReviewSummaryPath: string | null;
 }): Promise<ExternalReviewMissContext | null> {
-  const normalizedFindings = args.reviewThreads
-    .map((thread) => normalizeExternalReviewFinding(thread, args.reviewBotLogins))
+  const normalizedFindings = (args.reviewSignals ??
+    collectExternalReviewSignals({
+      reviewThreads: args.reviewThreads ?? [],
+      reviewBotLogins: args.reviewBotLogins,
+    }))
+    .map((signal) => normalizeExternalReviewSignal(signal))
     .filter((finding): finding is NormalizedExternalReviewFinding => finding !== null);
 
   if (normalizedFindings.length === 0) {

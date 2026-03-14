@@ -47,6 +47,8 @@ export function toRegressionTestCandidate(
     summary: finding.summary,
     rationale: finding.rationale,
     reviewerLogin: finding.reviewerLogin,
+    sourceKind: finding.sourceKind,
+    sourceId: finding.sourceId,
     sourceThreadId: finding.threadId,
     sourceUrl: finding.url ?? null,
     qualificationReasons,
