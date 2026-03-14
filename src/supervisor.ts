@@ -43,6 +43,7 @@ import { acquireFileLock, inspectFileLock, LockHandle } from "./lock";
 import { localReviewHasActionableFindings, LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY, runLocalReview, shouldRunLocalReview } from "./local-review";
 import { reviewDir } from "./local-review-artifacts";
 import { syncMemoryArtifacts } from "./memory";
+import { resolveRunnableIssueContext as resolveIssueSelectionContext } from "./run-once-issue-selection";
 import { RecoveryEvent, runOnceCyclePrelude } from "./run-once-cycle-prelude";
 import { StateStore } from "./state-store";
 import {
@@ -68,65 +69,7 @@ import {
   getWorkspaceStatus,
   isSafeCleanupTarget,
   pushBranch,
-  workspacePathForIssue,
 } from "./workspace";
-
-function createIssueRecord(config: SupervisorConfig, issueNumber: number): IssueRunRecord {
-  const branch = branchNameForIssue(config, issueNumber);
-  return {
-    issue_number: issueNumber,
-    state: "queued",
-    branch,
-    pr_number: null,
-    workspace: workspacePathForIssue(config, issueNumber),
-    journal_path: null,
-    review_wait_started_at: null,
-    review_wait_head_sha: null,
-    copilot_review_requested_observed_at: null,
-    copilot_review_requested_head_sha: null,
-    copilot_review_timed_out_at: null,
-    copilot_review_timeout_action: null,
-    copilot_review_timeout_reason: null,
-    codex_session_id: null,
-    local_review_head_sha: null,
-    local_review_blocker_summary: null,
-    local_review_summary_path: null,
-    local_review_run_at: null,
-    local_review_max_severity: null,
-    local_review_findings_count: 0,
-    local_review_root_cause_count: 0,
-    local_review_verified_max_severity: null,
-    local_review_verified_findings_count: 0,
-    local_review_recommendation: null,
-    local_review_degraded: false,
-    last_local_review_signature: null,
-    repeated_local_review_signature_count: 0,
-    external_review_head_sha: null,
-    external_review_misses_path: null,
-    external_review_matched_findings_count: 0,
-    external_review_near_match_findings_count: 0,
-    external_review_missed_findings_count: 0,
-    attempt_count: 0,
-    implementation_attempt_count: 0,
-    repair_attempt_count: 0,
-    timeout_retry_count: 0,
-    blocked_verification_retry_count: 0,
-    repeated_blocker_count: 0,
-    repeated_failure_signature_count: 0,
-    last_head_sha: null,
-    last_codex_summary: null,
-    last_recovery_reason: null,
-    last_recovery_at: null,
-    last_error: null,
-    last_failure_kind: null,
-    last_failure_context: null,
-    last_blocker_signature: null,
-    last_failure_signature: null,
-    blocked_reason: null,
-    processed_review_thread_ids: [],
-    updated_at: nowIso(),
-  };
-}
 
 const MAX_PROCESSED_REVIEW_THREAD_IDS = 200;
 const COPILOT_REVIEW_PROPAGATION_GRACE_MS = 5_000;
@@ -471,50 +414,6 @@ function buildAuthFailureContext(message: string): FailureContext {
 
 function formatExecutionReadyMissingFields(fields: string[]): string {
   return fields.join(", ");
-}
-
-function buildExecutionReadyFailureContext(
-  issue: Pick<GitHubIssue, "number" | "url">,
-  missingRequired: string[],
-  missingRecommended: string[],
-): FailureContext {
-  const missingRequiredText = formatExecutionReadyMissingFields(missingRequired);
-  return {
-    category: "blocked",
-    summary:
-      `Issue #${issue.number} is not execution-ready because it is missing: ` +
-      `${missingRequiredText}.`,
-    signature: `requirements:${missingRequired.join("|")}`,
-    command: null,
-    details: [
-      `missing_required=${missingRequiredText}`,
-      `missing_recommended=${
-        missingRecommended.length > 0 ? formatExecutionReadyMissingFields(missingRecommended) : "none"
-      }`,
-    ],
-    url: issue.url,
-    updated_at: nowIso(),
-  };
-}
-
-function buildClarificationFailureContext(
-  issue: Pick<GitHubIssue, "number" | "url">,
-  reason: string,
-  ambiguityClasses: string[],
-  riskyChangeClasses: string[],
-): FailureContext {
-  return {
-    category: "blocked",
-    summary: `Issue #${issue.number} requires manual clarification because ${reason}.`,
-    signature: `clarification:${ambiguityClasses.join("|")}:${riskyChangeClasses.join("|")}`,
-    command: null,
-    details: [
-      `ambiguity_classes=${ambiguityClasses.join(", ")}`,
-      `risky_change_classes=${riskyChangeClasses.join(", ")}`,
-    ],
-    url: issue.url,
-    updated_at: nowIso(),
-  };
 }
 
 async function handleAuthFailure(
@@ -1683,32 +1582,6 @@ function isOpenPullRequest(pr: GitHubPullRequest | null): pr is GitHubPullReques
   return pr !== null && pr.state === "OPEN" && !pr.mergedAt;
 }
 
-async function selectNextIssue(
-  github: GitHubClient,
-  config: SupervisorConfig,
-  state: SupervisorStateFile,
-): Promise<IssueRunRecord | null> {
-  const issues = await github.listCandidateIssues();
-  for (const issue of issues) {
-    if (config.skipTitlePrefixes.some((prefix) => issue.title.startsWith(prefix))) {
-      continue;
-    }
-
-    if (findBlockingIssue(issue, issues, state)) {
-      continue;
-    }
-
-    const existing = state.issues[String(issue.number)];
-    if (!isEligibleForSelection(existing, config)) {
-      continue;
-    }
-
-    return existing ?? createIssueRecord(config, issue.number);
-  }
-
-  return null;
-}
-
 async function buildReadinessSummary(
   github: GitHubClient,
   config: SupervisorConfig,
@@ -1816,11 +1689,6 @@ function formatRunnableReadinessReason(
 
 type IssueJournalSync = (record: IssueRunRecord) => Promise<void>;
 type MemoryArtifacts = Awaited<ReturnType<typeof syncMemoryArtifacts>>;
-
-interface SelectedIssueResult {
-  kind: "selected";
-  record: IssueRunRecord;
-}
 
 interface PreparedWorkspaceContext {
   record: IssueRunRecord;
@@ -2898,35 +2766,6 @@ export class Supervisor {
     return recoveryEvents;
   }
 
-  private async selectIssueRecord(
-    state: SupervisorStateFile,
-    currentRecord: IssueRunRecord | null,
-  ): Promise<SelectedIssueResult | string> {
-    let record = currentRecord;
-
-    if (!record || !isEligibleForSelection(record, this.config)) {
-      record = await selectNextIssue(this.github, this.config, state);
-      if (!record) {
-        state.activeIssueNumber = null;
-        await this.stateStore.save(state);
-        return "No matching open issue found.";
-      }
-
-      state.activeIssueNumber = record.issue_number;
-      state.issues[String(record.issue_number)] = record;
-      await this.stateStore.save(state);
-    }
-
-    if (!record) {
-      throw new Error("Invariant violation: active issue record is missing after selection.");
-    }
-
-    return {
-      kind: "selected",
-      record,
-    };
-  }
-
   private async prepareWorkspaceContext(
     state: SupervisorStateFile,
     record: IssueRunRecord,
@@ -2986,122 +2825,30 @@ export class Supervisor {
     state: SupervisorStateFile,
     currentRecord: IssueRunRecord | null,
   ): Promise<ReadyIssueContext | RestartRunOnce | string> {
-    const selectedIssue = await this.selectIssueRecord(state, currentRecord);
-    if (typeof selectedIssue === "string") {
-      return selectedIssue;
+    const runnableIssue = await resolveIssueSelectionContext({
+      github: this.github,
+      config: this.config,
+      stateStore: this.stateStore,
+      state,
+      currentRecord,
+      acquireIssueLock: (record) =>
+        acquireFileLock(
+          this.lockPath("issues", `issue-${record.issue_number}`),
+          `issue-${record.issue_number}`,
+        ),
+      ensureRecordJournalContext: (record) => ensureRecordJournalContext(this.config, record),
+    });
+    if (typeof runnableIssue === "string") {
+      return runnableIssue;
+    }
+    if (runnableIssue.kind === "restart") {
+      return runnableIssue;
     }
 
-    let record = selectedIssue.record;
-    const issueLock = await acquireFileLock(
-      this.lockPath("issues", `issue-${record.issue_number}`),
-      `issue-${record.issue_number}`,
-    );
-    if (!issueLock.acquired) {
-      return `Skipped issue #${record.issue_number}: ${issueLock.reason}.`;
-    }
-
-    let shouldReleaseIssueLock = true;
-    try {
-      const issue = await this.github.getIssue(record.issue_number);
-      if (issue.state === "CLOSED" && record.pr_number !== null) {
-        record = this.stateStore.touch(record, { state: "done" });
-        state.issues[String(record.issue_number)] = record;
-        state.activeIssueNumber = null;
-        await this.stateStore.save(state);
-        shouldReleaseIssueLock = false;
-        await issueLock.release();
-        return { kind: "restart" };
-      }
-
-      if (shouldEnforceExecutionReady(record)) {
-        const readiness = lintExecutionReadyIssueBody(issue);
-        if (!readiness.isExecutionReady) {
-          const journalContext = await ensureRecordJournalContext(this.config, record);
-          const failureContext = buildExecutionReadyFailureContext(
-            issue,
-            readiness.missingRequired,
-            readiness.missingRecommended,
-          );
-          const blockedRecord = this.stateStore.touch(record, {
-            ...journalContext,
-            state: "blocked",
-            last_error: truncate(
-              `Missing required execution-ready metadata: ${formatExecutionReadyMissingFields(readiness.missingRequired)}.`,
-              1000,
-            ),
-            last_failure_kind: null,
-            last_failure_context: failureContext,
-            ...applyFailureSignature(record, failureContext),
-            blocked_reason: "requirements",
-          });
-          state.issues[String(blockedRecord.issue_number)] = blockedRecord;
-          state.activeIssueNumber = null;
-          await this.stateStore.save(state);
-          if (blockedRecord.journal_path) {
-            await syncIssueJournal({
-              issue,
-              record: blockedRecord,
-              journalPath: blockedRecord.journal_path,
-              maxChars: this.config.issueJournalMaxChars,
-            });
-          }
-          shouldReleaseIssueLock = false;
-          await issueLock.release();
-          return { kind: "restart" };
-        }
-      }
-
-      const clarificationBlock = findHighRiskBlockingAmbiguity(issue);
-      if (clarificationBlock) {
-        const journalContext = await ensureRecordJournalContext(this.config, record);
-        const failureContext = buildClarificationFailureContext(
-          issue,
-          clarificationBlock.reason,
-          clarificationBlock.ambiguityClasses,
-          clarificationBlock.riskyChangeClasses,
-        );
-        const blockedRecord = this.stateStore.touch(record, {
-          ...journalContext,
-          state: "blocked",
-          last_error: truncate(`Needs manual clarification: ${clarificationBlock.reason}.`, 1000),
-          last_failure_kind: null,
-          last_failure_context: failureContext,
-          ...applyFailureSignature(record, failureContext),
-          blocked_reason: "clarification",
-        });
-        state.issues[String(blockedRecord.issue_number)] = blockedRecord;
-        state.activeIssueNumber = null;
-        await this.stateStore.save(state);
-        if (blockedRecord.journal_path) {
-          await syncIssueJournal({
-            issue,
-            record: blockedRecord,
-            journalPath: blockedRecord.journal_path,
-            maxChars: this.config.issueJournalMaxChars,
-          });
-        }
-        shouldReleaseIssueLock = false;
-        await issueLock.release();
-        return { kind: "restart" };
-      }
-
-      const candidateIssues = await this.github.listCandidateIssues();
-      const blockingIssue = findBlockingIssue(issue, candidateIssues, state);
-      if (blockingIssue) {
-        record = this.stateStore.touch(record, {
-          state: "queued",
-          last_error: `Waiting for ${blockingIssue.reason} before continuing issue #${record.issue_number}.`,
-        });
-        state.issues[String(record.issue_number)] = record;
-        state.activeIssueNumber = null;
-        await this.stateStore.save(state);
-        shouldReleaseIssueLock = false;
-        await issueLock.release();
-        return { kind: "restart" };
-      }
-
-      const budgetLaneBeforeWorkspace = attemptLane(record, null);
-      if (!hasAttemptBudgetRemaining(record, this.config, budgetLaneBeforeWorkspace)) {
+    let { record, issue, issueLock } = runnableIssue;
+    const budgetLaneBeforeWorkspace = attemptLane(record, null);
+    if (!hasAttemptBudgetRemaining(record, this.config, budgetLaneBeforeWorkspace)) {
+      try {
         const used = attemptsUsedForLane(record, budgetLaneBeforeWorkspace);
         const max = attemptBudgetForLane(this.config, budgetLaneBeforeWorkspace);
         const failureContext = buildCodexFailureContext(
@@ -3127,24 +2874,18 @@ export class Supervisor {
         state.issues[String(record.issue_number)] = record;
         state.activeIssueNumber = null;
         await this.stateStore.save(state);
-        shouldReleaseIssueLock = false;
-        await issueLock.release();
         return `Issue #${record.issue_number} reached max ${budgetLaneBeforeWorkspace} Codex attempts.`;
-      }
-
-      shouldReleaseIssueLock = false;
-      return {
-        kind: "ready",
-        record,
-        issue,
-        issueLock,
-      };
-    } catch (error) {
-      if (shouldReleaseIssueLock) {
+      } finally {
         await issueLock.release();
       }
-      throw error;
     }
+
+    return {
+      kind: "ready",
+      record,
+      issue,
+      issueLock,
+    };
   }
 
   private async hydratePullRequestContext(
