@@ -37,13 +37,21 @@ import {
   issueJournalPath,
   readIssueJournal,
   summarizeIssueJournalHandoff,
-  syncIssueJournal,
 } from "./journal";
 import { acquireFileLock, inspectFileLock, LockHandle } from "./lock";
 import { localReviewHasActionableFindings, LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY, runLocalReview, shouldRunLocalReview } from "./local-review";
 import { reviewDir } from "./local-review-artifacts";
-import { syncMemoryArtifacts } from "./memory";
-import { resolveRunnableIssueContext as resolveIssueSelectionContext } from "./run-once-issue-selection";
+import {
+  isRestartRunOnce,
+  IssueJournalSync,
+  MemoryArtifacts,
+  prepareIssueExecutionContext,
+  PreparedIssueExecutionContext,
+} from "./run-once-issue-preparation";
+import {
+  resolveRunnableIssueContext as resolveIssueSelectionContext,
+  RestartRunOnce as SelectionRestartRunOnce,
+} from "./run-once-issue-selection";
 import { RecoveryEvent, runOnceCyclePrelude } from "./run-once-cycle-prelude";
 import { StateStore } from "./state-store";
 import {
@@ -1687,45 +1695,11 @@ function formatRunnableReadinessReason(
   return reasons.join("+");
 }
 
-type IssueJournalSync = (record: IssueRunRecord) => Promise<void>;
-type MemoryArtifacts = Awaited<ReturnType<typeof syncMemoryArtifacts>>;
-
-interface PreparedWorkspaceContext {
-  record: IssueRunRecord;
-  issue: GitHubIssue;
-  previousCodexSummary: string | null;
-  previousError: string | null;
-  workspacePath: string;
-  journalPath: string;
-  syncJournal: IssueJournalSync;
-  memoryArtifacts: MemoryArtifacts;
-  workspaceStatus: WorkspaceStatus;
-}
-
 interface ReadyIssueContext {
   kind: "ready";
   record: IssueRunRecord;
   issue: GitHubIssue;
   issueLock: LockHandle;
-}
-
-interface HydratedPullRequestContext {
-  record: IssueRunRecord;
-  pr: GitHubPullRequest | null;
-  checks: PullRequestCheck[];
-  reviewThreads: ReviewThread[];
-  workspaceStatus: WorkspaceStatus;
-}
-
-interface PreparedIssueExecutionContext extends PreparedWorkspaceContext, HydratedPullRequestContext {}
-
-interface RestartRunOnce {
-  kind: "restart";
-  recoveryEvents?: RecoveryEvent[];
-}
-
-function isRestartRunOnce(result: HydratedPullRequestContext | PreparedIssueExecutionContext | RestartRunOnce): result is RestartRunOnce {
-  return "kind" in result && result.kind === "restart";
 }
 
 async function ensureRecordJournalContext(
@@ -2766,65 +2740,10 @@ export class Supervisor {
     return recoveryEvents;
   }
 
-  private async prepareWorkspaceContext(
-    state: SupervisorStateFile,
-    record: IssueRunRecord,
-    issue: GitHubIssue,
-  ): Promise<PreparedWorkspaceContext> {
-    const previousCodexSummary = record.last_codex_summary;
-    const previousError = record.last_error;
-    const workspacePath = await ensureWorkspace(this.config, record.issue_number, record.branch);
-    const journalPath = issueJournalPath(workspacePath, this.config.issueJournalRelativePath);
-    const syncJournal: IssueJournalSync = async (currentRecord: IssueRunRecord): Promise<void> => {
-      await syncIssueJournal({
-        issue,
-        record: currentRecord,
-        journalPath,
-        maxChars: this.config.issueJournalMaxChars,
-      });
-    };
-
-    const preparedRecord = this.stateStore.touch(record, {
-      workspace: workspacePath,
-      journal_path: journalPath,
-      state: record.implementation_attempt_count === 0 ? "planning" : record.state,
-      last_error: null,
-      last_failure_kind: null,
-      blocked_reason: null,
-    });
-    state.issues[String(preparedRecord.issue_number)] = preparedRecord;
-    await this.stateStore.save(state);
-    await syncJournal(preparedRecord);
-
-    const memoryArtifacts = await syncMemoryArtifacts({
-      config: this.config,
-      issueNumber: preparedRecord.issue_number,
-      workspacePath,
-      journalPath,
-    });
-
-    const workspaceStatus = await getWorkspaceStatus(workspacePath, preparedRecord.branch, this.config.defaultBranch);
-    const hydratedRecord = this.stateStore.touch(preparedRecord, { last_head_sha: workspaceStatus.headSha });
-    state.issues[String(hydratedRecord.issue_number)] = hydratedRecord;
-    await this.stateStore.save(state);
-
-    return {
-      record: hydratedRecord,
-      issue,
-      previousCodexSummary,
-      previousError,
-      workspacePath,
-      journalPath,
-      syncJournal,
-      memoryArtifacts,
-      workspaceStatus,
-    };
-  }
-
   private async resolveRunnableIssueContext(
     state: SupervisorStateFile,
     currentRecord: IssueRunRecord | null,
-  ): Promise<ReadyIssueContext | RestartRunOnce | string> {
+  ): Promise<ReadyIssueContext | SelectionRestartRunOnce | string> {
     const runnableIssue = await resolveIssueSelectionContext({
       github: this.github,
       config: this.config,
@@ -2885,119 +2804,6 @@ export class Supervisor {
       record,
       issue,
       issueLock,
-    };
-  }
-
-  private async hydratePullRequestContext(
-    state: SupervisorStateFile,
-    record: IssueRunRecord,
-    issue: GitHubIssue,
-    workspacePath: string,
-    workspaceStatus: WorkspaceStatus,
-    syncJournal: IssueJournalSync,
-    options: Pick<CliOptions, "dryRun">,
-  ): Promise<HydratedPullRequestContext | RestartRunOnce | string> {
-    let nextWorkspaceStatus = workspaceStatus;
-    if (nextWorkspaceStatus.remoteBranchExists && nextWorkspaceStatus.remoteAhead > 0) {
-      await pushBranch(workspacePath, record.branch, true);
-      nextWorkspaceStatus = await getWorkspaceStatus(workspacePath, record.branch, this.config.defaultBranch);
-    }
-
-    const resolvedPr = await this.github.resolvePullRequestForBranch(record.branch, record.pr_number);
-    let pr = isOpenPullRequest(resolvedPr) ? resolvedPr : null;
-    let checks = pr ? await this.github.getChecks(pr.number) : [];
-    let reviewThreads = pr ? await this.github.getUnresolvedReviewThreads(pr.number) : [];
-
-    if (!pr) {
-      if (!resolvedPr) {
-        // No current or historical PR for this branch; continue with normal branch/PR flow.
-      } else if (resolvedPr.mergedAt || resolvedPr.state === "MERGED") {
-        const recoveryEvent = buildRecoveryEvent(
-          record.issue_number,
-          `merged_pr_convergence: tracked PR #${resolvedPr.number} merged; marked issue #${record.issue_number} done`,
-        );
-        const doneRecord = this.stateStore.touch(record, {
-          pr_number: resolvedPr.number,
-          state: "done",
-          last_head_sha: resolvedPr.headRefOid,
-          ...applyRecoveryEvent({}, recoveryEvent),
-        });
-        state.issues[String(doneRecord.issue_number)] = doneRecord;
-        state.activeIssueNumber = null;
-        await this.stateStore.save(state);
-        return { kind: "restart", recoveryEvents: [recoveryEvent] };
-      } else if (resolvedPr.state === "CLOSED") {
-        const failureContext = buildCodexFailureContext(
-          "manual",
-          `PR #${resolvedPr.number} was closed without merge.`,
-          ["Manual intervention is required before the supervisor can continue this issue."],
-        );
-        const blockedRecord = this.stateStore.touch(record, {
-          pr_number: resolvedPr.number,
-          state: "blocked",
-          last_error:
-            `PR #${resolvedPr.number} was closed without merge. ` +
-            `Manual intervention is required before issue #${record.issue_number} can continue.`,
-          last_failure_kind: null,
-          last_failure_context: failureContext,
-          ...applyFailureSignature(record, failureContext),
-          blocked_reason: "manual_pr_closed",
-        });
-        state.issues[String(blockedRecord.issue_number)] = blockedRecord;
-        state.activeIssueNumber = null;
-        await this.stateStore.save(state);
-        await syncJournal(blockedRecord);
-        return `Issue #${blockedRecord.issue_number} blocked because PR #${resolvedPr.number} was closed without merge.`;
-      }
-    }
-
-    if (
-      !pr &&
-      nextWorkspaceStatus.baseAhead > 0 &&
-      !nextWorkspaceStatus.hasUncommittedChanges &&
-      record.implementation_attempt_count >= this.config.draftPrAfterAttempt
-    ) {
-      await pushBranch(workspacePath, record.branch, nextWorkspaceStatus.remoteBranchExists);
-      pr = await this.github.createPullRequest(issue, record, { draft: true });
-      checks = await this.github.getChecks(pr.number);
-      reviewThreads = await this.github.getUnresolvedReviewThreads(pr.number);
-    }
-
-    return {
-      record,
-      pr,
-      checks,
-      reviewThreads,
-      workspaceStatus: nextWorkspaceStatus,
-    };
-  }
-
-  private async prepareIssueExecutionContext(
-    state: SupervisorStateFile,
-    record: IssueRunRecord,
-    issue: GitHubIssue,
-    options: Pick<CliOptions, "dryRun">,
-  ): Promise<PreparedIssueExecutionContext | RestartRunOnce | string> {
-    const preparedWorkspace = await this.prepareWorkspaceContext(state, record, issue);
-    const hydratedPullRequest = await this.hydratePullRequestContext(
-      state,
-      preparedWorkspace.record,
-      issue,
-      preparedWorkspace.workspacePath,
-      preparedWorkspace.workspaceStatus,
-      preparedWorkspace.syncJournal,
-      options,
-    );
-    if (typeof hydratedPullRequest === "string") {
-      return hydratedPullRequest;
-    }
-    if (isRestartRunOnce(hydratedPullRequest)) {
-      return hydratedPullRequest;
-    }
-
-    return {
-      ...preparedWorkspace,
-      ...hydratedPullRequest,
     };
   }
 
@@ -3960,13 +3766,21 @@ export class Supervisor {
     if (runnableIssue.kind === "restart") {
       return {
         kind: "restart",
-        carryoverRecoveryEvents: [...recoveryEvents, ...(runnableIssue.recoveryEvents ?? [])],
+        carryoverRecoveryEvents: recoveryEvents,
       };
     }
 
     try {
       const issue = runnableIssue.issue;
-      const preparedIssue = await this.prepareIssueExecutionContext(state, runnableIssue.record, issue, options);
+      const preparedIssue = await prepareIssueExecutionContext({
+        github: this.github,
+        config: this.config,
+        stateStore: this.stateStore,
+        state,
+        record: runnableIssue.record,
+        issue,
+        options,
+      });
       if (typeof preparedIssue === "string") {
         return {
           kind: "return",
