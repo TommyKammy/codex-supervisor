@@ -8,6 +8,7 @@ import {
   SupervisorConfig,
 } from "./types";
 import { CommandOptions, CommandResult, runCommand } from "./command";
+import { hasActionableReviewText, isActionableTopLevelReview } from "./external-review-signal-heuristics";
 import { parseJson, truncate } from "./utils";
 
 const TRANSIENT_GITHUB_RETRY_LIMIT = 2;
@@ -226,52 +227,6 @@ function latestTimestamp(values: Array<string | null | undefined>): string | nul
   }
 
   return latest;
-}
-
-function normalizeReviewText(value: string | null | undefined): string {
-  return value?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
-}
-
-function isInformationalReviewText(value: string | null | undefined): boolean {
-  const normalized = normalizeReviewText(value);
-  if (!normalized) {
-    return false;
-  }
-
-  return (
-    (normalized.includes("summary") && normalized.includes("no actionable")) ||
-    normalized.includes("no actionable issues") ||
-    normalized.includes("no actionable comments") ||
-    normalized.includes("skipping review") ||
-    normalized.includes("skip review") ||
-    normalized.includes("still in draft") ||
-    normalized.includes("pull request is in draft") ||
-    normalized.includes("pull request is still in draft")
-  );
-}
-
-function hasActionableReviewText(value: string | null | undefined): boolean {
-  const normalized = normalizeReviewText(value);
-  if (!normalized || isInformationalReviewText(normalized)) {
-    return false;
-  }
-
-  return /\b(nit|nitpick|suggestion|consider|should|could|bug|issue|error|warning|fix|missing|fails?|incorrect|unsafe|please)\b/.test(
-    normalized,
-  );
-}
-
-function isActionableTopLevelReview(review: CopilotReviewLifecycleFacts["reviews"][number]): boolean {
-  const state = normalizeReviewText(review.state);
-  if (state === "changes_requested") {
-    return true;
-  }
-
-  if (!review.body && !review.state) {
-    return true;
-  }
-
-  return hasActionableReviewText(review.body);
 }
 
 export function inferCopilotReviewLifecycle(

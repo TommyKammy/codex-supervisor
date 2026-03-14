@@ -6,6 +6,9 @@ import { type ExternalReviewMissFinding } from "./external-review-classifier";
 function createMissFinding(overrides: Partial<ExternalReviewMissFinding> = {}): ExternalReviewMissFinding {
   return {
     source: "external_bot",
+    sourceKind: "review_thread",
+    sourceId: "thread-1",
+    sourceUrl: "https://example.test/thread-1#comment-1",
     reviewerLogin: "copilot-pull-request-reviewer",
     threadId: "thread-1",
     file: "src/auth.ts",
@@ -32,6 +35,8 @@ test("toRegressionTestCandidate keeps persisted ids and qualification reasons st
     summary: "This fallback skips the permission guard and lets unauthorized callers update records.",
     rationale: "This fallback skips the permission guard and lets unauthorized callers update records.",
     reviewerLogin: "copilot-pull-request-reviewer",
+    sourceKind: "review_thread",
+    sourceId: "thread-1",
     sourceThreadId: "thread-1",
     sourceUrl: "https://example.test/thread-1#comment-1",
     qualificationReasons: ["missed_by_local_review", "non_low_severity", "high_confidence", "file_scoped", "line_scoped"],

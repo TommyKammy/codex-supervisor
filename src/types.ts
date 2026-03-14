@@ -229,6 +229,11 @@ export interface ReviewThreadComment {
   } | null;
 }
 
+export interface ExternalReviewActor {
+  login: string | null;
+  typeName: string | null;
+}
+
 export interface ReviewThread {
   id: string;
   isResolved: boolean;
@@ -238,6 +243,23 @@ export interface ReviewThread {
   comments: {
     nodes: ReviewThreadComment[];
   };
+}
+
+export interface PullRequestReview {
+  id: string;
+  body: string | null;
+  submittedAt: string | null;
+  url: string | null;
+  state: string | null;
+  author: ExternalReviewActor | null;
+}
+
+export interface IssueComment {
+  id: string;
+  body: string;
+  createdAt: string;
+  url: string | null;
+  author: ExternalReviewActor | null;
 }
 
 export interface WorkspaceStatus {
