@@ -797,6 +797,57 @@ test("loadLocalReviewRepairContext surfaces malformed committed durable guardrai
   await fs.rm(workspaceDir, { recursive: true, force: true });
 });
 
+test("loadLocalReviewRepairContext surfaces malformed committed durable guardrails even without relevant files", async () => {
+  const workspaceDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "local-review-fix-invalid-durable-guardrails-no-files-test-"),
+  );
+  const reviewDir = path.join(workspaceDir, "reviews");
+  const summaryPath = path.join(reviewDir, "head-deadbeef.md");
+  const findingsPath = path.join(reviewDir, "head-deadbeef.json");
+  const durableGuardrailPath = path.join(workspaceDir, "docs", "shared-memory", "external-review-guardrails.json");
+
+  await fs.mkdir(path.dirname(durableGuardrailPath), { recursive: true });
+  await fs.mkdir(reviewDir, { recursive: true });
+  await fs.writeFile(summaryPath, "# summary\n", "utf8");
+  await fs.writeFile(
+    findingsPath,
+    JSON.stringify({
+      branch: "codex/issue-46",
+      headSha: "deadbeef",
+      actionableFindings: [],
+      rootCauseSummaries: [{ severity: "high", summary: "Permission guard retry path is fragile", file: null }],
+    }),
+    "utf8",
+  );
+  await fs.writeFile(
+    durableGuardrailPath,
+    JSON.stringify({
+      version: 1,
+      patterns: [
+        {
+          fingerprint: "",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 42,
+          summary: "Permission guard is bypassed.",
+          rationale: "Check the permission guard before the fallback write path.",
+          sourceArtifactPath: "/tmp/reviews/issue-46/external-review-misses-head-old.json",
+          sourceHeadSha: "oldhead123",
+          lastSeenAt: "2026-03-12T00:00:00Z",
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  await assert.rejects(
+    loadLocalReviewRepairContext(summaryPath, workspaceDir),
+    /Invalid durable external review guardrails in .*external-review-guardrails\.json: patterns\[0\]\.fingerprint must be a non-empty string\./,
+  );
+
+  await fs.rm(workspaceDir, { recursive: true, force: true });
+});
+
 test("loadLocalReviewRepairContext surfaces malformed committed verifier guardrails", async () => {
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-fix-invalid-verifier-guardrails-test-"));
   const reviewDir = path.join(workspaceDir, "reviews");
@@ -840,6 +891,54 @@ test("loadLocalReviewRepairContext surfaces malformed committed verifier guardra
   await assert.rejects(
     loadLocalReviewRepairContext(summaryPath, workspaceDir),
     /Invalid verifier guardrails in .*verifier-guardrails\.json: rules\[0\]\.title must be a non-empty string\./,
+  );
+
+  await fs.rm(workspaceDir, { recursive: true, force: true });
+});
+
+test("loadLocalReviewRepairContext surfaces malformed committed verifier guardrails even without relevant files", async () => {
+  const workspaceDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "local-review-fix-invalid-verifier-guardrails-no-files-test-"),
+  );
+  const reviewDir = path.join(workspaceDir, "reviews");
+  const summaryPath = path.join(reviewDir, "head-deadbeef.md");
+  const findingsPath = path.join(reviewDir, "head-deadbeef.json");
+  const verifierGuardrailPath = path.join(workspaceDir, "docs", "shared-memory", "verifier-guardrails.json");
+
+  await fs.mkdir(path.dirname(verifierGuardrailPath), { recursive: true });
+  await fs.mkdir(reviewDir, { recursive: true });
+  await fs.writeFile(summaryPath, "# summary\n", "utf8");
+  await fs.writeFile(
+    findingsPath,
+    JSON.stringify({
+      branch: "codex/issue-46",
+      headSha: "deadbeef",
+      actionableFindings: [],
+      rootCauseSummaries: [{ severity: "high", summary: "Permission guard retry path is fragile", file: null }],
+    }),
+    "utf8",
+  );
+  await fs.writeFile(
+    verifierGuardrailPath,
+    JSON.stringify({
+      version: 1,
+      rules: [
+        {
+          id: "permission-fallback",
+          title: "Re-check permission fallback invariants",
+          file: "",
+          line: 42,
+          summary: "Verify the permission guard path.",
+          rationale: "Read the guard path directly before dismissing the finding.",
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  await assert.rejects(
+    loadLocalReviewRepairContext(summaryPath, workspaceDir),
+    /Invalid verifier guardrails in .*verifier-guardrails\.json: rules\[0\]\.file must be a non-empty string\./,
   );
 
   await fs.rm(workspaceDir, { recursive: true, force: true });

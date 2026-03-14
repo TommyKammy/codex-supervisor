@@ -205,6 +205,40 @@ test("loadRelevantVerifierGuardrails rejects malformed committed rules", async (
   await fs.rm(workspaceDir, { recursive: true, force: true });
 });
 
+test("loadRelevantVerifierGuardrails rejects malformed committed rules even when no files changed", async () => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "verifier-guardrails-invalid-no-files-test-"));
+  const guardrailPath = path.join(workspaceDir, "docs", "shared-memory", "verifier-guardrails.json");
+  await fs.mkdir(path.dirname(guardrailPath), { recursive: true });
+  await fs.writeFile(
+    guardrailPath,
+    JSON.stringify({
+      version: 1,
+      rules: [
+        {
+          id: "permission-fallback",
+          title: "Re-check permission fallback invariants",
+          file: "",
+          line: 42,
+          summary: "Verify that every fallback path still enforces the permission guard before returning privileged data.",
+          rationale: "A prior confirmed verifier miss cleared a similar fallback too early; require a direct read of the guard path before dismissing the finding.",
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  await assert.rejects(
+    loadRelevantVerifierGuardrails({
+      workspacePath: workspaceDir,
+      changedFiles: [],
+      limit: 3,
+    }),
+    /Invalid verifier guardrails in .*verifier-guardrails\.json: rules\[0\]\.file must be a non-empty string\./,
+  );
+
+  await fs.rm(workspaceDir, { recursive: true, force: true });
+});
+
 test("repo-committed verifier guardrails cover Copilot request-vs-arrival lifecycle and merged-PR convergence", async () => {
   const changedFiles = ["src/github.ts", "src/supervisor.ts"];
   const rules = await loadRelevantVerifierGuardrails({
