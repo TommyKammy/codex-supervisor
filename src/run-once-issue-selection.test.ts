@@ -193,6 +193,91 @@ test("resolveRunnableIssueContext keeps the acquired lock attached to a ready is
   assert.equal(savedStates.length, 1);
 });
 
+test("resolveRunnableIssueContext does not persist a new active reservation when the issue lock is busy", async () => {
+  const config = createConfig();
+  const issue: GitHubIssue = {
+    number: 93,
+    title: "Ready issue",
+    body: executionReadyBody("Ship the ready issue."),
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/93",
+    state: "OPEN",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  const savedStates: SupervisorStateFile[] = [];
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [issue],
+      getIssue: async () => issue,
+    },
+    config,
+    stateStore: createTouchStateStore(savedStates),
+    state,
+    currentRecord: null,
+    acquireIssueLock: async () => ({
+      acquired: false,
+      reason: "lock held by pid 123 for issue-93",
+      release: async () => {},
+    }),
+  });
+
+  assert.equal(result, "Skipped issue #93: lock held by pid 123 for issue-93.");
+  assert.equal(state.activeIssueNumber, null);
+  assert.deepEqual(state.issues, {});
+  assert.equal(savedStates.length, 0);
+});
+
+test("resolveRunnableIssueContext restarts closed issues instead of handing them off as ready", async () => {
+  const config = createConfig();
+  const selectedIssue: GitHubIssue = {
+    number: 94,
+    title: "Ready issue",
+    body: executionReadyBody("Ship the ready issue."),
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/94",
+    state: "OPEN",
+  };
+  const closedIssue: GitHubIssue = {
+    ...selectedIssue,
+    state: "CLOSED",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  const savedStates: SupervisorStateFile[] = [];
+  let released = false;
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [selectedIssue],
+      getIssue: async () => closedIssue,
+    },
+    config,
+    stateStore: createTouchStateStore(savedStates),
+    state,
+    currentRecord: null,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {
+        released = true;
+      },
+    }),
+  });
+
+  assert.deepEqual(result, { kind: "restart" });
+  assert.equal(released, true);
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(state.issues["94"]?.state, "done");
+  assert.equal(savedStates.length, 2);
+});
+
 test("resolveRunnableIssueContext skips dependency-blocked candidates and reserves the next ready issue", async () => {
   const config = createConfig();
   const dependencyIssue: GitHubIssue = {

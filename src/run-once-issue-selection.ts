@@ -36,6 +36,11 @@ type IssueSelectionStateStore = Pick<StateStore, "save" | "touch">;
 
 type IssueJournalContext = Pick<IssueRunRecord, "workspace" | "journal_path">;
 
+interface SelectedIssueRecord {
+  record: IssueRunRecord;
+  persistReservation: boolean;
+}
+
 interface SyncIssueJournalArgs {
   issue: GitHubIssue;
   record: IssueRunRecord;
@@ -289,7 +294,7 @@ async function selectIssueRecord(
   stateStore: IssueSelectionStateStore,
   state: SupervisorStateFile,
   currentRecord: IssueRunRecord | null,
-): Promise<IssueRunRecord | string> {
+): Promise<SelectedIssueRecord | string> {
   let record = currentRecord;
 
   if (!record || !isEligibleForSelection(record, config)) {
@@ -319,12 +324,16 @@ async function selectIssueRecord(
       return "No matching open issue found.";
     }
 
-    state.activeIssueNumber = record.issue_number;
-    state.issues[String(record.issue_number)] = record;
-    await stateStore.save(state);
+    return {
+      record,
+      persistReservation: true,
+    };
   }
 
-  return record;
+  return {
+    record,
+    persistReservation: false,
+  };
 }
 
 export async function resolveRunnableIssueContext(
@@ -345,7 +354,7 @@ export async function resolveRunnableIssueContext(
     return selectedRecord;
   }
 
-  let record = selectedRecord;
+  let { record, persistReservation } = selectedRecord;
   const issueLock = await acquireIssueLock(record);
   if (!issueLock.acquired) {
     return `Skipped issue #${record.issue_number}: ${issueLock.reason}.`;
@@ -353,8 +362,15 @@ export async function resolveRunnableIssueContext(
 
   let shouldReleaseIssueLock = true;
   try {
+    if (persistReservation) {
+      state.activeIssueNumber = record.issue_number;
+      state.issues[String(record.issue_number)] = record;
+      await stateStore.save(state);
+      persistReservation = false;
+    }
+
     const issue = await github.getIssue(record.issue_number);
-    if (issue.state === "CLOSED" && record.pr_number !== null) {
+    if (issue.state === "CLOSED") {
       record = stateStore.touch(record, { state: "done" });
       state.issues[String(record.issue_number)] = record;
       state.activeIssueNumber = null;

@@ -16,6 +16,7 @@ import {
   shouldAutoRetryHandoffMissing,
   summarizeChecks,
 } from "./supervisor";
+import { StateStore } from "./state-store";
 import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig, SupervisorStateFile } from "./types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
@@ -2151,6 +2152,72 @@ test("runOnce releases the current issue lock before restarting after a merged P
   assert.equal(persisted.issues[String(mergedIssueNumber)]?.last_head_sha, "merged-head-191");
   assert.equal(persisted.issues[String(nextIssueNumber)]?.branch, nextBranch);
   assert.equal(listAllIssuesCalls, 2);
+});
+
+test("runOnce releases the issue lock when budget failure persistence throws", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 91;
+  const issueLockPath = path.join(
+    path.dirname(fixture.stateFile),
+    "locks",
+    "issues",
+    `issue-${issueNumber}.lock`,
+  );
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Budget exhausted issue",
+    body: executionReadyBody("Budget exhausted issue."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(
+    createConfig({
+      ...fixture.config,
+      maxImplementationAttemptsPerIssue: 0,
+    }),
+  );
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const stateStore = (supervisor as unknown as { stateStore: StateStore }).stateStore;
+  const originalSave = stateStore.save.bind(stateStore);
+  stateStore.save = async (nextState: SupervisorStateFile) => {
+    const record = nextState.issues[String(issueNumber)];
+    if (record?.state === "failed") {
+      throw new Error("injected state save failure");
+    }
+    await originalSave(nextState);
+  };
+
+  await assert.rejects(
+    supervisor.runOnce({ dryRun: true }),
+    /injected state save failure/,
+  );
+  await assert.rejects(fs.access(issueLockPath));
 });
 
 test("runOnce clears a stale active issue reservation before selecting the next runnable issue", async () => {

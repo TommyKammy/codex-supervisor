@@ -2848,33 +2848,36 @@ export class Supervisor {
     let { record, issue, issueLock } = runnableIssue;
     const budgetLaneBeforeWorkspace = attemptLane(record, null);
     if (!hasAttemptBudgetRemaining(record, this.config, budgetLaneBeforeWorkspace)) {
-      const used = attemptsUsedForLane(record, budgetLaneBeforeWorkspace);
-      const max = attemptBudgetForLane(this.config, budgetLaneBeforeWorkspace);
-      const failureContext = buildCodexFailureContext(
-        "manual",
-        `Issue #${record.issue_number} exhausted its ${budgetLaneBeforeWorkspace} Codex attempt budget.`,
-        [
-          `attempt_lane=${budgetLaneBeforeWorkspace}`,
-          `attempts=${used}`,
-          `max=${max}`,
-          `total_attempts=${record.attempt_count}`,
-        ],
-      );
-      record = this.stateStore.touch(record, {
-        state: "failed",
-        last_failure_kind: "command_error",
-        last_error:
-          `Reached max ${budgetLaneBeforeWorkspace} Codex attempts for issue #${record.issue_number} ` +
-          `(${used}/${max}).`,
-        last_failure_context: failureContext,
-        ...applyFailureSignature(record, failureContext),
-        blocked_reason: null,
-      });
-      state.issues[String(record.issue_number)] = record;
-      state.activeIssueNumber = null;
-      await this.stateStore.save(state);
-      await issueLock.release();
-      return `Issue #${record.issue_number} reached max ${budgetLaneBeforeWorkspace} Codex attempts.`;
+      try {
+        const used = attemptsUsedForLane(record, budgetLaneBeforeWorkspace);
+        const max = attemptBudgetForLane(this.config, budgetLaneBeforeWorkspace);
+        const failureContext = buildCodexFailureContext(
+          "manual",
+          `Issue #${record.issue_number} exhausted its ${budgetLaneBeforeWorkspace} Codex attempt budget.`,
+          [
+            `attempt_lane=${budgetLaneBeforeWorkspace}`,
+            `attempts=${used}`,
+            `max=${max}`,
+            `total_attempts=${record.attempt_count}`,
+          ],
+        );
+        record = this.stateStore.touch(record, {
+          state: "failed",
+          last_failure_kind: "command_error",
+          last_error:
+            `Reached max ${budgetLaneBeforeWorkspace} Codex attempts for issue #${record.issue_number} ` +
+            `(${used}/${max}).`,
+          last_failure_context: failureContext,
+          ...applyFailureSignature(record, failureContext),
+          blocked_reason: null,
+        });
+        state.issues[String(record.issue_number)] = record;
+        state.activeIssueNumber = null;
+        await this.stateStore.save(state);
+        return `Issue #${record.issue_number} reached max ${budgetLaneBeforeWorkspace} Codex attempts.`;
+      } finally {
+        await issueLock.release();
+      }
     }
 
     return {
