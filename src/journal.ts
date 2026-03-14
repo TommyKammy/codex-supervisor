@@ -69,6 +69,7 @@ function normalizeCurrentHandoff(lines: string[]): string[] {
   const values = new Map<HandoffField, string>();
   const extras: string[] = [];
   let activeField: HandoffField | null = null;
+  let preservingNextStepExtras = false;
 
   for (const line of lines) {
     const fieldMatch = line.match(/^- ([^:]+):(.*)$/);
@@ -78,6 +79,7 @@ function normalizeCurrentHandoff(lines: string[]): string[] {
       const rawValue = fieldMatch[2].trim();
 
       activeField = mappedField ?? null;
+      preservingNextStepExtras = false;
       if (!mappedField) {
         extras.push(line);
         continue;
@@ -95,13 +97,22 @@ function normalizeCurrentHandoff(lines: string[]): string[] {
       const trimmed = line.trim();
       if (trimmed.length === 0) {
         activeField = null;
+        preservingNextStepExtras = false;
         continue;
       }
 
+      if (preservingNextStepExtras) {
+        extras.push(line);
+        continue;
+      }
+
+      const isBulletItem = /^[-*]\s+/.test(trimmed);
       const continuation = trimmed.replace(/^[-*]\s+/, "").trim();
       if (continuation.length > 0) {
         const previous = values.get(activeField)?.trim() ?? "";
-        if (activeField === "Next exact step" && previous.length > 0) {
+        if (activeField === "Next exact step" && previous.length > 0 && isBulletItem) {
+          extras.push(line);
+          preservingNextStepExtras = true;
           continue;
         }
 
@@ -197,20 +208,29 @@ function preserveCodexNotes(existing: string): string | null {
 }
 
 function compactCodexNotes(notes: string, maxChars: number): string {
-  if (notes.length <= maxChars) {
-    return notes;
+  const normalizedNotes = normalizeCodexNotes(notes);
+
+  if (normalizedNotes.length <= maxChars) {
+    return normalizedNotes;
   }
 
-  const headerLines = normalizeCodexNotes(NOTES_TEMPLATE).trimEnd().split("\n");
-  const header = headerLines.join("\n");
-  const tailBudget = Math.max(0, maxChars - header.length - 1);
+  const normalizedLines = normalizedNotes.trimEnd().split("\n");
+  const scratchpadIndex = normalizedLines.findIndex((line) => line.trim() === "### Scratchpad");
+  const headerLines =
+    scratchpadIndex >= 0 ? normalizedLines.slice(0, scratchpadIndex + 1) : normalizedLines;
+  const tailSourceLines = scratchpadIndex >= 0 ? normalizedLines.slice(scratchpadIndex + 1) : [];
 
-  const lines = notes.split("\n");
+  const header = headerLines.join("\n");
+  if (header.length >= maxChars) {
+    return header.slice(0, maxChars);
+  }
+
+  const tailBudget = Math.max(0, maxChars - header.length - 1);
   const preservedTail: string[] = [];
   let currentLength = 0;
 
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const line = lines[index];
+  for (let index = tailSourceLines.length - 1; index >= 0; index -= 1) {
+    const line = tailSourceLines[index];
     const nextLength = currentLength + line.length + 1;
     if (preservedTail.length > 0 && nextLength > tailBudget) {
       break;
@@ -220,10 +240,7 @@ function compactCodexNotes(notes: string, maxChars: number): string {
     currentLength = nextLength;
   }
 
-  const compacted = [
-    ...headerLines,
-    ...preservedTail.filter((line) => line.trim() !== NOTES_MARKER),
-  ].join("\n");
+  const compacted = [...headerLines, ...preservedTail].join("\n");
 
   return compacted.length <= maxChars ? compacted : compacted.slice(0, maxChars);
 }
@@ -270,6 +287,6 @@ export async function syncIssueJournal(args: {
   const existing = await readIssueJournal(journalPath);
   const notes = existing ? preserveCodexNotes(existing) : null;
   const snapshot = buildSupervisorSnapshot({ issue, record, journalPath });
-  const nextContent = `${snapshot}\n${notes ? compactCodexNotes(normalizeCodexNotes(notes), maxChars) : NOTES_TEMPLATE}`;
+  const nextContent = `${snapshot}\n${notes ? compactCodexNotes(notes, maxChars) : NOTES_TEMPLATE}`;
   await fs.writeFile(journalPath, nextContent, "utf8");
 }

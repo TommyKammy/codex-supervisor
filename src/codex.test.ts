@@ -242,6 +242,51 @@ test("buildCodexPrompt keeps explicit operator overrides during local_review_fix
   assert.doesNotMatch(prompt, /Leave the PR as a stable checkpoint for handoff\./);
 });
 
+test("buildCodexPrompt suppresses structured next exact step guidance during local_review_fix without dropping later fields", () => {
+  const prompt = buildCodexPrompt({
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "local_review_fix" satisfies RunState,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+    journalExcerpt: `# Issue #46: Add a dedicated local_review_fix repair mode
+
+## Codex Working Notes
+### Current Handoff
+- Hypothesis: The repair path still carries forward stale checkpoint guidance.
+- Next exact step: Leave the PR as a stable checkpoint for handoff.
+- Verification gap: Full npm test was not rerun yet.
+
+### Scratchpad
+- Keep this section short.`,
+    localReviewRepairContext: {
+      summaryPath: "/tmp/reviews/issue-46/head-deadbeef.md",
+      findingsPath: "/tmp/reviews/issue-46/head-deadbeef.json",
+      relevantFiles: ["src/codex.ts"],
+      rootCauses: [
+        {
+          severity: "high",
+          summary: "Prompt guidance should ignore stale checkpoint-maintenance handoff text during repair.",
+          file: "src/codex.ts",
+          lines: "1-200",
+        },
+      ],
+      priorMissPatterns: [],
+      verifierGuardrails: [],
+    },
+  });
+
+  assert.doesNotMatch(prompt, /Leave the PR as a stable checkpoint for handoff\./);
+  assert.match(prompt, /- Next exact step: suppressed during active local-review repair/);
+  assert.match(prompt, /- Verification gap: Full npm test was not rerun yet\./);
+});
+
 test("buildCodexPrompt surfaces saved external review misses during addressing_review", () => {
   const prompt = buildCodexPrompt({
     repoSlug: "owner/repo",

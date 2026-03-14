@@ -132,3 +132,78 @@ test("syncIssueJournal preserves legacy handoff content by normalizing old field
   assert.match(content, /- Last focused command: npm test -- src\/journal\.test\.ts/);
   assert.match(content, /### Scratchpad\n- Existing note\./);
 });
+
+test("syncIssueJournal keeps wrapped next steps and preserves extra legacy actions", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-next-step-"));
+  const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
+
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    `# Issue #177: Structured handoff: define a clearer issue journal schema
+
+## Codex Working Notes
+### Current Handoff
+- Next 1-3 actions:
+  - Implement the handoff normalization
+    without dropping wrapped text.
+  - Update the downstream sanitizer for the new label.
+
+### Scratchpad
+- Existing note.
+`,
+    "utf8",
+  );
+
+  await syncIssueJournal({
+    issue,
+    record: createRecord({ workspace: tempDir, journal_path: journalPath }),
+    journalPath,
+  });
+
+  const content = await fs.readFile(journalPath, "utf8");
+  assert.match(content, /- Next exact step: Implement the handoff normalization without dropping wrapped text\./);
+  assert.match(content, /Update the downstream sanitizer for the new label\./);
+  assert.match(content, /### Scratchpad\n- Existing note\./);
+});
+
+test("syncIssueJournal compaction preserves populated current handoff values", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-compact-"));
+  const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
+
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    `# Issue #177: Structured handoff: define a clearer issue journal schema
+
+## Codex Working Notes
+### Current Handoff
+- Hypothesis: Structured handoff fields speed operator recovery.
+- What changed: Added explicit journal labels and normalization.
+- Current blocker: None.
+- Next exact step: Update the remaining prompt sanitizer.
+- Verification gap: Full npm test was not rerun.
+- Files touched: src/journal.ts, src/codex.ts
+- Rollback concern: Low.
+- Last focused command: npx tsx --test src/journal.test.ts
+
+### Scratchpad
+${Array.from({ length: 30 }, (_, index) => `- Scratch line ${index + 1}: ${"detail ".repeat(8).trim()}`).join("\n")}
+`,
+    "utf8",
+  );
+
+  await syncIssueJournal({
+    issue,
+    record: createRecord({ workspace: tempDir, journal_path: journalPath }),
+    journalPath,
+    maxChars: 650,
+  });
+
+  const content = await fs.readFile(journalPath, "utf8");
+  assert.match(content, /- What changed: Added explicit journal labels and normalization\./);
+  assert.match(content, /- Next exact step: Update the remaining prompt sanitizer\./);
+  assert.match(content, /- Verification gap: Full npm test was not rerun\./);
+  assert.doesNotMatch(content, /Scratch line 1:/);
+  assert.match(content, /Scratch line 30:/);
+});
