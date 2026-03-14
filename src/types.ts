@@ -95,6 +95,7 @@ export type FailureContextCategory =
 
 export type BlockedReason =
   | "requirements"
+  | "clarification"
   | "permissions"
   | "secrets"
   | "verification"

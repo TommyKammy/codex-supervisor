@@ -19,7 +19,13 @@ import {
 import { loadConfig } from "./config";
 import { ExternalReviewMissContext, loadRelevantExternalReviewMissPatterns, writeExternalReviewMissArtifact } from "./external-review-misses";
 import { GitHubClient } from "./github";
-import { findBlockingIssue, findParentIssuesReadyToClose, lintExecutionReadyIssueBody, parseIssueMetadata } from "./issue-metadata";
+import {
+  findBlockingIssue,
+  findHighRiskBlockingAmbiguity,
+  findParentIssuesReadyToClose,
+  lintExecutionReadyIssueBody,
+  parseIssueMetadata,
+} from "./issue-metadata";
 import { describeGsdIntegration } from "./gsd";
 import {
   hasMeaningfulJournalHandoff,
@@ -462,6 +468,26 @@ function buildExecutionReadyFailureContext(
       `missing_recommended=${
         missingRecommended.length > 0 ? formatExecutionReadyMissingFields(missingRecommended) : "none"
       }`,
+    ],
+    url: issue.url,
+    updated_at: nowIso(),
+  };
+}
+
+function buildClarificationFailureContext(
+  issue: Pick<GitHubIssue, "number" | "url">,
+  reason: string,
+  ambiguityClasses: string[],
+  riskyChangeClasses: string[],
+): FailureContext {
+  return {
+    category: "blocked",
+    summary: `Issue #${issue.number} requires manual clarification because ${reason}.`,
+    signature: `clarification:${ambiguityClasses.join("|")}:${riskyChangeClasses.join("|")}`,
+    command: null,
+    details: [
+      `ambiguity_classes=${ambiguityClasses.join(", ")}`,
+      `risky_change_classes=${riskyChangeClasses.join(", ")}`,
     ],
     url: issue.url,
     updated_at: nowIso(),
@@ -1436,6 +1462,14 @@ async function buildReadinessSummary(
       continue;
     }
 
+    const clarificationBlock = findHighRiskBlockingAmbiguity(issue);
+    if (clarificationBlock) {
+      blocked.push(
+        `#${issue.number} blocked_by=clarification:${clarificationBlock.ambiguityClasses.join("|")}:${clarificationBlock.riskyChangeClasses.join("|")}`,
+      );
+      continue;
+    }
+
     const blockingIssue = findBlockingIssue(issue, issues, state);
     if (blockingIssue) {
       blocked.push(`#${issue.number} blocked_by=${blockingIssue.reason}`);
@@ -1554,6 +1588,24 @@ interface RestartRunOnce {
 
 function isRestartRunOnce(result: HydratedPullRequestContext | PreparedIssueExecutionContext | RestartRunOnce): result is RestartRunOnce {
   return "kind" in result && result.kind === "restart";
+}
+
+async function ensureRecordJournalContext(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+): Promise<Pick<IssueRunRecord, "workspace" | "journal_path">> {
+  if (record.journal_path) {
+    return {
+      workspace: record.workspace,
+      journal_path: record.journal_path,
+    };
+  }
+
+  const workspace = await ensureWorkspace(config, record.issue_number, record.branch);
+  return {
+    workspace,
+    journal_path: issueJournalPath(workspace, config.issueJournalRelativePath),
+  };
 }
 
 interface CodexTurnContext {
@@ -2397,6 +2449,32 @@ export async function reconcileRecoverableBlockedIssueStates(
       state.issues[String(record.issue_number)] = updated;
       changed = true;
       recoveryEvents.push(recoveryEvent);
+      continue;
+    }
+
+    if (record.state === "blocked" && record.blocked_reason === "clarification") {
+      if (findHighRiskBlockingAmbiguity(issue)) {
+        continue;
+      }
+
+      const recoveryEvent = buildRecoveryEvent(
+        record.issue_number,
+        `clarification_recovered: requeued issue #${record.issue_number} after blocking ambiguity was resolved`,
+      );
+      const updated = stateStore.touch(record, {
+        state: "queued",
+        blocked_reason: null,
+        last_error: null,
+        last_failure_kind: null,
+        last_failure_context: null,
+        last_blocker_signature: null,
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+        ...applyRecoveryEvent({}, recoveryEvent),
+      });
+      state.issues[String(record.issue_number)] = updated;
+      changed = true;
+      recoveryEvents.push(recoveryEvent);
     }
   }
 
@@ -2637,12 +2715,14 @@ export class Supervisor {
       if (shouldEnforceExecutionReady(record)) {
         const readiness = lintExecutionReadyIssueBody(issue);
         if (!readiness.isExecutionReady) {
+          const journalContext = await ensureRecordJournalContext(this.config, record);
           const failureContext = buildExecutionReadyFailureContext(
             issue,
             readiness.missingRequired,
             readiness.missingRecommended,
           );
           const blockedRecord = this.stateStore.touch(record, {
+            ...journalContext,
             state: "blocked",
             last_error: truncate(
               `Missing required execution-ready metadata: ${formatExecutionReadyMissingFields(readiness.missingRequired)}.`,
@@ -2668,6 +2748,40 @@ export class Supervisor {
           await issueLock.release();
           return { kind: "restart" };
         }
+      }
+
+      const clarificationBlock = findHighRiskBlockingAmbiguity(issue);
+      if (clarificationBlock) {
+        const journalContext = await ensureRecordJournalContext(this.config, record);
+        const failureContext = buildClarificationFailureContext(
+          issue,
+          clarificationBlock.reason,
+          clarificationBlock.ambiguityClasses,
+          clarificationBlock.riskyChangeClasses,
+        );
+        const blockedRecord = this.stateStore.touch(record, {
+          ...journalContext,
+          state: "blocked",
+          last_error: truncate(`Needs manual clarification: ${clarificationBlock.reason}.`, 1000),
+          last_failure_kind: null,
+          last_failure_context: failureContext,
+          ...applyFailureSignature(record, failureContext),
+          blocked_reason: "clarification",
+        });
+        state.issues[String(blockedRecord.issue_number)] = blockedRecord;
+        state.activeIssueNumber = null;
+        await this.stateStore.save(state);
+        if (blockedRecord.journal_path) {
+          await syncIssueJournal({
+            issue,
+            record: blockedRecord,
+            journalPath: blockedRecord.journal_path,
+            maxChars: this.config.issueJournalMaxChars,
+          });
+        }
+        shouldReleaseIssueLock = false;
+        await issueLock.release();
+        return { kind: "restart" };
       }
 
       const candidateIssues = await this.github.listCandidateIssues();

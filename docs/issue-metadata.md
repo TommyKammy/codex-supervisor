@@ -16,7 +16,6 @@ issue 本文に次の行を追加します。
 Depends on: #232, #240
 Parallel group: timeline-layout
 Touches: web-ui, core-api, prisma
-Risky change opt-in: auth, ci
 ```
 
 既存の順序情報も引き続き使えます。
@@ -34,9 +33,10 @@ Part of #227
   - 指定した issue が open の間、その issue には着手しません
 - `Part of` + `Execution order`
   - 同じ parent issue 配下で、先行番号が終わるまで後続番号には着手しません
-- risky change classes (`auth`, `billing`, `permissions`, `ci`, `migrations`, `secrets`)
-  - title / `Summary` / `Scope` / `Touches` から決定的に検出した場合、対応する `Risky change opt-in` がない限り着手しません
-  - 本文に `This issue is explicitly approved for auth changes.` のような明示文でも許可できます
+- high-risk blocking ambiguity
+  - risky change classes (`auth`, `billing`, `permissions`, `ci`, `migrations`, `secrets`) 自体は advisory です
+  - ただし risky な issue に、次のような「人間の判断が未解決」と明示された文がある場合は `blocked_reason=clarification` で止まります
+  - ambiguity classes は `open_question` (`TBD`, `open question` など), `unresolved_choice` (`decide`, `choose`, `whether to` など), `operator_confirmation` (`confirm with`, `wait for`, `needs confirmation` など) です
 
 ## 現在は advisory のもの
 
@@ -44,7 +44,7 @@ Part of #227
   - いまは記法だけを予約しています。将来の並列 scheduler 用です
 - `Touches`
   - 依存関係や順序を直接 enforce するものではありません
-  - ただし risky change class の検出入力には使われるため、`Touches: secrets` のような記述は explicit opt-in gate を発火させることがあります
+  - ただし risky change class の検出入力には使われるため、`Touches: secrets` のような記述は clarification detector の対象になることがあります
 - `Scope` / `Verification` の弱い書き方
   - `Scope` は「何を変えるか」に加えて「何を維持するか / 何を含めないか」もあると扱いやすいです
   - `Verification` は `run tests` のような抽象語だけでなく、具体的な command・test file・manual check target を書くのが推奨です
@@ -63,7 +63,6 @@ Part of #227
 Depends on: #232
 Parallel group: timeline-layout
 Touches: web-ui, core-api, prisma
-Risky change opt-in: migrations
 
 ## Execution order
 7 of 15

@@ -896,7 +896,7 @@ Add execution-ready gating.`,
   ]);
 });
 
-test("runOnce blocks risky issues without explicit opt-in even when execution-ready sections are present", async () => {
+test("runOnce proceeds with concrete risky issues when no blocking ambiguity is present", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 94;
   const state: SupervisorStateFile = {
@@ -917,7 +917,66 @@ Rotate the production auth token flow for service-to-service requests.
 
 ## Acceptance criteria
 - production authentication changes are fully implemented
-- supervisor requires explicit opt-in before starting this class of work
+
+## Verification
+- npm test -- src/supervisor.test.ts`,
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(message, /Dry run: would invoke Codex for issue #94\./);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(persisted.activeIssueNumber, issueNumber);
+  assert.equal(record.state, "reproducing");
+  assert.equal(record.blocked_reason, null);
+  assert.equal(record.last_failure_context, null);
+});
+
+test("runOnce blocks only explicit high-risk blocking ambiguity", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 95;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Decide which production auth token flow to keep",
+    body: `## Summary
+Decide whether to keep the current production auth token flow or replace it before rollout.
+
+## Scope
+- choose the production authentication path for service-to-service traffic
+- keep rollout audit-friendly
+
+## Acceptance criteria
+- the operator confirms which auth flow should ship
 
 ## Verification
 - npm test -- src/supervisor.test.ts`,
@@ -953,12 +1012,20 @@ Rotate the production auth token flow for service-to-service requests.
   const record = persisted.issues[String(issueNumber)];
   assert.equal(persisted.activeIssueNumber, null);
   assert.equal(record.state, "blocked");
-  assert.equal(record.blocked_reason, "requirements");
-  assert.match(record.last_error ?? "", /explicit opt-in/i);
-  assert.match(record.last_failure_context?.summary ?? "", /explicit opt-in/i);
+  assert.equal(record.blocked_reason, "clarification");
+  assert.match(record.last_error ?? "", /manual clarification/i);
+  assert.match(record.last_error ?? "", /unresolved_choice/);
+  assert.match(record.last_failure_context?.summary ?? "", /requires manual clarification/i);
+  assert.deepEqual(record.last_failure_context?.details ?? [], [
+    "ambiguity_classes=unresolved_choice",
+    "risky_change_classes=auth",
+  ]);
+  const journal = await fs.readFile(record.journal_path ?? "", "utf8");
+  assert.match(journal, /requires manual clarification because high-risk blocking ambiguity/i);
+  assert.match(journal, /ambiguity_classes=unresolved_choice/i);
 });
 
-test("status shows readiness reasons for runnable and requirements-blocked issues", async () => {
+test("status shows readiness reasons for runnable, requirements-blocked, and clarification-blocked issues", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {
     activeIssueNumber: null,
@@ -1007,10 +1074,29 @@ Missing execution-ready metadata.`,
     url: "https://example.test/issues/93",
     state: "OPEN",
   };
+  const clarificationBlockedIssue: GitHubIssue = {
+    number: 94,
+    title: "Decide which auth path to keep",
+    body: `## Summary
+Decide whether to keep the current production auth token flow or replace it before rollout.
+
+## Scope
+- choose the production authentication path for service-to-service traffic
+
+## Acceptance criteria
+- the operator confirms which auth flow should ship
+
+## Verification
+- npm test -- src/supervisor.test.ts`,
+    createdAt: "2026-03-13T00:15:00Z",
+    updatedAt: "2026-03-13T00:15:00Z",
+    url: "https://example.test/issues/94",
+    state: "OPEN",
+  };
 
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
-    listCandidateIssues: async () => [runnableIssue, missingMetadataIssue],
+    listCandidateIssues: async () => [runnableIssue, missingMetadataIssue, clarificationBlockedIssue],
     getPullRequestIfExists: async () => null,
     getChecks: async () => [],
     getUnresolvedReviewThreads: async () => [],
@@ -1021,7 +1107,7 @@ Missing execution-ready metadata.`,
   assert.match(status, /runnable_issues=#92 ready=execution_ready\+depends_on_satisfied:91/);
   assert.match(
     status,
-    /blocked_issues=#93 blocked_by=requirements:scope, acceptance criteria, verification/,
+    /blocked_issues=#93 blocked_by=requirements:scope, acceptance criteria, verification; #94 blocked_by=clarification:unresolved_choice:auth/,
   );
 });
 
