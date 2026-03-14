@@ -854,6 +854,37 @@ test("buildRolePrompt includes bounded relevant prior external misses", () => {
   assert.match(prompt, /Response omits a required field\./);
 });
 
+test("buildRolePrompt teaches reviewer to prefer simpler solutions and flag speculative abstraction narrowly", () => {
+  const prompt = buildRolePrompt({
+    repoSlug: "owner/repo",
+    issue: {
+      number: 193,
+      title: "Prefer simpler reviewer guardrails",
+      body: "",
+      url: "https://example.test/issues/193",
+      createdAt: "2026-03-14T00:00:00Z",
+      updatedAt: "2026-03-14T00:00:00Z",
+      labels: [],
+    },
+    branch: "codex/issue-193",
+    workspacePath: "/tmp/workspaces/issue-193",
+    defaultBranch: "main",
+    pr: createPullRequest({
+      number: 193,
+      url: "https://example.test/pr/193",
+      headRefOid: "head193",
+    }),
+    role: "reviewer",
+    alwaysReadFiles: [],
+    onDemandFiles: [],
+    confidenceThreshold: 0.7,
+    priorMissPatterns: [],
+  });
+
+  assert.match(prompt, /Prefer the smallest correct implementation when it satisfies the issue\./);
+  assert.match(prompt, /Flag speculative abstraction, premature generalization, or unnecessary indirection only when it adds concrete maintenance or correctness risk\./);
+});
+
 test("buildVerifierPrompt includes bounded relevant prior external misses", () => {
   const prompt = buildVerifierPrompt({
     repoSlug: "owner/repo",
