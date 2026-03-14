@@ -169,15 +169,17 @@ function suppressStaleRepairHandoff(journalExcerpt: string | null | undefined, s
     return journalExcerpt;
   }
 
+  const nextActionLabels = ["Next 1-3 actions", "Next exact step"] as const;
   const lines = journalExcerpt.split("\n");
   const sanitized: string[] = [];
   let inNextActions = false;
-  let removedNextActions = false;
+  let removedNextActionsLabel: (typeof nextActionLabels)[number] | null = null;
 
   for (const line of lines) {
-    if (line.startsWith("- Next 1-3 actions:")) {
+    const matchedNextActionLabel = nextActionLabels.find((label) => line.startsWith(`- ${label}:`));
+    if (matchedNextActionLabel) {
       inNextActions = true;
-      removedNextActions = true;
+      removedNextActionsLabel = matchedNextActionLabel;
       continue;
     }
 
@@ -195,6 +197,12 @@ function suppressStaleRepairHandoff(journalExcerpt: string | null | undefined, s
         continue;
       }
 
+      if (/^- [^:]+:/.test(line)) {
+        inNextActions = false;
+        sanitized.push(line);
+        continue;
+      }
+
       const isBulletItem = /^[-*]\s+/.test(trimmed);
       const isContinuation = /^\s/.test(line);
       if (isBulletItem || isContinuation) {
@@ -207,7 +215,7 @@ function suppressStaleRepairHandoff(journalExcerpt: string | null | undefined, s
     sanitized.push(line);
   }
 
-  if (!removedNextActions) {
+  if (!removedNextActionsLabel) {
     return journalExcerpt;
   }
 
@@ -217,7 +225,7 @@ function suppressStaleRepairHandoff(journalExcerpt: string | null | undefined, s
     output.push(line);
     if (!insertedNotice && line.startsWith("### Current Handoff")) {
       output.push(
-        "- Next 1-3 actions: suppressed during active local-review repair; use the local-review blocker context unless an operator override note says otherwise.",
+        `- ${removedNextActionsLabel}: suppressed during active local-review repair; use the local-review blocker context unless an operator override note says otherwise.`,
       );
       insertedNotice = true;
     }

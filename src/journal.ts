@@ -4,19 +4,152 @@ import { GitHubIssue, IssueRunRecord } from "./types";
 import { ensureDir, truncate } from "./utils";
 
 const NOTES_MARKER = "## Codex Working Notes";
-const NOTES_TEMPLATE = [
-  NOTES_MARKER,
-  "### Current Handoff",
-  "- Hypothesis:",
-  "- Primary failure or risk:",
-  "- Last focused command:",
-  "- Files changed:",
-  "- Next 1-3 actions:",
-  "",
-  "### Scratchpad",
-  "- Keep this section short. The supervisor may compact older notes automatically.",
-  "",
-].join("\n");
+const HANDOFF_FIELDS = [
+  "Hypothesis",
+  "What changed",
+  "Current blocker",
+  "Next exact step",
+  "Verification gap",
+  "Files touched",
+  "Rollback concern",
+  "Last focused command",
+] as const;
+type HandoffField = (typeof HANDOFF_FIELDS)[number];
+
+const LEGACY_HANDOFF_FIELD_MAP: Record<string, HandoffField> = {
+  Hypothesis: "Hypothesis",
+  "What changed": "What changed",
+  "Primary failure or risk": "Current blocker",
+  "Current blocker": "Current blocker",
+  "Next 1-3 actions": "Next exact step",
+  "Next exact step": "Next exact step",
+  "Verification gap": "Verification gap",
+  "Files changed": "Files touched",
+  "Files touched": "Files touched",
+  "Rollback concern": "Rollback concern",
+  "Last focused command": "Last focused command",
+};
+
+function buildNotesTemplate(): string {
+  return [
+    NOTES_MARKER,
+    "### Current Handoff",
+    ...HANDOFF_FIELDS.map((field) => `- ${field}:`),
+    "",
+    "### Scratchpad",
+    "- Keep this section short. The supervisor may compact older notes automatically.",
+    "",
+  ].join("\n");
+}
+
+const NOTES_TEMPLATE = buildNotesTemplate();
+
+function splitCurrentHandoff(notes: string): { handoffLines: string[]; remainderLines: string[] } {
+  const lines = notes.split("\n");
+  const handoffHeaderIndex = lines.findIndex((line) => line.trim() === "### Current Handoff");
+  if (handoffHeaderIndex < 0) {
+    return { handoffLines: [], remainderLines: lines };
+  }
+
+  let handoffEndIndex = lines.length;
+  for (let index = handoffHeaderIndex + 1; index < lines.length; index += 1) {
+    if (/^###\s+/.test(lines[index])) {
+      handoffEndIndex = index;
+      break;
+    }
+  }
+
+  return {
+    handoffLines: lines.slice(handoffHeaderIndex + 1, handoffEndIndex),
+    remainderLines: lines.slice(handoffEndIndex),
+  };
+}
+
+function normalizeCurrentHandoff(lines: string[]): string[] {
+  const values = new Map<HandoffField, string>();
+  const extras: string[] = [];
+  let activeField: HandoffField | null = null;
+  let preservingNextStepExtras = false;
+
+  for (const line of lines) {
+    const fieldMatch = line.match(/^- ([^:]+):(.*)$/);
+    if (fieldMatch) {
+      const rawLabel = fieldMatch[1].trim();
+      const mappedField = LEGACY_HANDOFF_FIELD_MAP[rawLabel];
+      const rawValue = fieldMatch[2].trim();
+
+      activeField = mappedField ?? null;
+      preservingNextStepExtras = false;
+      if (!mappedField) {
+        extras.push(line);
+        continue;
+      }
+
+      if (rawValue.length > 0) {
+        values.set(mappedField, rawValue);
+      } else if (!values.has(mappedField)) {
+        values.set(mappedField, "");
+      }
+      continue;
+    }
+
+    if (activeField) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) {
+        activeField = null;
+        preservingNextStepExtras = false;
+        continue;
+      }
+
+      if (preservingNextStepExtras) {
+        extras.push(line);
+        continue;
+      }
+
+      const isBulletItem = /^[-*]\s+/.test(trimmed);
+      const continuation = trimmed.replace(/^[-*]\s+/, "").trim();
+      if (continuation.length > 0) {
+        const previous = values.get(activeField)?.trim() ?? "";
+        if (activeField === "Next exact step" && previous.length > 0 && isBulletItem) {
+          extras.push(line);
+          preservingNextStepExtras = true;
+          continue;
+        }
+
+        values.set(activeField, previous.length > 0 ? `${previous} ${continuation}` : continuation);
+        continue;
+      }
+    }
+
+    extras.push(line);
+  }
+
+  return [
+    "### Current Handoff",
+    ...HANDOFF_FIELDS.map((field) => `- ${field}: ${values.get(field) ?? ""}`.trimEnd()),
+    ...extras.filter((line) => line.trim().length > 0),
+  ];
+}
+
+function normalizeCodexNotes(notes: string): string {
+  const { handoffLines, remainderLines } = splitCurrentHandoff(notes);
+  if (handoffLines.length === 0) {
+    const lines = notes.split("\n");
+    const scratchpadIndex = lines.findIndex((line) => line.trim() === "### Scratchpad");
+    const fallbackRemainder =
+      scratchpadIndex >= 0
+        ? lines.slice(scratchpadIndex)
+        : ["### Scratchpad", "- Keep this section short. The supervisor may compact older notes automatically.", ""];
+    return `${[NOTES_MARKER, "### Current Handoff", ...HANDOFF_FIELDS.map((field) => `- ${field}:`), "", ...fallbackRemainder]
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trimEnd()}\n`;
+  }
+
+  const normalized = [NOTES_MARKER, ...normalizeCurrentHandoff(handoffLines)];
+  const cleanedRemainder = remainderLines.length > 0 ? remainderLines : ["", "### Scratchpad", "- Keep this section short. The supervisor may compact older notes automatically.", ""];
+  return `${[...normalized, ...cleanedRemainder].join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()}\n`;
+}
 
 function buildSupervisorSnapshot(args: {
   issue: GitHubIssue;
@@ -75,25 +208,29 @@ function preserveCodexNotes(existing: string): string | null {
 }
 
 function compactCodexNotes(notes: string, maxChars: number): string {
-  if (notes.length <= maxChars) {
-    return notes;
+  const normalizedNotes = normalizeCodexNotes(notes);
+
+  if (normalizedNotes.length <= maxChars) {
+    return normalizedNotes;
   }
 
-  const headerLines = [
-    NOTES_MARKER,
-    "### Current Handoff",
-    "- Older scratchpad entries were compacted by codex-supervisor to keep resume context small.",
-    "",
-  ];
-  const header = headerLines.join("\n");
-  const tailBudget = Math.max(0, maxChars - header.length - 1);
+  const normalizedLines = normalizedNotes.trimEnd().split("\n");
+  const scratchpadIndex = normalizedLines.findIndex((line) => line.trim() === "### Scratchpad");
+  const headerLines =
+    scratchpadIndex >= 0 ? normalizedLines.slice(0, scratchpadIndex + 1) : normalizedLines;
+  const tailSourceLines = scratchpadIndex >= 0 ? normalizedLines.slice(scratchpadIndex + 1) : [];
 
-  const lines = notes.split("\n");
+  const header = headerLines.join("\n");
+  if (header.length >= maxChars) {
+    return header.slice(0, maxChars);
+  }
+
+  const tailBudget = Math.max(0, maxChars - header.length - 1);
   const preservedTail: string[] = [];
   let currentLength = 0;
 
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const line = lines[index];
+  for (let index = tailSourceLines.length - 1; index >= 0; index -= 1) {
+    const line = tailSourceLines[index];
     const nextLength = currentLength + line.length + 1;
     if (preservedTail.length > 0 && nextLength > tailBudget) {
       break;
@@ -103,10 +240,7 @@ function compactCodexNotes(notes: string, maxChars: number): string {
     currentLength = nextLength;
   }
 
-  const compacted = [
-    ...headerLines,
-    ...preservedTail.filter((line) => line.trim() !== NOTES_MARKER),
-  ].join("\n");
+  const compacted = [...headerLines, ...preservedTail].join("\n");
 
   return compacted.length <= maxChars ? compacted : compacted.slice(0, maxChars);
 }
@@ -121,7 +255,7 @@ export function hasMeaningfulJournalHandoff(content: string | null): boolean {
     return false;
   }
 
-  const normalized = notes.trim();
+  const normalized = normalizeCodexNotes(notes).trim();
   return normalized !== NOTES_TEMPLATE.trim();
 }
 
