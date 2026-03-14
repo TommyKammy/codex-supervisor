@@ -142,6 +142,31 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
   };
 }
 
+function createReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
+  return {
+    id: "thread-1",
+    isResolved: false,
+    isOutdated: false,
+    path: "src/file.ts",
+    line: 12,
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "Please address this.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+    ...overrides,
+  };
+}
+
 function executionReadyBody(summary: string): string {
   return `## Summary
 ${summary}
@@ -2568,6 +2593,125 @@ test("runOnce records an observed Copilot request time when GitHub omits the req
   assert.equal(Number.isNaN(Date.parse(record.copilot_review_requested_observed_at ?? "")), false);
 });
 
+test("runOnce reprocesses a configured bot review thread once after a new PR head commit and then blocks if it remains unresolved", async () => {
+  const fixture = await createSupervisorFixture({
+    codexScriptLines: [
+      "#!/bin/sh",
+      "set -eu",
+      'out=""',
+      'while [ "$#" -gt 0 ]; do',
+      '  case "$1" in',
+      '    -o) out=\"$2\"; shift 2 ;;',
+      '    *) shift ;;',
+      '  esac',
+      "done",
+      'printf \'{"type":"thread.started","thread_id":"thread-review"}\\n\'',
+      "cat <<'EOF' > \"$out\"",
+      "Summary: reviewed configured bot thread once on the new head",
+      "State hint: stabilizing",
+      "Blocked reason: none",
+      "Tests: not run",
+      "Failure signature: none",
+      "Next action: refresh the PR snapshot and decide whether the thread still blocks",
+      "EOF",
+      "printf '\\n- Scratchpad note: review reprocessing completed for the current head.\\n' >> .codex-supervisor/issue-journal.md",
+      "exit 0",
+      "",
+    ],
+  });
+  const issueNumber = 116;
+  const branch = branchName(fixture.config, issueNumber);
+  const config = createConfig({
+    ...fixture.config,
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "pr_open",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: 116,
+        last_head_sha: "head-a",
+        processed_review_thread_ids: ["thread-1@head-a"],
+        blocked_reason: "manual_review",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Reprocess configured bot review threads after a new head commit",
+    body: executionReadyBody("Reprocess configured bot review threads after a new head commit."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: 116,
+    title: "Reprocess review threads",
+    url: "https://example.test/pr/116",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: "head-b",
+    mergedAt: null,
+  };
+  const reviewThreads = [createReviewThread()];
+
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      assert.equal(branchName, branch);
+      assert.equal(prNumber, 116);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 116);
+      return [];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 116);
+      return reviewThreads;
+    },
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 116);
+      return pr;
+    },
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: false });
+  assert.match(message, /state=blocked/);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(record.state, "blocked");
+  assert.equal(record.last_head_sha, "head-b");
+  assert.equal(record.blocked_reason, "manual_review");
+  assert.deepEqual(record.processed_review_thread_ids, ["thread-1@head-a", "thread-1@head-b"]);
+});
+
 function branchName(config: SupervisorConfig, issueNumber: number): string {
   return `${config.branchPrefix}${issueNumber}`;
 }
@@ -3149,6 +3293,96 @@ test("inferStateFromPullRequest does not stall local-review retries when CI adds
   const checks: PullRequestCheck[] = [{ name: "test", state: "FAILURE", bucket: "fail", workflow: "CI" }];
 
   assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "local_review_fix");
+});
+
+test("inferStateFromPullRequest keeps an unresolved configured bot thread blocked on the same head after processing", () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head-a",
+    processed_review_thread_ids: ["thread-1@head-a"],
+  });
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T00:00:00Z",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-38",
+    headRefOid: "head-a",
+    mergedAt: null,
+  };
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, pr, [], [createReviewThread()]),
+    "blocked",
+  );
+});
+
+test("inferStateFromPullRequest allows one reprocessing pass for a configured bot thread after the PR head changes", () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head-a",
+    processed_review_thread_ids: ["thread-1@head-a"],
+  });
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T00:00:00Z",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-38",
+    headRefOid: "head-b",
+    mergedAt: null,
+  };
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, pr, [], [createReviewThread()]),
+    "addressing_review",
+  );
+});
+
+test("inferStateFromPullRequest blocks a repeatedly unresolved configured bot thread again after its one pass on the new head", () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head-b",
+    processed_review_thread_ids: ["thread-1@head-a", "thread-1@head-b"],
+  });
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T00:00:00Z",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-38",
+    headRefOid: "head-b",
+    mergedAt: null,
+  };
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, pr, [], [createReviewThread()]),
+    "blocked",
+  );
 });
 
 test("nextExternalReviewMissPatch preserves same-head artifacts when no new miss artifact was written", () => {
