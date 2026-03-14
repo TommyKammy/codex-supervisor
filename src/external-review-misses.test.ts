@@ -927,3 +927,34 @@ test("repo-committed durable external-review guardrails teach stable anchors for
     ],
   );
 });
+
+test("repo-committed durable external-review guardrails prefer the real behavioral boundary over adjacent anchors", async () => {
+  const repoRoot = path.resolve(__dirname, "..");
+  const patterns = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: path.join(repoRoot, ".local", "reviews"),
+    branch: "codex/issue-204",
+    currentHeadSha: "currenthead",
+    changedFiles: ["src/local-review-prompt.ts"],
+    limit: 10,
+    workspacePath: repoRoot,
+  });
+
+  assert.deepEqual(
+    patterns.filter((pattern) => pattern.fingerprint === "src/local-review-prompt.ts|anchor-findings-to-real-boundary"),
+    [
+      {
+        fingerprint: "src/local-review-prompt.ts|anchor-findings-to-real-boundary",
+        reviewerLogin: "copilot-pull-request-reviewer",
+        file: "src/local-review-prompt.ts",
+        line: null,
+        summary:
+          "Flag findings or promoted guardrails that anchor to an earlier or adjacent implementation step when the real behavioral boundary is a later transition or invariant.",
+        rationale:
+          "Guardrails last longer when they point at the decisive boundary under protection instead of a nearby setup location that refactors can move without changing the behavior.",
+        sourceArtifactPath: "promoted-from-issue-204",
+        sourceHeadSha: "issue-204",
+        lastSeenAt: "2026-03-14T00:00:00Z",
+      },
+    ],
+  );
+});

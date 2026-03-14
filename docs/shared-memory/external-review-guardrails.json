@@ -2,6 +2,17 @@
   "version": 1,
   "patterns": [
     {
+      "fingerprint": "src/local-review-prompt.ts|anchor-findings-to-real-boundary",
+      "reviewerLogin": "copilot-pull-request-reviewer",
+      "file": "src/local-review-prompt.ts",
+      "line": null,
+      "summary": "Flag findings or promoted guardrails that anchor to an earlier or adjacent implementation step when the real behavioral boundary is a later transition or invariant.",
+      "rationale": "Guardrails last longer when they point at the decisive boundary under protection instead of a nearby setup location that refactors can move without changing the behavior.",
+      "sourceArtifactPath": "promoted-from-issue-204",
+      "sourceHeadSha": "issue-204",
+      "lastSeenAt": "2026-03-14T00:00:00Z"
+    },
+    {
       "fingerprint": "src/local-review.test.ts|avoid-drift-prone-line-coupling",
       "reviewerLogin": "copilot-pull-request-reviewer",
       "file": "src/local-review.test.ts",
