@@ -3254,6 +3254,7 @@ export class Supervisor {
 
       workspaceStatus = await getWorkspaceStatus(workspacePath, record.branch, this.config.defaultBranch);
       record = this.stateStore.touch(record, { last_head_sha: workspaceStatus.headSha });
+      const evaluatedReviewHeadSha = workspaceStatus.headSha;
 
       if ((workspaceStatus.remoteAhead > 0 || !workspaceStatus.remoteBranchExists) && !workspaceStatus.hasUncommittedChanges) {
         await pushBranch(workspacePath, record.branch, workspaceStatus.remoteBranchExists);
@@ -3275,8 +3276,8 @@ export class Supervisor {
       reviewThreads = pr ? await this.github.getUnresolvedReviewThreads(pr.number) : [];
       const currentPr = pr;
       const processedReviewThreadKeysForCurrentHead =
-        preRunState === "addressing_review" && currentPr
-          ? reviewThreadsToProcess.map((thread) => processedReviewThreadKey(thread.id, currentPr.headRefOid))
+        preRunState === "addressing_review" && currentPr && currentPr.headRefOid === evaluatedReviewHeadSha
+          ? reviewThreadsToProcess.map((thread) => processedReviewThreadKey(thread.id, evaluatedReviewHeadSha))
           : [];
       const processedReviewThreadIds =
         processedReviewThreadKeysForCurrentHead.length > 0
