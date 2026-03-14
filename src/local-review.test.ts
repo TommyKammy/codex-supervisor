@@ -885,6 +885,38 @@ test("buildRolePrompt teaches reviewer to prefer simpler solutions and flag spec
   assert.match(prompt, /Flag speculative abstraction, premature generalization, or unnecessary indirection only when it adds concrete maintenance or correctness risk\./);
 });
 
+test("buildRolePrompt teaches reviewer to flag unrelated cleanup but allow required support changes", () => {
+  const prompt = buildRolePrompt({
+    repoSlug: "owner/repo",
+    issue: {
+      number: 194,
+      title: "Keep reviewer changes surgical",
+      body: "",
+      url: "https://example.test/issues/194",
+      createdAt: "2026-03-14T00:00:00Z",
+      updatedAt: "2026-03-14T00:00:00Z",
+      labels: [],
+    },
+    branch: "codex/issue-194",
+    workspacePath: "/tmp/workspaces/issue-194",
+    defaultBranch: "main",
+    pr: createPullRequest({
+      number: 194,
+      url: "https://example.test/pr/194",
+      headRefOid: "head194",
+    }),
+    role: "reviewer",
+    alwaysReadFiles: [],
+    onDemandFiles: [],
+    confidenceThreshold: 0.7,
+    priorMissPatterns: [],
+  });
+
+  assert.match(prompt, /Prefer narrowly scoped changes that stay inside the issue boundary\./);
+  assert.match(prompt, /Flag unrelated cleanup, opportunistic refactors, or incidental file churn when they are not required for correctness or tests\./);
+  assert.match(prompt, /Do not treat minimal supporting changes as scope drift when they are necessary to make the issue fix correct, testable, or buildable\./);
+});
+
 test("buildVerifierPrompt includes bounded relevant prior external misses", () => {
   const prompt = buildVerifierPrompt({
     repoSlug: "owner/repo",
@@ -1013,4 +1045,47 @@ test("buildVerifierPrompt includes committed verifier guardrails", () => {
   assert.match(prompt, /Guardrail 1: file=src\/auth\.ts:42 title=Re-check permission fallback invariants/);
   assert.match(prompt, /Guardrail 2: file=src\/retry\.ts:15 title=Inspect retry state reuse/);
   assert.match(prompt, /Verifier should not dismiss retry-loop findings without checking the state reset path\./);
+});
+
+test("buildVerifierPrompt teaches verifier to detect scope drift without blocking required support changes", () => {
+  const prompt = buildVerifierPrompt({
+    repoSlug: "owner/repo",
+    issue: {
+      number: 194,
+      title: "Keep verifier changes surgical",
+      body: "",
+      url: "https://example.test/issues/194",
+      createdAt: "2026-03-14T00:00:00Z",
+      updatedAt: "2026-03-14T00:00:00Z",
+      labels: [],
+    },
+    branch: "codex/issue-194",
+    workspacePath: "/tmp/workspaces/issue-194",
+    defaultBranch: "main",
+    pr: createPullRequest({
+      number: 194,
+      url: "https://example.test/pr/194",
+      headRefOid: "head194",
+    }),
+    findings: [
+      {
+        role: "reviewer",
+        title: "Potential scope drift",
+        body: "The diff includes a refactor outside the issue path.",
+        file: "src/review.ts",
+        start: 12,
+        end: 20,
+        severity: "high",
+        confidence: 0.91,
+        category: "scope",
+        evidence: "A helper rename in an unrelated module is bundled with the issue fix.",
+      },
+    ],
+    priorMissPatterns: [],
+    verifierGuardrails: [],
+  });
+
+  assert.match(prompt, /Treat unrelated cleanup or opportunistic refactors outside the issue scope as potential confirmed findings when the diff does not need them for correctness\./);
+  assert.match(prompt, /Do not treat narrow supporting edits as scope drift when they are required to keep the issue fix correct, testable, or buildable\./);
+  assert.match(prompt, /Prefer the smallest explanation that distinguishes required support work from unrelated churn\./);
 });
