@@ -8,14 +8,14 @@ import {
   Supervisor,
   buildChecksFailureContext,
   formatDetailedStatus,
+  inferStateFromPullRequest,
   localReviewHighSeverityNeedsRetry,
   nextExternalReviewMissPatch,
-  inferStateFromPullRequest,
-  reconcileRecoverableBlockedIssueStates,
   recoverUnexpectedCodexTurnFailure,
   shouldAutoRetryHandoffMissing,
   summarizeChecks,
 } from "./supervisor";
+import { formatRecoveryLog, reconcileRecoverableBlockedIssueStates, reconcileStaleActiveIssueReservation } from "./recovery-reconciliation";
 import { StateStore } from "./state-store";
 import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig, SupervisorStateFile } from "./types";
 
@@ -349,7 +349,9 @@ test("reconcileRecoverableBlockedIssueStates requeues open handoff-missing issue
     },
   };
 
-  await reconcileRecoverableBlockedIssueStates(stateStore, state, config, issues);
+  await reconcileRecoverableBlockedIssueStates(stateStore, state, config, issues, {
+    shouldAutoRetryHandoffMissing,
+  });
 
   const updated = state.issues["366"];
   assert.equal(updated.state, "queued");
@@ -396,7 +398,9 @@ test("reconcileRecoverableBlockedIssueStates leaves closed issues blocked", asyn
     },
   };
 
-  await reconcileRecoverableBlockedIssueStates(stateStore, state, config, issues);
+  await reconcileRecoverableBlockedIssueStates(stateStore, state, config, issues, {
+    shouldAutoRetryHandoffMissing,
+  });
 
   assert.deepEqual(state.issues["366"], original);
   assert.equal(saveCalls, 0);
@@ -456,7 +460,9 @@ test("reconcileRecoverableBlockedIssueStates requeues requirements-blocked issue
     },
   };
 
-  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(stateStore, state, config, issues);
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(stateStore, state, config, issues, {
+    shouldAutoRetryHandoffMissing,
+  });
 
   const updated = state.issues["366"];
   assert.equal(updated.state, "queued");
@@ -471,6 +477,49 @@ test("reconcileRecoverableBlockedIssueStates requeues requirements-blocked issue
   assert.deepEqual(recoveryEvents.map((event) => event.reason), [
     "requirements_recovered: requeued issue #366 after execution-ready metadata was added",
   ]);
+});
+
+test("reconcileStaleActiveIssueReservation clears a stale reservation and emits a recovery loggable event", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 366,
+    issues: {
+      "366": createRecord({
+        issue_number: 366,
+        state: "implementing",
+        codex_session_id: "session-366",
+      }),
+    },
+  };
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...record,
+        ...patch,
+        updated_at: "2026-03-11T06:33:08.821Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileStaleActiveIssueReservation({
+    stateStore,
+    state,
+    issueLockPath: (issueNumber) => `/locks/issues/${issueNumber}`,
+    sessionLockPath: (sessionId) => `/locks/sessions/${sessionId}`,
+  });
+
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(state.issues["366"]?.codex_session_id, null);
+  assert.equal(saveCalls, 1);
+  assert.equal(recoveryEvents.length, 1);
+  assert.match(
+    formatRecoveryLog(recoveryEvents) ?? "",
+    /recovery issue=#366 reason=stale_state_cleanup: cleared stale active reservation after issue lock and session lock were missing/,
+  );
 });
 
 test("runOnce recovers when post-codex refresh throws after leaving a dirty worktree", async () => {
