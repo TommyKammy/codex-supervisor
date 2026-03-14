@@ -33,6 +33,12 @@ export interface LocalReviewRepairContext {
   verifierGuardrails: VerifierGuardrailRule[];
 }
 
+const LIVE_BLOCKER_HANDOFF_SUPPRESSION_STATES = new Set<RunState>([
+  "local_review_fix",
+  "repairing_ci",
+  "addressing_review",
+]);
+
 export function extractStateHint(message: string): RunState | null {
   const match = message.match(/State hint:\s*([a-z_]+)/i);
   if (!match) {
@@ -164,9 +170,8 @@ function phaseGuidance(state: RunState): string[] {
   return [];
 }
 
-function suppressStaleRepairHandoff(journalExcerpt: string | null | undefined, state: RunState): string | null | undefined {
-  const liveBlockerStates = new Set<RunState>(["local_review_fix", "repairing_ci", "addressing_review"]);
-  if (!journalExcerpt || !liveBlockerStates.has(state)) {
+function suppressStaleLiveBlockerHandoff(journalExcerpt: string | null | undefined, state: RunState): string | null | undefined {
+  if (!journalExcerpt || !LIVE_BLOCKER_HANDOFF_SUPPRESSION_STATES.has(state)) {
     return journalExcerpt;
   }
 
@@ -262,7 +267,7 @@ export function buildCodexPrompt(input: {
   localReviewRepairContext?: LocalReviewRepairContext | null;
   externalReviewMissContext?: ExternalReviewMissContext | null;
 }): string {
-  const journalExcerpt = suppressStaleRepairHandoff(input.journalExcerpt, input.state);
+  const journalExcerpt = suppressStaleLiveBlockerHandoff(input.journalExcerpt, input.state);
   const checksSummary =
     input.checks.length === 0
       ? "No checks currently reported."
