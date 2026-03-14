@@ -6,7 +6,13 @@ import { ExternalReviewMissContext, loadRelevantExternalReviewMissPatterns, writ
 import { GitHubClient } from "./github";
 import { findBlockingIssue, findParentIssuesReadyToClose, lintExecutionReadyIssueBody, parseIssueMetadata } from "./issue-metadata";
 import { describeGsdIntegration } from "./gsd";
-import { hasMeaningfulJournalHandoff, issueJournalPath, readIssueJournal, syncIssueJournal } from "./journal";
+import {
+  hasMeaningfulJournalHandoff,
+  issueJournalPath,
+  readIssueJournal,
+  summarizeIssueJournalHandoff,
+  syncIssueJournal,
+} from "./journal";
 import { acquireFileLock, inspectFileLock, LockHandle } from "./lock";
 import { localReviewHasActionableFindings, LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY, runLocalReview, shouldRunLocalReview } from "./local-review";
 import { syncMemoryArtifacts } from "./memory";
@@ -1761,6 +1767,7 @@ export function formatDetailedStatus(args: {
   pr: GitHubPullRequest | null;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
+  handoffSummary?: string | null;
 }): string {
   const {
     config,
@@ -1771,6 +1778,7 @@ export function formatDetailedStatus(args: {
     pr,
     checks,
     reviewThreads,
+    handoffSummary = null,
   } = args;
 
   if (!activeRecord) {
@@ -1853,6 +1861,10 @@ export function formatDetailedStatus(args: {
     lines.push(
       `failure_context category=${activeRecord.last_failure_context.category ?? "none"} summary=${truncate(activeRecord.last_failure_context.summary, 200) ?? "none"}`,
     );
+  }
+
+  if (handoffSummary) {
+    lines.push(`handoff_summary=${truncate(sanitizeStatusValue(handoffSummary), 200)}`);
   }
 
   if (latestRecoveryRecord?.last_recovery_reason && latestRecoveryRecord.last_recovery_at) {
@@ -3473,8 +3485,12 @@ export class Supervisor {
     let pr: GitHubPullRequest | null = null;
     let checks: PullRequestCheck[] = [];
     let reviewThreads: ReviewThread[] = [];
+    let handoffSummary: string | null = null;
 
     try {
+      if (activeRecord.journal_path) {
+        handoffSummary = summarizeIssueJournalHandoff(await readIssueJournal(activeRecord.journal_path));
+      }
       pr = await this.github.resolvePullRequestForBranch(activeRecord.branch, activeRecord.pr_number);
       if (isOpenPullRequest(pr)) {
         checks = await this.github.getChecks(pr.number);
@@ -3489,9 +3505,10 @@ export class Supervisor {
           latestRecoveryRecord,
           trackedIssueCount: Object.keys(state.issues).length,
           pr,
-        checks,
-        reviewThreads,
-      })}\nstatus_warning=${truncate(message, 200)}`]
+          checks,
+          reviewThreads,
+          handoffSummary,
+        })}\nstatus_warning=${truncate(message, 200)}`]
           .filter(Boolean)
           .join("\n");
     }
@@ -3505,6 +3522,7 @@ export class Supervisor {
       pr,
       checks,
       reviewThreads,
+      handoffSummary,
     })]
       .filter(Boolean)
       .join("\n");

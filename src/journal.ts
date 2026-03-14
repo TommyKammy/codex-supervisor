@@ -15,6 +15,7 @@ const HANDOFF_FIELDS = [
   "Last focused command",
 ] as const;
 type HandoffField = (typeof HANDOFF_FIELDS)[number];
+const HANDOFF_NO_VALUE_PATTERN = /^(none|none\.|no blocker|no blocker\.|n\/a|na|unknown)$/i;
 
 const LEGACY_HANDOFF_FIELD_MAP: Record<string, HandoffField> = {
   Hypothesis: "Hypothesis",
@@ -149,6 +150,68 @@ function normalizeCodexNotes(notes: string): string {
   const normalized = [NOTES_MARKER, ...normalizeCurrentHandoff(handoffLines)];
   const cleanedRemainder = remainderLines.length > 0 ? remainderLines : ["", "### Scratchpad", "- Keep this section short. The supervisor may compact older notes automatically.", ""];
   return `${[...normalized, ...cleanedRemainder].join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()}\n`;
+}
+
+function parseCurrentHandoffValues(content: string | null): Map<HandoffField, string> {
+  if (!content) {
+    return new Map();
+  }
+
+  const notes = preserveCodexNotes(content);
+  if (!notes) {
+    return new Map();
+  }
+
+  const { handoffLines } = splitCurrentHandoff(notes);
+  if (handoffLines.length === 0) {
+    return new Map();
+  }
+
+  const values = new Map<HandoffField, string>();
+  for (const line of normalizeCurrentHandoff(handoffLines)) {
+    const match = line.match(/^- ([^:]+):(.*)$/);
+    if (!match) {
+      continue;
+    }
+
+    const field = HANDOFF_FIELDS.find((candidate) => candidate === match[1].trim());
+    if (!field) {
+      continue;
+    }
+
+    values.set(field, match[2].trim());
+  }
+
+  return values;
+}
+
+function normalizeHandoffSummaryValue(value: string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const collapsed = value.replace(/\s+/g, " ").trim();
+  if (!collapsed || HANDOFF_NO_VALUE_PATTERN.test(collapsed)) {
+    return null;
+  }
+
+  return collapsed;
+}
+
+export function summarizeIssueJournalHandoff(content: string | null): string | null {
+  const values = parseCurrentHandoffValues(content);
+  const blocker = normalizeHandoffSummaryValue(values.get("Current blocker"));
+  const nextStep = normalizeHandoffSummaryValue(values.get("Next exact step"));
+  const summaryParts: string[] = [];
+
+  if (blocker) {
+    summaryParts.push(`blocker: ${blocker}`);
+  }
+  if (nextStep) {
+    summaryParts.push(`next: ${nextStep}`);
+  }
+
+  return summaryParts.length > 0 ? summaryParts.join(" | ") : null;
 }
 
 function buildSupervisorSnapshot(args: {
