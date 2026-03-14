@@ -145,7 +145,8 @@ Important fields:
 - `localReviewAutoDetect`: if `true`, infer a specialist review swarm from the managed repo shape when `localReviewRoles` is empty
 - `localReviewRoles`: explicit role labels for the local review swarm; leave empty to rely on auto-detect
 - `localReviewArtifactDir`: directory for generated local review artifacts
-- `localReviewConfidenceThreshold`: minimum confidence for a local review finding to be treated as actionable in saved artifacts
+- `localReviewConfidenceThreshold`: default confidence threshold used for reviewer-type gating when `localReviewReviewerThresholds` is omitted or only partially specified
+- `localReviewReviewerThresholds`: deterministic reviewer-type thresholds for `generic` (`reviewer`, `explorer`) and `specialist` roles; each type can set its own `confidenceThreshold` and `minimumSeverity`
 - `localReviewPolicy`: `advisory`, `block_ready`, or `block_merge`
 - `localReviewHighSeverityAction`: `retry` or `blocked`
 - `reviewBotLogins`: bot reviewer logins that the supervisor may auto-address
@@ -390,7 +391,7 @@ This is designed to reduce dependence on GitHub-hosted auto review. The supervis
 - saves a Markdown summary plus a structured JSON artifact (for example `head-<sha>.json`) under `localReviewArtifactDir`
 - keeps older `head-<sha>` artifacts on disk for history; `status` shows both the reviewed artifact SHA and the current PR head SHA so the current-head artifact is obvious
 - runs a verifier pass for actionable high-severity findings before stronger high-severity gates react
-- deduplicates findings and keeps only findings at or above `localReviewConfidenceThreshold`
+- deduplicates findings and keeps only findings that meet the configured reviewer-type confidence/severity thresholds
 - then continues the normal ready / Copilot wait flow
 
 If `localReviewRoles` is empty and `localReviewAutoDetect` is enabled, the supervisor chooses a baseline swarm from the managed repo shape:
@@ -404,6 +405,8 @@ If `localReviewRoles` is empty and `localReviewAutoDetect` is enabled, the super
 - adds `portability_reviewer` for repos where shell/runtime portability is likely to matter
 
 The local review artifacts explain these choices in two forms: the Markdown summary has a concise `Auto-detected roles` section, and the JSON artifact includes machine-readable `autoDetectedRoles` entries with `kind`, `signal`, and `paths`. If you later want deterministic manual control, inspect those reasons, copy the roles you want into `localReviewRoles`, and disable `localReviewAutoDetect`.
+
+By default, `reviewer` and `explorer` are treated as `generic`, and every other role is treated as `specialist`. If you leave `localReviewReviewerThresholds` unset, both reviewer types inherit `localReviewConfidenceThreshold` and keep the current `low` severity floor. When you want specialists to gate more aggressively without making the baseline swarm noisier, raise the `generic` threshold and/or severity floor while leaving `specialist` lower.
 
 Historical local review artifacts are intentionally retained until explicit cleanup. During incident response, use `status` to compare `reviewed_head_sha` with `pr_head_sha`: `head=current` means the artifact applies to the live PR head, while `head=stale` means the artifact is only historical context.
 

@@ -4,6 +4,12 @@ export type LocalReviewSeverity = "none" | "low" | "medium" | "high";
 
 export type ActionableSeverity = Exclude<LocalReviewSeverity, "none">;
 export type VerificationVerdict = "confirmed" | "dismissed" | "unclear";
+export type LocalReviewReviewerType = "generic" | "specialist";
+
+export interface LocalReviewReviewerThresholdConfig {
+  confidenceThreshold: number;
+  minimumSeverity: ActionableSeverity;
+}
 
 export interface ParsedRoleFooter {
   summary: string;
@@ -75,6 +81,7 @@ export interface LocalReviewArtifact {
   headSha: string;
   ranAt: string;
   confidenceThreshold: number;
+  reviewerThresholds: Record<LocalReviewReviewerType, LocalReviewReviewerThresholdConfig>;
   roles: string[];
   autoDetectedRoles: LocalReviewRoleSelection[];
   summary: string;
@@ -98,6 +105,10 @@ export interface LocalReviewArtifact {
   verifiedFindings: LocalReviewFinding[];
   roleReports: Array<{
     role: string;
+    reviewerType: LocalReviewReviewerType;
+    confidenceThreshold: number;
+    minimumSeverity: ActionableSeverity;
+    actionableFindingsCount: number;
     exitCode: number;
     degraded: boolean;
     summary: string;

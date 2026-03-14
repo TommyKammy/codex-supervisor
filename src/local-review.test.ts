@@ -8,7 +8,7 @@ import { LocalReviewRoleSelection } from "./review-role-detector";
 import { GitHubPullRequest, SupervisorConfig } from "./types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
-  return {
+  const baseConfig: SupervisorConfig = {
     repoPath: "/tmp/repo",
     repoSlug: "owner/repo",
     defaultBranch: "main",
@@ -29,6 +29,16 @@ function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConf
     localReviewRoles: [],
     localReviewArtifactDir: "/tmp/reviews",
     localReviewConfidenceThreshold: 0.7,
+    localReviewReviewerThresholds: {
+      generic: {
+        confidenceThreshold: 0.7,
+        minimumSeverity: "low",
+      },
+      specialist: {
+        confidenceThreshold: 0.7,
+        minimumSeverity: "low",
+      },
+    },
     localReviewPolicy: "block_ready",
     localReviewHighSeverityAction: "retry",
     reviewBotLogins: [],
@@ -52,8 +62,26 @@ function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConf
     cleanupDoneWorkspacesAfterHours: 24,
     mergeMethod: "squash",
     draftPrAfterAttempt: 1,
+  };
+  const config: SupervisorConfig = {
+    ...baseConfig,
     ...overrides,
   };
+
+  if (overrides.localReviewReviewerThresholds) {
+    config.localReviewReviewerThresholds = {
+      generic: {
+        ...baseConfig.localReviewReviewerThresholds.generic,
+        ...overrides.localReviewReviewerThresholds.generic,
+      },
+      specialist: {
+        ...baseConfig.localReviewReviewerThresholds.specialist,
+        ...overrides.localReviewReviewerThresholds.specialist,
+      },
+    };
+  }
+
+  return config;
 }
 
 function createPullRequest(overrides: Partial<GitHubPullRequest> = {}): GitHubPullRequest {
@@ -326,6 +354,99 @@ test("finalizeLocalReview includes auto-detect reasons in the artifact", () => {
   });
 
   assert.deepEqual(result.artifact.autoDetectedRoles, createDetectedRoles());
+});
+
+test("finalizeLocalReview uses stricter confidence thresholds for specialist reviewers", () => {
+  const result = finalizeLocalReview({
+    config: createConfig({
+      localReviewConfidenceThreshold: 0.7,
+      localReviewReviewerThresholds: {
+        generic: {
+          confidenceThreshold: 0.9,
+          minimumSeverity: "low",
+        },
+        specialist: {
+          confidenceThreshold: 0.8,
+          minimumSeverity: "low",
+        },
+      },
+    }),
+    issueNumber: 40,
+    prNumber: 14,
+    branch: "codex/issue-40",
+    headSha: "reviewertype123",
+    detectedRoles: createDetectedRoles(),
+    roleResults: [
+      {
+        role: "reviewer",
+        summary: "Flagged a generic concern below the generic threshold.",
+        recommendation: "changes_requested",
+        degraded: false,
+        exitCode: 0,
+        rawOutput: "generic raw output",
+        findings: [
+          {
+            role: "reviewer",
+            title: "Generic finding stays advisory",
+            body: "This generic finding should remain below the generic reviewer threshold.",
+            file: "src/example.ts",
+            start: 30,
+            end: 31,
+            severity: "medium",
+            confidence: 0.85,
+            category: "tests",
+            evidence: "Generic reviewer confidence is below its stricter threshold.",
+          },
+        ],
+      },
+      {
+        role: "prisma_postgres_reviewer",
+        summary: "Flagged a specialist concern at the specialist threshold.",
+        recommendation: "changes_requested",
+        degraded: false,
+        exitCode: 0,
+        rawOutput: "specialist raw output",
+        findings: [
+          {
+            role: "prisma_postgres_reviewer",
+            title: "Specialist finding blocks merge",
+            body: "This specialist finding should stay actionable under the specialist threshold.",
+            file: "prisma/schema.prisma",
+            start: 12,
+            end: 14,
+            severity: "high",
+            confidence: 0.85,
+            category: "correctness",
+            evidence: "Specialist reviewer confidence meets its own threshold.",
+          },
+        ],
+      },
+    ],
+    verifierReport: {
+      role: "verifier",
+      summary: "Confirmed the specialist issue.",
+      recommendation: "changes_requested",
+      degraded: false,
+      exitCode: 0,
+      rawOutput: "verifier raw output",
+      findings: [
+        {
+          findingKey: "prisma/schema.prisma|12|14|specialist finding blocks merge|this specialist finding should stay actionable under the specialist threshold.",
+          verdict: "confirmed",
+          rationale: "The schema invariant really is broken.",
+        },
+      ],
+    },
+    ranAt: "2026-03-12T01:15:00Z",
+  });
+
+  assert.equal(result.findingsCount, 1);
+  assert.equal(result.maxSeverity, "high");
+  assert.equal(result.verifiedFindingsCount, 1);
+  assert.equal(result.actionableFindings[0]?.role, "prisma_postgres_reviewer");
+  assert.equal(result.artifact.actionableFindings[0]?.role, "prisma_postgres_reviewer");
+  assert.equal(result.artifact.summary.includes("reviewer: 0 actionable"), true);
+  assert.equal(result.artifact.summary.includes("prisma_postgres_reviewer: 1 actionable"), true);
 });
 
 test("finalizeLocalReview compresses overlapping findings into a root-cause summary", () => {

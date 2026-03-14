@@ -1,3 +1,7 @@
+import type { LocalReviewReviewerThresholdConfig, LocalReviewReviewerType } from "./local-review-types";
+
+export type { LocalReviewReviewerThresholdConfig, LocalReviewReviewerType } from "./local-review-types";
+
 export type RunState =
   | "queued"
   | "planning"
@@ -50,6 +54,7 @@ export interface SupervisorConfig {
   localReviewRoles: string[];
   localReviewArtifactDir: string;
   localReviewConfidenceThreshold: number;
+  localReviewReviewerThresholds: Record<LocalReviewReviewerType, LocalReviewReviewerThresholdConfig>;
   localReviewPolicy: LocalReviewPolicy;
   localReviewHighSeverityAction: LocalReviewHighSeverityAction;
   reviewBotLogins: string[];

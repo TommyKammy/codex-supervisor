@@ -1,6 +1,7 @@
 import { type LocalReviewRoleSelection } from "./review-role-detector";
 import { type SupervisorConfig } from "./types";
 import { truncate } from "./utils";
+import { findingMeetsReviewerThreshold, reviewerTypeForRole, thresholdsForReviewerType } from "./local-review-thresholds";
 import {
   type FinalizedLocalReview,
   type LocalReviewArtifact,
@@ -207,7 +208,7 @@ function maxSeverity(findings: LocalReviewFinding[]): LocalReviewSeverity {
 }
 
 export function finalizeLocalReview(args: {
-  config: Pick<SupervisorConfig, "localReviewConfidenceThreshold">;
+  config: Pick<SupervisorConfig, "localReviewConfidenceThreshold" | "localReviewReviewerThresholds">;
   issueNumber: number;
   prNumber: number;
   branch: string;
@@ -219,13 +220,49 @@ export function finalizeLocalReview(args: {
 }): FinalizedLocalReview {
   const roles = args.roleResults.map((result) => result.role);
   const allFindings = args.roleResults.flatMap((result) => result.findings);
+  const roleReports = args.roleResults.map((result) => {
+    const reviewerType = reviewerTypeForRole({
+      role: result.role,
+      detectedRoles: args.detectedRoles,
+    });
+    const thresholds = thresholdsForReviewerType(args.config, reviewerType);
+    const actionableFindingsCount = result.findings.filter((finding) =>
+      findingMeetsReviewerThreshold({
+        finding,
+        reviewerType,
+        config: args.config,
+      }),
+    ).length;
+
+    return {
+      role: result.role,
+      reviewerType,
+      confidenceThreshold: thresholds.confidenceThreshold,
+      minimumSeverity: thresholds.minimumSeverity,
+      actionableFindingsCount,
+      exitCode: result.exitCode,
+      degraded: result.degraded,
+      summary: result.summary,
+      recommendation: result.recommendation,
+      findings: result.findings,
+    };
+  });
   const actionableFindings = dedupeFindings(
-    allFindings.filter((finding) => finding.confidence >= args.config.localReviewConfidenceThreshold),
+    allFindings.filter((finding) =>
+      findingMeetsReviewerThreshold({
+        finding,
+        reviewerType: reviewerTypeForRole({
+          role: finding.role,
+          detectedRoles: args.detectedRoles,
+        }),
+        config: args.config,
+      }),
+    ),
   );
   const rootCauseSummaries = compressRootCauses(actionableFindings);
   const degraded = args.roleResults.some((result) => result.degraded) || (args.verifierReport?.degraded ?? false);
   const summary = truncate(
-    `Roles run: ${roles.join(", ")}. Actionable findings above confidence ${args.config.localReviewConfidenceThreshold.toFixed(2)}: ${actionableFindings.length}. Root causes: ${rootCauseSummaries.length}. Degraded roles: ${args.roleResults.filter((result) => result.degraded).length}.`,
+    `Roles run: ${roles.join(", ")}. Global confidence threshold: ${args.config.localReviewConfidenceThreshold.toFixed(2)}. Actionable findings: ${actionableFindings.length}. Root causes: ${rootCauseSummaries.length}. Degraded roles: ${args.roleResults.filter((result) => result.degraded).length}. Actionable by role: ${roleReports.map((report) => `${report.role}: ${report.actionableFindingsCount} actionable (${report.reviewerType}, confidence>=${report.confidenceThreshold.toFixed(2)}, severity>=${report.minimumSeverity})`).join("; ")}.`,
     500,
   ) ?? "";
   const recommendation: LocalReviewResult["recommendation"] =
@@ -243,6 +280,7 @@ export function finalizeLocalReview(args: {
     headSha: args.headSha,
     ranAt: args.ranAt,
     confidenceThreshold: args.config.localReviewConfidenceThreshold,
+    reviewerThresholds: args.config.localReviewReviewerThresholds,
     roles,
     autoDetectedRoles: args.detectedRoles ?? [],
     summary,
@@ -264,14 +302,7 @@ export function finalizeLocalReview(args: {
       findings: args.verifierReport?.findings ?? [],
     },
     verifiedFindings,
-    roleReports: args.roleResults.map((result) => ({
-      role: result.role,
-      exitCode: result.exitCode,
-      degraded: result.degraded,
-      summary: result.summary,
-      recommendation: result.recommendation,
-      findings: result.findings,
-    })),
+    roleReports,
     verifierReport: args.verifierReport
       ? {
           role: args.verifierReport.role,

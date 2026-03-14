@@ -103,6 +103,11 @@ export async function writeLocalReviewArtifacts(args: {
       "## Role summaries",
       summarizeRoles(args.roleResults),
       "",
+      "## Reviewer thresholds",
+      ...args.finalized.artifact.roleReports.map((report) =>
+        `- ${report.role}: type=${report.reviewerType} confidence>=${report.confidenceThreshold.toFixed(2)} severity>=${report.minimumSeverity} actionable=${report.actionableFindingsCount}`,
+      ),
+      "",
       "## Actionable findings",
       ...(args.finalized.actionableFindings.length > 0
         ? args.finalized.actionableFindings.map((finding, index) =>
@@ -172,4 +177,3 @@ export async function writeLocalReviewArtifacts(args: {
 
   return { summaryPath, findingsPath, rawOutput };
 }
-
