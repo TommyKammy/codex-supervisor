@@ -27,9 +27,17 @@ export interface ExecutionReadyLintResult {
   approvedRiskyChangeClasses: RiskyChangeClass[];
 }
 
+export interface ClarificationBlock {
+  ambiguityClasses: HighRiskAmbiguityClass[];
+  riskyChangeClasses: RiskyChangeClass[];
+  reason: string;
+}
+
 const RISKY_CHANGE_CLASSES = ["auth", "billing", "permissions", "ci", "migrations", "secrets"] as const;
+const HIGH_RISK_AMBIGUITY_CLASSES = ["open_question", "unresolved_choice", "operator_confirmation"] as const;
 
 type RiskyChangeClass = (typeof RISKY_CHANGE_CLASSES)[number];
+type HighRiskAmbiguityClass = (typeof HIGH_RISK_AMBIGUITY_CLASSES)[number];
 
 const RISKY_CHANGE_SIGNALS: Record<RiskyChangeClass, RegExp[]> = {
   auth: [
@@ -79,6 +87,17 @@ const RISKY_CHANGE_SIGNALS: Record<RiskyChangeClass, RegExp[]> = {
     /\bapi key(s)?\b/i,
     /\bprivate key(s)?\b/i,
     /\bsigning key(s)?\b/i,
+  ],
+};
+
+const HIGH_RISK_AMBIGUITY_SIGNALS: Record<HighRiskAmbiguityClass, RegExp[]> = {
+  open_question: [/\b(?:tbd|to be decided|open question|pending decision)\b/i, /\?{2,}/],
+  unresolved_choice: [
+    /\b(?:decide|determine|choose|select|pick)\b/i,
+    /\b(?:whether to|which approach|which option)\b/i,
+  ],
+  operator_confirmation: [
+    /\b(?:clarify with|confirm with|wait(?:ing)? for|needs? confirmation from|ask [^.:\n]+ before)\b/i,
   ],
 };
 
@@ -308,10 +327,6 @@ export function lintExecutionReadyIssueBody(
       key: "verification",
       present: verificationContent !== null,
     },
-    ...riskyChangeClasses.map((riskyClass) => ({
-      key: `explicit opt-in for ${riskyClass}`,
-      present: approvedRiskyChangeClasses.includes(riskyClass),
-    })),
   ];
   const recommendedChecks: Array<{ key: string; present: boolean }> = [
     {
@@ -345,6 +360,37 @@ export function lintExecutionReadyIssueBody(
     missingRecommended,
     riskyChangeClasses,
     approvedRiskyChangeClasses,
+  };
+}
+
+export function findHighRiskBlockingAmbiguity(
+  issue: Pick<GitHubIssue, "title" | "body">,
+): ClarificationBlock | null {
+  const riskyChangeClasses = detectRiskyChangeClasses(issue);
+  if (riskyChangeClasses.length === 0) {
+    return null;
+  }
+
+  const ambiguityInputs = [
+    issue.title,
+    findMarkdownSectionContent(issue.body, "Summary") ?? "",
+    findMarkdownSectionContent(issue.body, "Scope") ?? "",
+    findMarkdownSectionContent(issue.body, "Acceptance criteria") ?? "",
+  ];
+  const ambiguityClasses = HIGH_RISK_AMBIGUITY_CLASSES.filter((ambiguityClass) =>
+    ambiguityInputs.some((input) =>
+      HIGH_RISK_AMBIGUITY_SIGNALS[ambiguityClass].some((pattern) => pattern.test(input)),
+    ),
+  );
+
+  if (ambiguityClasses.length === 0) {
+    return null;
+  }
+
+  return {
+    ambiguityClasses,
+    riskyChangeClasses,
+    reason: `high-risk blocking ambiguity (${ambiguityClasses.join(", ")}) for ${riskyChangeClasses.join(", ")} changes`,
   };
 }
 

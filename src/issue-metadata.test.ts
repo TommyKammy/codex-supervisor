@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { findParentIssuesReadyToClose, lintExecutionReadyIssueBody, parseIssueMetadata } from "./issue-metadata";
+import {
+  findHighRiskBlockingAmbiguity,
+  findParentIssuesReadyToClose,
+  lintExecutionReadyIssueBody,
+  parseIssueMetadata,
+} from "./issue-metadata";
 import { GitHubIssue } from "./types";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
@@ -221,7 +226,7 @@ test("lintExecutionReadyIssueBody treats ##Heading without a space as the next s
   });
 });
 
-test("lintExecutionReadyIssueBody requires explicit approval for detected risky auth changes", () => {
+test("lintExecutionReadyIssueBody keeps concrete risky auth work execution-ready without special opt-in", () => {
   const issue = createIssue({
     title: "Rotate production auth tokens",
     body: `## Summary
@@ -238,8 +243,8 @@ Rotate production auth tokens for service-to-service traffic.
   });
 
   assert.deepEqual(lintExecutionReadyIssueBody(issue), {
-    isExecutionReady: false,
-    missingRequired: ["explicit opt-in for auth"],
+    isExecutionReady: true,
+    missingRequired: [],
     missingRecommended: ["depends on", "execution order"],
     riskyChangeClasses: ["auth"],
     approvedRiskyChangeClasses: [],
@@ -342,8 +347,8 @@ Update .github/workflows/ci.yml to use narrower cache restore keys.
   });
 
   assert.deepEqual(lintExecutionReadyIssueBody(issue), {
-    isExecutionReady: false,
-    missingRequired: ["explicit opt-in for ci"],
+    isExecutionReady: true,
+    missingRequired: [],
     missingRecommended: ["depends on", "execution order"],
     riskyChangeClasses: ["ci"],
     approvedRiskyChangeClasses: [],
@@ -367,8 +372,8 @@ Update .GITHUB/WORKFLOWS/CI.YML to use narrower cache restore keys.
   });
 
   assert.deepEqual(lintExecutionReadyIssueBody(issue), {
-    isExecutionReady: false,
-    missingRequired: ["explicit opt-in for ci"],
+    isExecutionReady: true,
+    missingRequired: [],
     missingRecommended: ["depends on", "execution order"],
     riskyChangeClasses: ["ci"],
     approvedRiskyChangeClasses: [],
@@ -394,10 +399,52 @@ Touches: secrets
   });
 
   assert.deepEqual(lintExecutionReadyIssueBody(issue), {
-    isExecutionReady: false,
-    missingRequired: ["explicit opt-in for secrets"],
+    isExecutionReady: true,
+    missingRequired: [],
     missingRecommended: ["depends on", "execution order"],
     riskyChangeClasses: ["secrets"],
     approvedRiskyChangeClasses: [],
+  });
+});
+
+test("findHighRiskBlockingAmbiguity ignores concrete risky issues without unresolved-risk language", () => {
+  const issue = createIssue({
+    title: "Rotate production auth tokens",
+    body: `## Summary
+Rotate production auth tokens for service-to-service traffic.
+
+## Scope
+- update auth token issuance in production
+
+## Acceptance criteria
+- production authentication changes are fully implemented
+
+## Verification
+- npm test -- src/issue-metadata.test.ts`,
+  });
+
+  assert.equal(findHighRiskBlockingAmbiguity(issue), null);
+});
+
+test("findHighRiskBlockingAmbiguity blocks unresolved choices in risky auth work", () => {
+  const issue = createIssue({
+    title: "Decide which production auth token flow to keep",
+    body: `## Summary
+Decide whether to keep the current production auth token flow or replace it before rollout.
+
+## Scope
+- choose the production authentication path for service-to-service traffic
+
+## Acceptance criteria
+- the operator confirms which auth flow should ship
+
+## Verification
+- npm test -- src/issue-metadata.test.ts`,
+  });
+
+  assert.deepEqual(findHighRiskBlockingAmbiguity(issue), {
+    ambiguityClasses: ["unresolved_choice"],
+    riskyChangeClasses: ["auth"],
+    reason: "high-risk blocking ambiguity (unresolved_choice) for auth changes",
   });
 });
