@@ -49,6 +49,23 @@ function isOpenPullRequest(pr: GitHubPullRequest | null): pr is GitHubPullReques
   return pr !== null && pr.state === "OPEN" && !pr.mergedAt;
 }
 
+export function processedReviewThreadKey(threadId: string, headSha: string): string {
+  return `${threadId}@${headSha}`;
+}
+
+export function hasProcessedReviewThread(
+  record: Pick<IssueRunRecord, "processed_review_thread_ids" | "last_head_sha">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  threadId: string,
+): boolean {
+  const processedKeys = record.processed_review_thread_ids ?? [];
+  if (processedKeys.includes(processedReviewThreadKey(threadId, pr.headRefOid))) {
+    return true;
+  }
+
+  return record.last_head_sha === pr.headRefOid && processedKeys.includes(threadId);
+}
+
 export function localReviewBlocksReady(
   config: SupervisorConfig,
   record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation">,
@@ -551,9 +568,14 @@ export async function executeCodexTurnPhase(
 
     const journalContent = (await readIssueJournalImpl(journalPath)) ?? "";
     const preRunState = record.state;
-    const reviewThreadsToProcess = preRunState === "addressing_review"
-      ? reviewThreads.filter((thread) => !record.processed_review_thread_ids.includes(thread.id))
-      : reviewThreads;
+    const reviewThreadsToProcess = (() => {
+      if (preRunState !== "addressing_review" || pr == null) {
+        return reviewThreads;
+      }
+
+      const currentPr = pr;
+      return reviewThreads.filter((thread) => !hasProcessedReviewThread(record, currentPr, thread.id));
+    })();
     const localReviewRepairContext =
       record.state === "local_review_fix"
         ? await loadLocalReviewRepairContext(record.local_review_summary_path, workspacePath)
@@ -814,7 +836,7 @@ export async function executeCodexTurnPhase(
     const currentPr = pr;
     const processedReviewThreadKeysForCurrentHead =
       preRunState === "addressing_review" && currentPr && currentPr.headRefOid === evaluatedReviewHeadSha
-        ? reviewThreadsToProcess.map((thread) => `${thread.id}@${evaluatedReviewHeadSha}`)
+        ? reviewThreadsToProcess.map((thread) => processedReviewThreadKey(thread.id, evaluatedReviewHeadSha))
         : [];
     const processedReviewThreadIds =
       processedReviewThreadKeysForCurrentHead.length > 0

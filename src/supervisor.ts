@@ -40,6 +40,7 @@ import {
   CodexTurnShortCircuit,
   executeCodexTurnPhase,
   handlePostTurnPullRequestTransitionsPhase,
+  hasProcessedReviewThread,
   loadLocalReviewRepairContext,
   localReviewBlocksMerge,
   localReviewBlocksReady,
@@ -54,6 +55,7 @@ import {
   nextLocalReviewSignatureTracking,
   PostTurnPullRequestContext,
   PostTurnPullRequestResult,
+  processedReviewThreadKey,
 } from "./run-once-turn-execution";
 import {
   resolveRunnableIssueContext as resolveIssueSelectionContext,
@@ -112,23 +114,6 @@ function trimProcessedReviewThreadIds(ids: string[]): string[] {
   }
 
   return ids.slice(ids.length - MAX_PROCESSED_REVIEW_THREAD_IDS);
-}
-
-function processedReviewThreadKey(threadId: string, headSha: string): string {
-  return `${threadId}@${headSha}`;
-}
-
-function hasProcessedReviewThread(
-  record: Pick<IssueRunRecord, "processed_review_thread_ids" | "last_head_sha">,
-  pr: Pick<GitHubPullRequest, "headRefOid">,
-  threadId: string,
-): boolean {
-  const processedKeys = record.processed_review_thread_ids ?? [];
-  if (processedKeys.includes(processedReviewThreadKey(threadId, pr.headRefOid))) {
-    return true;
-  }
-
-  return record.last_head_sha === pr.headRefOid && processedKeys.includes(threadId);
 }
 
 function buildAuthFailureContext(message: string): FailureContext {

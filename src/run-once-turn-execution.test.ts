@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import {
+  hasProcessedReviewThread,
   handlePostTurnPullRequestTransitionsPhase,
 } from "./run-once-turn-execution";
 import {
@@ -136,6 +137,20 @@ function createFailureContext(summary: string): FailureContext {
     updated_at: "2026-03-13T06:20:00Z",
   };
 }
+
+test("hasProcessedReviewThread matches head-scoped processed thread ids", () => {
+  assert.equal(
+    hasProcessedReviewThread(
+      createRecord({
+        last_head_sha: "head-a",
+        processed_review_thread_ids: ["thread-1@head-b"],
+      }),
+      { headRefOid: "head-b" },
+      "thread-1",
+    ),
+    true,
+  );
+});
 
 test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking ready", async () => {
   const config = createConfig();
