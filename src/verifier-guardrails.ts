@@ -17,6 +17,7 @@ export async function loadRelevantVerifierGuardrails(args: {
   changedFiles: string[];
   limit?: number;
 }): Promise<VerifierGuardrailRule[]> {
+  const committedRules = await loadCommittedVerifierGuardrails(args.workspacePath);
   const changedFiles = [...new Set(args.changedFiles.filter((filePath) => filePath.trim() !== ""))];
   if (changedFiles.length === 0) {
     return [];
@@ -24,7 +25,7 @@ export async function loadRelevantVerifierGuardrails(args: {
 
   const changedFileSet = new Set(changedFiles);
   const deduped = new Map<string, VerifierGuardrailRule>();
-  for (const rule of await loadCommittedVerifierGuardrails(args.workspacePath)) {
+  for (const rule of committedRules) {
     if (!changedFileSet.has(rule.file)) {
       continue;
     }

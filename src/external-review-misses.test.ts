@@ -782,6 +782,43 @@ test("loadRelevantExternalReviewMissPatterns rejects durable guardrails with an 
   );
 });
 
+test("loadRelevantExternalReviewMissPatterns rejects malformed committed durable guardrails even when no files changed", async () => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "external-review-durable-guardrails-invalid-no-files-test-"));
+  const durableGuardrailPath = path.join(workspaceDir, "docs", "shared-memory", "external-review-guardrails.json");
+  await fs.mkdir(path.dirname(durableGuardrailPath), { recursive: true });
+  await fs.writeFile(
+    durableGuardrailPath,
+    JSON.stringify({
+      version: 1,
+      patterns: [
+        {
+          fingerprint: "",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 42,
+          summary: "Permission guard is bypassed.",
+          rationale: "Check the permission guard before the fallback write path.",
+          sourceArtifactPath: "external-review-misses-head-new.json",
+          sourceHeadSha: "newhead",
+          lastSeenAt: "2026-03-11T00:00:00Z",
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  await assert.rejects(
+    () => loadRelevantExternalReviewMissPatterns({
+      artifactDir: path.join(workspaceDir, ".local", "reviews"),
+      branch: "codex/issue-61",
+      currentHeadSha: "currenthead",
+      changedFiles: [],
+      workspacePath: workspaceDir,
+    }),
+    /Invalid durable external review guardrails in .*external-review-guardrails\.json: patterns\[0\]\.fingerprint must be a non-empty string\./,
+  );
+});
+
 test("loadRelevantExternalReviewMissPatterns rejects malformed durable guardrail fields and trims identifier-like strings", async () => {
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "external-review-durable-guardrails-strict-test-"));
   const durableGuardrailPath = path.join(workspaceDir, "docs", "shared-memory", "external-review-guardrails.json");

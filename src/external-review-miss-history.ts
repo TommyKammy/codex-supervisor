@@ -47,6 +47,9 @@ export async function loadRelevantExternalReviewMissPatterns(args: {
   workspacePath?: string;
 }): Promise<ExternalReviewMissPattern[]> {
   const changedFiles = [...new Set(args.changedFiles.filter((filePath) => filePath.trim() !== ""))].sort();
+  const committedPatterns = args.workspacePath
+    ? await loadCommittedExternalReviewGuardrails(args.workspacePath)
+    : [];
   if (changedFiles.length === 0) {
     return [];
   }
@@ -54,8 +57,8 @@ export async function loadRelevantExternalReviewMissPatterns(args: {
   const changedFileSet = new Set(changedFiles);
   const deduped = new Map<string, ExternalReviewMissPattern>();
 
-  if (args.workspacePath) {
-    mergeRelevantPatterns(deduped, await loadCommittedExternalReviewGuardrails(args.workspacePath), changedFileSet);
+  if (committedPatterns.length > 0) {
+    mergeRelevantPatterns(deduped, committedPatterns, changedFileSet);
   }
 
   let entries: string[];
