@@ -3113,7 +3113,10 @@ test("inferStateFromPullRequest waits when mixed configured bots include Copilot
 
 test("inferStateFromPullRequest keeps waiting when Copilot review was explicitly requested", () => {
   withStubbedDateNow("2026-03-11T00:10:00Z", () => {
-    const config = createConfig({ copilotReviewWaitMinutes: 10 });
+    const config = createConfig({
+      copilotReviewWaitMinutes: 10,
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    });
     const requestedAt = "2026-03-11T00:05:00Z";
     const record = createRecord({
       state: "waiting_ci",
@@ -3145,7 +3148,10 @@ test("inferStateFromPullRequest keeps waiting when Copilot review was explicitly
 
 test("inferStateFromPullRequest keeps waiting when a Copilot request was observed on the current head but has not arrived", () => {
   withStubbedDateNow("2026-03-11T00:10:00Z", () => {
-    const config = createConfig({ copilotReviewWaitMinutes: 10 });
+    const config = createConfig({
+      copilotReviewWaitMinutes: 10,
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    });
     const record = createRecord({
       state: "waiting_ci",
       review_wait_started_at: "2026-03-11T00:00:00Z",
@@ -3178,7 +3184,11 @@ test("inferStateFromPullRequest keeps waiting when a Copilot request was observe
 
 test("inferStateFromPullRequest does not start Copilot timeout from the generic review wait window", () => {
   withStubbedDateNow("2026-03-11T00:30:00Z", () => {
-    const config = createConfig({ copilotReviewWaitMinutes: 10, copilotReviewTimeoutAction: "block" });
+    const config = createConfig({
+      copilotReviewWaitMinutes: 10,
+      copilotReviewTimeoutAction: "block",
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    });
     const record = createRecord({
       state: "waiting_ci",
       review_wait_started_at: "2026-03-11T00:00:00Z",
@@ -3209,7 +3219,11 @@ test("inferStateFromPullRequest does not start Copilot timeout from the generic 
 
 test("inferStateFromPullRequest can time out from the observed Copilot request timestamp when GitHub omits one", () => {
   withStubbedDateNow("2026-03-11T00:30:00Z", () => {
-    const config = createConfig({ copilotReviewWaitMinutes: 10, copilotReviewTimeoutAction: "block" });
+    const config = createConfig({
+      copilotReviewWaitMinutes: 10,
+      copilotReviewTimeoutAction: "block",
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    });
     const record = createRecord({
       state: "waiting_ci",
       review_wait_started_at: "2026-03-11T00:00:00Z",
@@ -3277,6 +3291,43 @@ test("inferStateFromPullRequest can block when a configured bot review times out
   });
 });
 
+test("inferStateFromPullRequest does not wait on stale configured bot request state when no review bots are configured", () => {
+  withStubbedDateNow("2026-03-11T00:30:00Z", () => {
+    const config = createConfig({
+      copilotReviewWaitMinutes: 10,
+      copilotReviewTimeoutAction: "block",
+      reviewBotLogins: [],
+    });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-03-11T00:00:00Z",
+      review_wait_head_sha: "head123",
+      copilot_review_requested_observed_at: "2026-03-11T00:05:00Z",
+      copilot_review_requested_head_sha: "head123",
+    });
+    const pr: GitHubPullRequest = {
+      number: 44,
+      title: "Test PR",
+      url: "https://example.test/pr/44",
+      state: "OPEN",
+      createdAt: "2026-03-11T00:00:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      headRefName: "codex/issue-38",
+      headRefOid: "head123",
+      mergedAt: null,
+      copilotReviewState: "not_requested",
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+    };
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "ready_to_merge");
+  });
+});
+
 test("inferStateFromPullRequest times out requested Copilot reviews and continues by default", () => {
   withStubbedDateNow("2026-03-11T00:30:00Z", () => {
     const config = createConfig({ copilotReviewWaitMinutes: 10, copilotReviewTimeoutAction: "continue" });
@@ -3310,7 +3361,11 @@ test("inferStateFromPullRequest times out requested Copilot reviews and continue
 
 test("inferStateFromPullRequest can block when a requested Copilot review times out", () => {
   withStubbedDateNow("2026-03-11T00:30:00Z", () => {
-    const config = createConfig({ copilotReviewWaitMinutes: 10, copilotReviewTimeoutAction: "block" });
+    const config = createConfig({
+      copilotReviewWaitMinutes: 10,
+      copilotReviewTimeoutAction: "block",
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    });
     const record = createRecord({
       state: "waiting_ci",
       review_wait_started_at: "2026-03-11T00:00:00Z",
@@ -4053,6 +4108,96 @@ test("formatDetailedStatus surfaces configured bot review timeout outcome with g
   assert.match(
     status,
     /timeout_reason=Requested configured review bot \(chatgpt-codex-connector\) review never arrived within 10 minute\(s\) for head deadbeef\./,
+  );
+});
+
+test("formatDetailedStatus preserves Copilot-specific timeout wording for Copilot-only repos", () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const pr: GitHubPullRequest = {
+    number: 22,
+    title: "Add review learning",
+    url: "https://example.test/pr/22",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    headRefName: "codex/issue-58",
+    headRefOid: "deadbeef",
+    copilotReviewState: "requested",
+    copilotReviewRequestedAt: "2026-03-11T14:05:00Z",
+    copilotReviewArrivedAt: null,
+  };
+
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: createRecord({
+      pr_number: 22,
+      state: "ready_to_merge",
+      copilot_review_timed_out_at: "2026-03-11T14:15:00Z",
+      copilot_review_timeout_action: "continue",
+      copilot_review_timeout_reason:
+        "Requested Copilot review never arrived within 10 minute(s) for head deadbeef.",
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(status, /copilot_review state=requested requested_at=2026-03-11T14:05:00Z arrived_at=none timed_out_at=2026-03-11T14:15:00Z timeout_action=continue/);
+  assert.match(status, /timeout_reason=Requested Copilot review never arrived within 10 minute\(s\) for head deadbeef\./);
+});
+
+test("formatDetailedStatus keeps generic configured bot timeout wording for mixed bot repos", () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer", "chatgpt-codex-connector"],
+  });
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-38",
+    headRefOid: "deadbeef",
+    mergedAt: null,
+    copilotReviewState: "requested",
+    copilotReviewRequestedAt: "2026-03-11T14:05:00Z",
+    copilotReviewArrivedAt: null,
+  };
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: createRecord({
+      pr_number: 44,
+      state: "blocked",
+      blocked_reason: "review_bot_timeout",
+      copilot_review_timed_out_at: "2026-03-11T14:15:00Z",
+      copilot_review_timeout_action: "continue",
+      copilot_review_timeout_reason:
+        "Requested configured review bots (copilot-pull-request-reviewer, chatgpt-codex-connector) review never arrived within 10 minute(s) for head deadbeef.",
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr,
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [],
+  });
+
+  assert.match(
+    status,
+    /configured_bot_review state=requested reviewers=copilot-pull-request-reviewer,chatgpt-codex-connector requested_at=2026-03-11T14:05:00Z arrived_at=none timed_out_at=2026-03-11T14:15:00Z timeout_action=continue/,
+  );
+  assert.match(
+    status,
+    /timeout_reason=Requested configured review bots \(copilot-pull-request-reviewer, chatgpt-codex-connector\) review never arrived within 10 minute\(s\) for head deadbeef\./,
   );
 });
 

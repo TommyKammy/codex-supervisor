@@ -1015,8 +1015,24 @@ interface CopilotReviewTimeoutStatus {
   reason: string | null;
 }
 
+function configuredReviewBots(config: SupervisorConfig): string[] {
+  return config.reviewBotLogins.map((login) => login.trim()).filter((login) => login.length > 0);
+}
+
+function repoExpectsConfiguredBotReview(config: SupervisorConfig): boolean {
+  return configuredReviewBots(config).length > 0;
+}
+
+function repoUsesCopilotOnlyReviewBot(config: SupervisorConfig): boolean {
+  const bots = configuredReviewBots(config);
+  return bots.length === 1 && bots[0].toLowerCase() === COPILOT_REVIEWER_LOGIN;
+}
+
 function configuredReviewBotLabel(config: SupervisorConfig): string {
-  const bots = config.reviewBotLogins.filter((login) => login.trim() !== "");
+  const bots = configuredReviewBots(config);
+  if (repoUsesCopilotOnlyReviewBot(config)) {
+    return "Copilot";
+  }
   if (bots.length === 1) {
     return `configured review bot (${bots[0]})`;
   }
@@ -1027,8 +1043,7 @@ function configuredReviewBotLabel(config: SupervisorConfig): string {
 }
 
 function configuredReviewStatusLabel(config: SupervisorConfig): string {
-  return config.reviewBotLogins.length === 0 ||
-    (config.reviewBotLogins.length === 1 && config.reviewBotLogins[0] === COPILOT_REVIEWER_LOGIN)
+  return !repoExpectsConfiguredBotReview(config) || repoUsesCopilotOnlyReviewBot(config)
     ? "copilot_review"
     : "configured_bot_review";
 }
@@ -1037,20 +1052,28 @@ function copilotReviewArrived(pr: GitHubPullRequest): boolean {
   return (pr.copilotReviewState ?? "not_requested") === "arrived" || Boolean(pr.copilotReviewArrivedAt);
 }
 
-function hasObservedCopilotRequest(record: IssueRunRecord, pr: GitHubPullRequest): boolean {
-  return Boolean(record.copilot_review_requested_observed_at && record.copilot_review_requested_head_sha === pr.headRefOid);
-}
-
-function copilotReviewPending(record: IssueRunRecord, pr: GitHubPullRequest): boolean {
-  if (pr.isDraft || copilotReviewArrived(pr)) {
+function hasObservedCopilotRequest(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+): boolean {
+  if (!repoExpectsConfiguredBotReview(config)) {
     return false;
   }
 
-  return (pr.copilotReviewState ?? "not_requested") === "requested" || hasObservedCopilotRequest(record, pr);
+  return Boolean(record.copilot_review_requested_observed_at && record.copilot_review_requested_head_sha === pr.headRefOid);
 }
 
-function copilotReviewTimeoutStart(record: IssueRunRecord, pr: GitHubPullRequest): string | null {
-  if (!copilotReviewPending(record, pr)) {
+function copilotReviewPending(config: SupervisorConfig, record: IssueRunRecord, pr: GitHubPullRequest): boolean {
+  if (!repoExpectsConfiguredBotReview(config) || pr.isDraft || copilotReviewArrived(pr)) {
+    return false;
+  }
+
+  return (pr.copilotReviewState ?? "not_requested") === "requested" || hasObservedCopilotRequest(config, record, pr);
+}
+
+function copilotReviewTimeoutStart(config: SupervisorConfig, record: IssueRunRecord, pr: GitHubPullRequest): string | null {
+  if (!copilotReviewPending(config, record, pr)) {
     return null;
   }
 
@@ -1070,7 +1093,7 @@ function determineCopilotReviewTimeout(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
 ): CopilotReviewTimeoutStatus {
-  const startedAt = copilotReviewTimeoutStart(record, pr);
+  const startedAt = copilotReviewTimeoutStart(config, record, pr);
   if (!startedAt) {
     return { timedOut: false, action: null, startedAt: null, timedOutAt: null, reason: null };
   }
@@ -1095,10 +1118,6 @@ function determineCopilotReviewTimeout(
       `Requested ${configuredReviewBotLabel(config)} review never arrived within ${config.copilotReviewWaitMinutes} minute(s) ` +
       `for head ${pr.headRefOid}.`,
   };
-}
-
-function repoExpectsConfiguredBotReview(config: SupervisorConfig): boolean {
-  return config.reviewBotLogins.length > 0;
 }
 
 function shouldWaitForCopilotReviewPropagation(
@@ -1212,8 +1231,12 @@ function syncReviewWaitWindow(record: IssueRunRecord, pr: GitHubPullRequest): Pa
   };
 }
 
-function syncCopilotReviewRequestObservation(record: IssueRunRecord, pr: GitHubPullRequest): Partial<IssueRunRecord> {
-  if (pr.isDraft || copilotReviewArrived(pr)) {
+function syncCopilotReviewRequestObservation(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+): Partial<IssueRunRecord> {
+  if (!repoExpectsConfiguredBotReview(config) || pr.isDraft || copilotReviewArrived(pr)) {
     return {
       copilot_review_requested_observed_at: null,
       copilot_review_requested_head_sha: null,
@@ -1244,7 +1267,7 @@ function syncCopilotReviewRequestObservation(record: IssueRunRecord, pr: GitHubP
     };
   }
 
-  if (hasObservedCopilotRequest(record, pr)) {
+  if (hasObservedCopilotRequest(config, record, pr)) {
     return {
       copilot_review_requested_observed_at: record.copilot_review_requested_observed_at,
       copilot_review_requested_head_sha: record.copilot_review_requested_head_sha,
@@ -1360,7 +1383,7 @@ export function inferStateFromPullRequest(
     return "waiting_ci";
   }
 
-  if (copilotReviewPending(record, pr) && !copilotTimeout.timedOut) {
+  if (copilotReviewPending(config, record, pr) && !copilotTimeout.timedOut) {
     return "waiting_ci";
   }
 
@@ -1399,7 +1422,7 @@ function derivePullRequestLifecycleSnapshot(
 ): PullRequestLifecycleSnapshot {
   const baseRecord = { ...record, ...recordPatch };
   const reviewWaitPatch = syncReviewWaitWindow(baseRecord, pr);
-  const copilotRequestObservationPatch = syncCopilotReviewRequestObservation(baseRecord, pr);
+  const copilotRequestObservationPatch = syncCopilotReviewRequestObservation(config, baseRecord, pr);
   const recordForState = {
     ...baseRecord,
     ...reviewWaitPatch,
@@ -2053,7 +2076,9 @@ export function formatDetailedStatus(args: {
   if (pr) {
     const copilotReviewState = pr.copilotReviewState === null ? "unknown" : (pr.copilotReviewState ?? "not_requested");
     const reviewStatusLabel = configuredReviewStatusLabel(config);
-    const reviewersSuffix = config.reviewBotLogins.length > 0 ? ` reviewers=${config.reviewBotLogins.join(",")}` : "";
+    const reviewers = configuredReviewBots(config);
+    const reviewersSuffix =
+      reviewStatusLabel === "configured_bot_review" && reviewers.length > 0 ? ` reviewers=${reviewers.join(",")}` : "";
     lines.push(
       `${reviewStatusLabel} state=${copilotReviewState}${reviewersSuffix} requested_at=${pr.copilotReviewRequestedAt ?? "none"} arrived_at=${pr.copilotReviewArrivedAt ?? "none"} timed_out_at=${activeRecord.copilot_review_timed_out_at ?? "none"} timeout_action=${activeRecord.copilot_review_timeout_action ?? "none"}`,
     );
@@ -2404,7 +2429,7 @@ async function reconcileStaleFailedIssueStates(
       pr_number: pr.number,
       last_head_sha: pr.headRefOid,
       ...syncReviewWaitWindow(record, pr),
-      ...syncCopilotReviewRequestObservation(record, pr),
+      ...syncCopilotReviewRequestObservation(config, record, pr),
       ...syncCopilotReviewTimeoutState(config, record, pr),
     };
 
