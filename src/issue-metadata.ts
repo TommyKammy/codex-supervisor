@@ -166,6 +166,59 @@ function findMarkdownSectionContent(body: string, title: string): string | null 
   return null;
 }
 
+function hasListItem(content: string): boolean {
+  return content.split(/\r?\n/).some((line) => /^\s*(?:[-*]|\d+\.)\s+\S/.test(line));
+}
+
+function extractListItems(content: string): string[] {
+  return content
+    .split(/\r?\n/)
+    .filter((line) => /^\s*(?:[-*]|\d+\.)\s+\S/.test(line))
+    .map((line) => line.replace(/^\s*(?:[-*]|\d+\.)\s+/, "").trim());
+}
+
+function hasScopeBoundary(content: string): boolean {
+  const listItems = extractListItems(content);
+  if (listItems.length === 0) {
+    return false;
+  }
+
+  const boundaryPattern =
+    /\b(?:keep|leave|avoid|without|exclude|out of scope|do not|don't|unchanged|only|preserve|skip)\b/i;
+  if (listItems.some((item) => boundaryPattern.test(item))) {
+    return true;
+  }
+
+  return listItems.length === 1 && listItems[0].split(/\s+/).length >= 4;
+}
+
+function hasConcreteVerificationTarget(content: string): boolean {
+  const listItems = extractListItems(content);
+  if (listItems.length === 0) {
+    return false;
+  }
+
+  const genericOnlyPatterns = [
+    /^run tests$/i,
+    /^manual verification$/i,
+    /^verify manually$/i,
+    /^smoke test$/i,
+    /^confirm it works$/i,
+  ];
+  const genericOnly = listItems.every((item) => genericOnlyPatterns.some((pattern) => pattern.test(item)));
+  if (genericOnly) {
+    return false;
+  }
+
+  const concreteTargetPattern =
+    /`[^`]+`|(?:^|\s)(?:npm|pnpm|yarn|bun|npx|node|pytest|cargo|go test|bundle exec|mix test|mvn|gradle|dotnet|phpunit|rspec|vitest|jest|playwright|cypress)\b|[A-Za-z0-9_./-]+\.(?:test|spec)\.[A-Za-z0-9]+|src\/[A-Za-z0-9_./-]+/i;
+  if (listItems.some((item) => concreteTargetPattern.test(item))) {
+    return true;
+  }
+
+  return listItems.some((item) => item.split(/\s+/).length >= 5);
+}
+
 function parseRiskyChangeApprovalList(body: string): RiskyChangeClass[] {
   const approved = new Set<RiskyChangeClass>();
   const metadataMatches = body.matchAll(
@@ -233,16 +286,19 @@ export function parseIssueMetadata(issue: GitHubIssue): IssueMetadata {
 export function lintExecutionReadyIssueBody(
   issue: Pick<GitHubIssue, "title" | "body">,
 ): ExecutionReadyLintResult {
+  const summaryContent = findMarkdownSectionContent(issue.body, "Summary");
+  const scopeContent = findMarkdownSectionContent(issue.body, "Scope");
+  const verificationContent = findMarkdownSectionContent(issue.body, "Verification");
   const riskyChangeClasses = detectRiskyChangeClasses(issue);
   const approvedRiskyChangeClasses = parseRiskyChangeApprovalList(issue.body);
   const requiredChecks: Array<{ key: string; present: boolean }> = [
     {
       key: "summary",
-      present: findMarkdownSectionContent(issue.body, "Summary") !== null,
+      present: summaryContent !== null,
     },
     {
       key: "scope",
-      present: findMarkdownSectionContent(issue.body, "Scope") !== null,
+      present: scopeContent !== null,
     },
     {
       key: "acceptance criteria",
@@ -250,7 +306,7 @@ export function lintExecutionReadyIssueBody(
     },
     {
       key: "verification",
-      present: findMarkdownSectionContent(issue.body, "Verification") !== null,
+      present: verificationContent !== null,
     },
     ...riskyChangeClasses.map((riskyClass) => ({
       key: `explicit opt-in for ${riskyClass}`,
@@ -265,6 +321,14 @@ export function lintExecutionReadyIssueBody(
     {
       key: "execution order",
       present: parseExecutionOrder(issue.body) !== null,
+    },
+    {
+      key: "scope boundary",
+      present: scopeContent === null || hasScopeBoundary(scopeContent),
+    },
+    {
+      key: "verification target",
+      present: verificationContent === null || hasConcreteVerificationTarget(verificationContent),
     },
   ];
 

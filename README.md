@@ -305,7 +305,7 @@ Example issue body:
 ```md
 ## Summary
 
-Persist timeline row layout separately for each swimlane mode.
+Persist timeline row layout separately for each swimlane mode so switching views restores the right saved order.
 
 ## Scope
 
@@ -327,11 +327,19 @@ Parallelizable: No
 - switching between `section`, `assignee`, and `status` restores each mode's own saved layout
 - existing timeline reorder tests still pass
 - a focused E2E covers cross-mode persistence
+
+## Verification
+
+- `npm test -- src/timeline-layout.test.ts`
+- run the focused swimlane persistence E2E
 ```
 
 Practical guidance:
 
 - keep one execution-ready change per issue
+- use `Summary` to state the intended outcome, not just the area to touch
+- use `Scope` to say both what changes and what should stay unchanged
+- use `Verification` to name the focused test, command, or manual check that proves the issue is done
 - write `Depends on` whenever a later issue would be unsafe without an earlier one
 - use `Part of` for epics or parent rollups
 - use `Execution order` when a series must be processed in a specific sequence

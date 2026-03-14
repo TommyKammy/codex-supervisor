@@ -360,7 +360,12 @@ Example:
 
 ```md
 ## Summary
-Add a persisted recommendation severity model for wait stats findings.
+Add a persisted recommendation severity model so wait stats findings rank consistently.
+
+## Scope
+- define severity levels in the domain model
+- update recommendation ranking to use the new severity model
+- keep existing finding ingestion behavior unchanged
 
 Part of: #42
 Depends on: #41
@@ -373,6 +378,9 @@ Parallelizable: No
 - severity levels are defined in the domain model
 - recommendation ranking uses the new severity model
 - focused tests cover the ranking behavior
+
+## Verification
+- `npm test -- src/recommendation-ranking.test.ts`
 ```
 
 ## State machine

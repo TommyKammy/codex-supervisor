@@ -112,7 +112,7 @@ Epic: Persist timeline manual layout across swimlane modes
 ```md
 ## Summary
 
-Restore manual timeline row layout independently for `section`, `assignee`, and `status` swimlanes.
+Restore manual timeline row layout independently for `section`, `assignee`, and `status` swimlanes so each mode reopens with its own saved state.
 
 ## Why
 
@@ -149,6 +149,11 @@ Parallelizable: No
 - existing `section` layout data is still read correctly after migration
 - a focused E2E proves cross-mode persistence
 - the relevant API and domain tests pass
+
+## Verification
+
+- `npm test -- src/timeline-layout.test.ts`
+- run the focused cross-mode persistence E2E
 ```
 
 ## Splitting checklist
