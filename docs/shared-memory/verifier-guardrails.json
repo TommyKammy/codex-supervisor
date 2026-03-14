@@ -40,6 +40,14 @@
       "line": 1929,
       "summary": "Verify merged PR reconciliation drives local supervisor state to done, leaves not-yet-merged PRs untouched, and preserves stale-state recovery boundaries.",
       "rationale": "GitHub merge truth and local state convergence are separate concerns; tests should prove they reconcile deterministically without requiring manual cleanup."
+    },
+    {
+      "id": "extensible-output-targeted-assertions",
+      "title": "Prefer targeted assertions for extensible outputs",
+      "file": "src/verifier-guardrails.test.ts",
+      "line": 75,
+      "summary": "When loader output is intentionally extensible, assert on the rule or property under test instead of snapshotting the full returned array or document unless exact full output is the behavior being verified.",
+      "rationale": "Full-array or full-document snapshots make maintainability guardrails brittle as new rules are added later; exact-output assertions are still appropriate when the exact structure itself is the contract."
     }
   ]
 }
