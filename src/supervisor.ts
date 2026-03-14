@@ -1914,6 +1914,27 @@ interface PreparedIssueRunContext extends PreparedIssueExecutionContext {
   recoveryLog: string | null;
 }
 
+interface RunOnceCycleContext {
+  state: SupervisorStateFile;
+  recoveryEvents: RecoveryEvent[];
+  recoveryLog: string | null;
+}
+
+interface RunOnceIssuePhaseContext extends RunOnceCycleContext {
+  record: IssueRunRecord | null;
+  options: Pick<CliOptions, "dryRun">;
+}
+
+interface RunOnceContinue {
+  kind: "restart";
+  carryoverRecoveryEvents: RecoveryEvent[];
+}
+
+interface RunOnceReturn {
+  kind: "return";
+  message: string;
+}
+
 interface PostTurnPullRequestContext {
   state: SupervisorStateFile;
   record: IssueRunRecord;
@@ -4109,82 +4130,125 @@ export class Supervisor {
   async runOnce(options: Pick<CliOptions, "dryRun">): Promise<string> {
     let carryoverRecoveryEvents: RecoveryEvent[] = [];
     for (;;) {
-      const state = await this.stateStore.load();
-      const recoveryEvents: RecoveryEvent[] = [...carryoverRecoveryEvents];
+      const cycle = await this.startRunOnceCycle(carryoverRecoveryEvents);
+      if (typeof cycle === "string") {
+        return cycle;
+      }
       carryoverRecoveryEvents = [];
-      recoveryEvents.push(...(await this.reconcileStaleActiveIssueReservation(state)));
-      const authFailure = await handleAuthFailure(this.github, this.stateStore, state);
-      if (authFailure) {
-        return prependRecoveryLog(authFailure, formatRecoveryLog(recoveryEvents));
-      }
-      const issues = await this.github.listAllIssues();
-      recoveryEvents.push(...(await reconcileTrackedMergedButOpenIssues(this.github, this.stateStore, state, issues)));
-      recoveryEvents.push(...(await reconcileMergedIssueClosures(this.github, this.stateStore, state, issues)));
-      await reconcileStaleFailedIssueStates(this.github, this.stateStore, state, this.config, issues);
-      recoveryEvents.push(...(await reconcileRecoverableBlockedIssueStates(this.stateStore, state, this.config, issues)));
-      await reconcileParentEpicClosures(this.github, this.stateStore, state, issues);
-      recoveryEvents.push(...(await cleanupExpiredDoneWorkspaces(this.config, state)));
-      const recoveryLog = formatRecoveryLog(recoveryEvents);
 
-      let record =
-        state.activeIssueNumber !== null ? state.issues[String(state.activeIssueNumber)] ?? null : null;
-
-      if (record && shouldAutoRetryTimeout(record, this.config)) {
-        record = this.stateStore.touch(record, {
-          state: "queued",
-          last_error: `Auto-retrying after timeout (${record.timeout_retry_count}/${this.config.timeoutRetryLimit}).`,
-          blocked_reason: null,
-        });
-        state.issues[String(record.issue_number)] = record;
-        await this.stateStore.save(state);
-      }
-
-      if (record && shouldAutoRetryBlockedVerification(record, this.config)) {
-        record = this.stateStore.touch(record, {
-          state: "queued",
-          blocked_verification_retry_count: record.blocked_verification_retry_count + 1,
-          last_error:
-            `Auto-retrying after verification failure (` +
-            `${record.blocked_verification_retry_count + 1}/${this.config.blockedVerificationRetryLimit}). ` +
-            `Previous blocker: ${truncate(record.last_error, 1000) ?? "n/a"}`,
-          blocked_reason: "verification",
-        });
-        state.issues[String(record.issue_number)] = record;
-        await this.stateStore.save(state);
-      }
-
-      const runnableIssue = await this.resolveRunnableIssueContext(state, record);
-      if (typeof runnableIssue === "string") {
-        return prependRecoveryLog(runnableIssue, recoveryLog);
-      }
-      if (runnableIssue.kind === "restart") {
+      const record = await this.normalizeActiveIssueRecordForExecution(cycle.state);
+      const result = await this.runOnceIssuePhase({
+        ...cycle,
+        record,
+        options,
+      });
+      if (result.kind === "restart") {
+        carryoverRecoveryEvents = result.carryoverRecoveryEvents;
         continue;
       }
 
-      record = runnableIssue.record;
-      try {
-        const issue = runnableIssue.issue;
-        const preparedIssue = await this.prepareIssueExecutionContext(state, record, issue, options);
-        if (typeof preparedIssue === "string") {
-          return prependRecoveryLog(preparedIssue, recoveryLog);
-        }
-        if (isRestartRunOnce(preparedIssue)) {
-          carryoverRecoveryEvents = [
-            ...recoveryEvents,
-            ...(preparedIssue.recoveryEvents ?? []),
-          ];
-          continue;
-        }
+      return result.message;
+    }
+  }
 
-        return await this.runPreparedIssue({
+  private async startRunOnceCycle(carryoverRecoveryEvents: RecoveryEvent[]): Promise<RunOnceCycleContext | string> {
+    const state = await this.stateStore.load();
+    const recoveryEvents: RecoveryEvent[] = [...carryoverRecoveryEvents];
+    recoveryEvents.push(...(await this.reconcileStaleActiveIssueReservation(state)));
+    const authFailure = await handleAuthFailure(this.github, this.stateStore, state);
+    if (authFailure) {
+      return prependRecoveryLog(authFailure, formatRecoveryLog(recoveryEvents));
+    }
+
+    const issues = await this.github.listAllIssues();
+    recoveryEvents.push(...(await reconcileTrackedMergedButOpenIssues(this.github, this.stateStore, state, issues)));
+    recoveryEvents.push(...(await reconcileMergedIssueClosures(this.github, this.stateStore, state, issues)));
+    await reconcileStaleFailedIssueStates(this.github, this.stateStore, state, this.config, issues);
+    recoveryEvents.push(...(await reconcileRecoverableBlockedIssueStates(this.stateStore, state, this.config, issues)));
+    await reconcileParentEpicClosures(this.github, this.stateStore, state, issues);
+    recoveryEvents.push(...(await cleanupExpiredDoneWorkspaces(this.config, state)));
+
+    return {
+      state,
+      recoveryEvents,
+      recoveryLog: formatRecoveryLog(recoveryEvents),
+    };
+  }
+
+  private async normalizeActiveIssueRecordForExecution(state: SupervisorStateFile): Promise<IssueRunRecord | null> {
+    let record =
+      state.activeIssueNumber !== null ? state.issues[String(state.activeIssueNumber)] ?? null : null;
+
+    if (record && shouldAutoRetryTimeout(record, this.config)) {
+      record = this.stateStore.touch(record, {
+        state: "queued",
+        last_error: `Auto-retrying after timeout (${record.timeout_retry_count}/${this.config.timeoutRetryLimit}).`,
+        blocked_reason: null,
+      });
+      state.issues[String(record.issue_number)] = record;
+      await this.stateStore.save(state);
+    }
+
+    if (record && shouldAutoRetryBlockedVerification(record, this.config)) {
+      record = this.stateStore.touch(record, {
+        state: "queued",
+        blocked_verification_retry_count: record.blocked_verification_retry_count + 1,
+        last_error:
+          `Auto-retrying after verification failure (` +
+          `${record.blocked_verification_retry_count + 1}/${this.config.blockedVerificationRetryLimit}). ` +
+          `Previous blocker: ${truncate(record.last_error, 1000) ?? "n/a"}`,
+        blocked_reason: "verification",
+      });
+      state.issues[String(record.issue_number)] = record;
+      await this.stateStore.save(state);
+    }
+
+    return record;
+  }
+
+  private async runOnceIssuePhase(context: RunOnceIssuePhaseContext): Promise<RunOnceContinue | RunOnceReturn> {
+    const { state, record, options, recoveryEvents, recoveryLog } = context;
+    const runnableIssue = await this.resolveRunnableIssueContext(state, record);
+    if (typeof runnableIssue === "string") {
+      return {
+        kind: "return",
+        message: prependRecoveryLog(runnableIssue, recoveryLog),
+      };
+    }
+    if (runnableIssue.kind === "restart") {
+      return {
+        kind: "restart",
+        carryoverRecoveryEvents: [...recoveryEvents, ...(runnableIssue.recoveryEvents ?? [])],
+      };
+    }
+
+    try {
+      const issue = runnableIssue.issue;
+      const preparedIssue = await this.prepareIssueExecutionContext(state, runnableIssue.record, issue, options);
+      if (typeof preparedIssue === "string") {
+        return {
+          kind: "return",
+          message: prependRecoveryLog(preparedIssue, recoveryLog),
+        };
+      }
+      if (isRestartRunOnce(preparedIssue)) {
+        return {
+          kind: "restart",
+          carryoverRecoveryEvents: [...recoveryEvents, ...(preparedIssue.recoveryEvents ?? [])],
+        };
+      }
+
+      return {
+        kind: "return",
+        message: await this.runPreparedIssue({
           ...preparedIssue,
           state,
           options,
           recoveryLog,
-        });
-      } finally {
-        await runnableIssue.issueLock.release();
-      }
+        }),
+      };
+    } finally {
+      await runnableIssue.issueLock.release();
     }
   }
 }

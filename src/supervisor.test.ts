@@ -859,6 +859,94 @@ test("runOnce returns no matching issue when no runnable candidate is available"
   assert.deepEqual(persisted.issues, {});
 });
 
+test("runOnce carries recovery events across restarting phase handlers", async () => {
+  const supervisor = new Supervisor(createConfig());
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  const carryoverEvent = {
+    issueNumber: 91,
+    reason: "merged_pr_convergence: tracked PR #191 merged; marked issue #91 done",
+    at: "2026-03-13T00:20:00Z",
+  };
+
+  const observedCarryoverEvents: Array<Array<typeof carryoverEvent>> = [];
+  let cycleCalls = 0;
+  let retryCalls = 0;
+  let issuePhaseCalls = 0;
+
+  (
+    supervisor as unknown as {
+      startRunOnceCycle: (carryoverRecoveryEvents: Array<typeof carryoverEvent>) => Promise<{
+        state: SupervisorStateFile;
+        recoveryEvents: Array<typeof carryoverEvent>;
+        recoveryLog: string | null;
+      }>;
+    }
+  ).startRunOnceCycle = async (carryoverRecoveryEvents) => {
+    observedCarryoverEvents.push([...carryoverRecoveryEvents]);
+    cycleCalls += 1;
+    return {
+      state,
+      recoveryEvents: [...carryoverRecoveryEvents],
+      recoveryLog:
+        carryoverRecoveryEvents.length > 0
+          ? "[recovery] issue=#91 reason=merged_pr_convergence: tracked PR #191 merged; marked issue #91 done"
+          : null,
+    };
+  };
+  (
+    supervisor as unknown as {
+      normalizeActiveIssueRecordForExecution: (state: SupervisorStateFile) => Promise<null>;
+    }
+  ).normalizeActiveIssueRecordForExecution = async (loadedState) => {
+    retryCalls += 1;
+    assert.equal(loadedState, state);
+    return null;
+  };
+  (
+    supervisor as unknown as {
+      runOnceIssuePhase: (context: {
+        state: SupervisorStateFile;
+        record: IssueRunRecord | null;
+        options: { dryRun: boolean };
+        recoveryEvents: Array<typeof carryoverEvent>;
+        recoveryLog: string | null;
+      }) => Promise<
+        | { kind: "restart"; carryoverRecoveryEvents: Array<typeof carryoverEvent> }
+        | { kind: "return"; message: string }
+      >;
+    }
+  ).runOnceIssuePhase = async (context) => {
+    issuePhaseCalls += 1;
+    assert.equal(context.state, state);
+    assert.equal(context.record, null);
+    assert.equal(context.options.dryRun, true);
+    if (issuePhaseCalls === 1) {
+      assert.equal(context.recoveryLog, null);
+      return {
+        kind: "restart",
+        carryoverRecoveryEvents: [carryoverEvent],
+      };
+    }
+
+    assert.match(context.recoveryLog ?? "", /\[recovery\] issue=#91/);
+    assert.deepEqual(context.recoveryEvents, [carryoverEvent]);
+    return {
+      kind: "return",
+      message: "No matching open issue found.",
+    };
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.equal(message, "No matching open issue found.");
+  assert.deepEqual(observedCarryoverEvents, [[], [carryoverEvent]]);
+  assert.equal(cycleCalls, 2);
+  assert.equal(retryCalls, 2);
+  assert.equal(issuePhaseCalls, 2);
+});
+
 test("runOnce prunes orphaned done worktrees that are no longer referenced by state", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.maxDoneWorkspaces = 1;
