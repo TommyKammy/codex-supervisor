@@ -36,8 +36,8 @@ export interface ClarificationBlock {
 const RISKY_CHANGE_CLASSES = ["auth", "billing", "permissions", "ci", "migrations", "secrets"] as const;
 const HIGH_RISK_AMBIGUITY_CLASSES = ["open_question", "unresolved_choice", "operator_confirmation"] as const;
 
-type RiskyChangeClass = (typeof RISKY_CHANGE_CLASSES)[number];
-type HighRiskAmbiguityClass = (typeof HIGH_RISK_AMBIGUITY_CLASSES)[number];
+export type RiskyChangeClass = (typeof RISKY_CHANGE_CLASSES)[number];
+export type HighRiskAmbiguityClass = (typeof HIGH_RISK_AMBIGUITY_CLASSES)[number];
 
 const RISKY_CHANGE_SIGNALS: Record<RiskyChangeClass, RegExp[]> = {
   auth: [
