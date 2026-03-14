@@ -898,13 +898,14 @@ test("loadRelevantExternalReviewMissPatterns rejects malformed durable guardrail
 });
 
 test("repo-committed durable external-review guardrails teach stable anchors for drift-prone line assertions", async () => {
+  const repoRoot = path.resolve(__dirname, "..");
   const patterns = await loadRelevantExternalReviewMissPatterns({
-    artifactDir: path.join(process.cwd(), ".local", "reviews"),
+    artifactDir: path.join(repoRoot, ".local", "reviews"),
     branch: "codex/issue-203",
     currentHeadSha: "currenthead",
     changedFiles: ["src/local-review.test.ts"],
     limit: 10,
-    workspacePath: process.cwd(),
+    workspacePath: repoRoot,
   });
 
   assert.deepEqual(
