@@ -242,6 +242,132 @@ test("buildCodexPrompt keeps explicit operator overrides during local_review_fix
   assert.doesNotMatch(prompt, /Leave the PR as a stable checkpoint for handoff\./);
 });
 
+test("buildCodexPrompt suppresses stale handoff next actions during addressing_review", () => {
+  const prompt = buildCodexPrompt({
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "addressing_review" satisfies RunState,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+    journalExcerpt: `# Issue #46: Add a dedicated review-repair mode
+
+## Codex Working Notes
+### Current Handoff
+- Hypothesis: Review-thread fixes should override stale checkpoint advice.
+- Next 1-3 actions:
+  - Leave the PR as a stable checkpoint for handoff.
+  - Re-read the broad implementation plan before touching code.
+
+### Scratchpad
+- Keep this section short.`,
+    externalReviewMissContext: {
+      artifactPath: "/tmp/reviews/issue-46/external-review-misses-head-deadbeef.json",
+      matchedCount: 0,
+      nearMatchCount: 1,
+      missedCount: 1,
+      regressionTestCandidates: [],
+      missedFindings: [
+        {
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/codex.ts",
+          line: 180,
+          summary: "Live review guidance should take priority over stale handoff steps.",
+          rationale: "The active thread already describes the blocker to resolve before merge.",
+          url: "https://example.test/thread-1#comment-1",
+        },
+      ],
+    },
+  });
+
+  assert.doesNotMatch(prompt, /Leave the PR as a stable checkpoint for handoff\./);
+  assert.doesNotMatch(prompt, /Re-read the broad implementation plan before touching code\./);
+  assert.match(prompt, /Review threads are the primary task\./);
+  assert.match(prompt, /Live review guidance should take priority over stale handoff steps\./);
+});
+
+test("buildCodexPrompt keeps explicit operator overrides during addressing_review", () => {
+  const prompt = buildCodexPrompt({
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "addressing_review" satisfies RunState,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+    journalExcerpt: `# Issue #46: Add a dedicated review-repair mode
+
+## Codex Working Notes
+### Current Handoff
+- Hypothesis: Review-thread fixes should override stale checkpoint advice.
+- Operator override: Keep the temporary compatibility shim in place while resolving the review comment.
+- Next 1-3 actions:
+  - Leave the PR as a stable checkpoint for handoff.
+
+### Scratchpad
+- Keep this section short.`,
+    externalReviewMissContext: {
+      artifactPath: "/tmp/reviews/issue-46/external-review-misses-head-deadbeef.json",
+      matchedCount: 0,
+      nearMatchCount: 0,
+      missedCount: 1,
+      regressionTestCandidates: [],
+      missedFindings: [
+        {
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/codex.ts",
+          line: 180,
+          summary: "Live review guidance should take priority over stale handoff steps.",
+          rationale: "The active thread already describes the blocker to resolve before merge.",
+          url: "https://example.test/thread-1#comment-1",
+        },
+      ],
+    },
+  });
+
+  assert.match(prompt, /Operator override: Keep the temporary compatibility shim in place/);
+  assert.doesNotMatch(prompt, /Leave the PR as a stable checkpoint for handoff\./);
+});
+
+test("buildCodexPrompt suppresses stale handoff next actions during repairing_ci", () => {
+  const prompt = buildCodexPrompt({
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "repairing_ci" satisfies RunState,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+    journalExcerpt: `# Issue #46: Add a dedicated repair mode
+
+## Codex Working Notes
+### Current Handoff
+- Hypothesis: CI repair should override stale checkpoint advice.
+- Next exact step: Leave the PR as a stable checkpoint for handoff.
+- Primary failure or risk: npm run build currently fails on the active branch.
+
+### Scratchpad
+- Keep this section short.`,
+  });
+
+  assert.doesNotMatch(prompt, /Leave the PR as a stable checkpoint for handoff\./);
+  assert.match(prompt, /- Next exact step: suppressed during active CI repair/);
+  assert.match(prompt, /- Primary failure or risk: npm run build currently fails on the active branch\./);
+});
+
 test("buildCodexPrompt suppresses structured next exact step guidance during local_review_fix without dropping later fields", () => {
   const prompt = buildCodexPrompt({
     repoSlug: "owner/repo",

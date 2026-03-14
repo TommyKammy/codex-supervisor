@@ -33,6 +33,12 @@ export interface LocalReviewRepairContext {
   verifierGuardrails: VerifierGuardrailRule[];
 }
 
+const LIVE_BLOCKER_HANDOFF_SUPPRESSION_STATES = new Set<RunState>([
+  "local_review_fix",
+  "repairing_ci",
+  "addressing_review",
+]);
+
 export function extractStateHint(message: string): RunState | null {
   const match = message.match(/State hint:\s*([a-z_]+)/i);
   if (!match) {
@@ -164,8 +170,8 @@ function phaseGuidance(state: RunState): string[] {
   return [];
 }
 
-function suppressStaleRepairHandoff(journalExcerpt: string | null | undefined, state: RunState): string | null | undefined {
-  if (!journalExcerpt || state !== "local_review_fix") {
+function suppressStaleLiveBlockerHandoff(journalExcerpt: string | null | undefined, state: RunState): string | null | undefined {
+  if (!journalExcerpt || !LIVE_BLOCKER_HANDOFF_SUPPRESSION_STATES.has(state)) {
     return journalExcerpt;
   }
 
@@ -224,8 +230,14 @@ function suppressStaleRepairHandoff(journalExcerpt: string | null | undefined, s
   for (const line of sanitized) {
     output.push(line);
     if (!insertedNotice && line.startsWith("### Current Handoff")) {
+      const suppressionReason =
+        state === "local_review_fix"
+          ? "active local-review repair"
+          : state === "repairing_ci"
+            ? "active CI repair"
+            : "active review-thread handling";
       output.push(
-        `- ${removedNextActionsLabel}: suppressed during active local-review repair; use the local-review blocker context unless an operator override note says otherwise.`,
+        `- ${removedNextActionsLabel}: suppressed during ${suppressionReason}; use the live blocker context unless an operator override note says otherwise.`,
       );
       insertedNotice = true;
     }
@@ -255,7 +267,7 @@ export function buildCodexPrompt(input: {
   localReviewRepairContext?: LocalReviewRepairContext | null;
   externalReviewMissContext?: ExternalReviewMissContext | null;
 }): string {
-  const journalExcerpt = suppressStaleRepairHandoff(input.journalExcerpt, input.state);
+  const journalExcerpt = suppressStaleLiveBlockerHandoff(input.journalExcerpt, input.state);
   const checksSummary =
     input.checks.length === 0
       ? "No checks currently reported."
