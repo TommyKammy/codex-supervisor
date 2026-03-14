@@ -791,7 +791,7 @@ test("loadLocalReviewRepairContext surfaces malformed committed durable guardrai
 
   await assert.rejects(
     loadLocalReviewRepairContext(summaryPath, workspaceDir),
-    /Invalid durable external review guardrails in .*external-review-guardrails\.json: version must be 1\./,
+    /Invalid durable external review guardrails in .*external-review-guardrails\.json: unsupported schema version 2; expected version 1\./,
   );
 
   await fs.rm(workspaceDir, { recursive: true, force: true });

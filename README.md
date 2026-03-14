@@ -252,6 +252,8 @@ Committed Local Review Swarm guardrails also live under `docs/shared-memory/`:
 - `docs/shared-memory/verifier-guardrails.json`
 - `docs/shared-memory/external-review-guardrails.json`
 
+Each committed guardrail document must declare `"version": 1` at the top level. Missing versions, non-integer versions, or unsupported future versions fail validation and loading immediately so schema upgrades remain explicit and deterministic.
+
 Maintain them through the repo-managed workflow:
 
 1. Edit the committed JSON entry in `docs/shared-memory/`.

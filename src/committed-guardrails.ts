@@ -26,8 +26,8 @@ interface FormattedCommittedGuardrails {
 
 export const VERIFIER_GUARDRAILS_PATH = path.join("docs", "shared-memory", "verifier-guardrails.json");
 export const EXTERNAL_REVIEW_GUARDRAILS_PATH = path.join("docs", "shared-memory", "external-review-guardrails.json");
-const VERIFIER_GUARDRAILS_VERSION = 1;
-const EXTERNAL_REVIEW_GUARDRAILS_VERSION = 1;
+export const VERIFIER_GUARDRAILS_SCHEMA_VERSION = 1;
+export const EXTERNAL_REVIEW_GUARDRAILS_SCHEMA_VERSION = 1;
 const GUARDRAILS_MAX_BYTES = 256 * 1024;
 const VERIFIER_GUARDRAIL_KEYS = ["id", "title", "file", "line", "summary", "rationale"] as const;
 const DURABLE_MISS_PATTERN_KEYS = [
@@ -50,6 +50,10 @@ function isPositiveIntegerOrNull(value: unknown): value is number | null {
   return value === null || (typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value >= 1);
 }
 
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value >= 1;
+}
+
 function normalizeRequiredString(value: unknown, message: string): string {
   if (!isNonEmptyString(value)) {
     throw new Error(message);
@@ -64,6 +68,29 @@ function isIso8601Timestamp(value: string): boolean {
   }
 
   return !Number.isNaN(Date.parse(value));
+}
+
+function validateSchemaVersion(
+  actualVersion: unknown,
+  expectedVersion: number,
+  source: string,
+  label: string,
+): void {
+  if (actualVersion === undefined) {
+    throw new Error(`Invalid ${label} in ${source}: missing schema version; expected version ${expectedVersion}.`);
+  }
+
+  if (!isPositiveInteger(actualVersion)) {
+    throw new Error(
+      `Invalid ${label} in ${source}: schema version must be a positive integer; expected version ${expectedVersion}.`,
+    );
+  }
+
+  if (actualVersion !== expectedVersion) {
+    throw new Error(
+      `Invalid ${label} in ${source}: unsupported schema version ${actualVersion}; expected version ${expectedVersion}.`,
+    );
+  }
 }
 
 export function compareVerifierGuardrails(left: VerifierGuardrailRule, right: VerifierGuardrailRule): number {
@@ -247,9 +274,7 @@ function parseVerifierGuardrails(raw: string, source: string): DurableVerifierGu
   }
 
   const parsed = parseJson<DurableVerifierGuardrails & { version?: unknown; rules?: unknown }>(raw, source);
-  if (parsed.version !== VERIFIER_GUARDRAILS_VERSION) {
-    throw new Error(`Invalid verifier guardrails in ${source}: version must be ${VERIFIER_GUARDRAILS_VERSION}.`);
-  }
+  validateSchemaVersion(parsed.version, VERIFIER_GUARDRAILS_SCHEMA_VERSION, source, "verifier guardrails");
   for (const key of Object.keys(parsed)) {
     if (key !== "version" && key !== "rules") {
       throw new Error(`Invalid verifier guardrails in ${source}: ${key} is not allowed.`);
@@ -270,11 +295,12 @@ function parseExternalReviewGuardrails(raw: string, source: string): DurableExte
   }
 
   const parsed = parseJson<DurableExternalReviewGuardrails & { version?: unknown; patterns?: unknown }>(raw, source);
-  if (parsed.version !== EXTERNAL_REVIEW_GUARDRAILS_VERSION) {
-    throw new Error(
-      `Invalid durable external review guardrails in ${source}: version must be ${EXTERNAL_REVIEW_GUARDRAILS_VERSION}.`,
-    );
-  }
+  validateSchemaVersion(
+    parsed.version,
+    EXTERNAL_REVIEW_GUARDRAILS_SCHEMA_VERSION,
+    source,
+    "durable external review guardrails",
+  );
   for (const key of Object.keys(parsed)) {
     if (key !== "version" && key !== "patterns") {
       throw new Error(`Invalid durable external review guardrails in ${source}: ${key} is not allowed.`);

@@ -778,7 +778,7 @@ test("loadRelevantExternalReviewMissPatterns rejects durable guardrails with an 
       changedFiles: ["src/auth.ts"],
       workspacePath: workspaceDir,
     }),
-    /version must be 1/,
+    /unsupported schema version 2; expected version 1/,
   );
 });
 
