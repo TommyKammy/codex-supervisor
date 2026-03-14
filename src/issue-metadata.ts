@@ -170,50 +170,53 @@ function hasListItem(content: string): boolean {
   return content.split(/\r?\n/).some((line) => /^\s*(?:[-*]|\d+\.)\s+\S/.test(line));
 }
 
-function hasScopeBoundary(content: string): boolean {
-  const listItems = content
+function extractListItems(content: string): string[] {
+  return content
     .split(/\r?\n/)
     .filter((line) => /^\s*(?:[-*]|\d+\.)\s+\S/.test(line))
     .map((line) => line.replace(/^\s*(?:[-*]|\d+\.)\s+/, "").trim());
+}
+
+function hasScopeBoundary(content: string): boolean {
+  const listItems = extractListItems(content);
   if (listItems.length === 0) {
     return false;
   }
 
   const boundaryPattern =
     /\b(?:keep|leave|avoid|without|exclude|out of scope|do not|don't|unchanged|only|preserve|skip)\b/i;
-  if (boundaryPattern.test(content) || listItems.length >= 2) {
+  if (listItems.some((item) => boundaryPattern.test(item))) {
     return true;
   }
 
-  return listItems.some((item) => item.split(/\s+/).length >= 4);
+  return listItems.length === 1 && listItems[0].split(/\s+/).length >= 4;
 }
 
 function hasConcreteVerificationTarget(content: string): boolean {
-  if (!hasListItem(content)) {
+  const listItems = extractListItems(content);
+  if (listItems.length === 0) {
     return false;
   }
 
   const genericOnlyPatterns = [
-    /^\s*(?:[-*]|\d+\.)\s*run tests\s*$/im,
-    /^\s*(?:[-*]|\d+\.)\s*manual verification\s*$/im,
-    /^\s*(?:[-*]|\d+\.)\s*verify manually\s*$/im,
-    /^\s*(?:[-*]|\d+\.)\s*smoke test\s*$/im,
-    /^\s*(?:[-*]|\d+\.)\s*confirm it works\s*$/im,
+    /^run tests$/i,
+    /^manual verification$/i,
+    /^verify manually$/i,
+    /^smoke test$/i,
+    /^confirm it works$/i,
   ];
-  if (genericOnlyPatterns.some((pattern) => pattern.test(content.trim()))) {
+  const genericOnly = listItems.every((item) => genericOnlyPatterns.some((pattern) => pattern.test(item)));
+  if (genericOnly) {
     return false;
   }
 
   const concreteTargetPattern =
     /`[^`]+`|(?:^|\s)(?:npm|pnpm|yarn|bun|npx|node|pytest|cargo|go test|bundle exec|mix test|mvn|gradle|dotnet|phpunit|rspec|vitest|jest|playwright|cypress)\b|[A-Za-z0-9_./-]+\.(?:test|spec)\.[A-Za-z0-9]+|src\/[A-Za-z0-9_./-]+/i;
-  if (concreteTargetPattern.test(content)) {
+  if (listItems.some((item) => concreteTargetPattern.test(item))) {
     return true;
   }
 
-  return content
-    .split(/\r?\n/)
-    .filter((line) => /^\s*(?:[-*]|\d+\.)\s+\S/.test(line))
-    .some((line) => line.trim().split(/\s+/).length >= 5);
+  return listItems.some((item) => item.split(/\s+/).length >= 5);
 }
 
 function parseRiskyChangeApprovalList(body: string): RiskyChangeClass[] {

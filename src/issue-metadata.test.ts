@@ -147,6 +147,57 @@ Improve execution-ready issue guidance.
   });
 });
 
+test("lintExecutionReadyIssueBody keeps recommending scope boundaries for multi-bullet in-scope lists", () => {
+  const issue = createIssue({
+    body: `## Summary
+Improve execution-ready issue guidance.
+
+## Scope
+- update the template wording
+- adjust the lint guidance text
+
+## Acceptance criteria
+- issue guidance is updated
+
+## Verification
+- \`npx tsx --test src/issue-metadata.test.ts\``,
+  });
+
+  assert.deepEqual(lintExecutionReadyIssueBody(issue), {
+    isExecutionReady: true,
+    missingRequired: [],
+    missingRecommended: ["depends on", "execution order", "scope boundary"],
+    riskyChangeClasses: [],
+    approvedRiskyChangeClasses: [],
+  });
+});
+
+test("lintExecutionReadyIssueBody accepts mixed generic and concrete verification steps", () => {
+  const issue = createIssue({
+    body: `## Summary
+Improve execution-ready issue guidance.
+
+## Scope
+- update the template wording
+- keep the issue body concise
+
+## Acceptance criteria
+- issue guidance is updated
+
+## Verification
+- run tests
+- \`npx tsx --test src/issue-metadata.test.ts\``,
+  });
+
+  assert.deepEqual(lintExecutionReadyIssueBody(issue), {
+    isExecutionReady: true,
+    missingRequired: [],
+    missingRecommended: ["depends on", "execution order"],
+    riskyChangeClasses: [],
+    approvedRiskyChangeClasses: [],
+  });
+});
+
 test("lintExecutionReadyIssueBody treats ##Heading without a space as the next section", () => {
   const issue = createIssue({
     body: `## Summary
