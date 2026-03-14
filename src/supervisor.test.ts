@@ -922,6 +922,54 @@ test("runOnce prunes orphaned done worktrees that are no longer referenced by st
   assert.match(git(["-C", fixture.repoPath, "branch", "--list", orphanBranch]), /^$/);
 });
 
+test("runOnce ignores non-canonical orphan workspace names", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.maxDoneWorkspaces = 1;
+  fixture.config.cleanupDoneWorkspacesAfterHours = -1;
+
+  const orphanIssueNumber = 92;
+  const orphanBranch = branchName(fixture.config, orphanIssueNumber);
+  const orphanWorkspace = path.join(fixture.workspaceRoot, `issue-00${orphanIssueNumber}`);
+
+  await fs.mkdir(fixture.workspaceRoot, { recursive: true });
+  git(["-C", fixture.repoPath, "worktree", "add", "-b", orphanBranch, orphanWorkspace, "origin/main"]);
+
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [],
+    listCandidateIssues: async () => [],
+    getIssue: async () => {
+      throw new Error("unexpected getIssue call");
+    },
+    resolvePullRequestForBranch: async () => {
+      throw new Error("unexpected resolvePullRequestForBranch call");
+    },
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.equal(message, "No matching open issue found.");
+
+  await fs.access(orphanWorkspace);
+  assert.match(git(["-C", fixture.repoPath, "branch", "--list", orphanBranch]), new RegExp(orphanBranch));
+});
+
 test("runOnce moves a non-ready issue into blocked(requirements) with missing requirements", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 91;

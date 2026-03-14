@@ -558,13 +558,12 @@ async function cleanupRecordWorkspace(config: SupervisorConfig, record: IssueRun
 }
 
 function parseIssueNumberFromWorkspaceName(workspaceName: string): number | null {
-  const match = /^issue-(\d+)$/.exec(workspaceName);
+  const match = /^issue-([1-9]\d*)$/.exec(workspaceName);
   if (!match) {
     return null;
   }
 
-  const issueNumber = Number.parseInt(match[1] ?? "", 10);
-  return Number.isInteger(issueNumber) && issueNumber > 0 ? issueNumber : null;
+  return Number.parseInt(match[1], 10);
 }
 
 async function cleanupOrphanedIssueWorkspaces(
