@@ -9,7 +9,7 @@
   "properties": {
     "version": {
       "const": 1,
-      "description": "Schema version for committed verifier guardrails."
+      "description": "Schema version for committed verifier guardrails. Version 1 is required; missing or unsupported versions are rejected."
     },
     "rules": {
       "type": "array",

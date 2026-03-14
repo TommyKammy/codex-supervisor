@@ -9,7 +9,7 @@
   "properties": {
     "version": {
       "const": 1,
-      "description": "Schema version for durable external-review guardrails."
+      "description": "Schema version for durable external-review guardrails. Version 1 is required; missing or unsupported versions are rejected."
     },
     "patterns": {
       "type": "array",

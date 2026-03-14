@@ -173,6 +173,85 @@ test("validateCommittedGuardrails reports verifier failures before external-revi
   await fs.rm(workspaceDir, { recursive: true, force: true });
 });
 
+test("validateCommittedGuardrails accepts schema version 1 and rejects missing or unsupported committed schema versions predictably", async () => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "committed-guardrails-schema-version-test-"));
+  const sharedMemoryDir = path.join(workspaceDir, "docs", "shared-memory");
+  await fs.mkdir(sharedMemoryDir, { recursive: true });
+
+  const verifierPath = path.join(sharedMemoryDir, "verifier-guardrails.json");
+  const externalReviewPath = path.join(sharedMemoryDir, "external-review-guardrails.json");
+
+  await fs.writeFile(
+    verifierPath,
+    JSON.stringify({
+      version: 1,
+      rules: [],
+    }),
+    "utf8",
+  );
+  await fs.writeFile(
+    externalReviewPath,
+    JSON.stringify({
+      version: 1,
+      patterns: [],
+    }),
+    "utf8",
+  );
+
+  await validateCommittedGuardrails(workspaceDir);
+
+  await fs.writeFile(
+    verifierPath,
+    JSON.stringify({
+      rules: [],
+    }),
+    "utf8",
+  );
+
+  await assert.rejects(
+    validateCommittedGuardrails(workspaceDir),
+    /Invalid verifier guardrails in .*verifier-guardrails\.json: missing schema version; expected version 1\./,
+  );
+
+  await fs.writeFile(
+    verifierPath,
+    JSON.stringify({
+      version: "1",
+      rules: [],
+    }),
+    "utf8",
+  );
+
+  await assert.rejects(
+    validateCommittedGuardrails(workspaceDir),
+    /Invalid verifier guardrails in .*verifier-guardrails\.json: schema version must be a positive integer; expected version 1\./,
+  );
+
+  await fs.writeFile(
+    verifierPath,
+    JSON.stringify({
+      version: 1,
+      rules: [],
+    }),
+    "utf8",
+  );
+  await fs.writeFile(
+    externalReviewPath,
+    JSON.stringify({
+      version: 2,
+      patterns: [],
+    }),
+    "utf8",
+  );
+
+  await assert.rejects(
+    validateCommittedGuardrails(workspaceDir),
+    /Invalid durable external review guardrails in .*external-review-guardrails\.json: unsupported schema version 2; expected version 1\./,
+  );
+
+  await fs.rm(workspaceDir, { recursive: true, force: true });
+});
+
 test("formatCommittedGuardrails rewrites committed guardrails into canonical sorted JSON", async () => {
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "committed-guardrails-format-test-"));
   const sharedMemoryDir = path.join(workspaceDir, "docs", "shared-memory");

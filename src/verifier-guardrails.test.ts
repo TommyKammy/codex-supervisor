@@ -199,7 +199,7 @@ test("loadRelevantVerifierGuardrails rejects malformed committed rules", async (
       changedFiles: ["src/auth.ts"],
       limit: 3,
     }),
-    /Invalid verifier guardrails in .*verifier-guardrails\.json: version must be 1\./,
+    /Invalid verifier guardrails in .*verifier-guardrails\.json: unsupported schema version 2; expected version 1\./,
   );
 
   await fs.rm(workspaceDir, { recursive: true, force: true });
