@@ -36,6 +36,37 @@ function assertRelevantRuleIdsAndFiles(args: {
   );
 }
 
+function assertContainsRelevantRule(
+  rules: Awaited<ReturnType<typeof loadRelevantVerifierGuardrails>>,
+  expected: {
+    id: string;
+    title?: string;
+    file?: string;
+    line?: number | null;
+    summary?: string;
+    rationale?: string;
+  },
+): void {
+  const actual = rules.find((rule) => rule.id === expected.id);
+  assert.ok(actual, `expected relevant verifier guardrails to include rule "${expected.id}"`);
+
+  if (expected.title !== undefined) {
+    assert.equal(actual.title, expected.title);
+  }
+  if (expected.file !== undefined) {
+    assert.equal(actual.file, expected.file);
+  }
+  if (expected.line !== undefined) {
+    assert.equal(actual.line, expected.line);
+  }
+  if (expected.summary !== undefined) {
+    assert.equal(actual.summary, expected.summary);
+  }
+  if (expected.rationale !== undefined) {
+    assert.equal(actual.rationale, expected.rationale);
+  }
+}
+
 test("loadRelevantVerifierGuardrails reads repo-committed rules for relevant files in deterministic order", async () => {
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "verifier-guardrails-test-"));
   const guardrailPath = path.join(workspaceDir, "docs", "shared-memory", "verifier-guardrails.json");
@@ -80,24 +111,28 @@ test("loadRelevantVerifierGuardrails reads repo-committed rules for relevant fil
     limit: 5,
   });
 
-  assert.deepEqual(rules, [
-    {
-      id: "permission-fallback",
-      title: "Re-check permission fallback invariants",
-      file: "src/auth.ts",
-      line: 42,
-      summary: "Verify that every fallback path still enforces the permission guard before returning privileged data.",
-      rationale: "A prior confirmed verifier miss cleared a similar fallback too early; require a direct read of the guard path before dismissing the finding.",
-    },
-    {
-      id: "retry-state",
-      title: "Inspect retry state reuse",
-      file: "src/retry.ts",
-      line: 15,
-      summary: "Confirm retries rebuild mutable state instead of reusing stale cached state.",
-      rationale: "Verifier should not dismiss retry-loop findings without checking the state reset path.",
-    },
-  ]);
+  assert.equal(rules.length, 2);
+  assert.deepEqual(
+    rules.map((rule) => rule.id),
+    ["permission-fallback", "retry-state"],
+  );
+  assertContainsRelevantRule(rules, {
+    id: "permission-fallback",
+    title: "Re-check permission fallback invariants",
+    file: "src/auth.ts",
+    line: 42,
+    summary: "Verify that every fallback path still enforces the permission guard before returning privileged data.",
+    rationale:
+      "A prior confirmed verifier miss cleared a similar fallback too early; require a direct read of the guard path before dismissing the finding.",
+  });
+  assertContainsRelevantRule(rules, {
+    id: "retry-state",
+    title: "Inspect retry state reuse",
+    file: "src/retry.ts",
+    line: 15,
+    summary: "Confirm retries rebuild mutable state instead of reusing stale cached state.",
+    rationale: "Verifier should not dismiss retry-loop findings without checking the state reset path.",
+  });
 
   await fs.rm(workspaceDir, { recursive: true, force: true });
 });
@@ -138,16 +173,15 @@ test("loadRelevantVerifierGuardrails preserves null committed line hints for rel
     limit: 5,
   });
 
-  assert.deepEqual(rules, [
-    {
-      id: "null-line-hint",
-      title: "Allow optional line hints",
-      file: "src/auth.ts",
-      line: null,
-      summary: "Keep committed verifier guardrails loadable even when the line pointer is intentionally omitted.",
-      rationale: "Committed line references are human-oriented hints and should not be required for durable rule matching.",
-    },
-  ]);
+  assert.equal(rules.length, 1);
+  assertContainsRelevantRule(rules, {
+    id: "null-line-hint",
+    title: "Allow optional line hints",
+    file: "src/auth.ts",
+    line: null,
+    summary: "Keep committed verifier guardrails loadable even when the line pointer is intentionally omitted.",
+    rationale: "Committed line references are human-oriented hints and should not be required for durable rule matching.",
+  });
 
   await fs.rm(workspaceDir, { recursive: true, force: true });
 });
@@ -256,6 +290,22 @@ test("repo-committed verifier guardrails cover Copilot request-vs-arrival lifecy
       { id: "copilot-merge-readiness-arrival-gate", file: "src/supervisor.ts" },
       { id: "merged-pr-state-convergence", file: "src/supervisor.ts", line: 1929 },
     ],
+  });
+});
+
+test("repo-committed verifier guardrails include targeted-assertion guidance for extensible outputs", async () => {
+  const changedFiles = ["src/verifier-guardrails.test.ts"];
+  const rules = await loadRelevantVerifierGuardrails({
+    workspacePath: process.cwd(),
+    changedFiles,
+    limit: 10,
+  });
+
+  assertContainsRelevantRule(rules, {
+    id: "extensible-output-targeted-assertions",
+    file: "src/verifier-guardrails.test.ts",
+    summary:
+      "When loader output is intentionally extensible, assert on the rule or property under test instead of snapshotting the full returned array or document unless exact full output is the behavior being verified.",
   });
 });
 
