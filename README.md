@@ -149,7 +149,7 @@ Important fields:
 - `localReviewReviewerThresholds`: deterministic reviewer-type thresholds for `generic` (`reviewer`, `explorer`) and `specialist` roles; each type can set its own `confidenceThreshold` and `minimumSeverity`
 - `localReviewPolicy`: `advisory`, `block_ready`, or `block_merge`
 - `localReviewHighSeverityAction`: `retry` or `blocked`
-- `reviewBotLogins`: bot reviewer logins that the supervisor may auto-address
+- `reviewBotLogins`: bot reviewer logins that the supervisor may auto-address, for example `copilot-pull-request-reviewer` or `chatgpt-codex-connector`
 - `humanReviewBlocksMerge`: if `true`, unresolved human or unconfigured-bot review threads stop auto-merge and require manual intervention
 - `issueJournalRelativePath`: per-issue handoff journal inside each worktree
 - `issueJournalMaxChars`: compaction budget for the journal handoff section
