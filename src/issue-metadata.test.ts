@@ -123,6 +123,30 @@ Add deterministic issue-body linting for execution-ready metadata.`,
   });
 });
 
+test("lintExecutionReadyIssueBody recommends explicit scope boundaries and verification targets", () => {
+  const issue = createIssue({
+    body: `## Summary
+Improve execution-ready issue guidance.
+
+## Scope
+- make the change
+
+## Acceptance criteria
+- issue guidance is updated
+
+## Verification
+- run tests`,
+  });
+
+  assert.deepEqual(lintExecutionReadyIssueBody(issue), {
+    isExecutionReady: true,
+    missingRequired: [],
+    missingRecommended: ["depends on", "execution order", "scope boundary", "verification target"],
+    riskyChangeClasses: [],
+    approvedRiskyChangeClasses: [],
+  });
+});
+
 test("lintExecutionReadyIssueBody treats ##Heading without a space as the next section", () => {
   const issue = createIssue({
     body: `## Summary

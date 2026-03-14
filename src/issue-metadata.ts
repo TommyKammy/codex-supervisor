@@ -166,6 +166,56 @@ function findMarkdownSectionContent(body: string, title: string): string | null 
   return null;
 }
 
+function hasListItem(content: string): boolean {
+  return content.split(/\r?\n/).some((line) => /^\s*(?:[-*]|\d+\.)\s+\S/.test(line));
+}
+
+function hasScopeBoundary(content: string): boolean {
+  const listItems = content
+    .split(/\r?\n/)
+    .filter((line) => /^\s*(?:[-*]|\d+\.)\s+\S/.test(line))
+    .map((line) => line.replace(/^\s*(?:[-*]|\d+\.)\s+/, "").trim());
+  if (listItems.length === 0) {
+    return false;
+  }
+
+  const boundaryPattern =
+    /\b(?:keep|leave|avoid|without|exclude|out of scope|do not|don't|unchanged|only|preserve|skip)\b/i;
+  if (boundaryPattern.test(content) || listItems.length >= 2) {
+    return true;
+  }
+
+  return listItems.some((item) => item.split(/\s+/).length >= 4);
+}
+
+function hasConcreteVerificationTarget(content: string): boolean {
+  if (!hasListItem(content)) {
+    return false;
+  }
+
+  const genericOnlyPatterns = [
+    /^\s*(?:[-*]|\d+\.)\s*run tests\s*$/im,
+    /^\s*(?:[-*]|\d+\.)\s*manual verification\s*$/im,
+    /^\s*(?:[-*]|\d+\.)\s*verify manually\s*$/im,
+    /^\s*(?:[-*]|\d+\.)\s*smoke test\s*$/im,
+    /^\s*(?:[-*]|\d+\.)\s*confirm it works\s*$/im,
+  ];
+  if (genericOnlyPatterns.some((pattern) => pattern.test(content.trim()))) {
+    return false;
+  }
+
+  const concreteTargetPattern =
+    /`[^`]+`|(?:^|\s)(?:npm|pnpm|yarn|bun|npx|node|pytest|cargo|go test|bundle exec|mix test|mvn|gradle|dotnet|phpunit|rspec|vitest|jest|playwright|cypress)\b|[A-Za-z0-9_./-]+\.(?:test|spec)\.[A-Za-z0-9]+|src\/[A-Za-z0-9_./-]+/i;
+  if (concreteTargetPattern.test(content)) {
+    return true;
+  }
+
+  return content
+    .split(/\r?\n/)
+    .filter((line) => /^\s*(?:[-*]|\d+\.)\s+\S/.test(line))
+    .some((line) => line.trim().split(/\s+/).length >= 5);
+}
+
 function parseRiskyChangeApprovalList(body: string): RiskyChangeClass[] {
   const approved = new Set<RiskyChangeClass>();
   const metadataMatches = body.matchAll(
@@ -233,16 +283,19 @@ export function parseIssueMetadata(issue: GitHubIssue): IssueMetadata {
 export function lintExecutionReadyIssueBody(
   issue: Pick<GitHubIssue, "title" | "body">,
 ): ExecutionReadyLintResult {
+  const summaryContent = findMarkdownSectionContent(issue.body, "Summary");
+  const scopeContent = findMarkdownSectionContent(issue.body, "Scope");
+  const verificationContent = findMarkdownSectionContent(issue.body, "Verification");
   const riskyChangeClasses = detectRiskyChangeClasses(issue);
   const approvedRiskyChangeClasses = parseRiskyChangeApprovalList(issue.body);
   const requiredChecks: Array<{ key: string; present: boolean }> = [
     {
       key: "summary",
-      present: findMarkdownSectionContent(issue.body, "Summary") !== null,
+      present: summaryContent !== null,
     },
     {
       key: "scope",
-      present: findMarkdownSectionContent(issue.body, "Scope") !== null,
+      present: scopeContent !== null,
     },
     {
       key: "acceptance criteria",
@@ -250,7 +303,7 @@ export function lintExecutionReadyIssueBody(
     },
     {
       key: "verification",
-      present: findMarkdownSectionContent(issue.body, "Verification") !== null,
+      present: verificationContent !== null,
     },
     ...riskyChangeClasses.map((riskyClass) => ({
       key: `explicit opt-in for ${riskyClass}`,
@@ -265,6 +318,14 @@ export function lintExecutionReadyIssueBody(
     {
       key: "execution order",
       present: parseExecutionOrder(issue.body) !== null,
+    },
+    {
+      key: "scope boundary",
+      present: scopeContent === null || hasScopeBoundary(scopeContent),
+    },
+    {
+      key: "verification target",
+      present: verificationContent === null || hasConcreteVerificationTarget(verificationContent),
     },
   ];
 

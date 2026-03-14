@@ -45,6 +45,9 @@ Part of #227
 - `Touches`
   - 依存関係や順序を直接 enforce するものではありません
   - ただし risky change class の検出入力には使われるため、`Touches: secrets` のような記述は explicit opt-in gate を発火させることがあります
+- `Scope` / `Verification` の弱い書き方
+  - `Scope` は「何を変えるか」に加えて「何を維持するか / 何を含めないか」もあると扱いやすいです
+  - `Verification` は `run tests` のような抽象語だけでなく、具体的な command・test file・manual check target を書くのが推奨です
 
 ## 推奨運用
 
