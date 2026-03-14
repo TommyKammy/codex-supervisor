@@ -1066,6 +1066,7 @@ interface ReviewBotDiagnostics {
 function inferReviewBotProfile(config: SupervisorConfig): ReviewBotProfileSummary {
   const reviewers = configuredReviewBots(config);
   const normalized = reviewers.map((reviewer) => reviewer.toLowerCase());
+  const normalizedSet = new Set(normalized);
 
   if (normalized.length === 0) {
     return {
@@ -1096,8 +1097,8 @@ function inferReviewBotProfile(config: SupervisorConfig): ReviewBotProfileSummar
 
   if (
     normalized.length === 2 &&
-    normalized[0] === "coderabbitai" &&
-    normalized[1] === "coderabbitai[bot]"
+    normalizedSet.has("coderabbitai") &&
+    normalizedSet.has("coderabbitai[bot]")
   ) {
     return {
       profile: "coderabbit",

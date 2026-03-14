@@ -4199,6 +4199,58 @@ test("formatDetailedStatus surfaces active review-bot profile and missing extern
   );
 });
 
+test("formatDetailedStatus detects the CodeRabbit profile for canonical and reversed review bot login orderings", () => {
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: false,
+    reviewDecision: "REVIEW_REQUIRED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-38",
+    headRefOid: "deadbeef",
+    mergedAt: null,
+    copilotReviewState: "not_requested",
+    copilotReviewRequestedAt: null,
+    copilotReviewArrivedAt: null,
+  };
+
+  for (const reviewBotLogins of [
+    ["coderabbitai", "coderabbitai[bot]"],
+    ["coderabbitai[bot]", "coderabbitai"],
+  ]) {
+    const config = createConfig({ reviewBotLogins });
+    const status = formatDetailedStatus({
+      config,
+      activeRecord: createRecord({
+        pr_number: 44,
+        state: "pr_open",
+        blocked_reason: null,
+        external_review_head_sha: null,
+        external_review_matched_findings_count: 0,
+        external_review_near_match_findings_count: 0,
+        external_review_missed_findings_count: 0,
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      }),
+      latestRecord: null,
+      trackedIssueCount: 1,
+      pr,
+      checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [],
+    });
+
+    assert.match(
+      status,
+      /review_bot_profile profile=coderabbit provider=coderabbitai .* signal_source=review_threads/,
+    );
+  }
+});
+
 test("formatDetailedStatus preserves Copilot-specific timeout wording for Copilot-only repos", () => {
   const config = createConfig({
     reviewBotLogins: ["copilot-pull-request-reviewer"],
