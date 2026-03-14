@@ -145,7 +145,7 @@ Important fields:
 - `localReviewAutoDetect`: if `true`, infer a specialist review swarm from the managed repo shape when `localReviewRoles` is empty
 - `localReviewRoles`: explicit role labels for the local review swarm; leave empty to rely on auto-detect
 - `localReviewArtifactDir`: directory for generated local review artifacts
-- `localReviewConfidenceThreshold`: minimum confidence for a local review finding to be treated as actionable in saved artifacts
+- `localReviewConfidenceThreshold`: default confidence threshold used for reviewer-type gating when `localReviewReviewerThresholds` is omitted or only partially specified
 - `localReviewReviewerThresholds`: deterministic reviewer-type thresholds for `generic` (`reviewer`, `explorer`) and `specialist` roles; each type can set its own `confidenceThreshold` and `minimumSeverity`
 - `localReviewPolicy`: `advisory`, `block_ready`, or `block_merge`
 - `localReviewHighSeverityAction`: `retry` or `blocked`

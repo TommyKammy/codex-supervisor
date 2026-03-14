@@ -1,3 +1,7 @@
+import type { LocalReviewReviewerThresholdConfig, LocalReviewReviewerType } from "./local-review-types";
+
+export type { LocalReviewReviewerThresholdConfig, LocalReviewReviewerType } from "./local-review-types";
+
 export type RunState =
   | "queued"
   | "planning"
@@ -25,12 +29,6 @@ export type LocalReviewPolicy = "advisory" | "block_ready" | "block_merge";
 export type LocalReviewHighSeverityAction = "retry" | "blocked";
 export type CopilotReviewState = "not_requested" | "requested" | "arrived";
 export type CopilotReviewTimeoutAction = "continue" | "block";
-export type LocalReviewReviewerType = "generic" | "specialist";
-
-export interface LocalReviewReviewerThresholdConfig {
-  confidenceThreshold: number;
-  minimumSeverity: "low" | "medium" | "high";
-}
 
 export interface SupervisorConfig {
   repoPath: string;
