@@ -229,6 +229,8 @@ function roleGoal(role: string): string[] {
         "- Flag unrelated cleanup, opportunistic refactors, or incidental file churn when they are not required for correctness or tests.",
         "- Do not treat minimal supporting changes as scope drift when they are necessary to make the issue fix correct, testable, or buildable.",
         "- Prefer precise findings tied to a specific file and line whenever possible.",
+        "- Flag tests or promoted guardrails that hard-code exact source line numbers when a stable behavior, identifier, or nearby intent anchor would verify the same thing.",
+        "- Do not object to exact line assertions when source location itself is the intended contract.",
         "- Ignore style nits unless they could hide a bug or maintenance trap.",
       ];
     case "docs_researcher":
@@ -388,6 +390,8 @@ export function buildVerifierPrompt(args: {
     "- Do not treat narrow supporting edits as scope drift when they are required to keep the issue fix correct, testable, or buildable.",
     "- Use `unclear` when the evidence is inconclusive from the available local context.",
     "- Prefer the smallest explanation that distinguishes required support work from unrelated churn.",
+    "- Treat exact source lines as optional hints unless the finding is explicitly about a user-visible or contractual source location.",
+    "- When a test or guardrail could anchor to stable behavior, identifiers, or nearby intent instead of a hard-coded line number, prefer that more stable reading.",
     "",
     "Constraints:",
     "- Do not edit files, do not commit, and do not push.",

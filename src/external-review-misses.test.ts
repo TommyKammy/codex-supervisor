@@ -896,3 +896,33 @@ test("loadRelevantExternalReviewMissPatterns rejects malformed durable guardrail
     },
   ]);
 });
+
+test("repo-committed durable external-review guardrails teach stable anchors for drift-prone line assertions", async () => {
+  const patterns = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: path.join(process.cwd(), ".local", "reviews"),
+    branch: "codex/issue-203",
+    currentHeadSha: "currenthead",
+    changedFiles: ["src/local-review.test.ts"],
+    limit: 10,
+    workspacePath: process.cwd(),
+  });
+
+  assert.deepEqual(
+    patterns.filter((pattern) => pattern.fingerprint === "src/local-review.test.ts|avoid-drift-prone-line-coupling"),
+    [
+      {
+        fingerprint: "src/local-review.test.ts|avoid-drift-prone-line-coupling",
+        reviewerLogin: "copilot-pull-request-reviewer",
+        file: "src/local-review.test.ts",
+        line: null,
+        summary:
+          "Flag tests or promoted guardrails that hard-code exact source line numbers when a stable behavior, identifier, or nearby intent anchor would verify the same invariant.",
+        rationale:
+          "Source lines drift during refactors. Keep exact line assertions only when the source location itself is the intended contract, such as user-visible diagnostics or mappings.",
+        sourceArtifactPath: "promoted-from-issue-203",
+        sourceHeadSha: "issue-203",
+        lastSeenAt: "2026-03-14T00:00:00Z",
+      },
+    ],
+  );
+});
