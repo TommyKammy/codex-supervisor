@@ -286,3 +286,36 @@ test("toDurableGuardrailCandidates keeps unanchored durable ids stable across PR
   assert.equal(candidateA[0]?.id, "reviewer_rubric|top_level_review|bug: retries can reuse stale state and mask the latest failure.");
   assert.equal(candidateA[0]?.id, candidateB[0]?.id);
 });
+
+test("toDurableGuardrailCandidates treats whitespace-only file values as unanchored for top-level reviews", () => {
+  const candidates = toDurableGuardrailCandidates({
+    issueNumber: 85,
+    prNumber: 144,
+    branch: "codex/issue-85",
+    headSha: "deadbeefcafebabe",
+    sourceArtifactPath: "/tmp/external-review-misses-head-deadbeef.json",
+    localReviewSummaryPath: "/tmp/head-deadbeef.md",
+    localReviewFindingsPath: "/tmp/head-deadbeef.json",
+    finding: createMissFinding({
+      sourceKind: "top_level_review",
+      sourceId: "review-whitespace",
+      sourceUrl: "https://example.test/pr/1#pullrequestreview-whitespace",
+      threadId: null,
+      file: "   ",
+      line: null,
+      summary: "Bug: retries can reuse stale state and mask the latest failure.",
+      rationale: "Bug: retries can reuse stale state and mask the latest failure.",
+      severity: "medium",
+      url: "https://example.test/pr/1#pullrequestreview-whitespace",
+    }),
+  });
+
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0]?.category, "reviewer_rubric");
+  assert.deepEqual(candidates[0]?.qualificationReasons, [
+    "missed_by_local_review",
+    "high_confidence",
+    "top_level_review_unanchored",
+    "non_low_severity",
+  ]);
+});

@@ -94,7 +94,7 @@ function qualifies(
   }
 
   const hasFileScoped = typeof finding.file === "string" && finding.file.trim() !== "";
-  const hasTopLevelReviewUnanchored = finding.sourceKind === "top_level_review" && !finding.file && finding.line == null;
+  const hasTopLevelReviewUnanchored = finding.sourceKind === "top_level_review" && !hasFileScoped && finding.line == null;
 
   if (spec.category === "reviewer_rubric") {
     if (hasFileScoped) {
