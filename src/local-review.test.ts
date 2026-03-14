@@ -885,6 +885,43 @@ test("buildRolePrompt teaches reviewer to prefer simpler solutions and flag spec
   assert.match(prompt, /Flag speculative abstraction, premature generalization, or unnecessary indirection only when it adds concrete maintenance or correctness risk\./);
 });
 
+test("buildRolePrompt teaches reviewer to avoid drift-prone line coupling unless source location is the contract", () => {
+  const prompt = buildRolePrompt({
+    repoSlug: "owner/repo",
+    issue: {
+      number: 203,
+      title: "Avoid drift-prone line assertions",
+      body: "",
+      url: "https://example.test/issues/203",
+      createdAt: "2026-03-14T00:00:00Z",
+      updatedAt: "2026-03-14T00:00:00Z",
+      labels: [],
+    },
+    branch: "codex/issue-203",
+    workspacePath: "/tmp/workspaces/issue-203",
+    defaultBranch: "main",
+    pr: createPullRequest({
+      number: 203,
+      url: "https://example.test/pr/203",
+      headRefOid: "head203",
+    }),
+    role: "reviewer",
+    alwaysReadFiles: [],
+    onDemandFiles: [],
+    confidenceThreshold: 0.7,
+    priorMissPatterns: [],
+  });
+
+  assert.match(
+    prompt,
+    /Flag tests or promoted guardrails that hard-code exact source line numbers when a stable behavior, identifier, or nearby intent anchor would verify the same thing\./,
+  );
+  assert.match(
+    prompt,
+    /Do not object to exact line assertions when source location itself is the intended contract\./,
+  );
+});
+
 test("buildRolePrompt teaches reviewer to flag unrelated cleanup but allow required support changes", () => {
   const prompt = buildRolePrompt({
     repoSlug: "owner/repo",
@@ -1045,6 +1082,66 @@ test("buildVerifierPrompt includes committed verifier guardrails", () => {
   assert.match(prompt, /Guardrail 1: file=src\/auth\.ts:42 title=Re-check permission fallback invariants/);
   assert.match(prompt, /Guardrail 2: file=src\/retry\.ts:15 title=Inspect retry state reuse/);
   assert.match(prompt, /Verifier should not dismiss retry-loop findings without checking the state reset path\./);
+});
+
+test("buildVerifierPrompt distinguishes drift-prone and legitimate line-sensitive assertions", () => {
+  const prompt = buildVerifierPrompt({
+    repoSlug: "owner/repo",
+    issue: {
+      number: 203,
+      title: "Avoid drift-prone line assertions",
+      body: "",
+      url: "https://example.test/issues/203",
+      createdAt: "2026-03-14T00:00:00Z",
+      updatedAt: "2026-03-14T00:00:00Z",
+      labels: [],
+    },
+    branch: "codex/issue-203",
+    workspacePath: "/tmp/workspaces/issue-203",
+    defaultBranch: "main",
+    pr: createPullRequest({
+      number: 203,
+      url: "https://example.test/pr/203",
+      headRefOid: "head203",
+    }),
+    findings: [
+      {
+        role: "reviewer",
+        title: "Brittle line-number assertion",
+        body: "The new test hard-codes a source line number even though it could anchor to the same guardrail id and behavior.",
+        file: "src/local-review.test.ts",
+        start: 1,
+        end: 20,
+        severity: "high",
+        confidence: 0.91,
+        category: "tests",
+        evidence: "The asserted line moves with unrelated edits.",
+      },
+      {
+        role: "reviewer",
+        title: "Legitimate source-location contract",
+        body: "A mapping test intentionally verifies the generated diagnostic points at the exact user-visible source line.",
+        file: "src/diagnostics.test.ts",
+        start: 30,
+        end: 45,
+        severity: "high",
+        confidence: 0.88,
+        category: "tests",
+        evidence: "The location is part of the public diagnostic contract.",
+      },
+    ],
+    priorMissPatterns: [],
+    verifierGuardrails: [],
+  });
+
+  assert.match(
+    prompt,
+    /Treat exact source lines as optional hints unless the finding is explicitly about a user-visible or contractual source location\./,
+  );
+  assert.match(
+    prompt,
+    /When a test or guardrail could anchor to stable behavior, identifiers, or nearby intent instead of a hard-coded line number, prefer that more stable reading\./,
+  );
 });
 
 test("buildVerifierPrompt teaches verifier to detect scope drift without blocking required support changes", () => {
