@@ -1,10 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import {
-  hasProcessedReviewThread,
-  handlePostTurnPullRequestTransitionsPhase,
-} from "./run-once-turn-execution";
+import { hasProcessedReviewThread } from "./review-handling";
+import { handlePostTurnPullRequestTransitionsPhase } from "./run-once-turn-execution";
 import {
   FailureContext,
   GitHubIssue,

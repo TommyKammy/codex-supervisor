@@ -36,6 +36,20 @@ import {
   syncReviewWaitWindow,
 } from "./pull-request-state";
 import {
+  hasProcessedReviewThread,
+  localReviewBlocksMerge,
+  localReviewBlocksReady,
+  localReviewFailureContext,
+  localReviewFailureSummary,
+  localReviewHighSeverityNeedsBlock,
+  localReviewHighSeverityNeedsRetry,
+  localReviewRetryLoopCandidate,
+  localReviewRetryLoopStalled,
+  localReviewStallFailureContext,
+  nextLocalReviewSignatureTracking,
+  processedReviewThreadKey,
+} from "./review-handling";
+import {
   isRestartRunOnce,
   IssueJournalSync,
   MemoryArtifacts,
@@ -48,22 +62,10 @@ import {
   CodexTurnShortCircuit,
   executeCodexTurnPhase,
   handlePostTurnPullRequestTransitionsPhase,
-  hasProcessedReviewThread,
   loadLocalReviewRepairContext,
-  localReviewBlocksMerge,
-  localReviewBlocksReady,
-  localReviewFailureContext,
-  localReviewFailureSummary,
-  localReviewHighSeverityNeedsBlock,
-  localReviewHighSeverityNeedsRetry,
-  localReviewRetryLoopCandidate,
-  localReviewRetryLoopStalled,
-  localReviewStallFailureContext,
   nextExternalReviewMissPatch,
-  nextLocalReviewSignatureTracking,
   PostTurnPullRequestContext,
   PostTurnPullRequestResult,
-  processedReviewThreadKey,
 } from "./run-once-turn-execution";
 import {
   resolveRunnableIssueContext as resolveIssueSelectionContext,
@@ -127,9 +129,22 @@ import {
 
 export {
   loadLocalReviewRepairContext,
-  localReviewHighSeverityNeedsRetry,
   nextExternalReviewMissPatch,
 } from "./run-once-turn-execution";
+export {
+  hasProcessedReviewThread,
+  localReviewBlocksMerge,
+  localReviewBlocksReady,
+  localReviewFailureContext,
+  localReviewFailureSummary,
+  localReviewHighSeverityNeedsBlock,
+  localReviewHighSeverityNeedsRetry,
+  localReviewRetryLoopCandidate,
+  localReviewRetryLoopStalled,
+  localReviewStallFailureContext,
+  nextLocalReviewSignatureTracking,
+  processedReviewThreadKey,
+} from "./review-handling";
 export { inferStateFromPullRequest } from "./pull-request-state";
 export { reconcileRecoverableBlockedIssueStates } from "./recovery-reconciliation";
 export { formatDetailedStatus, summarizeChecks } from "./supervisor-reporting";
