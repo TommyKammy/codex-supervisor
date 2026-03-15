@@ -101,9 +101,9 @@ import {
   buildDurableGuardrailStatusLine,
   formatDetailedStatus,
   mergeConflictDetected,
-  sanitizeStatusValue,
   summarizeChecks,
-} from "./supervisor-reporting";
+  sanitizeStatusValue,
+} from "./supervisor-status-rendering";
 import {
   buildManualReviewFailureContext,
   buildRequestedChangesFailureContext,
@@ -154,7 +154,7 @@ export {
 } from "./review-handling";
 export { inferStateFromPullRequest } from "./pull-request-state";
 export { reconcileRecoverableBlockedIssueStates } from "./recovery-reconciliation";
-export { formatDetailedStatus, summarizeChecks } from "./supervisor-reporting";
+export { formatDetailedStatus, summarizeChecks } from "./supervisor-status-rendering";
 export { recoverUnexpectedCodexTurnFailure } from "./supervisor-failure-helpers";
 export { shouldAutoRetryHandoffMissing } from "./supervisor-execution-policy";
 
