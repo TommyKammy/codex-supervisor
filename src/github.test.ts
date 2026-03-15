@@ -274,6 +274,93 @@ test("inferCopilotReviewLifecycle treats actionable configured-bot top-level rev
   });
 });
 
+test("inferCopilotReviewLifecycle ignores configured-bot activity that predates the latest active request", () => {
+  const lifecycle = inferCopilotReviewLifecycle(
+    {
+      reviewRequests: ["coderabbitai[bot]"],
+      reviews: [
+        {
+          authorLogin: "coderabbitai[bot]",
+          submittedAt: "2026-03-13T01:03:04Z",
+          state: "COMMENTED",
+          body: "Nitpick: old review on the prior request cycle.",
+        },
+      ],
+      comments: [
+        {
+          authorLogin: "coderabbitai[bot]",
+          createdAt: "2026-03-13T01:04:05Z",
+        },
+      ],
+      issueComments: [],
+      timeline: [
+        {
+          type: "requested",
+          createdAt: "2026-03-13T01:00:00Z",
+          reviewerLogin: "coderabbitai[bot]",
+        },
+        {
+          type: "removed",
+          createdAt: "2026-03-13T01:05:00Z",
+          reviewerLogin: "coderabbitai[bot]",
+        },
+        {
+          type: "requested",
+          createdAt: "2026-03-13T02:00:00Z",
+          reviewerLogin: "coderabbitai[bot]",
+        },
+      ],
+    },
+    ["coderabbitai[bot]"],
+  );
+
+  assert.deepEqual(lifecycle, {
+    state: "requested",
+    requestedAt: "2026-03-13T02:00:00Z",
+    arrivedAt: null,
+  });
+});
+
+test("inferCopilotReviewLifecycle computes the active request cutoff per configured bot", () => {
+  const lifecycle = inferCopilotReviewLifecycle(
+    {
+      reviewRequests: ["coderabbitai[bot]"],
+      reviews: [],
+      comments: [
+        {
+          authorLogin: "coderabbitai[bot]",
+          createdAt: "2026-03-13T00:30:00Z",
+        },
+      ],
+      issueComments: [],
+      timeline: [
+        {
+          type: "requested",
+          createdAt: "2026-03-13T01:00:00Z",
+          reviewerLogin: "coderabbitai[bot]",
+        },
+        {
+          type: "requested",
+          createdAt: "2026-03-13T02:00:00Z",
+          reviewerLogin: "copilot-pull-request-reviewer",
+        },
+        {
+          type: "removed",
+          createdAt: "2026-03-13T03:00:00Z",
+          reviewerLogin: "copilot-pull-request-reviewer",
+        },
+      ],
+    },
+    ["coderabbitai[bot]", "copilot-pull-request-reviewer"],
+  );
+
+  assert.deepEqual(lifecycle, {
+    state: "requested",
+    requestedAt: "2026-03-13T01:00:00Z",
+    arrivedAt: null,
+  });
+});
+
 test("GitHubClient classifies nitpick-only configured-bot top-level changes requests conservatively", async () => {
   const config = createConfig({ reviewBotLogins: ["coderabbitai[bot]"] });
   const client = new GitHubClient(config, async (_command, args) => {
@@ -344,6 +431,87 @@ test("GitHubClient classifies nitpick-only configured-bot top-level changes requ
   const pr = await client.getPullRequest(44);
 
   assert.equal(pr.copilotReviewState, "arrived");
+  assert.equal(pr.configuredBotTopLevelReviewStrength, "nitpick_only");
+  assert.equal(pr.configuredBotTopLevelReviewSubmittedAt, "2026-03-13T02:03:04Z");
+});
+
+test("GitHubClient keeps configured-bot top-level review strength scoped to configured bots", async () => {
+  const config = createConfig({ reviewBotLogins: ["coderabbitai[bot]"] });
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "pr" && args[1] === "view") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          number: 44,
+          title: "Mixed human and configured-bot top-level reviews",
+          url: "https://example.test/pr/44",
+          state: "OPEN",
+          createdAt: "2026-03-13T00:00:00Z",
+          updatedAt: "2026-03-13T00:00:00Z",
+          isDraft: false,
+          reviewDecision: "CHANGES_REQUESTED",
+          mergeStateStatus: "CLEAN",
+          mergeable: "MERGEABLE",
+          headRefName: "codex/issue-141",
+          headRefOid: "head-44",
+          mergedAt: null,
+        }),
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "graphql") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: {
+                  nodes: [],
+                },
+                reviews: {
+                  nodes: [
+                    {
+                      submittedAt: "2026-03-13T02:02:00Z",
+                      state: "CHANGES_REQUESTED",
+                      body: "Please address these blocking concerns.",
+                      author: {
+                        login: "octocat",
+                      },
+                    },
+                    {
+                      submittedAt: "2026-03-13T02:03:04Z",
+                      state: "CHANGES_REQUESTED",
+                      body: "Nitpick: rename this helper for consistency with the rest of the file.",
+                      author: {
+                        login: "coderabbitai[bot]",
+                      },
+                    },
+                  ],
+                },
+                comments: {
+                  nodes: [],
+                },
+                reviewThreads: {
+                  nodes: [],
+                },
+                timelineItems: {
+                  nodes: [],
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const pr = await client.getPullRequest(44);
+
   assert.equal(pr.configuredBotTopLevelReviewStrength, "nitpick_only");
   assert.equal(pr.configuredBotTopLevelReviewSubmittedAt, "2026-03-13T02:03:04Z");
 });
@@ -811,4 +979,73 @@ test("GitHubClient fetches the newest unresolved review thread comments", async 
   assert.equal(threads.length, 1);
   assert.equal(threads[0]?.comments.nodes.at(-1)?.id, "comment-100");
   assert.equal(threads[0]?.comments.nodes.at(-1)?.author?.typeName, "Bot");
+});
+
+test("GitHubClient normalizes fallback statusCheckRollup checks by latest timestamp", async () => {
+  const config = createConfig();
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "pr" && args[1] === "checks") {
+      return {
+        exitCode: 1,
+        stdout: "not-json",
+        stderr: "failed to load checks",
+      };
+    }
+
+    if (args[0] === "pr" && args[1] === "view") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          statusCheckRollup: [
+            {
+              __typename: "CheckRun",
+              name: "build",
+              workflowName: "CI",
+              detailsUrl: "https://example.test/checks/build-old",
+              conclusion: "FAILURE",
+              status: "COMPLETED",
+              completedAt: "2026-03-13T02:01:00Z",
+            },
+            {
+              __typename: "CheckRun",
+              name: "build",
+              workflowName: "CI",
+              detailsUrl: "https://example.test/checks/build-new",
+              conclusion: "SUCCESS",
+              status: "COMPLETED",
+              completedAt: "2026-03-13T02:02:00Z",
+            },
+            {
+              __typename: "StatusContext",
+              context: "lint",
+              targetUrl: "https://example.test/checks/lint",
+              state: "PENDING",
+              startedAt: "2026-03-13T02:03:00Z",
+            },
+          ],
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const checks = await client.getChecks(44);
+
+  assert.deepEqual(checks, [
+    {
+      name: "build",
+      state: "SUCCESS",
+      bucket: "pass",
+      workflow: "CI",
+      link: "https://example.test/checks/build-new",
+    },
+    {
+      name: "lint",
+      state: "PENDING",
+      bucket: "pending",
+      link: "https://example.test/checks/lint",
+    },
+  ]);
 });
