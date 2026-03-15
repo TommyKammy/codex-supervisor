@@ -13,17 +13,17 @@ import { CommandOptions, runCommand } from "./command";
 import {
   applyConfiguredBotReviewSummary,
   buildConfiguredBotReviewSummary,
-  ConfiguredBotReviewSummary,
   normalizeRollupChecks,
   PullRequestCopilotReviewLifecycleResponse,
   PullRequestStatusCheckRollupResponse,
 } from "./github-hydration";
+import { ConfiguredBotReviewSummary } from "./github-review-signals";
 import { GitHubTransport } from "./github-transport";
 import type { GitHubCommandRunner } from "./github-transport";
 import { parseJson, truncate } from "./utils";
 
 export { isTransientGitHubCommandFailure } from "./github-transport";
-export { inferCopilotReviewLifecycle } from "./github-hydration";
+export { inferCopilotReviewLifecycle } from "./github-review-signals";
 export type { GitHubCommandRunner } from "./github-transport";
 
 const COPILOT_REVIEW_TRANSITION_CACHE_TTL_MS = 30_000;
