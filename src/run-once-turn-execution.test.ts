@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { hasProcessedReviewThread } from "./review-handling";
-import { executeCodexTurnPhase, handlePostTurnPullRequestTransitionsPhase } from "./run-once-turn-execution";
+import { executeCodexTurnPhase } from "./run-once-turn-execution";
+import { handlePostTurnPullRequestTransitionsPhase } from "./post-turn-pull-request";
 import {
   FailureContext,
   GitHubIssue,
