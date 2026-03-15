@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import test, { mock } from "node:test";
 import { runCodexTurn } from "./codex-runner";
 import { SupervisorConfig } from "./types";
 
@@ -175,4 +175,34 @@ exit 0
   assert.equal(args[8], "session-123");
   assert.equal(args[9], "resume prompt");
   assert.equal(args.includes("-C"), false);
+});
+
+test("runCodexTurn removes its temp dir when command execution fails", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-runner-test-"));
+  const workspacePath = path.join(root, "workspace");
+  const codexBinary = path.join(root, "missing-codex");
+  await fs.mkdir(workspacePath, { recursive: true });
+
+  const rmCalls: string[] = [];
+  const originalRm = fs.rm.bind(fs);
+  const rmMock = mock.method(
+    fs,
+    "rm",
+    async (target: Parameters<typeof fs.rm>[0], options?: Parameters<typeof fs.rm>[1]) => {
+      rmCalls.push(String(target));
+      return originalRm(target, options);
+    },
+  );
+
+  try {
+    await assert.rejects(
+      runCodexTurn(createConfig({ codexBinary }), workspacePath, "prompt body", "implementing"),
+      /ENOENT|spawn/i,
+    );
+  } finally {
+    rmMock.mock.restore();
+  }
+
+  assert.equal(rmCalls.length, 1);
+  assert.match(rmCalls[0] ?? "", /codex-supervisor-/);
 });

@@ -44,55 +44,57 @@ export async function runCodexTurn(
 ): Promise<CodexTurnResult> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-"));
   const messageFile = path.join(tempDir, "last-message.txt");
-  const overrideArgs = buildCodexConfigOverrideArgs(resolveCodexExecutionPolicy(config, state, record));
-  const commandArgs = sessionId
-    ? [
-        "exec",
-        "resume",
-        ...overrideArgs,
-        "--json",
-        "--dangerously-bypass-approvals-and-sandbox",
-        "-o",
-        messageFile,
-        sessionId,
-        prompt,
-      ]
-    : [
-        "exec",
-        ...overrideArgs,
-        "--json",
-        "--dangerously-bypass-approvals-and-sandbox",
-        "-C",
-        workspacePath,
-        "-o",
-        messageFile,
-        prompt,
-      ];
-  const result = await runCommand(
-    config.codexBinary,
-    commandArgs,
-    {
-      cwd: workspacePath,
-      allowExitCodes: [0, 1],
-      env: {
-        ...process.env,
-        npm_config_yes: "true",
-        CI: "1",
+  try {
+    const overrideArgs = buildCodexConfigOverrideArgs(resolveCodexExecutionPolicy(config, state, record));
+    const commandArgs = sessionId
+      ? [
+          "exec",
+          "resume",
+          ...overrideArgs,
+          "--json",
+          "--dangerously-bypass-approvals-and-sandbox",
+          "-o",
+          messageFile,
+          sessionId,
+          prompt,
+        ]
+      : [
+          "exec",
+          ...overrideArgs,
+          "--json",
+          "--dangerously-bypass-approvals-and-sandbox",
+          "-C",
+          workspacePath,
+          "-o",
+          messageFile,
+          prompt,
+        ];
+    const result = await runCommand(
+      config.codexBinary,
+      commandArgs,
+      {
+        cwd: workspacePath,
+        allowExitCodes: [0, 1],
+        env: {
+          ...process.env,
+          npm_config_yes: "true",
+          CI: "1",
+        },
+        timeoutMs: config.codexExecTimeoutMinutes * 60_000,
       },
-      timeoutMs: config.codexExecTimeoutMinutes * 60_000,
-    },
-  );
+    );
 
-  const lastMessage = await readLastMessage(messageFile);
-  const resolvedSessionId = extractSessionId(result.stdout, sessionId);
+    const lastMessage = await readLastMessage(messageFile);
+    const resolvedSessionId = extractSessionId(result.stdout, sessionId);
 
-  await fs.rm(tempDir, { recursive: true, force: true });
-
-  return {
-    exitCode: result.exitCode,
-    sessionId: resolvedSessionId,
-    lastMessage: lastMessage.trim(),
-    stderr: result.stderr,
-    stdout: result.stdout,
-  };
+    return {
+      exitCode: result.exitCode,
+      sessionId: resolvedSessionId,
+      lastMessage: lastMessage.trim(),
+      stderr: result.stderr,
+      stdout: result.stdout,
+    };
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
 }
