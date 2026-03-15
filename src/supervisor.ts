@@ -69,6 +69,7 @@ import {
   PostTurnPullRequestContext,
   PostTurnPullRequestResult,
 } from "./post-turn-pull-request";
+import { buildChecksFailureContext, buildConflictFailureContext } from "./pull-request-failure-context";
 import {
   resolveRunnableIssueContext as resolveIssueSelectionContext,
   RestartRunOnce as SelectionRestartRunOnce,
@@ -153,6 +154,7 @@ export {
   processedReviewThreadKey,
 } from "./review-handling";
 export { inferStateFromPullRequest } from "./pull-request-state";
+export { buildChecksFailureContext, buildConflictFailureContext } from "./pull-request-failure-context";
 export { reconcileRecoverableBlockedIssueStates } from "./recovery-reconciliation";
 export { formatDetailedStatus, summarizeChecks } from "./supervisor-status-rendering";
 export { recoverUnexpectedCodexTurnFailure } from "./supervisor-failure-helpers";
@@ -196,36 +198,6 @@ function inferStateWithoutPullRequest(
 
   return "stabilizing";
 }
-
-export function buildChecksFailureContext(pr: GitHubPullRequest, checks: PullRequestCheck[]): FailureContext | null {
-  const failingChecks = checks.filter((check) => check.bucket === "fail");
-  if (failingChecks.length === 0) {
-    return null;
-  }
-
-  return {
-    category: "checks",
-    summary: `PR #${pr.number} has failing checks.`,
-    signature: failingChecks.map((check) => `${check.name}:${check.bucket}`).join("|"),
-    command: "gh pr checks",
-    details: failingChecks.map((check) => `${check.name} (${check.bucket}/${check.state}) ${check.link ?? ""}`.trim()),
-    url: pr.url,
-    updated_at: nowIso(),
-  };
-}
-
-function buildConflictFailureContext(pr: GitHubPullRequest): FailureContext {
-  return {
-    category: "conflict",
-    summary: `PR #${pr.number} has merge conflicts and needs a base-branch integration pass.`,
-    signature: `dirty:${pr.headRefOid}`,
-    command: "git fetch origin && git merge origin/<default-branch>",
-    details: [`mergeStateStatus=${pr.mergeStateStatus ?? "unknown"}`],
-    url: pr.url,
-    updated_at: nowIso(),
-  };
-}
-
 
 function shouldStopForRepeatedFailureSignature(record: IssueRunRecord, config: SupervisorConfig): boolean {
   return (
