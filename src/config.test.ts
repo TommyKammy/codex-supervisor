@@ -314,6 +314,7 @@ test("README stays a lightweight landing page with provider profile guidance and
   assert.match(readme, /^## Docs Map$/m);
   assert.match(readme, /\[Getting started\]\(\.\/docs\/getting-started\.md\)/i);
   assert.match(readme, /\[Configuration reference\]\(\.\/docs\/configuration\.md\)/i);
+  assert.match(readme, /\[Local review reference\]\(\.\/docs\/local-review\.md\)/i);
   assert.match(readme, /\[Architecture\]\(\.\/docs\/architecture\.md\)/i);
   assert.match(readme, /\[Issue metadata\]\(\.\/docs\/issue-metadata\.md\)/i);
   assert.match(readme, /\[GSD to GitHub issues\]\(\.\/docs\/examples\/gsd-to-github-issues\.md\)/i);
@@ -327,4 +328,21 @@ test("README stays a lightweight landing page with provider profile guidance and
   assert.doesNotMatch(readme, /^## Run states$/m);
   assert.doesNotMatch(readme, /^## State backends$/m);
   assert.doesNotMatch(readme, /^## Commands$/m);
+});
+
+test("getting started links to focused configuration and local review references", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  const gettingStarted = await fs.readFile(path.join(rootDir, "docs", "getting-started.md"), "utf8");
+  const localReview = await fs.readFile(path.join(rootDir, "docs", "local-review.md"), "utf8");
+
+  assert.match(gettingStarted, /\[Configuration reference\]\(\.\/configuration\.md\)/i);
+  assert.match(gettingStarted, /\[Local review reference\]\(\.\/local-review\.md\)/i);
+  assert.doesNotMatch(gettingStarted, /^### Option 1: Auto-detect roles$/m);
+  assert.doesNotMatch(gettingStarted, /^### Option 2: Explicit roles$/m);
+  assert.doesNotMatch(gettingStarted, /^### What specialist roles are for$/m);
+  assert.doesNotMatch(gettingStarted, /^Committed Local Review Swarm guardrails are maintained under `docs\/shared-memory\/`:$/m);
+
+  assert.match(localReview, /^# Local Review Reference$/m);
+  assert.match(localReview, /^## Choosing reviewer roles$/m);
+  assert.match(localReview, /^## Artifacts, thresholds, and guardrails$/m);
 });

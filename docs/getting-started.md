@@ -184,111 +184,12 @@ These files work well as durable shared memory:
 
 The supervisor reads a compact context index first, then opens durable memory files only on demand.
 
-## Local review swarm
+## Focused reference guides
 
-`codex-supervisor` can run a local review swarm on pull requests. The recommended starting policy is `block_merge`, because it keeps the normal ready-for-review flow while still making the swarm a practical merge gate on the current PR head.
+Use the high-level flow in this guide, then jump to the reference that matches the task:
 
-The important points are:
-
-- each role runs in a separate Codex turn
-- behavior is controlled by `localReviewPolicy`
-- `block_merge` is the recommended default path: it gates merge on ready PRs and re-runs on ready PR head updates
-- `block_ready` is stricter earlier in the flow: it gates draft-to-ready instead of merge
-- `advisory` is non-blocking and best when you want saved findings without automation gates
-- verifier-confirmed high-severity findings can trigger a dedicated `local_review_fix` turn that focuses on compressed root causes and the most relevant files
-- findings are saved as Markdown and JSON artifacts
-- the same context-budget policy still applies: read the compact context index and issue journal first, then open durable memory only on demand
-
-There are two ways to choose reviewer roles.
-
-### Option 1: Auto-detect roles
-
-This is the recommended starting point.
-
-If `localReviewRoles` is empty and `localReviewAutoDetect` is `true`, the supervisor detects a role set from the managed repo shape.
-
-Example:
-
-```json
-{
-  "localReviewEnabled": true,
-  "localReviewAutoDetect": true,
-  "localReviewRoles": []
-}
-```
-
-The baseline is:
-
-- `reviewer`
-- `explorer`
-
-Then the supervisor adds specialists when the repo suggests them. For example:
-
-- docs or durable memory present -> `docs_researcher`
-- Prisma schema + migrations present -> `prisma_postgres_reviewer`, `migration_invariant_reviewer`, `contract_consistency_reviewer`
-- Playwright-heavy repo -> `ui_regression_reviewer`
-- GitHub Actions workflows present -> `github_actions_semantics_reviewer`
-- workflow-focused tests present -> `workflow_test_reviewer`
-- Node/script-heavy or workflow-heavy repo -> `portability_reviewer`
-
-The generated local review artifacts now show why each auto-detected role was selected:
-
-- the Markdown summary includes an `Auto-detected roles` section with concise signal summaries
-- the JSON artifact includes `autoDetectedRoles`, with machine-readable `kind`, `signal`, and `paths` fields for each selected role
-
-When you want to override auto-detect manually, inspect those reasons first, then copy only the roles you want into `localReviewRoles` and set `localReviewAutoDetect` to `false`. That preserves the useful specialists while making the swarm deterministic.
-
-This works well for first-time setup because you do not need to design the swarm up front.
-
-### Option 2: Explicit roles
-
-Use explicit roles when you want full manual control.
-
-Example:
-
-```json
-{
-  "localReviewEnabled": true,
-  "localReviewAutoDetect": false,
-  "localReviewRoles": [
-    "reviewer",
-    "explorer",
-    "docs_researcher",
-    "prisma_postgres_reviewer",
-    "migration_invariant_reviewer",
-    "contract_consistency_reviewer"
-  ]
-}
-```
-
-Use this when:
-
-- you already know the repo needs specialist reviewers
-- you want deterministic role selection across machines
-- you want to compare swarm results over time
-
-### What specialist roles are for
-
-The generic roles are good at broad bug hunting, but they will miss some repo-specific defects.
-
-Examples:
-
-- `prisma_postgres_reviewer`
-  - looks for PostgreSQL uniqueness semantics, nullable unique traps, partial indexes, and Prisma/schema drift
-- `migration_invariant_reviewer`
-  - looks for invalid persisted states that are blocked in app code but not enforced by the database
-- `contract_consistency_reviewer`
-  - compares contracts, schema, docs, and tests for drift
-- `ui_regression_reviewer`
-  - looks for likely browser-flow and end-to-end regressions
-- `github_actions_semantics_reviewer`
-  - looks for GitHub Actions event/context mistakes, concurrency pitfalls, and stale cancelled-check behavior
-- `workflow_test_reviewer`
-  - looks for brittle workflow tests, regex-heavy assertions, and path/cwd assumptions
-- `portability_reviewer`
-  - looks for shell glob, path, line-ending, and OS portability risks
-
-In a repo like `atlaspm`, these specialist reviewers are often more useful than adding more generic reviewer turns.
+- [Configuration reference](./configuration.md) for config fields, provider profiles, model strategy, durable memory, and execution policy
+- [Local review reference](./local-review.md) for review policies, role selection, artifacts, thresholds, and committed guardrails
 
 ## How issue scheduling actually works
 
@@ -425,58 +326,6 @@ Short interpretation:
 - `blocked`: needs manual clarification
 - `failed`: retry budget exhausted or unrecoverable condition
 
-## Local review swarm
-
-The local review swarm is an optional pre-ready review phase.
-
-It is designed to catch defects before GitHub-hosted review becomes the only signal.
-
-Typical roles:
-
-- `reviewer`
-- `explorer`
-- `docs_researcher`
-
-What it does:
-
-- runs separate review turns per role
-- keeps the same context-budget policy as implementation turns
-- writes a Markdown summary
-- writes a structured JSON artifact
-- keeps older `head-<sha>` artifacts for history; `status` shows `head`, `reviewed_head_sha`, and `pr_head_sha` so you can see whether the latest actionable artifact still matches the PR
-- runs a verifier pass for actionable high-severity findings before stronger high-severity gates react
-- deduplicates findings
-- keeps only findings that meet the configured reviewer-type confidence/severity thresholds as actionable
-
-What it does not do by default:
-
-- edit code
-- block merge by itself
-- replace GitHub branch protection
-
-The artifacts keep raw actionable findings separate from verifier-confirmed findings. `block_ready` and `block_merge` still respond to raw actionable findings. `localReviewHighSeverityAction` only escalates on verifier-confirmed high-severity findings, which reduces false positives before the supervisor triggers a repair retry or manual block.
-
-Baseline `reviewer` and `explorer` turns are treated as `generic` reviewers. Every other role is treated as a `specialist`. You can tune these two reviewer types independently with `localReviewReviewerThresholds`: each type has its own `confidenceThreshold` and `minimumSeverity`. Leaving that field unset preserves the old behavior by inheriting `localReviewConfidenceThreshold` and a `low` severity floor for both types.
-
-For most solo-operator setups, prefer `localReviewHighSeverityAction: "blocked"` so verifier-confirmed high-severity findings stop the merge and force an explicit decision. Switch to `retry` only when you intentionally want the supervisor to launch another repair pass automatically.
-
-Older local review artifacts remain on disk unless you clean them up explicitly. For live triage, trust the `status` output first: `head=current` means the artifact for `reviewed_head_sha` matches `pr_head_sha`, while `head=stale` means the artifact is historical and a newer PR head needs another review run.
-
-If the supervisor sends the issue into `local_review_fix`, treat the active local-review blocker as the top priority. The repair prompt suppresses stale issue-journal `Next 1-3 actions` bullets so older checkpoint advice does not compete with the current blocker. If you need to force a temporary repair instruction anyway, write it explicitly in the journal as `- Operator override: ...`; that override remains visible in repair prompts.
-
-Committed Local Review Swarm guardrails are maintained under `docs/shared-memory/`:
-
-- `verifier-guardrails.json`
-- `external-review-guardrails.json`
-
-Each committed guardrail document must include top-level `"version": 1`. The loader rejects missing versions, non-integer versions, and unsupported future versions so schema changes stay explicit and predictable.
-
-When you add or update an entry, follow the deterministic repo workflow:
-
-1. Edit the committed JSON in `docs/shared-memory/`.
-2. Run `npm run guardrails:fix` to normalize ordering and formatting.
-3. Run `npm run guardrails:check` to catch malformed updates, duplicate verifier `id` values, duplicate external-review `fingerprint` values, or formatting drift before committing.
-
 ## What to ask Codex
 
 ### To use the supervisor
@@ -500,6 +349,7 @@ When you add or update an entry, follow the deterministic repo workflow:
 1. Install Codex CLI.
 2. Clone your repo.
 3. Prepare `supervisor.config.json`.
+   Use the [Configuration reference](./configuration.md) for the full field guide and the [Local review reference](./local-review.md) when you want to enable or tune the local review swarm.
 4. Create execution-ready issues.
 5. Run:
 
