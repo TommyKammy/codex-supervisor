@@ -1,196 +1,65 @@
 # codex-supervisor 日本語ガイド
 
-`codex-supervisor` は、`codex exec` と `gh` を使って GitHub Issues / PR / CI / review / merge のループを継続するための、**deterministic で durable な supervisor** です。
+`codex-supervisor` は、`codex exec` と `gh` を使って GitHub issue、PR、CI、review、merge の進行を継続監督するための deterministic な supervisor です。
 
-英語版の一次ソースは [README.md](/Users/tomoakikawada/Dev/codex-supervisor/README.md) です。この文書は、日本語で全体像と運用モデルを素早く把握するためのガイドです。
+英語版の一次ソースは [README.md](../README.md) です。この文書は、日本語で全体像と入口を把握するための軽い案内として使ってください。実際のセットアップと運用手順は [docs/getting-started.ja.md](./getting-started.ja.md) に寄せています。
 
-## 何を目指すか
+## 何をするツールか
 
-`codex-supervisor` の中心思想は次の 3 つです。
+`codex-supervisor` は、長い chat thread を覚え続ける代わりに、毎ターン GitHub とローカル state を読み直して次の行動を決めます。
 
-- GitHub を source of truth にする
-- chat thread の長期記憶に依存しない
-- 状態遷移とローカル state によって loop を継続する
-
-つまり、長い会話を維持して作業を続けるのではなく、毎ターン
-
-- issue
-- PR
-- checks
-- review threads
-- mergeability
-
-を GitHub から再取得し、次に取るべき行動を決めます。
-
-## 何が嬉しいか
-
-- issue 駆動で実装を進められる
-- PR 作成後の CI 待ち、review 待ち、修正、再 push を loop として扱える
-- local state があるので、会話コンテキスト圧縮で止まりにくい
-- readiness-driven に次の runnable issue を選べる
-
-## 何をしないか
-
-- GitHub 以外の曖昧な優先順位付けを勝手に発明しない
-- 長い設計議論を supervisor 自身が持ち続けない
-- repo 固有の workflow を自動で推測し切ることを期待しない
+- issue、PR、checks、review、mergeability を再取得する
+- runnable な issue を readiness-driven に選ぶ
+- issue ごとの worktree と issue journal を維持する
+- draft PR、CI 修復、review 対応、merge までの loop を継続する
 
 ## 向いているケース
 
-- 1 人開発、または小規模で ownership が明確な automation lane
-- `Depends on` や `Execution order` が issue に書かれている repo
-- branch protection と CI が整っている repo
-- execution-ready な issue を順番に回したい repo
+Best fit:
 
-## 向いていないケース
+- 1 人、または ownership が明確な automation lane
+- `Depends on` と `Execution order` が明示された backlog
+- branch protection と CI が整った repo
+- execution-ready issue を順に回したい運用
 
-- 多人数が同じ領域を頻繁に触る repo
-- issue の優先順位や依存関係が暗黙な backlog
-- issue が相談単位で、実装単位に分解されていない repo
+Not a fit:
 
-## 全体像
+- 優先順位や依存関係が暗黙な backlog
+- 相談単位の issue が多く、実装単位に分解されていない repo
+- 複数人が同じ領域を頻繁に触る repo
 
-```mermaid
-flowchart LR
-  U["User"] --> C["Codex CLI / Codex App"]
-  C --> P["GSD planning flow (optional)"]
-  C --> S["codex-supervisor"]
+## クイックスタート
 
-  P --> M["Repo memory"]
-  P --> I["GitHub Issues"]
+1. 依存関係を入れてビルドします。
 
-  S --> M
-  S --> I
-  S --> W["Worktrees + local state"]
-  S --> G["PR / CI / Reviews / Merge"]
+   ```bash
+   npm install
+   npm run build
+   ```
 
-  G --> S
-  I --> S
-```
+2. ベース設定から active config を作ります。
 
-ポイントは次です。
+   ```bash
+   cp supervisor.config.example.json supervisor.config.json
+   ```
 
-- 出発点は常に `User -> Codex`
-- GSD は optional な planning tool
-- `codex-supervisor` は execution engine
+3. review provider に合う profile を選び、`supervisor.config.json` に反映します。
 
-## readiness-driven scheduling
+   - [supervisor.config.copilot.json](../supervisor.config.copilot.json)
+   - [supervisor.config.codex.json](../supervisor.config.codex.json)
+   - [supervisor.config.coderabbit.json](../supervisor.config.coderabbit.json)
 
-`codex-supervisor` は単純な「新しい issue が立ったら取る」仕組みではありません。
+4. `repoPath`、`repoSlug`、`workspaceRoot`、`codexBinary` などを設定します。
+5. まず `run-once` と `status` で挙動を確認し、その後 `loop` に切り替えます。
 
-本質は **今 runnable な issue を選ぶこと** です。
+より詳しい初回手順、issue の書き方、運用中の判断は [docs/getting-started.ja.md](./getting-started.ja.md) を参照してください。
 
-そのため、毎 poll で次を見ます。
+## ドキュメントマップ
 
-- issue が open か
-- label / search 条件に合うか
-- `Depends on` が解消されているか
-- `Execution order` 上、前段 issue が終わっているか
-- local state が `blocked` / `failed` のままではないか
-- 関連 PR / checks / review が stale ではないか
-
-これにより、Epic と複数の子 issue をまとめて open する運用でも、先に進めるべき issue だけを選べます。
-
-## 主な状態遷移
-
-```mermaid
-flowchart TD
-  Q["queued"] --> R["reproducing"]
-  R --> S["stabilizing"]
-  S --> D["draft_pr"]
-  D --> L["local_review"]
-  L --> W["waiting_ci"]
-  W --> A["addressing_review"]
-  W --> C["repairing_ci"]
-  W --> M["ready_to_merge"]
-  A --> W
-  C --> W
-  M --> G["merging"]
-  G --> O["done"]
-  R --> B["blocked"]
-  S --> F["failed"]
-```
-
-補足:
-
-- `reproducing`: 問題や要件を再現可能な形に寄せる
-- `stabilizing`: checkpoint を clean にして PR 可能な形へ寄せる
-- `local_review`: ローカル review swarm を回す
-- `repairing_ci`: CI failure 修正
-- `addressing_review`: bot review 対応
-
-## local review swarm
-
-`codex-supervisor` は、draft PR を ready にする前後でローカル review swarm を回せます。
-
-主な特徴:
-
-- role ごとに別 Codex turn を実行
-- Markdown と JSON artifact を保存
-- confidence threshold 以上の finding を actionable として扱う
-- 推奨パスは `block_merge` で、必要に応じて `block_ready` / `advisory` を選べる
-
-代表的な role:
-
-- `reviewer`
-- `explorer`
-- `docs_researcher`
-- `prisma_postgres_reviewer`
-- `migration_invariant_reviewer`
-- `contract_consistency_reviewer`
-- `ui_regression_reviewer`
-
-`localReviewRoles` を空にし、`localReviewAutoDetect: true` にすると、repo 構成から specialist role を自動選択できます。
-
-## model / reasoning の考え方
-
-現状の推奨は次です。
-
-- model は基本 `inherit`
-- Codex CLI / App 側の default model を `GPT-5.4` にする
-- 最適化は model 切り替えより reasoning effort の調整で行う
-
-`xhigh` は常用せず、例外的な repeated failure の escalation 用に残す方がよいです。
-
-## GSD との関係
-
-GSD は daily execution loop の中核ではありません。役割分担は次です。
-
-- GSD: 上流の planning
-- `codex-supervisor`: 下流の execution
-
-使い分け:
-
-- execution-ready な issue があるなら、そのまま supervisor に流す
-- wave / epic の設計、issue 分解、要求整理が必要なら GSD を使う
-- GSD の出力は `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `STATE.md` と GitHub issue に落としてから supervisor に渡す
-
-## 初回セットアップの流れ
-
-1. `gh auth status` が通ることを確認
-2. Codex CLI をインストール
-3. `supervisor.config.json` を作る
-4. `run-once` で 1 サイクル確認
-5. 問題なければ `loop` で常駐させる
-
-詳細な手順は以下を見てください。
-
-- [docs/getting-started.md](/Users/tomoakikawada/Dev/codex-supervisor/docs/getting-started.md)
-- [docs/getting-started.ja.md](/Users/tomoakikawada/Dev/codex-supervisor/docs/getting-started.ja.md)
-
-## 現時点での README コンセプト
-
-`codex-supervisor` は、もはや「最小限だけの supervisor」ではありません。現在の実態に近い表現は次です。
-
-- deterministic
-- durable
-- GitHub-driven
-- readiness-driven
-
-一方で、still true なこともあります。
-
-- orchestration の責務を明示的に保っている
-- GitHub と local state 以外を source of truth にしない
-- chat memory ではなく state machine を中心にしている
-
-その意味で、`codex-supervisor` は「軽量な toy」ではなく、**実用的な deterministic execution supervisor** と捉えるのが適切です。
+- [docs/getting-started.ja.md](./getting-started.ja.md): 日本語での詳しいセットアップ、issue readiness、初回実行、運用判断
+- [docs/getting-started.md](./getting-started.md): 英語版の getting started
+- [Configuration reference](./configuration.md): config 項目、provider profile、durable memory、実行ポリシー
+- [Local review reference](./local-review.md): local review の role、artifact、threshold、guardrail
+- [Architecture](./architecture.md): core loop、durable state、reconciliation、安全境界
+- [Issue metadata](./issue-metadata.md): issue body の canonical fields と scheduling inputs
+- [Validation checklist](./validation-checklist.md): 導入前後の確認項目
