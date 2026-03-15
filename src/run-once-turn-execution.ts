@@ -14,6 +14,7 @@ import {
   loadRelevantExternalReviewMissPatterns,
   writeExternalReviewMissArtifact,
 } from "./external-review-misses";
+import { syncExternalReviewMissState } from "./external-review-miss-state";
 import { GitHubClient } from "./github";
 import {
   hasMeaningfulJournalHandoff,
@@ -61,41 +62,6 @@ export {
 
 function isOpenPullRequest(pr: GitHubPullRequest | null): pr is GitHubPullRequest {
   return pr !== null && pr.state === "OPEN" && !pr.mergedAt;
-}
-
-export function nextExternalReviewMissPatch(
-  record: Pick<
-    IssueRunRecord,
-    | "external_review_head_sha"
-    | "external_review_misses_path"
-    | "external_review_matched_findings_count"
-    | "external_review_near_match_findings_count"
-    | "external_review_missed_findings_count"
-  >,
-  pr: Pick<GitHubPullRequest, "headRefOid"> | null,
-  context: ExternalReviewMissContext | null,
-): Partial<IssueRunRecord> {
-  if (context && pr) {
-    return {
-      external_review_head_sha: pr.headRefOid,
-      external_review_misses_path: context.artifactPath,
-      external_review_matched_findings_count: context.matchedCount,
-      external_review_near_match_findings_count: context.nearMatchCount,
-      external_review_missed_findings_count: context.missedCount,
-    };
-  }
-
-  if (pr && record.external_review_head_sha && record.external_review_head_sha !== pr.headRefOid) {
-    return {
-      external_review_head_sha: null,
-      external_review_misses_path: null,
-      external_review_matched_findings_count: 0,
-      external_review_near_match_findings_count: 0,
-      external_review_missed_findings_count: 0,
-    };
-  }
-
-  return {};
 }
 
 export { loadLocalReviewRepairContext } from "./local-review-repair-context";
@@ -330,13 +296,14 @@ export async function executeCodexTurnPhase(
             localReviewSummaryPath: record.local_review_summary_path,
           })
         : null;
-    const externalReviewMissPatch = nextExternalReviewMissPatch(record, pr, externalReviewMissContext);
-    if (Object.keys(externalReviewMissPatch).length > 0) {
-      record = stateStore.touch(record, externalReviewMissPatch);
-      state.issues[String(record.issue_number)] = record;
-      await stateStore.save(state);
-      await syncJournal(record);
-    }
+    record = await syncExternalReviewMissState({
+      stateStore,
+      state,
+      record,
+      pr,
+      context: externalReviewMissContext,
+      syncJournal,
+    });
 
     const prompt = record.codex_session_id && shouldUseCompactResumePrompt(record.state)
       ? buildCodexResumePrompt({
