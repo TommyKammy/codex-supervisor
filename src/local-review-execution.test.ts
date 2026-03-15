@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { runLocalReviewExecution, selectVerifierFindings } from "./local-review-execution";
 import { type LocalReviewRoleResult, type LocalReviewVerifierReport } from "./local-review-types";
+import { type LocalReviewRoleSelection } from "./review-role-detector";
 import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "./types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
@@ -105,6 +106,14 @@ function createRoleResult(overrides: Partial<LocalReviewRoleResult> = {}): Local
   };
 }
 
+function createDetectedRoles(overrides: Partial<LocalReviewRoleSelection> = {}): LocalReviewRoleSelection {
+  return {
+    role: "reviewer",
+    reasons: [{ kind: "baseline", signal: "default", paths: [] }],
+    ...overrides,
+  };
+}
+
 async function waitFor(condition: () => boolean): Promise<void> {
   while (!condition()) {
     await new Promise<void>((resolve) => setImmediate(resolve));
@@ -173,6 +182,11 @@ test("selectVerifierFindings keeps only deduped actionable high-severity finding
   const config = createConfig();
   const result = selectVerifierFindings({
     config,
+    detectedRoles: [
+      createDetectedRoles({
+        role: "security_reviewer",
+      }),
+    ],
     roleResults: [
       createRoleResult({
         role: "reviewer",
@@ -214,7 +228,7 @@ test("selectVerifierFindings keeps only deduped actionable high-severity finding
             start: 5,
             end: 6,
             severity: "high",
-            confidence: 0.75,
+            confidence: 0.65,
             category: "security",
             evidence: null,
           },
@@ -287,6 +301,52 @@ test("runLocalReviewExecution invokes verifier only when actionable high-severit
 
   assert.deepEqual(findingsPassed, ["Actionable high"]);
   assert.equal(withVerifier.verifierReport?.role, "verifier");
+
+  const baselineDetectedRole = await runLocalReviewExecution({
+    config: createConfig(),
+    issue: createIssue(),
+    branch: "codex/issue-334",
+    workspacePath: "/tmp/repo",
+    defaultBranch: "main",
+    pr: createPullRequest(),
+    roles: ["security_reviewer"],
+    detectedRoles: [
+      createDetectedRoles({
+        role: "security_reviewer",
+      }),
+    ],
+    alwaysReadFiles: [],
+    onDemandFiles: [],
+    priorMissPatterns: [],
+    runRoleReview: async () => createRoleResult({
+      role: "security_reviewer",
+      findings: [
+        {
+          role: "security_reviewer",
+          title: "Baseline generic high",
+          body: "Body",
+          file: "src/example.ts",
+          start: 5,
+          end: 6,
+          severity: "high",
+          confidence: 0.75,
+          category: "security",
+          evidence: null,
+        },
+      ],
+    }),
+    runVerifierReview: async ({ findings }) => ({
+      role: "verifier",
+      summary: findings[0]?.title ?? "verified",
+      recommendation: "changes_requested",
+      findings: [],
+      rawOutput: "raw",
+      exitCode: 0,
+      degraded: false,
+    }),
+  });
+
+  assert.equal(baselineDetectedRole.verifierReport?.summary, "Baseline generic high");
 
   const withoutVerifier = await runLocalReviewExecution({
     config: createConfig(),

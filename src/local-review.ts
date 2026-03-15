@@ -171,6 +171,7 @@ export async function runLocalReview(args: {
   const { roleResults, verifierReport } = await runLocalReviewExecution({
     ...args,
     roles,
+    detectedRoles,
     priorMissPatterns,
   });
   const ranAt = nowIso();

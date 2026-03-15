@@ -3,10 +3,12 @@ import { findingMeetsReviewerThreshold, reviewerTypeForRole } from "./local-revi
 import { runRoleReview as defaultRunRoleReview, runVerifierReview as defaultRunVerifierReview } from "./local-review-runner";
 import { type ExternalReviewMissPattern } from "./external-review-misses";
 import { type LocalReviewFinding, type LocalReviewRoleResult, type LocalReviewVerifierReport } from "./local-review-types";
+import { type LocalReviewRoleSelection } from "./review-role-detector";
 import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "./types";
 
 export function selectVerifierFindings(args: {
   config: SupervisorConfig;
+  detectedRoles?: LocalReviewRoleSelection[];
   roleResults: LocalReviewRoleResult[];
 }): LocalReviewFinding[] {
   return dedupeFindings(
@@ -16,7 +18,7 @@ export function selectVerifierFindings(args: {
         finding.severity === "high" &&
         findingMeetsReviewerThreshold({
           finding,
-          reviewerType: reviewerTypeForRole({ role: finding.role }),
+          reviewerType: reviewerTypeForRole({ role: finding.role, detectedRoles: args.detectedRoles }),
           config: args.config,
         }),
       ),
@@ -31,6 +33,7 @@ export async function runLocalReviewExecution(args: {
   defaultBranch: string;
   pr: GitHubPullRequest;
   roles: string[];
+  detectedRoles?: LocalReviewRoleSelection[];
   alwaysReadFiles: string[];
   onDemandFiles: string[];
   priorMissPatterns: ExternalReviewMissPattern[];
@@ -72,6 +75,7 @@ export async function runLocalReviewExecution(args: {
 
   const findings = selectVerifierFindings({
     config: args.config,
+    detectedRoles: args.detectedRoles,
     roleResults,
   });
 
