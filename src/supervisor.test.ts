@@ -4384,6 +4384,65 @@ test("inferStateFromPullRequest treats an arrived configured-bot top-level revie
   });
 });
 
+test("inferStateFromPullRequest softens nitpick-only configured-bot top-level changes requests when no configured-bot threads remain", () => {
+  const config = createConfig({
+    reviewBotLogins: ["coderabbitai[bot]"],
+    humanReviewBlocksMerge: true,
+  });
+  const record = createRecord({ state: "pr_open" });
+  const pr = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T00:00:00Z",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-38",
+    headRefOid: "head123",
+    mergedAt: null,
+    copilotReviewState: "arrived",
+    copilotReviewRequestedAt: "2026-03-11T00:05:00Z",
+    copilotReviewArrivedAt: "2026-03-11T00:07:00Z",
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+  } as GitHubPullRequest;
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "ready_to_merge");
+});
+
+test("inferStateFromPullRequest still blocks stronger configured-bot top-level changes requests without review threads", () => {
+  const config = createConfig({
+    reviewBotLogins: ["coderabbitai[bot]"],
+    humanReviewBlocksMerge: false,
+  });
+  const record = createRecord({ state: "pr_open" });
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T00:00:00Z",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-38",
+    headRefOid: "head123",
+    mergedAt: null,
+    copilotReviewState: "arrived",
+    copilotReviewRequestedAt: "2026-03-11T00:05:00Z",
+    copilotReviewArrivedAt: "2026-03-11T00:07:00Z",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-03-11T00:07:00Z",
+  };
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "blocked");
+});
+
 test("inferStateFromPullRequest keeps waiting when a Copilot request was observed on the current head but has not arrived", () => {
   withStubbedDateNow("2026-03-11T00:10:00Z", () => {
     const config = createConfig({
@@ -5463,6 +5522,49 @@ test("formatDetailedStatus surfaces configured bot review timeout outcome with g
   assert.match(
     status,
     /timeout_reason=Requested configured review bot \(chatgpt-codex-connector\) review never arrived within 10 minute\(s\) for head deadbeef\./,
+  );
+});
+
+test("formatDetailedStatus explains softened nitpick-only configured-bot top-level reviews", () => {
+  const config = createConfig({
+    reviewBotLogins: ["coderabbitai[bot]"],
+  });
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-38",
+    headRefOid: "deadbeef",
+    mergedAt: null,
+    copilotReviewState: "arrived",
+    copilotReviewRequestedAt: "2026-03-11T14:05:00Z",
+    copilotReviewArrivedAt: "2026-03-11T14:06:00Z",
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+    configuredBotTopLevelReviewSubmittedAt: "2026-03-11T14:06:00Z",
+  };
+
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: createRecord({
+      pr_number: 44,
+      state: "ready_to_merge",
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr,
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [],
+  });
+
+  assert.match(
+    status,
+    /configured_bot_top_level_review strength=nitpick_only submitted_at=2026-03-11T14:06:00Z effect=softened/,
   );
 });
 

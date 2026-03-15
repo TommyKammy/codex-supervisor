@@ -241,6 +241,22 @@ function reviewBotDiagnostics(
   };
 }
 
+function configuredBotTopLevelReviewEffect(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+  reviewThreads: ReviewThread[],
+): string {
+  if (!repoExpectsConfiguredBotReview(config) || !pr.configuredBotTopLevelReviewStrength) {
+    return "none";
+  }
+
+  if (pr.configuredBotTopLevelReviewStrength === "nitpick_only") {
+    return configuredBotReviewThreads(config, reviewThreads).length === 0 ? "softened" : "awaiting_thread_resolution";
+  }
+
+  return "blocking";
+}
+
 export function sanitizeStatusValue(value: string | null | undefined): string | null {
   if (!value) {
     return null;
@@ -570,6 +586,9 @@ export function formatDetailedStatus(args: {
     );
     lines.push(
       `${reviewStatusLabel} state=${copilotReviewState}${reviewersSuffix} requested_at=${pr.copilotReviewRequestedAt ?? "none"} arrived_at=${pr.copilotReviewArrivedAt ?? "none"} timed_out_at=${activeRecord.copilot_review_timed_out_at ?? "none"} timeout_action=${activeRecord.copilot_review_timeout_action ?? "none"}`,
+    );
+    lines.push(
+      `configured_bot_top_level_review strength=${pr.configuredBotTopLevelReviewStrength ?? "none"} submitted_at=${pr.configuredBotTopLevelReviewSubmittedAt ?? "none"} effect=${configuredBotTopLevelReviewEffect(config, pr, reviewThreads)}`,
     );
     if (activeRecord.copilot_review_timeout_reason) {
       lines.push(`timeout_reason=${sanitizeStatusValue(activeRecord.copilot_review_timeout_reason)}`);
