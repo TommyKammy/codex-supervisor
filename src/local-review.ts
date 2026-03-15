@@ -1,19 +1,19 @@
 import path from "node:path";
 import {
-  compareExternalReviewPatterns,
   EXTERNAL_REVIEW_GUARDRAILS_PATH,
-  loadCommittedExternalReviewGuardrails,
   VERIFIER_GUARDRAILS_PATH,
 } from "./committed-guardrails";
-import { detectLocalReviewRoleSelections } from "./review-role-detector";
-import { runCommand } from "./command";
-import { loadRelevantExternalReviewMissPatterns } from "./external-review-misses";
 import { ensureDir, nowIso, truncate } from "./utils";
-import { compareRef } from "./local-review-prompt";
 import { dedupeFindings, finalizeLocalReview } from "./local-review-finalize";
 import { findingMeetsReviewerThreshold, reviewerTypeForRole } from "./local-review-thresholds";
 import { reviewDir, writeLocalReviewArtifacts } from "./local-review-artifacts";
 import { runRoleReview, runVerifierReview } from "./local-review-runner";
+import { type ExternalReviewMissPattern } from "./external-review-misses";
+import {
+  collectLocalReviewChangedFiles,
+  loadLocalReviewExternalReviewContext,
+  prepareLocalReviewRoleSelection,
+} from "./local-review-preparation";
 import { GitHubIssue, GitHubPullRequest, SupervisorConfig } from "./types";
 import { type FinalizedLocalReview, type LocalReviewResult, type LocalReviewRoleResult, type LocalReviewVerifierReport } from "./local-review-types";
 
@@ -99,20 +99,6 @@ export function buildLocalReviewBlockerSummary(
   );
 }
 
-function selectLocalReviewRoles(args: {
-  config: SupervisorConfig;
-  detectedRoles: Awaited<ReturnType<typeof detectLocalReviewRoleSelections>>;
-}): string[] {
-  if (args.config.localReviewRoles.length > 0) {
-    return args.config.localReviewRoles;
-  }
-  if (args.detectedRoles.length > 0) {
-    return args.detectedRoles.map((selection) => selection.role);
-  }
-
-  return ["reviewer", "explorer"];
-}
-
 function displayGuardrailArtifactPath(config: SupervisorConfig, filePath: string): string {
   const relativePath = path.relative(config.localReviewArtifactDir, filePath);
   return relativePath && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)
@@ -130,7 +116,7 @@ async function runLocalReviewRoles(args: {
   roles: string[];
   alwaysReadFiles: string[];
   onDemandFiles: string[];
-  priorMissPatterns: Awaited<ReturnType<typeof loadRelevantExternalReviewMissPatterns>>;
+  priorMissPatterns: ExternalReviewMissPattern[];
 }): Promise<LocalReviewRoleResult[]> {
   const roleResults: LocalReviewRoleResult[] = new Array(args.roles.length);
   const concurrency = Math.min(2, args.roles.length);
@@ -243,46 +229,24 @@ export async function runLocalReview(args: {
   alwaysReadFiles: string[];
   onDemandFiles: string[];
 }): Promise<LocalReviewResult> {
-  const ref = compareRef(args.defaultBranch);
-  const changedFilesResult = await runCommand(
-    "git",
-    ["diff", "--name-only", ref],
-    {
-      cwd: args.workspacePath,
-      env: process.env,
-    },
-  );
-  const changedFiles = changedFilesResult.stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-  const changedFileSet = new Set(changedFiles);
-  const committedExternalReviewPatterns = (await loadCommittedExternalReviewGuardrails(args.workspacePath))
-    .filter((pattern) => changedFileSet.has(pattern.file))
-    .sort(compareExternalReviewPatterns)
-    .slice(0, 3);
-  const runtimeExternalReviewPatterns = await loadRelevantExternalReviewMissPatterns({
-    artifactDir: reviewDir(args.config, args.issue.number),
-    branch: args.branch,
-    currentHeadSha: args.pr.headRefOid,
-    changedFiles,
-    limit: 3,
-  });
-  const priorMissPatterns = await loadRelevantExternalReviewMissPatterns({
-    artifactDir: reviewDir(args.config, args.issue.number),
-    branch: args.branch,
-    currentHeadSha: args.pr.headRefOid,
-    changedFiles,
-    limit: 3,
+  const changedFiles = await collectLocalReviewChangedFiles({
     workspacePath: args.workspacePath,
+    defaultBranch: args.defaultBranch,
   });
-  const detectedRoles =
-    args.config.localReviewRoles.length === 0 && args.config.localReviewAutoDetect
-      ? await detectLocalReviewRoleSelections(args.config)
-      : [];
-  const roles = selectLocalReviewRoles({
+  const {
+    committedExternalReviewPatterns,
+    runtimeExternalReviewPatterns,
+    priorMissPatterns,
+  } = await loadLocalReviewExternalReviewContext({
     config: args.config,
-    detectedRoles,
+    issue: args.issue,
+    branch: args.branch,
+    workspacePath: args.workspacePath,
+    currentHeadSha: args.pr.headRefOid,
+    changedFiles,
+  });
+  const { detectedRoles, roles } = await prepareLocalReviewRoleSelection({
+    config: args.config,
   });
   const roleResults = await runLocalReviewRoles({
     ...args,
