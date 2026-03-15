@@ -17,6 +17,15 @@ interface LocalReviewRepairArtifact {
   }>;
 }
 
+function normalizeRepairContextFilePath(file: string | null | undefined): string | null {
+  if (typeof file !== "string") {
+    return null;
+  }
+
+  const trimmed = file.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
 export async function loadLocalReviewRepairContext(summaryPath: string | null, workspacePath?: string) {
   if (!summaryPath) {
     return null;
@@ -52,7 +61,7 @@ export async function loadLocalReviewRepairContext(summaryPath: string | null, w
       return {
         severity: rootCause.severity ?? "medium",
         summary: rootCause.summary!.trim(),
-        file: rootCause.file ?? null,
+        file: normalizeRepairContextFilePath(rootCause.file),
         lines:
           start == null
             ? null
@@ -64,7 +73,7 @@ export async function loadLocalReviewRepairContext(summaryPath: string | null, w
   const relevantFiles = [...new Set([
     ...rootCauses.map((rootCause) => rootCause.file).filter((filePath): filePath is string => Boolean(filePath)),
     ...(artifact.actionableFindings ?? [])
-      .map((finding) => (typeof finding.file === "string" && finding.file.trim() !== "" ? finding.file : null))
+      .map((finding) => normalizeRepairContextFilePath(finding.file))
       .filter((filePath): filePath is string => Boolean(filePath)),
   ])].slice(0, 10);
   const priorMissPatterns =
