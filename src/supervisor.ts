@@ -23,7 +23,7 @@ import {
   syncCopilotReviewTimeoutState,
   syncReviewWaitWindow,
 } from "./pull-request-state";
-import { inferStateWithoutPullRequest, shouldPreserveNoPrFailureTracking } from "./no-pull-request-state";
+import { inferStateWithoutPullRequest } from "./no-pull-request-state";
 import {
   hasProcessedReviewThread,
   localReviewBlocksMerge,
@@ -91,6 +91,14 @@ import {
 import { inferFailureContext } from "./supervisor-failure-context";
 import { StateStore } from "./state-store";
 import {
+  blockedReasonForLifecycleState,
+  derivePullRequestLifecycleSnapshot,
+  isOpenPullRequest,
+  resetNoPrLifecycleFailureTracking,
+  shouldRunCodex,
+  shouldStopForRepeatedFailureSignature,
+} from "./supervisor-lifecycle";
+import {
   formatDetailedStatus,
   mergeConflictDetected,
   summarizeChecks,
@@ -125,112 +133,6 @@ import {
   getWorkspaceStatus,
   pushBranch,
 } from "./workspace";
-
-function shouldStopForRepeatedFailureSignature(record: IssueRunRecord, config: SupervisorConfig): boolean {
-  return (
-    record.last_failure_signature !== null &&
-    record.repeated_failure_signature_count >= config.sameFailureSignatureRepeatLimit
-  );
-}
-
-function blockedReasonForLifecycleState(
-  config: SupervisorConfig,
-  record: IssueRunRecord,
-  pr: GitHubPullRequest,
-  checks: PullRequestCheck[],
-  reviewThreads: ReviewThread[],
-): IssueRunRecord["blocked_reason"] {
-  return (
-    blockedReasonFromReviewState(config, record, pr, reviewThreads) ??
-    (localReviewRetryLoopStalled(
-      config,
-      record,
-      pr,
-      checks,
-      reviewThreads,
-      manualReviewThreads,
-      configuredBotReviewThreads,
-      summarizeChecks,
-      mergeConflictDetected,
-    ) || localReviewHighSeverityNeedsBlock(config, record, pr)
-      ? "verification"
-      : null)
-  );
-}
-
-interface PullRequestLifecycleSnapshot {
-  recordForState: IssueRunRecord;
-  nextState: RunState;
-  failureContext: FailureContext | null;
-  reviewWaitPatch: Partial<Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha">>;
-  copilotRequestObservationPatch: Partial<
-    Pick<IssueRunRecord, "copilot_review_requested_observed_at" | "copilot_review_requested_head_sha">
-  >;
-  copilotTimeoutPatch: Pick<
-    IssueRunRecord,
-    "copilot_review_timed_out_at" | "copilot_review_timeout_action" | "copilot_review_timeout_reason"
-  >;
-}
-
-function derivePullRequestLifecycleSnapshot(
-  config: SupervisorConfig,
-  record: IssueRunRecord,
-  pr: GitHubPullRequest,
-  checks: PullRequestCheck[],
-  reviewThreads: ReviewThread[],
-  recordPatch: Partial<IssueRunRecord> = {},
-): PullRequestLifecycleSnapshot {
-  const baseRecord = { ...record, ...recordPatch };
-  const reviewWaitPatch = syncReviewWaitWindow(baseRecord, pr);
-  const copilotRequestObservationPatch = syncCopilotReviewRequestObservation(config, baseRecord, pr);
-  const recordForState = {
-    ...baseRecord,
-    ...reviewWaitPatch,
-    ...copilotRequestObservationPatch,
-  };
-  const copilotTimeoutPatch = syncCopilotReviewTimeoutState(config, recordForState, pr);
-  const finalizedRecordForState = {
-    ...recordForState,
-    ...copilotTimeoutPatch,
-  };
-
-  return {
-    recordForState: finalizedRecordForState,
-    nextState: inferStateFromPullRequest(config, finalizedRecordForState, pr, checks, reviewThreads),
-    failureContext: inferFailureContext(config, finalizedRecordForState, pr, checks, reviewThreads),
-    reviewWaitPatch,
-    copilotRequestObservationPatch,
-    copilotTimeoutPatch,
-  };
-}
-
-function shouldRunCodex(
-  record: IssueRunRecord,
-  pr: GitHubPullRequest | null,
-  checks: PullRequestCheck[],
-  reviewThreads: ReviewThread[],
-  config: SupervisorConfig,
-): boolean {
-  if (!pr) {
-    return true;
-  }
-
-  const inferred = inferStateFromPullRequest(config, record, pr, checks, reviewThreads);
-  return (
-    inferred === "draft_pr" ||
-    inferred === "repairing_ci" ||
-    inferred === "resolving_conflict" ||
-    inferred === "addressing_review" ||
-    inferred === "implementing" ||
-    inferred === "local_review_fix" ||
-    inferred === "reproducing" ||
-    inferred === "stabilizing"
-  );
-}
-
-function isOpenPullRequest(pr: GitHubPullRequest | null): pr is GitHubPullRequest {
-  return pr !== null && pr.state === "OPEN" && !pr.mergedAt;
-}
 
 interface ReadyIssueContext {
   kind: "ready";
@@ -540,18 +442,9 @@ export class Supervisor {
         );
       }
     } else {
-      const preserveFailureTracking = shouldPreserveNoPrFailureTracking(record);
       record = this.stateStore.touch(record, {
         state: inferStateWithoutPullRequest(record, workspaceStatus),
-        copilot_review_requested_observed_at: null,
-        copilot_review_requested_head_sha: null,
-        copilot_review_timed_out_at: null,
-        copilot_review_timeout_action: null,
-        copilot_review_timeout_reason: null,
-        last_failure_context: preserveFailureTracking ? record.last_failure_context : null,
-        last_failure_signature: preserveFailureTracking ? record.last_failure_signature : null,
-        repeated_failure_signature_count: preserveFailureTracking ? record.repeated_failure_signature_count : 0,
-        blocked_reason: null,
+        ...resetNoPrLifecycleFailureTracking(record),
       });
     }
     state.issues[String(record.issue_number)] = record;
