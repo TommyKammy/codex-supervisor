@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCodexPrompt, buildCodexResumePrompt, extractStateHint, shouldUseCompactResumePrompt } from "./codex";
+import { buildCodexPrompt, buildCodexResumePrompt, shouldUseCompactResumePrompt } from "./codex";
 import { loadLocalReviewRepairContext } from "./local-review-repair-context";
 import { FailureContext, GitHubIssue, RunState } from "./types";
 import { type VerifierGuardrailRule } from "./verifier-guardrails";
@@ -16,10 +16,6 @@ const issue: GitHubIssue = {
   updatedAt: "2026-03-12T00:00:00Z",
   url: "https://example.test/issues/46",
 };
-
-test("extractStateHint accepts local_review_fix", () => {
-  assert.equal(extractStateHint("State hint: local_review_fix"), "local_review_fix");
-});
 
 test("shouldUseCompactResumePrompt only enables compact resume guidance for handoff-driven states", () => {
   assert.equal(shouldUseCompactResumePrompt("planning"), true);
