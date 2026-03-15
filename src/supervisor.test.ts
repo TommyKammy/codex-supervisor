@@ -3706,6 +3706,174 @@ test("runOnce does not mark configured bot review threads as processed for a ref
   assert.deepEqual(record.processed_review_thread_ids, ["thread-1@head-a"]);
 });
 
+test("runOnce records verification blocker context when local review blocks merge before a turn", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 118;
+  const branch = branchName(fixture.config, issueNumber);
+  const runHeadSha = git(["rev-parse", "HEAD"], fixture.repoPath);
+  const config = createConfig({
+    ...fixture.config,
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    copilotReviewWaitMinutes: 0,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "pr_open",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: issueNumber,
+        local_review_head_sha: runHeadSha,
+        local_review_findings_count: 2,
+        local_review_root_cause_count: 1,
+        local_review_max_severity: "medium",
+        local_review_recommendation: "changes_requested",
+        local_review_summary_path: "/tmp/reviews/local-review-summary.md",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Persist local review blockers before a turn",
+    body: executionReadyBody("Persist local review blockers before a turn."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: issueNumber,
+    title: "Preserve local review blocker context",
+    url: `https://example.test/pr/${issueNumber}`,
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: runHeadSha,
+    mergedAt: null,
+  };
+
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequest: async () => pr,
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: false });
+  assert.match(message, /state=blocked/);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(record.state, "blocked");
+  assert.equal(record.blocked_reason, "verification");
+  assert.match(record.last_error ?? "", /Local review found 2 actionable finding/);
+  assert.equal(record.last_failure_context?.category, "blocked");
+  assert.match(record.last_failure_context?.summary ?? "", /Local review found 2 actionable finding/);
+});
+
+test("runOnce records manual review context when GitHub reports changes requested without threads", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 119;
+  const branch = branchName(fixture.config, issueNumber);
+  const runHeadSha = git(["rev-parse", "HEAD"], fixture.repoPath);
+  const config = createConfig({
+    ...fixture.config,
+    humanReviewBlocksMerge: true,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "pr_open",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: issueNumber,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Persist changes-requested blocker context without threads",
+    body: executionReadyBody("Persist changes-requested blocker context without threads."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: issueNumber,
+    title: "Changes requested without threads",
+    url: `https://example.test/pr/${issueNumber}`,
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: runHeadSha,
+    mergedAt: null,
+  };
+
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequest: async () => pr,
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: false });
+  assert.match(message, /state=blocked/);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(record.state, "blocked");
+  assert.equal(record.blocked_reason, "manual_review");
+  assert.match(record.last_error ?? "", /requires manual review resolution before merge/);
+  assert.equal(record.last_failure_context?.category, "manual");
+  assert.match(record.last_failure_context?.summary ?? "", /requires manual review resolution before merge/);
+});
+
 function branchName(config: SupervisorConfig, issueNumber: number): string {
   return `${config.branchPrefix}${issueNumber}`;
 }
@@ -3842,6 +4010,39 @@ test("inferStateFromPullRequest waits briefly after ready-for-review for Copilot
 
     assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "waiting_ci");
   });
+});
+
+test("inferStateFromPullRequest does not time out immediately when configured review waiting is disabled", () => {
+  const config = createConfig({
+    copilotReviewWaitMinutes: 0,
+    copilotReviewTimeoutAction: "block",
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const record = createRecord({
+    state: "waiting_ci",
+    review_wait_started_at: "2026-03-11T00:00:00Z",
+    review_wait_head_sha: "head123",
+  });
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T00:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-38",
+    headRefOid: "head123",
+    mergedAt: null,
+    copilotReviewState: "requested",
+    copilotReviewRequestedAt: "2026-03-11T00:05:00Z",
+    copilotReviewArrivedAt: null,
+  };
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "waiting_ci");
 });
 
 test("inferStateFromPullRequest waits briefly after ready-for-review for configured bot request propagation", () => {

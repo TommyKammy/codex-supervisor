@@ -1,5 +1,4 @@
 import {
-  hasProcessedReviewThread,
   localReviewBlocksMerge,
   localReviewHighSeverityNeedsBlock,
   localReviewHighSeverityNeedsRetry,
@@ -111,6 +110,10 @@ function determineCopilotReviewTimeout(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
 ): CopilotReviewTimeoutStatus {
+  if (config.copilotReviewWaitMinutes <= 0) {
+    return { timedOut: false, action: null, startedAt: null, timedOutAt: null, reason: null };
+  }
+
   const startedAt = copilotReviewTimeoutStart(config, record, pr);
   if (!startedAt) {
     return { timedOut: false, action: null, startedAt: null, timedOutAt: null, reason: null };
@@ -223,6 +226,14 @@ export function blockedReasonFromReviewState(
     configuredBotReviewThreads(config, reviewThreads).length > 0
   ) {
     return "manual_review";
+  }
+
+  if (pr.reviewDecision === "CHANGES_REQUESTED" && config.humanReviewBlocksMerge) {
+    return "manual_review";
+  }
+
+  if (localReviewHighSeverityNeedsBlock(config, record, pr) || localReviewBlocksMerge(config, record, pr)) {
+    return "verification";
   }
 
   return null;

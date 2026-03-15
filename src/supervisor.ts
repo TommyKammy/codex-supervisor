@@ -441,6 +441,18 @@ function buildManualReviewFailureContext(reviewThreads: ReviewThread[]): Failure
   };
 }
 
+function buildRequestedChangesFailureContext(pr: GitHubPullRequest): FailureContext {
+  return {
+    category: "manual",
+    summary: `PR #${pr.number} has requested changes and requires manual review resolution before merge.`,
+    signature: `changes-requested:${pr.headRefOid}`,
+    command: null,
+    details: [`reviewDecision=${pr.reviewDecision ?? "none"}`],
+    url: pr.url,
+    updated_at: nowIso(),
+  };
+}
+
 function buildStalledBotReviewFailureContext(reviewThreads: ReviewThread[]): FailureContext | null {
   if (reviewThreads.length === 0) {
     return null;
@@ -532,6 +544,50 @@ function inferFailureContext(
       return copilotTimeoutContext;
     }
 
+    if (pr.reviewDecision === "CHANGES_REQUESTED") {
+      const manualReviewContext =
+        config.humanReviewBlocksMerge ? buildManualReviewFailureContext(manualReviewThreads(config, reviewThreads)) : null;
+      if (manualReviewContext) {
+        return manualReviewContext;
+      }
+
+      const reviewContext = buildReviewFailureContext(pendingBotReviewThreads(config, record, pr, reviewThreads));
+      if (reviewContext) {
+        return reviewContext;
+      }
+
+      const stalledBotReviewContext = buildStalledBotReviewFailureContext(
+        configuredBotReviewThreads(config, reviewThreads),
+      );
+      if (stalledBotReviewContext) {
+        return stalledBotReviewContext;
+      }
+
+      if (config.humanReviewBlocksMerge) {
+        return buildRequestedChangesFailureContext(pr);
+      }
+    }
+
+    if (
+      localReviewRetryLoopStalled(
+        config,
+        record,
+        pr,
+        checks,
+        reviewThreads,
+        manualReviewThreads,
+        configuredBotReviewThreads,
+        summarizeChecks,
+        mergeConflictDetected,
+      )
+    ) {
+      return localReviewStallFailureContext(record);
+    }
+
+    if (localReviewHighSeverityNeedsBlock(config, record, pr)) {
+      return localReviewFailureContext(record);
+    }
+
     const manualReviewContext =
       config.humanReviewBlocksMerge ? buildManualReviewFailureContext(manualReviewThreads(config, reviewThreads)) : null;
     if (manualReviewContext) {
@@ -550,12 +606,41 @@ function inferFailureContext(
       return stalledBotReviewContext;
     }
 
+    if (localReviewBlocksMerge(config, record, pr)) {
+      return localReviewFailureContext(record);
+    }
+
     if (mergeConflictDetected(pr)) {
       return buildConflictFailureContext(pr);
     }
   }
 
   return null;
+}
+
+function blockedReasonForLifecycleState(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
+  reviewThreads: ReviewThread[],
+): IssueRunRecord["blocked_reason"] {
+  return (
+    blockedReasonFromReviewState(config, record, pr, reviewThreads) ??
+    (localReviewRetryLoopStalled(
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+      manualReviewThreads,
+      configuredBotReviewThreads,
+      summarizeChecks,
+      mergeConflictDetected,
+    ) || localReviewHighSeverityNeedsBlock(config, record, pr)
+      ? "verification"
+      : null)
+  );
 }
 
 interface PullRequestLifecycleSnapshot {
@@ -1002,6 +1087,12 @@ export class Supervisor {
 
     if (pr) {
       const lifecycle = derivePullRequestLifecycleSnapshot(this.config, record, pr, checks, reviewThreads);
+      const effectiveFailureContext =
+        lifecycle.failureContext ??
+        (lifecycle.nextState === "local_review_fix" &&
+        localReviewHighSeverityNeedsRetry(this.config, lifecycle.recordForState, pr)
+          ? localReviewFailureContext(lifecycle.recordForState)
+          : null);
       record = this.stateStore.touch(record, {
         pr_number: pr.number,
         state: lifecycle.nextState,
@@ -1009,18 +1100,18 @@ export class Supervisor {
         ...lifecycle.copilotRequestObservationPatch,
         ...lifecycle.copilotTimeoutPatch,
         last_error:
-          lifecycle.nextState === "blocked" && lifecycle.failureContext
-            ? truncate(lifecycle.failureContext.summary, 1000)
+          lifecycle.nextState === "blocked" && effectiveFailureContext
+            ? truncate(effectiveFailureContext.summary, 1000)
             : record.last_error,
-        last_failure_context: lifecycle.failureContext,
-        ...applyFailureSignature(record, lifecycle.failureContext),
+        last_failure_context: effectiveFailureContext,
+        ...applyFailureSignature(record, effectiveFailureContext),
         blocked_reason:
           lifecycle.nextState === "blocked"
-            ? blockedReasonFromReviewState(this.config, lifecycle.recordForState, pr, reviewThreads)
+            ? blockedReasonForLifecycleState(this.config, lifecycle.recordForState, pr, checks, reviewThreads)
             : null,
       });
 
-      if (lifecycle.failureContext && shouldStopForRepeatedFailureSignature(record, this.config)) {
+      if (effectiveFailureContext && shouldStopForRepeatedFailureSignature(record, this.config)) {
         record = this.stateStore.touch(record, {
           state: "failed",
           last_error:
