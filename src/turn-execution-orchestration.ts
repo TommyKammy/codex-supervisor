@@ -225,7 +225,9 @@ export function nextProcessedReviewThreadPatch(args: {
       processedReviewThreadFingerprintKeysForCurrentHead.length > 0
         ? Array.from(
             new Set([
-              ...args.record.processed_review_thread_fingerprints,
+              ...args.record.processed_review_thread_fingerprints.filter(
+                (key) => !processedReviewThreadFingerprintKeysForCurrentHead.includes(key),
+              ),
               ...processedReviewThreadFingerprintKeysForCurrentHead,
             ]),
           ).slice(-200)

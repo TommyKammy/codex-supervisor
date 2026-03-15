@@ -361,13 +361,30 @@ test("nextProcessedReviewThreadPatch refreshes reprocessed same-head ids to the 
     preRunState: "addressing_review",
     record: {
       processed_review_thread_ids: Array.from({ length: 200 }, (_, index) => `thread-${index}@head-a`),
-      processed_review_thread_fingerprints: [],
+      processed_review_thread_fingerprints: Array.from(
+        { length: 200 },
+        (_, index) => `thread-${index}@head-a#comment-${index}`,
+      ),
     },
     currentPr: { headRefOid: "head-a" },
     evaluatedReviewHeadSha: "head-a",
     reviewThreadsToProcess: [
       createReviewThread({
         id: "thread-0",
+        comments: {
+          nodes: [
+            {
+              id: "comment-0",
+              body: "Please address this again.",
+              createdAt: "2026-03-13T06:20:00Z",
+              url: "https://example.test/pr/116#discussion_r0",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
       }),
     ],
   });
@@ -377,6 +394,15 @@ test("nextProcessedReviewThreadPatch refreshes reprocessed same-head ids to the 
   assert.equal(
     patch.processed_review_thread_ids[patch.processed_review_thread_ids.length - 1],
     "thread-0@head-a",
+  );
+  assert.equal(patch.processed_review_thread_fingerprints.length, 200);
+  assert.equal(
+    patch.processed_review_thread_fingerprints[0],
+    "thread-1@head-a#comment-1",
+  );
+  assert.equal(
+    patch.processed_review_thread_fingerprints[patch.processed_review_thread_fingerprints.length - 1],
+    "thread-0@head-a#comment-0",
   );
 });
 
