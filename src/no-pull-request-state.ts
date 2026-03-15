@@ -1,5 +1,19 @@
 import { IssueRunRecord, RunState, WorkspaceStatus } from "./types";
 
+export function shouldPreserveNoPrFailureTracking(
+  record: Pick<
+    IssueRunRecord,
+    "pr_number" | "last_failure_context" | "last_failure_signature" | "repeated_failure_signature_count"
+  >,
+): boolean {
+  return (
+    record.pr_number === null &&
+    record.last_failure_context?.category === "blocked" &&
+    record.last_failure_signature !== null &&
+    record.repeated_failure_signature_count > 0
+  );
+}
+
 export function inferStateWithoutPullRequest(
   record: IssueRunRecord,
   workspaceStatus: WorkspaceStatus,
