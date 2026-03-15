@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { hasProcessedReviewThread } from "./review-handling";
 import { executeCodexTurnPhase } from "./run-once-turn-execution";
@@ -504,4 +506,172 @@ test("executeCodexTurnPhase persists blocked reason and repeated blocker bookkee
   assert.equal(state.issues["102"]?.repeated_blocker_count, 2);
   assert.equal(state.issues["102"]?.last_failure_signature, "prior-check");
   assert.equal(state.issues["102"]?.repeated_failure_signature_count, 1);
+});
+
+test("executeCodexTurnPhase loads local-review repair context before building the local_review_fix prompt", async () => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "turn-execution-local-review-fix-"));
+  const reviewDir = path.join(workspaceDir, "reviews");
+  const summaryPath = path.join(reviewDir, "head-deadbeef.md");
+  const findingsPath = path.join(reviewDir, "head-deadbeef.json");
+  let capturedPrompt = "";
+  let journalReads = 0;
+
+  await fs.mkdir(reviewDir, { recursive: true });
+  await fs.writeFile(summaryPath, "# summary\n", "utf8");
+  await fs.writeFile(
+    findingsPath,
+    JSON.stringify({
+      actionableFindings: [{ file: "src/auth.ts" }],
+      rootCauseSummaries: [
+        {
+          severity: "high",
+          summary: "Permission guard retry path is fragile",
+          file: "src/auth.ts",
+          start: 40,
+          end: 44,
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "local_review_fix",
+        local_review_summary_path: summaryPath,
+        last_failure_context: createFailureContext("Active local-review blocker."),
+      }),
+    },
+  };
+
+  try {
+    const result = await executeCodexTurnPhase({
+      config: createConfig(),
+      stateStore: {
+        touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+        save: async () => undefined,
+      },
+      github: {
+        resolvePullRequestForBranch: async () => null,
+        createPullRequest: async () => {
+          throw new Error("unexpected createPullRequest call");
+        },
+        getChecks: async () => [],
+        getUnresolvedReviewThreads: async () => [],
+        getExternalReviewSurface: async () => {
+          throw new Error("unexpected getExternalReviewSurface call");
+        },
+      },
+      context: {
+        state,
+        record: state.issues["102"]!,
+        issue: {
+          number: 102,
+          title: "Repair local review context loading",
+          body: "",
+          createdAt: "2026-03-13T00:00:00Z",
+          updatedAt: "2026-03-13T00:00:00Z",
+          url: "https://example.test/issues/102",
+          state: "OPEN",
+        },
+        previousCodexSummary: null,
+        previousError: null,
+        workspacePath: workspaceDir,
+        journalPath: path.join(workspaceDir, ".codex-supervisor", "issue-journal.md"),
+        syncJournal: async () => undefined,
+        memoryArtifacts: {
+          contextIndexPath: path.join(workspaceDir, "context-index.md"),
+          agentsPath: path.join(workspaceDir, "AGENTS.generated.md"),
+          alwaysReadFiles: [],
+          onDemandFiles: [],
+        },
+        workspaceStatus: {
+          branch: "codex/issue-102",
+          headSha: "head-116",
+          hasUncommittedChanges: false,
+          baseAhead: 0,
+          baseBehind: 0,
+          remoteBranchExists: true,
+          remoteAhead: 0,
+          remoteBehind: 0,
+        },
+        pr: null,
+        checks: [],
+        reviewThreads: [],
+        options: { dryRun: false },
+      },
+      acquireSessionLock: async () => null,
+      classifyFailure: () => "command_error",
+      buildCodexFailureContext: (category, summary, details) => ({
+        category,
+        summary,
+        signature: `${category}:${summary}`,
+        command: null,
+        details,
+        url: null,
+        updated_at: "2026-03-13T06:20:00Z",
+      }),
+      applyFailureSignature: (record, failureContext) => ({
+        last_failure_signature: failureContext?.signature ?? null,
+        repeated_failure_signature_count:
+          failureContext?.signature && record.last_failure_signature === failureContext.signature
+            ? record.repeated_failure_signature_count + 1
+            : failureContext?.signature
+              ? 1
+              : 0,
+      }),
+      normalizeBlockerSignature: (message) => message?.trim() ?? null,
+      isVerificationBlockedMessage: () => false,
+      derivePullRequestLifecycleSnapshot: () => {
+        throw new Error("unexpected derivePullRequestLifecycleSnapshot call");
+      },
+      inferStateWithoutPullRequest: () => "stabilizing",
+      blockedReasonFromReviewState: () => null,
+      recoverUnexpectedCodexTurnFailure: async () => {
+        throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+      },
+      readIssueJournal: async () => {
+        journalReads += 1;
+        return journalReads === 1
+          ? [
+              "## Codex Working Notes",
+              "### Current Handoff",
+              "- Hypothesis: local-review repair context should reach the prompt.",
+            ].join("\n")
+          : [
+              "## Codex Working Notes",
+              "### Current Handoff",
+              "- Hypothesis: local-review repair context should reach the prompt.",
+              "- Current blocker: Waiting on repair verification.",
+              "- Next exact step: validate the permission guard path against the root-cause summary.",
+            ].join("\n");
+      },
+      runCodexTurnImpl: async (_config, _workspacePath, prompt) => {
+        capturedPrompt = prompt;
+        return {
+          exitCode: 0,
+          sessionId: "session-102",
+          lastMessage: [
+            "Waiting on repair verification",
+            "State hint: blocked",
+            "Blocked reason: verification",
+          ].join("\n"),
+          stderr: "",
+          stdout: "",
+        };
+      },
+    });
+
+    assert.deepEqual(result, {
+      kind: "returned",
+      message: "Codex reported blocked for issue #102.",
+    });
+    assert.match(capturedPrompt, /Active local-review repair context:/);
+    assert.match(capturedPrompt, /Permission guard retry path is fragile/);
+    assert.match(capturedPrompt, /file=src\/auth\.ts lines=40-44/);
+  } finally {
+    await fs.rm(workspaceDir, { recursive: true, force: true });
+  }
 });

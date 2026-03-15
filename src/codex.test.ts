@@ -611,12 +611,17 @@ test("loadLocalReviewRepairContext derives the findings path and trims prompt co
     findingsPath,
     JSON.stringify({
       actionableFindings: Array.from({ length: 12 }, (_, index) => ({
-        file: `src/file-${index}.ts`,
+        file:
+          index === 3
+            ? "  src/file-3.ts  "
+            : index === 10
+              ? "   "
+              : `src/file-${index}.ts`,
       })),
       rootCauseSummaries: [
-        { severity: "high", summary: " one ", file: "src/file-0.ts", start: 11, end: 13 },
+        { severity: "high", summary: " one ", file: " src/file-0.ts ", start: 11, end: 13 },
         { severity: "medium", summary: "two", file: "src/file-1.ts", start: 20, end: 20 },
-        { severity: "low", summary: "three", file: "src/file-2.ts" },
+        { severity: "low", summary: "three", file: "   " },
         { severity: "medium", summary: "four", file: null, start: 30, end: 32 },
         { severity: "high", summary: "five", file: "src/file-4.ts", start: 40 },
         { severity: "medium", summary: "six", file: "src/file-5.ts", start: 50 },
@@ -633,8 +638,8 @@ test("loadLocalReviewRepairContext derives the findings path and trims prompt co
     relevantFiles: [
       "src/file-0.ts",
       "src/file-1.ts",
-      "src/file-2.ts",
       "src/file-4.ts",
+      "src/file-2.ts",
       "src/file-3.ts",
       "src/file-5.ts",
       "src/file-6.ts",
@@ -645,7 +650,7 @@ test("loadLocalReviewRepairContext derives the findings path and trims prompt co
     rootCauses: [
       { severity: "high", summary: "one", file: "src/file-0.ts", lines: "11-13" },
       { severity: "medium", summary: "two", file: "src/file-1.ts", lines: "20" },
-      { severity: "low", summary: "three", file: "src/file-2.ts", lines: null },
+      { severity: "low", summary: "three", file: null, lines: null },
       { severity: "medium", summary: "four", file: null, lines: "30-32" },
       { severity: "high", summary: "five", file: "src/file-4.ts", lines: "40" },
     ],
@@ -774,6 +779,51 @@ test("loadLocalReviewRepairContext surfaces malformed findings artifacts", async
   await fs.writeFile(findingsPath, "{not json}\n", "utf8");
 
   await assert.rejects(loadLocalReviewRepairContext(summaryPath), /Failed to parse JSON from .*head-invalid\.json/);
+
+  await fs.rm(tempDir, { recursive: true, force: true });
+});
+
+test("loadLocalReviewRepairContext surfaces malformed findings shapes", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-fix-invalid-findings-shape-test-"));
+  const summaryPath = path.join(tempDir, "head-invalid-shape.md");
+  const findingsPath = path.join(tempDir, "head-invalid-shape.json");
+
+  await fs.writeFile(summaryPath, "# summary\n", "utf8");
+  await fs.writeFile(
+    findingsPath,
+    JSON.stringify({
+      rootCauseSummaries: {},
+      actionableFindings: [null, { file: "src/auth.ts" }],
+    }),
+    "utf8",
+  );
+
+  await assert.rejects(
+    loadLocalReviewRepairContext(summaryPath),
+    /Invalid local review findings in .*head-invalid-shape\.json: rootCauseSummaries must be an array\./,
+  );
+
+  await fs.writeFile(
+    findingsPath,
+    JSON.stringify({
+      rootCauseSummaries: [null, { summary: " Permission guard retry path is fragile ", file: " src/auth.ts " }],
+      actionableFindings: [null, { file: "src/auth.ts" }, { file: "   " }],
+    }),
+    "utf8",
+  );
+
+  const context = await loadLocalReviewRepairContext(summaryPath);
+
+  assert.deepEqual(context, {
+    summaryPath,
+    findingsPath,
+    relevantFiles: ["src/auth.ts"],
+    rootCauses: [
+      { severity: "medium", summary: "Permission guard retry path is fragile", file: "src/auth.ts", lines: null },
+    ],
+    priorMissPatterns: [],
+    verifierGuardrails: [],
+  });
 
   await fs.rm(tempDir, { recursive: true, force: true });
 });
