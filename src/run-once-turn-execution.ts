@@ -243,27 +243,6 @@ export async function executeCodexTurnPhase(
 
     const journalContent = (await readIssueJournalImpl(journalPath)) ?? "";
     const preRunState = record.state;
-    const preparedTurn = await prepareCodexTurnPrompt({
-      config,
-      stateStore,
-      state,
-      record,
-      issue,
-      previousCodexSummary,
-      previousError,
-      workspacePath,
-      journalPath,
-      journalContent,
-      syncJournal,
-      memoryArtifacts,
-      pr,
-      checks,
-      reviewThreads,
-      github,
-    });
-    record = preparedTurn.record;
-    const { prompt, reviewThreadsToProcess } = preparedTurn;
-
     const sessionLock =
       args.sessionLock ??
       (record.codex_session_id ? await args.acquireSessionLock(record.codex_session_id) : null);
@@ -274,185 +253,208 @@ export async function executeCodexTurnPhase(
       };
     }
 
-    let codexResult;
     try {
-      codexResult = await runCodexTurnImpl(
+      const preparedTurn = await prepareCodexTurnPrompt({
         config,
-        workspacePath,
-        prompt,
-        record.state,
-        record,
-        record.codex_session_id,
-      );
-    } catch (error) {
-      record = await persistCodexTurnExecutionFailureImpl({
         stateStore,
         state,
         record,
+        issue,
+        previousCodexSummary,
+        previousError,
+        workspacePath,
+        journalPath,
+        journalContent,
         syncJournal,
-        issueNumber: record.issue_number,
-        error,
-        classifyFailure: args.classifyFailure,
-        buildCodexFailureContext: args.buildCodexFailureContext,
-        applyFailureSignature: args.applyFailureSignature,
+        memoryArtifacts,
+        pr,
+        checks,
+        reviewThreads,
+        github,
       });
+      record = preparedTurn.record;
+      const { prompt, reviewThreadsToProcess } = preparedTurn;
+
+      let codexResult;
+      try {
+        codexResult = await runCodexTurnImpl(
+          config,
+          workspacePath,
+          prompt,
+          record.state,
+          record,
+          record.codex_session_id,
+        );
+      } catch (error) {
+        record = await persistCodexTurnExecutionFailureImpl({
+          stateStore,
+          state,
+          record,
+          syncJournal,
+          issueNumber: record.issue_number,
+          error,
+          classifyFailure: args.classifyFailure,
+          buildCodexFailureContext: args.buildCodexFailureContext,
+          applyFailureSignature: args.applyFailureSignature,
+        });
+        return {
+          kind: "returned",
+          message: `Codex turn failed for issue #${record.issue_number}.`,
+        };
+      }
+
+      const hintedState = extractStateHint(codexResult.lastMessage);
+      const hintedBlockedReason = extractBlockedReason(codexResult.lastMessage);
+      const hintedFailureSignature = extractFailureSignature(codexResult.lastMessage);
+      const journalAfterRun = await readIssueJournalImpl(journalPath);
+      record = stateStore.touch(record, {
+        codex_session_id: codexResult.sessionId,
+        last_codex_summary: truncate(codexResult.lastMessage),
+        last_failure_kind: null,
+        last_error:
+          codexResult.exitCode === 0
+            ? null
+            : truncate([codexResult.stderr.trim(), codexResult.stdout.trim()].filter(Boolean).join("\n")),
+      });
+
+      if (
+        codexResult.exitCode === 0 &&
+        (!journalAfterRun ||
+          journalAfterRun === journalContent ||
+          !hasMeaningfulJournalHandoff(journalAfterRun))
+      ) {
+        record = await persistMissingCodexJournalHandoffImpl({
+          stateStore,
+          state,
+          record,
+          syncJournal,
+          issueNumber: record.issue_number,
+          buildCodexFailureContext: args.buildCodexFailureContext,
+          applyFailureSignature: args.applyFailureSignature,
+        });
+        return {
+          kind: "returned",
+          message: `Codex turn for issue #${record.issue_number} was rejected because no journal handoff was written.`,
+        };
+      }
+
+      if (codexResult.exitCode !== 0) {
+        record = await persistCodexTurnExitFailureImpl({
+          stateStore,
+          state,
+          record,
+          syncJournal,
+          issueNumber: record.issue_number,
+          codexResult,
+          classifyFailure: args.classifyFailure,
+          buildCodexFailureContext: args.buildCodexFailureContext,
+          applyFailureSignature: args.applyFailureSignature,
+        });
+        return {
+          kind: "returned",
+          message: `Codex turn failed for issue #${record.issue_number}.`,
+        };
+      }
+
+      if (hintedState === "blocked" || hintedState === "failed") {
+        record = await persistHintedCodexTurnStateImpl({
+          stateStore,
+          state,
+          record,
+          syncJournal,
+          issueNumber: record.issue_number,
+          lastMessage: codexResult.lastMessage,
+          hintedState,
+          hintedBlockedReason,
+          hintedFailureSignature,
+          buildCodexFailureContext: args.buildCodexFailureContext,
+          applyFailureSignature: args.applyFailureSignature,
+          normalizeBlockerSignature: args.normalizeBlockerSignature,
+          isVerificationBlockedMessage: args.isVerificationBlockedMessage,
+        });
+        return {
+          kind: "returned",
+          message: `Codex reported ${hintedState} for issue #${record.issue_number}.`,
+        };
+      }
+
+      workspaceStatus = await getWorkspaceStatusImpl(workspacePath, record.branch, config.defaultBranch);
+      record = stateStore.touch(record, { last_head_sha: workspaceStatus.headSha });
+      const evaluatedReviewHeadSha = workspaceStatus.headSha;
+
+      if ((workspaceStatus.remoteAhead > 0 || !workspaceStatus.remoteBranchExists) && !workspaceStatus.hasUncommittedChanges) {
+        await pushBranchImpl(workspacePath, record.branch, workspaceStatus.remoteBranchExists);
+        workspaceStatus = await getWorkspaceStatusImpl(workspacePath, record.branch, config.defaultBranch);
+      }
+
+      const refreshedResolvedPr = await github.resolvePullRequestForBranch(record.branch, record.pr_number);
+      pr = isOpenPullRequest(refreshedResolvedPr) ? refreshedResolvedPr : null;
+      if (
+        !pr &&
+        workspaceStatus.baseAhead > 0 &&
+        !workspaceStatus.hasUncommittedChanges &&
+        record.implementation_attempt_count >= config.draftPrAfterAttempt
+      ) {
+        pr = await github.createPullRequest(issue, record, { draft: true });
+      }
+
+      checks = pr ? await github.getChecks(pr.number) : [];
+      reviewThreads = pr ? await github.getUnresolvedReviewThreads(pr.number) : [];
+      const processedReviewThreadPatch = nextProcessedReviewThreadPatch({
+        preRunState,
+        record,
+        currentPr: pr,
+        evaluatedReviewHeadSha,
+        reviewThreadsToProcess,
+      });
+      const postRunSnapshot = pr
+        ? args.derivePullRequestLifecycleSnapshot(
+            record,
+            pr,
+            checks,
+            reviewThreads,
+            processedReviewThreadPatch,
+          )
+        : null;
+      const postRunState = postRunSnapshot
+        ? postRunSnapshot.nextState
+        : hintedState ?? args.inferStateWithoutPullRequest(record, workspaceStatus);
+      record = stateStore.touch(record, {
+        pr_number: pr?.number ?? null,
+        ...(postRunSnapshot?.reviewWaitPatch ?? {}),
+        ...(postRunSnapshot?.copilotRequestObservationPatch ?? {}),
+        ...(postRunSnapshot?.copilotTimeoutPatch ?? {}),
+        ...processedReviewThreadPatch,
+        blocked_verification_retry_count: pr ? 0 : record.blocked_verification_retry_count,
+        repeated_blocker_count: 0,
+        last_blocker_signature: null,
+        last_error:
+          postRunState === "blocked" && postRunSnapshot?.failureContext
+            ? truncate(postRunSnapshot.failureContext.summary, 1000)
+            : record.last_error,
+        last_failure_context: postRunSnapshot?.failureContext ?? null,
+        ...args.applyFailureSignature(record, postRunSnapshot?.failureContext ?? null),
+        blocked_reason:
+          pr && postRunState === "blocked"
+            ? args.blockedReasonFromReviewState(postRunSnapshot?.recordForState ?? record, pr, reviewThreads)
+            : null,
+        state: postRunState,
+      });
+      state.issues[String(record.issue_number)] = record;
+      await stateStore.save(state);
+      await syncJournal(record);
+
       return {
-        kind: "returned",
-        message: `Codex turn failed for issue #${record.issue_number}.`,
+        kind: "completed",
+        record,
+        workspaceStatus,
+        pr,
+        checks,
+        reviewThreads,
       };
     } finally {
       await sessionLock?.release();
     }
-
-    const hintedState = extractStateHint(codexResult.lastMessage);
-    const hintedBlockedReason = extractBlockedReason(codexResult.lastMessage);
-    const hintedFailureSignature = extractFailureSignature(codexResult.lastMessage);
-    const journalAfterRun = await readIssueJournalImpl(journalPath);
-    record = stateStore.touch(record, {
-      codex_session_id: codexResult.sessionId,
-      last_codex_summary: truncate(codexResult.lastMessage),
-      last_failure_kind: null,
-      last_error:
-        codexResult.exitCode === 0
-          ? null
-          : truncate([codexResult.stderr.trim(), codexResult.stdout.trim()].filter(Boolean).join("\n")),
-    });
-
-    if (
-      codexResult.exitCode === 0 &&
-      (!journalAfterRun ||
-        journalAfterRun === journalContent ||
-        !hasMeaningfulJournalHandoff(journalAfterRun))
-    ) {
-      record = await persistMissingCodexJournalHandoffImpl({
-        stateStore,
-        state,
-        record,
-        syncJournal,
-        issueNumber: record.issue_number,
-        buildCodexFailureContext: args.buildCodexFailureContext,
-        applyFailureSignature: args.applyFailureSignature,
-      });
-      return {
-        kind: "returned",
-        message: `Codex turn for issue #${record.issue_number} was rejected because no journal handoff was written.`,
-      };
-    }
-
-    if (codexResult.exitCode !== 0) {
-      record = await persistCodexTurnExitFailureImpl({
-        stateStore,
-        state,
-        record,
-        syncJournal,
-        issueNumber: record.issue_number,
-        codexResult,
-        classifyFailure: args.classifyFailure,
-        buildCodexFailureContext: args.buildCodexFailureContext,
-        applyFailureSignature: args.applyFailureSignature,
-      });
-      return {
-        kind: "returned",
-        message: `Codex turn failed for issue #${record.issue_number}.`,
-      };
-    }
-
-    if (hintedState === "blocked" || hintedState === "failed") {
-      record = await persistHintedCodexTurnStateImpl({
-        stateStore,
-        state,
-        record,
-        syncJournal,
-        issueNumber: record.issue_number,
-        lastMessage: codexResult.lastMessage,
-        hintedState,
-        hintedBlockedReason,
-        hintedFailureSignature,
-        buildCodexFailureContext: args.buildCodexFailureContext,
-        applyFailureSignature: args.applyFailureSignature,
-        normalizeBlockerSignature: args.normalizeBlockerSignature,
-        isVerificationBlockedMessage: args.isVerificationBlockedMessage,
-      });
-      return {
-        kind: "returned",
-        message: `Codex reported ${hintedState} for issue #${record.issue_number}.`,
-      };
-    }
-
-    workspaceStatus = await getWorkspaceStatusImpl(workspacePath, record.branch, config.defaultBranch);
-    record = stateStore.touch(record, { last_head_sha: workspaceStatus.headSha });
-    const evaluatedReviewHeadSha = workspaceStatus.headSha;
-
-    if ((workspaceStatus.remoteAhead > 0 || !workspaceStatus.remoteBranchExists) && !workspaceStatus.hasUncommittedChanges) {
-      await pushBranchImpl(workspacePath, record.branch, workspaceStatus.remoteBranchExists);
-      workspaceStatus = await getWorkspaceStatusImpl(workspacePath, record.branch, config.defaultBranch);
-    }
-
-    const refreshedResolvedPr = await github.resolvePullRequestForBranch(record.branch, record.pr_number);
-    pr = isOpenPullRequest(refreshedResolvedPr) ? refreshedResolvedPr : null;
-    if (
-      !pr &&
-      workspaceStatus.baseAhead > 0 &&
-      !workspaceStatus.hasUncommittedChanges &&
-      record.implementation_attempt_count >= config.draftPrAfterAttempt
-    ) {
-      pr = await github.createPullRequest(issue, record, { draft: true });
-    }
-
-    checks = pr ? await github.getChecks(pr.number) : [];
-    reviewThreads = pr ? await github.getUnresolvedReviewThreads(pr.number) : [];
-    const processedReviewThreadPatch = nextProcessedReviewThreadPatch({
-      preRunState,
-      record,
-      currentPr: pr,
-      evaluatedReviewHeadSha,
-      reviewThreadsToProcess,
-    });
-    const postRunSnapshot = pr
-      ? args.derivePullRequestLifecycleSnapshot(
-          record,
-          pr,
-          checks,
-          reviewThreads,
-          processedReviewThreadPatch,
-        )
-      : null;
-    const postRunState = postRunSnapshot
-      ? postRunSnapshot.nextState
-      : hintedState ?? args.inferStateWithoutPullRequest(record, workspaceStatus);
-    record = stateStore.touch(record, {
-      pr_number: pr?.number ?? null,
-      ...(postRunSnapshot?.reviewWaitPatch ?? {}),
-      ...(postRunSnapshot?.copilotRequestObservationPatch ?? {}),
-      ...(postRunSnapshot?.copilotTimeoutPatch ?? {}),
-      ...processedReviewThreadPatch,
-      blocked_verification_retry_count: pr ? 0 : record.blocked_verification_retry_count,
-      repeated_blocker_count: 0,
-      last_blocker_signature: null,
-      last_error:
-        postRunState === "blocked" && postRunSnapshot?.failureContext
-          ? truncate(postRunSnapshot.failureContext.summary, 1000)
-          : record.last_error,
-      last_failure_context: postRunSnapshot?.failureContext ?? null,
-      ...args.applyFailureSignature(record, postRunSnapshot?.failureContext ?? null),
-      blocked_reason:
-        pr && postRunState === "blocked"
-          ? args.blockedReasonFromReviewState(postRunSnapshot?.recordForState ?? record, pr, reviewThreads)
-          : null,
-      state: postRunState,
-    });
-    state.issues[String(record.issue_number)] = record;
-    await stateStore.save(state);
-    await syncJournal(record);
-
-    return {
-      kind: "completed",
-      record,
-      workspaceStatus,
-      pr,
-      checks,
-      reviewThreads,
-    };
   } catch (error) {
     record = await args.recoverUnexpectedCodexTurnFailure({
       stateStore,

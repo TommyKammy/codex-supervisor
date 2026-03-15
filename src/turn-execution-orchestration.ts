@@ -214,7 +214,9 @@ export function nextProcessedReviewThreadPatch(args: {
       processedReviewThreadKeysForCurrentHead.length > 0
         ? Array.from(
             new Set([
-              ...args.record.processed_review_thread_ids,
+              ...args.record.processed_review_thread_ids.filter(
+                (key) => !processedReviewThreadKeysForCurrentHead.includes(key),
+              ),
               ...processedReviewThreadKeysForCurrentHead,
             ]),
           ).slice(-200)
