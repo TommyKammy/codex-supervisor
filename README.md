@@ -49,13 +49,13 @@ Not a fit:
    cp supervisor.config.example.json supervisor.config.json
    ```
 
-3. Choose the review-bot profile that matches your PR review flow.
+3. Choose the review-bot profile that matches your PR review flow, then either copy that file over `supervisor.config.json` or copy its `reviewBotLogins` into the `supervisor.config.json` you created in step 2.
 
    - [supervisor.config.copilot.json](./supervisor.config.copilot.json)
    - [supervisor.config.codex.json](./supervisor.config.codex.json)
    - [supervisor.config.coderabbit.json](./supervisor.config.coderabbit.json)
 
-4. Point `supervisor.config.json` at your cloned target repo, workspace root, and preferred review provider.
+4. Edit `supervisor.config.json` and set `repoPath`, `repoSlug`, `workspaceRoot`, `codexBinary`, and any provider-specific values you want to keep.
 
 5. Run a single pass first, then switch to the loop when the config looks right.
 

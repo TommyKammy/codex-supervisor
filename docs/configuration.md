@@ -4,13 +4,13 @@ This guide holds the setup and reference material that used to make the root `RE
 
 ## Base Setup
 
-Start from [supervisor.config.example.json](../supervisor.config.example.json), then copy in the provider profile that matches your review flow:
+Start from [supervisor.config.example.json](../supervisor.config.example.json), then choose the provider profile that matches your review flow:
 
 - [supervisor.config.copilot.json](../supervisor.config.copilot.json)
 - [supervisor.config.codex.json](../supervisor.config.codex.json)
 - [supervisor.config.coderabbit.json](../supervisor.config.coderabbit.json)
 
-`supervisor.config.json` is always the active file that the supervisor loads.
+`supervisor.config.json` is always the active file that the supervisor loads. The shipped provider profiles are complete templates, so you can either copy one over `supervisor.config.json` or copy its `reviewBotLogins` into your existing `supervisor.config.json` and keep your other edits.
 
 Requirements:
 
