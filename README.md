@@ -79,11 +79,11 @@ If the provider never posts a usable PR review signal, fix the provider-side set
 
 ## Docs Map
 
-- [Getting started](./docs/getting-started.md): operator model, readiness-driven scheduling, issue format, state machine, local review, and first-run workflow
+- [Getting started](./docs/getting-started.md): operator model, readiness-driven scheduling, state machine, local review, and first-run workflow
 - [Configuration reference](./docs/configuration.md): config setup, provider profiles, model/reasoning controls, durable memory, and execution policy
 - [Local review reference](./docs/local-review.md): local review policies, role selection, artifacts, thresholds, and committed guardrails
 - [Architecture](./docs/architecture.md): core loop, durable state, reconciliations, and safety boundaries
-- [Issue metadata](./docs/issue-metadata.md): `Part of`, `Depends on`, and `Execution order` conventions
+- [Issue metadata](./docs/issue-metadata.md): canonical issue-body fields, sequencing rules, and execution-ready examples
 - [GSD to GitHub issues](./docs/examples/gsd-to-github-issues.md): how to hand planning output into execution-ready issues
 - [Atlas example](./docs/examples/atlaspm.md): a concrete config and workflow example
 - [Validation checklist](./docs/validation-checklist.md): rollout checks and operational readiness

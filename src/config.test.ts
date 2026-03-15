@@ -334,15 +334,30 @@ test("getting started links to focused configuration and local review references
   const rootDir = path.resolve(__dirname, "..");
   const gettingStarted = await fs.readFile(path.join(rootDir, "docs", "getting-started.md"), "utf8");
   const localReview = await fs.readFile(path.join(rootDir, "docs", "local-review.md"), "utf8");
+  const issueMetadata = await fs.readFile(path.join(rootDir, "docs", "issue-metadata.md"), "utf8");
 
   assert.match(gettingStarted, /\[Configuration reference\]\(\.\/configuration\.md\)/i);
   assert.match(gettingStarted, /\[Local review reference\]\(\.\/local-review\.md\)/i);
+  assert.match(gettingStarted, /\[Issue metadata reference\]\(\.\/issue-metadata\.md\)/i);
   assert.doesNotMatch(gettingStarted, /^### Option 1: Auto-detect roles$/m);
   assert.doesNotMatch(gettingStarted, /^### Option 2: Explicit roles$/m);
   assert.doesNotMatch(gettingStarted, /^### What specialist roles are for$/m);
   assert.doesNotMatch(gettingStarted, /^Committed Local Review Swarm guardrails are maintained under `docs\/shared-memory\/`:$/m);
+  assert.doesNotMatch(gettingStarted, /^## Issue metadata format$/m);
 
   assert.match(localReview, /^# Local Review Reference$/m);
   assert.match(localReview, /^## Choosing reviewer roles$/m);
   assert.match(localReview, /^## Artifacts, thresholds, and guardrails$/m);
+
+  assert.match(issueMetadata, /^# Issue Metadata$/m);
+  assert.match(issueMetadata, /^## Canonical fields$/m);
+  assert.match(issueMetadata, /^## How scheduling uses the fields$/m);
+  assert.match(issueMetadata, /^## Issue body template$/m);
+  assert.match(issueMetadata, /Part of: #42/m);
+  assert.match(issueMetadata, /Depends on: #41/m);
+  assert.match(issueMetadata, /Parallelizable: No/m);
+  assert.match(issueMetadata, /## Execution order/m);
+  assert.match(issueMetadata, /2 of 4/m);
+  assert.match(issueMetadata, /## Acceptance criteria/m);
+  assert.match(issueMetadata, /## Verification/m);
 });

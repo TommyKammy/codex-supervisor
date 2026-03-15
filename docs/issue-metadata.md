@@ -1,69 +1,133 @@
 # Issue Metadata
 
-`codex-supervisor` で安全に issue 順序を扱うための最小記法です。
+Use this document as the canonical reference for execution-ready issue metadata.
 
-## 目的
+It explains which fields `codex-supervisor` reads, how scheduling uses them, and what a good issue body should look like. Keep `README.md` and getting-started docs lightweight; put detailed field rules and examples here.
 
-- supervisor が依存関係を機械的に enforce できるようにする
-- 並列化を始める前に、人間が安全な前提を issue に残す
-- 「コードから推測」ではなく issue を正とする
+## Canonical fields
 
-## 最小記法
+These fields are the core metadata format for execution-ready work:
 
-issue 本文に次の行を追加します。
+- `Part of: #...`
+- `Depends on: #...`
+- `Parallelizable: Yes/No`
+- `## Execution order`
+- `## Acceptance criteria`
+- `## Verification`
+
+`## Summary` and `## Scope` are also strongly recommended because they tell Codex what to change and what must remain unchanged.
+
+## Field reference
+
+### `Part of`
+
+Use `Part of: #42` to point at the parent epic or tracking issue.
+
+- Use one parent issue for a sequenced set of child issues.
+- Prefer the `Part of: #...` form in new issues for consistency.
+- The parser still accepts the legacy `Part of #42` form.
+
+### `Depends on`
+
+Use `Depends on: #41` for prerequisites that must be closed before this issue can run.
+
+- List every true prerequisite, not just the most recent one.
+- Use comma-separated issue numbers when there are multiple dependencies.
+- Prefer `Depends on` even when `Execution order` also implies the sequence.
+
+### `Parallelizable`
+
+Use `Parallelizable: No` unless you are confident the issue can run alongside related work without conflict.
+
+- `No` is the safe default.
+- `Yes` communicates intent to operators and future scheduling logic.
+- Do not use this field as a substitute for `Depends on`.
+
+### `Execution order`
+
+Use this when sibling issues under the same parent must run in a specific sequence.
 
 ```md
-Depends on: #232, #240
-Parallel group: timeline-layout
-Touches: web-ui, core-api, prisma
+## Execution order
+2 of 4
 ```
 
-既存の順序情報も引き続き使えます。
+- The first number is this issue's position.
+- The second number is the total number of sequenced sibling issues.
+- Use it together with `Part of`.
+
+### `Acceptance criteria`
+
+Use acceptance criteria for the concrete behavior that must be true when the issue is done.
+
+- Keep the bullets observable and testable.
+- Prefer behavior statements over implementation notes.
+- Include preserved behavior when regressions are a risk.
+
+### `Verification`
+
+Use verification steps for the exact commands or manual checks that prove the issue is done.
+
+- Prefer concrete commands such as `npm test -- src/issue-metadata.test.ts`.
+- Name the test file, command, or manual target directly.
+- Avoid vague steps like `run tests` unless the next bullet makes them concrete.
+
+## How scheduling uses the fields
+
+The supervisor is readiness-driven. It does not just pick the newest issue.
+
+- `Depends on` blocks an issue while any listed dependency is still open.
+- `Part of` plus `Execution order` blocks later siblings until earlier siblings are done.
+- `Acceptance criteria` and `Verification` make the issue execution-ready for implementation and review.
+- `Parallelizable` is documentation today; it does not override explicit dependencies.
+
+When in doubt, make the dependency explicit. A conservative queue is better than an ambiguous one.
+
+## Authoring guidance
+
+Use the issue body to remove ambiguity before execution starts.
+
+- Put the problem statement in `## Summary`.
+- Use `## Scope` for what changes and what stays unchanged.
+- Use `Depends on` for prerequisites and `Execution order` for sibling sequencing.
+- Keep acceptance criteria behavior-focused.
+- Keep verification concrete.
+
+If an issue touches risky areas, spell out the guardrails in scope or acceptance criteria rather than relying on implicit repo knowledge.
+
+## Issue body template
 
 ```md
-Part of #227
+## Summary
+Add a persisted recommendation severity model so wait stats findings rank consistently.
+
+## Scope
+- define severity levels in the domain model
+- update recommendation ranking to use the new severity model
+- keep existing finding ingestion behavior unchanged
+
+Part of: #42
+Depends on: #41
+Parallelizable: No
 
 ## Execution order
-7 of 15
+2 of 4
+
+## Acceptance criteria
+- severity levels are defined in the domain model
+- recommendation ranking uses the new severity model
+- focused tests cover the ranking behavior
+
+## Verification
+- `npm test -- src/recommendation-ranking.test.ts`
 ```
 
-## 現在 enforce されるもの
+## Example review checklist
 
-- `Depends on`
-  - 指定した issue が open の間、その issue には着手しません
-- `Part of` + `Execution order`
-  - 同じ parent issue 配下で、先行番号が終わるまで後続番号には着手しません
-- high-risk blocking ambiguity
-  - risky change classes (`auth`, `billing`, `permissions`, `ci`, `migrations`, `secrets`) 自体は advisory です
-  - ただし risky な issue に、次のような「人間の判断が未解決」と明示された文がある場合は `blocked_reason=clarification` で止まります
-  - ambiguity classes は `open_question` (`TBD`, `open question` など), `unresolved_choice` (`decide`, `choose`, `whether to` など), `operator_confirmation` (`confirm with`, `wait for`, `needs confirmation` など) です
+Before handing an issue to the supervisor, check that:
 
-## 現在は advisory のもの
-
-- `Parallel group`
-  - いまは記法だけを予約しています。将来の並列 scheduler 用です
-- `Touches`
-  - 依存関係や順序を直接 enforce するものではありません
-  - ただし risky change class の検出入力には使われるため、`Touches: secrets` のような記述は clarification detector の対象になることがあります
-- `Scope` / `Verification` の弱い書き方
-  - `Scope` は「何を変えるか」に加えて「何を維持するか / 何を含めないか」もあると扱いやすいです
-  - `Verification` は `run tests` のような抽象語だけでなく、具体的な command・test file・manual check target を書くのが推奨です
-
-## 推奨運用
-
-- 本当に前提 issue があるなら、`Execution order` だけに頼らず `Depends on` も書く
-- DB migration や shared schema を触る issue は `Touches: prisma, core-api` のように広めに書く
-- 同時に動かしてよい issue 群だけ同じ `Parallel group` を付ける
-- 並列可能か迷う場合は、まず `Depends on` を付けて直列にする
-
-## 例
-
-```md
-Part of #227
-Depends on: #232
-Parallel group: timeline-layout
-Touches: web-ui, core-api, prisma
-
-## Execution order
-7 of 15
-```
+- dependencies are explicit
+- execution order is present when sibling order matters
+- acceptance criteria describe the intended behavior
+- verification steps are concrete
+- the issue can be understood without guessing from chat history
