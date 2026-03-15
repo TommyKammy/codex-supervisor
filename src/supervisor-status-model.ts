@@ -82,6 +82,10 @@ interface ReviewBotDiagnostics {
   nextCheck: string;
 }
 
+function unresolvedReviewThreads(reviewThreads: ReviewThread[]): ReviewThread[] {
+  return reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
+}
+
 function inferReviewBotProfile(config: SupervisorConfig): ReviewBotProfileSummary {
   const reviewers = configuredReviewBots(config);
   const normalized = reviewers.map((reviewer) => reviewer.toLowerCase());
@@ -215,7 +219,9 @@ function configuredBotTopLevelReviewEffect(
   }
 
   if (pr.configuredBotTopLevelReviewStrength === "nitpick_only") {
-    return configuredBotReviewThreads(config, reviewThreads).length === 0 ? "softened" : "awaiting_thread_resolution";
+    return unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads)).length === 0
+      ? "softened"
+      : "awaiting_thread_resolution";
   }
 
   return "blocking";
@@ -451,8 +457,9 @@ export function buildDetailedStatusModel(args: BuildDetailedStatusModelArgs): st
     if (pendingChecks) {
       lines.push(`pending_checks=${pendingChecks}`);
     }
+    const unresolvedConfiguredBotThreads = unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads));
     lines.push(
-      `review_threads bot_pending=${pendingBotReviewThreads(config, activeRecord, pr, reviewThreads).length} bot_unresolved=${configuredBotReviewThreads(config, reviewThreads).length} manual=${manualReviewThreads(config, reviewThreads).length}`,
+      `review_threads bot_pending=${pendingBotReviewThreads(config, activeRecord, pr, reviewThreads).length} bot_unresolved=${unresolvedConfiguredBotThreads.length} manual=${manualReviewThreads(config, reviewThreads).length}`,
     );
   }
 

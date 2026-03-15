@@ -5352,6 +5352,75 @@ test("buildDetailedStatusModel sanitizes failure context summary before emitting
   assert.ok(lines.includes("failure_context category=blocked summary=first line\\nsecond line"));
 });
 
+test("buildDetailedStatusModel counts only unresolved configured bot threads in status fields", () => {
+  const config = createConfig({
+    reviewBotLogins: ["coderabbitai[bot]"],
+  });
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-38",
+    headRefOid: "deadbeef",
+    mergedAt: null,
+    copilotReviewState: "arrived",
+    copilotReviewRequestedAt: "2026-03-11T14:05:00Z",
+    copilotReviewArrivedAt: "2026-03-11T14:06:00Z",
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+    configuredBotTopLevelReviewSubmittedAt: "2026-03-11T14:06:00Z",
+  };
+  const resolvedBotThread = createReviewThread({
+    isResolved: true,
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "Resolved.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "coderabbitai[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const lines = buildDetailedStatusModel({
+    config,
+    activeRecord: createRecord({
+      pr_number: 44,
+      state: "ready_to_merge",
+      last_error: null,
+      last_failure_context: null,
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr,
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [resolvedBotThread],
+    manualReviewThreads,
+    configuredBotReviewThreads,
+    pendingBotReviewThreads: () => [],
+    summarizeChecks,
+    mergeConflictDetected: (innerPr) => innerPr.mergeStateStatus === "DIRTY",
+  });
+
+  assert.ok(
+    lines.includes(
+      "configured_bot_top_level_review strength=nitpick_only submitted_at=2026-03-11T14:06:00Z effect=softened",
+    ),
+  );
+  assert.ok(lines.includes("review_threads bot_pending=0 bot_unresolved=0 manual=0"));
+});
+
 test("formatDetailedStatus shows both raw and compressed local review counts", () => {
   const config = createConfig({ localReviewPolicy: "block_ready" });
   const record = {
