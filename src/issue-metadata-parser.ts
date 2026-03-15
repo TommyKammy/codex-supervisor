@@ -1,5 +1,6 @@
 import type { GitHubIssue } from "./types";
-import type { IssueMetadata, RiskyChangeClass } from "./issue-metadata";
+import type { IssueMetadata } from "./issue-metadata";
+import type { RiskyChangeClass } from "./issue-metadata-gates";
 
 const RISKY_CHANGE_CLASSES = ["auth", "billing", "permissions", "ci", "migrations", "secrets"] as const;
 
