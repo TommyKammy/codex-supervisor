@@ -35,6 +35,7 @@ import {
   syncCopilotReviewTimeoutState,
   syncReviewWaitWindow,
 } from "./pull-request-state";
+import { inferStateWithoutPullRequest } from "./no-pull-request-state";
 import {
   hasProcessedReviewThread,
   localReviewBlocksMerge,
@@ -154,6 +155,7 @@ export {
   processedReviewThreadKey,
 } from "./review-handling";
 export { inferStateFromPullRequest } from "./pull-request-state";
+export { inferStateWithoutPullRequest } from "./no-pull-request-state";
 export { buildChecksFailureContext, buildConflictFailureContext } from "./pull-request-failure-context";
 export { reconcileRecoverableBlockedIssueStates } from "./recovery-reconciliation";
 export { formatDetailedStatus, summarizeChecks } from "./supervisor-status-rendering";
@@ -177,26 +179,6 @@ function shouldPreserveNoPrFailureTracking(record: IssueRunRecord): boolean {
     record.last_failure_signature !== null &&
     record.repeated_failure_signature_count > 0
   );
-}
-
-function inferStateWithoutPullRequest(
-  record: IssueRunRecord,
-  workspaceStatus: WorkspaceStatus,
-): RunState {
-  const branchHasCheckpoint = workspaceStatus.baseAhead > 0 || workspaceStatus.remoteAhead > 0;
-  if (record.implementation_attempt_count === 0) {
-    return "reproducing";
-  }
-
-  if (branchHasCheckpoint && !workspaceStatus.hasUncommittedChanges) {
-    return "draft_pr";
-  }
-
-  if (record.state === "planning" || record.state === "reproducing") {
-    return "reproducing";
-  }
-
-  return "stabilizing";
 }
 
 function shouldStopForRepeatedFailureSignature(record: IssueRunRecord, config: SupervisorConfig): boolean {
