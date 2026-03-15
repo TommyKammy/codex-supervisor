@@ -1,0 +1,110 @@
+# Configuration Reference
+
+This guide holds the setup and reference material that used to make the root `README.md` too dense.
+
+## Base Setup
+
+Start from [supervisor.config.example.json](../supervisor.config.example.json), then copy in the provider profile that matches your review flow:
+
+- [supervisor.config.copilot.json](../supervisor.config.copilot.json)
+- [supervisor.config.codex.json](../supervisor.config.codex.json)
+- [supervisor.config.coderabbit.json](../supervisor.config.coderabbit.json)
+
+`supervisor.config.json` is always the active file that the supervisor loads.
+
+Requirements:
+
+- `gh auth status` succeeds
+- `codex` CLI is installed
+- the managed repository is already cloned locally
+- branch protection and CI are already configured on the managed repository
+
+## Provider Profiles
+
+Each shipped profile only covers supervisor-side expectations. You still need the matching provider-side setup before the supervisor can observe a usable review signal.
+
+### Copilot profile
+
+- Supervisor-side: use `supervisor.config.copilot.json` or copy its `reviewBotLogins` entry into `supervisor.config.json`.
+- Provider-side: install and enable GitHub Copilot review for the repository or organization, and make sure your PR flow requests or auto-triggers Copilot review.
+- Verify: open a small test PR, mark it ready, and confirm GitHub shows review activity from `copilot-pull-request-reviewer`.
+
+### Codex Connector profile
+
+- Supervisor-side: use `supervisor.config.codex.json`, which tells the supervisor to watch for `chatgpt-codex-connector`.
+- Provider-side: connect the repository to Codex in ChatGPT/OpenAI and enable the review flow your Codex Connector setup requires.
+- Verify: trigger a PR that should receive Codex review and confirm the review arrives on the PR from `chatgpt-codex-connector`.
+
+### CodeRabbit profile
+
+- Supervisor-side: use `supervisor.config.coderabbit.json`, which tracks both `coderabbitai` and `coderabbitai[bot]`.
+- Provider-side: install CodeRabbit and commit any required repo config such as `.coderabbit.yaml` when your policy depends on it.
+- Verify: open a PR and confirm CodeRabbit posts review activity under one of the configured bot identities.
+
+Only treat a profile as working after the provider produces a usable PR review signal that the supervisor can observe and react to.
+
+## Key Config Areas
+
+Repository and workspace:
+
+- `repoPath`, `repoSlug`, `workspaceRoot`
+- `stateBackend`, `stateFile`, `stateBootstrapFile`
+- `branchPrefix`
+
+Codex execution policy:
+
+- `codexBinary`
+- `codexModelStrategy`, `codexModel`
+- `codexReasoningEffortByState`
+- `codexReasoningEscalateOnRepeatedFailure`
+- `codexExecTimeoutMinutes`
+
+Durable memory and planning:
+
+- `sharedMemoryFiles`
+- `issueJournalRelativePath`, `issueJournalMaxChars`
+- `gsdEnabled`, `gsdAutoInstall`, `gsdInstallScope`, `gsdCodexConfigDir`, `gsdPlanningFiles`
+
+Issue selection and retry policy:
+
+- `issueLabel`, `issueSearch`, `skipTitlePrefixes`
+- `maxImplementationAttemptsPerIssue`, `maxRepairAttemptsPerIssue`, `maxCodexAttemptsPerIssue`
+- `timeoutRetryLimit`, `blockedVerificationRetryLimit`
+- `sameBlockerRepeatLimit`, `sameFailureSignatureRepeatLimit`
+
+Review and merge policy:
+
+- `reviewBotLogins`
+- `humanReviewBlocksMerge`
+- `copilotReviewWaitMinutes`, `copilotReviewTimeoutAction`
+- `localReviewEnabled`, `localReviewAutoDetect`, `localReviewRoles`
+- `localReviewPolicy`, `localReviewHighSeverityAction`
+- `localReviewArtifactDir`, `localReviewConfidenceThreshold`, `localReviewReviewerThresholds`
+- `mergeMethod`
+
+Workspace cleanup:
+
+- `maxDoneWorkspaces`
+- `cleanupDoneWorkspacesAfterHours`
+
+## Model and Reasoning Guidance
+
+Recommended default:
+
+- set your Codex CLI or app default model to `GPT-5.4`
+- use `codexModelStrategy: "inherit"` so the supervisor follows that default
+- tune cost and effort through per-state reasoning instead of constant model switching
+
+Practical guidance:
+
+- `inherit` keeps the supervisor aligned with your Codex default
+- `fixed` pins one model explicitly
+- `alias` uses a moving alias when your Codex environment exposes one
+- keep `xhigh` reserved for escalation paths rather than the default policy
+
+## Related Docs
+
+- [Getting started](./getting-started.md)
+- [Architecture](./architecture.md)
+- [Issue metadata](./issue-metadata.md)
+- [Atlas example](./examples/atlaspm.md)

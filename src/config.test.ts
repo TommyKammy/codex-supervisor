@@ -303,15 +303,28 @@ test("shipped config profiles declare the intended review bot logins", async () 
   }
 });
 
-test("README documents provider-side setup and verification for shipped review-bot profiles", async () => {
+test("README stays a lightweight landing page with provider profile guidance and a docs map", async () => {
   const rootDir = path.resolve(__dirname, "..");
   const readme = await fs.readFile(path.join(rootDir, "README.md"), "utf8");
 
+  assert.match(readme, /^## What It Is$/m);
+  assert.match(readme, /^## Who It Is For$/m);
+  assert.match(readme, /^## Quick Start$/m);
+  assert.match(readme, /^## Provider Profiles$/m);
+  assert.match(readme, /^## Docs Map$/m);
+  assert.match(readme, /\[Getting started\]\(\.\/docs\/getting-started\.md\)/i);
+  assert.match(readme, /\[Configuration reference\]\(\.\/docs\/configuration\.md\)/i);
+  assert.match(readme, /\[Architecture\]\(\.\/docs\/architecture\.md\)/i);
+  assert.match(readme, /\[Issue metadata\]\(\.\/docs\/issue-metadata\.md\)/i);
+  assert.match(readme, /\[GSD to GitHub issues\]\(\.\/docs\/examples\/gsd-to-github-issues\.md\)/i);
+  assert.match(readme, /\[Validation checklist\]\(\.\/docs\/validation-checklist\.md\)/i);
   assert.match(readme, /Copilot profile/i);
   assert.match(readme, /Codex Connector profile/i);
   assert.match(readme, /CodeRabbit profile/i);
-  assert.match(readme, /supervisor-side/i);
-  assert.match(readme, /provider-side/i);
-  assert.match(readme, /\.coderabbit\.yaml/i);
-  assert.match(readme, /usable review signal/i);
+  assert.match(readme, /supervisor\.config\.copilot\.json/i);
+  assert.match(readme, /supervisor\.config\.codex\.json/i);
+  assert.match(readme, /supervisor\.config\.coderabbit\.json/i);
+  assert.doesNotMatch(readme, /^## Run states$/m);
+  assert.doesNotMatch(readme, /^## State backends$/m);
+  assert.doesNotMatch(readme, /^## Commands$/m);
 });
