@@ -88,6 +88,7 @@ import {
   loadActiveIssueStatusSnapshot,
   summarizeSupervisorStatusRecords,
 } from "./supervisor-selection-status";
+import { inferFailureContext } from "./supervisor-failure-context";
 import { StateStore } from "./state-store";
 import {
   formatDetailedStatus,
@@ -149,98 +150,6 @@ function shouldStopForRepeatedFailureSignature(record: IssueRunRecord, config: S
     record.last_failure_signature !== null &&
     record.repeated_failure_signature_count >= config.sameFailureSignatureRepeatLimit
   );
-}
-
-function inferFailureContext(
-  config: SupervisorConfig,
-  record: IssueRunRecord,
-  pr: GitHubPullRequest | null,
-  checks: PullRequestCheck[],
-  reviewThreads: ReviewThread[],
-): FailureContext | null {
-  if (pr) {
-    const checksContext = buildChecksFailureContext(pr, checks);
-    if (checksContext) {
-      return checksContext;
-    }
-
-    const copilotTimeoutContext = buildCopilotReviewTimeoutFailureContext(config, record, pr);
-    if (copilotTimeoutContext) {
-      return copilotTimeoutContext;
-    }
-
-    if (pr.reviewDecision === "CHANGES_REQUESTED") {
-      const manualReviewContext =
-        config.humanReviewBlocksMerge ? buildManualReviewFailureContext(manualReviewThreads(config, reviewThreads)) : null;
-      if (manualReviewContext) {
-        return manualReviewContext;
-      }
-
-      const reviewContext = buildReviewFailureContext(pendingBotReviewThreads(config, record, pr, reviewThreads));
-      if (reviewContext) {
-        return reviewContext;
-      }
-
-      const stalledBotReviewContext = buildStalledBotReviewFailureContext(
-        configuredBotReviewThreads(config, reviewThreads),
-      );
-      if (stalledBotReviewContext) {
-        return stalledBotReviewContext;
-      }
-
-      if (config.humanReviewBlocksMerge) {
-        return buildRequestedChangesFailureContext(pr);
-      }
-    }
-
-    if (
-      localReviewRetryLoopStalled(
-        config,
-        record,
-        pr,
-        checks,
-        reviewThreads,
-        manualReviewThreads,
-        configuredBotReviewThreads,
-        summarizeChecks,
-        mergeConflictDetected,
-      )
-    ) {
-      return localReviewStallFailureContext(record);
-    }
-
-    if (localReviewHighSeverityNeedsBlock(config, record, pr)) {
-      return localReviewFailureContext(record);
-    }
-
-    const manualReviewContext =
-      config.humanReviewBlocksMerge ? buildManualReviewFailureContext(manualReviewThreads(config, reviewThreads)) : null;
-    if (manualReviewContext) {
-      return manualReviewContext;
-    }
-
-    const reviewContext = buildReviewFailureContext(pendingBotReviewThreads(config, record, pr, reviewThreads));
-    if (reviewContext) {
-      return reviewContext;
-    }
-
-    const stalledBotReviewContext = buildStalledBotReviewFailureContext(
-      configuredBotReviewThreads(config, reviewThreads),
-    );
-    if (stalledBotReviewContext) {
-      return stalledBotReviewContext;
-    }
-
-    if (localReviewBlocksMerge(config, record, pr)) {
-      return localReviewFailureContext(record);
-    }
-
-    if (mergeConflictDetected(pr)) {
-      return buildConflictFailureContext(pr);
-    }
-  }
-
-  return null;
 }
 
 function blockedReasonForLifecycleState(
