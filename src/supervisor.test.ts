@@ -5255,6 +5255,45 @@ test("formatDetailedStatus surfaces the latest recovery reason separately from t
   );
 });
 
+test("formatDetailedStatus reports idle status with the latest record and latest recovery", () => {
+  const config = createConfig();
+  const latestRecord = createRecord({
+    issue_number: 92,
+    state: "done",
+    branch: "codex/issue-92",
+    updated_at: "2026-03-13T01:20:00Z",
+  });
+  const latestRecoveryRecord = createRecord({
+    issue_number: 91,
+    state: "done",
+    branch: "codex/issue-91",
+    workspace: "/tmp/workspaces/issue-91",
+    updated_at: "2026-03-13T00:20:00Z",
+    last_codex_summary: null,
+    last_recovery_reason: "merged_pr_convergence: tracked PR #191 merged; marked issue #91 done",
+    last_recovery_at: "2026-03-13T00:20:00Z",
+  });
+
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: null,
+    latestRecord,
+    latestRecoveryRecord,
+    trackedIssueCount: 2,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(status, /^No active issue\./);
+  assert.match(status, /tracked_issues=2/);
+  assert.match(status, /latest_record=#92 state=done updated_at=2026-03-13T01:20:00Z/);
+  assert.match(
+    status,
+    /latest_recovery issue=#91 at=2026-03-13T00:20:00Z reason=merged_pr_convergence: tracked PR #191 merged; marked issue #91 done/,
+  );
+});
+
 test("formatDetailedStatus marks stale local review as non-gating", () => {
   const config = createConfig({ localReviewPolicy: "block_merge" });
   const record = createRecord({
