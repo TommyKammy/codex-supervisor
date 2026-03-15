@@ -36,6 +36,12 @@ interface CopilotReviewTimeoutStatus {
   reason: string | null;
 }
 
+interface ConfiguredBotRateLimitWaitStatus {
+  active: boolean;
+  observedAt: string | null;
+  waitUntil: string | null;
+}
+
 function reviewSatisfied(pr: GitHubPullRequest): boolean {
   return (
     (pr.reviewDecision !== "CHANGES_REQUESTED" || pr.configuredBotTopLevelReviewStrength === "nitpick_only") &&
@@ -72,6 +78,28 @@ function configuredReviewBotLabel(config: SupervisorConfig): string {
 
 function copilotReviewArrived(pr: GitHubPullRequest): boolean {
   return (pr.copilotReviewState ?? "not_requested") === "arrived" || Boolean(pr.copilotReviewArrivedAt);
+}
+
+function determineConfiguredBotRateLimitWait(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+): ConfiguredBotRateLimitWaitStatus {
+  const waitMinutes = config.configuredBotRateLimitWaitMinutes ?? 0;
+  if (waitMinutes <= 0 || pr.isDraft || copilotReviewArrived(pr) || !pr.configuredBotRateLimitedAt) {
+    return { active: false, observedAt: null, waitUntil: null };
+  }
+
+  const observedAtMs = Date.parse(pr.configuredBotRateLimitedAt);
+  if (Number.isNaN(observedAtMs)) {
+    return { active: false, observedAt: pr.configuredBotRateLimitedAt, waitUntil: null };
+  }
+
+  const waitUntilMs = observedAtMs + waitMinutes * 60_000;
+  return {
+    active: Date.now() < waitUntilMs,
+    observedAt: pr.configuredBotRateLimitedAt,
+    waitUntil: new Date(waitUntilMs).toISOString(),
+  };
 }
 
 function hasObservedCopilotRequest(
@@ -430,6 +458,11 @@ export function inferStateFromPullRequest(
   const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
   if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
     return "blocked";
+  }
+
+  const configuredBotRateLimitWait = determineConfiguredBotRateLimitWait(config, pr);
+  if (configuredBotRateLimitWait.active) {
+    return "waiting_ci";
   }
 
   if (shouldWaitForCopilotReviewPropagation(config, record, pr)) {

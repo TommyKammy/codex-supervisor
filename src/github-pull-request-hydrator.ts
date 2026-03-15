@@ -58,6 +58,7 @@ class ConfiguredBotReviewSummaryCache {
       promise: Promise.resolve({
         lifecycle: { state: "not_requested", requestedAt: null, arrivedAt: null },
         topLevelReview: { strength: null, submittedAt: null },
+        rateLimitWarningAt: null,
       }),
     };
     const lifecyclePromise = lifecyclePromiseFactory()

@@ -52,6 +52,28 @@ function configuredReviewBots(config: SupervisorConfig): string[] {
   return config.reviewBotLogins.map((login) => login.trim()).filter((login) => login.length > 0);
 }
 
+function configuredBotRateLimitWaitWindow(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+): { status: "inactive" | "active" | "expired"; observedAt: string | null; waitUntil: string | null } {
+  const waitMinutes = config.configuredBotRateLimitWaitMinutes ?? 0;
+  if (waitMinutes <= 0 || !pr.configuredBotRateLimitedAt) {
+    return { status: "inactive", observedAt: pr.configuredBotRateLimitedAt ?? null, waitUntil: null };
+  }
+
+  const observedAtMs = Date.parse(pr.configuredBotRateLimitedAt);
+  if (Number.isNaN(observedAtMs)) {
+    return { status: "inactive", observedAt: pr.configuredBotRateLimitedAt, waitUntil: null };
+  }
+
+  const waitUntil = new Date(observedAtMs + waitMinutes * 60_000).toISOString();
+  return {
+    status: Date.now() < Date.parse(waitUntil) ? "active" : "expired",
+    observedAt: pr.configuredBotRateLimitedAt,
+    waitUntil,
+  };
+}
+
 function repoExpectsConfiguredBotReview(config: SupervisorConfig): boolean {
   return configuredReviewBots(config).length > 0;
 }
@@ -442,6 +464,12 @@ export function buildDetailedStatusModel(args: BuildDetailedStatusModelArgs): st
     lines.push(
       `configured_bot_top_level_review strength=${pr.configuredBotTopLevelReviewStrength ?? "none"} submitted_at=${pr.configuredBotTopLevelReviewSubmittedAt ?? "none"} effect=${configuredBotTopLevelReviewEffect(config, pr, reviewThreads, configuredBotReviewThreads)}`,
     );
+    const configuredBotRateLimit = configuredBotRateLimitWaitWindow(config, pr);
+    if (configuredBotRateLimit.observedAt) {
+      lines.push(
+        `configured_bot_rate_limit status=${configuredBotRateLimit.status} observed_at=${configuredBotRateLimit.observedAt} wait_until=${configuredBotRateLimit.waitUntil ?? "none"}`,
+      );
+    }
     if (activeRecord.copilot_review_timeout_reason) {
       lines.push(`timeout_reason=${sanitizeStatusValue(activeRecord.copilot_review_timeout_reason)}`);
     }

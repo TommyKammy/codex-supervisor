@@ -68,6 +68,7 @@ export interface SupervisorConfig {
   pollIntervalSeconds: number;
   copilotReviewWaitMinutes: number;
   copilotReviewTimeoutAction: CopilotReviewTimeoutAction;
+  configuredBotRateLimitWaitMinutes?: number;
   codexExecTimeoutMinutes: number;
   maxCodexAttemptsPerIssue: number;
   maxImplementationAttemptsPerIssue: number;
@@ -208,6 +209,7 @@ export interface GitHubPullRequest {
   copilotReviewState?: CopilotReviewState | null;
   copilotReviewRequestedAt?: string | null;
   copilotReviewArrivedAt?: string | null;
+  configuredBotRateLimitedAt?: string | null;
   configuredBotTopLevelReviewStrength?: "nitpick_only" | "blocking" | null;
   configuredBotTopLevelReviewSubmittedAt?: string | null;
   mergedAt?: string | null;

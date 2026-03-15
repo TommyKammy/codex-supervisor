@@ -4553,6 +4553,68 @@ test("inferStateFromPullRequest treats an arrived configured-bot top-level revie
   });
 });
 
+test("inferStateFromPullRequest waits through a configured-bot rate limit warning for the configured window", () => {
+  withStubbedDateNow("2026-03-11T00:20:00Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      configuredBotRateLimitWaitMinutes: 30,
+    });
+    const record = createRecord({ state: "waiting_ci" });
+    const pr: GitHubPullRequest = {
+      number: 44,
+      title: "Test PR",
+      url: "https://example.test/pr/44",
+      state: "OPEN",
+      createdAt: "2026-03-11T00:00:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      headRefName: "codex/issue-38",
+      headRefOid: "head123",
+      mergedAt: null,
+      copilotReviewState: "requested",
+      copilotReviewRequestedAt: "2026-03-11T00:10:00Z",
+      copilotReviewArrivedAt: null,
+      configuredBotRateLimitedAt: "2026-03-11T00:15:00Z",
+    };
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "waiting_ci");
+  });
+});
+
+test("inferStateFromPullRequest allows merge again after a configured-bot rate limit wait expires", () => {
+  withStubbedDateNow("2026-03-11T00:50:01Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      configuredBotRateLimitWaitMinutes: 30,
+    });
+    const record = createRecord({ state: "waiting_ci" });
+    const pr: GitHubPullRequest = {
+      number: 44,
+      title: "Test PR",
+      url: "https://example.test/pr/44",
+      state: "OPEN",
+      createdAt: "2026-03-11T00:00:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      headRefName: "codex/issue-38",
+      headRefOid: "head123",
+      mergedAt: null,
+      copilotReviewState: "requested",
+      copilotReviewRequestedAt: "2026-03-11T00:10:00Z",
+      copilotReviewArrivedAt: null,
+      configuredBotRateLimitedAt: "2026-03-11T00:20:00Z",
+    };
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "ready_to_merge");
+  });
+});
+
 test("inferStateFromPullRequest softens nitpick-only configured-bot top-level changes requests when no configured-bot threads remain", () => {
   const config = createConfig({
     reviewBotLogins: ["coderabbitai[bot]"],

@@ -73,7 +73,7 @@ Requirements: `gh auth status` must succeed, `codex` CLI must be installed, and 
 
 - Copilot profile: start from [supervisor.config.copilot.json](./supervisor.config.copilot.json), enable GitHub Copilot review for the target repo or org, and verify a ready PR receives review activity from `copilot-pull-request-reviewer`.
 - Codex Connector profile: start from [supervisor.config.codex.json](./supervisor.config.codex.json), connect the repo to Codex in ChatGPT/OpenAI, and verify PR review activity arrives from `chatgpt-codex-connector`.
-- CodeRabbit profile: start from [supervisor.config.coderabbit.json](./supervisor.config.coderabbit.json), install CodeRabbit plus any required repo config such as `.coderabbit.yaml`, and verify review activity arrives from `coderabbitai` or `coderabbitai[bot]`.
+- CodeRabbit profile: start from [supervisor.config.coderabbit.json](./supervisor.config.coderabbit.json), install CodeRabbit, and verify review activity arrives from `coderabbitai` or `coderabbitai[bot]`. The shipped profile also waits up to 30 minutes after a CodeRabbit `Rate limit exceeded` warning before continuing, so you can keep auto-incremental review enabled without adding repo-level throttling by default.
 
 If the provider never posts a usable PR review signal, fix the provider-side setup before treating the profile as working.
 
