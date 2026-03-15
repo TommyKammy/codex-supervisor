@@ -136,7 +136,9 @@ export async function recoverUnexpectedCodexTurnFailure(args: {
     `Supervisor failed while recovering a Codex turn for issue #${record.issue_number}.`,
     [
       `previous_state=${record.state}`,
-      `workspace_dirty=${workspaceStatus?.hasUncommittedChanges ? "yes" : "no"}`,
+      `workspace_dirty=${
+        workspaceStatus === null ? "unknown" : workspaceStatus.hasUncommittedChanges ? "yes" : "no"
+      }`,
       `workspace_head=${workspaceStatus?.headSha ?? record.last_head_sha ?? "unknown"}`,
       `pr_number=${pr?.number ?? "none"}`,
       `pr_head=${pr?.headRefOid ?? "none"}`,

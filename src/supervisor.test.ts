@@ -1157,6 +1157,56 @@ test("recoverUnexpectedCodexTurnFailure preserves dirty recovery context and tim
   assert.equal(syncedRecord, updated);
 });
 
+test("recoverUnexpectedCodexTurnFailure records unavailable workspace inspection distinctly", async () => {
+  const issueNumber = 92;
+  const record = createRecord({
+    issue_number: issueNumber,
+    state: "stabilizing",
+    last_head_sha: "abc1234",
+    codex_session_id: null,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: record,
+    },
+  };
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return { ...current, ...patch, updated_at: "2026-03-15T02:00:00.000Z" };
+    },
+    async save(): Promise<void> {},
+  };
+
+  const updated = await recoverUnexpectedCodexTurnFailure({
+    stateStore: stateStore as unknown as Parameters<typeof recoverUnexpectedCodexTurnFailure>[0]["stateStore"],
+    state,
+    record,
+    issue: {
+      number: issueNumber,
+      title: "Refresh failed before workspace inspection",
+      body: "",
+      createdAt: "2026-03-15T00:00:00Z",
+      updatedAt: "2026-03-15T00:00:00Z",
+      url: `https://example.test/issues/${issueNumber}`,
+      state: "OPEN",
+    },
+    journalSync: async () => {},
+    error: new Error("Command failed: codex exec resume"),
+    workspaceStatus: null,
+    pr: null,
+  });
+
+  assert.deepEqual(updated.last_failure_context?.details.slice(0, 6), [
+    "previous_state=stabilizing",
+    "workspace_dirty=unknown",
+    "workspace_head=abc1234",
+    "pr_number=none",
+    "pr_head=none",
+    "codex_session_id=none",
+  ]);
+});
+
 test("handleAuthFailure blocks the active issue and preserves failure tracking fields", async () => {
   const issueNumber = 91;
   const record = createRecord({
