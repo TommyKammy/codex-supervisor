@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCodexPrompt, buildCodexResumePrompt, shouldUseCompactResumePrompt } from "./codex";
+import { buildCodexPrompt, buildCodexResumePrompt, shouldUseCompactResumePrompt } from "./codex-prompt";
 import { loadLocalReviewRepairContext } from "./local-review-repair-context";
 import { FailureContext, GitHubIssue, RunState } from "./types";
 import { type VerifierGuardrailRule } from "./verifier-guardrails";
