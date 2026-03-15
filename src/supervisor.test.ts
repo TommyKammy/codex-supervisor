@@ -148,6 +148,7 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     last_failure_signature: "handoff-missing",
     blocked_reason: "handoff_missing",
     processed_review_thread_ids: [],
+    processed_review_thread_fingerprints: [],
     updated_at: "2026-03-11T01:50:41.997Z",
     ...overrides,
   };
@@ -3607,6 +3608,7 @@ test("runOnce reprocesses a configured bot review thread once after a new PR hea
         pr_number: 116,
         last_head_sha: "head-a",
         processed_review_thread_ids: ["thread-1@head-a"],
+        processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
         blocked_reason: "manual_review",
       }),
     },
@@ -3680,6 +3682,7 @@ test("runOnce reprocesses a configured bot review thread once after a new PR hea
   assert.equal(record.last_head_sha, runHeadSha);
   assert.equal(record.blocked_reason, "manual_review");
   assert.deepEqual(record.processed_review_thread_ids, ["thread-1@head-a", `thread-1@${runHeadSha}`]);
+  assert.deepEqual(record.processed_review_thread_fingerprints, ["thread-1@head-a#comment-1", `thread-1@${runHeadSha}#comment-1`]);
   assert.equal(record.last_failure_context?.category, "manual");
   assert.match(
     record.last_failure_context?.summary ?? "",
@@ -4861,6 +4864,7 @@ test("inferStateFromPullRequest keeps an unresolved configured bot thread blocke
     state: "pr_open",
     last_head_sha: "head-a",
     processed_review_thread_ids: ["thread-1@head-a"],
+    processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
   });
   const pr: GitHubPullRequest = {
     number: 44,
@@ -4929,6 +4933,7 @@ test("inferStateFromPullRequest allows one reprocessing pass for a configured bo
     state: "pr_open",
     last_head_sha: "head-a",
     processed_review_thread_ids: ["thread-1@head-a"],
+    processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
   });
   const pr: GitHubPullRequest = {
     number: 44,
@@ -4951,6 +4956,120 @@ test("inferStateFromPullRequest allows one reprocessing pass for a configured bo
   );
 });
 
+test("inferStateFromPullRequest allows one reprocessing pass for a configured bot thread when its latest comment changes on the same head", () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head-a",
+    processed_review_thread_ids: ["thread-1@head-a"],
+    processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+  });
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T00:00:00Z",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-38",
+    headRefOid: "head-a",
+    mergedAt: null,
+  };
+  const updatedThread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "Please address this.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-2",
+          body: "One more note on the same thread.",
+          createdAt: "2026-03-11T00:05:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, pr, [], [updatedThread]),
+    "addressing_review",
+  );
+});
+
+test("inferStateFromPullRequest blocks a same-head configured bot thread again after its updated comment has already been reprocessed once", () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head-a",
+    processed_review_thread_ids: ["thread-1@head-a"],
+    processed_review_thread_fingerprints: ["thread-1@head-a#comment-2"],
+  });
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T00:00:00Z",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-38",
+    headRefOid: "head-a",
+    mergedAt: null,
+  };
+  const updatedThread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "Please address this.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-2",
+          body: "One more note on the same thread.",
+          createdAt: "2026-03-11T00:05:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, pr, [], [updatedThread]),
+    "blocked",
+  );
+});
+
 test("inferStateFromPullRequest blocks a repeatedly unresolved configured bot thread again after its one pass on the new head", () => {
   const config = createConfig({
     reviewBotLogins: ["copilot-pull-request-reviewer"],
@@ -4959,6 +5078,7 @@ test("inferStateFromPullRequest blocks a repeatedly unresolved configured bot th
     state: "pr_open",
     last_head_sha: "head-b",
     processed_review_thread_ids: ["thread-1@head-a", "thread-1@head-b"],
+    processed_review_thread_fingerprints: ["thread-1@head-b#comment-1"],
   });
   const pr: GitHubPullRequest = {
     number: 44,

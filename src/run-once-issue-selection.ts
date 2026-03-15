@@ -120,6 +120,7 @@ function createIssueRecord(config: SupervisorConfig, issueNumber: number): Issue
     last_failure_signature: null,
     blocked_reason: null,
     processed_review_thread_ids: [],
+    processed_review_thread_fingerprints: [],
     updated_at: nowIso(),
   };
 }

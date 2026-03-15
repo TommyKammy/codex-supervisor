@@ -53,17 +53,51 @@ export function processedReviewThreadKey(threadId: string, headSha: string): str
   return `${threadId}@${headSha}`;
 }
 
-export function hasProcessedReviewThread(
-  record: Pick<IssueRunRecord, "processed_review_thread_ids" | "last_head_sha">,
-  pr: Pick<GitHubPullRequest, "headRefOid">,
+export function latestReviewThreadCommentFingerprint(
+  thread: Pick<ReviewThread, "comments">,
+): string | null {
+  const latestComment = thread.comments.nodes[thread.comments.nodes.length - 1] ?? null;
+  if (!latestComment) {
+    return null;
+  }
+
+  return latestComment.id || latestComment.createdAt || null;
+}
+
+export function processedReviewThreadFingerprintKey(
   threadId: string,
+  headSha: string,
+  latestCommentFingerprint: string,
+): string {
+  return `${processedReviewThreadKey(threadId, headSha)}#${latestCommentFingerprint}`;
+}
+
+export function hasProcessedReviewThread(
+  record: Pick<
+    IssueRunRecord,
+    "processed_review_thread_ids" | "processed_review_thread_fingerprints" | "last_head_sha"
+  >,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  thread: Pick<ReviewThread, "id" | "comments">,
 ): boolean {
   const processedKeys = record.processed_review_thread_ids ?? [];
-  if (processedKeys.includes(processedReviewThreadKey(threadId, pr.headRefOid))) {
+  const processedFingerprints = record.processed_review_thread_fingerprints ?? [];
+  const headScopedKey = processedReviewThreadKey(thread.id, pr.headRefOid);
+  const latestCommentFingerprint = latestReviewThreadCommentFingerprint(thread);
+  if (
+    latestCommentFingerprint &&
+    processedFingerprints.includes(
+      processedReviewThreadFingerprintKey(thread.id, pr.headRefOid, latestCommentFingerprint),
+    )
+  ) {
     return true;
   }
 
-  return record.last_head_sha === pr.headRefOid && processedKeys.includes(threadId);
+  if (processedKeys.includes(headScopedKey)) {
+    return latestCommentFingerprint === null || processedFingerprints.length === 0;
+  }
+
+  return record.last_head_sha === pr.headRefOid && processedKeys.includes(thread.id);
 }
 
 export function localReviewBlocksReady(
@@ -225,7 +259,14 @@ export async function loadLocalReviewRepairContext(summaryPath: string | null, w
 
 export function localReviewRetryLoopCandidate(
   config: SupervisorConfig,
-  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_verified_max_severity" | "repeated_local_review_signature_count" | "processed_review_thread_ids">,
+  record: Pick<
+    IssueRunRecord,
+    | "local_review_head_sha"
+    | "local_review_verified_max_severity"
+    | "repeated_local_review_signature_count"
+    | "processed_review_thread_ids"
+    | "processed_review_thread_fingerprints"
+  >,
   pr: GitHubPullRequest,
   checks: PullRequestCheck[],
   reviewThreads: ReviewThread[],
@@ -249,7 +290,14 @@ export function localReviewRetryLoopCandidate(
 
 export function localReviewRetryLoopStalled(
   config: SupervisorConfig,
-  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_verified_max_severity" | "repeated_local_review_signature_count" | "processed_review_thread_ids">,
+  record: Pick<
+    IssueRunRecord,
+    | "local_review_head_sha"
+    | "local_review_verified_max_severity"
+    | "repeated_local_review_signature_count"
+    | "processed_review_thread_ids"
+    | "processed_review_thread_fingerprints"
+  >,
   pr: GitHubPullRequest,
   checks: PullRequestCheck[],
   reviewThreads: ReviewThread[],
@@ -574,7 +622,7 @@ export async function executeCodexTurnPhase(
       }
 
       const currentPr = pr;
-      return reviewThreads.filter((thread) => !hasProcessedReviewThread(record, currentPr, thread.id));
+      return reviewThreads.filter((thread) => !hasProcessedReviewThread(record, currentPr, thread));
     })();
     const localReviewRepairContext =
       record.state === "local_review_fix"
@@ -838,6 +886,21 @@ export async function executeCodexTurnPhase(
       preRunState === "addressing_review" && currentPr && currentPr.headRefOid === evaluatedReviewHeadSha
         ? reviewThreadsToProcess.map((thread) => processedReviewThreadKey(thread.id, evaluatedReviewHeadSha))
         : [];
+    const processedReviewThreadFingerprintKeysForCurrentHead =
+      preRunState === "addressing_review" && currentPr && currentPr.headRefOid === evaluatedReviewHeadSha
+        ? reviewThreadsToProcess.flatMap((thread) => {
+            const latestCommentFingerprint = latestReviewThreadCommentFingerprint(thread);
+            return latestCommentFingerprint
+              ? [
+                  processedReviewThreadFingerprintKey(
+                    thread.id,
+                    evaluatedReviewHeadSha,
+                    latestCommentFingerprint,
+                  ),
+                ]
+              : [];
+          })
+        : [];
     const processedReviewThreadIds =
       processedReviewThreadKeysForCurrentHead.length > 0
         ? Array.from(
@@ -847,13 +910,25 @@ export async function executeCodexTurnPhase(
             ]),
           ).slice(-200)
         : record.processed_review_thread_ids;
+    const processedReviewThreadFingerprints =
+      processedReviewThreadFingerprintKeysForCurrentHead.length > 0
+        ? Array.from(
+            new Set([
+              ...record.processed_review_thread_fingerprints,
+              ...processedReviewThreadFingerprintKeysForCurrentHead,
+            ]),
+          ).slice(-200)
+        : record.processed_review_thread_fingerprints;
     const postRunSnapshot = pr
       ? args.derivePullRequestLifecycleSnapshot(
           record,
           pr,
           checks,
           reviewThreads,
-          { processed_review_thread_ids: processedReviewThreadIds },
+          {
+            processed_review_thread_ids: processedReviewThreadIds,
+            processed_review_thread_fingerprints: processedReviewThreadFingerprints,
+          },
         )
       : null;
     const postRunState = postRunSnapshot
@@ -865,6 +940,7 @@ export async function executeCodexTurnPhase(
       ...(postRunSnapshot?.copilotRequestObservationPatch ?? {}),
       ...(postRunSnapshot?.copilotTimeoutPatch ?? {}),
       processed_review_thread_ids: processedReviewThreadIds,
+      processed_review_thread_fingerprints: processedReviewThreadFingerprints,
       blocked_verification_retry_count: pr ? 0 : record.blocked_verification_retry_count,
       repeated_blocker_count: 0,
       last_blocker_signature: null,

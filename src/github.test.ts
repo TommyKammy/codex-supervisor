@@ -947,6 +947,7 @@ test("GitHubClient does not retry non-transient gh failures", async () => {
           last_failure_signature: null,
           blocked_reason: null,
           processed_review_thread_ids: [],
+          processed_review_thread_fingerprints: [],
           updated_at: "2026-03-13T00:00:00Z",
         },
       ),

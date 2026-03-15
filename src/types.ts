@@ -168,6 +168,7 @@ export interface IssueRunRecord {
   last_failure_signature: string | null;
   blocked_reason: BlockedReason;
   processed_review_thread_ids: string[];
+  processed_review_thread_fingerprints: string[];
   updated_at: string;
 }
 
