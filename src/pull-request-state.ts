@@ -455,14 +455,14 @@ export function inferStateFromPullRequest(
     return "draft_pr";
   }
 
-  const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
-  if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
-    return "blocked";
-  }
-
   const configuredBotRateLimitWait = determineConfiguredBotRateLimitWait(config, pr);
   if (configuredBotRateLimitWait.active) {
     return "waiting_ci";
+  }
+
+  const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
+  if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
+    return "blocked";
   }
 
   if (shouldWaitForCopilotReviewPropagation(config, record, pr)) {

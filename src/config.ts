@@ -275,7 +275,9 @@ export function loadConfig(configPath?: string): SupervisorConfig {
         ? (raw.copilotReviewTimeoutAction as CopilotReviewTimeoutAction)
         : "continue",
     configuredBotRateLimitWaitMinutes:
-      typeof raw.configuredBotRateLimitWaitMinutes === "number" && raw.configuredBotRateLimitWaitMinutes >= 0
+      typeof raw.configuredBotRateLimitWaitMinutes === "number" &&
+      Number.isFinite(raw.configuredBotRateLimitWaitMinutes) &&
+      raw.configuredBotRateLimitWaitMinutes >= 0
         ? raw.configuredBotRateLimitWaitMinutes
         : 0,
     codexExecTimeoutMinutes:

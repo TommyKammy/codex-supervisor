@@ -86,6 +86,7 @@ function summarizeConfiguredBotRequestWindow(
 ): {
   latestRequestedAt: string | null;
   activeRequestStartedAt: string | null;
+  latestRemovedByBot: Map<string, string | null>;
 } {
   const requestedTimes = timeline
     .filter((event) => event.type === "requested" && event.reviewerLogin && configuredReviewBots.has(event.reviewerLogin))
@@ -110,9 +111,22 @@ function summarizeConfiguredBotRequestWindow(
       : [];
   });
 
+  const latestRemovedByBot = new Map<string, string | null>();
+  for (const botLogin of configuredReviewBots) {
+    latestRemovedByBot.set(
+      botLogin,
+      latestTimestamp(
+        timeline
+          .filter((event) => event.type === "removed" && event.reviewerLogin === botLogin)
+          .map((event) => event.createdAt),
+      ),
+    );
+  }
+
   return {
     latestRequestedAt,
     activeRequestStartedAt: latestTimestamp(activeRequestStarts),
+    latestRemovedByBot,
   };
 }
 
@@ -125,7 +139,7 @@ export function inferCopilotReviewLifecycle(
     return { state: "not_requested", requestedAt: null, arrivedAt: null };
   }
 
-  const { latestRequestedAt, activeRequestStartedAt } = summarizeConfiguredBotRequestWindow(
+  const { latestRequestedAt, activeRequestStartedAt, latestRemovedByBot } = summarizeConfiguredBotRequestWindow(
     facts.timeline,
     configuredReviewBots,
   );
@@ -153,7 +167,9 @@ export function inferCopilotReviewLifecycle(
   });
   const rateLimitWarningTimes = facts.issueComments.flatMap((comment) => {
     const authorLogin = normalizeLogin(comment.authorLogin);
+    const latestRemovedAt = authorLogin ? latestRemovedByBot.get(authorLogin) ?? null : null;
     return authorLogin && configuredReviewBots.has(authorLogin) && isRateLimitReviewText(comment.body) && scopedToActiveRequest(comment.createdAt)
+      && (latestRemovedAt === null || parseTimestamp(comment.createdAt) > parseTimestamp(latestRemovedAt))
       ? [comment.createdAt]
       : [];
   });
@@ -241,7 +257,7 @@ function inferConfiguredBotRateLimitWarningAt(
     return null;
   }
 
-  const { activeRequestStartedAt } = summarizeConfiguredBotRequestWindow(facts.timeline, configuredReviewBots);
+  const { activeRequestStartedAt, latestRemovedByBot } = summarizeConfiguredBotRequestWindow(facts.timeline, configuredReviewBots);
   const activeRequestStartedAtMs = parseTimestamp(activeRequestStartedAt);
   const scopedToActiveRequest = (value: string | null | undefined): value is string =>
     value !== null &&
@@ -251,10 +267,12 @@ function inferConfiguredBotRateLimitWarningAt(
   return latestTimestamp(
     facts.issueComments.flatMap((comment) => {
       const authorLogin = normalizeLogin(comment.authorLogin);
+      const latestRemovedAt = authorLogin ? latestRemovedByBot.get(authorLogin) ?? null : null;
       return authorLogin &&
         configuredReviewBots.has(authorLogin) &&
         isRateLimitReviewText(comment.body) &&
-        scopedToActiveRequest(comment.createdAt)
+        scopedToActiveRequest(comment.createdAt) &&
+        (latestRemovedAt === null || parseTimestamp(comment.createdAt) > parseTimestamp(latestRemovedAt))
         ? [comment.createdAt]
         : [];
     }),

@@ -4584,6 +4584,43 @@ test("inferStateFromPullRequest waits through a configured-bot rate limit warnin
   });
 });
 
+test("inferStateFromPullRequest lets the rate-limit wait win over a blocking configured-bot timeout", () => {
+  withStubbedDateNow("2026-03-11T00:20:00Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      configuredBotRateLimitWaitMinutes: 30,
+      copilotReviewWaitMinutes: 10,
+      copilotReviewTimeoutAction: "block",
+    });
+    const record = createRecord({
+      state: "waiting_ci",
+      copilot_review_requested_observed_at: "2026-03-11T00:00:00Z",
+      copilot_review_requested_head_sha: "head123",
+    });
+    const pr: GitHubPullRequest = {
+      number: 44,
+      title: "Test PR",
+      url: "https://example.test/pr/44",
+      state: "OPEN",
+      createdAt: "2026-03-11T00:00:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      headRefName: "codex/issue-38",
+      headRefOid: "head123",
+      mergedAt: null,
+      copilotReviewState: "requested",
+      copilotReviewRequestedAt: "2026-03-11T00:00:00Z",
+      copilotReviewArrivedAt: null,
+      configuredBotRateLimitedAt: "2026-03-11T00:15:00Z",
+    };
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, checks, []), "waiting_ci");
+  });
+});
+
 test("inferStateFromPullRequest allows merge again after a configured-bot rate limit wait expires", () => {
   withStubbedDateNow("2026-03-11T00:50:01Z", () => {
     const config = createConfig({
