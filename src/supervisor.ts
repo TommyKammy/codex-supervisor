@@ -61,12 +61,14 @@ import {
   CodexTurnResult,
   CodexTurnShortCircuit,
   executeCodexTurnPhase,
-  handlePostTurnPullRequestTransitionsPhase,
   loadLocalReviewRepairContext,
   nextExternalReviewMissPatch,
+} from "./run-once-turn-execution";
+import {
+  handlePostTurnPullRequestTransitionsPhase,
   PostTurnPullRequestContext,
   PostTurnPullRequestResult,
-} from "./run-once-turn-execution";
+} from "./post-turn-pull-request";
 import {
   resolveRunnableIssueContext as resolveIssueSelectionContext,
   RestartRunOnce as SelectionRestartRunOnce,
