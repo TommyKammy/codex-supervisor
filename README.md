@@ -16,7 +16,7 @@ Use `codex-supervisor` when you want Codex to work through execution-ready GitHu
 - run each turn in a dedicated worktree with a persistent issue journal
 - keep moving through draft PR, CI repair, review fixes, and merge
 
-If you want the full operator model, scheduling flow, or state machine, start with [Getting started](./docs/getting-started.md).
+If you want the setup flow, first-run commands, and operator decisions, start with [Getting started](./docs/getting-started.md).
 
 ## Who It Is For
 
@@ -79,7 +79,7 @@ If the provider never posts a usable PR review signal, fix the provider-side set
 
 ## Docs Map
 
-- [Getting started](./docs/getting-started.md): operator model, readiness-driven scheduling, state machine, local review, and first-run workflow
+- [Getting started](./docs/getting-started.md): setup checklist, execution-ready issue flow, first-run commands, and common operator decisions
 - [Configuration reference](./docs/configuration.md): config setup, provider profiles, model/reasoning controls, durable memory, and execution policy
 - [Local review reference](./docs/local-review.md): local review policies, role selection, artifacts, thresholds, and committed guardrails
 - [Architecture](./docs/architecture.md): core loop, durable state, reconciliations, and safety boundaries
