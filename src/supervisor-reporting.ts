@@ -51,9 +51,10 @@ export function latestReviewComment(thread: ReviewThread) {
 }
 
 function isAllowedReviewBotThread(config: SupervisorConfig, thread: ReviewThread): boolean {
+  const configuredLogins = new Set(configuredReviewBots(config).map((login) => login.toLowerCase()));
   return thread.comments.nodes.some((comment) => {
     const login = comment.author?.login?.toLowerCase();
-    return Boolean(login && config.reviewBotLogins.includes(login));
+    return Boolean(login && configuredLogins.has(login));
   });
 }
 

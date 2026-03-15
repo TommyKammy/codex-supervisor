@@ -23,6 +23,7 @@ import {
   reconcileStaleActiveIssueReservation,
   reconcileTrackedMergedButOpenIssues,
 } from "./recovery-reconciliation";
+import { configuredBotReviewThreads, manualReviewThreads } from "./supervisor-reporting";
 import { StateStore } from "./state-store";
 import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig, SupervisorStateFile } from "./types";
 
@@ -5292,6 +5293,31 @@ test("formatDetailedStatus reports idle status with the latest record and latest
     status,
     /latest_recovery issue=#91 at=2026-03-13T00:20:00Z reason=merged_pr_convergence: tracked PR #191 merged; marked issue #91 done/,
   );
+});
+
+test("configuredBotReviewThreads normalizes configured bot logins before classifying threads", () => {
+  const config = createConfig({
+    reviewBotLogins: [" Copilot-Pull-Request-Reviewer "],
+  });
+  const thread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "Please address this.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(configuredBotReviewThreads(config, [thread]).length, 1);
+  assert.equal(manualReviewThreads(config, [thread]).length, 0);
 });
 
 test("formatDetailedStatus marks stale local review as non-gating", () => {
