@@ -6,18 +6,15 @@ import os from "node:os";
 import path from "node:path";
 import {
   Supervisor,
-  buildChecksFailureContext,
-  buildConflictFailureContext,
-  formatDetailedStatus,
-  inferStateFromPullRequest,
-  localReviewHighSeverityNeedsRetry,
-  recoverUnexpectedCodexTurnFailure,
-  summarizeChecks,
 } from "./supervisor";
+import { buildChecksFailureContext, buildConflictFailureContext } from "./pull-request-failure-context";
+import { inferStateFromPullRequest } from "./pull-request-state";
+import { localReviewHighSeverityNeedsRetry } from "./review-handling";
+import { recoverUnexpectedCodexTurnFailure } from "./supervisor-failure-helpers";
+import { formatDetailedStatus, summarizeChecks } from "./supervisor-status-rendering";
 import { buildDetailedStatusModel, buildDetailedStatusSummaryLines } from "./supervisor-status-model";
 import { shouldAutoRetryHandoffMissing } from "./supervisor-execution-policy";
 import { handleAuthFailure } from "./supervisor-failure-helpers";
-import { inferStateFromPullRequest as inferPullRequestStateFromModule } from "./pull-request-state";
 import {
   formatRecoveryLog,
   reconcileMergedIssueClosures,
@@ -4216,8 +4213,8 @@ test("buildConflictFailureContext preserves merge-conflict reporting fields", ()
   assert.equal(context.url, "https://example.test/pr/42");
 });
 
-test("supervisor re-exports PR state inference from the dedicated pull-request-state module", () => {
-  assert.equal(inferStateFromPullRequest, inferPullRequestStateFromModule);
+test("supervisor module continues to export the Supervisor class", () => {
+  assert.equal(typeof Supervisor, "function");
 });
 
 test("inferStateFromPullRequest routes actionable high local-review retry into local_review_fix", () => {
