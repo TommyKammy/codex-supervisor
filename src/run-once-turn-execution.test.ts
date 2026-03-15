@@ -6,6 +6,7 @@ import path from "node:path";
 import { hasProcessedReviewThread } from "./review-handling";
 import { executeCodexTurnPhase } from "./run-once-turn-execution";
 import { handlePostTurnPullRequestTransitionsPhase } from "./post-turn-pull-request";
+import { nextProcessedReviewThreadPatch } from "./turn-execution-orchestration";
 import {
   FailureContext,
   GitHubIssue,
@@ -353,6 +354,56 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking
   assert.equal(readyCalls, 1);
   assert.equal(snapshotLoads, 2);
   assert.equal(syncJournalCalls, 0);
+});
+
+test("nextProcessedReviewThreadPatch refreshes reprocessed same-head ids to the newest position before trimming", () => {
+  const patch = nextProcessedReviewThreadPatch({
+    preRunState: "addressing_review",
+    record: {
+      processed_review_thread_ids: Array.from({ length: 200 }, (_, index) => `thread-${index}@head-a`),
+      processed_review_thread_fingerprints: Array.from(
+        { length: 200 },
+        (_, index) => `thread-${index}@head-a#comment-${index}`,
+      ),
+    },
+    currentPr: { headRefOid: "head-a" },
+    evaluatedReviewHeadSha: "head-a",
+    reviewThreadsToProcess: [
+      createReviewThread({
+        id: "thread-0",
+        comments: {
+          nodes: [
+            {
+              id: "comment-0",
+              body: "Please address this again.",
+              createdAt: "2026-03-13T06:20:00Z",
+              url: "https://example.test/pr/116#discussion_r0",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.equal(patch.processed_review_thread_ids.length, 200);
+  assert.equal(patch.processed_review_thread_ids[0], "thread-1@head-a");
+  assert.equal(
+    patch.processed_review_thread_ids[patch.processed_review_thread_ids.length - 1],
+    "thread-0@head-a",
+  );
+  assert.equal(patch.processed_review_thread_fingerprints.length, 200);
+  assert.equal(
+    patch.processed_review_thread_fingerprints[0],
+    "thread-1@head-a#comment-1",
+  );
+  assert.equal(
+    patch.processed_review_thread_fingerprints[patch.processed_review_thread_fingerprints.length - 1],
+    "thread-0@head-a#comment-0",
+  );
 });
 
 test("executeCodexTurnPhase persists blocked reason and repeated blocker bookkeeping from Codex hints", async () => {
@@ -834,4 +885,319 @@ test("executeCodexTurnPhase loads local-review repair context before building th
   } finally {
     await fs.rm(workspaceDir, { recursive: true, force: true });
   }
+});
+
+test("executeCodexTurnPhase does not mark review threads processed for a refreshed PR head it did not evaluate", async () => {
+  const config = createConfig();
+  const issue: GitHubIssue = {
+    number: 102,
+    title: "Avoid attributing review processing to a refreshed head",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: "https://example.test/issues/102",
+    state: "OPEN",
+  };
+  const initialPr: GitHubPullRequest = {
+    number: 116,
+    title: "Address review threads",
+    url: "https://example.test/pr/116",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-102",
+    headRefOid: "head-b",
+    mergedAt: null,
+    copilotReviewState: "not_requested",
+    copilotReviewRequestedAt: null,
+    copilotReviewArrivedAt: null,
+  };
+  const refreshedPr: GitHubPullRequest = {
+    ...initialPr,
+    headRefOid: "head-c",
+  };
+  const reviewThreads = [createReviewThread()];
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "addressing_review",
+        pr_number: 116,
+        last_head_sha: "head-a",
+        processed_review_thread_ids: ["thread-1@head-a"],
+        processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+      }),
+    },
+  };
+
+  let journalReads = 0;
+  let resolveCalls = 0;
+  const result = await executeCodexTurnPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => {
+        resolveCalls += 1;
+        return resolveCalls === 1 ? refreshedPr : refreshedPr;
+      },
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => reviewThreads,
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      previousCodexSummary: null,
+      previousError: null,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      journalPath: path.join("/tmp/workspaces/issue-102", ".codex-supervisor", "issue-journal.md"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      workspaceStatus: {
+        branch: "codex/issue-102",
+        headSha: "head-b",
+        hasUncommittedChanges: false,
+        baseAhead: 0,
+        baseBehind: 0,
+        remoteBranchExists: true,
+        remoteAhead: 0,
+        remoteBehind: 0,
+      },
+      pr: initialPr,
+      checks: [],
+      reviewThreads,
+      options: { dryRun: false },
+    },
+    acquireSessionLock: async () => null,
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-03-13T06:20:00Z",
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    normalizeBlockerSignature: () => null,
+    isVerificationBlockedMessage: () => false,
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "addressing_review",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    inferStateWithoutPullRequest: () => "stabilizing",
+    blockedReasonFromReviewState: () => "manual_review",
+    recoverUnexpectedCodexTurnFailure: async () => {
+      throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+    },
+    getWorkspaceStatus: async () => ({
+      branch: "codex/issue-102",
+      headSha: "head-b",
+      hasUncommittedChanges: false,
+      baseAhead: 0,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    }),
+    pushBranch: async () => {
+      throw new Error("unexpected pushBranch call");
+    },
+    readIssueJournal: async () => {
+      journalReads += 1;
+      return journalReads === 1
+        ? [
+            "## Codex Working Notes",
+            "### Current Handoff",
+            "- Hypothesis: address the review thread on the current head.",
+          ].join("\n")
+        : [
+            "## Codex Working Notes",
+            "### Current Handoff",
+            "- Hypothesis: address the review thread on the current head.",
+            "- What changed: reviewed the configured bot thread before the PR head changed again.",
+            "- Next exact step: inspect the refreshed PR state.",
+          ].join("\n");
+    },
+    runCodexTurnImpl: async () => ({
+      exitCode: 0,
+      sessionId: "session-102",
+      lastMessage: "Reviewed the configured bot thread on the current head.",
+      stderr: "",
+      stdout: "",
+    }),
+  });
+
+  assert.equal(result.kind, "completed");
+  assert.equal(state.issues["102"]?.last_head_sha, "head-b");
+  assert.deepEqual(state.issues["102"]?.processed_review_thread_ids, ["thread-1@head-a"]);
+  assert.deepEqual(state.issues["102"]?.processed_review_thread_fingerprints, ["thread-1@head-a#comment-1"]);
+});
+
+test("executeCodexTurnPhase skips prompt preparation side effects when the session lock is unavailable", async () => {
+  const issue: GitHubIssue = {
+    number: 102,
+    title: "Skip prompt preparation when the session lock is unavailable",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: "https://example.test/issues/102",
+    state: "OPEN",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "addressing_review",
+        codex_session_id: "session-102",
+        local_review_head_sha: "head-a",
+        local_review_summary_path: "/tmp/reviews/head-a.md",
+      }),
+    },
+  };
+  let syncJournalCalls = 0;
+
+  const result = await executeCodexTurnPhase({
+    config: createConfig(),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => {
+        throw new Error("unexpected resolvePullRequestForBranch call");
+      },
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      previousCodexSummary: null,
+      previousError: null,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      journalPath: path.join("/tmp/workspaces/issue-102", ".codex-supervisor", "issue-journal.md"),
+      syncJournal: async () => {
+        syncJournalCalls += 1;
+      },
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      workspaceStatus: {
+        branch: "codex/issue-102",
+        headSha: "head-a",
+        hasUncommittedChanges: false,
+        baseAhead: 0,
+        baseBehind: 0,
+        remoteBranchExists: true,
+        remoteAhead: 0,
+        remoteBehind: 0,
+      },
+      pr: {
+        number: 116,
+        title: "Session-locked review turn",
+        url: "https://example.test/pr/116",
+        state: "OPEN",
+        createdAt: "2026-03-13T06:20:00Z",
+        isDraft: false,
+        reviewDecision: "CHANGES_REQUESTED",
+        mergeStateStatus: "CLEAN",
+        mergeable: "MERGEABLE",
+        headRefName: "codex/issue-102",
+        headRefOid: "head-a",
+        mergedAt: null,
+        copilotReviewState: "not_requested",
+        copilotReviewRequestedAt: null,
+        copilotReviewArrivedAt: null,
+      },
+      checks: [],
+      reviewThreads: [createReviewThread()],
+      options: { dryRun: false },
+    },
+    acquireSessionLock: async () => ({
+      sessionId: "session-102",
+      acquired: false,
+      reason: "session already locked elsewhere",
+      release: async () => undefined,
+    }),
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-03-13T06:20:00Z",
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    normalizeBlockerSignature: () => null,
+    isVerificationBlockedMessage: () => false,
+    derivePullRequestLifecycleSnapshot: () => {
+      throw new Error("unexpected derivePullRequestLifecycleSnapshot call");
+    },
+    inferStateWithoutPullRequest: () => "stabilizing",
+    blockedReasonFromReviewState: () => null,
+    recoverUnexpectedCodexTurnFailure: async () => {
+      throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+    },
+    readIssueJournal: async () => "## Codex Working Notes\n### Current Handoff\n- Hypothesis: wait for the lock.\n",
+    runCodexTurnImpl: async () => {
+      throw new Error("unexpected runCodexTurnImpl call");
+    },
+  });
+
+  assert.deepEqual(result, {
+    kind: "returned",
+    message: "Skipped issue #102: session already locked elsewhere.",
+  });
+  assert.equal(syncJournalCalls, 0);
+  assert.equal(state.issues["102"]?.external_review_misses_path, null);
+  assert.equal(state.issues["102"]?.external_review_head_sha, null);
 });
