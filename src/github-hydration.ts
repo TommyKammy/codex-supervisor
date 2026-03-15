@@ -188,34 +188,6 @@ export function inferCopilotReviewLifecycle(
     return { state: "not_requested", requestedAt: null, arrivedAt: null };
   }
 
-  const matchingReviewTimes = facts.reviews.flatMap((review) => {
-    const authorLogin = normalizeLogin(review.authorLogin);
-    return authorLogin && configuredReviewBots.has(authorLogin) && isActionableTopLevelReview(review) ? [review.submittedAt] : [];
-  });
-  const matchingCommentTimes = facts.comments.flatMap((comment) => {
-    const authorLogin = normalizeLogin(comment.authorLogin);
-    return authorLogin && configuredReviewBots.has(authorLogin) ? [comment.createdAt] : [];
-  });
-  const matchingIssueCommentTimes = facts.issueComments.flatMap((comment) => {
-    const authorLogin = normalizeLogin(comment.authorLogin);
-    return authorLogin && configuredReviewBots.has(authorLogin) && hasActionableReviewText(comment.body)
-      ? [comment.createdAt]
-      : [];
-  });
-  const arrivedAt = latestTimestamp([...matchingReviewTimes, ...matchingCommentTimes, ...matchingIssueCommentTimes]);
-  if (arrivedAt) {
-    return {
-      state: "arrived",
-      requestedAt: latestTimestamp(
-        facts.timeline
-          .filter((event) => event.type === "requested" && event.reviewerLogin && configuredReviewBots.has(event.reviewerLogin))
-          .map((event) => event.createdAt),
-      ),
-      arrivedAt,
-    };
-  }
-
-  const matchingRequests = facts.reviewRequests.filter((login) => configuredReviewBots.has(normalizeLogin(login) ?? ""));
   const latestRequestedAt = latestTimestamp(
     facts.timeline
       .filter((event) => event.type === "requested" && event.reviewerLogin && configuredReviewBots.has(event.reviewerLogin))
@@ -226,6 +198,42 @@ export function inferCopilotReviewLifecycle(
       .filter((event) => event.type === "removed" && event.reviewerLogin && configuredReviewBots.has(event.reviewerLogin))
       .map((event) => event.createdAt),
   );
+  const activeRequestStartedAt =
+    latestRequestedAt !== null && (latestRemovedAt === null || parseTimestamp(latestRequestedAt) > parseTimestamp(latestRemovedAt))
+      ? latestRequestedAt
+      : null;
+  const activeRequestStartedAtMs = parseTimestamp(activeRequestStartedAt);
+  const scopedToActiveRequest = (value: string | null | undefined): value is string =>
+    value !== null &&
+    value !== undefined &&
+    (activeRequestStartedAt === null || parseTimestamp(value) >= activeRequestStartedAtMs);
+
+  const matchingReviewTimes = facts.reviews.flatMap((review) => {
+    const authorLogin = normalizeLogin(review.authorLogin);
+    return authorLogin && configuredReviewBots.has(authorLogin) && isActionableTopLevelReview(review) && scopedToActiveRequest(review.submittedAt)
+      ? [review.submittedAt]
+      : [];
+  });
+  const matchingCommentTimes = facts.comments.flatMap((comment) => {
+    const authorLogin = normalizeLogin(comment.authorLogin);
+    return authorLogin && configuredReviewBots.has(authorLogin) && scopedToActiveRequest(comment.createdAt) ? [comment.createdAt] : [];
+  });
+  const matchingIssueCommentTimes = facts.issueComments.flatMap((comment) => {
+    const authorLogin = normalizeLogin(comment.authorLogin);
+    return authorLogin && configuredReviewBots.has(authorLogin) && hasActionableReviewText(comment.body) && scopedToActiveRequest(comment.createdAt)
+      ? [comment.createdAt]
+      : [];
+  });
+  const arrivedAt = latestTimestamp([...matchingReviewTimes, ...matchingCommentTimes, ...matchingIssueCommentTimes]);
+  if (arrivedAt) {
+    return {
+      state: "arrived",
+      requestedAt: latestRequestedAt,
+      arrivedAt,
+    };
+  }
+
+  const matchingRequests = facts.reviewRequests.filter((login) => configuredReviewBots.has(normalizeLogin(login) ?? ""));
 
   if (
     matchingRequests.length > 0 ||
@@ -254,7 +262,6 @@ function inferConfiguredBotTopLevelReviewSummary(
 
   let latestConfiguredReview: ConfiguredBotTopLevelReviewSummary = { strength: null, submittedAt: null };
   let latestConfiguredReviewMs = 0;
-  let sawNonConfiguredChangesRequestedReview = false;
 
   for (const review of facts.reviews) {
     const authorLogin = normalizeLogin(review.authorLogin);
@@ -263,7 +270,6 @@ function inferConfiguredBotTopLevelReviewSummary(
     }
 
     if (!configuredReviewBots.has(authorLogin)) {
-      sawNonConfiguredChangesRequestedReview = true;
       continue;
     }
 
@@ -281,13 +287,6 @@ function inferConfiguredBotTopLevelReviewSummary(
 
   if (!latestConfiguredReview.strength) {
     return { strength: null, submittedAt: null };
-  }
-
-  if (sawNonConfiguredChangesRequestedReview) {
-    return {
-      strength: "blocking",
-      submittedAt: latestConfiguredReview.submittedAt,
-    };
   }
 
   return latestConfiguredReview;
