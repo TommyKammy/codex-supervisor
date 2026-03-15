@@ -4,10 +4,9 @@ import {
   VERIFIER_GUARDRAILS_PATH,
 } from "./committed-guardrails";
 import { ensureDir, nowIso, truncate } from "./utils";
-import { dedupeFindings, finalizeLocalReview } from "./local-review-finalize";
-import { findingMeetsReviewerThreshold, reviewerTypeForRole } from "./local-review-thresholds";
+import { finalizeLocalReview } from "./local-review-finalize";
 import { reviewDir, writeLocalReviewArtifacts } from "./local-review-artifacts";
-import { runRoleReview, runVerifierReview } from "./local-review-runner";
+import { runLocalReviewExecution } from "./local-review-execution";
 import { type ExternalReviewMissPattern } from "./external-review-misses";
 import {
   collectLocalReviewChangedFiles,
@@ -106,85 +105,6 @@ function displayGuardrailArtifactPath(config: SupervisorConfig, filePath: string
     : path.basename(filePath);
 }
 
-async function runLocalReviewRoles(args: {
-  config: SupervisorConfig;
-  issue: GitHubIssue;
-  branch: string;
-  workspacePath: string;
-  defaultBranch: string;
-  pr: GitHubPullRequest;
-  roles: string[];
-  alwaysReadFiles: string[];
-  onDemandFiles: string[];
-  priorMissPatterns: ExternalReviewMissPattern[];
-}): Promise<LocalReviewRoleResult[]> {
-  const roleResults: LocalReviewRoleResult[] = new Array(args.roles.length);
-  const concurrency = Math.min(2, args.roles.length);
-  let currentIndex = 0;
-
-  async function runNextRole(): Promise<void> {
-    while (true) {
-      const index = currentIndex;
-      if (index >= args.roles.length) {
-        return;
-      }
-      currentIndex += 1;
-      roleResults[index] = await runRoleReview({
-        config: args.config,
-        issue: args.issue,
-        branch: args.branch,
-        workspacePath: args.workspacePath,
-        defaultBranch: args.defaultBranch,
-        pr: args.pr,
-        role: args.roles[index]!,
-        alwaysReadFiles: args.alwaysReadFiles,
-        onDemandFiles: args.onDemandFiles,
-        priorMissPatterns: args.priorMissPatterns,
-      });
-    }
-  }
-
-  await Promise.all(Array.from({ length: concurrency }, () => runNextRole()));
-  return roleResults;
-}
-
-async function runLocalReviewVerifier(args: {
-  config: SupervisorConfig;
-  issue: GitHubIssue;
-  branch: string;
-  workspacePath: string;
-  defaultBranch: string;
-  pr: GitHubPullRequest;
-  roleResults: LocalReviewRoleResult[];
-}): Promise<LocalReviewVerifierReport | null> {
-  const rawActionableHighSeverityFindings = dedupeFindings(
-    args.roleResults
-      .flatMap((result) => result.findings)
-      .filter((finding) =>
-        finding.severity === "high" &&
-        findingMeetsReviewerThreshold({
-          finding,
-          reviewerType: reviewerTypeForRole({ role: finding.role }),
-          config: args.config,
-        }),
-      ),
-  );
-
-  if (rawActionableHighSeverityFindings.length === 0) {
-    return null;
-  }
-
-  return runVerifierReview({
-    config: args.config,
-    issue: args.issue,
-    branch: args.branch,
-    workspacePath: args.workspacePath,
-    defaultBranch: args.defaultBranch,
-    pr: args.pr,
-    findings: rawActionableHighSeverityFindings,
-  });
-}
-
 function formatLocalReviewResult(args: {
   ranAt: string;
   finalized: FinalizedLocalReview;
@@ -248,18 +168,15 @@ export async function runLocalReview(args: {
   const { detectedRoles, roles } = await prepareLocalReviewRoleSelection({
     config: args.config,
   });
-  const roleResults = await runLocalReviewRoles({
+  const { roleResults, verifierReport } = await runLocalReviewExecution({
     ...args,
     roles,
+    detectedRoles,
     priorMissPatterns,
   });
   const ranAt = nowIso();
   const dirPath = reviewDir(args.config, args.issue.number);
   await ensureDir(dirPath);
-  const verifierReport = await runLocalReviewVerifier({
-    ...args,
-    roleResults,
-  });
   const finalized = finalizeLocalReview({
     config: args.config,
     issueNumber: args.issue.number,
