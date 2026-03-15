@@ -812,3 +812,72 @@ test("GitHubClient fetches the newest unresolved review thread comments", async 
   assert.equal(threads[0]?.comments.nodes.at(-1)?.id, "comment-100");
   assert.equal(threads[0]?.comments.nodes.at(-1)?.author?.typeName, "Bot");
 });
+
+test("GitHubClient normalizes fallback statusCheckRollup checks by latest timestamp", async () => {
+  const config = createConfig();
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "pr" && args[1] === "checks") {
+      return {
+        exitCode: 1,
+        stdout: "not-json",
+        stderr: "failed to load checks",
+      };
+    }
+
+    if (args[0] === "pr" && args[1] === "view") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          statusCheckRollup: [
+            {
+              __typename: "CheckRun",
+              name: "build",
+              workflowName: "CI",
+              detailsUrl: "https://example.test/checks/build-old",
+              conclusion: "FAILURE",
+              status: "COMPLETED",
+              completedAt: "2026-03-13T02:01:00Z",
+            },
+            {
+              __typename: "CheckRun",
+              name: "build",
+              workflowName: "CI",
+              detailsUrl: "https://example.test/checks/build-new",
+              conclusion: "SUCCESS",
+              status: "COMPLETED",
+              completedAt: "2026-03-13T02:02:00Z",
+            },
+            {
+              __typename: "StatusContext",
+              context: "lint",
+              targetUrl: "https://example.test/checks/lint",
+              state: "PENDING",
+              startedAt: "2026-03-13T02:03:00Z",
+            },
+          ],
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const checks = await client.getChecks(44);
+
+  assert.deepEqual(checks, [
+    {
+      name: "build",
+      state: "SUCCESS",
+      bucket: "pass",
+      workflow: "CI",
+      link: "https://example.test/checks/build-new",
+    },
+    {
+      name: "lint",
+      state: "PENDING",
+      bucket: "pending",
+      link: "https://example.test/checks/lint",
+    },
+  ]);
+});
