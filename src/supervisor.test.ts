@@ -17,6 +17,8 @@ import {
 } from "./supervisor";
 import {
   formatRecoveryLog,
+  reconcileMergedIssueClosures,
+  reconcileParentEpicClosures,
   reconcileRecoverableBlockedIssueStates,
   reconcileStaleActiveIssueReservation,
   reconcileTrackedMergedButOpenIssues,
@@ -485,6 +487,7 @@ test("reconcileRecoverableBlockedIssueStates requeues requirements-blocked issue
 });
 
 test("reconcileStaleActiveIssueReservation clears a stale reservation and emits a recovery loggable event", async () => {
+  const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
   const state: SupervisorStateFile = {
     activeIssueNumber: 366,
     issues: {
@@ -513,8 +516,8 @@ test("reconcileStaleActiveIssueReservation clears a stale reservation and emits 
   const recoveryEvents = await reconcileStaleActiveIssueReservation({
     stateStore,
     state,
-    issueLockPath: (issueNumber) => `/locks/issues/${issueNumber}`,
-    sessionLockPath: (sessionId) => `/locks/sessions/${sessionId}`,
+    issueLockPath: (issueNumber) => path.join(lockRoot, "locks", "issues", String(issueNumber)),
+    sessionLockPath: (sessionId) => path.join(lockRoot, "locks", "sessions", String(sessionId)),
   });
 
   assert.equal(state.activeIssueNumber, null);
@@ -525,6 +528,187 @@ test("reconcileStaleActiveIssueReservation clears a stale reservation and emits 
     formatRecoveryLog(recoveryEvents) ?? "",
     /recovery issue=#366 reason=stale_state_cleanup: cleared stale active reservation after issue lock and session lock were missing/,
   );
+});
+
+test("reconcileMergedIssueClosures clears a stale active issue pointer even when the record already matches the done patch", async () => {
+  const original = createRecord({
+    issue_number: 366,
+    state: "done",
+    pr_number: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_blocker_signature: null,
+    last_failure_signature: null,
+    timeout_retry_count: 0,
+    blocked_verification_retry_count: 0,
+    repeated_blocker_count: 0,
+    repeated_failure_signature_count: 0,
+    local_review_blocker_summary: null,
+    local_review_recommendation: null,
+    local_review_degraded: false,
+    external_review_head_sha: null,
+    external_review_misses_path: null,
+    external_review_matched_findings_count: 0,
+    external_review_near_match_findings_count: 0,
+    external_review_missed_findings_count: 0,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 366,
+    issues: {
+      "366": original,
+    },
+  };
+  const closedIssue: GitHubIssue = {
+    number: 366,
+    title: "Closed issue",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:20:00Z",
+    url: "https://example.test/issues/366",
+    state: "CLOSED",
+  };
+
+  let touchCalls = 0;
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      touchCalls += 1;
+      return { ...current, ...patch };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileMergedIssueClosures(
+    {
+      getMergedPullRequestsClosingIssue: async () => [],
+      getPullRequestIfExists: async () => null,
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore,
+    state,
+    [closedIssue],
+  );
+
+  assert.equal(touchCalls, 0);
+  assert.equal(saveCalls, 1);
+  assert.equal(state.activeIssueNumber, null);
+  assert.deepEqual(recoveryEvents, []);
+  assert.deepEqual(state.issues["366"], original);
+});
+
+test("reconcileParentEpicClosures clears a stale active issue pointer even when the parent record already matches the done patch", async () => {
+  const original = createRecord({
+    issue_number: 123,
+    state: "done",
+    pr_number: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_blocker_signature: null,
+    last_failure_signature: null,
+    timeout_retry_count: 0,
+    blocked_verification_retry_count: 0,
+    repeated_blocker_count: 0,
+    repeated_failure_signature_count: 0,
+    local_review_blocker_summary: null,
+    local_review_recommendation: null,
+    local_review_degraded: false,
+    external_review_head_sha: null,
+    external_review_misses_path: null,
+    external_review_matched_findings_count: 0,
+    external_review_near_match_findings_count: 0,
+    external_review_missed_findings_count: 0,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 123,
+    issues: {
+      "123": original,
+    },
+  };
+  const issues: GitHubIssue[] = [
+    {
+      number: 123,
+      title: "Parent issue",
+      body: "",
+      createdAt: "2026-03-13T00:00:00Z",
+      updatedAt: "2026-03-13T00:00:00Z",
+      url: "https://example.test/issues/123",
+      state: "OPEN",
+    },
+    {
+      number: 201,
+      title: "Child one",
+      body: "Part of #123",
+      createdAt: "2026-03-13T00:00:00Z",
+      updatedAt: "2026-03-13T00:00:00Z",
+      url: "https://example.test/issues/201",
+      state: "CLOSED",
+    },
+    {
+      number: 202,
+      title: "Child two",
+      body: "Part of: #123",
+      createdAt: "2026-03-13T00:00:00Z",
+      updatedAt: "2026-03-13T00:00:00Z",
+      url: "https://example.test/issues/202",
+      state: "CLOSED",
+    },
+  ];
+
+  let touchCalls = 0;
+  let saveCalls = 0;
+  let closeIssueCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      touchCalls += 1;
+      return { ...current, ...patch };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  await reconcileParentEpicClosures(
+    {
+      closeIssue: async () => {
+        closeIssueCalls += 1;
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getChecks: async () => [],
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+      getPullRequestIfExists: async () => null,
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore,
+    state,
+    issues,
+  );
+
+  assert.equal(closeIssueCalls, 1);
+  assert.equal(touchCalls, 0);
+  assert.equal(saveCalls, 1);
+  assert.equal(state.activeIssueNumber, null);
+  assert.deepEqual(state.issues["123"], original);
 });
 
 test("reconcileTrackedMergedButOpenIssues fetches missing issue snapshots for non-merging merged records", async () => {

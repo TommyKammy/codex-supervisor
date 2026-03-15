@@ -260,9 +260,10 @@ export async function reconcileMergedIssueClosures(
       if (needsRecordUpdate(record, patch)) {
         const updated = stateStore.touch(record, patch);
         state.issues[String(record.issue_number)] = updated;
-        if (state.activeIssueNumber === record.issue_number) {
-          state.activeIssueNumber = null;
-        }
+        changed = true;
+      }
+      if (state.activeIssueNumber === record.issue_number) {
+        state.activeIssueNumber = null;
         changed = true;
       }
       continue;
@@ -292,11 +293,12 @@ export async function reconcileMergedIssueClosures(
       );
       const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
       state.issues[String(record.issue_number)] = updated;
-      if (state.activeIssueNumber === record.issue_number) {
-        state.activeIssueNumber = null;
-      }
       changed = true;
       recoveryEvents.push(recoveryEvent);
+    }
+    if (state.activeIssueNumber === record.issue_number) {
+      state.activeIssueNumber = null;
+      changed = true;
     }
   }
 
@@ -616,9 +618,10 @@ export async function reconcileParentEpicClosures(
       if (needsRecordUpdate(existingRecord, patch)) {
         const updated = stateStore.touch(existingRecord, patch);
         state.issues[String(parentIssue.number)] = updated;
-        if (state.activeIssueNumber === parentIssue.number) {
-          state.activeIssueNumber = null;
-        }
+        changed = true;
+      }
+      if (state.activeIssueNumber === parentIssue.number) {
+        state.activeIssueNumber = null;
         changed = true;
       }
     }
