@@ -3,7 +3,7 @@ import {
   localReviewHighSeverityNeedsBlock,
   localReviewHighSeverityNeedsRetry,
   localReviewRetryLoopStalled,
-} from "./run-once-turn-execution";
+} from "./review-handling";
 import {
   configuredBotReviewThreads,
   manualReviewThreads,
