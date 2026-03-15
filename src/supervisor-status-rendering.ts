@@ -19,6 +19,7 @@ import {
   buildDetailedStatusSummaryLines,
   sanitizeStatusValue,
 } from "./supervisor-status-model";
+import { displayRelativeArtifactPath } from "./supervisor-status-summary-helpers";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "./types";
 import { loadRelevantVerifierGuardrails } from "./verifier-guardrails";
 
@@ -50,13 +51,6 @@ export function summarizeChecks(
 
 export function mergeConflictDetected(pr: GitHubPullRequest): boolean {
   return pr.mergeStateStatus === "DIRTY";
-}
-
-function displayStatusArtifactPath(config: SupervisorConfig, filePath: string): string {
-  const relativePath = path.relative(config.localReviewArtifactDir, filePath);
-  return relativePath && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)
-    ? relativePath
-    : path.basename(filePath);
 }
 
 async function loadStatusChangedFiles(config: SupervisorConfig, workspacePath: string): Promise<string[]> {
@@ -148,7 +142,7 @@ export async function buildDurableGuardrailStatusLine(args: {
       continue;
     }
 
-    const sourcePath = displayStatusArtifactPath(args.config, winner.pattern.sourceArtifactPath);
+    const sourcePath = displayRelativeArtifactPath(args.config, winner.pattern.sourceArtifactPath);
     runtimeCounts.set(sourcePath, (runtimeCounts.get(sourcePath) ?? 0) + 1);
   }
   if (committedCount > 0) {
