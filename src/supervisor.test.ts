@@ -7,6 +7,7 @@ import path from "node:path";
 import {
   Supervisor,
   buildChecksFailureContext,
+  buildConflictFailureContext,
   formatDetailedStatus,
   inferStateFromPullRequest,
   localReviewHighSeverityNeedsRetry,
@@ -4042,6 +4043,75 @@ test("buildChecksFailureContext ignores cancelled runs", () => {
   ];
 
   assert.equal(buildChecksFailureContext(pr, checks), null);
+});
+
+test("buildChecksFailureContext preserves failing-check reporting fields", () => {
+  const pr: GitHubPullRequest = {
+    number: 42,
+    title: "Test PR",
+    url: "https://example.test/pr/42",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "UNSTABLE",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-42",
+    headRefOid: "deadbeef",
+    mergedAt: null,
+  };
+
+  const checks: PullRequestCheck[] = [
+    {
+      name: "build (ubuntu-latest)",
+      state: "FAILURE",
+      bucket: "fail",
+      workflow: "CI",
+      link: "https://example.test/checks/ubuntu",
+    },
+    {
+      name: "test (macos-latest)",
+      state: "TIMED_OUT",
+      bucket: "fail",
+      workflow: "CI",
+    },
+  ];
+
+  const context = buildChecksFailureContext(pr, checks);
+  assert.equal(context?.category, "checks");
+  assert.equal(context?.summary, "PR #42 has failing checks.");
+  assert.equal(context?.signature, "build (ubuntu-latest):fail|test (macos-latest):fail");
+  assert.equal(context?.command, "gh pr checks");
+  assert.deepEqual(context?.details, [
+    "build (ubuntu-latest) (fail/FAILURE) https://example.test/checks/ubuntu",
+    "test (macos-latest) (fail/TIMED_OUT)",
+  ]);
+  assert.equal(context?.url, "https://example.test/pr/42");
+});
+
+test("buildConflictFailureContext preserves merge-conflict reporting fields", () => {
+  const pr: GitHubPullRequest = {
+    number: 42,
+    title: "Test PR",
+    url: "https://example.test/pr/42",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "DIRTY",
+    mergeable: "CONFLICTING",
+    headRefName: "codex/issue-42",
+    headRefOid: "deadbeef",
+    mergedAt: null,
+  };
+
+  const context = buildConflictFailureContext(pr);
+  assert.equal(context.category, "conflict");
+  assert.equal(context.summary, "PR #42 has merge conflicts and needs a base-branch integration pass.");
+  assert.equal(context.signature, "dirty:deadbeef");
+  assert.equal(context.command, "git fetch origin && git merge origin/<default-branch>");
+  assert.deepEqual(context.details, ["mergeStateStatus=DIRTY"]);
+  assert.equal(context.url, "https://example.test/pr/42");
 });
 
 test("supervisor re-exports PR state inference from the dedicated pull-request-state module", () => {
