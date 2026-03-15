@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildCodexPrompt, buildCodexResumePrompt, extractStateHint, shouldUseCompactResumePrompt } from "./codex";
-import { loadLocalReviewRepairContext } from "./supervisor";
+import { loadLocalReviewRepairContext } from "./local-review-repair-context";
 import { FailureContext, GitHubIssue, RunState } from "./types";
 import { type VerifierGuardrailRule } from "./verifier-guardrails";
 
