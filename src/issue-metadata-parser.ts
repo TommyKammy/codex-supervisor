@@ -1,8 +1,6 @@
 import type { GitHubIssue } from "./types";
 import type { IssueMetadata } from "./issue-metadata";
-import type { RiskyChangeClass } from "./issue-metadata-gates";
-
-const RISKY_CHANGE_CLASSES = ["auth", "billing", "permissions", "ci", "migrations", "secrets"] as const;
+import type { RiskyChangeClass } from "./issue-metadata-risky-policy";
 
 function parseIssueNumberList(input: string): number[] {
   return Array.from(
@@ -19,15 +17,6 @@ function parseList(input: string): string[] {
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
-}
-
-function normalizeRiskyChangeClass(input: string): RiskyChangeClass | null {
-  const normalized = input.trim().toLowerCase();
-  if ((RISKY_CHANGE_CLASSES as readonly string[]).includes(normalized)) {
-    return normalized as RiskyChangeClass;
-  }
-
-  return null;
 }
 
 export function parseTouchesList(body: string): string[] {
@@ -57,35 +46,6 @@ export function parseExecutionOrder(
     executionOrderIndex: Number(singleLineMatch[1]),
     executionOrderTotal: Number(singleLineMatch[2]),
   };
-}
-
-export function parseRiskyChangeApprovalList(body: string): RiskyChangeClass[] {
-  const approved = new Set<RiskyChangeClass>();
-  const metadataMatches = body.matchAll(
-    /^\s*(?:Risky change approval|Risky changes approved|Risky change opt-in):\s*(.+)\s*$/gim,
-  );
-  for (const match of metadataMatches) {
-    for (const value of parseList(match[1])) {
-      const riskyClass = normalizeRiskyChangeClass(value);
-      if (riskyClass) {
-        approved.add(riskyClass);
-      }
-    }
-  }
-
-  const lowerBody = body.toLowerCase();
-  for (const riskyClass of RISKY_CHANGE_CLASSES) {
-    const sentencePatterns = [
-      `explicitly approved for ${riskyClass} changes`,
-      `explicitly authorize ${riskyClass} changes`,
-      `explicitly opt in to ${riskyClass} changes`,
-    ];
-    if (sentencePatterns.some((pattern) => lowerBody.includes(pattern))) {
-      approved.add(riskyClass);
-    }
-  }
-
-  return [...approved].sort();
 }
 
 export function parseIssueMetadata(issue: GitHubIssue): IssueMetadata {

@@ -1,9 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  parseIssueMetadata,
-  parseRiskyChangeApprovalList,
-} from "./issue-metadata-parser";
+import { parseIssueMetadata } from "./issue-metadata-parser";
 import { GitHubIssue } from "./types";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
@@ -38,19 +35,4 @@ Touches: src/issue-metadata.ts, src/supervisor.ts
     parallelGroup: "parser-refactor",
     touches: ["src/issue-metadata.ts", "src/supervisor.ts"],
   });
-});
-
-test("parseRiskyChangeApprovalList preserves approval aliases and normalization", () => {
-  const body = `Risky changes approved: billing, unknown, Billing
-Risky change opt-in: ci
-
-This issue explicitly authorize auth changes.
-This issue explicitly approved for secrets changes.`;
-
-  assert.deepEqual(parseRiskyChangeApprovalList(body), [
-    "auth",
-    "billing",
-    "ci",
-    "secrets",
-  ]);
 });

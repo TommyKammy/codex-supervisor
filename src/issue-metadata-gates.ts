@@ -1,9 +1,14 @@
 import type { GitHubIssue } from "./types";
 import {
   parseExecutionOrder,
-  parseRiskyChangeApprovalList,
-  parseTouchesList,
 } from "./issue-metadata-parser";
+import {
+  detectRiskyChangeClasses,
+  parseRiskyChangeApprovalList,
+  type RiskyChangeClass,
+} from "./issue-metadata-risky-policy";
+
+export type { RiskyChangeClass } from "./issue-metadata-risky-policy";
 
 export interface ExecutionReadyLintResult {
   isExecutionReady: boolean;
@@ -19,62 +24,9 @@ export interface ClarificationBlock {
   reason: string;
 }
 
-const RISKY_CHANGE_CLASSES = ["auth", "billing", "permissions", "ci", "migrations", "secrets"] as const;
 const HIGH_RISK_AMBIGUITY_CLASSES = ["open_question", "unresolved_choice", "operator_confirmation"] as const;
 
-export type RiskyChangeClass = (typeof RISKY_CHANGE_CLASSES)[number];
 export type HighRiskAmbiguityClass = (typeof HIGH_RISK_AMBIGUITY_CLASSES)[number];
-
-const RISKY_CHANGE_SIGNALS: Record<RiskyChangeClass, RegExp[]> = {
-  auth: [
-    /\bauth\b/i,
-    /\bauthentication\b/i,
-    /\boauth\b/i,
-    /\blogin\b/i,
-    /\bpasswords?\b/i,
-    /\bsessions?\b/i,
-    /\btokens?\b/i,
-    /\bsso\b/i,
-  ],
-  billing: [
-    /\bbilling\b/i,
-    /\binvoices?\b/i,
-    /\bsubscriptions?\b/i,
-    /\bpayments?\b/i,
-    /\bcharges?\b/i,
-    /\bstripe\b/i,
-  ],
-  permissions: [
-    /\bpermission(s)?\b/i,
-    /\brbac\b/i,
-    /\baccess control\b/i,
-    /\bacl\b/i,
-    /\brole(s)?\b/i,
-  ],
-  ci: [
-    /\bci\b/i,
-    /\bgithub actions\b/i,
-    /\.github\/workflows\b/i,
-    /\bci workflows?\b/i,
-    /\bworkflow files?\b/i,
-    /\bpipeline(s)?\b/i,
-  ],
-  migrations: [
-    /\bmigration(s)?\b/i,
-    /\bmigrate\b/i,
-    /\bprisma migrate\b/i,
-    /\bdatabase schema\b/i,
-    /\bschema change(s)?\b/i,
-    /\bddl\b/i,
-  ],
-  secrets: [
-    /\bsecret(s)?\b/i,
-    /\bcredential(s)?\b/i,
-    /\bapi key(s)?\b/i,
-    /\bprivate key(s)?\b/i,
-    /\bsigning key(s)?\b/i,
-  ],
-};
 
 const HIGH_RISK_AMBIGUITY_SIGNALS: Record<HighRiskAmbiguityClass, RegExp[]> = {
   open_question: [/\b(?:tbd|to be decided|open question|pending decision)\b/i, /\?{2,}/],
@@ -165,25 +117,6 @@ function hasConcreteVerificationTarget(content: string): boolean {
   }
 
   return listItems.some((item) => item.split(/\s+/).length >= 5);
-}
-
-function detectRiskyChangeClasses(issue: Pick<GitHubIssue, "title" | "body">): RiskyChangeClass[] {
-  const detectionInputs = [
-    issue.title,
-    findMarkdownSectionContent(issue.body, "Summary") ?? "",
-    findMarkdownSectionContent(issue.body, "Scope") ?? "",
-    parseTouchesList(issue.body).join(", "),
-  ];
-  const detected = new Set<RiskyChangeClass>();
-
-  for (const riskyClass of RISKY_CHANGE_CLASSES) {
-    const patterns = RISKY_CHANGE_SIGNALS[riskyClass];
-    if (detectionInputs.some((input) => patterns.some((pattern) => pattern.test(input)))) {
-      detected.add(riskyClass);
-    }
-  }
-
-  return [...detected].sort();
 }
 
 export function lintExecutionReadyIssueBody(
