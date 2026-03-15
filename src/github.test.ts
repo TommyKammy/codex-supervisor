@@ -729,6 +729,87 @@ test("GitHubClient refreshes same-head Copilot lifecycle transitions from not_re
   assert.equal(lifecycleCallCount, 3);
 });
 
+test("GitHubClient reuses arrived configured-bot lifecycle for the same head without refetching", async () => {
+  const config = createConfig();
+  let lifecycleCallCount = 0;
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "pr" && args[1] === "view") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          number: 44,
+          title: "Same head arrived lifecycle cache",
+          url: "https://example.test/pr/44",
+          state: "OPEN",
+          createdAt: "2026-03-13T00:00:00Z",
+          updatedAt: "2026-03-13T00:00:00Z",
+          isDraft: false,
+          reviewDecision: null,
+          mergeStateStatus: "CLEAN",
+          mergeable: "MERGEABLE",
+          headRefName: "codex/issue-141",
+          headRefOid: "head-44",
+          mergedAt: null,
+        }),
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "graphql") {
+      lifecycleCallCount += 1;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: { nodes: [] },
+                reviews: {
+                  nodes: [
+                    {
+                      submittedAt: "2026-03-13T01:03:04Z",
+                      author: {
+                        login: "copilot-pull-request-reviewer",
+                      },
+                    },
+                  ],
+                },
+                comments: { nodes: [] },
+                reviewThreads: { nodes: [] },
+                timelineItems: {
+                  nodes: [
+                    {
+                      __typename: "ReviewRequestedEvent",
+                      createdAt: "2026-03-13T01:02:03Z",
+                      requestedReviewer: {
+                        login: "copilot-pull-request-reviewer",
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const first = await client.getPullRequest(44);
+  const second = await client.getPullRequest(44);
+
+  assert.equal(first.copilotReviewState, "arrived");
+  assert.equal(first.copilotReviewRequestedAt, "2026-03-13T01:02:03Z");
+  assert.equal(first.copilotReviewArrivedAt, "2026-03-13T01:03:04Z");
+  assert.equal(second.copilotReviewState, "arrived");
+  assert.equal(second.copilotReviewRequestedAt, "2026-03-13T01:02:03Z");
+  assert.equal(second.copilotReviewArrivedAt, "2026-03-13T01:03:04Z");
+  assert.equal(lifecycleCallCount, 1);
+});
+
 test("GitHubClient hydrates arrived lifecycle from actionable configured-bot issue comments", async () => {
   const config = createConfig({ reviewBotLogins: ["coderabbitai[bot]"] });
   let lifecycleQuery: string | null = null;
