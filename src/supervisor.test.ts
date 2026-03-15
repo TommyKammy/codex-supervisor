@@ -15,6 +15,7 @@ import {
   shouldAutoRetryHandoffMissing,
   summarizeChecks,
 } from "./supervisor";
+import { inferStateFromPullRequest as inferPullRequestStateFromModule } from "./pull-request-state";
 import {
   formatRecoveryLog,
   reconcileMergedIssueClosures,
@@ -3743,6 +3744,10 @@ test("buildChecksFailureContext ignores cancelled runs", () => {
   ];
 
   assert.equal(buildChecksFailureContext(pr, checks), null);
+});
+
+test("supervisor re-exports PR state inference from the dedicated pull-request-state module", () => {
+  assert.equal(inferStateFromPullRequest, inferPullRequestStateFromModule);
 });
 
 test("inferStateFromPullRequest routes actionable high local-review retry into local_review_fix", () => {
