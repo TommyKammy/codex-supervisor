@@ -1,20 +1,18 @@
-import path from "node:path";
 import {
-  EXTERNAL_REVIEW_GUARDRAILS_PATH,
-  VERIFIER_GUARDRAILS_PATH,
-} from "./committed-guardrails";
-import { ensureDir, nowIso, truncate } from "./utils";
+  formatLocalReviewResult,
+  prepareLocalReviewGuardrailProvenance,
+} from "./local-review-result";
+import { ensureDir, nowIso } from "./utils";
 import { finalizeLocalReview } from "./local-review-finalize";
 import { reviewDir, writeLocalReviewArtifacts } from "./local-review-artifacts";
 import { runLocalReviewExecution } from "./local-review-execution";
-import { type ExternalReviewMissPattern } from "./external-review-misses";
 import {
   collectLocalReviewChangedFiles,
   loadLocalReviewExternalReviewContext,
   prepareLocalReviewRoleSelection,
 } from "./local-review-preparation";
 import { GitHubIssue, GitHubPullRequest, SupervisorConfig } from "./types";
-import { type FinalizedLocalReview, type LocalReviewResult, type LocalReviewRoleResult, type LocalReviewVerifierReport } from "./local-review-types";
+import { type LocalReviewResult } from "./local-review-types";
 
 export type {
   ActionableSeverity,
@@ -31,6 +29,10 @@ export type {
   ParsedVerifierFooter,
   VerificationVerdict,
 } from "./local-review-types";
+export {
+  buildLocalReviewBlockerSummary,
+  LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY,
+} from "./local-review-result";
 
 export function localReviewHasActionableFindings(
   record: Pick<IssueRunRecordLike, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation">,
@@ -49,82 +51,6 @@ interface IssueRunRecordLike {
   local_review_head_sha: string | null;
   local_review_findings_count: number;
   local_review_recommendation: "ready" | "changes_requested" | "unknown" | null;
-}
-
-export const LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY = "degraded local review; inspect the saved artifact";
-
-function formatBlockerLocation(args: { file: string | null; start: number | null; end: number | null }): string | null {
-  if (!args.file) {
-    return null;
-  }
-  if (args.start == null) {
-    return args.file;
-  }
-
-  return args.end != null && args.end !== args.start
-    ? `${args.file}:${args.start}-${args.end}`
-    : `${args.file}:${args.start}`;
-}
-
-export function buildLocalReviewBlockerSummary(
-  review: Pick<FinalizedLocalReview, "recommendation" | "degraded" | "maxSeverity" | "rootCauseCount" | "rootCauseSummaries">,
-): string | null {
-  if (review.recommendation === "ready") {
-    return null;
-  }
-  if (review.degraded) {
-    return LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY;
-  }
-
-  const primary = review.rootCauseSummaries[0];
-  if (!primary) {
-    return review.rootCauseCount > 0 || review.maxSeverity !== "none"
-      ? `${review.maxSeverity} severity local-review findings`
-      : null;
-  }
-
-  const location = formatBlockerLocation(primary);
-  const extraCount = Math.max(review.rootCauseSummaries.length - 1, 0);
-  return truncate(
-    [
-      primary.severity,
-      location,
-      primary.summary,
-      extraCount > 0 ? `(+${extraCount} more root cause${extraCount === 1 ? "" : "s"})` : null,
-    ]
-      .filter((part): part is string => Boolean(part))
-      .join(" "),
-    160,
-  );
-}
-
-function displayGuardrailArtifactPath(config: SupervisorConfig, filePath: string): string {
-  const relativePath = path.relative(config.localReviewArtifactDir, filePath);
-  return relativePath && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)
-    ? relativePath
-    : path.basename(filePath);
-}
-
-function formatLocalReviewResult(args: {
-  ranAt: string;
-  finalized: FinalizedLocalReview;
-  artifacts: Pick<LocalReviewResult, "summaryPath" | "findingsPath" | "rawOutput">;
-}): LocalReviewResult {
-  return {
-    ranAt: args.ranAt,
-    summaryPath: args.artifacts.summaryPath,
-    findingsPath: args.artifacts.findingsPath,
-    summary: args.finalized.summary,
-    blockerSummary: buildLocalReviewBlockerSummary(args.finalized),
-    findingsCount: args.finalized.findingsCount,
-    rootCauseCount: args.finalized.rootCauseCount,
-    maxSeverity: args.finalized.maxSeverity,
-    verifiedFindingsCount: args.finalized.verifiedFindingsCount,
-    verifiedMaxSeverity: args.finalized.verifiedMaxSeverity,
-    recommendation: args.finalized.recommendation,
-    degraded: args.finalized.degraded,
-    rawOutput: args.artifacts.rawOutput,
-  };
 }
 
 export function shouldRunLocalReview(
@@ -187,23 +113,12 @@ export async function runLocalReview(args: {
     roleResults,
     verifierReport,
     ranAt,
-    guardrailProvenance: {
-      verifier: {
-        committedPath:
-          (verifierReport?.verifierGuardrails?.length ?? 0) > 0 ? VERIFIER_GUARDRAILS_PATH : null,
-        committedCount: verifierReport?.verifierGuardrails?.length ?? 0,
-      },
-      externalReview: {
-        committedPath: committedExternalReviewPatterns.length > 0 ? EXTERNAL_REVIEW_GUARDRAILS_PATH : null,
-        committedCount: committedExternalReviewPatterns.length,
-        runtimeSources: [...new Set(runtimeExternalReviewPatterns.map((pattern) => pattern.sourceArtifactPath))]
-          .sort()
-          .map((sourcePath) => ({
-            path: displayGuardrailArtifactPath(args.config, sourcePath),
-            count: runtimeExternalReviewPatterns.filter((pattern) => pattern.sourceArtifactPath === sourcePath).length,
-          })),
-      },
-    },
+    guardrailProvenance: prepareLocalReviewGuardrailProvenance({
+      config: args.config,
+      verifierReport,
+      committedExternalReviewPatterns,
+      runtimeExternalReviewPatterns,
+    }),
   });
   const artifacts = await writeLocalReviewArtifacts({
     config: args.config,
