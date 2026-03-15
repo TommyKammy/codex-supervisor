@@ -2,6 +2,7 @@ import {
   classifyConfiguredBotTopLevelReviewStrength,
   hasActionableReviewText,
   isActionableTopLevelReview,
+  isRateLimitReviewText,
 } from "./external-review-signal-heuristics";
 import { CopilotReviewState } from "./types";
 
@@ -43,6 +44,7 @@ export interface ConfiguredBotTopLevelReviewSummary {
 export interface ConfiguredBotReviewSummary {
   lifecycle: CopilotReviewLifecycle;
   topLevelReview: ConfiguredBotTopLevelReviewSummary;
+  rateLimitWarningAt: string | null;
 }
 
 function parseTimestamp(value: string | null | undefined): number {
@@ -84,6 +86,7 @@ function summarizeConfiguredBotRequestWindow(
 ): {
   latestRequestedAt: string | null;
   activeRequestStartedAt: string | null;
+  latestRemovedByBot: Map<string, string | null>;
 } {
   const requestedTimes = timeline
     .filter((event) => event.type === "requested" && event.reviewerLogin && configuredReviewBots.has(event.reviewerLogin))
@@ -108,9 +111,22 @@ function summarizeConfiguredBotRequestWindow(
       : [];
   });
 
+  const latestRemovedByBot = new Map<string, string | null>();
+  for (const botLogin of configuredReviewBots) {
+    latestRemovedByBot.set(
+      botLogin,
+      latestTimestamp(
+        timeline
+          .filter((event) => event.type === "removed" && event.reviewerLogin === botLogin)
+          .map((event) => event.createdAt),
+      ),
+    );
+  }
+
   return {
     latestRequestedAt,
     activeRequestStartedAt: latestTimestamp(activeRequestStarts),
+    latestRemovedByBot,
   };
 }
 
@@ -123,7 +139,7 @@ export function inferCopilotReviewLifecycle(
     return { state: "not_requested", requestedAt: null, arrivedAt: null };
   }
 
-  const { latestRequestedAt, activeRequestStartedAt } = summarizeConfiguredBotRequestWindow(
+  const { latestRequestedAt, activeRequestStartedAt, latestRemovedByBot } = summarizeConfiguredBotRequestWindow(
     facts.timeline,
     configuredReviewBots,
   );
@@ -149,12 +165,29 @@ export function inferCopilotReviewLifecycle(
       ? [comment.createdAt]
       : [];
   });
+  const rateLimitWarningTimes = facts.issueComments.flatMap((comment) => {
+    const authorLogin = normalizeLogin(comment.authorLogin);
+    const latestRemovedAt = authorLogin ? latestRemovedByBot.get(authorLogin) ?? null : null;
+    return authorLogin && configuredReviewBots.has(authorLogin) && isRateLimitReviewText(comment.body) && scopedToActiveRequest(comment.createdAt)
+      && (latestRemovedAt === null || parseTimestamp(comment.createdAt) > parseTimestamp(latestRemovedAt))
+      ? [comment.createdAt]
+      : [];
+  });
   const arrivedAt = latestTimestamp([...matchingReviewTimes, ...matchingCommentTimes, ...matchingIssueCommentTimes]);
   if (arrivedAt) {
     return {
       state: "arrived",
       requestedAt: activeRequestStartedAt ?? latestRequestedAt,
       arrivedAt,
+    };
+  }
+
+  const latestRateLimitWarningAt = latestTimestamp(rateLimitWarningTimes);
+  if (latestRateLimitWarningAt) {
+    return {
+      state: "requested",
+      requestedAt: latestRateLimitWarningAt,
+      arrivedAt: null,
     };
   }
 
@@ -213,6 +246,39 @@ function inferConfiguredBotTopLevelReviewSummary(
   return latestConfiguredReview;
 }
 
+function inferConfiguredBotRateLimitWarningAt(
+  facts: CopilotReviewLifecycleFacts,
+  reviewBotLogins: string[],
+): string | null {
+  const configuredReviewBots = new Set(
+    reviewBotLogins.map((login) => normalizeLogin(login)).filter((login): login is string => Boolean(login)),
+  );
+  if (configuredReviewBots.size === 0) {
+    return null;
+  }
+
+  const { activeRequestStartedAt, latestRemovedByBot } = summarizeConfiguredBotRequestWindow(facts.timeline, configuredReviewBots);
+  const activeRequestStartedAtMs = parseTimestamp(activeRequestStartedAt);
+  const scopedToActiveRequest = (value: string | null | undefined): value is string =>
+    value !== null &&
+    value !== undefined &&
+    (activeRequestStartedAt === null || parseTimestamp(value) >= activeRequestStartedAtMs);
+
+  return latestTimestamp(
+    facts.issueComments.flatMap((comment) => {
+      const authorLogin = normalizeLogin(comment.authorLogin);
+      const latestRemovedAt = authorLogin ? latestRemovedByBot.get(authorLogin) ?? null : null;
+      return authorLogin &&
+        configuredReviewBots.has(authorLogin) &&
+        isRateLimitReviewText(comment.body) &&
+        scopedToActiveRequest(comment.createdAt) &&
+        (latestRemovedAt === null || parseTimestamp(comment.createdAt) > parseTimestamp(latestRemovedAt))
+        ? [comment.createdAt]
+        : [];
+    }),
+  );
+}
+
 export function buildConfiguredBotReviewSummary(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
@@ -220,5 +286,6 @@ export function buildConfiguredBotReviewSummary(
   return {
     lifecycle: inferCopilotReviewLifecycle(facts, reviewBotLogins),
     topLevelReview: inferConfiguredBotTopLevelReviewSummary(facts, reviewBotLogins),
+    rateLimitWarningAt: inferConfiguredBotRateLimitWarningAt(facts, reviewBotLogins),
   };
 }

@@ -257,6 +257,7 @@ export function applyConfiguredBotReviewSummary(
     copilotReviewState: summary?.lifecycle.state ?? null,
     copilotReviewRequestedAt: summary?.lifecycle.requestedAt ?? null,
     copilotReviewArrivedAt: summary?.lifecycle.arrivedAt ?? null,
+    configuredBotRateLimitedAt: summary?.rateLimitWarningAt ?? null,
     configuredBotTopLevelReviewStrength: summary?.topLevelReview.strength ?? null,
     configuredBotTopLevelReviewSubmittedAt: summary?.topLevelReview.submittedAt ?? null,
   };

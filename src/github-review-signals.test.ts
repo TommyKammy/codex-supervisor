@@ -38,6 +38,7 @@ test("buildConfiguredBotReviewSummary treats actionable configured-bot issue com
       strength: null,
       submittedAt: null,
     },
+    rateLimitWarningAt: null,
   });
 });
 
@@ -73,5 +74,75 @@ test("buildConfiguredBotReviewSummary keeps top-level review strength scoped to 
       strength: "nitpick_only",
       submittedAt: "2026-03-13T02:03:04Z",
     },
+    rateLimitWarningAt: null,
+  });
+});
+
+test("buildConfiguredBotReviewSummary treats configured-bot rate limit issue comments as a temporary requested state", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [],
+    comments: [],
+    issueComments: [
+      {
+        authorLogin: "coderabbitai",
+        createdAt: "2026-03-13T03:15:00Z",
+        body: "Rate limit exceeded for this repository. Please try again later.",
+      },
+    ],
+    timeline: [],
+  };
+
+  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["coderabbitai", "coderabbitai[bot]"]), {
+    lifecycle: {
+      state: "requested",
+      requestedAt: "2026-03-13T03:15:00Z",
+      arrivedAt: null,
+    },
+    topLevelReview: {
+      strength: null,
+      submittedAt: null,
+    },
+    rateLimitWarningAt: "2026-03-13T03:15:00Z",
+  });
+});
+
+test("buildConfiguredBotReviewSummary ignores configured-bot rate limit warnings that were superseded by a later request removal", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [],
+    comments: [],
+    issueComments: [
+      {
+        authorLogin: "coderabbitai",
+        createdAt: "2026-03-13T03:15:00Z",
+        body: "Rate limit exceeded for this repository. Please try again later.",
+      },
+    ],
+    timeline: [
+      {
+        type: "requested",
+        createdAt: "2026-03-13T03:00:00Z",
+        reviewerLogin: "coderabbitai",
+      },
+      {
+        type: "removed",
+        createdAt: "2026-03-13T03:20:00Z",
+        reviewerLogin: "coderabbitai",
+      },
+    ],
+  };
+
+  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["coderabbitai", "coderabbitai[bot]"]), {
+    lifecycle: {
+      state: "not_requested",
+      requestedAt: null,
+      arrivedAt: null,
+    },
+    topLevelReview: {
+      strength: null,
+      submittedAt: null,
+    },
+    rateLimitWarningAt: null,
   });
 });

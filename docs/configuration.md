@@ -37,8 +37,8 @@ Each shipped profile only covers supervisor-side expectations. You still need th
 
 ### CodeRabbit profile
 
-- Supervisor-side: use `supervisor.config.coderabbit.json`, which tracks both `coderabbitai` and `coderabbitai[bot]`.
-- Provider-side: install CodeRabbit and commit any required repo config such as `.coderabbit.yaml` when your policy depends on it.
+- Supervisor-side: use `supervisor.config.coderabbit.json`, which tracks both `coderabbitai` and `coderabbitai[bot]` and waits up to 30 minutes after a CodeRabbit `Rate limit exceeded` warning before continuing.
+- Provider-side: install CodeRabbit. Add `.coderabbit.yaml` only when you intentionally want repo-specific CodeRabbit behavior; it is not required just to make the supervisor wait through temporary rate limits.
 - Verify: open a PR and confirm CodeRabbit posts review activity under one of the configured bot identities.
 
 Only treat a profile as working after the provider produces a usable PR review signal that the supervisor can observe and react to.

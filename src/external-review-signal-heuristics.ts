@@ -2,6 +2,8 @@ function normalizeReviewText(value: string | null | undefined): string {
   return value?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
 }
 
+const RATE_LIMIT_REVIEW_TEXT_PATTERN = /\brate limit exceeded\b/;
+
 const NITPICK_REVIEW_TEXT_PATTERN =
   /\b(nit|nitpick|nits|style|format|formatting|typo|wording|docs?|documentation|comment|comments|naming|rename|readability|consistency|prefer)\b/;
 const STRONG_REVIEW_TEXT_PATTERN =
@@ -25,9 +27,18 @@ export function isInformationalReviewText(value: string | null | undefined): boo
   );
 }
 
+export function isRateLimitReviewText(value: string | null | undefined): boolean {
+  const normalized = normalizeReviewText(value);
+  if (!normalized) {
+    return false;
+  }
+
+  return RATE_LIMIT_REVIEW_TEXT_PATTERN.test(normalized);
+}
+
 export function hasActionableReviewText(value: string | null | undefined): boolean {
   const normalized = normalizeReviewText(value);
-  if (!normalized || isInformationalReviewText(normalized)) {
+  if (!normalized || isInformationalReviewText(normalized) || isRateLimitReviewText(normalized)) {
     return false;
   }
 

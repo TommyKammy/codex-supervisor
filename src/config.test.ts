@@ -139,6 +139,33 @@ test("loadConfig accepts explicit copilotReviewTimeoutAction", async (t) => {
   assert.equal(config.copilotReviewTimeoutAction, "block");
 });
 
+test("loadConfig rejects non-finite configuredBotRateLimitWaitMinutes by falling back to 0", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    `{
+      "repoPath": ".",
+      "repoSlug": "owner/repo",
+      "defaultBranch": "main",
+      "workspaceRoot": "./workspaces",
+      "stateFile": "./state.json",
+      "codexBinary": "codex",
+      "branchPrefix": "codex/issue-",
+      "configuredBotRateLimitWaitMinutes": 1e309
+    }`,
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+
+  assert.equal(config.configuredBotRateLimitWaitMinutes, 0);
+});
+
 test("loadConfig defaults localReviewHighSeverityAction to blocked", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
   t.after(async () => {
