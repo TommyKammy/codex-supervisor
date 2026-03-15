@@ -82,14 +82,19 @@ export async function loadActiveIssueStatusSnapshot(args: {
   activeRecord: IssueRunRecord;
 }): Promise<ActiveIssueStatusSnapshot> {
   let handoffSummary: string | null = null;
-  if (args.activeRecord.journal_path) {
-    handoffSummary = summarizeIssueJournalHandoff(await readIssueJournal(args.activeRecord.journal_path));
-  }
   let pr: GitHubPullRequest | null = null;
   let checks: PullRequestCheck[] = [];
   let reviewThreads: ReviewThread[] = [];
   let durableGuardrailSummary: string | null = null;
   let warningMessage: string | null = null;
+
+  if (args.activeRecord.journal_path) {
+    try {
+      handoffSummary = summarizeIssueJournalHandoff(await readIssueJournal(args.activeRecord.journal_path));
+    } catch (error) {
+      warningMessage = error instanceof Error ? error.message : String(error);
+    }
+  }
 
   try {
     pr = await args.github.resolvePullRequestForBranch(args.activeRecord.branch, args.activeRecord.pr_number);
@@ -101,7 +106,8 @@ export async function loadActiveIssueStatusSnapshot(args: {
       pr,
     });
   } catch (error) {
-    warningMessage = error instanceof Error ? error.message : String(error);
+    const message = error instanceof Error ? error.message : String(error);
+    warningMessage = warningMessage ? `${warningMessage}; ${message}` : message;
   }
 
   return {

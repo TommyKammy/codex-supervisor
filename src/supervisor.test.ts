@@ -2287,6 +2287,41 @@ test("status keeps the active handoff summary when PR status loading emits a war
   assert.match(status, /status_warning=injected status hydration failure/);
 });
 
+test("status downgrades journal read failures into status warnings", async () => {
+  const fixture = await createSupervisorFixture();
+  const journalPath = path.join(fixture.workspaceRoot, "issue-92");
+  await fs.mkdir(journalPath, { recursive: true });
+
+  const activeRecord = createRecord({
+    issue_number: 92,
+    state: "reproducing",
+    branch: branchName(fixture.config, 92),
+    workspace: path.join(fixture.workspaceRoot, "issue-92-workspace"),
+    journal_path: journalPath,
+    blocked_reason: "verification",
+    last_error: null,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 92,
+    issues: {
+      "92": activeRecord,
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    resolvePullRequestForBranch: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const status = await supervisor.status();
+
+  assert.match(status, /status_warning=/);
+  assert.doesNotMatch(status, /handoff_summary=/);
+});
+
 test("status shows durable guardrail provenance for active committed and runtime guidance", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.localReviewArtifactDir = path.join(path.dirname(fixture.stateFile), "reviews");
