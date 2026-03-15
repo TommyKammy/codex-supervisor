@@ -23,6 +23,7 @@ import {
   reconcileStaleActiveIssueReservation,
   reconcileTrackedMergedButOpenIssues,
 } from "./recovery-reconciliation";
+import { configuredBotReviewThreads, manualReviewThreads } from "./supervisor-reporting";
 import { StateStore } from "./state-store";
 import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig, SupervisorStateFile } from "./types";
 
@@ -5253,6 +5254,70 @@ test("formatDetailedStatus surfaces the latest recovery reason separately from t
     status,
     /latest_recovery issue=#91 at=2026-03-13T00:20:00Z reason=merged_pr_convergence: tracked PR #191 merged; marked issue #91 done/,
   );
+});
+
+test("formatDetailedStatus reports idle status with the latest record and latest recovery", () => {
+  const config = createConfig();
+  const latestRecord = createRecord({
+    issue_number: 92,
+    state: "done",
+    branch: "codex/issue-92",
+    updated_at: "2026-03-13T01:20:00Z",
+  });
+  const latestRecoveryRecord = createRecord({
+    issue_number: 91,
+    state: "done",
+    branch: "codex/issue-91",
+    workspace: "/tmp/workspaces/issue-91",
+    updated_at: "2026-03-13T00:20:00Z",
+    last_codex_summary: null,
+    last_recovery_reason: "merged_pr_convergence: tracked PR #191 merged; marked issue #91 done",
+    last_recovery_at: "2026-03-13T00:20:00Z",
+  });
+
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: null,
+    latestRecord,
+    latestRecoveryRecord,
+    trackedIssueCount: 2,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(status, /^No active issue\./);
+  assert.match(status, /tracked_issues=2/);
+  assert.match(status, /latest_record=#92 state=done updated_at=2026-03-13T01:20:00Z/);
+  assert.match(
+    status,
+    /latest_recovery issue=#91 at=2026-03-13T00:20:00Z reason=merged_pr_convergence: tracked PR #191 merged; marked issue #91 done/,
+  );
+});
+
+test("configuredBotReviewThreads normalizes configured bot logins before classifying threads", () => {
+  const config = createConfig({
+    reviewBotLogins: [" Copilot-Pull-Request-Reviewer "],
+  });
+  const thread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "Please address this.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(configuredBotReviewThreads(config, [thread]).length, 1);
+  assert.equal(manualReviewThreads(config, [thread]).length, 0);
 });
 
 test("formatDetailedStatus marks stale local review as non-gating", () => {
