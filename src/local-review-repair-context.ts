@@ -1,23 +1,25 @@
 import fs from "node:fs";
 import path from "node:path";
+import { type LocalReviewRepairContext } from "./codex";
 import { loadRelevantExternalReviewMissPatterns } from "./external-review-misses";
 import { parseJson } from "./utils";
 import { loadRelevantVerifierGuardrails } from "./verifier-guardrails";
 
-interface LocalReviewRepairArtifact {
-  branch?: string;
-  headSha?: string;
-  actionableFindings?: Array<{ file?: string | null }>;
-  rootCauseSummaries?: Array<{
-    severity?: "low" | "medium" | "high";
-    summary?: string;
-    file?: string | null;
-    start?: number | null;
-    end?: number | null;
-  }>;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function normalizeRepairContextFilePath(file: string | null | undefined): string | null {
+function isRootCauseSeverity(value: unknown): value is LocalReviewRepairContext["rootCauses"][number]["severity"] {
+  return value === "low" || value === "medium" || value === "high";
+}
+
+function hasUsableRootCauseSummary(
+  value: Record<string, unknown>,
+): value is Record<string, unknown> & { summary: string } {
+  return typeof value.summary === "string" && value.summary.trim() !== "";
+}
+
+function normalizeRepairContextFilePath(file: unknown): string | null {
   if (typeof file !== "string") {
     return null;
   }
@@ -26,7 +28,27 @@ function normalizeRepairContextFilePath(file: string | null | undefined): string
   return trimmed === "" ? null : trimmed;
 }
 
-export async function loadLocalReviewRepairContext(summaryPath: string | null, workspacePath?: string) {
+function readArtifactArray(
+  artifact: Record<string, unknown>,
+  key: "rootCauseSummaries" | "actionableFindings",
+  findingsPath: string,
+): unknown[] {
+  const value = artifact[key];
+  if (value == null) {
+    return [];
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error(`Invalid local review findings in ${findingsPath}: ${key} must be an array.`);
+  }
+
+  return value;
+}
+
+export async function loadLocalReviewRepairContext(
+  summaryPath: string | null,
+  workspacePath?: string,
+): Promise<LocalReviewRepairContext | null> {
   if (!summaryPath) {
     return null;
   }
@@ -51,16 +73,24 @@ export async function loadLocalReviewRepairContext(summaryPath: string | null, w
     throw error;
   }
 
-  const artifact = parseJson<LocalReviewRepairArtifact>(raw, findingsPath);
-  const rootCauses = (artifact.rootCauseSummaries ?? [])
-    .filter((rootCause) => typeof rootCause.summary === "string" && rootCause.summary.trim() !== "")
+  const artifact = parseJson<unknown>(raw, findingsPath);
+  if (!isRecord(artifact)) {
+    throw new Error(`Invalid local review findings in ${findingsPath}: top-level JSON value must be an object.`);
+  }
+
+  const rootCauseSummaries = readArtifactArray(artifact, "rootCauseSummaries", findingsPath);
+  const actionableFindings = readArtifactArray(artifact, "actionableFindings", findingsPath);
+  const rootCauses = rootCauseSummaries
+    .filter(isRecord)
+    .filter(hasUsableRootCauseSummary)
     .slice(0, 5)
     .map((rootCause) => {
+      const summary = rootCause.summary.trim();
       const start = typeof rootCause.start === "number" ? rootCause.start : null;
       const end = typeof rootCause.end === "number" ? rootCause.end : start;
       return {
-        severity: rootCause.severity ?? "medium",
-        summary: rootCause.summary!.trim(),
+        severity: isRootCauseSeverity(rootCause.severity) ? rootCause.severity : "medium",
+        summary,
         file: normalizeRepairContextFilePath(rootCause.file),
         lines:
           start == null
@@ -72,7 +102,8 @@ export async function loadLocalReviewRepairContext(summaryPath: string | null, w
     });
   const relevantFiles = [...new Set([
     ...rootCauses.map((rootCause) => rootCause.file).filter((filePath): filePath is string => Boolean(filePath)),
-    ...(artifact.actionableFindings ?? [])
+    ...actionableFindings
+      .filter(isRecord)
       .map((finding) => normalizeRepairContextFilePath(finding.file))
       .filter((filePath): filePath is string => Boolean(filePath)),
   ])].slice(0, 10);
