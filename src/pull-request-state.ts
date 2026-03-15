@@ -5,12 +5,14 @@ import {
   localReviewRetryLoopStalled,
 } from "./review-handling";
 import {
-  configuredBotReviewThreads,
-  manualReviewThreads,
   mergeConflictDetected,
-  pendingBotReviewThreads,
   summarizeChecks,
 } from "./supervisor-reporting";
+import {
+  configuredBotReviewThreads,
+  manualReviewThreads,
+  pendingBotReviewThreads,
+} from "./review-thread-reporting";
 import {
   BlockedReason,
   FailureContext,

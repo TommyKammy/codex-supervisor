@@ -14,6 +14,12 @@ import {
   buildDetailedStatusSummaryLines,
   sanitizeStatusValue,
 } from "./supervisor-status-model";
+import {
+  configuredBotReviewThreads,
+  latestReviewComment,
+  manualReviewThreads,
+  pendingBotReviewThreads,
+} from "./review-thread-reporting";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "./types";
 import { loadRelevantVerifierGuardrails } from "./verifier-guardrails";
 
@@ -43,58 +49,8 @@ export function summarizeChecks(
   return { allPassing, hasPending, hasFailing };
 }
 
-export function latestReviewComment(thread: ReviewThread) {
-  return thread.comments.nodes[thread.comments.nodes.length - 1] ?? null;
-}
-
-function isAllowedReviewBotThread(config: SupervisorConfig, thread: ReviewThread): boolean {
-  const configuredLogins = new Set(configuredReviewBots(config).map((login) => login.toLowerCase()));
-  return thread.comments.nodes.some((comment) => {
-    const login = comment.author?.login?.toLowerCase();
-    return Boolean(login && configuredLogins.has(login));
-  });
-}
-
-export function manualReviewThreads(config: SupervisorConfig, reviewThreads: ReviewThread[]): ReviewThread[] {
-  return reviewThreads.filter((thread) => !isAllowedReviewBotThread(config, thread));
-}
-
-export function configuredBotReviewThreads(
-  config: SupervisorConfig,
-  reviewThreads: ReviewThread[],
-): ReviewThread[] {
-  return reviewThreads.filter((thread) => isAllowedReviewBotThread(config, thread));
-}
-
-export function pendingBotReviewThreads(
-  config: SupervisorConfig,
-  record: Pick<
-    IssueRunRecord,
-    "processed_review_thread_ids" | "processed_review_thread_fingerprints" | "last_head_sha"
-  >,
-  pr: Pick<GitHubPullRequest, "headRefOid">,
-  reviewThreads: ReviewThread[],
-): ReviewThread[] {
-  return configuredBotReviewThreads(config, reviewThreads).filter(
-    (thread) => !hasProcessedReviewThread(record, pr, thread),
-  );
-}
-
 export function mergeConflictDetected(pr: GitHubPullRequest): boolean {
   return pr.mergeStateStatus === "DIRTY";
-}
-
-function configuredReviewBots(config: SupervisorConfig): string[] {
-  return config.reviewBotLogins.map((login) => login.trim()).filter((login) => login.length > 0);
-}
-
-function repoExpectsConfiguredBotReview(config: SupervisorConfig): boolean {
-  return configuredReviewBots(config).length > 0;
-}
-
-function repoUsesCopilotOnlyReviewBot(config: SupervisorConfig): boolean {
-  const bots = configuredReviewBots(config);
-  return bots.length === 1 && bots[0].toLowerCase() === "copilot-pull-request-reviewer";
 }
 
 function displayStatusArtifactPath(config: SupervisorConfig, filePath: string): string {
@@ -244,3 +200,9 @@ export function formatDetailedStatus(args: {
 }
 
 export { sanitizeStatusValue };
+export {
+  configuredBotReviewThreads,
+  latestReviewComment,
+  manualReviewThreads,
+  pendingBotReviewThreads,
+} from "./review-thread-reporting";
