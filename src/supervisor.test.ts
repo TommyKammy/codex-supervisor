@@ -13,6 +13,7 @@ import {
   recoverUnexpectedCodexTurnFailure,
   summarizeChecks,
 } from "./supervisor";
+import { buildDetailedStatusModel, buildDetailedStatusSummaryLines } from "./supervisor-status-model";
 import { shouldAutoRetryHandoffMissing } from "./supervisor-execution-policy";
 import { handleAuthFailure } from "./supervisor-failure-helpers";
 import { inferStateFromPullRequest as inferPullRequestStateFromModule } from "./pull-request-state";
@@ -5201,6 +5202,124 @@ test("formatDetailedStatus shows blocking local review status for current PR hea
   );
   assert.doesNotMatch(status, /needs_review_run=/);
   assert.match(status, /external_review head=none reviewed_head_sha=none matched=0 near_match=0 missed=0/);
+});
+
+test("buildDetailedStatusModel returns the reusable core status lines for an active PR", () => {
+  const config = createConfig({
+    localReviewPolicy: "block_ready",
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    local_review_blocker_summary: "high src/supervisor.ts:210-214 stale artifact context drives the wrong repair path.",
+    local_review_max_severity: "high",
+    local_review_findings_count: 3,
+    local_review_recommendation: "changes_requested",
+    local_review_run_at: "2026-03-11T14:05:00Z",
+    pr_number: 44,
+    state: "pr_open",
+    blocked_reason: null,
+    last_error: null,
+    last_failure_context: null,
+    external_review_head_sha: null,
+    external_review_matched_findings_count: 0,
+    external_review_near_match_findings_count: 0,
+    external_review_missed_findings_count: 0,
+  });
+  const pr: GitHubPullRequest = {
+    number: 44,
+    title: "Test PR",
+    url: "https://example.test/pr/44",
+    state: "OPEN",
+    createdAt: "2026-03-11T14:00:00Z",
+    isDraft: false,
+    reviewDecision: "REVIEW_REQUIRED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-44",
+    headRefOid: "deadbeef",
+    mergedAt: null,
+    copilotReviewState: "not_requested",
+    copilotReviewRequestedAt: null,
+    copilotReviewArrivedAt: null,
+  };
+
+  const lines = buildDetailedStatusModel({
+    config,
+    activeRecord: record,
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr,
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [],
+    manualReviewThreads,
+    configuredBotReviewThreads,
+    pendingBotReviewThreads: (innerConfig, innerRecord, innerPr, innerReviewThreads) =>
+      configuredBotReviewThreads(innerConfig, innerReviewThreads).filter(
+        (thread) =>
+          !innerRecord.processed_review_thread_ids.includes(thread.id) &&
+          innerRecord.last_head_sha === innerPr.headRefOid,
+      ),
+    summarizeChecks,
+    mergeConflictDetected: (innerPr) => innerPr.mergeStateStatus === "DIRTY",
+  });
+
+  assert.ok(lines.includes("issue=#366"));
+  assert.ok(
+    lines.some((line) =>
+      /local_review gating=yes policy=block_ready findings=3 .* head=current .* blocker_summary=high src\/supervisor\.ts:210-214 stale artifact context drives the wrong repair path\./.test(
+        line,
+      ),
+    ),
+  );
+  assert.ok(lines.includes("external_review head=none reviewed_head_sha=none matched=0 near_match=0 missed=0"));
+  assert.ok(
+    lines.includes(
+      "review_bot_profile profile=codex provider=chatgpt-codex-connector reviewers=chatgpt-codex-connector signal_source=review_threads",
+    ),
+  );
+  assert.ok(
+    lines.includes(
+      "review_bot_diagnostics status=missing_provider_signal observed_review=none expected_reviewers=chatgpt-codex-connector next_check=provider_setup_or_delivery",
+    ),
+  );
+});
+
+test("buildDetailedStatusSummaryLines shapes optional summaries and artifact paths", () => {
+  const config = createConfig({
+    localReviewArtifactDir: "/tmp/reviews",
+  });
+  const activeRecord = createRecord({
+    local_review_summary_path: "/tmp/reviews/owner-repo/issue-58/local-review-summary.md",
+    external_review_misses_path: "/tmp/reviews/owner-repo/issue-58/external-review-misses-head-deadbeef.json",
+  });
+  const latestRecoveryRecord = createRecord({
+    issue_number: 91,
+    state: "done",
+    branch: "codex/issue-91",
+    workspace: "/tmp/workspaces/issue-91",
+    updated_at: "2026-03-13T00:20:00Z",
+    last_codex_summary: null,
+    last_recovery_reason: "merged_pr_convergence: tracked PR #191 merged; marked issue #91 done",
+    last_recovery_at: "2026-03-13T00:20:00Z",
+  });
+
+  assert.deepEqual(
+    buildDetailedStatusSummaryLines({
+      config,
+      activeRecord,
+      latestRecoveryRecord,
+      handoffSummary: "blocked\nneeds reproduction",
+      durableGuardrailSummary: "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=none",
+    }),
+    [
+      "handoff_summary=blocked\\nneeds reproduction",
+      "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=none",
+      "latest_recovery issue=#91 at=2026-03-13T00:20:00Z reason=merged_pr_convergence: tracked PR #191 merged; marked issue #91 done",
+      "local_review_summary_path=owner-repo/issue-58/local-review-summary.md",
+      "external_review_misses_path=owner-repo/issue-58/external-review-misses-head-deadbeef.json",
+    ],
+  );
 });
 
 test("formatDetailedStatus shows both raw and compressed local review counts", () => {
