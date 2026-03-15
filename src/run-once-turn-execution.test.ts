@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { hasProcessedReviewThread } from "./review-handling";
-import { handlePostTurnPullRequestTransitionsPhase } from "./run-once-turn-execution";
+import { executeCodexTurnPhase, handlePostTurnPullRequestTransitionsPhase } from "./run-once-turn-execution";
 import {
   FailureContext,
   GitHubIssue,
@@ -350,4 +350,157 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking
   assert.equal(readyCalls, 1);
   assert.equal(snapshotLoads, 2);
   assert.equal(syncJournalCalls, 0);
+});
+
+test("executeCodexTurnPhase persists blocked reason and repeated blocker bookkeeping from Codex hints", async () => {
+  const config = createConfig();
+  const issue: GitHubIssue = {
+    number: 102,
+    title: "Persist blocked Codex hints",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: "https://example.test/issues/102",
+    state: "OPEN",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "reproducing",
+        repeated_blocker_count: 1,
+        last_blocker_signature: "waiting on verification evidence failure signature: prior-check",
+      }),
+    },
+  };
+  let journalReads = 0;
+  let syncJournalCalls = 0;
+  const result = await executeCodexTurnPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => {
+        throw new Error("unexpected resolvePullRequestForBranch call");
+      },
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      previousCodexSummary: null,
+      previousError: null,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      journalPath: path.join("/tmp/workspaces", "issue-102/.codex-supervisor/issue-journal.md"),
+      syncJournal: async () => {
+        syncJournalCalls += 1;
+      },
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      workspaceStatus: {
+        branch: "codex/issue-102",
+        headSha: "head-116",
+        hasUncommittedChanges: false,
+        baseAhead: 0,
+        baseBehind: 0,
+        remoteBranchExists: true,
+        remoteAhead: 0,
+        remoteBehind: 0,
+      },
+      pr: null,
+      checks: [],
+      reviewThreads: [],
+      options: { dryRun: false },
+    },
+    acquireSessionLock: async () => null,
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-03-13T06:20:00Z",
+    }),
+    applyFailureSignature: (record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count:
+        failureContext?.signature && record.last_failure_signature === failureContext.signature
+          ? record.repeated_failure_signature_count + 1
+          : failureContext?.signature
+            ? 1
+            : 0,
+    }),
+    normalizeBlockerSignature: (message) =>
+      message
+        ?.toLowerCase()
+        .replace(/state hint:\s*[a-z_]+/i, "")
+        .replace(/blocked reason:\s*[a-z_]+/i, "")
+        .replace(/\s+/g, " ")
+        .trim() ?? null,
+    isVerificationBlockedMessage: (message) => (message ?? "").includes("verification"),
+    derivePullRequestLifecycleSnapshot: () => {
+      throw new Error("unexpected derivePullRequestLifecycleSnapshot call");
+    },
+    inferStateWithoutPullRequest: () => "stabilizing",
+    blockedReasonFromReviewState: () => null,
+    recoverUnexpectedCodexTurnFailure: async () => {
+      throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+    },
+    readIssueJournal: async () => {
+      journalReads += 1;
+      return journalReads === 1
+        ? "## Codex Working Notes\n### Current Handoff\n- Hypothesis: reproduce the failure.\n"
+        : [
+            "## Codex Working Notes",
+            "### Current Handoff",
+            "- Hypothesis: reproduce the failure.",
+            "- Current blocker: Waiting on verification evidence.",
+            "- Next exact step: capture the missing verification output.",
+          ].join("\n");
+    },
+    runCodexTurnImpl: async () => ({
+      exitCode: 0,
+      sessionId: "session-102",
+      lastMessage: [
+        "Waiting on verification evidence",
+        "State hint: blocked",
+        "Blocked reason: verification",
+        "Failure signature: prior-check",
+      ].join("\n"),
+      stderr: "",
+      stdout: "",
+    }),
+  });
+
+  assert.deepEqual(result, {
+    kind: "returned",
+    message: "Codex reported blocked for issue #102.",
+  });
+  assert.equal(syncJournalCalls, 1);
+  assert.equal(state.issues["102"]?.state, "blocked");
+  assert.equal(state.issues["102"]?.blocked_reason, "verification");
+  assert.equal(state.issues["102"]?.last_blocker_signature, "waiting on verification evidence failure signature: prior-check");
+  assert.equal(state.issues["102"]?.repeated_blocker_count, 2);
+  assert.equal(state.issues["102"]?.last_failure_signature, "prior-check");
+  assert.equal(state.issues["102"]?.repeated_failure_signature_count, 1);
 });

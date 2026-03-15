@@ -22,6 +22,12 @@ import {
 } from "./journal";
 import { LockHandle } from "./lock";
 import {
+  persistCodexTurnExecutionFailure,
+  persistCodexTurnExitFailure,
+  persistHintedCodexTurnState,
+  persistMissingCodexJournalHandoff,
+} from "./turn-execution-failure-helpers";
+import {
   LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY,
   runLocalReview,
   shouldRunLocalReview,
@@ -303,6 +309,80 @@ interface ExecuteCodexTurnPhaseArgs {
   recoverUnexpectedCodexTurnFailure: (
     args: RecoverUnexpectedCodexTurnFailureArgs,
   ) => Promise<IssueRunRecord>;
+  persistCodexTurnExecutionFailure?: (args: {
+    stateStore: Pick<StateStore, "touch" | "save">;
+    state: SupervisorStateFile;
+    record: IssueRunRecord;
+    syncJournal: (record: IssueRunRecord) => Promise<void>;
+    issueNumber: number;
+    error: unknown;
+    classifyFailure: (message: string | null | undefined) => "timeout" | "command_error";
+    buildCodexFailureContext: (
+      category: FailureContext["category"],
+      summary: string,
+      details: string[],
+    ) => FailureContext;
+    applyFailureSignature: (
+      record: IssueRunRecord,
+      failureContext: FailureContext | null,
+    ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
+  }) => Promise<IssueRunRecord>;
+  persistCodexTurnExitFailure?: (args: {
+    stateStore: Pick<StateStore, "touch" | "save">;
+    state: SupervisorStateFile;
+    record: IssueRunRecord;
+    syncJournal: (record: IssueRunRecord) => Promise<void>;
+    issueNumber: number;
+    codexResult: Pick<import("./types").CodexTurnResult, "lastMessage" | "stderr" | "stdout">;
+    classifyFailure: (message: string | null | undefined) => "timeout" | "command_error";
+    buildCodexFailureContext: (
+      category: FailureContext["category"],
+      summary: string,
+      details: string[],
+    ) => FailureContext;
+    applyFailureSignature: (
+      record: IssueRunRecord,
+      failureContext: FailureContext | null,
+    ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
+  }) => Promise<IssueRunRecord>;
+  persistMissingCodexJournalHandoff?: (args: {
+    stateStore: Pick<StateStore, "touch" | "save">;
+    state: SupervisorStateFile;
+    record: IssueRunRecord;
+    syncJournal: (record: IssueRunRecord) => Promise<void>;
+    issueNumber: number;
+    buildCodexFailureContext: (
+      category: FailureContext["category"],
+      summary: string,
+      details: string[],
+    ) => FailureContext;
+    applyFailureSignature: (
+      record: IssueRunRecord,
+      failureContext: FailureContext | null,
+    ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
+  }) => Promise<IssueRunRecord>;
+  persistHintedCodexTurnState?: (args: {
+    stateStore: Pick<StateStore, "touch" | "save">;
+    state: SupervisorStateFile;
+    record: IssueRunRecord;
+    syncJournal: (record: IssueRunRecord) => Promise<void>;
+    issueNumber: number;
+    lastMessage: string;
+    hintedState: "blocked" | "failed";
+    hintedBlockedReason: IssueRunRecord["blocked_reason"];
+    hintedFailureSignature: string | null;
+    buildCodexFailureContext: (
+      category: FailureContext["category"],
+      summary: string,
+      details: string[],
+    ) => FailureContext;
+    applyFailureSignature: (
+      record: IssueRunRecord,
+      failureContext: FailureContext | null,
+    ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
+    normalizeBlockerSignature: (message: string | null | undefined) => string | null;
+    isVerificationBlockedMessage: (message: string | null | undefined) => boolean;
+  }) => Promise<IssueRunRecord>;
   getWorkspaceStatus?: typeof getWorkspaceStatus;
   pushBranch?: typeof pushBranch;
   readIssueJournal?: typeof readIssueJournal;
@@ -363,6 +443,13 @@ export async function executeCodexTurnPhase(
   const pushBranchImpl = args.pushBranch ?? pushBranch;
   const readIssueJournalImpl = args.readIssueJournal ?? readIssueJournal;
   const runCodexTurnImpl = args.runCodexTurnImpl ?? runCodexTurn;
+  const persistCodexTurnExecutionFailureImpl =
+    args.persistCodexTurnExecutionFailure ?? persistCodexTurnExecutionFailure;
+  const persistCodexTurnExitFailureImpl = args.persistCodexTurnExitFailure ?? persistCodexTurnExitFailure;
+  const persistMissingCodexJournalHandoffImpl =
+    args.persistMissingCodexJournalHandoff ?? persistMissingCodexJournalHandoff;
+  const persistHintedCodexTurnStateImpl =
+    args.persistHintedCodexTurnState ?? persistHintedCodexTurnState;
   const { config, stateStore, github } = args;
   const { state, issue, previousCodexSummary, previousError, workspacePath, journalPath, syncJournal, memoryArtifacts, options } = args.context;
   let { record, workspaceStatus, pr, checks, reviewThreads } = args.context;
@@ -483,26 +570,17 @@ export async function executeCodexTurnPhase(
         record.codex_session_id,
       );
     } catch (error) {
-      const message = error instanceof Error ? error.stack ?? error.message : String(error);
-      const failureKind = args.classifyFailure(message);
-      const failureContext = args.buildCodexFailureContext(
-        "codex",
-        `Codex turn execution failed for issue #${record.issue_number}.`,
-        [truncate(message, 2000) ?? "Unknown failure"],
-      );
-      record = stateStore.touch(record, {
-        state: "failed",
-        last_error: truncate(message),
-        last_failure_kind: failureKind,
-        last_failure_context: failureContext,
-        ...args.applyFailureSignature(record, failureContext),
-        blocked_reason: null,
-        timeout_retry_count:
-          failureKind === "timeout" ? record.timeout_retry_count + 1 : record.timeout_retry_count,
+      record = await persistCodexTurnExecutionFailureImpl({
+        stateStore,
+        state,
+        record,
+        syncJournal,
+        issueNumber: record.issue_number,
+        error,
+        classifyFailure: args.classifyFailure,
+        buildCodexFailureContext: args.buildCodexFailureContext,
+        applyFailureSignature: args.applyFailureSignature,
       });
-      state.issues[String(record.issue_number)] = record;
-      await stateStore.save(state);
-      await syncJournal(record);
       return {
         kind: "returned",
         message: `Codex turn failed for issue #${record.issue_number}.`,
@@ -531,22 +609,15 @@ export async function executeCodexTurnPhase(
         journalAfterRun === journalContent ||
         !hasMeaningfulJournalHandoff(journalAfterRun))
     ) {
-      const failureContext = args.buildCodexFailureContext(
-        "blocked",
-        `Codex completed without updating the issue journal for issue #${record.issue_number}.`,
-        ["Update the Codex Working Notes section before ending the turn."],
-      );
-      record = stateStore.touch(record, {
-        state: "blocked",
-        last_error: truncate(failureContext.summary),
-        last_failure_kind: null,
-        last_failure_context: failureContext,
-        ...args.applyFailureSignature(record, failureContext),
-        blocked_reason: "handoff_missing",
+      record = await persistMissingCodexJournalHandoffImpl({
+        stateStore,
+        state,
+        record,
+        syncJournal,
+        issueNumber: record.issue_number,
+        buildCodexFailureContext: args.buildCodexFailureContext,
+        applyFailureSignature: args.applyFailureSignature,
       });
-      state.issues[String(record.issue_number)] = record;
-      await stateStore.save(state);
-      await syncJournal(record);
       return {
         kind: "returned",
         message: `Codex turn for issue #${record.issue_number} was rejected because no journal handoff was written.`,
@@ -554,28 +625,17 @@ export async function executeCodexTurnPhase(
     }
 
     if (codexResult.exitCode !== 0) {
-      const failureOutput = [codexResult.lastMessage, codexResult.stderr, codexResult.stdout]
-        .filter(Boolean)
-        .join("\n");
-      const failureKind = args.classifyFailure(failureOutput) === "timeout" ? "timeout" : "codex_exit";
-      const failureContext = args.buildCodexFailureContext(
-        "codex",
-        `Codex exited non-zero for issue #${record.issue_number}.`,
-        [truncate(failureOutput, 2000) ?? "Unknown failure output"],
-      );
-      record = stateStore.touch(record, {
-        state: "failed",
-        last_error: truncate(failureOutput),
-        last_failure_kind: failureKind,
-        last_failure_context: failureContext,
-        ...args.applyFailureSignature(record, failureContext),
-        blocked_reason: null,
-        timeout_retry_count:
-          failureKind === "timeout" ? record.timeout_retry_count + 1 : record.timeout_retry_count,
+      record = await persistCodexTurnExitFailureImpl({
+        stateStore,
+        state,
+        record,
+        syncJournal,
+        issueNumber: record.issue_number,
+        codexResult,
+        classifyFailure: args.classifyFailure,
+        buildCodexFailureContext: args.buildCodexFailureContext,
+        applyFailureSignature: args.applyFailureSignature,
       });
-      state.issues[String(record.issue_number)] = record;
-      await stateStore.save(state);
-      await syncJournal(record);
       return {
         kind: "returned",
         message: `Codex turn failed for issue #${record.issue_number}.`,
@@ -583,37 +643,21 @@ export async function executeCodexTurnPhase(
     }
 
     if (hintedState === "blocked" || hintedState === "failed") {
-      const blockerSignature = hintedState === "blocked" ? args.normalizeBlockerSignature(codexResult.lastMessage) : null;
-      const repeatedBlockerCount =
-        hintedState === "blocked" && blockerSignature && blockerSignature === record.last_blocker_signature
-          ? record.repeated_blocker_count + 1
-          : hintedState === "blocked"
-            ? 1
-            : 0;
-      const failureContext = args.buildCodexFailureContext(
-        hintedState === "failed" ? "codex" : "blocked",
-        `Codex reported ${hintedState} for issue #${record.issue_number}.`,
-        [truncate(codexResult.lastMessage, 2000) ?? "No additional summary."],
-      );
-      if (hintedFailureSignature) {
-        failureContext.signature = hintedFailureSignature;
-      }
-      record = stateStore.touch(record, {
-        state: hintedState,
-        last_error: truncate(codexResult.lastMessage),
-        last_failure_kind: hintedState === "failed" ? "codex_failed" : null,
-        last_failure_context: failureContext,
-        ...args.applyFailureSignature(record, failureContext),
-        repeated_blocker_count: repeatedBlockerCount,
-        last_blocker_signature: blockerSignature,
-        blocked_reason:
-          hintedState === "blocked"
-            ? hintedBlockedReason ?? (args.isVerificationBlockedMessage(codexResult.lastMessage) ? "verification" : "unknown")
-            : null,
+      record = await persistHintedCodexTurnStateImpl({
+        stateStore,
+        state,
+        record,
+        syncJournal,
+        issueNumber: record.issue_number,
+        lastMessage: codexResult.lastMessage,
+        hintedState,
+        hintedBlockedReason,
+        hintedFailureSignature,
+        buildCodexFailureContext: args.buildCodexFailureContext,
+        applyFailureSignature: args.applyFailureSignature,
+        normalizeBlockerSignature: args.normalizeBlockerSignature,
+        isVerificationBlockedMessage: args.isVerificationBlockedMessage,
       });
-      state.issues[String(record.issue_number)] = record;
-      await stateStore.save(state);
-      await syncJournal(record);
       return {
         kind: "returned",
         message: `Codex reported ${hintedState} for issue #${record.issue_number}.`,
