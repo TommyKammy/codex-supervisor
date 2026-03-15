@@ -23,7 +23,7 @@ import {
   syncCopilotReviewTimeoutState,
   syncReviewWaitWindow,
 } from "./pull-request-state";
-import { inferStateWithoutPullRequest } from "./no-pull-request-state";
+import { inferStateWithoutPullRequest, shouldPreserveNoPrFailureTracking } from "./no-pull-request-state";
 import {
   hasProcessedReviewThread,
   localReviewBlocksMerge,
@@ -125,25 +125,6 @@ import {
   getWorkspaceStatus,
   pushBranch,
 } from "./workspace";
-
-const MAX_PROCESSED_REVIEW_THREAD_IDS = 200;
-
-function trimProcessedReviewThreadIds(ids: string[]): string[] {
-  if (ids.length <= MAX_PROCESSED_REVIEW_THREAD_IDS) {
-    return ids;
-  }
-
-  return ids.slice(ids.length - MAX_PROCESSED_REVIEW_THREAD_IDS);
-}
-
-function shouldPreserveNoPrFailureTracking(record: IssueRunRecord): boolean {
-  return (
-    record.pr_number === null &&
-    record.last_failure_context?.category === "blocked" &&
-    record.last_failure_signature !== null &&
-    record.repeated_failure_signature_count > 0
-  );
-}
 
 function shouldStopForRepeatedFailureSignature(record: IssueRunRecord, config: SupervisorConfig): boolean {
   return (

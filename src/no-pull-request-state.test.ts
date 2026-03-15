@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inferStateWithoutPullRequest } from "./no-pull-request-state";
+import { inferStateWithoutPullRequest, shouldPreserveNoPrFailureTracking } from "./no-pull-request-state";
 import { IssueRunRecord, WorkspaceStatus } from "./types";
 
 function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
@@ -118,4 +118,33 @@ test("inferStateWithoutPullRequest preserves no-PR state policy branches", () =>
       testCase.name,
     );
   }
+});
+
+test("shouldPreserveNoPrFailureTracking only keeps repeated blocked no-PR failures", () => {
+  assert.equal(shouldPreserveNoPrFailureTracking(createRecord()), true);
+  assert.equal(
+    shouldPreserveNoPrFailureTracking(createRecord({ repeated_failure_signature_count: 0 })),
+    false,
+  );
+  assert.equal(
+    shouldPreserveNoPrFailureTracking(createRecord({ last_failure_signature: null })),
+    false,
+  );
+  assert.equal(
+    shouldPreserveNoPrFailureTracking(
+      createRecord({
+        last_failure_context: {
+          category: "manual",
+          summary: "Needs manual follow-up.",
+          signature: "manual-follow-up",
+          command: null,
+          details: [],
+          url: null,
+          updated_at: "2026-03-11T01:50:41.997Z",
+        },
+      }),
+    ),
+    false,
+  );
+  assert.equal(shouldPreserveNoPrFailureTracking(createRecord({ pr_number: 123 })), false);
 });
