@@ -70,3 +70,23 @@ Decide whether to keep the current production auth token flow or replace it befo
     reason: "high-risk blocking ambiguity (unresolved_choice) for auth changes",
   });
 });
+
+test("findHighRiskBlockingAmbiguity does not treat normal pick/select implementation text as ambiguity", () => {
+  const issue = createIssue({
+    title: "Refine auth token parsing",
+    body: `## Summary
+Pick up the auth token from headers and select the role column during permission checks.
+
+## Scope
+- update auth header parsing
+- select role column values when building the permission map
+
+## Acceptance criteria
+- auth token parsing and permissions lookup are implemented
+
+## Verification
+- npm test -- src/issue-metadata-gates.test.ts`,
+  });
+
+  assert.equal(findHighRiskBlockingAmbiguity(issue), null);
+});

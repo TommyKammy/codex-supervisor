@@ -79,8 +79,10 @@ const RISKY_CHANGE_SIGNALS: Record<RiskyChangeClass, RegExp[]> = {
 const HIGH_RISK_AMBIGUITY_SIGNALS: Record<HighRiskAmbiguityClass, RegExp[]> = {
   open_question: [/\b(?:tbd|to be decided|open question|pending decision)\b/i, /\?{2,}/],
   unresolved_choice: [
-    /\b(?:decide|determine|choose|select|pick)\b/i,
-    /\b(?:whether to|which approach|which option)\b/i,
+    /\b(?:decide|determine)\s+(?:whether|which|between)\b/i,
+    /\b(?:choose|pick|select)\s+between\b/i,
+    /\bwhether to\b/i,
+    /\bwhich (?:approach|option|one|path|flow|strategy)\b/i,
   ],
   operator_confirmation: [
     /\b(?:clarify with|confirm with|wait(?:ing)? for|needs? confirmation from|ask [^.:\n]+ before)\b/i,
