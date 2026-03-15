@@ -35,7 +35,10 @@ interface CopilotReviewTimeoutStatus {
 }
 
 function reviewSatisfied(pr: GitHubPullRequest): boolean {
-  return pr.reviewDecision !== "CHANGES_REQUESTED" && pr.reviewDecision !== "REVIEW_REQUIRED";
+  return (
+    (pr.reviewDecision !== "CHANGES_REQUESTED" || pr.configuredBotTopLevelReviewStrength === "nitpick_only") &&
+    pr.reviewDecision !== "REVIEW_REQUIRED"
+  );
 }
 
 function configuredReviewBots(config: SupervisorConfig): string[] {
@@ -216,19 +219,22 @@ export function blockedReasonFromReviewState(
   pr: GitHubPullRequest,
   reviewThreads: ReviewThread[],
 ): Exclude<BlockedReason, null> | null {
+  const manualThreads = manualReviewThreads(config, reviewThreads);
+  const unresolvedBotThreads = configuredBotReviewThreads(config, reviewThreads);
   const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
   if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
     return "review_bot_timeout";
   }
 
-  if (
-    manualReviewThreads(config, reviewThreads).length > 0 ||
-    configuredBotReviewThreads(config, reviewThreads).length > 0
-  ) {
+  if (manualThreads.length > 0 || unresolvedBotThreads.length > 0) {
     return "manual_review";
   }
 
-  if (pr.reviewDecision === "CHANGES_REQUESTED" && config.humanReviewBlocksMerge) {
+  if (
+    pr.reviewDecision === "CHANGES_REQUESTED" &&
+    (pr.configuredBotTopLevelReviewStrength === "blocking" ||
+      (config.humanReviewBlocksMerge && pr.configuredBotTopLevelReviewStrength !== "nitpick_only"))
+  ) {
     return "manual_review";
   }
 
@@ -348,11 +354,22 @@ export function inferStateFromPullRequest(
       return "addressing_review";
     }
 
-    if (unresolvedBotThreads.length > 0 || config.humanReviewBlocksMerge) {
+    const nitpickOnlyConfiguredBotReview =
+      pr.configuredBotTopLevelReviewStrength === "nitpick_only" &&
+      unresolvedBotThreads.length === 0 &&
+      manualThreads.length === 0;
+
+    if (unresolvedBotThreads.length > 0 || pr.configuredBotTopLevelReviewStrength === "blocking") {
       return "blocked";
     }
 
-    return "pr_open";
+    if (config.humanReviewBlocksMerge && !nitpickOnlyConfiguredBotReview) {
+      return "blocked";
+    }
+
+    if (!nitpickOnlyConfiguredBotReview) {
+      return "pr_open";
+    }
   }
 
   if (

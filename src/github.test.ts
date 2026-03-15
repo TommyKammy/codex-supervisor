@@ -274,6 +274,80 @@ test("inferCopilotReviewLifecycle treats actionable configured-bot top-level rev
   });
 });
 
+test("GitHubClient classifies nitpick-only configured-bot top-level changes requests conservatively", async () => {
+  const config = createConfig({ reviewBotLogins: ["coderabbitai[bot]"] });
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "pr" && args[1] === "view") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          number: 44,
+          title: "Nitpick-only top-level review",
+          url: "https://example.test/pr/44",
+          state: "OPEN",
+          createdAt: "2026-03-13T00:00:00Z",
+          updatedAt: "2026-03-13T00:00:00Z",
+          isDraft: false,
+          reviewDecision: "CHANGES_REQUESTED",
+          mergeStateStatus: "CLEAN",
+          mergeable: "MERGEABLE",
+          headRefName: "codex/issue-141",
+          headRefOid: "head-44",
+          mergedAt: null,
+        }),
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "graphql") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: {
+                  nodes: [],
+                },
+                reviews: {
+                  nodes: [
+                    {
+                      submittedAt: "2026-03-13T02:03:04Z",
+                      state: "CHANGES_REQUESTED",
+                      body: "Nitpick: rename this helper for consistency with the rest of the file.",
+                      author: {
+                        login: "coderabbitai[bot]",
+                      },
+                    },
+                  ],
+                },
+                comments: {
+                  nodes: [],
+                },
+                reviewThreads: {
+                  nodes: [],
+                },
+                timelineItems: {
+                  nodes: [],
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const pr = await client.getPullRequest(44);
+
+  assert.equal(pr.copilotReviewState, "arrived");
+  assert.equal(pr.configuredBotTopLevelReviewStrength, "nitpick_only");
+  assert.equal(pr.configuredBotTopLevelReviewSubmittedAt, "2026-03-13T02:03:04Z");
+});
+
 test("GitHubClient hydrates Copilot arrival from long review threads without truncating comments to 20", async () => {
   const config = createConfig();
   let lifecycleQuery: string | null = null;

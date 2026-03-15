@@ -2,6 +2,11 @@ function normalizeReviewText(value: string | null | undefined): string {
   return value?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
 }
 
+const NITPICK_REVIEW_TEXT_PATTERN =
+  /\b(nit|nitpick|nits|style|format|formatting|typo|wording|docs?|documentation|comment|comments|naming|rename|readability|consistency|prefer)\b/;
+const STRONG_REVIEW_TEXT_PATTERN =
+  /\b(bug|issue|error|warning|fix|fixed|missing|fails?|failure|broken|incorrect|unsafe|security|panic|crash|deadlock|regression|data loss|leak)\b/;
+
 export function isInformationalReviewText(value: string | null | undefined): boolean {
   const normalized = normalizeReviewText(value);
   if (!normalized) {
@@ -29,6 +34,27 @@ export function hasActionableReviewText(value: string | null | undefined): boole
   return /\b(nit|nitpick|suggestion|consider|should|could|bug|issue|error|warning|fix|missing|fails?|incorrect|unsafe|please)\b/.test(
     normalized,
   );
+}
+
+export function classifyConfiguredBotTopLevelReviewStrength(args: {
+  body?: string | null | undefined;
+  state?: string | null | undefined;
+}): "nitpick_only" | "blocking" | null {
+  const state = normalizeReviewText(args.state);
+  if (state !== "changes_requested") {
+    return null;
+  }
+
+  const normalized = normalizeReviewText(args.body ?? args.state);
+  if (!normalized || isInformationalReviewText(normalized)) {
+    return "blocking";
+  }
+
+  if (NITPICK_REVIEW_TEXT_PATTERN.test(normalized) && !STRONG_REVIEW_TEXT_PATTERN.test(normalized)) {
+    return "nitpick_only";
+  }
+
+  return "blocking";
 }
 
 export function isActionableTopLevelReview(args: {

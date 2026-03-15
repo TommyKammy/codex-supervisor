@@ -10,7 +10,11 @@ import {
   SupervisorConfig,
 } from "./types";
 import { CommandOptions, CommandResult, runCommand } from "./command";
-import { hasActionableReviewText, isActionableTopLevelReview } from "./external-review-signal-heuristics";
+import {
+  classifyConfiguredBotTopLevelReviewStrength,
+  hasActionableReviewText,
+  isActionableTopLevelReview,
+} from "./external-review-signal-heuristics";
 import { parseJson, truncate } from "./utils";
 
 const TRANSIENT_GITHUB_RETRY_LIMIT = 2;
@@ -161,7 +165,17 @@ export interface CopilotReviewLifecycle {
 interface CachedCopilotReviewLifecycleEntry {
   fetchedAtMs: number;
   state: CopilotReviewState | null;
-  promise: Promise<CopilotReviewLifecycle>;
+  promise: Promise<ConfiguredBotReviewSummary>;
+}
+
+interface ConfiguredBotTopLevelReviewSummary {
+  strength: "nitpick_only" | "blocking" | null;
+  submittedAt: string | null;
+}
+
+interface ConfiguredBotReviewSummary {
+  lifecycle: CopilotReviewLifecycle;
+  topLevelReview: ConfiguredBotTopLevelReviewSummary;
 }
 
 function mapCheckBucket(args: {
@@ -291,6 +305,58 @@ export function inferCopilotReviewLifecycle(
   }
 
   return { state: "not_requested", requestedAt: null, arrivedAt: null };
+}
+
+function inferConfiguredBotTopLevelReviewSummary(
+  facts: CopilotReviewLifecycleFacts,
+  reviewBotLogins: string[],
+): ConfiguredBotTopLevelReviewSummary {
+  const configuredReviewBots = new Set(
+    reviewBotLogins.map((login) => normalizeLogin(login)).filter((login): login is string => Boolean(login)),
+  );
+  if (configuredReviewBots.size === 0) {
+    return { strength: null, submittedAt: null };
+  }
+
+  let latestConfiguredReview: ConfiguredBotTopLevelReviewSummary = { strength: null, submittedAt: null };
+  let latestConfiguredReviewMs = 0;
+  let sawNonConfiguredChangesRequestedReview = false;
+
+  for (const review of facts.reviews) {
+    const authorLogin = normalizeLogin(review.authorLogin);
+    if (!authorLogin || normalizeLogin(review.state)?.replace(/\s+/g, "_") !== "changes_requested") {
+      continue;
+    }
+
+    if (!configuredReviewBots.has(authorLogin)) {
+      sawNonConfiguredChangesRequestedReview = true;
+      continue;
+    }
+
+    const submittedAtMs = parseTimestamp(review.submittedAt);
+    if (latestConfiguredReview.submittedAt && submittedAtMs < latestConfiguredReviewMs) {
+      continue;
+    }
+
+    latestConfiguredReview = {
+      strength: classifyConfiguredBotTopLevelReviewStrength(review),
+      submittedAt: review.submittedAt,
+    };
+    latestConfiguredReviewMs = submittedAtMs;
+  }
+
+  if (!latestConfiguredReview.strength) {
+    return { strength: null, submittedAt: null };
+  }
+
+  if (sawNonConfiguredChangesRequestedReview) {
+    return {
+      strength: "blocking",
+      submittedAt: latestConfiguredReview.submittedAt,
+    };
+  }
+
+  return latestConfiguredReview;
 }
 
 function normalizeRollupChecks(rollup: PullRequestStatusCheckRollupResponse | null | undefined): PullRequestCheck[] {
@@ -644,7 +710,7 @@ export class GitHubClient {
   private getCachedCopilotReviewLifecycle(
     cacheKey: string,
     nowMs: number,
-  ): Promise<CopilotReviewLifecycle> | null {
+  ): Promise<ConfiguredBotReviewSummary> | null {
     const cachedLifecycle = this.copilotReviewLifecycleCache.get(cacheKey);
     if (!cachedLifecycle) {
       return null;
@@ -674,18 +740,21 @@ export class GitHubClient {
 
   private setCachedCopilotReviewLifecycle(
     cacheKey: string,
-    lifecyclePromiseFactory: () => Promise<CopilotReviewLifecycle>,
-  ): Promise<CopilotReviewLifecycle> {
+    lifecyclePromiseFactory: () => Promise<ConfiguredBotReviewSummary>,
+  ): Promise<ConfiguredBotReviewSummary> {
     const cacheEntry: CachedCopilotReviewLifecycleEntry = {
       fetchedAtMs: this.now(),
       state: null,
-      promise: Promise.resolve({ state: "not_requested", requestedAt: null, arrivedAt: null }),
+      promise: Promise.resolve({
+        lifecycle: { state: "not_requested", requestedAt: null, arrivedAt: null },
+        topLevelReview: { strength: null, submittedAt: null },
+      }),
     };
     const lifecyclePromise = lifecyclePromiseFactory()
-      .then((lifecycle) => {
+      .then((summary) => {
         cacheEntry.fetchedAtMs = this.now();
-        cacheEntry.state = lifecycle.state;
-        return lifecycle;
+        cacheEntry.state = summary.lifecycle.state;
+        return summary;
       })
       .catch((error) => {
         this.copilotReviewLifecycleCache.delete(cacheKey);
@@ -1129,27 +1198,31 @@ export class GitHubClient {
     const cacheKey = `${pr.number}:${pr.headRefOid}`;
     const cachedLifecycle = this.getCachedCopilotReviewLifecycle(cacheKey, this.now());
     if (cachedLifecycle) {
-      const lifecycle = await cachedLifecycle;
+      const summary = await cachedLifecycle;
       return {
         ...pr,
-        copilotReviewState: lifecycle.state,
-        copilotReviewRequestedAt: lifecycle.requestedAt,
-        copilotReviewArrivedAt: lifecycle.arrivedAt,
+        copilotReviewState: summary.lifecycle.state,
+        copilotReviewRequestedAt: summary.lifecycle.requestedAt,
+        copilotReviewArrivedAt: summary.lifecycle.arrivedAt,
+        configuredBotTopLevelReviewStrength: summary.topLevelReview.strength,
+        configuredBotTopLevelReviewSubmittedAt: summary.topLevelReview.submittedAt,
       };
     }
 
     const lifecyclePromise = this.setCachedCopilotReviewLifecycle(
       cacheKey,
-      () => this.getCopilotReviewLifecycle(pr.number),
+      () => this.getConfiguredBotReviewSummary(pr.number),
     );
 
     try {
-      const lifecycle = await lifecyclePromise;
+      const summary = await lifecyclePromise;
       return {
         ...pr,
-        copilotReviewState: lifecycle.state,
-        copilotReviewRequestedAt: lifecycle.requestedAt,
-        copilotReviewArrivedAt: lifecycle.arrivedAt,
+        copilotReviewState: summary.lifecycle.state,
+        copilotReviewRequestedAt: summary.lifecycle.requestedAt,
+        copilotReviewArrivedAt: summary.lifecycle.arrivedAt,
+        configuredBotTopLevelReviewStrength: summary.topLevelReview.strength,
+        configuredBotTopLevelReviewSubmittedAt: summary.topLevelReview.submittedAt,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1159,11 +1232,13 @@ export class GitHubClient {
         copilotReviewState: null,
         copilotReviewRequestedAt: null,
         copilotReviewArrivedAt: null,
+        configuredBotTopLevelReviewStrength: null,
+        configuredBotTopLevelReviewSubmittedAt: null,
       };
     }
   }
 
-  private async getCopilotReviewLifecycle(prNumber: number): Promise<CopilotReviewLifecycle> {
+  private async getConfiguredBotReviewSummary(prNumber: number): Promise<ConfiguredBotReviewSummary> {
     const { owner, repo } = this.repoOwnerAndName();
     const query = `
       query($owner: String!, $repo: String!, $number: Int!) {
@@ -1333,6 +1408,9 @@ export class GitHubClient {
           .filter((event): event is CopilotReviewLifecycleFacts["timeline"][number] => event !== null) ?? [],
     };
 
-    return inferCopilotReviewLifecycle(facts, this.config.reviewBotLogins);
+    return {
+      lifecycle: inferCopilotReviewLifecycle(facts, this.config.reviewBotLogins),
+      topLevelReview: inferConfiguredBotTopLevelReviewSummary(facts, this.config.reviewBotLogins),
+    };
   }
 }
