@@ -10,7 +10,6 @@ import {
   formatDetailedStatus,
   inferStateFromPullRequest,
   localReviewHighSeverityNeedsRetry,
-  nextExternalReviewMissPatch,
   recoverUnexpectedCodexTurnFailure,
   summarizeChecks,
 } from "./supervisor";
@@ -5160,47 +5159,6 @@ test("inferStateFromPullRequest blocks a repeatedly unresolved configured bot th
   );
 });
 
-test("nextExternalReviewMissPatch preserves same-head artifacts when no new miss artifact was written", () => {
-  const patch = nextExternalReviewMissPatch(
-    createRecord({
-      external_review_head_sha: "deadbeef",
-      external_review_misses_path: "/tmp/reviews/external-review-misses-head-deadbeef.json",
-      external_review_matched_findings_count: 1,
-      external_review_near_match_findings_count: 1,
-      external_review_missed_findings_count: 2,
-    }),
-    {
-      headRefOid: "deadbeef",
-    },
-    null,
-  );
-
-  assert.deepEqual(patch, {});
-});
-
-test("nextExternalReviewMissPatch clears stale artifacts when the PR head changes", () => {
-  const patch = nextExternalReviewMissPatch(
-    createRecord({
-      external_review_head_sha: "oldhead",
-      external_review_misses_path: "/tmp/reviews/external-review-misses-head-oldhead.json",
-      external_review_matched_findings_count: 1,
-      external_review_near_match_findings_count: 1,
-      external_review_missed_findings_count: 2,
-    }),
-    {
-      headRefOid: "newhead",
-    },
-    null,
-  );
-
-  assert.deepEqual(patch, {
-    external_review_head_sha: null,
-    external_review_misses_path: null,
-    external_review_matched_findings_count: 0,
-    external_review_near_match_findings_count: 0,
-    external_review_missed_findings_count: 0,
-  });
-});
 
 test("formatDetailedStatus shows blocking local review status for current PR head", () => {
   const config = createConfig({ localReviewPolicy: "block_ready" });

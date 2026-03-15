@@ -62,8 +62,8 @@ import {
   CodexTurnShortCircuit,
   executeCodexTurnPhase,
   loadLocalReviewRepairContext,
-  nextExternalReviewMissPatch,
 } from "./run-once-turn-execution";
+import { nextExternalReviewMissPatch } from "./external-review-miss-state";
 import {
   handlePostTurnPullRequestTransitionsPhase,
   PostTurnPullRequestContext,
@@ -131,8 +131,8 @@ import {
 
 export {
   loadLocalReviewRepairContext,
-  nextExternalReviewMissPatch,
 } from "./run-once-turn-execution";
+export { nextExternalReviewMissPatch } from "./external-review-miss-state";
 export {
   hasProcessedReviewThread,
   localReviewBlocksMerge,

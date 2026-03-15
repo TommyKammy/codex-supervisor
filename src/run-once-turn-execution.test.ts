@@ -508,6 +508,166 @@ test("executeCodexTurnPhase persists blocked reason and repeated blocker bookkee
   assert.equal(state.issues["102"]?.repeated_failure_signature_count, 1);
 });
 
+test("executeCodexTurnPhase clears stale external-review miss artifacts when the PR head changes", async () => {
+  const config = createConfig();
+  const issue: GitHubIssue = {
+    number: 102,
+    title: "Clear stale external review artifacts",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: "https://example.test/issues/102",
+    state: "OPEN",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "addressing_review",
+        external_review_head_sha: "oldhead",
+        external_review_misses_path: "/tmp/reviews/external-review-misses-head-oldhead.json",
+        external_review_matched_findings_count: 1,
+        external_review_near_match_findings_count: 2,
+        external_review_missed_findings_count: 3,
+      }),
+    },
+  };
+  let syncJournalCalls = 0;
+  let journalReads = 0;
+
+  const result = await executeCodexTurnPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => {
+        throw new Error("unexpected resolvePullRequestForBranch call");
+      },
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      previousCodexSummary: null,
+      previousError: null,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      journalPath: path.join("/tmp/workspaces", "issue-102/.codex-supervisor/issue-journal.md"),
+      syncJournal: async () => {
+        syncJournalCalls += 1;
+      },
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      workspaceStatus: {
+        branch: "codex/issue-102",
+        headSha: "head-116",
+        hasUncommittedChanges: false,
+        baseAhead: 0,
+        baseBehind: 0,
+        remoteBranchExists: true,
+        remoteAhead: 0,
+        remoteBehind: 0,
+      },
+      pr: {
+        number: 116,
+        title: "Clear stale external review artifacts",
+        url: "https://example.test/pr/116",
+        state: "OPEN",
+        createdAt: "2026-03-13T06:20:00Z",
+        isDraft: false,
+        reviewDecision: "CHANGES_REQUESTED",
+        mergeStateStatus: "CLEAN",
+        mergeable: "MERGEABLE",
+        headRefName: "codex/issue-102",
+        headRefOid: "newhead",
+        mergedAt: null,
+        copilotReviewState: "not_requested",
+        copilotReviewRequestedAt: null,
+        copilotReviewArrivedAt: null,
+      },
+      checks: [],
+      reviewThreads: [],
+      options: { dryRun: false },
+    },
+    acquireSessionLock: async () => null,
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-03-13T06:20:00Z",
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    normalizeBlockerSignature: () => null,
+    isVerificationBlockedMessage: () => false,
+    derivePullRequestLifecycleSnapshot: () => {
+      throw new Error("unexpected derivePullRequestLifecycleSnapshot call");
+    },
+    inferStateWithoutPullRequest: () => "stabilizing",
+    blockedReasonFromReviewState: () => null,
+    recoverUnexpectedCodexTurnFailure: async () => {
+      throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+    },
+    readIssueJournal: async () => {
+      journalReads += 1;
+      return journalReads === 1
+        ? "## Codex Working Notes\n### Current Handoff\n- Hypothesis: clear stale artifacts.\n"
+        : [
+            "## Codex Working Notes",
+            "### Current Handoff",
+            "- Hypothesis: clear stale artifacts.",
+            "- What changed: cleared stale external review artifact counters.",
+            "- Next exact step: handle the current review feedback.",
+          ].join("\n");
+    },
+    runCodexTurnImpl: async () => ({
+      exitCode: 0,
+      sessionId: "session-102",
+      lastMessage: [
+        "Waiting on manual review",
+        "State hint: blocked",
+        "Blocked reason: manual_review",
+      ].join("\n"),
+      stderr: "",
+      stdout: "",
+    }),
+  });
+
+  assert.deepEqual(result, {
+    kind: "returned",
+    message: "Codex reported blocked for issue #102.",
+  });
+  assert.equal(syncJournalCalls, 2);
+  assert.equal(state.issues["102"]?.external_review_head_sha, null);
+  assert.equal(state.issues["102"]?.external_review_misses_path, null);
+  assert.equal(state.issues["102"]?.external_review_matched_findings_count, 0);
+  assert.equal(state.issues["102"]?.external_review_near_match_findings_count, 0);
+  assert.equal(state.issues["102"]?.external_review_missed_findings_count, 0);
+});
+
 test("executeCodexTurnPhase loads local-review repair context before building the local_review_fix prompt", async () => {
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "turn-execution-local-review-fix-"));
   const reviewDir = path.join(workspaceDir, "reviews");
