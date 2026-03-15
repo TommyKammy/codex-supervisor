@@ -8,7 +8,7 @@ function safeSlug(input: string): string {
   return input.replace(/[^a-zA-Z0-9._-]+/g, "-");
 }
 
-export function reviewDir(config: SupervisorConfig, issueNumber: number): string {
+export function reviewDir(config: Pick<SupervisorConfig, "localReviewArtifactDir" | "repoSlug">, issueNumber: number): string {
   return path.join(config.localReviewArtifactDir, safeSlug(config.repoSlug), `issue-${issueNumber}`);
 }
 
