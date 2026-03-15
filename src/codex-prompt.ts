@@ -372,11 +372,13 @@ export function buildCodexPrompt(input: {
     failureSummary,
     ...(localReviewRepairSummary.length > 0 ? ["", ...localReviewRepairSummary] : []),
     ...(externalReviewMissSummary.length > 0 ? ["", ...externalReviewMissSummary] : []),
-    ...(input.alwaysReadFiles.length > 0
+    ...((input.alwaysReadFiles.length > 0 || input.onDemandMemoryFiles.length > 0)
       ? [
           "",
           "Always-read memory files:",
-          ...input.alwaysReadFiles.map((filePath) => `- ${filePath}`),
+          ...(input.alwaysReadFiles.length > 0
+            ? input.alwaysReadFiles.map((filePath) => `- ${filePath}`)
+            : ["- none configured"]),
           "",
           "On-demand durable memory files:",
           ...(input.onDemandMemoryFiles.length > 0
@@ -384,7 +386,9 @@ export function buildCodexPrompt(input: {
             : ["- none configured"]),
           "",
           "Memory policy:",
-          "- Read the always-read files first.",
+          ...(input.alwaysReadFiles.length > 0
+            ? ["- Read the always-read files first."]
+            : []),
           "- Use the context index to decide whether you need any on-demand durable memory files.",
           "- Do not bulk-read every durable memory file on every turn.",
           "- Treat these files as the durable cross-thread memory shared by Codex, CI agents, and future sessions.",

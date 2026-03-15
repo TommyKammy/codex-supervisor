@@ -112,6 +112,29 @@ test("buildCodexPrompt suppresses stale handoff next actions during local_review
   assert.match(prompt, /Prompt guidance should ignore stale checkpoint-maintenance handoff text during repair\./);
 });
 
+test("buildCodexPrompt renders on-demand memory files even without always-read files", () => {
+  const prompt = buildCodexPrompt({
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "addressing_review" satisfies RunState,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: ["/tmp/workspaces/issue-46/README.md"],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+  });
+
+  assert.match(prompt, /Always-read memory files:/);
+  assert.match(prompt, /- none configured/);
+  assert.match(prompt, /On-demand durable memory files:/);
+  assert.match(prompt, /\/tmp\/workspaces\/issue-46\/README\.md/);
+  assert.doesNotMatch(prompt, /Read the always-read files first\./);
+  assert.match(prompt, /Use the context index to decide whether you need any on-demand durable memory files\./);
+});
+
 test("buildCodexResumePrompt falls back to current failure context when the journal lacks a blocker", () => {
   const failureContext: FailureContext = {
     category: "blocked",
