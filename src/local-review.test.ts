@@ -552,6 +552,29 @@ test("prepareLocalReviewGuardrailProvenance groups runtime sources and keeps art
   });
 });
 
+test("prepareLocalReviewGuardrailProvenance collapses relative runtime source paths to a basename", () => {
+  const provenance = prepareLocalReviewGuardrailProvenance({
+    config: createConfig({
+      localReviewArtifactDir: process.cwd(),
+    }),
+    verifierReport: null,
+    committedExternalReviewPatterns: [],
+    runtimeExternalReviewPatterns: [
+      createMissPattern({
+        fingerprint: "runtime-relative",
+        sourceArtifactPath: "owner-repo/issue-38/external-review-misses-head-333.json",
+      }),
+    ],
+  });
+
+  assert.deepEqual(provenance.externalReview.runtimeSources, [
+    {
+      path: "external-review-misses-head-333.json",
+      count: 1,
+    },
+  ]);
+});
+
 test("formatLocalReviewResult preserves finalized summary fields and blocker summary", () => {
   const finalized = finalizeLocalReview({
     config: createConfig({ localReviewConfidenceThreshold: 0.7 }),

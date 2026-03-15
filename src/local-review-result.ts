@@ -56,6 +56,10 @@ export function buildLocalReviewBlockerSummary(
 }
 
 function displayGuardrailArtifactPath(config: Pick<SupervisorConfig, "localReviewArtifactDir">, filePath: string): string {
+  if (!path.isAbsolute(filePath)) {
+    return path.basename(filePath);
+  }
+
   const relativePath = path.relative(config.localReviewArtifactDir, filePath);
   return relativePath && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)
     ? relativePath
