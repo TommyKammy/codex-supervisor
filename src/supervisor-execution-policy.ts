@@ -4,6 +4,8 @@ import { isTerminalState } from "./utils";
 
 export type AttemptLane = "implementation" | "repair";
 
+const VERIFICATION_KEYWORD_PATTERN = /\b(playwright|e2e|vitest|assertion|verification|tests?)\b/;
+
 export function formatExecutionReadyMissingFields(fields: string[]): string {
   return fields.join(", ");
 }
@@ -14,13 +16,7 @@ export function isVerificationBlockedMessage(message: string | null | undefined)
   }
 
   const lower = message.toLowerCase();
-  const mentionsVerification =
-    lower.includes("playwright") ||
-    lower.includes("e2e") ||
-    lower.includes("vitest") ||
-    lower.includes("test") ||
-    lower.includes("assertion") ||
-    lower.includes("verification");
+  const mentionsVerification = VERIFICATION_KEYWORD_PATTERN.test(lower);
   const mentionsFailure =
     lower.includes("fails") ||
     lower.includes("failing") ||

@@ -133,6 +133,7 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
 test("isVerificationBlockedMessage ignores hard blockers even when tests fail", () => {
   assert.equal(isVerificationBlockedMessage("Playwright test failed because of missing permissions."), false);
   assert.equal(isVerificationBlockedMessage("Verification still failing in vitest after the patch."), true);
+  assert.equal(isVerificationBlockedMessage("Latest run failed after the patch."), false);
 });
 
 test("shouldAutoRetryBlockedVerification respects implementation budgets and repeat caps", () => {
