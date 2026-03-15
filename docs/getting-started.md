@@ -190,6 +190,7 @@ Use the high-level flow in this guide, then jump to the reference that matches t
 
 - [Configuration reference](./configuration.md) for config fields, provider profiles, model strategy, durable memory, and execution policy
 - [Local review reference](./local-review.md) for review policies, role selection, artifacts, thresholds, and committed guardrails
+- [Issue metadata reference](./issue-metadata.md) for the canonical field guide, sequencing rules, and execution-ready issue template
 
 ## How issue scheduling actually works
 
@@ -247,42 +248,7 @@ The scheduler considers:
 - local record is not terminal in a way that blocks retry
 - stale PR or stale failure state has been reconciled
 
-## Issue metadata format
-
-A good issue body usually includes:
-
-- `Part of: #...`
-- `Depends on: #...`
-- `Parallelizable: Yes/No`
-- `Execution order`
-- `Acceptance criteria`
-
-Example:
-
-```md
-## Summary
-Add a persisted recommendation severity model so wait stats findings rank consistently.
-
-## Scope
-- define severity levels in the domain model
-- update recommendation ranking to use the new severity model
-- keep existing finding ingestion behavior unchanged
-
-Part of: #42
-Depends on: #41
-Parallelizable: No
-
-## Execution order
-2 of 4
-
-## Acceptance criteria
-- severity levels are defined in the domain model
-- recommendation ranking uses the new severity model
-- focused tests cover the ranking behavior
-
-## Verification
-- `npm test -- src/recommendation-ranking.test.ts`
-```
+For the detailed issue format, examples, and field-by-field rules, use the [Issue metadata reference](./issue-metadata.md).
 
 ## State machine
 
@@ -349,7 +315,7 @@ Short interpretation:
 1. Install Codex CLI.
 2. Clone your repo.
 3. Prepare `supervisor.config.json`.
-   Use the [Configuration reference](./configuration.md) for the full field guide and the [Local review reference](./local-review.md) when you want to enable or tune the local review swarm.
+   Use the [Configuration reference](./configuration.md) for the full field guide, the [Local review reference](./local-review.md) when you want to enable or tune the local review swarm, and the [Issue metadata reference](./issue-metadata.md) when you need to author or review execution-ready issues.
 4. Create execution-ready issues.
 5. Run:
 
