@@ -2,10 +2,13 @@ import { GitHubClient } from "./github";
 import { issueJournalPath, syncIssueJournal as syncIssueJournalImpl } from "./journal";
 import { syncMemoryArtifacts as syncMemoryArtifactsImpl } from "./memory";
 import { RecoveryEvent } from "./run-once-cycle-prelude";
+import {
+  applyFailureSignature,
+  buildCodexFailureContext,
+} from "./supervisor-failure-helpers";
 import { StateStore } from "./state-store";
 import {
   CliOptions,
-  FailureContext,
   GitHubIssue,
   GitHubPullRequest,
   IssueRunRecord,
@@ -101,57 +104,6 @@ export function isRestartRunOnce(
 
 function isOpenPullRequest(pr: GitHubPullRequest | null): pr is GitHubPullRequest {
   return pr !== null && pr.state === "OPEN" && !pr.mergedAt;
-}
-
-function normalizeBlockerSignature(message: string | null | undefined): string | null {
-  if (!message) {
-    return null;
-  }
-
-  return message
-    .toLowerCase()
-    .replace(/\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:\d{2}(?:\.\d+)?z/g, "<ts>")
-    .replace(/#\d+/g, "#<n>")
-    .replace(/\b[0-9a-f]{7,40}\b/g, "<sha>")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 1000);
-}
-
-function buildCodexFailureContext(
-  now: () => string,
-  category: FailureContext["category"],
-  summary: string,
-  details: string[],
-): FailureContext {
-  return {
-    category,
-    summary,
-    signature: normalizeBlockerSignature(`${summary}\n${details.join("\n")}`),
-    command: null,
-    details,
-    url: null,
-    updated_at: now(),
-  };
-}
-
-function applyFailureSignature(
-  record: IssueRunRecord,
-  failureContext: FailureContext | null,
-): Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count"> {
-  const signature = failureContext?.signature ?? null;
-  if (!signature) {
-    return {
-      last_failure_signature: null,
-      repeated_failure_signature_count: 0,
-    };
-  }
-
-  return {
-    last_failure_signature: signature,
-    repeated_failure_signature_count:
-      record.last_failure_signature === signature ? record.repeated_failure_signature_count + 1 : 1,
-  };
 }
 
 function buildRecoveryEvent(issueNumber: number, reason: string, now: () => string): RecoveryEvent {
@@ -275,7 +227,6 @@ async function hydratePullRequestContext(
       return { kind: "restart", recoveryEvents: [recoveryEvent] };
     } else if (resolvedPr.state === "CLOSED") {
       const failureContext = buildCodexFailureContext(
-        now,
         "manual",
         `PR #${resolvedPr.number} was closed without merge.`,
         ["Manual intervention is required before the supervisor can continue this issue."],
