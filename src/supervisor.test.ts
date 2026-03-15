@@ -3680,6 +3680,32 @@ test("runOnce reprocesses a configured bot review thread once after a new PR hea
   assert.equal(record.last_head_sha, runHeadSha);
   assert.equal(record.blocked_reason, "manual_review");
   assert.deepEqual(record.processed_review_thread_ids, ["thread-1@head-a", `thread-1@${runHeadSha}`]);
+  assert.equal(record.last_failure_context?.category, "manual");
+  assert.match(
+    record.last_failure_context?.summary ?? "",
+    /configured bot review thread\(s\) remain unresolved after processing on the current head/,
+  );
+  assert.deepEqual(record.last_failure_context?.details, [
+    "reviewer=copilot-pull-request-reviewer file=src/file.ts line=12 processed_on_current_head=yes",
+  ]);
+
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: record,
+    latestRecord: record,
+    trackedIssueCount: 1,
+    pr,
+    checks: [],
+    reviewThreads,
+  });
+  assert.match(
+    status,
+    /failure_context category=manual summary=1 configured bot review thread\(s\) remain unresolved after processing on the current head and now require manual attention\./,
+  );
+  assert.match(
+    status,
+    /failure_details=reviewer=copilot-pull-request-reviewer file=src\/file\.ts line=12 processed_on_current_head=yes/,
+  );
 });
 
 test("runOnce does not mark configured bot review threads as processed for a refreshed PR head it did not evaluate", async () => {
