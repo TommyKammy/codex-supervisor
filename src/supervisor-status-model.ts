@@ -458,7 +458,7 @@ export function buildDetailedStatusModel(args: BuildDetailedStatusModelArgs): st
 
   if (activeRecord.last_failure_context) {
     lines.push(
-      `failure_context category=${activeRecord.last_failure_context.category ?? "none"} summary=${truncate(activeRecord.last_failure_context.summary, 200) ?? "none"}`,
+      `failure_context category=${activeRecord.last_failure_context.category ?? "none"} summary=${truncate(sanitizeStatusValue(activeRecord.last_failure_context.summary), 200) ?? "none"}`,
     );
     if (activeRecord.last_failure_context.details.length > 0) {
       lines.push(

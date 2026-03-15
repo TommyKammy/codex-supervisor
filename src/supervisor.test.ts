@@ -5322,6 +5322,36 @@ test("buildDetailedStatusSummaryLines shapes optional summaries and artifact pat
   );
 });
 
+test("buildDetailedStatusModel sanitizes failure context summary before emitting it", () => {
+  const lines = buildDetailedStatusModel({
+    config: createConfig(),
+    activeRecord: createRecord({
+      last_error: null,
+      last_failure_context: {
+        category: "blocked",
+        summary: "first line\nsecond line",
+        signature: "two-line-summary",
+        command: null,
+        details: [],
+        url: null,
+        updated_at: "2026-03-11T01:50:41.997Z",
+      },
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    manualReviewThreads,
+    configuredBotReviewThreads,
+    pendingBotReviewThreads: () => [],
+    summarizeChecks,
+    mergeConflictDetected: (innerPr) => innerPr.mergeStateStatus === "DIRTY",
+  });
+
+  assert.ok(lines.includes("failure_context category=blocked summary=first line\\nsecond line"));
+});
+
 test("formatDetailedStatus shows both raw and compressed local review counts", () => {
   const config = createConfig({ localReviewPolicy: "block_ready" });
   const record = {
