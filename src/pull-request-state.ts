@@ -296,13 +296,6 @@ export function syncCopilotReviewRequestObservation(
     };
   }
 
-  if (hasObservedCopilotRequest(config, record, pr)) {
-    return {
-      copilot_review_requested_observed_at: record.copilot_review_requested_observed_at,
-      copilot_review_requested_head_sha: record.copilot_review_requested_head_sha,
-    };
-  }
-
   return {
     copilot_review_requested_observed_at: null,
     copilot_review_requested_head_sha: null,
