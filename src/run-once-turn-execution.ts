@@ -94,7 +94,15 @@ export function hasProcessedReviewThread(
   }
 
   if (processedKeys.includes(headScopedKey)) {
-    return latestCommentFingerprint === null || processedFingerprints.length === 0;
+    if (latestCommentFingerprint === null) {
+      return true;
+    }
+
+    const threadFingerprintPrefix = `${headScopedKey}#`;
+    const hasStoredFingerprintForThreadOnHead = processedFingerprints.some((key) =>
+      key.startsWith(threadFingerprintPrefix),
+    );
+    return !hasStoredFingerprintForThreadOnHead;
   }
 
   return record.last_head_sha === pr.headRefOid && processedKeys.includes(thread.id);

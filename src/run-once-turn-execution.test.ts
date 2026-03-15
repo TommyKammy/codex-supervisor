@@ -219,6 +219,21 @@ test("hasProcessedReviewThread treats a same-head thread with a fresh latest com
   );
 });
 
+test("hasProcessedReviewThread ignores unrelated same-head fingerprints when deciding whether a thread is already processed", () => {
+  assert.equal(
+    hasProcessedReviewThread(
+      createRecord({
+        last_head_sha: "head-a",
+        processed_review_thread_ids: ["thread-1@head-a"],
+        processed_review_thread_fingerprints: ["thread-2@head-a#comment-9"],
+      }),
+      { headRefOid: "head-a" },
+      createReviewThread(),
+    ),
+    true,
+  );
+});
+
 test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking ready", async () => {
   const config = createConfig();
   const issue: GitHubIssue = {
