@@ -31,8 +31,7 @@ export async function collectLocalReviewChangedFiles(args: {
   const runGitDiff = args.runGitDiff ?? defaultRunGitDiff;
   const stdout = await runGitDiff(args.defaultBranch, args.workspacePath);
   return stdout
-    .split("\n")
-    .map((line) => line.trim())
+    .split("\0")
     .filter((line) => line.length > 0);
 }
 
@@ -40,7 +39,7 @@ async function defaultRunGitDiff(defaultBranch: string, workspacePath: string): 
   const ref = compareRef(defaultBranch);
   const changedFilesResult = await runCommand(
     "git",
-    ["diff", "--name-only", ref],
+    ["diff", "--name-only", "-z", ref],
     {
       cwd: workspacePath,
       env: process.env,
@@ -102,7 +101,7 @@ export async function loadLocalReviewExternalReviewContext(args: {
 }
 
 export async function prepareLocalReviewRoleSelection(args: {
-  config: Pick<SupervisorConfig, "localReviewRoles" | "localReviewAutoDetect">;
+  config: SupervisorConfig;
   detectRoles?: () => Promise<LocalReviewRoleSelection[]>;
 }): Promise<{
   detectedRoles: LocalReviewRoleSelection[];
@@ -110,7 +109,7 @@ export async function prepareLocalReviewRoleSelection(args: {
 }> {
   const detectedRoles =
     args.config.localReviewRoles.length === 0 && args.config.localReviewAutoDetect
-      ? await (args.detectRoles ?? (() => detectLocalReviewRoleSelections(args.config as SupervisorConfig)))()
+      ? await (args.detectRoles ?? (() => detectLocalReviewRoleSelections(args.config)))()
       : [];
 
   return {

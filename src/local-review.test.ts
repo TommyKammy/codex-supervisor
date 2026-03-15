@@ -262,7 +262,7 @@ test("prepareLocalReviewRoleSelection skips auto-detect when roles are configure
   };
 
   const configured = await prepareLocalReviewRoleSelection({
-    config: { localReviewRoles: ["security_reviewer"], localReviewAutoDetect: true },
+    config: createConfig({ localReviewRoles: ["security_reviewer"], localReviewAutoDetect: true }),
     detectRoles,
   });
   assert.equal(detectCalls, 0);
@@ -270,7 +270,7 @@ test("prepareLocalReviewRoleSelection skips auto-detect when roles are configure
   assert.deepEqual(configured.roles, ["security_reviewer"]);
 
   const disabled = await prepareLocalReviewRoleSelection({
-    config: { localReviewRoles: [], localReviewAutoDetect: false },
+    config: createConfig({ localReviewRoles: [], localReviewAutoDetect: false }),
     detectRoles,
   });
   assert.equal(detectCalls, 0);
@@ -278,7 +278,7 @@ test("prepareLocalReviewRoleSelection skips auto-detect when roles are configure
   assert.deepEqual(disabled.roles, ["reviewer", "explorer"]);
 
   const autodetected = await prepareLocalReviewRoleSelection({
-    config: { localReviewRoles: [], localReviewAutoDetect: true },
+    config: createConfig({ localReviewRoles: [], localReviewAutoDetect: true }),
     detectRoles,
   });
   assert.equal(detectCalls, 1);
@@ -286,14 +286,14 @@ test("prepareLocalReviewRoleSelection skips auto-detect when roles are configure
   assert.deepEqual(autodetected.roles, ["reviewer", "prisma_postgres_reviewer"]);
 });
 
-test("collectLocalReviewChangedFiles trims blank lines from git diff output", async () => {
+test("collectLocalReviewChangedFiles preserves exact paths from NUL-delimited git diff output", async () => {
   const changedFiles = await collectLocalReviewChangedFiles({
     workspacePath: "/tmp/repo",
     defaultBranch: "main",
-    runGitDiff: async () => "src/a.ts\n\n src/b.ts \n",
+    runGitDiff: async () => "src/a.ts\0 src/b.ts \0",
   });
 
-  assert.deepEqual(changedFiles, ["src/a.ts", "src/b.ts"]);
+  assert.deepEqual(changedFiles, ["src/a.ts", " src/b.ts "]);
 });
 
 test("loadLocalReviewExternalReviewContext filters committed patterns to changed files and loads runtime/prior variants", async () => {
