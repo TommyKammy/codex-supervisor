@@ -62,6 +62,7 @@ function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
     last_failure_signature: value.last_failure_signature ?? null,
     blocked_reason: value.blocked_reason ?? null,
     processed_review_thread_ids: value.processed_review_thread_ids ?? [],
+    processed_review_thread_fingerprints: value.processed_review_thread_fingerprints ?? [],
   };
 }
 
@@ -173,6 +174,8 @@ export class StateStore {
       ...patch,
       processed_review_thread_ids:
         patch.processed_review_thread_ids ?? record.processed_review_thread_ids ?? [],
+      processed_review_thread_fingerprints:
+        patch.processed_review_thread_fingerprints ?? record.processed_review_thread_fingerprints ?? [],
       journal_path: hasOwn(patch, "journal_path") ? patch.journal_path ?? null : record.journal_path ?? null,
       review_wait_started_at:
         hasOwn(patch, "review_wait_started_at") ? patch.review_wait_started_at ?? null : record.review_wait_started_at ?? null,

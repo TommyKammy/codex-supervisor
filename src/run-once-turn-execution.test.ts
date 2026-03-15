@@ -121,6 +121,7 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     last_failure_signature: null,
     blocked_reason: null,
     processed_review_thread_ids: [],
+    processed_review_thread_fingerprints: [],
     updated_at: "2026-03-13T06:20:00Z",
     ...overrides,
   };
@@ -138,15 +139,96 @@ function createFailureContext(summary: string): FailureContext {
   };
 }
 
+function createReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
+  return {
+    id: "thread-1",
+    isResolved: false,
+    isOutdated: false,
+    path: "src/file.ts",
+    line: 12,
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "Please address this.",
+          createdAt: "2026-03-13T06:20:00Z",
+          url: "https://example.test/pr/116#discussion_r1",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+    ...overrides,
+  };
+}
+
 test("hasProcessedReviewThread matches head-scoped processed thread ids", () => {
   assert.equal(
     hasProcessedReviewThread(
       createRecord({
         last_head_sha: "head-a",
         processed_review_thread_ids: ["thread-1@head-b"],
+        processed_review_thread_fingerprints: ["thread-1@head-b#comment-1"],
       }),
       { headRefOid: "head-b" },
-      "thread-1",
+      createReviewThread(),
+    ),
+    true,
+  );
+});
+
+test("hasProcessedReviewThread treats a same-head thread with a fresh latest comment as reprocessable once", () => {
+  assert.equal(
+    hasProcessedReviewThread(
+      createRecord({
+        last_head_sha: "head-a",
+        processed_review_thread_ids: ["thread-1@head-a"],
+        processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+      }),
+      { headRefOid: "head-a" },
+      createReviewThread({
+        comments: {
+          nodes: [
+            {
+              id: "comment-1",
+              body: "Please address this.",
+              createdAt: "2026-03-13T06:20:00Z",
+              url: "https://example.test/pr/116#discussion_r1",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+            {
+              id: "comment-2",
+              body: "Please also handle this update.",
+              createdAt: "2026-03-13T06:25:00Z",
+              url: "https://example.test/pr/116#discussion_r2",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ),
+    false,
+  );
+});
+
+test("hasProcessedReviewThread ignores unrelated same-head fingerprints when deciding whether a thread is already processed", () => {
+  assert.equal(
+    hasProcessedReviewThread(
+      createRecord({
+        last_head_sha: "head-a",
+        processed_review_thread_ids: ["thread-1@head-a"],
+        processed_review_thread_fingerprints: ["thread-2@head-a#comment-9"],
+      }),
+      { headRefOid: "head-a" },
+      createReviewThread(),
     ),
     true,
   );

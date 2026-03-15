@@ -125,6 +125,7 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     last_failure_signature: "handoff-missing",
     blocked_reason: "handoff_missing",
     processed_review_thread_ids: [],
+    processed_review_thread_fingerprints: [],
     updated_at: "2026-03-11T01:50:41.997Z",
     ...overrides,
   };

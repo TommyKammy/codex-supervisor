@@ -71,12 +71,15 @@ export function configuredBotReviewThreads(
 
 export function pendingBotReviewThreads(
   config: SupervisorConfig,
-  record: Pick<IssueRunRecord, "processed_review_thread_ids" | "last_head_sha">,
+  record: Pick<
+    IssueRunRecord,
+    "processed_review_thread_ids" | "processed_review_thread_fingerprints" | "last_head_sha"
+  >,
   pr: Pick<GitHubPullRequest, "headRefOid">,
   reviewThreads: ReviewThread[],
 ): ReviewThread[] {
   return configuredBotReviewThreads(config, reviewThreads).filter(
-    (thread) => !hasProcessedReviewThread(record, pr, thread.id),
+    (thread) => !hasProcessedReviewThread(record, pr, thread),
   );
 }
 
