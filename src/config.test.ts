@@ -148,16 +148,16 @@ test("loadConfig rejects non-finite configuredBotRateLimitWaitMinutes by falling
 
   await fs.writeFile(
     configPath,
-    JSON.stringify({
-      repoPath: ".",
-      repoSlug: "owner/repo",
-      defaultBranch: "main",
-      workspaceRoot: "./workspaces",
-      stateFile: "./state.json",
-      codexBinary: "codex",
-      branchPrefix: "codex/issue-",
-      configuredBotRateLimitWaitMinutes: Number.POSITIVE_INFINITY,
-    }),
+    `{
+      "repoPath": ".",
+      "repoSlug": "owner/repo",
+      "defaultBranch": "main",
+      "workspaceRoot": "./workspaces",
+      "stateFile": "./state.json",
+      "codexBinary": "codex",
+      "branchPrefix": "codex/issue-",
+      "configuredBotRateLimitWaitMinutes": 1e309
+    }`,
     "utf8",
   );
 
