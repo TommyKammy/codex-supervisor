@@ -179,6 +179,42 @@ function latestTimestamp(values: Array<string | null | undefined>): string | nul
   return latest;
 }
 
+function summarizeConfiguredBotRequestWindow(
+  timeline: CopilotReviewLifecycleFacts["timeline"],
+  configuredReviewBots: Set<string>,
+): {
+  latestRequestedAt: string | null;
+  activeRequestStartedAt: string | null;
+} {
+  const requestedTimes = timeline
+    .filter((event) => event.type === "requested" && event.reviewerLogin && configuredReviewBots.has(event.reviewerLogin))
+    .map((event) => event.createdAt);
+  const latestRequestedAt = latestTimestamp(requestedTimes);
+
+  const activeRequestStarts = Array.from(configuredReviewBots).flatMap((botLogin) => {
+    const botLatestRequestedAt = latestTimestamp(
+      timeline
+        .filter((event) => event.type === "requested" && event.reviewerLogin === botLogin)
+        .map((event) => event.createdAt),
+    );
+    const botLatestRemovedAt = latestTimestamp(
+      timeline
+        .filter((event) => event.type === "removed" && event.reviewerLogin === botLogin)
+        .map((event) => event.createdAt),
+    );
+
+    return botLatestRequestedAt !== null &&
+      (botLatestRemovedAt === null || parseTimestamp(botLatestRequestedAt) > parseTimestamp(botLatestRemovedAt))
+      ? [botLatestRequestedAt]
+      : [];
+  });
+
+  return {
+    latestRequestedAt,
+    activeRequestStartedAt: latestTimestamp(activeRequestStarts),
+  };
+}
+
 export function inferCopilotReviewLifecycle(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
@@ -188,20 +224,10 @@ export function inferCopilotReviewLifecycle(
     return { state: "not_requested", requestedAt: null, arrivedAt: null };
   }
 
-  const latestRequestedAt = latestTimestamp(
-    facts.timeline
-      .filter((event) => event.type === "requested" && event.reviewerLogin && configuredReviewBots.has(event.reviewerLogin))
-      .map((event) => event.createdAt),
+  const { latestRequestedAt, activeRequestStartedAt } = summarizeConfiguredBotRequestWindow(
+    facts.timeline,
+    configuredReviewBots,
   );
-  const latestRemovedAt = latestTimestamp(
-    facts.timeline
-      .filter((event) => event.type === "removed" && event.reviewerLogin && configuredReviewBots.has(event.reviewerLogin))
-      .map((event) => event.createdAt),
-  );
-  const activeRequestStartedAt =
-    latestRequestedAt !== null && (latestRemovedAt === null || parseTimestamp(latestRequestedAt) > parseTimestamp(latestRemovedAt))
-      ? latestRequestedAt
-      : null;
   const activeRequestStartedAtMs = parseTimestamp(activeRequestStartedAt);
   const scopedToActiveRequest = (value: string | null | undefined): value is string =>
     value !== null &&
@@ -228,7 +254,7 @@ export function inferCopilotReviewLifecycle(
   if (arrivedAt) {
     return {
       state: "arrived",
-      requestedAt: latestRequestedAt,
+      requestedAt: activeRequestStartedAt ?? latestRequestedAt,
       arrivedAt,
     };
   }
@@ -237,11 +263,11 @@ export function inferCopilotReviewLifecycle(
 
   if (
     matchingRequests.length > 0 ||
-    (latestRequestedAt !== null && (latestRemovedAt === null || parseTimestamp(latestRequestedAt) > parseTimestamp(latestRemovedAt)))
+    activeRequestStartedAt !== null
   ) {
     return {
       state: "requested",
-      requestedAt: latestRequestedAt,
+      requestedAt: activeRequestStartedAt ?? latestRequestedAt,
       arrivedAt: null,
     };
   }

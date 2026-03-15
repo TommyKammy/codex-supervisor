@@ -321,6 +321,46 @@ test("inferCopilotReviewLifecycle ignores configured-bot activity that predates 
   });
 });
 
+test("inferCopilotReviewLifecycle computes the active request cutoff per configured bot", () => {
+  const lifecycle = inferCopilotReviewLifecycle(
+    {
+      reviewRequests: ["coderabbitai[bot]"],
+      reviews: [],
+      comments: [
+        {
+          authorLogin: "coderabbitai[bot]",
+          createdAt: "2026-03-13T00:30:00Z",
+        },
+      ],
+      issueComments: [],
+      timeline: [
+        {
+          type: "requested",
+          createdAt: "2026-03-13T01:00:00Z",
+          reviewerLogin: "coderabbitai[bot]",
+        },
+        {
+          type: "requested",
+          createdAt: "2026-03-13T02:00:00Z",
+          reviewerLogin: "copilot-pull-request-reviewer",
+        },
+        {
+          type: "removed",
+          createdAt: "2026-03-13T03:00:00Z",
+          reviewerLogin: "copilot-pull-request-reviewer",
+        },
+      ],
+    },
+    ["coderabbitai[bot]", "copilot-pull-request-reviewer"],
+  );
+
+  assert.deepEqual(lifecycle, {
+    state: "requested",
+    requestedAt: "2026-03-13T01:00:00Z",
+    arrivedAt: null,
+  });
+});
+
 test("GitHubClient classifies nitpick-only configured-bot top-level changes requests conservatively", async () => {
   const config = createConfig({ reviewBotLogins: ["coderabbitai[bot]"] });
   const client = new GitHubClient(config, async (_command, args) => {
