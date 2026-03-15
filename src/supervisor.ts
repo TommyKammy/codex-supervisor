@@ -255,12 +255,12 @@ function buildStalledBotReviewFailureContext(reviewThreads: ReviewThread[]): Fai
   const details = reviewThreads.slice(0, 5).map((thread) => {
     const latestComment = latestReviewComment(thread);
     const author = latestComment?.author?.login ?? "unknown";
-    return `${thread.path ?? "unknown"}:${thread.line ?? "?"} reviewer=${author} ${latestComment?.body.replace(/\s+/g, " ").trim() ?? ""}`;
+    return `reviewer=${author} file=${thread.path ?? "unknown"} line=${thread.line ?? "?"} processed_on_current_head=yes`;
   });
 
   return {
     category: "manual",
-    summary: `${reviewThreads.length} configured bot review thread(s) remain unresolved after processing and now require manual attention.`,
+    summary: `${reviewThreads.length} configured bot review thread(s) remain unresolved after processing on the current head and now require manual attention.`,
     signature: reviewThreads.map((thread) => `stalled-bot:${thread.id}`).join("|"),
     command: null,
     details,
