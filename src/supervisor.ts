@@ -79,6 +79,19 @@ import {
   recoverUnexpectedCodexTurnFailure,
   shouldAutoRetryTimeout,
 } from "./supervisor-failure-helpers";
+import {
+  attemptBudgetForLane,
+  attemptLane,
+  attemptsUsedForLane,
+  formatExecutionReadyMissingFields,
+  hasAttemptBudgetRemaining,
+  incrementAttemptCounters,
+  isEligibleForSelection,
+  isVerificationBlockedMessage,
+  shouldAutoRetryBlockedVerification,
+  shouldAutoRetryHandoffMissing,
+  shouldEnforceExecutionReady,
+} from "./supervisor-execution-policy";
 import { StateStore } from "./state-store";
 import {
   buildDurableGuardrailStatusLine,
@@ -105,7 +118,7 @@ import {
   SupervisorStateFile,
   WorkspaceStatus,
 } from "./types";
-import { nowIso, truncate, isTerminalState } from "./utils";
+import { nowIso, truncate } from "./utils";
 import {
   ensureWorkspace,
   getWorkspaceStatus,
@@ -121,6 +134,7 @@ export { inferStateFromPullRequest } from "./pull-request-state";
 export { reconcileRecoverableBlockedIssueStates } from "./recovery-reconciliation";
 export { formatDetailedStatus, summarizeChecks } from "./supervisor-reporting";
 export { recoverUnexpectedCodexTurnFailure } from "./supervisor-failure-helpers";
+export { shouldAutoRetryHandoffMissing } from "./supervisor-execution-policy";
 
 const MAX_PROCESSED_REVIEW_THREAD_IDS = 200;
 
@@ -132,119 +146,12 @@ function trimProcessedReviewThreadIds(ids: string[]): string[] {
   return ids.slice(ids.length - MAX_PROCESSED_REVIEW_THREAD_IDS);
 }
 
-function formatExecutionReadyMissingFields(fields: string[]): string {
-  return fields.join(", ");
-}
-
-function isVerificationBlockedMessage(message: string | null | undefined): boolean {
-  if (!message) {
-    return false;
-  }
-
-  const lower = message.toLowerCase();
-  const mentionsVerification =
-    lower.includes("playwright") ||
-    lower.includes("e2e") ||
-    lower.includes("vitest") ||
-    lower.includes("test") ||
-    lower.includes("assertion") ||
-    lower.includes("verification");
-  const mentionsFailure =
-    lower.includes("fails") ||
-    lower.includes("failing") ||
-    lower.includes("failed") ||
-    lower.includes("still failing");
-  const hardBlocker =
-    lower.includes("missing permissions") ||
-    lower.includes("missing secrets") ||
-    lower.includes("unclear requirements");
-
-  return mentionsVerification && mentionsFailure && !hardBlocker;
-}
-
-
-function shouldAutoRetryBlockedVerification(record: IssueRunRecord, config: SupervisorConfig): boolean {
-  return (
-    record.state === "blocked" &&
-    isVerificationBlockedMessage(record.last_error) &&
-    hasAttemptBudgetRemaining(record, config, "implementation") &&
-    record.blocked_verification_retry_count < config.blockedVerificationRetryLimit &&
-    record.repeated_blocker_count < config.sameBlockerRepeatLimit &&
-    record.repeated_failure_signature_count < config.sameFailureSignatureRepeatLimit
-  );
-}
-
-export function shouldAutoRetryHandoffMissing(record: IssueRunRecord, config: SupervisorConfig): boolean {
-  return (
-    record.state === "blocked" &&
-    record.blocked_reason === "handoff_missing" &&
-    record.pr_number === null &&
-    hasAttemptBudgetRemaining(record, config, "implementation") &&
-    record.repeated_failure_signature_count < config.sameFailureSignatureRepeatLimit
-  );
-}
-
 function shouldPreserveNoPrFailureTracking(record: IssueRunRecord): boolean {
   return (
     record.pr_number === null &&
     record.last_failure_context?.category === "blocked" &&
     record.last_failure_signature !== null &&
     record.repeated_failure_signature_count > 0
-  );
-}
-
-type AttemptLane = "implementation" | "repair";
-
-function attemptLane(record: IssueRunRecord, pr: GitHubPullRequest | null): AttemptLane {
-  return pr !== null || record.pr_number !== null ? "repair" : "implementation";
-}
-
-function attemptBudgetForLane(config: SupervisorConfig, lane: AttemptLane): number {
-  return lane === "repair" ? config.maxRepairAttemptsPerIssue : config.maxImplementationAttemptsPerIssue;
-}
-
-function attemptsUsedForLane(record: IssueRunRecord, lane: AttemptLane): number {
-  return lane === "repair" ? record.repair_attempt_count : record.implementation_attempt_count;
-}
-
-function hasAttemptBudgetRemaining(
-  record: IssueRunRecord,
-  config: SupervisorConfig,
-  lane: AttemptLane,
-): boolean {
-  return attemptsUsedForLane(record, lane) < attemptBudgetForLane(config, lane);
-}
-
-function shouldEnforceExecutionReady(record: Pick<IssueRunRecord, "attempt_count" | "pr_number"> | undefined | null): boolean {
-  return (record?.pr_number ?? null) === null && (record?.attempt_count ?? 0) === 0;
-}
-
-function incrementAttemptCounters(
-  record: IssueRunRecord,
-  lane: AttemptLane,
-): Pick<IssueRunRecord, "attempt_count" | "implementation_attempt_count" | "repair_attempt_count"> {
-  return {
-    attempt_count: record.attempt_count + 1,
-    implementation_attempt_count:
-      lane === "implementation" ? record.implementation_attempt_count + 1 : record.implementation_attempt_count,
-    repair_attempt_count:
-      lane === "repair" ? record.repair_attempt_count + 1 : record.repair_attempt_count,
-  };
-}
-
-function isEligibleForSelection(record: IssueRunRecord | undefined, config: SupervisorConfig): boolean {
-  if (!record) {
-    return true;
-  }
-
-  if (!isTerminalState(record.state)) {
-    return true;
-  }
-
-  return (
-    shouldAutoRetryTimeout(record, config) ||
-    shouldAutoRetryBlockedVerification(record, config) ||
-    shouldAutoRetryHandoffMissing(record, config)
   );
 }
 

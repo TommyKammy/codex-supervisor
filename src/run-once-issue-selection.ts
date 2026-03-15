@@ -9,8 +9,12 @@ import { issueJournalPath, syncIssueJournal } from "./journal";
 import { acquireFileLock, LockHandle } from "./lock";
 import {
   applyFailureSignature,
-  shouldAutoRetryTimeout,
 } from "./supervisor-failure-helpers";
+import {
+  formatExecutionReadyMissingFields,
+  isEligibleForSelection,
+  shouldEnforceExecutionReady,
+} from "./supervisor-execution-policy";
 import { StateStore } from "./state-store";
 import {
   FailureContext,
@@ -19,7 +23,7 @@ import {
   SupervisorConfig,
   SupervisorStateFile,
 } from "./types";
-import { nowIso, isTerminalState, truncate } from "./utils";
+import { nowIso, truncate } from "./utils";
 import { branchNameForIssue, ensureWorkspace, workspacePathForIssue } from "./workspace";
 
 export interface ReadyIssueContext {
@@ -118,79 +122,6 @@ function createIssueRecord(config: SupervisorConfig, issueNumber: number): Issue
     processed_review_thread_ids: [],
     updated_at: nowIso(),
   };
-}
-
-function isVerificationBlockedMessage(message: string | null | undefined): boolean {
-  if (!message) {
-    return false;
-  }
-
-  const lower = message.toLowerCase();
-  const mentionsVerification =
-    lower.includes("playwright") ||
-    lower.includes("e2e") ||
-    lower.includes("vitest") ||
-    lower.includes("test") ||
-    lower.includes("assertion") ||
-    lower.includes("verification");
-  const mentionsFailure =
-    lower.includes("fails") ||
-    lower.includes("failing") ||
-    lower.includes("failed") ||
-    lower.includes("still failing");
-  const hardBlocker =
-    lower.includes("missing permissions") ||
-    lower.includes("missing secrets") ||
-    lower.includes("unclear requirements");
-
-  return mentionsVerification && mentionsFailure && !hardBlocker;
-}
-
-function shouldAutoRetryBlockedVerification(record: IssueRunRecord, config: SupervisorConfig): boolean {
-  return (
-    record.state === "blocked" &&
-    isVerificationBlockedMessage(record.last_error) &&
-    record.implementation_attempt_count < config.maxImplementationAttemptsPerIssue &&
-    record.blocked_verification_retry_count < config.blockedVerificationRetryLimit &&
-    record.repeated_blocker_count < config.sameBlockerRepeatLimit &&
-    record.repeated_failure_signature_count < config.sameFailureSignatureRepeatLimit
-  );
-}
-
-function shouldAutoRetryHandoffMissing(record: IssueRunRecord, config: SupervisorConfig): boolean {
-  return (
-    record.state === "blocked" &&
-    record.blocked_reason === "handoff_missing" &&
-    record.pr_number === null &&
-    record.implementation_attempt_count < config.maxImplementationAttemptsPerIssue &&
-    record.repeated_failure_signature_count < config.sameFailureSignatureRepeatLimit
-  );
-}
-
-function shouldEnforceExecutionReady(
-  record: Pick<IssueRunRecord, "attempt_count" | "pr_number"> | undefined | null,
-): boolean {
-  return (record?.pr_number ?? null) === null && (record?.attempt_count ?? 0) === 0;
-}
-
-function isEligibleForSelection(record: IssueRunRecord | undefined, config: SupervisorConfig): boolean {
-  if (!record) {
-    return true;
-  }
-
-  if (!isTerminalState(record.state)) {
-    return true;
-  }
-
-  return (
-    shouldAutoRetryTimeout(record, config) ||
-    shouldAutoRetryBlockedVerification(record, config) ||
-    shouldAutoRetryHandoffMissing(record, config)
-  );
-}
-
-function formatExecutionReadyMissingFields(fields: string[]): string {
-  return fields.join(", ");
 }
 
 function buildExecutionReadyFailureContext(

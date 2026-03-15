@@ -12,9 +12,9 @@ import {
   localReviewHighSeverityNeedsRetry,
   nextExternalReviewMissPatch,
   recoverUnexpectedCodexTurnFailure,
-  shouldAutoRetryHandoffMissing,
   summarizeChecks,
 } from "./supervisor";
+import { shouldAutoRetryHandoffMissing } from "./supervisor-execution-policy";
 import { handleAuthFailure } from "./supervisor-failure-helpers";
 import { inferStateFromPullRequest as inferPullRequestStateFromModule } from "./pull-request-state";
 import {
