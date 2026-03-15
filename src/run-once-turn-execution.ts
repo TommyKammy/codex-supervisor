@@ -1,20 +1,10 @@
-import path from "node:path";
 import {
-  buildCodexPrompt,
-  buildCodexResumePrompt,
   extractBlockedReason,
   extractFailureSignature,
   extractStateHint,
   runCodexTurn,
-  shouldUseCompactResumePrompt,
 } from "./codex";
-import {
-  collectExternalReviewSignals,
-  ExternalReviewMissContext,
-  loadRelevantExternalReviewMissPatterns,
-  writeExternalReviewMissArtifact,
-} from "./external-review-misses";
-import { syncExternalReviewMissState } from "./external-review-miss-state";
+import { loadRelevantExternalReviewMissPatterns } from "./external-review-misses";
 import { GitHubClient } from "./github";
 import {
   hasMeaningfulJournalHandoff,
@@ -28,17 +18,16 @@ import {
   persistMissingCodexJournalHandoff,
 } from "./turn-execution-failure-helpers";
 import {
-  hasProcessedReviewThread,
-  latestReviewThreadCommentFingerprint,
-  processedReviewThreadFingerprintKey,
-  processedReviewThreadKey,
 } from "./review-handling";
 import {
   PullRequestLifecycleSnapshot,
 } from "./post-turn-pull-request";
 import { IssueJournalSync, MemoryArtifacts } from "./run-once-issue-preparation";
-import { loadLocalReviewRepairContext } from "./local-review-repair-context";
 import { StateStore } from "./state-store";
+import {
+  nextProcessedReviewThreadPatch,
+  prepareCodexTurnPrompt,
+} from "./turn-execution-orchestration";
 import {
   FailureContext,
   GitHubIssue,
@@ -254,91 +243,26 @@ export async function executeCodexTurnPhase(
 
     const journalContent = (await readIssueJournalImpl(journalPath)) ?? "";
     const preRunState = record.state;
-    const reviewThreadsToProcess = (() => {
-      if (preRunState !== "addressing_review" || pr == null) {
-        return reviewThreads;
-      }
-
-      const currentPr = pr;
-      return reviewThreads.filter((thread) => !hasProcessedReviewThread(record, currentPr, thread));
-    })();
-    const localReviewRepairContext =
-      record.state === "local_review_fix"
-        ? await loadLocalReviewRepairContext(record.local_review_summary_path, workspacePath)
-        : null;
-    const externalReviewSurface =
-      pr &&
-      preRunState === "addressing_review" &&
-      reviewThreadsToProcess.length > 0 &&
-      record.local_review_head_sha === pr.headRefOid &&
-      record.local_review_summary_path
-        ? await github.getExternalReviewSurface(pr.number)
-        : null;
-    const externalReviewMissContext: ExternalReviewMissContext | null =
-      pr &&
-      preRunState === "addressing_review" &&
-      reviewThreadsToProcess.length > 0 &&
-      record.local_review_head_sha === pr.headRefOid &&
-      record.local_review_summary_path
-        ? await writeExternalReviewMissArtifact({
-            artifactDir: path.dirname(record.local_review_summary_path),
-            issueNumber: issue.number,
-            prNumber: pr.number,
-            branch: record.branch,
-            headSha: pr.headRefOid,
-            reviewSignals: collectExternalReviewSignals({
-              reviewThreads: reviewThreadsToProcess,
-              reviews: externalReviewSurface?.reviews ?? [],
-              issueComments: externalReviewSurface?.issueComments ?? [],
-              reviewBotLogins: config.reviewBotLogins,
-            }),
-            reviewBotLogins: config.reviewBotLogins,
-            localReviewSummaryPath: record.local_review_summary_path,
-          })
-        : null;
-    record = await syncExternalReviewMissState({
+    const preparedTurn = await prepareCodexTurnPrompt({
+      config,
       stateStore,
       state,
       record,
-      pr,
-      context: externalReviewMissContext,
+      issue,
+      previousCodexSummary,
+      previousError,
+      workspacePath,
+      journalPath,
+      journalContent,
       syncJournal,
+      memoryArtifacts,
+      pr,
+      checks,
+      reviewThreads,
+      github,
     });
-
-    const prompt = record.codex_session_id && shouldUseCompactResumePrompt(record.state)
-      ? buildCodexResumePrompt({
-          repoSlug: config.repoSlug,
-          issue,
-          branch: record.branch,
-          workspacePath,
-          state: record.state,
-          journalPath,
-          journalExcerpt: truncate(journalContent, 5000),
-          failureContext: record.last_failure_context,
-          previousSummary: previousCodexSummary,
-          previousError,
-        })
-      : buildCodexPrompt({
-          repoSlug: config.repoSlug,
-          issue,
-          branch: record.branch,
-          workspacePath,
-          state: record.state,
-          pr,
-          checks,
-          reviewThreads: reviewThreadsToProcess,
-          journalPath,
-          journalExcerpt: truncate(journalContent, 5000),
-          failureContext: record.last_failure_context,
-          previousSummary: previousCodexSummary,
-          previousError,
-          alwaysReadFiles: memoryArtifacts.alwaysReadFiles,
-          onDemandMemoryFiles: memoryArtifacts.onDemandFiles,
-          gsdEnabled: config.gsdEnabled,
-          gsdPlanningFiles: config.gsdPlanningFiles,
-          localReviewRepairContext,
-          externalReviewMissContext,
-        });
+    record = preparedTurn.record;
+    const { prompt, reviewThreadsToProcess } = preparedTurn;
 
     const sessionLock =
       args.sessionLock ??
@@ -477,54 +401,20 @@ export async function executeCodexTurnPhase(
 
     checks = pr ? await github.getChecks(pr.number) : [];
     reviewThreads = pr ? await github.getUnresolvedReviewThreads(pr.number) : [];
-    const currentPr = pr;
-    const processedReviewThreadKeysForCurrentHead =
-      preRunState === "addressing_review" && currentPr && currentPr.headRefOid === evaluatedReviewHeadSha
-        ? reviewThreadsToProcess.map((thread) => processedReviewThreadKey(thread.id, evaluatedReviewHeadSha))
-        : [];
-    const processedReviewThreadFingerprintKeysForCurrentHead =
-      preRunState === "addressing_review" && currentPr && currentPr.headRefOid === evaluatedReviewHeadSha
-        ? reviewThreadsToProcess.flatMap((thread) => {
-            const latestCommentFingerprint = latestReviewThreadCommentFingerprint(thread);
-            return latestCommentFingerprint
-              ? [
-                  processedReviewThreadFingerprintKey(
-                    thread.id,
-                    evaluatedReviewHeadSha,
-                    latestCommentFingerprint,
-                  ),
-                ]
-              : [];
-          })
-        : [];
-    const processedReviewThreadIds =
-      processedReviewThreadKeysForCurrentHead.length > 0
-        ? Array.from(
-            new Set([
-              ...record.processed_review_thread_ids,
-              ...processedReviewThreadKeysForCurrentHead,
-            ]),
-          ).slice(-200)
-        : record.processed_review_thread_ids;
-    const processedReviewThreadFingerprints =
-      processedReviewThreadFingerprintKeysForCurrentHead.length > 0
-        ? Array.from(
-            new Set([
-              ...record.processed_review_thread_fingerprints,
-              ...processedReviewThreadFingerprintKeysForCurrentHead,
-            ]),
-          ).slice(-200)
-        : record.processed_review_thread_fingerprints;
+    const processedReviewThreadPatch = nextProcessedReviewThreadPatch({
+      preRunState,
+      record,
+      currentPr: pr,
+      evaluatedReviewHeadSha,
+      reviewThreadsToProcess,
+    });
     const postRunSnapshot = pr
       ? args.derivePullRequestLifecycleSnapshot(
           record,
           pr,
           checks,
           reviewThreads,
-          {
-            processed_review_thread_ids: processedReviewThreadIds,
-            processed_review_thread_fingerprints: processedReviewThreadFingerprints,
-          },
+          processedReviewThreadPatch,
         )
       : null;
     const postRunState = postRunSnapshot
@@ -535,8 +425,7 @@ export async function executeCodexTurnPhase(
       ...(postRunSnapshot?.reviewWaitPatch ?? {}),
       ...(postRunSnapshot?.copilotRequestObservationPatch ?? {}),
       ...(postRunSnapshot?.copilotTimeoutPatch ?? {}),
-      processed_review_thread_ids: processedReviewThreadIds,
-      processed_review_thread_fingerprints: processedReviewThreadFingerprints,
+      ...processedReviewThreadPatch,
       blocked_verification_retry_count: pr ? 0 : record.blocked_verification_retry_count,
       repeated_blocker_count: 0,
       last_blocker_signature: null,
