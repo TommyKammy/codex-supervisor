@@ -2220,6 +2220,73 @@ test("status includes a compact handoff summary for an active blocker", async ()
   );
 });
 
+test("status keeps the active handoff summary when PR status loading emits a warning", async () => {
+  const fixture = await createSupervisorFixture();
+  const journalPath = path.join(fixture.workspaceRoot, "issue-92", ".codex-supervisor", "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    `# Issue #92: Step 2
+
+## Supervisor Snapshot
+- Updated at: 2026-03-13T00:20:00Z
+
+## Latest Codex Summary
+- None yet.
+
+## Active Failure Context
+- None recorded.
+
+## Codex Working Notes
+### Current Handoff
+- Hypothesis: Preserve the active handoff summary even when status loading warns.
+- What changed: Added a focused status warning assertion.
+- Current blocker: Waiting on GitHub status hydration to finish cleanly.
+- Next exact step: Keep the warning path rendering the same handoff summary.
+- Verification gap: Focused supervisor status warning coverage was missing.
+- Files touched: src/supervisor.test.ts
+- Rollback concern:
+- Last focused command: npm test -- --test-name-pattern status warning
+
+### Scratchpad
+- Keep this section short.
+`,
+    "utf8",
+  );
+
+  const activeRecord = createRecord({
+    issue_number: 92,
+    state: "reproducing",
+    branch: branchName(fixture.config, 92),
+    workspace: path.join(fixture.workspaceRoot, "issue-92"),
+    journal_path: journalPath,
+    blocked_reason: "verification",
+    last_error: null,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 92,
+    issues: {
+      "92": activeRecord,
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    resolvePullRequestForBranch: async () => {
+      throw new Error("injected status hydration failure");
+    },
+  };
+
+  const status = await supervisor.status();
+
+  assert.match(
+    status,
+    /handoff_summary=blocker: Waiting on GitHub status hydration to finish cleanly\. \| next: Keep the warning path rendering the same handoff summary\./,
+  );
+  assert.match(status, /status_warning=injected status hydration failure/);
+});
+
 test("status shows durable guardrail provenance for active committed and runtime guidance", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.localReviewArtifactDir = path.join(path.dirname(fixture.stateFile), "reviews");

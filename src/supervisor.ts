@@ -3,18 +3,8 @@ import {
 } from "./codex";
 import { loadConfig } from "./config";
 import { GitHubClient } from "./github";
-import {
-  findBlockingIssue,
-  findHighRiskBlockingAmbiguity,
-  lintExecutionReadyIssueBody,
-  parseIssueMetadata,
-} from "./issue-metadata";
 import { describeGsdIntegration } from "./gsd";
-import {
-  issueJournalPath,
-  readIssueJournal,
-  summarizeIssueJournalHandoff,
-} from "./journal";
+import { issueJournalPath } from "./journal";
 import { acquireFileLock, LockHandle } from "./lock";
 import {
   cleanupExpiredDoneWorkspaces,
@@ -89,18 +79,19 @@ import {
   attemptBudgetForLane,
   attemptLane,
   attemptsUsedForLane,
-  formatExecutionReadyMissingFields,
   hasAttemptBudgetRemaining,
   incrementAttemptCounters,
-  isEligibleForSelection,
   isVerificationBlockedMessage,
   shouldAutoRetryBlockedVerification,
   shouldAutoRetryHandoffMissing,
-  shouldEnforceExecutionReady,
 } from "./supervisor-execution-policy";
+import {
+  buildReadinessSummary,
+  loadActiveIssueStatusSnapshot,
+  summarizeSupervisorStatusRecords,
+} from "./supervisor-selection-status";
 import { StateStore } from "./state-store";
 import {
-  buildDurableGuardrailStatusLine,
   formatDetailedStatus,
   mergeConflictDetected,
   summarizeChecks,
@@ -377,111 +368,6 @@ function shouldRunCodex(
 
 function isOpenPullRequest(pr: GitHubPullRequest | null): pr is GitHubPullRequest {
   return pr !== null && pr.state === "OPEN" && !pr.mergedAt;
-}
-
-async function buildReadinessSummary(
-  github: GitHubClient,
-  config: SupervisorConfig,
-  state: SupervisorStateFile,
-): Promise<string[]> {
-  const issues = await github.listCandidateIssues();
-  const runnable: string[] = [];
-  const blocked: string[] = [];
-
-  for (const issue of issues) {
-    if (config.skipTitlePrefixes.some((prefix) => issue.title.startsWith(prefix))) {
-      continue;
-    }
-
-    const existing = state.issues[String(issue.number)];
-    const readiness = lintExecutionReadyIssueBody(issue);
-    if (shouldEnforceExecutionReady(existing) && !readiness.isExecutionReady) {
-      blocked.push(
-        `#${issue.number} blocked_by=requirements:${formatExecutionReadyMissingFields(readiness.missingRequired)}`,
-      );
-      continue;
-    }
-
-    const clarificationBlock = findHighRiskBlockingAmbiguity(issue);
-    if (clarificationBlock) {
-      blocked.push(
-        `#${issue.number} blocked_by=clarification:${clarificationBlock.ambiguityClasses.join("|")}:${clarificationBlock.riskyChangeClasses.join("|")}`,
-      );
-      continue;
-    }
-
-    const blockingIssue = findBlockingIssue(issue, issues, state);
-    if (blockingIssue) {
-      blocked.push(`#${issue.number} blocked_by=${blockingIssue.reason}`);
-      continue;
-    }
-
-    if (!isEligibleForSelection(existing, config)) {
-      blocked.push(
-        `#${issue.number} blocked_by=local_state:${existing?.state ?? "unknown"}`,
-      );
-      continue;
-    }
-
-    runnable.push(`#${issue.number} ready=${formatRunnableReadinessReason(issue, issues, state, readiness.isExecutionReady)}`);
-  }
-
-  return [
-    `runnable_issues=${runnable.length > 0 ? runnable.join(",") : "none"}`,
-    `blocked_issues=${blocked.length > 0 ? blocked.join("; ") : "none"}`,
-  ];
-}
-
-function formatRunnableReadinessReason(
-  issue: GitHubIssue,
-  issues: GitHubIssue[],
-  state: SupervisorStateFile,
-  isExecutionReady: boolean,
-): string {
-  const metadata = parseIssueMetadata(issue);
-  const reasons = [isExecutionReady ? "execution_ready" : "requirements_skipped"];
-
-  if (metadata.dependsOn.length > 0) {
-    const satisfiedDependencies = metadata.dependsOn.filter(
-      (dependencyNumber) => state.issues[String(dependencyNumber)]?.state === "done",
-    );
-
-    if (satisfiedDependencies.length > 0) {
-      reasons.push(`depends_on_satisfied:${satisfiedDependencies.join("|")}`);
-    }
-  }
-
-  if (
-    metadata.parentIssueNumber !== null &&
-    metadata.executionOrderIndex !== null &&
-    metadata.executionOrderIndex > 1
-  ) {
-    const clearedPredecessors = issues
-      .filter((candidate) => candidate.number !== issue.number)
-      .map((candidate) => ({
-        issue: candidate,
-        metadata: parseIssueMetadata(candidate),
-      }))
-      .filter(
-        ({ metadata: candidateMetadata }) =>
-          candidateMetadata.parentIssueNumber === metadata.parentIssueNumber &&
-          candidateMetadata.executionOrderIndex !== null &&
-          candidateMetadata.executionOrderIndex < metadata.executionOrderIndex!,
-      )
-      .sort(
-        (left, right) =>
-          (left.metadata.executionOrderIndex ?? Number.MAX_SAFE_INTEGER) -
-          (right.metadata.executionOrderIndex ?? Number.MAX_SAFE_INTEGER),
-      )
-      .map(({ issue: predecessorIssue }) => predecessorIssue.number)
-      .filter((predecessorNumber) => state.issues[String(predecessorNumber)]?.state === "done");
-
-    if (clearedPredecessors.length > 0) {
-      reasons.push(`execution_order_satisfied:${clearedPredecessors.join("|")}`);
-    }
-  }
-
-  return reasons.join("+");
 }
 
 interface ReadyIssueContext {
@@ -922,31 +808,15 @@ export class Supervisor {
   async status(): Promise<string> {
     const state = await this.stateStore.load();
     const gsdSummary = await describeGsdIntegration(this.config);
-    const activeRecord =
-      state.activeIssueNumber !== null ? state.issues[String(state.activeIssueNumber)] ?? null : null;
-    let latestRecord: IssueRunRecord | null = null;
-    let latestRecoveryRecord: IssueRunRecord | null = null;
-    for (const record of Object.values(state.issues)) {
-      if (latestRecord === null || record.updated_at.localeCompare(latestRecord.updated_at) > 0) {
-        latestRecord = record;
-      }
-      if (
-        record.last_recovery_reason &&
-        record.last_recovery_at &&
-        (latestRecoveryRecord === null ||
-          record.last_recovery_at.localeCompare(latestRecoveryRecord.last_recovery_at ?? "") > 0)
-      ) {
-        latestRecoveryRecord = record;
-      }
-    }
+    const statusRecords = summarizeSupervisorStatusRecords(state);
 
-    if (!activeRecord) {
+    if (!statusRecords.activeRecord) {
       const baseStatus = formatDetailedStatus({
         config: this.config,
         activeRecord: null,
-        latestRecord,
-        latestRecoveryRecord,
-        trackedIssueCount: Object.keys(state.issues).length,
+        latestRecord: statusRecords.latestRecord,
+        latestRecoveryRecord: statusRecords.latestRecoveryRecord,
+        trackedIssueCount: statusRecords.trackedIssueCount,
         pr: null,
         checks: [],
         reviewThreads: [],
@@ -964,56 +834,27 @@ export class Supervisor {
       }
     }
 
-    let pr: GitHubPullRequest | null = null;
-    let checks: PullRequestCheck[] = [];
-    let reviewThreads: ReviewThread[] = [];
-    let handoffSummary: string | null = null;
-    let durableGuardrailSummary: string | null = null;
-
-    try {
-      if (activeRecord.journal_path) {
-        handoffSummary = summarizeIssueJournalHandoff(await readIssueJournal(activeRecord.journal_path));
-      }
-      pr = await this.github.resolvePullRequestForBranch(activeRecord.branch, activeRecord.pr_number);
-      if (isOpenPullRequest(pr)) {
-        checks = await this.github.getChecks(pr.number);
-        reviewThreads = await this.github.getUnresolvedReviewThreads(pr.number);
-      }
-      durableGuardrailSummary = await buildDurableGuardrailStatusLine({
-        config: this.config,
-        activeRecord,
-        pr,
-      });
-    } catch (error) {
-      const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
-      return [gsdSummary, `${formatDetailedStatus({
-        config: this.config,
-        activeRecord,
-        latestRecord,
-        latestRecoveryRecord,
-        trackedIssueCount: Object.keys(state.issues).length,
-        pr,
-        checks,
-        reviewThreads,
-        handoffSummary,
-        durableGuardrailSummary,
-      })}\nstatus_warning=${truncate(message, 200)}`]
-        .filter(Boolean)
-        .join("\n");
-    }
-
-    return [gsdSummary, formatDetailedStatus({
+    const activeStatus = await loadActiveIssueStatusSnapshot({
+      github: this.github,
       config: this.config,
-      activeRecord,
-      latestRecord,
-      latestRecoveryRecord,
-      trackedIssueCount: Object.keys(state.issues).length,
-      pr,
-      checks,
-      reviewThreads,
-      handoffSummary,
-      durableGuardrailSummary,
-    })]
+      activeRecord: statusRecords.activeRecord,
+    });
+    const detailedStatus = formatDetailedStatus({
+      config: this.config,
+      activeRecord: statusRecords.activeRecord,
+      latestRecord: statusRecords.latestRecord,
+      latestRecoveryRecord: statusRecords.latestRecoveryRecord,
+      trackedIssueCount: statusRecords.trackedIssueCount,
+      pr: activeStatus.pr,
+      checks: activeStatus.checks,
+      reviewThreads: activeStatus.reviewThreads,
+      handoffSummary: activeStatus.handoffSummary,
+      durableGuardrailSummary: activeStatus.durableGuardrailSummary,
+    });
+
+    return [gsdSummary, activeStatus.warningMessage
+      ? `${detailedStatus}\nstatus_warning=${truncate(sanitizeStatusValue(activeStatus.warningMessage), 200)}`
+      : detailedStatus]
       .filter(Boolean)
       .join("\n");
   }
