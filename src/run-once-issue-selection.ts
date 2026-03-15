@@ -7,6 +7,10 @@ import {
 } from "./issue-metadata";
 import { issueJournalPath, syncIssueJournal } from "./journal";
 import { acquireFileLock, LockHandle } from "./lock";
+import {
+  applyFailureSignature,
+  shouldAutoRetryTimeout,
+} from "./supervisor-failure-helpers";
 import { StateStore } from "./state-store";
 import {
   FailureContext,
@@ -114,33 +118,6 @@ function createIssueRecord(config: SupervisorConfig, issueNumber: number): Issue
     processed_review_thread_ids: [],
     updated_at: nowIso(),
   };
-}
-
-function applyFailureSignature(
-  record: IssueRunRecord,
-  failureContext: FailureContext | null,
-): Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count"> {
-  const signature = failureContext?.signature ?? null;
-  if (!signature) {
-    return {
-      last_failure_signature: null,
-      repeated_failure_signature_count: 0,
-    };
-  }
-
-  return {
-    last_failure_signature: signature,
-    repeated_failure_signature_count:
-      record.last_failure_signature === signature ? record.repeated_failure_signature_count + 1 : 1,
-  };
-}
-
-function shouldAutoRetryTimeout(record: IssueRunRecord, config: SupervisorConfig): boolean {
-  return (
-    record.state === "failed" &&
-    record.last_failure_kind === "timeout" &&
-    record.timeout_retry_count < config.timeoutRetryLimit
-  );
 }
 
 function isVerificationBlockedMessage(message: string | null | undefined): boolean {

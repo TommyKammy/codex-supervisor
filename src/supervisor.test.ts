@@ -15,6 +15,7 @@ import {
   shouldAutoRetryHandoffMissing,
   summarizeChecks,
 } from "./supervisor";
+import { handleAuthFailure } from "./supervisor-failure-helpers";
 import { inferStateFromPullRequest as inferPullRequestStateFromModule } from "./pull-request-state";
 import {
   formatRecoveryLog,
@@ -1154,6 +1155,56 @@ test("recoverUnexpectedCodexTurnFailure preserves dirty recovery context and tim
   ]);
   assert.equal(state.issues[String(issueNumber)], updated);
   assert.equal(syncedRecord, updated);
+});
+
+test("handleAuthFailure blocks the active issue and preserves failure tracking fields", async () => {
+  const issueNumber = 91;
+  const record = createRecord({
+    issue_number: issueNumber,
+    state: "stabilizing",
+    last_failure_signature: "older-signature",
+    repeated_failure_signature_count: 2,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: record,
+    },
+  };
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return { ...current, ...patch, updated_at: "2026-03-15T00:00:00.000Z" };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const message = await handleAuthFailure(
+    {
+      async authStatus() {
+        return {
+          ok: false,
+          message: "gh auth status failed: token expired",
+        };
+      },
+    },
+    stateStore as unknown as Parameters<typeof handleAuthFailure>[1],
+    state,
+  );
+
+  const updated = state.issues[String(issueNumber)];
+  assert.equal(message, `Paused issue #${issueNumber}: GitHub auth unavailable.`);
+  assert.equal(saveCalls, 1);
+  assert.equal(updated.state, "blocked");
+  assert.equal(updated.last_error, "gh auth status failed: token expired");
+  assert.equal(updated.last_failure_kind, "command_error");
+  assert.equal(updated.last_failure_context?.summary, "GitHub CLI authentication is unavailable.");
+  assert.deepEqual(updated.last_failure_context?.details, ["gh auth status failed: token expired"]);
+  assert.equal(updated.last_failure_signature, "gh-auth-unavailable");
+  assert.equal(updated.repeated_failure_signature_count, 1);
+  assert.equal(updated.blocked_reason, "unknown");
 });
 
 test("runOnce dry-run selects an issue and hydrates workspace and PR context before Codex", async () => {
