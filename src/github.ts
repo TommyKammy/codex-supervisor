@@ -22,6 +22,9 @@ export { isTransientGitHubCommandFailure } from "./github-transport";
 export { inferCopilotReviewLifecycle } from "./github-review-signals";
 export type { GitHubCommandRunner } from "./github-transport";
 
+const POST_CREATE_PR_LOOKUP_RETRY_LIMIT = 2;
+const POST_CREATE_PR_LOOKUP_BASE_DELAY_MS = 200;
+
 export class GitHubClient {
   private readonly pullRequestHydrator: GitHubPullRequestHydrator;
   private readonly transport: GitHubTransport;
@@ -29,7 +32,7 @@ export class GitHubClient {
   constructor(
     private readonly config: SupervisorConfig,
     commandRunner = runCommand,
-    delay: (ms: number) => Promise<void> = async (ms) => {
+    private readonly delay: (ms: number) => Promise<void> = async (ms) => {
       await new Promise((resolve) => setTimeout(resolve, ms));
     },
     private readonly now: () => number = Date.now,
@@ -384,12 +387,27 @@ export class GitHubClient {
       ...(options?.draft ? ["--draft"] : []),
     ]);
 
-    const created = await this.findOpenPullRequest(record.branch);
+    const created = await this.findPullRequestAfterCreation(record.branch);
     if (!created) {
       throw new Error(`Failed to locate PR after creation for branch ${record.branch}`);
     }
 
     return created;
+  }
+
+  private async findPullRequestAfterCreation(branch: string): Promise<GitHubPullRequest | null> {
+    for (let attempt = 0; attempt <= POST_CREATE_PR_LOOKUP_RETRY_LIMIT; attempt += 1) {
+      const pullRequest = await this.findOpenPullRequest(branch);
+      if (pullRequest) {
+        return pullRequest;
+      }
+
+      if (attempt < POST_CREATE_PR_LOOKUP_RETRY_LIMIT) {
+        await this.delay(POST_CREATE_PR_LOOKUP_BASE_DELAY_MS * (attempt + 1));
+      }
+    }
+
+    return this.findLatestPullRequestForBranch(branch);
   }
 
   async enableAutoMerge(prNumber: number, headSha: string): Promise<void> {
