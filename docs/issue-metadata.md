@@ -83,6 +83,19 @@ The supervisor is readiness-driven. It does not just pick the newest issue.
 
 When in doubt, make the dependency explicit. A conservative queue is better than an ambiguous one.
 
+## Changed-file classification
+
+The supervisor also uses a small deterministic changed-file classification layer for path-based policy decisions.
+
+- `workflow`: files under `.github/workflows/`
+- `docs`: files under `docs/` plus common documentation extensions such as `.md`
+- `tests`: files in `test/`, `tests/`, `__tests__/`, or files ending in `.test.*` or `.spec.*`
+- `schema`: schema and migration paths such as `prisma/schema.prisma`, `db/`, or `migrations/`
+- `infrastructure`: deployment and environment paths such as `infra/`, `terraform/`, `helm/`, `k8s/`, `docker/`, or `Dockerfile`
+- `backend`: the fallback for application and backend code that does not match a narrower class
+
+Classification is deterministic and precedence-based. The current order is `workflow`, `docs`, `tests`, `schema`, `infrastructure`, then fallback `backend`.
+
 ## Authoring guidance
 
 Use the issue body to remove ambiguity before execution starts.
