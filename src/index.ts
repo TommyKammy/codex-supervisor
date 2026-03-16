@@ -12,6 +12,7 @@ import {
 export function parseArgs(argv: string[]): CliOptions {
   const args = [...argv];
   let command: CliOptions["command"] = "run-once";
+  let commandSeen = false;
   let configPath: string | undefined;
   let dryRun = false;
   let why = false;
@@ -32,7 +33,11 @@ export function parseArgs(argv: string[]): CliOptions {
       token === "doctor" ||
       token === "replay"
     ) {
+      if (commandSeen) {
+        throw new Error(`Unexpected second command: ${token}`);
+      }
       command = token;
+      commandSeen = true;
       continue;
     }
 

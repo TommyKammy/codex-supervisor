@@ -48,6 +48,13 @@ test("parseArgs accepts replay with a snapshot path", () => {
   });
 });
 
+test("parseArgs rejects a second command after replay", () => {
+  assert.throws(
+    () => parseArgs(["replay", "/tmp/decision-cycle-snapshot.json", "run-once"]),
+    /Unexpected second command: run-once/,
+  );
+});
+
 test("replay re-runs a saved snapshot through the CLI entry path", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "replay-cli-"));
   const configPath = path.join(tempDir, "supervisor.config.json");
