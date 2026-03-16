@@ -204,24 +204,36 @@ test("buildCodexPrompt accepts a normalized resume AgentTurnContext", () => {
 });
 
 test("buildCodexPrompt requires config before treating input as an AgentTurnContext", () => {
-  const prompt = buildCodexPrompt({
-    kind: "resume",
-    repoSlug: "owner/repo",
-    issue,
-    branch: "codex/issue-46",
-    workspacePath: "/tmp/workspaces/issue-46",
-    state: "reproducing" satisfies RunState,
-    pr: null,
-    checks: [],
-    reviewThreads: [],
-    alwaysReadFiles: [],
-    onDemandMemoryFiles: [],
-    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
-    journalExcerpt: "## Codex Working Notes",
-  });
+  assert.throws(
+    () =>
+      buildCodexPrompt({
+        kind: "resume",
+        repoSlug: "owner/repo",
+        issue,
+        branch: "codex/issue-46",
+        workspacePath: "/tmp/workspaces/issue-46",
+        state: "reproducing" satisfies RunState,
+        pr: null,
+        checks: [],
+        reviewThreads: [],
+        alwaysReadFiles: [],
+        onDemandMemoryFiles: [],
+        journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+        journalExcerpt: "## Codex Working Notes",
+      }),
+    /Invalid AgentTurnContext/,
+  );
+});
 
-  assert.match(prompt, /Issue body:/);
-  assert.match(prompt, /No unresolved configured-bot review threads\./);
+test("buildCodexPrompt rejects unknown AgentTurnContext kinds", () => {
+  assert.throws(
+    () =>
+      buildCodexPrompt({
+        kind: "unexpected",
+        config: createConfig(),
+      } as unknown as AgentTurnContext),
+    /Invalid AgentTurnContext/,
+  );
 });
 
 test("buildCodexPrompt emphasizes compressed local-review root causes during local_review_fix", () => {

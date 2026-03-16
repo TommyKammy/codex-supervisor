@@ -522,7 +522,13 @@ export function buildCodexResumePrompt(input: BuildCodexResumePromptInput): stri
 }
 
 function isAgentTurnContext(input: BuildCodexStartPromptInput | AgentTurnContext): input is AgentTurnContext {
-  return "kind" in input && "config" in input && typeof input.config === "object" && input.config !== null;
+  return (
+    "kind" in input &&
+    (input.kind === "start" || input.kind === "resume") &&
+    "config" in input &&
+    typeof input.config === "object" &&
+    input.config !== null
+  );
 }
 
 function isResumeTurnContext(input: AgentTurnContext): input is ResumeAgentTurnContext {
@@ -572,11 +578,15 @@ export function buildCodexPrompt(input: BuildCodexStartPromptInput): string;
 export function buildCodexPrompt(input: AgentTurnContext): string;
 export function buildCodexPrompt(input: BuildCodexStartPromptInput | AgentTurnContext): string;
 export function buildCodexPrompt(input: BuildCodexStartPromptInput | AgentTurnContext): string {
-  if (!isAgentTurnContext(input)) {
-    return buildCodexStartPrompt(input);
+  if ("kind" in input) {
+    if (!isAgentTurnContext(input)) {
+      throw new Error("Invalid AgentTurnContext: expected kind=start|resume with a normalized config object.");
+    }
+
+    return isResumeTurnContext(input)
+      ? buildCodexResumePrompt(toResumePromptInput(input))
+      : buildCodexStartPrompt(toStartPromptInput(input));
   }
 
-  return isResumeTurnContext(input)
-    ? buildCodexResumePrompt(toResumePromptInput(input))
-    : buildCodexStartPrompt(toStartPromptInput(input));
+  return buildCodexStartPrompt(input);
 }
