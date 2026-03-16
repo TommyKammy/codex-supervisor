@@ -570,6 +570,7 @@ function toStartPromptInput(input: StartAgentTurnContext): BuildCodexStartPrompt
 
 export function buildCodexPrompt(input: BuildCodexStartPromptInput): string;
 export function buildCodexPrompt(input: AgentTurnContext): string;
+export function buildCodexPrompt(input: BuildCodexStartPromptInput | AgentTurnContext): string;
 export function buildCodexPrompt(input: BuildCodexStartPromptInput | AgentTurnContext): string {
   if (!isAgentTurnContext(input)) {
     return buildCodexStartPrompt(input);
