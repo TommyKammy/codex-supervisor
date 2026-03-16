@@ -11,7 +11,7 @@ import {
   writeExternalReviewMissArtifact,
 } from "./external-review-misses";
 import { loadLocalReviewArtifact } from "./external-review-local-artifact-io";
-import { IssueComment, PullRequestReview, ReviewThread } from "./types";
+import { IssueComment, PullRequestReview, ReviewThread } from "../types";
 
 function createReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
   return {
@@ -1212,7 +1212,7 @@ test("loadRelevantExternalReviewMissPatterns rejects malformed durable guardrail
 });
 
 test("repo-committed durable external-review guardrails teach stable anchors for drift-prone line assertions", async () => {
-  const repoRoot = path.resolve(__dirname, "..");
+  const repoRoot = path.resolve(__dirname, "..", "..");
   const patterns = await loadRelevantExternalReviewMissPatterns({
     artifactDir: path.join(repoRoot, ".local", "reviews"),
     branch: "codex/issue-203",
@@ -1243,7 +1243,7 @@ test("repo-committed durable external-review guardrails teach stable anchors for
 });
 
 test("repo-committed durable external-review guardrails prefer the real behavioral boundary over adjacent anchors", async () => {
-  const repoRoot = path.resolve(__dirname, "..");
+  const repoRoot = path.resolve(__dirname, "..", "..");
   const patterns = await loadRelevantExternalReviewMissPatterns({
     artifactDir: path.join(repoRoot, ".local", "reviews"),
     branch: "codex/issue-204",

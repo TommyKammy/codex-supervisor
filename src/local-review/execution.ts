@@ -1,7 +1,7 @@
 import { dedupeFindings } from "./finalize";
 import { findingMeetsReviewerThreshold, reviewerTypeForRole } from "./thresholds";
 import { runRoleReview as defaultRunRoleReview, runVerifierReview as defaultRunVerifierReview } from "./runner";
-import { type ExternalReviewMissPattern } from "../external-review-misses";
+import { type ExternalReviewMissPattern } from "../external-review/external-review-misses";
 import { type LocalReviewFinding, type LocalReviewRoleResult, type LocalReviewVerifierReport } from "./types";
 import { type LocalReviewRoleSelection } from "../review-role-detector";
 import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "../types";

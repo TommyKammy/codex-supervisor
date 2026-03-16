@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { nextExternalReviewMissPatch, syncExternalReviewMissState } from "./external-review-miss-state";
 import { type ExternalReviewMissContext } from "./external-review-misses";
-import { type IssueRunRecord, type SupervisorStateFile } from "./types";
+import { type IssueRunRecord, type SupervisorStateFile } from "../types";
 
 function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
   return {

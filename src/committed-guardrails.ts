@@ -3,7 +3,7 @@ import path from "node:path";
 import {
   type DurableExternalReviewGuardrails,
   type ExternalReviewMissPattern,
-} from "./external-review-miss-artifact-types";
+} from "./external-review/external-review-miss-artifact-types";
 import { parseJson, writeJsonAtomic } from "./utils";
 import { type VerifierGuardrailRule } from "./verifier-guardrails";
 

@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { ensureDir, nowIso } from "./utils";
+import { ensureDir, nowIso } from "../utils";
 import {
   classifyExternalReviewFinding,
   type ExternalReviewMissFinding,
@@ -23,7 +23,7 @@ import { toDurableGuardrailCandidates } from "./external-review-durable-guardrai
 import { toReusableMissPattern } from "./external-review-miss-patterns";
 import { toRegressionTestCandidate } from "./external-review-regression-candidates";
 import { loadLocalReviewArtifact } from "./external-review-local-artifact-io";
-import { type ReviewThread } from "./types";
+import { type ReviewThread } from "../types";
 
 export async function writeExternalReviewMissArtifact(args: {
   artifactDir: string;

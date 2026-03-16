@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { runCommand } from "../command";
 import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "../codex/codex-policy";
-import { loadRelevantExternalReviewMissPatterns, type ExternalReviewMissPattern } from "../external-review-misses";
+import { loadRelevantExternalReviewMissPatterns, type ExternalReviewMissPattern } from "../external-review/external-review-misses";
 import { reviewDir } from "./artifacts";
 import { buildRolePrompt, buildVerifierPrompt, parseRoleFooter, parseVerifierFooter } from "./prompt";
 import { type LocalReviewFinding, type LocalReviewRoleResult, type LocalReviewVerifierReport } from "./types";

@@ -4,7 +4,7 @@ import {
   extractStateHint,
   runCodexTurn,
 } from "./codex";
-import { loadRelevantExternalReviewMissPatterns } from "./external-review-misses";
+import { loadRelevantExternalReviewMissPatterns } from "./external-review/external-review-misses";
 import { GitHubClient } from "./github";
 import {
   hasMeaningfulJournalHandoff,
