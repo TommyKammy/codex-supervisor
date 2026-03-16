@@ -17,7 +17,7 @@ export function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
-    if (token === "run-once" || token === "loop" || token === "status" || token === "explain") {
+    if (token === "run-once" || token === "loop" || token === "status" || token === "explain" || token === "doctor") {
       command = token;
       continue;
     }
@@ -91,7 +91,7 @@ async function main(): Promise<void> {
   process.once("SIGINT", () => requestStop("SIGINT"));
   process.once("SIGTERM", () => requestStop("SIGTERM"));
 
-  if (options.command !== "status" && options.command !== "explain") {
+  if (options.command !== "status" && options.command !== "explain" && options.command !== "doctor") {
     const installMessage = await ensureGsdInstalled(supervisor.config);
     if (installMessage) {
       console.log(installMessage);
@@ -105,6 +105,11 @@ async function main(): Promise<void> {
 
   if (options.command === "explain") {
     console.log(await supervisor.explain(options.issueNumber!));
+    return;
+  }
+
+  if (options.command === "doctor") {
+    console.log(await supervisor.doctor());
     return;
   }
 
@@ -130,8 +135,15 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.stack ?? error.message : String(error);
-  console.error(message);
-  process.exit(1);
-});
+function isDirectExecution(): boolean {
+  const entry = process.argv[1];
+  return typeof entry === "string" && entry === __filename;
+}
+
+if (isDirectExecution()) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.stack ?? error.message : String(error);
+    console.error(message);
+    process.exit(1);
+  });
+}

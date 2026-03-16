@@ -92,6 +92,7 @@ import {
 } from "./supervisor-selection-status";
 import { inferFailureContext } from "./supervisor-failure-context";
 import { StateStore } from "../core/state-store";
+import { diagnoseSupervisorHost, loadStateReadonlyForDoctor, renderDoctorReport } from "../doctor";
 import {
   blockedReasonForLifecycleState,
   derivePullRequestLifecycleSnapshot,
@@ -623,6 +624,16 @@ export class Supervisor {
   async explain(issueNumber: number): Promise<string> {
     const state = await this.stateStore.load();
     return buildIssueExplainSummary(this.github, this.config, state, issueNumber).then((lines) => lines.join("\n"));
+  }
+
+  async doctor(): Promise<string> {
+    return renderDoctorReport(
+      await diagnoseSupervisorHost({
+        config: this.config,
+        authStatus: () => this.github.authStatus(),
+        loadState: () => loadStateReadonlyForDoctor(this.config),
+      }),
+    );
   }
 
   async runOnce(options: Pick<CliOptions, "dryRun">): Promise<string> {
