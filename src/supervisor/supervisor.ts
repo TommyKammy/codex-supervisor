@@ -72,6 +72,7 @@ import {
   recoverUnexpectedCodexTurnFailure,
   shouldAutoRetryTimeout,
 } from "./supervisor-failure-helpers";
+import { AgentRunner, createCodexAgentRunner } from "./agent-runner";
 import {
   attemptBudgetForLane,
   attemptLane,
@@ -203,13 +204,15 @@ function formatStatus(record: IssueRunRecord | null): string {
 export class Supervisor {
   private readonly github: GitHubClient;
   private readonly stateStore: StateStore;
+  private readonly agentRunner: AgentRunner;
 
-  constructor(public readonly config: SupervisorConfig) {
+  constructor(public readonly config: SupervisorConfig, options: { agentRunner?: AgentRunner } = {}) {
     this.github = new GitHubClient(config);
     this.stateStore = new StateStore(config.stateFile, {
       backend: config.stateBackend,
       bootstrapFilePath: config.stateBootstrapFile,
     });
+    this.agentRunner = options.agentRunner ?? createCodexAgentRunner();
   }
 
   static fromConfig(configPath?: string): Supervisor {
@@ -370,6 +373,7 @@ export class Supervisor {
             ...args,
             stateStore: this.stateStore,
           }),
+        agentRunner: this.agentRunner,
       });
     } catch (error) {
       await sessionLock?.release();

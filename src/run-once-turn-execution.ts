@@ -1,9 +1,3 @@
-import {
-  extractBlockedReason,
-  extractFailureSignature,
-  extractStateHint,
-  runCodexTurn,
-} from "./codex";
 import { loadRelevantExternalReviewMissPatterns } from "./external-review/external-review-misses";
 import { GitHubClient } from "./github";
 import {
@@ -42,6 +36,7 @@ import {
 } from "./core/types";
 import { truncate } from "./core/utils";
 import { getWorkspaceStatus, pushBranch } from "./core/workspace";
+import { AgentRunner, createCodexAgentRunner } from "./supervisor/agent-runner";
 
 export {
   handlePostTurnPullRequestTransitionsPhase,
@@ -212,7 +207,7 @@ interface ExecuteCodexTurnPhaseArgs {
   getWorkspaceStatus?: typeof getWorkspaceStatus;
   pushBranch?: typeof pushBranch;
   readIssueJournal?: typeof readIssueJournal;
-  runCodexTurnImpl?: typeof runCodexTurn;
+  agentRunner?: AgentRunner;
 }
 
 export async function executeCodexTurnPhase(
@@ -221,7 +216,6 @@ export async function executeCodexTurnPhase(
   const getWorkspaceStatusImpl = args.getWorkspaceStatus ?? getWorkspaceStatus;
   const pushBranchImpl = args.pushBranch ?? pushBranch;
   const readIssueJournalImpl = args.readIssueJournal ?? readIssueJournal;
-  const runCodexTurnImpl = args.runCodexTurnImpl ?? runCodexTurn;
   const persistCodexTurnExecutionFailureImpl =
     args.persistCodexTurnExecutionFailure ?? persistCodexTurnExecutionFailure;
   const persistCodexTurnExitFailureImpl = args.persistCodexTurnExitFailure ?? persistCodexTurnExitFailure;
@@ -229,6 +223,12 @@ export async function executeCodexTurnPhase(
     args.persistMissingCodexJournalHandoff ?? persistMissingCodexJournalHandoff;
   const persistHintedCodexTurnStateImpl =
     args.persistHintedCodexTurnState ?? persistHintedCodexTurnState;
+  const agentRunner =
+    args.agentRunner ??
+    createCodexAgentRunner({
+      classifyFailureImpl: args.classifyFailure,
+      buildFailureContextImpl: args.buildCodexFailureContext,
+    });
   const { config, stateStore, github } = args;
   const { state, issue, previousCodexSummary, previousError, workspacePath, journalPath, syncJournal, memoryArtifacts, options } = args.context;
   let { record, workspaceStatus, pr, checks, reviewThreads } = args.context;
@@ -275,50 +275,42 @@ export async function executeCodexTurnPhase(
       record = preparedTurn.record;
       const { prompt, reviewThreadsToProcess } = preparedTurn;
 
-      let codexResult;
-      try {
-        codexResult = await runCodexTurnImpl(
-          config,
-          workspacePath,
-          prompt,
-          record.state,
-          record,
-          record.codex_session_id,
-        );
-      } catch (error) {
-        record = await persistCodexTurnExecutionFailureImpl({
-          stateStore,
-          state,
-          record,
-          syncJournal,
-          issueNumber: record.issue_number,
-          error,
-          classifyFailure: args.classifyFailure,
-          buildCodexFailureContext: args.buildCodexFailureContext,
-          applyFailureSignature: args.applyFailureSignature,
-        });
-        return {
-          kind: "returned",
-          message: `Codex turn failed for issue #${record.issue_number}.`,
-        };
-      }
-
-      const hintedState = extractStateHint(codexResult.lastMessage);
-      const hintedBlockedReason = extractBlockedReason(codexResult.lastMessage);
-      const hintedFailureSignature = extractFailureSignature(codexResult.lastMessage);
+      const turnRequest =
+        record.codex_session_id && agentRunner.capabilities.supportsResume
+          ? {
+              kind: "resume" as const,
+              sessionId: record.codex_session_id,
+              config,
+              workspacePath,
+              prompt,
+              state: record.state,
+              record,
+            }
+          : {
+              kind: "start" as const,
+              config,
+              workspacePath,
+              prompt,
+              state: record.state,
+              record,
+            };
+      const turnResult = await agentRunner.runTurn(turnRequest);
+      const hintedState = turnResult.structuredResult?.stateHint ?? null;
+      const hintedBlockedReason = turnResult.structuredResult?.blockedReason ?? null;
+      const hintedFailureSignature = turnResult.structuredResult?.failureSignature ?? null;
       const journalAfterRun = await readIssueJournalImpl(journalPath);
       record = stateStore.touch(record, {
-        codex_session_id: codexResult.sessionId,
-        last_codex_summary: truncate(codexResult.lastMessage),
-        last_failure_kind: null,
+        codex_session_id: turnResult.sessionId,
+        last_codex_summary: truncate(turnResult.supervisorMessage),
+        last_failure_kind: turnResult.failureKind,
         last_error:
-          codexResult.exitCode === 0
+          turnResult.exitCode === 0
             ? null
-            : truncate([codexResult.stderr.trim(), codexResult.stdout.trim()].filter(Boolean).join("\n")),
+            : truncate([turnResult.stderr.trim(), turnResult.stdout.trim()].filter(Boolean).join("\n")),
       });
 
       if (
-        codexResult.exitCode === 0 &&
+        turnResult.exitCode === 0 &&
         (!journalAfterRun ||
           journalAfterRun === journalContent ||
           !hasMeaningfulJournalHandoff(journalAfterRun))
@@ -338,14 +330,41 @@ export async function executeCodexTurnPhase(
         };
       }
 
-      if (codexResult.exitCode !== 0) {
+      if (turnResult.failureKind === "timeout" || turnResult.failureKind === "command_error") {
+        const message =
+          turnResult.stderr.trim() ||
+          turnResult.stdout.trim() ||
+          turnResult.supervisorMessage.trim() ||
+          "Unknown failure";
+        record = await persistCodexTurnExecutionFailureImpl({
+          stateStore,
+          state,
+          record,
+          syncJournal,
+          issueNumber: record.issue_number,
+          error: new Error(message),
+          classifyFailure: args.classifyFailure,
+          buildCodexFailureContext: args.buildCodexFailureContext,
+          applyFailureSignature: args.applyFailureSignature,
+        });
+        return {
+          kind: "returned",
+          message: `Codex turn failed for issue #${record.issue_number}.`,
+        };
+      }
+
+      if (turnResult.exitCode !== 0) {
         record = await persistCodexTurnExitFailureImpl({
           stateStore,
           state,
           record,
           syncJournal,
           issueNumber: record.issue_number,
-          codexResult,
+          codexResult: {
+            lastMessage: turnResult.supervisorMessage,
+            stderr: turnResult.stderr,
+            stdout: turnResult.stdout,
+          },
           classifyFailure: args.classifyFailure,
           buildCodexFailureContext: args.buildCodexFailureContext,
           applyFailureSignature: args.applyFailureSignature,
@@ -363,7 +382,7 @@ export async function executeCodexTurnPhase(
           record,
           syncJournal,
           issueNumber: record.issue_number,
-          lastMessage: codexResult.lastMessage,
+          lastMessage: turnResult.supervisorMessage,
           hintedState,
           hintedBlockedReason,
           hintedFailureSignature,
