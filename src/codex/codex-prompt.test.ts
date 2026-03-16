@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildCodexPrompt, buildCodexResumePrompt, shouldUseCompactResumePrompt } from "./codex-prompt";
 import { FailureContext, GitHubIssue, RunState } from "../core/types";
+import type { AgentTurnContext } from "../supervisor/agent-runner";
+import { createConfig } from "../turn-execution-test-helpers";
 
 const issue: GitHubIssue = {
   number: 46,
@@ -171,6 +173,67 @@ test("buildCodexResumePrompt falls back to current failure context when the jour
   assert.doesNotMatch(prompt, /Verification gap:/);
   assert.match(prompt, /Command\/source: npm run build/);
   assert.match(prompt, /Respond in this exact footer format at the end:/);
+});
+
+test("buildCodexPrompt accepts a normalized resume AgentTurnContext", () => {
+  const context = {
+    kind: "resume",
+    config: createConfig(),
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "reproducing" satisfies RunState,
+    record: null,
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+    journalExcerpt: `## Codex Working Notes
+### Current Handoff
+- What changed: Added turn-context normalization.
+- Next exact step: Route prompt building through the normalized context.`,
+    failureContext: null,
+    previousSummary: "Added turn-context normalization.",
+    previousError: null,
+    sessionId: "session-123",
+  } satisfies AgentTurnContext;
+
+  const prompt = buildCodexPrompt(context);
+
+  assert.match(prompt, /You are resuming work inside the existing Codex session for owner\/repo\./);
+  assert.match(prompt, /Route prompt building through the normalized context\./);
+  assert.doesNotMatch(prompt, /Issue body:/);
+});
+
+test("buildCodexPrompt requires config before treating input as an AgentTurnContext", () => {
+  assert.throws(
+    () =>
+      buildCodexPrompt({
+        kind: "resume",
+        repoSlug: "owner/repo",
+        issue,
+        branch: "codex/issue-46",
+        workspacePath: "/tmp/workspaces/issue-46",
+        state: "reproducing" satisfies RunState,
+        pr: null,
+        checks: [],
+        reviewThreads: [],
+        alwaysReadFiles: [],
+        onDemandMemoryFiles: [],
+        journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+        journalExcerpt: "## Codex Working Notes",
+      }),
+    /Invalid AgentTurnContext/,
+  );
+});
+
+test("buildCodexPrompt rejects unknown AgentTurnContext kinds", () => {
+  assert.throws(
+    () =>
+      buildCodexPrompt({
+        kind: "unexpected",
+        config: createConfig(),
+      } as unknown as AgentTurnContext),
+    /Invalid AgentTurnContext/,
+  );
 });
 
 test("buildCodexPrompt emphasizes compressed local-review root causes during local_review_fix", () => {
