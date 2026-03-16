@@ -10,7 +10,7 @@ import type {
   ResumeAgentTurnRequest,
   StartAgentTurnRequest,
 } from "./agent-runner";
-import { createCodexAgentRunner } from "./agent-runner";
+import { createCodexAgentRunner, detectCodexCliCapabilities } from "./agent-runner";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
@@ -301,6 +301,17 @@ test("createCodexAgentRunner normalizes Codex execution errors into the shared f
   assert.equal(result.failureKind, "timeout");
   assert.equal(result.failureContext?.category, "codex");
   assert.match(result.failureContext?.details[0] ?? "", /Command timed out after 1800000ms/);
+});
+
+test("detectCodexCliCapabilities keeps Codex-compatible defaults conservative for non-codex binaries", () => {
+  assert.deepEqual(detectCodexCliCapabilities({ codexBinary: "/usr/local/bin/codex" }), {
+    supportsResume: true,
+    supportsStructuredResult: true,
+  });
+  assert.deepEqual(detectCodexCliCapabilities({ codexBinary: "/usr/local/bin/custom-agent" }), {
+    supportsResume: false,
+    supportsStructuredResult: false,
+  });
 });
 
 void ([

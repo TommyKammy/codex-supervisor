@@ -212,7 +212,7 @@ export class Supervisor {
       backend: config.stateBackend,
       bootstrapFilePath: config.stateBootstrapFile,
     });
-    this.agentRunner = options.agentRunner ?? createCodexAgentRunner();
+    this.agentRunner = options.agentRunner ?? createCodexAgentRunner({ config });
   }
 
   static fromConfig(configPath?: string): Supervisor {

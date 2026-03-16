@@ -2,6 +2,7 @@ import { extractBlockedReason, extractFailureSignature, extractStateHint, runCod
 import { truncate } from "../core/utils";
 import type { BlockedReason, FailureKind, FailureContext, IssueRunRecord, RunState, SupervisorConfig } from "../core/types";
 import { buildCodexFailureContext, classifyFailure } from "./supervisor-failure-helpers";
+import { basename } from "node:path";
 
 export interface AgentRunnerCapabilities {
   supportsResume: boolean;
@@ -59,6 +60,20 @@ export interface CreateCodexAgentRunnerOptions {
   runCodexTurnImpl?: typeof runCodexTurn;
   classifyFailureImpl?: typeof classifyFailure;
   buildFailureContextImpl?: typeof buildCodexFailureContext;
+  probeCapabilitiesImpl?: (config?: SupervisorConfig) => AgentRunnerCapabilities;
+  config?: SupervisorConfig;
+}
+
+export function detectCodexCliCapabilities(
+  config?: Pick<SupervisorConfig, "codexBinary"> | null,
+): AgentRunnerCapabilities {
+  const binaryName = basename(config?.codexBinary ?? "codex").toLowerCase();
+  const looksLikeCodex = binaryName === "codex" || binaryName.startsWith("codex.");
+
+  return {
+    supportsResume: looksLikeCodex,
+    supportsStructuredResult: looksLikeCodex,
+  };
 }
 
 function extractLabeledValue(message: string, label: string): string | null {
@@ -114,12 +129,10 @@ export function createCodexAgentRunner(options: CreateCodexAgentRunnerOptions = 
   const runCodexTurnImpl = options.runCodexTurnImpl ?? runCodexTurn;
   const classifyFailureImpl = options.classifyFailureImpl ?? classifyFailure;
   const buildFailureContextImpl = options.buildFailureContextImpl ?? buildCodexFailureContext;
+  const capabilities = (options.probeCapabilitiesImpl ?? detectCodexCliCapabilities)(options.config);
 
   return {
-    capabilities: {
-      supportsResume: true,
-      supportsStructuredResult: true,
-    },
+    capabilities,
     async runTurn(request): Promise<AgentTurnResult> {
       try {
         const result = await runCodexTurnImpl(

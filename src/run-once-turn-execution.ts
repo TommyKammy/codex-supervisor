@@ -226,6 +226,7 @@ export async function executeCodexTurnPhase(
   const agentRunner =
     args.agentRunner ??
     createCodexAgentRunner({
+      config: args.config,
       classifyFailureImpl: args.classifyFailure,
       buildFailureContextImpl: args.buildCodexFailureContext,
     });
@@ -245,7 +246,9 @@ export async function executeCodexTurnPhase(
     const preRunState = record.state;
     const sessionLock =
       args.sessionLock ??
-      (record.codex_session_id ? await args.acquireSessionLock(record.codex_session_id) : null);
+      (record.codex_session_id && agentRunner.capabilities.supportsResume
+        ? await args.acquireSessionLock(record.codex_session_id)
+        : null);
     if (sessionLock && !sessionLock.acquired) {
       return {
         kind: "returned",
@@ -271,6 +274,7 @@ export async function executeCodexTurnPhase(
         checks,
         reviewThreads,
         github,
+        agentRunnerCapabilities: agentRunner.capabilities,
       });
       record = preparedTurn.record;
       const { prompt, reviewThreadsToProcess } = preparedTurn;
@@ -295,9 +299,10 @@ export async function executeCodexTurnPhase(
               record,
             };
       const turnResult = await agentRunner.runTurn(turnRequest);
-      const hintedState = turnResult.structuredResult?.stateHint ?? null;
-      const hintedBlockedReason = turnResult.structuredResult?.blockedReason ?? null;
-      const hintedFailureSignature = turnResult.structuredResult?.failureSignature ?? null;
+      const structuredResult = agentRunner.capabilities.supportsStructuredResult ? turnResult.structuredResult : null;
+      const hintedState = structuredResult?.stateHint ?? null;
+      const hintedBlockedReason = structuredResult?.blockedReason ?? null;
+      const hintedFailureSignature = structuredResult?.failureSignature ?? null;
       const journalAfterRun = await readIssueJournalImpl(journalPath);
       record = stateStore.touch(record, {
         codex_session_id: turnResult.sessionId,

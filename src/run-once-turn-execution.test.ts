@@ -462,3 +462,176 @@ test("executeCodexTurnPhase routes start and resume turns through the shared age
   assert.equal(requests[1]?.kind, "resume");
   assert.equal(requests[1]?.sessionId, "session-existing");
 });
+
+test("executeCodexTurnPhase falls back to a fresh start when the agent runner cannot resume", async () => {
+  const requests: AgentTurnRequest[] = [];
+  let sessionLockCalls = 0;
+  const agentRunner: AgentRunner = {
+    capabilities: {
+      supportsResume: false,
+      supportsStructuredResult: false,
+    },
+    async runTurn(request) {
+      requests.push(request);
+      return {
+        exitCode: 0,
+        sessionId: null,
+        supervisorMessage: "Completed via fallback start turn.",
+        stderr: "",
+        stdout: "",
+        structuredResult: {
+          summary: "ignored without structured-result support",
+          stateHint: "blocked",
+          blockedReason: "verification",
+          failureSignature: "should-not-apply",
+          nextAction: "ignored",
+          tests: "ignored",
+        },
+        failureKind: null,
+        failureContext: null,
+      };
+    },
+  };
+  const issue: GitHubIssue = createIssue({
+    title: "Fallback to a fresh start turn",
+    body: "## Summary\nFresh sessions still need the full issue prompt.",
+  });
+  const pr: GitHubPullRequest = createPullRequest({ title: "Agent runner compatibility fallback" });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "reproducing",
+        codex_session_id: "session-existing",
+      }),
+    },
+  };
+
+  const result = await executeCodexTurnPhase({
+    config: createConfig(),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => pr,
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      previousCodexSummary: null,
+      previousError: null,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      journalPath: path.join("/tmp/workspaces/issue-102", ".codex-supervisor", "issue-journal.md"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      workspaceStatus: {
+        branch: "codex/issue-102",
+        headSha: "head-a",
+        hasUncommittedChanges: false,
+        baseAhead: 0,
+        baseBehind: 0,
+        remoteBranchExists: true,
+        remoteAhead: 0,
+        remoteBehind: 0,
+      },
+      pr,
+      checks: [],
+      reviewThreads: [],
+      options: { dryRun: false },
+    },
+    acquireSessionLock: async () => {
+      sessionLockCalls += 1;
+      return null;
+    },
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-03-13T06:20:00Z",
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    normalizeBlockerSignature: () => null,
+    isVerificationBlockedMessage: () => false,
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "stabilizing",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    inferStateWithoutPullRequest: () => "stabilizing",
+    blockedReasonFromReviewState: () => null,
+    recoverUnexpectedCodexTurnFailure: async () => {
+      throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+    },
+    getWorkspaceStatus: async () => ({
+      branch: "codex/issue-102",
+      headSha: "head-a",
+      hasUncommittedChanges: false,
+      baseAhead: 0,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    }),
+    pushBranch: async () => {
+      throw new Error("unexpected pushBranch call");
+    },
+    readIssueJournal: (() => {
+      let readCount = 0;
+      return async () => {
+        readCount += 1;
+        return readCount === 1
+          ? [
+              "## Codex Working Notes",
+              "### Current Handoff",
+              "- Hypothesis: a fresh start fallback should use the full issue prompt.",
+              "- Next exact step: restart from the issue body.",
+            ].join("\n")
+          : [
+              "## Codex Working Notes",
+              "### Current Handoff",
+              "- Hypothesis: a fresh start fallback should use the full issue prompt.",
+              "- What changed: restarted from the full issue body.",
+              "- Next exact step: continue with focused verification.",
+            ].join("\n");
+      };
+    })(),
+    agentRunner,
+  });
+
+  assert.equal(result.kind, "completed");
+  assert.equal(sessionLockCalls, 0);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.kind, "start");
+  assert.match(requests[0]?.prompt ?? "", /Fresh sessions still need the full issue prompt\./);
+  assert.doesNotMatch(requests[0]?.prompt ?? "", /Resume only from the current durable state below\./);
+  assert.equal(state.issues["102"]?.state, "stabilizing");
+});
