@@ -221,6 +221,75 @@ test("buildDetailedStatusModel formats the latest record for idle status", () =>
   ]);
 });
 
+test("buildDetailedStatusModel preserves active-line ordering across PR and failure sections", () => {
+  const lines = buildDetailedStatusModel({
+    config: createConfig({ reviewBotLogins: ["coderabbitai[bot]"] }),
+    activeRecord: createRecord({
+      state: "pr_open",
+      blocked_reason: "verification",
+      last_failure_kind: "command_error",
+      last_failure_signature: "build:red",
+      last_error: "build failed\nsee logs",
+      copilot_review_timeout_reason: "provider timeout\nwaiting",
+      last_failure_context: {
+        category: "checks",
+        summary: "build failed\nsee logs",
+        signature: "build:red",
+        command: "npm run build",
+        details: ["step one", "step two"],
+        url: null,
+        updated_at: "2026-03-11T16:00:00Z",
+      },
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr: createPullRequest({
+      copilotReviewState: "arrived",
+      copilotReviewRequestedAt: "2026-03-11T15:00:00Z",
+      copilotReviewArrivedAt: "2026-03-11T15:05:00Z",
+      configuredBotTopLevelReviewStrength: "blocking",
+      configuredBotTopLevelReviewSubmittedAt: "2026-03-11T15:05:00Z",
+    }),
+    checks: [
+      { name: "unit", state: "FAILURE", bucket: "fail", workflow: "CI" },
+      { name: "lint", state: "IN_PROGRESS", bucket: "pending", workflow: "CI" },
+    ],
+    reviewThreads: [],
+    manualReviewThreads: noReviewThreads,
+    configuredBotReviewThreads: noReviewThreads,
+    pendingBotReviewThreads: noPendingReviewThreads,
+    summarizeChecks,
+    mergeConflictDetected: () => false,
+  });
+
+  const prefixesInOrder = [
+    "issue=#58",
+    "local_review gating=",
+    "external_review head=",
+    "last_error=build failed\\nsee logs",
+    "review_bot_profile profile=",
+    "review_bot_diagnostics status=",
+    "configured_bot_review state=arrived",
+    "configured_bot_top_level_review strength=blocking",
+    "timeout_reason=provider timeout\\nwaiting",
+    "pr_state=OPEN draft=no merge_state=CLEAN review_decision=none head_sha=deadbeef",
+    "checks=fail=1 pending=1",
+    "failing_checks=unit",
+    "pending_checks=lint",
+    "review_threads bot_pending=0 bot_unresolved=0 manual=0",
+    "failure_context category=checks summary=build failed\\nsee logs",
+    "failure_details=step one | step two",
+  ];
+
+  let lastIndex = -1;
+  for (const prefix of prefixesInOrder) {
+    const index = lines.findIndex((line) => line.startsWith(prefix));
+    assert.notEqual(index, -1, `expected line starting with ${prefix}`);
+    assert.ok(index > lastIndex, `expected ${prefix} after prior status sections`);
+    lastIndex = index;
+  }
+});
+
 test("buildDetailedStatusSummaryLines keeps artifact paths relative and falls back to basenames", () => {
   const lines = buildDetailedStatusSummaryLines({
     config: createConfig({ localReviewArtifactDir: "/tmp/reviews" }),
