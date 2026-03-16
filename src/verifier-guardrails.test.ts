@@ -274,7 +274,7 @@ test("loadRelevantVerifierGuardrails rejects malformed committed rules even when
 });
 
 test("repo-committed verifier guardrails cover Copilot request-vs-arrival lifecycle and merged-PR convergence", async () => {
-  const changedFiles = ["src/github.ts", "src/supervisor.ts"];
+  const changedFiles = ["src/github/github.ts", "src/supervisor.ts"];
   const rules = await loadRelevantVerifierGuardrails({
     workspacePath: process.cwd(),
     changedFiles,
@@ -285,7 +285,7 @@ test("repo-committed verifier guardrails cover Copilot request-vs-arrival lifecy
     rules,
     changedFiles,
     expected: [
-      { id: "copilot-review-arrival-lifecycle", file: "src/github.ts" },
+      { id: "copilot-review-arrival-lifecycle", file: "src/github/github.ts" },
       { id: "local-review-repair-context-malformed-input", file: "src/supervisor.ts" },
       { id: "copilot-merge-readiness-arrival-gate", file: "src/supervisor.ts" },
       { id: "merged-pr-state-convergence", file: "src/supervisor.ts", line: 1929 },

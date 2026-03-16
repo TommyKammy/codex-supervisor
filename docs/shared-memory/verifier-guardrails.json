@@ -12,7 +12,7 @@
     {
       "id": "copilot-review-arrival-lifecycle",
       "title": "Separate Copilot request and arrival states",
-      "file": "src/github.ts",
+      "file": "src/github/github.ts",
       "line": 205,
       "summary": "Verify configured-bot review lifecycle stays requested until an actual configured-bot review or review-thread comment arrives.",
       "rationale": "Merge readiness depends on distinguishing review request creation from real arrival, including paginated review-thread comments and propagation delays."
