@@ -49,13 +49,13 @@ Not a fit:
    cp supervisor.config.example.json supervisor.config.json
    ```
 
-3. Choose the review-bot profile that matches your PR review flow, then either copy that file over `supervisor.config.json` or copy its `reviewBotLogins` into the `supervisor.config.json` you created in step 2.
+3. Choose the review provider profile that matches your PR review flow, then either copy that file over `supervisor.config.json` or copy its `reviewBotLogins` into the `supervisor.config.json` you created in step 2.
 
    - [supervisor.config.copilot.json](./supervisor.config.copilot.json)
    - [supervisor.config.codex.json](./supervisor.config.codex.json)
    - [supervisor.config.coderabbit.json](./supervisor.config.coderabbit.json)
 
-4. Edit `supervisor.config.json` and set `repoPath`, `repoSlug`, `workspaceRoot`, `codexBinary`, and any provider-specific values you want to keep.
+4. Edit `supervisor.config.json` and set `repoPath`, `repoSlug`, `workspaceRoot`, `codexBinary`, and any review-provider-specific values you want to keep.
 
 5. Run a single pass first, then switch to the loop when the config looks right.
 
@@ -69,7 +69,7 @@ Requirements: `gh auth status` must succeed, `codex` CLI must be installed, and 
 
 ## Provider Profiles
 
-`supervisor.config.json` is always the active file. The shipped provider profiles are starting points that set the expected review-bot identities.
+`supervisor.config.json` is always the active file. The shipped provider profiles are starting points that set the expected review signal identities for each provider.
 
 - Copilot profile: start from [supervisor.config.copilot.json](./supervisor.config.copilot.json), enable GitHub Copilot review for the target repo or org, and verify a ready PR receives review activity from `copilot-pull-request-reviewer`.
 - Codex Connector profile: start from [supervisor.config.codex.json](./supervisor.config.codex.json), connect the repo to Codex in ChatGPT/OpenAI, and verify PR review activity arrives from `chatgpt-codex-connector`.

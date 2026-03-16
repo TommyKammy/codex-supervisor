@@ -58,7 +58,7 @@ Create an active config from the base example:
 cp supervisor.config.example.json supervisor.config.json
 ```
 
-Then choose the provider profile that matches your PR review flow:
+Then choose the review provider profile that matches your PR review flow:
 
 - [supervisor.config.copilot.json](../supervisor.config.copilot.json)
 - [supervisor.config.codex.json](../supervisor.config.codex.json)
@@ -72,7 +72,7 @@ At minimum, set these fields before the first run:
 - `repoSlug`
 - `workspaceRoot`
 - `codexBinary`
-- provider-specific review bot settings you expect the supervisor to watch
+- provider-specific review settings you expect the supervisor to watch
 
 If you need the full field-by-field setup, model policy, durable memory, or provider guidance, use the [Configuration reference](./configuration.md).
 
