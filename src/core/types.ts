@@ -287,7 +287,7 @@ export interface CodexTurnResult {
 }
 
 export interface CliOptions {
-  command: "run-once" | "loop" | "status" | "explain";
+  command: "run-once" | "loop" | "status" | "explain" | "doctor";
   configPath?: string;
   dryRun: boolean;
   why: boolean;
