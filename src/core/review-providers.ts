@@ -17,6 +17,15 @@ export interface ReviewProviderProfileSummary {
   signalSource: string;
 }
 
+export interface ReviewProviderWaitPolicy {
+  botLabel: string;
+  shouldWaitForRequestedReviewSignal: boolean;
+  shouldWaitForRequestPropagation: boolean;
+  shouldTrackRequestedState: boolean;
+  shouldApplyRequestedReviewTimeout: boolean;
+  shouldApplyRateLimitCooldown: boolean;
+}
+
 function trimReviewBotLogins(reviewBotLogins: string[]): string[] {
   return reviewBotLogins.map((login) => login.trim()).filter((login) => login.length > 0);
 }
@@ -85,6 +94,27 @@ export function repoExpectsLifecycleBotReview(config: Pick<SupervisorConfig, "re
 export function repoUsesCopilotOnlyReviewBot(config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">): boolean {
   const providers = configuredReviewProviders(config);
   return providers.length === 1 && providers[0]?.kind === "copilot" && providers[0].reviewerLogins.length === 1;
+}
+
+export function reviewProviderWaitPolicyFromConfig(
+  config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">,
+): ReviewProviderWaitPolicy {
+  const reviewers = configuredReviewBotLogins(config);
+  const usesLifecycleSignals = repoExpectsLifecycleBotReview(config);
+  return {
+    botLabel: repoUsesCopilotOnlyReviewBot(config)
+      ? "Copilot"
+      : reviewers.length === 1
+        ? `configured review bot (${reviewers[0]})`
+        : reviewers.length > 1
+          ? `configured review bots (${reviewers.join(", ")})`
+          : "configured review bot",
+    shouldWaitForRequestedReviewSignal: reviewers.length > 0,
+    shouldWaitForRequestPropagation: usesLifecycleSignals,
+    shouldTrackRequestedState: usesLifecycleSignals,
+    shouldApplyRequestedReviewTimeout: usesLifecycleSignals,
+    shouldApplyRateLimitCooldown: reviewers.length > 0,
+  };
 }
 
 export function reviewProviderProfileFromConfig(

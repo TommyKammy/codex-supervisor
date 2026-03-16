@@ -24,10 +24,8 @@ import {
   SupervisorConfig,
 } from "./core/types";
 import {
-  configuredReviewBotLogins,
   repoExpectsConfiguredBotReview,
-  repoExpectsLifecycleBotReview,
-  repoUsesCopilotOnlyReviewBot,
+  reviewProviderWaitPolicyFromConfig,
 } from "./core/review-providers";
 import { nowIso } from "./core/utils";
 
@@ -55,17 +53,7 @@ function reviewSatisfied(pr: GitHubPullRequest): boolean {
 }
 
 function configuredReviewBotLabel(config: SupervisorConfig): string {
-  const bots = configuredReviewBotLogins(config);
-  if (repoUsesCopilotOnlyReviewBot(config)) {
-    return "Copilot";
-  }
-  if (bots.length === 1) {
-    return `configured review bot (${bots[0]})`;
-  }
-  if (bots.length > 1) {
-    return `configured review bots (${bots.join(", ")})`;
-  }
-  return "configured review bot";
+  return reviewProviderWaitPolicyFromConfig(config).botLabel;
 }
 
 function copilotReviewArrived(pr: GitHubPullRequest): boolean {
@@ -76,8 +64,15 @@ function determineConfiguredBotRateLimitWait(
   config: SupervisorConfig,
   pr: GitHubPullRequest,
 ): ConfiguredBotRateLimitWaitStatus {
+  const policy = reviewProviderWaitPolicyFromConfig(config);
   const waitMinutes = config.configuredBotRateLimitWaitMinutes ?? 0;
-  if (waitMinutes <= 0 || pr.isDraft || copilotReviewArrived(pr) || !pr.configuredBotRateLimitedAt) {
+  if (
+    !policy.shouldApplyRateLimitCooldown ||
+    waitMinutes <= 0 ||
+    pr.isDraft ||
+    copilotReviewArrived(pr) ||
+    !pr.configuredBotRateLimitedAt
+  ) {
     return { active: false, observedAt: null, waitUntil: null };
   }
 
@@ -99,7 +94,7 @@ function hasObservedCopilotRequest(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
 ): boolean {
-  if (!repoExpectsLifecycleBotReview(config)) {
+  if (!reviewProviderWaitPolicyFromConfig(config).shouldTrackRequestedState) {
     return false;
   }
 
@@ -107,7 +102,17 @@ function hasObservedCopilotRequest(
 }
 
 function copilotReviewPending(config: SupervisorConfig, record: IssueRunRecord, pr: GitHubPullRequest): boolean {
-  if (!repoExpectsConfiguredBotReview(config) || pr.isDraft || copilotReviewArrived(pr)) {
+  const policy = reviewProviderWaitPolicyFromConfig(config);
+  if (
+    !repoExpectsConfiguredBotReview(config) ||
+    !policy.shouldWaitForRequestedReviewSignal ||
+    pr.isDraft ||
+    copilotReviewArrived(pr)
+  ) {
+    return false;
+  }
+
+  if (!policy.shouldApplyRequestedReviewTimeout && pr.configuredBotRateLimitedAt) {
     return false;
   }
 
@@ -115,6 +120,7 @@ function copilotReviewPending(config: SupervisorConfig, record: IssueRunRecord, 
 }
 
 function copilotReviewTimeoutStart(config: SupervisorConfig, record: IssueRunRecord, pr: GitHubPullRequest): string | null {
+  const policy = reviewProviderWaitPolicyFromConfig(config);
   if (!copilotReviewPending(config, record, pr)) {
     return null;
   }
@@ -123,7 +129,7 @@ function copilotReviewTimeoutStart(config: SupervisorConfig, record: IssueRunRec
     return pr.copilotReviewRequestedAt;
   }
 
-  if (hasObservedCopilotRequest(config, record, pr)) {
+  if (policy.shouldTrackRequestedState && hasObservedCopilotRequest(config, record, pr)) {
     return record.copilot_review_requested_observed_at;
   }
 
@@ -135,7 +141,8 @@ function determineCopilotReviewTimeout(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
 ): CopilotReviewTimeoutStatus {
-  if (config.copilotReviewWaitMinutes <= 0) {
+  const policy = reviewProviderWaitPolicyFromConfig(config);
+  if (!policy.shouldApplyRequestedReviewTimeout || config.copilotReviewWaitMinutes <= 0) {
     return { timedOut: false, action: null, startedAt: null, timedOutAt: null, reason: null };
   }
 
@@ -171,8 +178,9 @@ function shouldWaitForCopilotReviewPropagation(
   record: Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha">,
   pr: GitHubPullRequest,
 ): boolean {
+  const policy = reviewProviderWaitPolicyFromConfig(config);
   if (
-    !repoExpectsLifecycleBotReview(config) ||
+    !policy.shouldWaitForRequestPropagation ||
     config.copilotReviewWaitMinutes <= 0 ||
     pr.isDraft ||
     pr.headRefOid !== record.review_wait_head_sha
@@ -293,7 +301,7 @@ export function syncCopilotReviewRequestObservation(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
 ): Partial<IssueRunRecord> {
-  if (!repoExpectsLifecycleBotReview(config) || pr.isDraft || copilotReviewArrived(pr)) {
+  if (!reviewProviderWaitPolicyFromConfig(config).shouldTrackRequestedState || pr.isDraft || copilotReviewArrived(pr)) {
     return {
       copilot_review_requested_observed_at: null,
       copilot_review_requested_head_sha: null,
