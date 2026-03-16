@@ -22,6 +22,7 @@ import type {
 import { buildCodexFailureContext, classifyFailure } from "./supervisor-failure-helpers";
 import { basename } from "node:path";
 import type { ExternalReviewMissContext } from "../external-review/external-review-misses";
+import type { DeterministicChangeClass } from "../issue-metadata";
 
 export interface AgentRunnerCapabilities {
   supportsResume: boolean;
@@ -51,6 +52,7 @@ export interface StartAgentTurnContext extends AgentRunnerBaseRequest {
   pr: GitHubPullRequest | null;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
+  changeClasses?: DeterministicChangeClass[];
   alwaysReadFiles: string[];
   onDemandMemoryFiles: string[];
   gsdEnabled?: boolean;

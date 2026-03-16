@@ -26,9 +26,11 @@ import {
   SupervisorConfig,
   SupervisorStateFile,
 } from "./core/types";
+import { detectDeterministicChangeClasses } from "./issue-metadata";
 import type { AgentRunnerCapabilities } from "./supervisor/agent-runner";
 import type { AgentTurnContext } from "./supervisor/agent-runner";
 import { truncate } from "./core/utils";
+import { loadStatusChangedFiles } from "./supervisor/supervisor-status-rendering";
 
 function shouldLoadExternalReviewContext(args: {
   preRunState: IssueRunRecord["state"];
@@ -96,6 +98,7 @@ export async function prepareCodexTurnPrompt(args: {
   reviewThreads: ReviewThread[];
   github: Pick<GitHubClient, "getExternalReviewSurface">;
   agentRunnerCapabilities?: Pick<AgentRunnerCapabilities, "supportsResume">;
+  loadChangedFiles?: (config: SupervisorConfig, workspacePath: string) => Promise<string[]>;
 }): Promise<{
   record: IssueRunRecord;
   turnContext: AgentTurnContext;
@@ -168,6 +171,12 @@ export async function prepareCodexTurnPrompt(args: {
     record,
     agentRunnerCapabilities: args.agentRunnerCapabilities,
   });
+  const changeClasses =
+    shouldResumeTurn
+      ? []
+      : detectDeterministicChangeClasses(
+          await (args.loadChangedFiles ?? loadStatusChangedFiles)(args.config, args.workspacePath),
+        );
   const turnContext =
     shouldResumeTurn
       ? {
@@ -181,6 +190,7 @@ export async function prepareCodexTurnPrompt(args: {
           pr: args.pr,
           checks: args.checks,
           reviewThreads: reviewThreadsToProcess,
+          changeClasses,
           alwaysReadFiles: args.memoryArtifacts.alwaysReadFiles,
           onDemandMemoryFiles: args.memoryArtifacts.onDemandFiles,
           gsdEnabled: args.config.gsdEnabled,
