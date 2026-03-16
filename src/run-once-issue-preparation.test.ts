@@ -186,6 +186,12 @@ test("prepareIssueExecutionContext prepares workspace, journal, memory, and head
   const workspaceStatus = createWorkspaceStatus({ headSha: "workspace-head-240" });
   const saveSnapshots: SupervisorStateFile[] = [];
   const touchedRecords: IssueRunRecord[] = [];
+  const replaySnapshots: Array<{
+    pr: GitHubPullRequest | null;
+    checks: { name: string; state: string; bucket: string }[];
+    recordState: IssueRunRecord["state"];
+    workspaceHead: string;
+  }> = [];
 
   const result = await prepareIssueExecutionContext({
     github: {
@@ -227,6 +233,15 @@ test("prepareIssueExecutionContext prepares workspace, journal, memory, and head
       };
     },
     getWorkspaceStatus: async () => workspaceStatus,
+    writeSupervisorCycleDecisionSnapshot: async ({ pr, checks, record: snapshotRecord, workspaceStatus: snapshotWorkspaceStatus }) => {
+      replaySnapshots.push({
+        pr,
+        checks,
+        recordState: snapshotRecord.state,
+        workspaceHead: snapshotWorkspaceStatus.headSha,
+      });
+      return "/tmp/workspaces/issue-240/.codex-supervisor/replay/decision-cycle-snapshot.json";
+    },
   });
 
   assert.equal(typeof result, "object");
@@ -242,6 +257,14 @@ test("prepareIssueExecutionContext prepares workspace, journal, memory, and head
   assert.equal(saveSnapshots[0]?.issues["240"]?.journal_path, "/tmp/workspaces/issue-240/.codex-supervisor/issue-journal.md");
   assert.equal(saveSnapshots[1]?.issues["240"]?.last_head_sha, "workspace-head-240");
   assert.equal(touchedRecords.at(-1)?.last_head_sha, "workspace-head-240");
+  assert.deepEqual(replaySnapshots, [
+    {
+      pr: null,
+      checks: [],
+      recordState: "planning",
+      workspaceHead: "workspace-head-240",
+    },
+  ]);
 });
 
 test("prepareIssueExecutionContext restarts when a tracked PR already merged", async () => {
