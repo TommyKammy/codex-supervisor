@@ -1,6 +1,309 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildConfiguredBotReviewSummary, CopilotReviewLifecycleFacts } from "./github-review-signals";
+import {
+  buildConfiguredBotReviewSummary,
+  CopilotReviewLifecycleFacts,
+  inferCopilotReviewLifecycle,
+} from "./github-review-signals";
+
+test("inferCopilotReviewLifecycle returns not_requested when no Copilot signal exists", () => {
+  const lifecycle = inferCopilotReviewLifecycle(
+    {
+      reviewRequests: [],
+      reviews: [],
+      comments: [],
+      issueComments: [],
+      timeline: [],
+    },
+    ["copilot-pull-request-reviewer"],
+  );
+
+  assert.deepEqual(lifecycle, {
+    state: "not_requested",
+    requestedAt: null,
+    arrivedAt: null,
+  });
+});
+
+test("inferCopilotReviewLifecycle returns requested when Copilot was requested but has not reviewed", () => {
+  const lifecycle = inferCopilotReviewLifecycle(
+    {
+      reviewRequests: ["copilot-pull-request-reviewer"],
+      reviews: [],
+      comments: [],
+      issueComments: [],
+      timeline: [
+        {
+          type: "requested",
+          createdAt: "2026-03-13T01:02:03Z",
+          reviewerLogin: "copilot-pull-request-reviewer",
+        },
+      ],
+    },
+    ["copilot-pull-request-reviewer"],
+  );
+
+  assert.deepEqual(lifecycle, {
+    state: "requested",
+    requestedAt: "2026-03-13T01:02:03Z",
+    arrivedAt: null,
+  });
+});
+
+test("inferCopilotReviewLifecycle returns arrived when Copilot review exists", () => {
+  const lifecycle = inferCopilotReviewLifecycle(
+    {
+      reviewRequests: [],
+      reviews: [
+        {
+          authorLogin: "copilot-pull-request-reviewer",
+          submittedAt: "2026-03-13T02:03:04Z",
+        },
+      ],
+      comments: [],
+      issueComments: [],
+      timeline: [
+        {
+          type: "requested",
+          createdAt: "2026-03-13T01:02:03Z",
+          reviewerLogin: "copilot-pull-request-reviewer",
+        },
+      ],
+    },
+    ["copilot-pull-request-reviewer"],
+  );
+
+  assert.deepEqual(lifecycle, {
+    state: "arrived",
+    requestedAt: "2026-03-13T01:02:03Z",
+    arrivedAt: "2026-03-13T02:03:04Z",
+  });
+});
+
+test("inferCopilotReviewLifecycle returns arrived when Copilot comments on a review thread", () => {
+  const lifecycle = inferCopilotReviewLifecycle(
+    {
+      reviewRequests: [],
+      reviews: [],
+      comments: [
+        {
+          authorLogin: "copilot-pull-request-reviewer",
+          createdAt: "2026-03-13T02:04:05Z",
+        },
+      ],
+      issueComments: [],
+      timeline: [
+        {
+          type: "requested",
+          createdAt: "2026-03-13T01:02:03Z",
+          reviewerLogin: "copilot-pull-request-reviewer",
+        },
+      ],
+    },
+    ["copilot-pull-request-reviewer"],
+  );
+
+  assert.deepEqual(lifecycle, {
+    state: "arrived",
+    requestedAt: "2026-03-13T01:02:03Z",
+    arrivedAt: "2026-03-13T02:04:05Z",
+  });
+});
+
+test("inferCopilotReviewLifecycle treats configured review bots generically for Codex-only and mixed configurations", () => {
+  const facts = {
+    reviewRequests: ["chatgpt-codex-connector"],
+    reviews: [
+      {
+        authorLogin: "chatgpt-codex-connector",
+        submittedAt: "2026-03-13T02:03:04Z",
+        state: "COMMENTED",
+        body: "Nitpick: the fallback path still skips the auth guard.",
+      },
+    ],
+    comments: [],
+    issueComments: [],
+    timeline: [
+      {
+        type: "requested" as const,
+        createdAt: "2026-03-13T01:02:03Z",
+        reviewerLogin: "chatgpt-codex-connector",
+      },
+      {
+        type: "requested" as const,
+        createdAt: "2026-03-13T01:00:00Z",
+        reviewerLogin: "copilot-pull-request-reviewer",
+      },
+    ],
+  };
+
+  assert.deepEqual(inferCopilotReviewLifecycle(facts, ["chatgpt-codex-connector"]), {
+    state: "arrived",
+    requestedAt: "2026-03-13T01:02:03Z",
+    arrivedAt: "2026-03-13T02:03:04Z",
+  });
+
+  assert.deepEqual(inferCopilotReviewLifecycle(facts, ["copilot-pull-request-reviewer", "chatgpt-codex-connector"]), {
+    state: "arrived",
+    requestedAt: "2026-03-13T01:02:03Z",
+    arrivedAt: "2026-03-13T02:03:04Z",
+  });
+});
+
+test("inferCopilotReviewLifecycle ignores summary-only and draft-skip issue comments from configured bots", () => {
+  const lifecycle = inferCopilotReviewLifecycle(
+    {
+      reviewRequests: ["coderabbitai[bot]"],
+      reviews: [],
+      comments: [],
+      issueComments: [
+        {
+          authorLogin: "coderabbitai[bot]",
+          createdAt: "2026-03-13T02:04:05Z",
+          body: "## Summary\nCodeRabbit reviewed this pull request and found no actionable issues.",
+        },
+        {
+          authorLogin: "coderabbitai[bot]",
+          createdAt: "2026-03-13T02:05:05Z",
+          body: "Skipping review because this pull request is still in draft.",
+        },
+      ],
+      timeline: [
+        {
+          type: "requested",
+          createdAt: "2026-03-13T01:02:03Z",
+          reviewerLogin: "coderabbitai[bot]",
+        },
+      ],
+    },
+    ["coderabbitai[bot]"],
+  );
+
+  assert.deepEqual(lifecycle, {
+    state: "requested",
+    requestedAt: "2026-03-13T01:02:03Z",
+    arrivedAt: null,
+  });
+});
+
+test("inferCopilotReviewLifecycle treats actionable configured-bot top-level reviews as arrived", () => {
+  const lifecycle = inferCopilotReviewLifecycle(
+    {
+      reviewRequests: ["coderabbitai[bot]"],
+      reviews: [
+        {
+          authorLogin: "coderabbitai[bot]",
+          submittedAt: "2026-03-13T02:03:04Z",
+          state: "COMMENTED",
+          body: "Nitpick: this nil check is inverted and can mask the error path.",
+        },
+      ],
+      comments: [],
+      issueComments: [],
+      timeline: [
+        {
+          type: "requested",
+          createdAt: "2026-03-13T01:02:03Z",
+          reviewerLogin: "coderabbitai[bot]",
+        },
+      ],
+    },
+    ["coderabbitai[bot]"],
+  );
+
+  assert.deepEqual(lifecycle, {
+    state: "arrived",
+    requestedAt: "2026-03-13T01:02:03Z",
+    arrivedAt: "2026-03-13T02:03:04Z",
+  });
+});
+
+test("inferCopilotReviewLifecycle ignores configured-bot activity that predates the latest active request", () => {
+  const lifecycle = inferCopilotReviewLifecycle(
+    {
+      reviewRequests: ["coderabbitai[bot]"],
+      reviews: [
+        {
+          authorLogin: "coderabbitai[bot]",
+          submittedAt: "2026-03-13T01:03:04Z",
+          state: "COMMENTED",
+          body: "Nitpick: old review on the prior request cycle.",
+        },
+      ],
+      comments: [
+        {
+          authorLogin: "coderabbitai[bot]",
+          createdAt: "2026-03-13T01:04:05Z",
+        },
+      ],
+      issueComments: [],
+      timeline: [
+        {
+          type: "requested",
+          createdAt: "2026-03-13T01:00:00Z",
+          reviewerLogin: "coderabbitai[bot]",
+        },
+        {
+          type: "removed",
+          createdAt: "2026-03-13T01:05:00Z",
+          reviewerLogin: "coderabbitai[bot]",
+        },
+        {
+          type: "requested",
+          createdAt: "2026-03-13T02:00:00Z",
+          reviewerLogin: "coderabbitai[bot]",
+        },
+      ],
+    },
+    ["coderabbitai[bot]"],
+  );
+
+  assert.deepEqual(lifecycle, {
+    state: "requested",
+    requestedAt: "2026-03-13T02:00:00Z",
+    arrivedAt: null,
+  });
+});
+
+test("inferCopilotReviewLifecycle computes the active request cutoff per configured bot", () => {
+  const lifecycle = inferCopilotReviewLifecycle(
+    {
+      reviewRequests: ["coderabbitai[bot]"],
+      reviews: [],
+      comments: [
+        {
+          authorLogin: "coderabbitai[bot]",
+          createdAt: "2026-03-13T00:30:00Z",
+        },
+      ],
+      issueComments: [],
+      timeline: [
+        {
+          type: "requested",
+          createdAt: "2026-03-13T01:00:00Z",
+          reviewerLogin: "coderabbitai[bot]",
+        },
+        {
+          type: "requested",
+          createdAt: "2026-03-13T02:00:00Z",
+          reviewerLogin: "copilot-pull-request-reviewer",
+        },
+        {
+          type: "removed",
+          createdAt: "2026-03-13T03:00:00Z",
+          reviewerLogin: "copilot-pull-request-reviewer",
+        },
+      ],
+    },
+    ["coderabbitai[bot]", "copilot-pull-request-reviewer"],
+  );
+
+  assert.deepEqual(lifecycle, {
+    state: "requested",
+    requestedAt: "2026-03-13T01:00:00Z",
+    arrivedAt: null,
+  });
+});
 
 test("buildConfiguredBotReviewSummary treats actionable configured-bot issue comments as arrival signals", () => {
   const facts: CopilotReviewLifecycleFacts = {
