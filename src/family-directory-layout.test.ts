@@ -16,6 +16,7 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
   files: [
     "committed-guardrails-cli.ts",
     "committed-guardrails.ts",
+    "doctor.ts",
     "gsd.ts",
     "index.ts",
     "no-pull-request-state.ts",
@@ -51,6 +52,7 @@ const EXPECTED_FAMILY_FILES = {
     "journal.ts",
     "lock.ts",
     "memory.ts",
+    "review-providers.ts",
     "state-store.ts",
     "types.ts",
     "utils.ts",

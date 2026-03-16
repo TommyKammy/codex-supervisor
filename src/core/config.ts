@@ -10,6 +10,7 @@ import {
   RunState,
   SupervisorConfig,
 } from "./types";
+import { mapConfiguredReviewProviders } from "./review-providers";
 import { isValidGitRefName, parseJson, resolveMaybeRelative } from "./utils";
 
 const DEFAULT_CONFIG_FILE = "supervisor.config.json";
@@ -243,6 +244,11 @@ export function loadConfig(configPath?: string): SupervisorConfig {
           .filter((value): value is string => typeof value === "string" && value.trim() !== "")
           .map((value) => value.trim().toLowerCase())
       : ["copilot-pull-request-reviewer"],
+    configuredReviewProviders: mapConfiguredReviewProviders(
+      Array.isArray(raw.reviewBotLogins)
+        ? raw.reviewBotLogins.filter((value): value is string => typeof value === "string")
+        : ["copilot-pull-request-reviewer"],
+    ),
     humanReviewBlocksMerge:
       typeof raw.humanReviewBlocksMerge === "boolean"
         ? raw.humanReviewBlocksMerge

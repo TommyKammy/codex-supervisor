@@ -1,13 +1,10 @@
 import { hasProcessedReviewThread } from "./review-handling";
+import { configuredReviewBotLogins } from "./core/review-providers";
 import { FailureContext, GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "./core/types";
 import { nowIso } from "./core/utils";
 
-function configuredReviewBots(config: SupervisorConfig): string[] {
-  return config.reviewBotLogins.map((login) => login.trim()).filter((login) => login.length > 0);
-}
-
 function isAllowedReviewBotThread(config: SupervisorConfig, thread: ReviewThread): boolean {
-  const configuredLogins = new Set(configuredReviewBots(config).map((login) => login.toLowerCase()));
+  const configuredLogins = new Set(configuredReviewBotLogins(config).map((login) => login.toLowerCase()));
   return thread.comments.nodes.some((comment) => {
     const login = comment.author?.login?.toLowerCase();
     return Boolean(login && configuredLogins.has(login));

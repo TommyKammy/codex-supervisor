@@ -4,6 +4,7 @@ import {
   isActionableTopLevelReview,
   isRateLimitReviewText,
 } from "../external-review/external-review-signal-heuristics";
+import { normalizeReviewBotLogins } from "../core/review-providers";
 import { CopilotReviewState } from "../core/types";
 
 export interface CopilotReviewLifecycleFacts {
@@ -134,7 +135,7 @@ export function inferCopilotReviewLifecycle(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
 ): CopilotReviewLifecycle {
-  const configuredReviewBots = new Set(reviewBotLogins.map((login) => normalizeLogin(login)).filter((login): login is string => Boolean(login)));
+  const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
   if (configuredReviewBots.size === 0) {
     return { state: "not_requested", requestedAt: null, arrivedAt: null };
   }
@@ -207,9 +208,7 @@ function inferConfiguredBotTopLevelReviewSummary(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
 ): ConfiguredBotTopLevelReviewSummary {
-  const configuredReviewBots = new Set(
-    reviewBotLogins.map((login) => normalizeLogin(login)).filter((login): login is string => Boolean(login)),
-  );
+  const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
   if (configuredReviewBots.size === 0) {
     return { strength: null, submittedAt: null };
   }
@@ -250,9 +249,7 @@ function inferConfiguredBotRateLimitWarningAt(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
 ): string | null {
-  const configuredReviewBots = new Set(
-    reviewBotLogins.map((login) => normalizeLogin(login)).filter((login): login is string => Boolean(login)),
-  );
+  const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
   if (configuredReviewBots.size === 0) {
     return null;
   }

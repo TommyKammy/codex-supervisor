@@ -23,10 +23,14 @@ import {
   RunState,
   SupervisorConfig,
 } from "./core/types";
+import {
+  configuredReviewBotLogins,
+  repoExpectsConfiguredBotReview,
+  repoUsesCopilotOnlyReviewBot,
+} from "./core/review-providers";
 import { nowIso } from "./core/utils";
 
 const COPILOT_REVIEW_PROPAGATION_GRACE_MS = 5_000;
-const COPILOT_REVIEWER_LOGIN = "copilot-pull-request-reviewer";
 
 interface CopilotReviewTimeoutStatus {
   timedOut: boolean;
@@ -49,21 +53,8 @@ function reviewSatisfied(pr: GitHubPullRequest): boolean {
   );
 }
 
-function configuredReviewBots(config: SupervisorConfig): string[] {
-  return config.reviewBotLogins.map((login) => login.trim()).filter((login) => login.length > 0);
-}
-
-function repoExpectsConfiguredBotReview(config: SupervisorConfig): boolean {
-  return configuredReviewBots(config).length > 0;
-}
-
-function repoUsesCopilotOnlyReviewBot(config: SupervisorConfig): boolean {
-  const bots = configuredReviewBots(config);
-  return bots.length === 1 && bots[0].toLowerCase() === COPILOT_REVIEWER_LOGIN;
-}
-
 function configuredReviewBotLabel(config: SupervisorConfig): string {
-  const bots = configuredReviewBots(config);
+  const bots = configuredReviewBotLogins(config);
   if (repoUsesCopilotOnlyReviewBot(config)) {
     return "Copilot";
   }
