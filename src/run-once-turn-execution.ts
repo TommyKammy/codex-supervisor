@@ -21,6 +21,7 @@ import { StateStore } from "./core/state-store";
 import {
   nextProcessedReviewThreadPatch,
   prepareCodexTurnPrompt,
+  shouldResumeAgentTurn,
 } from "./turn-execution-orchestration";
 import {
   FailureContext,
@@ -244,10 +245,14 @@ export async function executeCodexTurnPhase(
 
     const journalContent = (await readIssueJournalImpl(journalPath)) ?? "";
     const preRunState = record.state;
+    const shouldResumeTurn = shouldResumeAgentTurn({
+      record,
+      agentRunnerCapabilities: agentRunner.capabilities,
+    });
     const sessionLock =
       args.sessionLock ??
-      (record.codex_session_id && agentRunner.capabilities.supportsResume
-        ? await args.acquireSessionLock(record.codex_session_id)
+      (shouldResumeTurn
+        ? await args.acquireSessionLock(record.codex_session_id!)
         : null);
     if (sessionLock && !sessionLock.acquired) {
       return {
@@ -277,28 +282,8 @@ export async function executeCodexTurnPhase(
         agentRunnerCapabilities: agentRunner.capabilities,
       });
       record = preparedTurn.record;
-      const { prompt, reviewThreadsToProcess } = preparedTurn;
-
-      const turnRequest =
-        record.codex_session_id && agentRunner.capabilities.supportsResume
-          ? {
-              kind: "resume" as const,
-              sessionId: record.codex_session_id,
-              config,
-              workspacePath,
-              prompt,
-              state: record.state,
-              record,
-            }
-          : {
-              kind: "start" as const,
-              config,
-              workspacePath,
-              prompt,
-              state: record.state,
-              record,
-            };
-      const turnResult = await agentRunner.runTurn(turnRequest);
+      const { turnContext, reviewThreadsToProcess } = preparedTurn;
+      const turnResult = await agentRunner.runTurn(turnContext);
       const structuredResult = agentRunner.capabilities.supportsStructuredResult ? turnResult.structuredResult : null;
       const hintedState = structuredResult?.stateHint ?? null;
       const hintedBlockedReason = structuredResult?.blockedReason ?? null;

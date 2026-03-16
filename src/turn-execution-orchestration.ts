@@ -1,7 +1,5 @@
 import path from "node:path";
 import {
-  buildCodexPrompt,
-  buildCodexResumePrompt,
   shouldUseCompactResumePrompt,
 } from "./codex";
 import {
@@ -29,6 +27,7 @@ import {
   SupervisorStateFile,
 } from "./core/types";
 import type { AgentRunnerCapabilities } from "./supervisor/agent-runner";
+import type { AgentTurnContext } from "./supervisor/agent-runner";
 import { truncate } from "./core/utils";
 
 function shouldLoadExternalReviewContext(args: {
@@ -68,6 +67,17 @@ export function selectReviewThreadsForTurn(args: {
   return args.reviewThreads.filter((thread) => !hasProcessedReviewThread(args.record, currentPr, thread));
 }
 
+export function shouldResumeAgentTurn(args: {
+  record: Pick<IssueRunRecord, "codex_session_id" | "state">;
+  agentRunnerCapabilities?: Pick<AgentRunnerCapabilities, "supportsResume">;
+}): args is {
+  record: Pick<IssueRunRecord, "codex_session_id" | "state"> & { codex_session_id: string };
+  agentRunnerCapabilities?: Pick<AgentRunnerCapabilities, "supportsResume">;
+} {
+  const canResume = args.agentRunnerCapabilities?.supportsResume ?? true;
+  return Boolean(args.record.codex_session_id) && canResume && shouldUseCompactResumePrompt(args.record.state);
+}
+
 export async function prepareCodexTurnPrompt(args: {
   config: SupervisorConfig;
   stateStore: Pick<StateStore, "touch" | "save">;
@@ -88,7 +98,7 @@ export async function prepareCodexTurnPrompt(args: {
   agentRunnerCapabilities?: Pick<AgentRunnerCapabilities, "supportsResume">;
 }): Promise<{
   record: IssueRunRecord;
-  prompt: string;
+  turnContext: AgentTurnContext;
   reviewThreadsToProcess: ReviewThread[];
 }> {
   const reviewThreadsToProcess = selectReviewThreadsForTurn({
@@ -140,43 +150,46 @@ export async function prepareCodexTurnPrompt(args: {
     syncJournal: args.syncJournal,
   });
 
-  const canResume = args.agentRunnerCapabilities?.supportsResume ?? true;
-  const prompt = record.codex_session_id && canResume && shouldUseCompactResumePrompt(record.state)
-    ? buildCodexResumePrompt({
-        repoSlug: args.config.repoSlug,
-        issue: args.issue,
-        branch: record.branch,
-        workspacePath: args.workspacePath,
-        state: record.state,
-        journalPath: args.journalPath,
-        journalExcerpt: truncate(args.journalContent, 5000),
-        failureContext: record.last_failure_context,
-        previousSummary: args.previousCodexSummary,
-        previousError: args.previousError,
-      })
-    : buildCodexPrompt({
-        repoSlug: args.config.repoSlug,
-        issue: args.issue,
-        branch: record.branch,
-        workspacePath: args.workspacePath,
-        state: record.state,
-        pr: args.pr,
-        checks: args.checks,
-        reviewThreads: reviewThreadsToProcess,
-        journalPath: args.journalPath,
-        journalExcerpt: truncate(args.journalContent, 5000),
-        failureContext: record.last_failure_context,
-        previousSummary: args.previousCodexSummary,
-        previousError: args.previousError,
-        alwaysReadFiles: args.memoryArtifacts.alwaysReadFiles,
-        onDemandMemoryFiles: args.memoryArtifacts.onDemandFiles,
-        gsdEnabled: args.config.gsdEnabled,
-        gsdPlanningFiles: args.config.gsdPlanningFiles,
-        localReviewRepairContext,
-        externalReviewMissContext,
-      });
+  const commonTurnContext = {
+    config: args.config,
+    workspacePath: args.workspacePath,
+    state: record.state,
+    record,
+    repoSlug: args.config.repoSlug,
+    issue: args.issue,
+    branch: record.branch,
+    journalPath: args.journalPath,
+    journalExcerpt: truncate(args.journalContent, 5000),
+    failureContext: record.last_failure_context,
+    previousSummary: args.previousCodexSummary,
+    previousError: args.previousError,
+  };
+  const shouldResumeTurn = shouldResumeAgentTurn({
+    record,
+    agentRunnerCapabilities: args.agentRunnerCapabilities,
+  });
+  const turnContext =
+    shouldResumeTurn
+      ? {
+          ...commonTurnContext,
+          kind: "resume" as const,
+          sessionId: record.codex_session_id!,
+        }
+      : {
+          ...commonTurnContext,
+          kind: "start" as const,
+          pr: args.pr,
+          checks: args.checks,
+          reviewThreads: reviewThreadsToProcess,
+          alwaysReadFiles: args.memoryArtifacts.alwaysReadFiles,
+          onDemandMemoryFiles: args.memoryArtifacts.onDemandFiles,
+          gsdEnabled: args.config.gsdEnabled,
+          gsdPlanningFiles: args.config.gsdPlanningFiles,
+          localReviewRepairContext,
+          externalReviewMissContext,
+        };
 
-  return { record, prompt, reviewThreadsToProcess };
+  return { record, turnContext, reviewThreadsToProcess };
 }
 
 export function nextProcessedReviewThreadPatch(args: {

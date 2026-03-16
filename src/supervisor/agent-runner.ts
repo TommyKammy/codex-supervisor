@@ -1,8 +1,28 @@
-import { extractBlockedReason, extractFailureSignature, extractStateHint, runCodexTurn } from "../codex";
+import {
+  buildCodexPrompt,
+  buildCodexResumePrompt,
+  extractBlockedReason,
+  extractFailureSignature,
+  extractStateHint,
+  LocalReviewRepairContext,
+  runCodexTurn,
+} from "../codex";
 import { truncate } from "../core/utils";
-import type { BlockedReason, FailureKind, FailureContext, IssueRunRecord, RunState, SupervisorConfig } from "../core/types";
+import type {
+  BlockedReason,
+  FailureContext,
+  FailureKind,
+  GitHubIssue,
+  GitHubPullRequest,
+  IssueRunRecord,
+  PullRequestCheck,
+  ReviewThread,
+  RunState,
+  SupervisorConfig,
+} from "../core/types";
 import { buildCodexFailureContext, classifyFailure } from "./supervisor-failure-helpers";
 import { basename } from "node:path";
+import type { ExternalReviewMissContext } from "../external-review/external-review-misses";
 
 export interface AgentRunnerCapabilities {
   supportsResume: boolean;
@@ -12,24 +32,41 @@ export interface AgentRunnerCapabilities {
 interface AgentRunnerBaseRequest {
   config: SupervisorConfig;
   workspacePath: string;
-  prompt: string;
   state: RunState;
   record?: Pick<
     IssueRunRecord,
     "repeated_failure_signature_count" | "blocked_verification_retry_count" | "timeout_retry_count"
   > | null;
+  repoSlug: string;
+  issue: GitHubIssue;
+  branch: string;
+  journalPath: string;
+  journalExcerpt?: string | null;
+  failureContext?: FailureContext | null;
+  previousSummary?: string | null;
+  previousError?: string | null;
 }
 
-export interface StartAgentTurnRequest extends AgentRunnerBaseRequest {
+export interface StartAgentTurnContext extends AgentRunnerBaseRequest {
   kind: "start";
+  pr: GitHubPullRequest | null;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  alwaysReadFiles: string[];
+  onDemandMemoryFiles: string[];
+  gsdEnabled?: boolean;
+  gsdPlanningFiles?: string[];
+  localReviewRepairContext?: LocalReviewRepairContext | null;
+  externalReviewMissContext?: ExternalReviewMissContext | null;
 }
 
-export interface ResumeAgentTurnRequest extends AgentRunnerBaseRequest {
+export interface ResumeAgentTurnContext extends AgentRunnerBaseRequest {
   kind: "resume";
   sessionId: string;
 }
 
-export type AgentTurnRequest = StartAgentTurnRequest | ResumeAgentTurnRequest;
+export type AgentTurnContext = StartAgentTurnContext | ResumeAgentTurnContext;
+export type AgentTurnRequest = AgentTurnContext;
 
 export interface AgentTurnStructuredResult {
   summary: string;
@@ -53,7 +90,7 @@ export interface AgentTurnResult {
 
 export interface AgentRunner {
   readonly capabilities: AgentRunnerCapabilities;
-  runTurn(request: AgentTurnRequest): Promise<AgentTurnResult>;
+  runTurn(context: AgentTurnContext): Promise<AgentTurnResult>;
 }
 
 export interface CreateCodexAgentRunnerOptions {
@@ -125,6 +162,45 @@ function buildCodexExitFailureContext(
   );
 }
 
+function buildCodexPromptForTurn(context: AgentTurnContext): string {
+  if (context.kind === "resume") {
+    return buildCodexResumePrompt({
+      repoSlug: context.repoSlug,
+      issue: context.issue,
+      branch: context.branch,
+      workspacePath: context.workspacePath,
+      state: context.state,
+      journalPath: context.journalPath,
+      journalExcerpt: context.journalExcerpt,
+      failureContext: context.failureContext,
+      previousSummary: context.previousSummary,
+      previousError: context.previousError,
+    });
+  }
+
+  return buildCodexPrompt({
+    repoSlug: context.repoSlug,
+    issue: context.issue,
+    branch: context.branch,
+    workspacePath: context.workspacePath,
+    state: context.state,
+    pr: context.pr,
+    checks: context.checks,
+    reviewThreads: context.reviewThreads,
+    alwaysReadFiles: context.alwaysReadFiles,
+    onDemandMemoryFiles: context.onDemandMemoryFiles,
+    gsdEnabled: context.gsdEnabled,
+    gsdPlanningFiles: context.gsdPlanningFiles,
+    journalPath: context.journalPath,
+    journalExcerpt: context.journalExcerpt,
+    failureContext: context.failureContext,
+    previousSummary: context.previousSummary,
+    previousError: context.previousError,
+    localReviewRepairContext: context.localReviewRepairContext,
+    externalReviewMissContext: context.externalReviewMissContext,
+  });
+}
+
 export function createCodexAgentRunner(options: CreateCodexAgentRunnerOptions = {}): AgentRunner {
   const runCodexTurnImpl = options.runCodexTurnImpl ?? runCodexTurn;
   const classifyFailureImpl = options.classifyFailureImpl ?? classifyFailure;
@@ -133,15 +209,16 @@ export function createCodexAgentRunner(options: CreateCodexAgentRunnerOptions = 
 
   return {
     capabilities,
-    async runTurn(request): Promise<AgentTurnResult> {
+    async runTurn(context): Promise<AgentTurnResult> {
       try {
+        const prompt = buildCodexPromptForTurn(context);
         const result = await runCodexTurnImpl(
-          request.config,
-          request.workspacePath,
-          request.prompt,
-          request.state,
-          request.record,
-          request.kind === "resume" ? request.sessionId : undefined,
+          context.config,
+          context.workspacePath,
+          prompt,
+          context.state,
+          context.record,
+          context.kind === "resume" ? context.sessionId : undefined,
         );
         const structuredResult = parseAgentTurnStructuredResult(result.lastMessage);
         const failureKind: FailureKind = result.exitCode === 0 ? null : "codex_exit";
@@ -168,7 +245,7 @@ export function createCodexAgentRunner(options: CreateCodexAgentRunnerOptions = 
         const message = error instanceof Error ? error.stack ?? error.message : String(error);
         return {
           exitCode: 1,
-          sessionId: request.kind === "resume" ? request.sessionId : null,
+          sessionId: context.kind === "resume" ? context.sessionId : null,
           supervisorMessage: "",
           stderr: message,
           stdout: "",

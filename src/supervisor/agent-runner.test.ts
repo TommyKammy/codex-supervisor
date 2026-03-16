@@ -1,14 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { BlockedReason, FailureKind, RunState, SupervisorConfig } from "../core/types";
+import type {
+  BlockedReason,
+  FailureContext,
+  FailureKind,
+  GitHubIssue,
+  GitHubPullRequest,
+  PullRequestCheck,
+  ReviewThread,
+  RunState,
+  SupervisorConfig,
+} from "../core/types";
 import type {
   AgentRunner,
   AgentRunnerCapabilities,
-  AgentTurnRequest,
+  AgentTurnContext,
   AgentTurnResult,
   AgentTurnStructuredResult,
-  ResumeAgentTurnRequest,
-  StartAgentTurnRequest,
+  ResumeAgentTurnContext,
+  StartAgentTurnContext,
 } from "./agent-runner";
 import { createCodexAgentRunner, detectCodexCliCapabilities } from "./agent-runner";
 
@@ -105,7 +115,7 @@ test("agent runner contract normalizes start and resume turn requests", async ()
     supportsStructuredResult: true,
   };
   const config = createConfig();
-  const seenRequests: AgentTurnRequest[] = [];
+  const seenRequests: AgentTurnContext[] = [];
 
   const runner: AgentRunner = {
     capabilities,
@@ -117,26 +127,107 @@ test("agent runner contract normalizes start and resume turn requests", async ()
     },
   };
 
-  const startRequest: StartAgentTurnRequest = {
+  const issue: GitHubIssue = {
+    number: 102,
+    title: "Normalize the shared agent turn context",
+    body: "## Summary\nUse the normalized supervisor-facing input shape.",
+    createdAt: "2026-03-16T00:00:00Z",
+    updatedAt: "2026-03-16T00:00:00Z",
+    url: "https://example.test/issues/102",
+  };
+  const pr: GitHubPullRequest = {
+    number: 116,
+    title: "Normalize the shared agent turn context",
+    url: "https://example.test/pull/116",
+    state: "OPEN",
+    createdAt: "2026-03-16T00:00:00Z",
+    isDraft: true,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "DIRTY",
+    headRefName: "codex/issue-102",
+    headRefOid: "head-123",
+  };
+  const checks: PullRequestCheck[] = [
+    {
+      name: "build",
+      state: "SUCCESS",
+      bucket: "pass",
+    },
+  ];
+  const reviewThreads: ReviewThread[] = [
+    {
+      id: "thread-1",
+      isResolved: false,
+      isOutdated: false,
+      path: "src/index.ts",
+      line: 12,
+      comments: {
+        nodes: [
+          {
+            id: "comment-1",
+            body: "Please tighten the contract.",
+            createdAt: "2026-03-16T00:00:00Z",
+            url: "https://example.test/pull/116#discussion_r1",
+            author: {
+              login: "copilot-pull-request-reviewer",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    },
+  ];
+  const failureContext: FailureContext = {
+    category: "codex",
+    summary: "Previous run exited non-zero.",
+    signature: "codex-exit",
+    command: "codex exec",
+    details: ["non-zero exit code"],
+    url: null,
+    updated_at: "2026-03-16T00:00:00Z",
+  };
+
+  const startRequest: StartAgentTurnContext = {
     kind: "start",
     config,
     workspacePath: "/tmp/workspace",
-    prompt: "Investigate the failing path.",
     state: "reproducing",
     record: {
       repeated_failure_signature_count: 0,
       blocked_verification_retry_count: 0,
       timeout_retry_count: 0,
     },
+    repoSlug: config.repoSlug,
+    issue,
+    branch: "codex/issue-102",
+    pr,
+    checks,
+    reviewThreads,
+    alwaysReadFiles: ["/tmp/AGENTS.generated.md"],
+    onDemandMemoryFiles: ["/tmp/README.md"],
+    journalPath: "/tmp/workspace/.codex-supervisor/issue-journal.md",
+    journalExcerpt: "## Codex Working Notes\n### Current Handoff\n- Hypothesis: tighten the contract.\n",
+    failureContext,
+    previousSummary: "Prior attempt reproduced the mismatch.",
+    previousError: "resume unsupported",
+    gsdEnabled: false,
+    gsdPlanningFiles: [],
   };
-  const resumeRequest: ResumeAgentTurnRequest = {
+  const resumeRequest: ResumeAgentTurnContext = {
     kind: "resume",
     config,
     workspacePath: "/tmp/workspace",
-    prompt: "Continue from the previous session.",
     state: "implementing",
     sessionId: "session-123",
     record: null,
+    repoSlug: config.repoSlug,
+    issue,
+    branch: "codex/issue-102",
+    journalPath: "/tmp/workspace/.codex-supervisor/issue-journal.md",
+    journalExcerpt: "## Codex Working Notes\n### Current Handoff\n- Next exact step: continue.\n",
+    failureContext,
+    previousSummary: "Prior attempt reproduced the mismatch.",
+    previousError: "resume unsupported",
   };
 
   const startResult = await runner.runTurn(startRequest);
@@ -179,8 +270,28 @@ test("agent turn result supports both parsed and raw supervisor output", () => {
   assert.equal(parsedResult.structuredResult?.failureSignature, "missing-test");
 });
 
-test("createCodexAgentRunner adapts start and resume requests to Codex CLI turns", async () => {
+test("createCodexAgentRunner adapts normalized start and resume turn contexts to Codex CLI turns", async () => {
   const config = createConfig();
+  const issue: GitHubIssue = {
+    number: 102,
+    title: "Normalize the shared agent turn context",
+    body: "## Summary\nUse the normalized supervisor-facing input shape.",
+    createdAt: "2026-03-16T00:00:00Z",
+    updatedAt: "2026-03-16T00:00:00Z",
+    url: "https://example.test/issues/102",
+  };
+  const pr: GitHubPullRequest = {
+    number: 116,
+    title: "Normalize the shared agent turn context",
+    url: "https://example.test/pull/116",
+    state: "OPEN",
+    createdAt: "2026-03-16T00:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    headRefName: "codex/issue-102",
+    headRefOid: "head-123",
+  };
   const seenCalls: Array<{
     workspacePath: string;
     prompt: string;
@@ -225,46 +336,69 @@ test("createCodexAgentRunner adapts start and resume requests to Codex CLI turns
     kind: "start",
     config,
     workspacePath: "/tmp/workspace",
-    prompt: "Investigate the failing path.",
     state: "reproducing",
     record: {
       repeated_failure_signature_count: 0,
       blocked_verification_retry_count: 0,
       timeout_retry_count: 0,
     },
+    repoSlug: config.repoSlug,
+    issue,
+    branch: "codex/issue-102",
+    pr,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: ["/tmp/AGENTS.generated.md"],
+    onDemandMemoryFiles: ["/tmp/README.md"],
+    journalPath: "/tmp/workspace/.codex-supervisor/issue-journal.md",
+    journalExcerpt: "## Codex Working Notes\n### Current Handoff\n- Hypothesis: use the new context.\n",
+    failureContext: null,
+    previousSummary: null,
+    previousError: null,
+    gsdEnabled: false,
+    gsdPlanningFiles: [],
   });
   const resumeResult = await runner.runTurn({
     kind: "resume",
     config,
     workspacePath: "/tmp/workspace",
-    prompt: "Continue from the previous session.",
     state: "implementing",
     sessionId: "session-123",
     record: null,
+    repoSlug: config.repoSlug,
+    issue,
+    branch: "codex/issue-102",
+    journalPath: "/tmp/workspace/.codex-supervisor/issue-journal.md",
+    journalExcerpt: [
+      "## Codex Working Notes",
+      "### Current Handoff",
+      "- What changed: agent turn context reached the runner.",
+      "- Next exact step: continue from the saved session.",
+    ].join("\n"),
+    failureContext: null,
+    previousSummary: "agent turn context reached the runner",
+    previousError: null,
   });
 
   assert.equal(runner.capabilities.supportsResume, true);
   assert.equal(runner.capabilities.supportsStructuredResult, true);
-  assert.deepEqual(seenCalls, [
-    {
-      workspacePath: "/tmp/workspace",
-      prompt: "Investigate the failing path.",
-      state: "reproducing",
-      record: {
-        repeated_failure_signature_count: 0,
-        blocked_verification_retry_count: 0,
-        timeout_retry_count: 0,
-      },
-      sessionId: undefined,
-    },
-    {
-      workspacePath: "/tmp/workspace",
-      prompt: "Continue from the previous session.",
-      state: "implementing",
-      record: null,
-      sessionId: "session-123",
-    },
-  ]);
+  assert.equal(seenCalls.length, 2);
+  assert.equal(seenCalls[0]?.workspacePath, "/tmp/workspace");
+  assert.equal(seenCalls[0]?.state, "reproducing");
+  assert.deepEqual(seenCalls[0]?.record, {
+    repeated_failure_signature_count: 0,
+    blocked_verification_retry_count: 0,
+    timeout_retry_count: 0,
+  });
+  assert.equal(seenCalls[0]?.sessionId, undefined);
+  assert.equal(seenCalls[1]?.workspacePath, "/tmp/workspace");
+  assert.equal(seenCalls[1]?.state, "implementing");
+  assert.equal(seenCalls[1]?.record, null);
+  assert.equal(seenCalls[1]?.sessionId, "session-123");
+  assert.match(seenCalls[0]!.prompt, /Current issue: #102 Normalize the shared agent turn context/);
+  assert.match(seenCalls[0]!.prompt, /Use the normalized supervisor-facing input shape\./);
+  assert.match(seenCalls[1]!.prompt, /Resume only from the current durable state below\./);
+  assert.match(seenCalls[1]!.prompt, /agent turn context reached the runner/);
   assert.equal(startResult.sessionId, "session-new");
   assert.equal(startResult.failureKind, null);
   assert.equal(startResult.structuredResult?.summary, "Codex adapter result");
@@ -290,9 +424,28 @@ test("createCodexAgentRunner normalizes Codex execution errors into the shared f
     kind: "start",
     config: createConfig(),
     workspacePath: "/tmp/workspace",
-    prompt: "Retry the focused verification command.",
     state: "repairing_ci",
     record: null,
+    repoSlug: "owner/repo",
+    issue: {
+      number: 102,
+      title: "Normalize the shared agent turn context",
+      body: "",
+      createdAt: "2026-03-16T00:00:00Z",
+      updatedAt: "2026-03-16T00:00:00Z",
+      url: "https://example.test/issues/102",
+    },
+    branch: "codex/issue-102",
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspace/.codex-supervisor/issue-journal.md",
+    journalExcerpt: null,
+    failureContext: null,
+    previousSummary: null,
+    previousError: null,
   });
 
   assert.equal(result.exitCode, 1);
