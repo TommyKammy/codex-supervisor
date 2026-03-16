@@ -522,7 +522,7 @@ export function buildCodexResumePrompt(input: BuildCodexResumePromptInput): stri
 }
 
 function isAgentTurnContext(input: BuildCodexStartPromptInput | AgentTurnContext): input is AgentTurnContext {
-  return "kind" in input;
+  return "kind" in input && "config" in input && typeof input.config === "object" && input.config !== null;
 }
 
 function isResumeTurnContext(input: AgentTurnContext): input is ResumeAgentTurnContext {
