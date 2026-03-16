@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   configuredReviewProviderKinds,
   mapConfiguredReviewProviders,
+  reviewProviderWaitPolicyFromConfig,
   reviewProviderProfileFromConfig,
 } from "./review-providers";
 import { SupervisorConfig } from "./types";
@@ -160,5 +161,54 @@ test("configuredReviewProviderKinds reports the normalized kinds in config order
       createConfig({ reviewBotLogins: ["CodeRabbitAI", "coderabbitai[bot]", "chatgpt-codex-connector"] }),
     ),
     ["coderabbit", "codex"],
+  );
+});
+
+test("reviewProviderWaitPolicyFromConfig normalizes wait and timeout behavior behind the provider model", () => {
+  assert.deepEqual(reviewProviderWaitPolicyFromConfig(createConfig()), {
+    botLabel: "configured review bot",
+    shouldWaitForRequestedReviewSignal: false,
+    shouldWaitForRequestPropagation: false,
+    shouldTrackRequestedState: false,
+    shouldApplyRequestedReviewTimeout: false,
+    shouldApplyRateLimitCooldown: false,
+  });
+
+  assert.deepEqual(
+    reviewProviderWaitPolicyFromConfig(createConfig({ reviewBotLogins: ["copilot-pull-request-reviewer"] })),
+    {
+      botLabel: "Copilot",
+      shouldWaitForRequestedReviewSignal: true,
+      shouldWaitForRequestPropagation: true,
+      shouldTrackRequestedState: true,
+      shouldApplyRequestedReviewTimeout: true,
+      shouldApplyRateLimitCooldown: true,
+    },
+  );
+
+  assert.deepEqual(
+    reviewProviderWaitPolicyFromConfig(createConfig({ reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"] })),
+    {
+      botLabel: "configured review bots (coderabbitai, coderabbitai[bot])",
+      shouldWaitForRequestedReviewSignal: true,
+      shouldWaitForRequestPropagation: false,
+      shouldTrackRequestedState: false,
+      shouldApplyRequestedReviewTimeout: false,
+      shouldApplyRateLimitCooldown: true,
+    },
+  );
+
+  assert.deepEqual(
+    reviewProviderWaitPolicyFromConfig(
+      createConfig({ reviewBotLogins: ["chatgpt-codex-connector", "copilot-pull-request-reviewer"] }),
+    ),
+    {
+      botLabel: "configured review bots (chatgpt-codex-connector, copilot-pull-request-reviewer)",
+      shouldWaitForRequestedReviewSignal: true,
+      shouldWaitForRequestPropagation: true,
+      shouldTrackRequestedState: true,
+      shouldApplyRequestedReviewTimeout: true,
+      shouldApplyRateLimitCooldown: true,
+    },
   );
 });
