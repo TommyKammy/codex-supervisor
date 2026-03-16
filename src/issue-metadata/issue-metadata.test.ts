@@ -6,7 +6,7 @@ import {
   lintExecutionReadyIssueBody,
   parseIssueMetadata,
 } from "./issue-metadata";
-import { GitHubIssue } from "./types";
+import { GitHubIssue } from "../types";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return {
@@ -101,7 +101,7 @@ Execution order: 1 of 4
 - invalid issues report missing metadata
 
 ## Verification
-- npm test -- src/issue-metadata.test.ts`,
+- npm test -- src/issue-metadata/issue-metadata.test.ts`,
   });
 
   assert.deepEqual(lintExecutionReadyIssueBody(issue), {
@@ -165,7 +165,7 @@ Improve execution-ready issue guidance.
 - issue guidance is updated
 
 ## Verification
-- \`npx tsx --test src/issue-metadata.test.ts\``,
+- \`npx tsx --test src/issue-metadata/issue-metadata.test.ts\``,
   });
 
   assert.deepEqual(lintExecutionReadyIssueBody(issue), {
@@ -191,7 +191,7 @@ Improve execution-ready issue guidance.
 
 ## Verification
 - run tests
-- \`npx tsx --test src/issue-metadata.test.ts\``,
+- \`npx tsx --test src/issue-metadata/issue-metadata.test.ts\``,
   });
 
   assert.deepEqual(lintExecutionReadyIssueBody(issue), {
@@ -214,7 +214,7 @@ test("lintExecutionReadyIssueBody treats ##Heading without a space as the next s
 - summary is still missing
 
 ## Verification
-- npx tsx --test src/issue-metadata.test.ts`,
+- npx tsx --test src/issue-metadata/issue-metadata.test.ts`,
   });
 
   assert.deepEqual(lintExecutionReadyIssueBody(issue), {
@@ -239,7 +239,7 @@ Rotate production auth tokens for service-to-service traffic.
 - production authentication changes are fully implemented
 
 ## Verification
-- npm test -- src/issue-metadata.test.ts`,
+- npm test -- src/issue-metadata/issue-metadata.test.ts`,
   });
 
   assert.deepEqual(lintExecutionReadyIssueBody(issue), {
@@ -266,7 +266,7 @@ Risky change approval: billing
 - billing retry handling is updated
 
 ## Verification
-- npm test -- src/issue-metadata.test.ts`,
+- npm test -- src/issue-metadata/issue-metadata.test.ts`,
   });
 
   assert.deepEqual(lintExecutionReadyIssueBody(issue), {
@@ -293,7 +293,7 @@ This issue is explicitly approved for ci changes.
 - workflow cache behavior is updated
 
 ## Verification
-- npm test -- src/issue-metadata.test.ts`,
+- npm test -- src/issue-metadata/issue-metadata.test.ts`,
   });
 
   assert.deepEqual(lintExecutionReadyIssueBody(issue), {
@@ -318,7 +318,7 @@ Document CLI-first workflows for operator handoffs.
 - issue prose mentioning workflows alone remains execution-ready
 
 ## Verification
-- npm test -- src/issue-metadata.test.ts`,
+- npm test -- src/issue-metadata/issue-metadata.test.ts`,
   });
 
   assert.deepEqual(lintExecutionReadyIssueBody(issue), {
@@ -343,7 +343,7 @@ Update .github/workflows/ci.yml to use narrower cache restore keys.
 - GitHub workflow path changes still require CI opt-in
 
 ## Verification
-- npm test -- src/issue-metadata.test.ts`,
+- npm test -- src/issue-metadata/issue-metadata.test.ts`,
   });
 
   assert.deepEqual(lintExecutionReadyIssueBody(issue), {
@@ -368,7 +368,7 @@ Update .GITHUB/WORKFLOWS/CI.YML to use narrower cache restore keys.
 - mixed-case GitHub workflow paths still require CI opt-in
 
 ## Verification
-- npm test -- src/issue-metadata.test.ts`,
+- npm test -- src/issue-metadata/issue-metadata.test.ts`,
   });
 
   assert.deepEqual(lintExecutionReadyIssueBody(issue), {
@@ -395,7 +395,7 @@ Touches: secrets
 - rollout notes are refreshed
 
 ## Verification
-- npm test -- src/issue-metadata.test.ts`,
+- npm test -- src/issue-metadata/issue-metadata.test.ts`,
   });
 
   assert.deepEqual(lintExecutionReadyIssueBody(issue), {
@@ -420,7 +420,7 @@ Rotate production auth tokens for service-to-service traffic.
 - production authentication changes are fully implemented
 
 ## Verification
-- npm test -- src/issue-metadata.test.ts`,
+- npm test -- src/issue-metadata/issue-metadata.test.ts`,
   });
 
   assert.equal(findHighRiskBlockingAmbiguity(issue), null);
@@ -439,7 +439,7 @@ Decide whether to keep the current production auth token flow or replace it befo
 - the operator confirms which auth flow should ship
 
 ## Verification
-- npm test -- src/issue-metadata.test.ts`,
+- npm test -- src/issue-metadata/issue-metadata.test.ts`,
   });
 
   assert.deepEqual(findHighRiskBlockingAmbiguity(issue), {

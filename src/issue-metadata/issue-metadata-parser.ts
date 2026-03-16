@@ -1,4 +1,4 @@
-import type { GitHubIssue } from "./types";
+import type { GitHubIssue } from "../types";
 import type { IssueMetadata } from "./issue-metadata";
 import type { RiskyChangeClass } from "./issue-metadata-risky-policy";
 

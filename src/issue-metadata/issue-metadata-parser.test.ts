@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseIssueMetadata } from "./issue-metadata-parser";
-import { GitHubIssue } from "./types";
+import { GitHubIssue } from "../types";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return {
@@ -21,7 +21,7 @@ test("parseIssueMetadata preserves dependency and normalization behavior", () =>
     body: `Part of: #123
 Depends on: #45, #67, #45, ignored, #0
 Parallel group: parser-refactor
-Touches: src/issue-metadata.ts, src/supervisor.ts
+Touches: src/issue-metadata/issue-metadata.ts, src/supervisor.ts
 
 ## Execution order
 2 of 3`,
@@ -33,6 +33,6 @@ Touches: src/issue-metadata.ts, src/supervisor.ts
     executionOrderTotal: 3,
     dependsOn: [45, 67],
     parallelGroup: "parser-refactor",
-    touches: ["src/issue-metadata.ts", "src/supervisor.ts"],
+    touches: ["src/issue-metadata/issue-metadata.ts", "src/supervisor.ts"],
   });
 });

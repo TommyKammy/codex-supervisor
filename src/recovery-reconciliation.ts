@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import { findHighRiskBlockingAmbiguity, findParentIssuesReadyToClose, lintExecutionReadyIssueBody } from "./issue-metadata";
+import {
+  findHighRiskBlockingAmbiguity,
+  findParentIssuesReadyToClose,
+  lintExecutionReadyIssueBody,
+} from "./issue-metadata";
 import { inspectFileLock } from "./lock";
 import { RecoveryEvent } from "./run-once-cycle-prelude";
 import { StateStore } from "./state-store";

@@ -4,7 +4,7 @@ import {
   detectRiskyChangeClasses,
   parseRiskyChangeApprovalList,
 } from "./issue-metadata-risky-policy";
-import { GitHubIssue } from "./types";
+import { GitHubIssue } from "../types";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return {
@@ -49,7 +49,7 @@ Touches: .github/workflows/ci.yml, secrets
 - rollout notes mention the current release plan
 
 ## Verification
-- npm test -- src/issue-metadata-risky-policy.test.ts`,
+- npm test -- src/issue-metadata/issue-metadata-risky-policy.test.ts`,
   });
 
   assert.deepEqual(detectRiskyChangeClasses(issue), ["ci", "secrets"]);

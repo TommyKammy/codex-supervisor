@@ -1,4 +1,4 @@
-import { GitHubIssue, SupervisorStateFile } from "./types";
+import { GitHubIssue, SupervisorStateFile } from "../types";
 import { parseIssueMetadata } from "./issue-metadata-parser";
 
 export { parseIssueMetadata } from "./issue-metadata-parser";

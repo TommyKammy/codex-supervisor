@@ -4,7 +4,7 @@ import {
   findHighRiskBlockingAmbiguity,
   lintExecutionReadyIssueBody,
 } from "./issue-metadata-gates";
-import { GitHubIssue } from "./types";
+import { GitHubIssue } from "../types";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return {
@@ -36,7 +36,7 @@ Execution order: 1 of 4
 - invalid issues report missing metadata
 
 ## Verification
-- npm test -- src/issue-metadata-gates.test.ts`,
+- npm test -- src/issue-metadata/issue-metadata-gates.test.ts`,
   });
 
   assert.deepEqual(lintExecutionReadyIssueBody(issue), {
@@ -61,7 +61,7 @@ Decide whether to keep the current production auth token flow or replace it befo
 - the operator confirms which auth flow should ship
 
 ## Verification
-- npm test -- src/issue-metadata-gates.test.ts`,
+- npm test -- src/issue-metadata/issue-metadata-gates.test.ts`,
   });
 
   assert.deepEqual(findHighRiskBlockingAmbiguity(issue), {
@@ -85,7 +85,7 @@ Pick up the auth token from headers and select the role column during permission
 - auth token parsing and permissions lookup are implemented
 
 ## Verification
-- npm test -- src/issue-metadata-gates.test.ts`,
+- npm test -- src/issue-metadata/issue-metadata-gates.test.ts`,
   });
 
   assert.equal(findHighRiskBlockingAmbiguity(issue), null);
