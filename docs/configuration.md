@@ -4,7 +4,7 @@ This guide holds the setup and reference material that used to make the root `RE
 
 ## Base Setup
 
-Start from [supervisor.config.example.json](../supervisor.config.example.json), then choose the provider profile that matches your review flow:
+Start from [supervisor.config.example.json](../supervisor.config.example.json), then choose the review provider profile that matches your review flow:
 
 - [supervisor.config.copilot.json](../supervisor.config.copilot.json)
 - [supervisor.config.codex.json](../supervisor.config.codex.json)

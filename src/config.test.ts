@@ -426,9 +426,12 @@ test("README stays a lightweight landing page with provider profile guidance and
   assert.match(readme, /Copilot profile/i);
   assert.match(readme, /Codex Connector profile/i);
   assert.match(readme, /CodeRabbit profile/i);
+  assert.match(readme, /review provider profile/i);
+  assert.match(readme, /provider-side setup/i);
   assert.match(readme, /supervisor\.config\.copilot\.json/i);
   assert.match(readme, /supervisor\.config\.codex\.json/i);
   assert.match(readme, /supervisor\.config\.coderabbit\.json/i);
+  assert.doesNotMatch(readme, /review-bot profile/i);
   assert.doesNotMatch(readme, /^## Run states$/m);
   assert.doesNotMatch(readme, /^## State backends$/m);
   assert.doesNotMatch(readme, /^## Commands$/m);
@@ -443,6 +446,9 @@ test("getting started links to focused configuration and local review references
   assert.match(gettingStarted, /\[Configuration reference\]\(\.\/configuration\.md\)/i);
   assert.match(gettingStarted, /\[Local review reference\]\(\.\/local-review\.md\)/i);
   assert.match(gettingStarted, /\[Issue metadata reference\]\(\.\/issue-metadata\.md\)/i);
+  assert.match(gettingStarted, /review provider profile/i);
+  assert.match(gettingStarted, /provider-specific review settings/i);
+  assert.doesNotMatch(gettingStarted, /review-bot profile/i);
   assert.doesNotMatch(gettingStarted, /^### Option 1: Auto-detect roles$/m);
   assert.doesNotMatch(gettingStarted, /^### Option 2: Explicit roles$/m);
   assert.doesNotMatch(gettingStarted, /^### What specialist roles are for$/m);
