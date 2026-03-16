@@ -3914,7 +3914,10 @@ test("runOnce marks a clean draft PR ready and enables auto-merge after the turn
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { executeCodexTurn: typeof supervisor["executeCodexTurn"] }).executeCodexTurn = async (context) => ({
     kind: "completed",
-    record: context.record,
+    record: {
+      ...context.record,
+      last_head_sha: "head-113",
+    },
     workspaceStatus: context.workspaceStatus,
     pr: context.pr,
     checks: context.checks,
