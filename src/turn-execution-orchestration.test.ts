@@ -1,0 +1,199 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { nextProcessedReviewThreadPatch, prepareCodexTurnPrompt } from "./turn-execution-orchestration";
+import { SupervisorStateFile } from "./types";
+import {
+  createConfig,
+  createFailureContext,
+  createIssue,
+  createPullRequest,
+  createRecord,
+  createReviewThread,
+} from "./turn-execution-test-helpers";
+
+test("nextProcessedReviewThreadPatch refreshes reprocessed same-head ids to the newest position before trimming", () => {
+  const patch = nextProcessedReviewThreadPatch({
+    preRunState: "addressing_review",
+    record: {
+      processed_review_thread_ids: Array.from({ length: 200 }, (_, index) => `thread-${index}@head-a`),
+      processed_review_thread_fingerprints: Array.from(
+        { length: 200 },
+        (_, index) => `thread-${index}@head-a#comment-${index}`,
+      ),
+    },
+    currentPr: { headRefOid: "head-a" },
+    evaluatedReviewHeadSha: "head-a",
+    reviewThreadsToProcess: [
+      createReviewThread({
+        id: "thread-0",
+        comments: {
+          nodes: [
+            {
+              id: "comment-0",
+              body: "Please address this again.",
+              createdAt: "2026-03-13T06:20:00Z",
+              url: "https://example.test/pr/116#discussion_r0",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.equal(patch.processed_review_thread_ids.length, 200);
+  assert.equal(patch.processed_review_thread_ids[0], "thread-1@head-a");
+  assert.equal(
+    patch.processed_review_thread_ids[patch.processed_review_thread_ids.length - 1],
+    "thread-0@head-a",
+  );
+  assert.equal(patch.processed_review_thread_fingerprints.length, 200);
+  assert.equal(patch.processed_review_thread_fingerprints[0], "thread-1@head-a#comment-1");
+  assert.equal(
+    patch.processed_review_thread_fingerprints[patch.processed_review_thread_fingerprints.length - 1],
+    "thread-0@head-a#comment-0",
+  );
+});
+
+test("prepareCodexTurnPrompt loads local-review repair context for local_review_fix prompts", async () => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "turn-execution-local-review-fix-"));
+  const reviewDir = path.join(workspaceDir, "reviews");
+  const summaryPath = path.join(reviewDir, "head-deadbeef.md");
+  const findingsPath = path.join(reviewDir, "head-deadbeef.json");
+
+  await fs.mkdir(reviewDir, { recursive: true });
+  await fs.writeFile(summaryPath, "# summary\n", "utf8");
+  await fs.writeFile(
+    findingsPath,
+    JSON.stringify({
+      actionableFindings: [{ file: "src/auth.ts" }],
+      rootCauseSummaries: [
+        {
+          severity: "high",
+          summary: "Permission guard retry path is fragile",
+          file: "src/auth.ts",
+          start: 40,
+          end: 44,
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "local_review_fix",
+        local_review_summary_path: summaryPath,
+        last_failure_context: createFailureContext("Active local-review blocker."),
+      }),
+    },
+  };
+
+  try {
+    const prepared = await prepareCodexTurnPrompt({
+      config: createConfig(),
+      stateStore: {
+        touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+        save: async () => undefined,
+      },
+      state,
+      record: state.issues["102"]!,
+      issue: createIssue({ title: "Repair local review context loading" }),
+      previousCodexSummary: null,
+      previousError: null,
+      workspacePath: workspaceDir,
+      journalPath: path.join(workspaceDir, ".codex-supervisor", "issue-journal.md"),
+      journalContent: [
+        "## Codex Working Notes",
+        "### Current Handoff",
+        "- Hypothesis: local-review repair context should reach the prompt.",
+      ].join("\n"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        contextIndexPath: path.join(workspaceDir, "context-index.md"),
+        agentsPath: path.join(workspaceDir, "AGENTS.generated.md"),
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+      },
+      pr: null,
+      checks: [],
+      reviewThreads: [],
+      github: {
+        getExternalReviewSurface: async () => {
+          throw new Error("unexpected getExternalReviewSurface call");
+        },
+      },
+    });
+
+    assert.match(prepared.prompt, /Active local-review repair context:/);
+    assert.match(prepared.prompt, /Permission guard retry path is fragile/);
+    assert.match(prepared.prompt, /file=src\/auth\.ts lines=40-44/);
+  } finally {
+    await fs.rm(workspaceDir, { recursive: true, force: true });
+  }
+});
+
+test("prepareCodexTurnPrompt clears stale external-review miss state when review processing no longer applies", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "local_review_fix",
+        external_review_head_sha: "oldhead",
+        external_review_misses_path: "/tmp/reviews/external-review-misses-head-oldhead.json",
+        external_review_matched_findings_count: 1,
+        external_review_near_match_findings_count: 2,
+        external_review_missed_findings_count: 3,
+      }),
+    },
+  };
+  let syncJournalCalls = 0;
+
+  const prepared = await prepareCodexTurnPrompt({
+    config: createConfig(),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    state,
+    record: state.issues["102"]!,
+    issue: createIssue({ title: "Clear stale external review artifacts" }),
+    previousCodexSummary: null,
+    previousError: null,
+    workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    journalPath: path.join("/tmp/workspaces", "issue-102/.codex-supervisor/issue-journal.md"),
+    journalContent: "## Codex Working Notes\n### Current Handoff\n- Hypothesis: clear stale artifacts.\n",
+    syncJournal: async () => {
+      syncJournalCalls += 1;
+    },
+    memoryArtifacts: {
+      alwaysReadFiles: [],
+      onDemandFiles: [],
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+    },
+    pr: createPullRequest({ headRefOid: "newhead", reviewDecision: "CHANGES_REQUESTED" }),
+    checks: [],
+    reviewThreads: [],
+    github: {
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+  });
+
+  assert.equal(syncJournalCalls, 1);
+  assert.equal(prepared.record.external_review_head_sha, null);
+  assert.equal(prepared.record.external_review_misses_path, null);
+  assert.equal(prepared.record.external_review_matched_findings_count, 0);
+  assert.equal(prepared.record.external_review_near_match_findings_count, 0);
+  assert.equal(prepared.record.external_review_missed_findings_count, 0);
+});
