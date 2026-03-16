@@ -195,6 +195,36 @@ test("hasProcessedReviewThread reprocesses same-head threads when the latest bot
   assert.equal(processed, false);
 });
 
+test("hasProcessedReviewThread matches head-scoped processed thread ids", () => {
+  assert.equal(
+    hasProcessedReviewThread(
+      createRecord({
+        last_head_sha: "head-a",
+        processed_review_thread_ids: ["thread-1@head-b"],
+        processed_review_thread_fingerprints: ["thread-1@head-b#comment-1"],
+      }),
+      createPullRequest({ headRefOid: "head-b" }),
+      createReviewThread(),
+    ),
+    true,
+  );
+});
+
+test("hasProcessedReviewThread ignores unrelated same-head fingerprints when deciding whether a thread is already processed", () => {
+  assert.equal(
+    hasProcessedReviewThread(
+      createRecord({
+        last_head_sha: "head-a",
+        processed_review_thread_ids: ["thread-1@head-a"],
+        processed_review_thread_fingerprints: ["thread-2@head-a#comment-9"],
+      }),
+      createPullRequest({ headRefOid: "head-a" }),
+      createReviewThread(),
+    ),
+    true,
+  );
+});
+
 test("local review gating only blocks the intended transition for current actionable findings", () => {
   const pr = createPullRequest({ isDraft: false });
   const actionableRecord = createRecord({
