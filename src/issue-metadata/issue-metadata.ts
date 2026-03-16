@@ -3,9 +3,18 @@ import { parseIssueMetadata } from "./issue-metadata-parser";
 
 export { parseIssueMetadata } from "./issue-metadata-parser";
 export {
+  classifyChangedFile,
+  classifyChangedFiles,
+  detectDeterministicChangeClasses,
+} from "./issue-metadata-change-classification";
+export {
   findHighRiskBlockingAmbiguity,
   lintExecutionReadyIssueBody,
 } from "./issue-metadata-gates";
+export type {
+  ClassifiedChangedFile,
+  DeterministicChangeClass,
+} from "./issue-metadata-change-classification";
 export type {
   ClarificationBlock,
   ExecutionReadyLintResult,

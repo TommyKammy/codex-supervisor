@@ -82,6 +82,7 @@ const EXPECTED_FAMILY_FILES = {
   ],
   "issue-metadata": [
     "index.ts",
+    "issue-metadata-change-classification.ts",
     "issue-metadata-gates.ts",
     "issue-metadata-parser.ts",
     "issue-metadata-risky-policy.ts",
@@ -104,6 +105,7 @@ const EXPECTED_FAMILY_FILES = {
   supervisor: [
     "agent-runner.ts",
     "index.ts",
+    "supervisor-cycle-replay.ts",
     "supervisor-cycle-snapshot.ts",
     "supervisor-detailed-status-assembly.ts",
     "supervisor-execution-policy.ts",
