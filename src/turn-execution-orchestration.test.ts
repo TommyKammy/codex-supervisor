@@ -297,3 +297,60 @@ test("prepareCodexTurnPrompt falls back to the full start prompt when the runner
   assert.match(prompt, /## Summary/);
   assert.match(prompt, /The fresh session still needs the issue body\./);
 });
+
+test("prepareCodexTurnPrompt computes change classes for start prompts", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "implementing",
+        codex_session_id: null,
+      }),
+    },
+  };
+
+  const prepared = await prepareCodexTurnPrompt({
+    config: createConfig(),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    state,
+    record: state.issues["102"]!,
+    issue: createIssue({
+      title: "Compute change classes for prompt verification guidance",
+      body: "Issue body",
+    }),
+    previousCodexSummary: null,
+    previousError: null,
+    workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    journalPath: path.join("/tmp/workspaces", "issue-102/.codex-supervisor/issue-journal.md"),
+    journalContent: "## Codex Working Notes\n### Current Handoff\n- Hypothesis: derive change classes.\n",
+    syncJournal: async () => undefined,
+    memoryArtifacts: {
+      alwaysReadFiles: [],
+      onDemandFiles: [],
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+    },
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    github: {
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    loadChangedFiles: async () => ["docs/getting-started.md", "src/codex/codex-prompt.test.ts"],
+  });
+
+  assert.equal(prepared.turnContext.kind, "start");
+  if (prepared.turnContext.kind !== "start") {
+    throw new Error("expected a start turn context");
+  }
+
+  assert.deepEqual(prepared.turnContext.changeClasses, ["docs", "tests"]);
+  const prompt = buildCodexPrompt(prepared.turnContext);
+  assert.match(prompt, /Computed change classes: docs, tests/);
+  assert.match(prompt, /Verification intensity: focused/);
+});

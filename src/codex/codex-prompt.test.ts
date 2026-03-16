@@ -203,6 +203,56 @@ test("buildCodexPrompt accepts a normalized resume AgentTurnContext", () => {
   assert.doesNotMatch(prompt, /Issue body:/);
 });
 
+test("buildCodexPrompt applies focused verification guidance for lower-risk change classes", () => {
+  const prompt = buildCodexPrompt({
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "implementing" satisfies RunState,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+    changeClasses: ["docs", "tests"],
+  });
+
+  assert.match(prompt, /Verification policy:/);
+  assert.match(prompt, /Computed change classes: docs, tests/);
+  assert.match(prompt, /Verification intensity: focused/);
+  assert.match(
+    prompt,
+    /Keep verification focused on the directly affected documentation or tests unless another signal justifies broader coverage\./,
+  );
+});
+
+test("buildCodexPrompt keeps stronger verification guidance for workflow-like change classes", () => {
+  const prompt = buildCodexPrompt({
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "implementing" satisfies RunState,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+    changeClasses: ["backend", "workflow"],
+  });
+
+  assert.match(prompt, /Verification policy:/);
+  assert.match(prompt, /Computed change classes: backend, workflow/);
+  assert.match(prompt, /Verification intensity: strong/);
+  assert.match(
+    prompt,
+    /Keep stronger verification for workflow, schema, or infrastructure changes, including the most relevant higher-signal checks before concluding the work is done\./,
+  );
+});
+
 test("buildCodexPrompt requires config before treating input as an AgentTurnContext", () => {
   assert.throws(
     () =>
