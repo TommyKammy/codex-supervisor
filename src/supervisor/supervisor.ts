@@ -52,7 +52,6 @@ import {
   executeCodexTurnPhase,
   loadLocalReviewRepairContext,
 } from "../run-once-turn-execution";
-import { nextExternalReviewMissPatch } from "../external-review-miss-state";
 import {
   handlePostTurnPullRequestTransitionsPhase,
   PostTurnPullRequestContext,
