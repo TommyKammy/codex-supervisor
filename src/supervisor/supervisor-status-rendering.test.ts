@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { formatDetailedStatus } from "./supervisor-status-rendering";
+import { buildChangeClassesStatusLine, formatDetailedStatus } from "./supervisor-status-rendering";
 import { GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
@@ -165,6 +165,7 @@ test("formatDetailedStatus renders core lines before appended summaries", () => 
     checks: [],
     reviewThreads: [],
     handoffSummary: "blocked\nneeds reproduction",
+    changeClassesSummary: "change_classes=backend, docs, tests",
     durableGuardrailSummary:
       "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=runtime:owner-repo/issue-58/external-review-misses-head-deadbeef.json#2",
   });
@@ -195,11 +196,24 @@ test("formatDetailedStatus renders core lines before appended summaries", () => 
       "checks=none",
       "review_threads bot_pending=0 bot_unresolved=0 manual=0",
       "handoff_summary=blocked\\nneeds reproduction",
+      "change_classes=backend, docs, tests",
       "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=runtime:owner-repo/issue-58/external-review-misses-head-deadbeef.json#2",
       "latest_recovery issue=#57 at=2026-03-13T00:20:00Z reason=merged_pr_convergence: tracked PR #157 merged; marked issue #57 done",
       "local_review_summary_path=owner-repo/issue-58/local-review-summary.md",
       "external_review_misses_path=owner-repo/issue-58/external-review-misses-head-deadbeef.json",
     ].join("\n"),
+  );
+});
+
+test("buildChangeClassesStatusLine reports a sorted multi-class summary", () => {
+  assert.equal(
+    buildChangeClassesStatusLine([
+      "src/supervisor.ts",
+      "docs/getting-started.md",
+      "src/supervisor/supervisor-status-rendering.test.ts",
+      "src/supervisor.ts",
+    ]),
+    "change_classes=backend, docs, tests",
   );
 });
 

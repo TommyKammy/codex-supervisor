@@ -16,7 +16,11 @@ import {
   shouldEnforceExecutionReady,
 } from "./supervisor-execution-policy";
 import { shouldAutoRetryTimeout } from "./supervisor-failure-helpers";
-import { buildDurableGuardrailStatusLine } from "./supervisor-status-rendering";
+import {
+  buildChangeClassesStatusLine,
+  buildDurableGuardrailStatusLine,
+  loadStatusChangedFiles,
+} from "./supervisor-status-rendering";
 import {
   GitHubIssue,
   GitHubPullRequest,
@@ -47,6 +51,7 @@ export interface ActiveIssueStatusSnapshot {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
   handoffSummary: string | null;
+  changeClassesSummary: string | null;
   durableGuardrailSummary: string | null;
   warningMessage: string | null;
 }
@@ -92,6 +97,7 @@ export async function loadActiveIssueStatusSnapshot(args: {
   let pr: GitHubPullRequest | null = null;
   let checks: PullRequestCheck[] = [];
   let reviewThreads: ReviewThread[] = [];
+  let changeClassesSummary: string | null = null;
   let durableGuardrailSummary: string | null = null;
   let warningMessage: string | null = null;
 
@@ -107,10 +113,13 @@ export async function loadActiveIssueStatusSnapshot(args: {
     pr = await args.github.resolvePullRequestForBranch(args.activeRecord.branch, args.activeRecord.pr_number);
     checks = isOpenPullRequest(pr) ? await args.github.getChecks(pr.number) : [];
     reviewThreads = isOpenPullRequest(pr) ? await args.github.getUnresolvedReviewThreads(pr.number) : [];
+    const changedFiles = await loadStatusChangedFiles(args.config, args.activeRecord.workspace);
+    changeClassesSummary = buildChangeClassesStatusLine(changedFiles);
     durableGuardrailSummary = await buildDurableGuardrailStatusLine({
       config: args.config,
       activeRecord: args.activeRecord,
       pr,
+      changedFiles,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -122,6 +131,7 @@ export async function loadActiveIssueStatusSnapshot(args: {
     checks,
     reviewThreads,
     handoffSummary,
+    changeClassesSummary,
     durableGuardrailSummary,
     warningMessage,
   };
