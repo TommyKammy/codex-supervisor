@@ -1,5 +1,5 @@
-import { extractIssueJournalHandoff } from "./journal";
-import { ExternalReviewMissContext, type ExternalReviewMissPattern } from "./external-review-misses";
+import { extractIssueJournalHandoff } from "../journal";
+import { ExternalReviewMissContext, type ExternalReviewMissPattern } from "../external-review-misses";
 import {
   FailureContext,
   GitHubIssue,
@@ -7,9 +7,9 @@ import {
   PullRequestCheck,
   ReviewThread,
   RunState,
-} from "./types";
-import { truncate } from "./utils";
-import { type VerifierGuardrailRule } from "./verifier-guardrails";
+} from "../types";
+import { truncate } from "../utils";
+import { type VerifierGuardrailRule } from "../verifier-guardrails";
 
 export interface LocalReviewRepairContext {
   summaryPath: string;

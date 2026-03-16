@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { runCommand } from "./command";
+import { runCommand } from "../command";
 import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "./codex-policy";
-import { CodexTurnResult, IssueRunRecord, RunState, SupervisorConfig } from "./types";
+import { CodexTurnResult, IssueRunRecord, RunState, SupervisorConfig } from "../types";
 
 function extractSessionId(stdout: string, sessionId?: string | null): string | null {
   let resolvedSessionId = sessionId ?? null;

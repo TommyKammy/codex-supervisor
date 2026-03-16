@@ -1,4 +1,4 @@
-import { IssueRunRecord, ReasoningEffort, RunState, SupervisorConfig } from "./types";
+import { IssueRunRecord, ReasoningEffort, RunState, SupervisorConfig } from "../types";
 
 const REASONING_ORDER: ReasoningEffort[] = ["none", "low", "medium", "high", "xhigh"];
 

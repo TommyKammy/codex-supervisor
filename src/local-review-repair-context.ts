@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { type LocalReviewRepairContext } from "./codex-prompt";
+import { type LocalReviewRepairContext } from "./codex/codex-prompt";
 import { loadRelevantExternalReviewMissPatterns } from "./external-review-misses";
 import { parseJson } from "./utils";
 import { loadRelevantVerifierGuardrails } from "./verifier-guardrails";
