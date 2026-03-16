@@ -296,9 +296,10 @@ export interface CodexTurnResult {
 }
 
 export interface CliOptions {
-  command: "run-once" | "loop" | "status" | "explain" | "doctor";
+  command: "run-once" | "loop" | "status" | "explain" | "doctor" | "replay";
   configPath?: string;
   dryRun: boolean;
   why: boolean;
   issueNumber?: number;
+  snapshotPath?: string;
 }
