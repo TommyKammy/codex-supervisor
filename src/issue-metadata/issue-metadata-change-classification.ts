@@ -74,7 +74,7 @@ export function classifyChangedFiles(filePaths: string[]): ClassifiedChangedFile
   return filePaths
     .map((filePath) => normalizeChangedFilePath(filePath))
     .filter((filePath) => filePath.length > 0)
-    .sort((left, right) => left.localeCompare(right))
+    .sort((left, right) => (left === right ? 0 : left < right ? -1 : 1))
     .map((filePath) => ({
       path: filePath,
       changeClass: classifyChangedFile(filePath),

@@ -18,12 +18,24 @@ test("classifyChangedFiles maps representative paths into deterministic change c
     ]),
     [
       { path: ".github/workflows/ci.yml", changeClass: "workflow" },
+      { path: "README.md", changeClass: "docs" },
       { path: "docs/getting-started.md", changeClass: "docs" },
       { path: "infra/docker/Dockerfile", changeClass: "infrastructure" },
       { path: "prisma/schema.prisma", changeClass: "schema" },
-      { path: "README.md", changeClass: "docs" },
       { path: "src/issue-metadata/issue-metadata.test.ts", changeClass: "tests" },
       { path: "src/supervisor/supervisor.ts", changeClass: "backend" },
+    ],
+  );
+});
+
+test("classifyChangedFiles sorts normalized paths with deterministic code-unit ordering", () => {
+  assert.deepEqual(
+    classifyChangedFiles(["b.ts", "a.ts", "A.ts", ".\\z.ts"]),
+    [
+      { path: "A.ts", changeClass: "backend" },
+      { path: "a.ts", changeClass: "backend" },
+      { path: "b.ts", changeClass: "backend" },
+      { path: "z.ts", changeClass: "backend" },
     ],
   );
 });
