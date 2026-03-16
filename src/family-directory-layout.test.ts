@@ -100,6 +100,7 @@ const EXPECTED_FAMILY_FILES = {
     "types.ts",
   ],
   supervisor: [
+    "agent-runner.ts",
     "index.ts",
     "supervisor-detailed-status-assembly.ts",
     "supervisor-execution-policy.ts",
