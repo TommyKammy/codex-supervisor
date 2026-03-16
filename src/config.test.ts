@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -328,6 +329,43 @@ test("shipped config profiles declare the intended review bot logins", async () 
       `${relativePath} should declare the expected reviewBotLogins`,
     );
   }
+});
+
+test("repo gitignore ignores .DS_Store without hiding host-specific coderabbit config", async (t) => {
+  const rootDir = path.resolve(__dirname, "..");
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-gitignore-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  await fs.copyFile(path.join(rootDir, ".gitignore"), path.join(tempDir, ".gitignore"));
+  await fs.writeFile(path.join(tempDir, ".DS_Store"), "", "utf8");
+  await fs.writeFile(path.join(tempDir, "supervisor.config.coderabbit.json"), "{}", "utf8");
+
+  execFileSync("git", ["init"], {
+    cwd: tempDir,
+    stdio: "ignore",
+  });
+
+  const ignoredPath = execFileSync("git", ["check-ignore", ".DS_Store"], {
+    cwd: tempDir,
+    encoding: "utf8",
+  }).trim();
+  assert.equal(ignoredPath, ".DS_Store");
+
+  const coderabbitExitCode = (() => {
+    try {
+      execFileSync("git", ["check-ignore", "supervisor.config.coderabbit.json"], {
+        cwd: tempDir,
+        stdio: "ignore",
+      });
+      return 0;
+    } catch (error) {
+      const exitCode = (error as NodeJS.ErrnoException & { status?: number }).status;
+      return typeof exitCode === "number" ? exitCode : -1;
+    }
+  })();
+  assert.equal(coderabbitExitCode, 1);
 });
 
 test("README stays a lightweight landing page with provider profile guidance and a docs map", async () => {
