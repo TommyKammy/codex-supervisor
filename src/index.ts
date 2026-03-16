@@ -3,11 +3,12 @@ import { Supervisor } from "./supervisor";
 import { CliOptions } from "./core/types";
 import { sleep } from "./core/utils";
 
-function parseArgs(argv: string[]): CliOptions {
+export function parseArgs(argv: string[]): CliOptions {
   const args = [...argv];
   let command: CliOptions["command"] = "run-once";
   let configPath: string | undefined;
   let dryRun = false;
+  let why = false;
 
   while (args.length > 0) {
     const token = args.shift();
@@ -30,10 +31,19 @@ function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
+    if (token === "--why") {
+      why = true;
+      continue;
+    }
+
     throw new Error(`Unknown argument: ${token}`);
   }
 
-  return { command, configPath, dryRun };
+  if (why && command !== "status") {
+    throw new Error("The --why flag is only supported with the status command.");
+  }
+
+  return { command, configPath, dryRun, why };
 }
 
 async function runOnceWithSupervisorLock(
@@ -77,7 +87,7 @@ async function main(): Promise<void> {
   }
 
   if (options.command === "status") {
-    console.log(await supervisor.status());
+    console.log(await supervisor.status({ why: options.why }));
     return;
   }
 

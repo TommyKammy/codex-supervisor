@@ -85,6 +85,7 @@ import {
 } from "./supervisor-execution-policy";
 import {
   buildReadinessSummary,
+  buildSelectionWhySummary,
   loadActiveIssueStatusSnapshot,
   summarizeSupervisorStatusRecords,
 } from "./supervisor-selection-status";
@@ -563,7 +564,7 @@ export class Supervisor {
     return acquireFileLock(this.lockPath("supervisor", "run"), `supervisor-${label}`);
   }
 
-  async status(): Promise<string> {
+  async status(options: Pick<CliOptions, "why"> = { why: false }): Promise<string> {
     const state = await this.stateStore.load();
     const gsdSummary = await describeGsdIntegration(this.config);
     const statusRecords = summarizeSupervisorStatusRecords(state);
@@ -581,7 +582,8 @@ export class Supervisor {
       });
       try {
         const readinessLines = await buildReadinessSummary(this.github, this.config, state);
-        return [gsdSummary, `${baseStatus}\n${readinessLines.join("\n")}`]
+        const whyLines = options.why ? await buildSelectionWhySummary(this.github, this.config, state) : [];
+        return [gsdSummary, `${baseStatus}\n${readinessLines.join("\n")}${whyLines.length > 0 ? `\n${whyLines.join("\n")}` : ""}`]
           .filter(Boolean)
           .join("\n");
       } catch (error) {

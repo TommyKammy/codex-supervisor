@@ -9,8 +9,11 @@ import { readIssueJournal, summarizeIssueJournalHandoff } from "../core/journal"
 import {
   formatExecutionReadyMissingFields,
   isEligibleForSelection,
+  shouldAutoRetryBlockedVerification,
+  shouldAutoRetryHandoffMissing,
   shouldEnforceExecutionReady,
 } from "./supervisor-execution-policy";
+import { shouldAutoRetryTimeout } from "./supervisor-failure-helpers";
 import { buildDurableGuardrailStatusLine } from "./supervisor-status-rendering";
 import {
   GitHubIssue,
@@ -23,6 +26,7 @@ import {
 } from "../core/types";
 
 type ReadinessSummaryGitHub = Pick<GitHubClient, "listCandidateIssues">;
+type SelectionWhyGitHub = Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">;
 type ActiveStatusGitHub = Pick<
   GitHubClient,
   "resolvePullRequestForBranch" | "getChecks" | "getUnresolvedReviewThreads"
@@ -171,6 +175,46 @@ export async function buildReadinessSummary(
   ];
 }
 
+export async function buildSelectionWhySummary(
+  github: SelectionWhyGitHub,
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+): Promise<string[]> {
+  const candidateIssues = await github.listCandidateIssues();
+  const issues = await github.listAllIssues();
+
+  for (const issue of candidateIssues) {
+    if (config.skipTitlePrefixes.some((prefix) => issue.title.startsWith(prefix))) {
+      continue;
+    }
+
+    const existing = state.issues[String(issue.number)];
+    const readiness = lintExecutionReadyIssueBody(issue);
+    if (shouldEnforceExecutionReady(existing) && !readiness.isExecutionReady) {
+      continue;
+    }
+
+    if (findHighRiskBlockingAmbiguity(issue)) {
+      continue;
+    }
+
+    if (findBlockingIssue(issue, issues, state)) {
+      continue;
+    }
+
+    if (!isEligibleForSelection(existing, config)) {
+      continue;
+    }
+
+    return [
+      `selected_issue=#${issue.number}`,
+      `selection_reason=${formatSelectionReason(issue, issues, state, existing, readiness.isExecutionReady, config)}`,
+    ];
+  }
+
+  return ["selected_issue=none", "selection_reason=no_runnable_issue"];
+}
+
 function formatRunnableReadinessReason(
   issue: GitHubIssue,
   issues: GitHubIssue[],
@@ -221,4 +265,80 @@ function formatRunnableReadinessReason(
   }
 
   return reasons.join("+");
+}
+
+function formatSelectionReason(
+  issue: GitHubIssue,
+  issues: GitHubIssue[],
+  state: SupervisorStateFile,
+  existing: IssueRunRecord | undefined,
+  isExecutionReady: boolean,
+  config: SupervisorConfig,
+): string {
+  const metadata = parseIssueMetadata(issue);
+  const dependencyStatus =
+    metadata.dependsOn.length === 0
+      ? "none"
+      : `${metadata.dependsOn.join("|")}:${metadata.dependsOn.every((dependencyNumber) => state.issues[String(dependencyNumber)]?.state === "done") ? "done" : "pending"}`;
+
+  let executionOrderStatus = "none";
+  let predecessorStatus = "none";
+  if (metadata.parentIssueNumber !== null && metadata.executionOrderIndex !== null) {
+    executionOrderStatus = `${metadata.parentIssueNumber}/${metadata.executionOrderIndex}`;
+    const predecessors = issues
+      .filter((candidate) => candidate.number !== issue.number)
+      .map((candidate) => ({
+        issue: candidate,
+        metadata: parseIssueMetadata(candidate),
+      }))
+      .filter(
+        ({ metadata: candidateMetadata }) =>
+          candidateMetadata.parentIssueNumber === metadata.parentIssueNumber &&
+          candidateMetadata.executionOrderIndex !== null &&
+          candidateMetadata.executionOrderIndex < metadata.executionOrderIndex!,
+      )
+      .sort(
+        (left, right) =>
+          (left.metadata.executionOrderIndex ?? Number.MAX_SAFE_INTEGER) -
+          (right.metadata.executionOrderIndex ?? Number.MAX_SAFE_INTEGER),
+      )
+      .map(({ issue: predecessorIssue }) => predecessorIssue.number);
+
+    if (predecessors.length > 0) {
+      predecessorStatus = `${predecessors.join("|")}:${
+        predecessors.every((predecessorNumber) => state.issues[String(predecessorNumber)]?.state === "done")
+          ? "done"
+          : "pending"
+      }`;
+    }
+  }
+
+  return [
+    "ready",
+    `execution_ready=${isExecutionReady ? "yes" : "skipped"}`,
+    `depends_on=${dependencyStatus}`,
+    `execution_order=${executionOrderStatus}`,
+    `predecessors=${predecessorStatus}`,
+    `retry_state=${formatRetryState(existing, config)}`,
+  ].join(" ");
+}
+
+function formatRetryState(record: IssueRunRecord | undefined, config: SupervisorConfig): string {
+  if (!record || record.attempt_count === 0) {
+    return "fresh";
+  }
+
+  if (shouldAutoRetryTimeout(record, config)) {
+    return `timeout_retry:${record.timeout_retry_count}/${config.timeoutRetryLimit}`;
+  }
+
+  if (shouldAutoRetryBlockedVerification(record, config)) {
+    return `blocked_verification_retry:${record.blocked_verification_retry_count}/${config.blockedVerificationRetryLimit}`;
+  }
+
+  if (shouldAutoRetryHandoffMissing(record, config)) {
+    return "handoff_missing_retry";
+  }
+
+  return `resume:${record.state}`;
 }
