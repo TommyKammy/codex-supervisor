@@ -10,6 +10,11 @@ import {
 } from "../core/types";
 import { truncate } from "../core/utils";
 import { type VerifierGuardrailRule } from "../verifier-guardrails";
+import type {
+  AgentTurnContext,
+  ResumeAgentTurnContext,
+  StartAgentTurnContext,
+} from "../supervisor/agent-runner";
 
 export interface LocalReviewRepairContext {
   summaryPath: string;
@@ -178,7 +183,7 @@ function suppressStaleLiveBlockerHandoff(journalExcerpt: string | null | undefin
   return output.join("\n");
 }
 
-export function buildCodexPrompt(input: {
+export interface BuildCodexStartPromptInput {
   repoSlug: string;
   issue: GitHubIssue;
   branch: string;
@@ -198,7 +203,22 @@ export function buildCodexPrompt(input: {
   previousError?: string | null;
   localReviewRepairContext?: LocalReviewRepairContext | null;
   externalReviewMissContext?: ExternalReviewMissContext | null;
-}): string {
+}
+
+export interface BuildCodexResumePromptInput {
+  repoSlug: string;
+  issue: GitHubIssue;
+  branch: string;
+  workspacePath: string;
+  state: RunState;
+  journalPath: string;
+  journalExcerpt?: string | null;
+  failureContext?: FailureContext | null;
+  previousSummary?: string | null;
+  previousError?: string | null;
+}
+
+function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
   const journalExcerpt = suppressStaleLiveBlockerHandoff(input.journalExcerpt, input.state);
   const checksSummary =
     input.checks.length === 0
@@ -441,18 +461,7 @@ export function buildCodexPrompt(input: {
   ].join("\n");
 }
 
-export function buildCodexResumePrompt(input: {
-  repoSlug: string;
-  issue: GitHubIssue;
-  branch: string;
-  workspacePath: string;
-  state: RunState;
-  journalPath: string;
-  journalExcerpt?: string | null;
-  failureContext?: FailureContext | null;
-  previousSummary?: string | null;
-  previousError?: string | null;
-}): string {
+export function buildCodexResumePrompt(input: BuildCodexResumePromptInput): string {
   const handoff = extractIssueJournalHandoff(input.journalExcerpt ?? null);
   const currentBlocker = handoff.currentBlocker ?? input.failureContext?.summary ?? input.previousError ?? null;
   const nextExactStep = handoff.nextExactStep ?? "Review the current journal handoff, inspect the live workspace state, and continue from there.";
@@ -510,4 +519,63 @@ export function buildCodexResumePrompt(input: {
   ];
 
   return resumeLines.join("\n");
+}
+
+function isAgentTurnContext(input: BuildCodexStartPromptInput | AgentTurnContext): input is AgentTurnContext {
+  return "kind" in input;
+}
+
+function isResumeTurnContext(input: AgentTurnContext): input is ResumeAgentTurnContext {
+  return input.kind === "resume";
+}
+
+function toResumePromptInput(input: ResumeAgentTurnContext): BuildCodexResumePromptInput {
+  return {
+    repoSlug: input.repoSlug,
+    issue: input.issue,
+    branch: input.branch,
+    workspacePath: input.workspacePath,
+    state: input.state,
+    journalPath: input.journalPath,
+    journalExcerpt: input.journalExcerpt,
+    failureContext: input.failureContext,
+    previousSummary: input.previousSummary,
+    previousError: input.previousError,
+  };
+}
+
+function toStartPromptInput(input: StartAgentTurnContext): BuildCodexStartPromptInput {
+  return {
+    repoSlug: input.repoSlug,
+    issue: input.issue,
+    branch: input.branch,
+    workspacePath: input.workspacePath,
+    state: input.state,
+    pr: input.pr,
+    checks: input.checks,
+    reviewThreads: input.reviewThreads,
+    alwaysReadFiles: input.alwaysReadFiles,
+    onDemandMemoryFiles: input.onDemandMemoryFiles,
+    gsdEnabled: input.gsdEnabled,
+    gsdPlanningFiles: input.gsdPlanningFiles,
+    journalPath: input.journalPath,
+    journalExcerpt: input.journalExcerpt,
+    failureContext: input.failureContext,
+    previousSummary: input.previousSummary,
+    previousError: input.previousError,
+    localReviewRepairContext: input.localReviewRepairContext,
+    externalReviewMissContext: input.externalReviewMissContext,
+  };
+}
+
+export function buildCodexPrompt(input: BuildCodexStartPromptInput): string;
+export function buildCodexPrompt(input: AgentTurnContext): string;
+export function buildCodexPrompt(input: BuildCodexStartPromptInput | AgentTurnContext): string {
+  if (!isAgentTurnContext(input)) {
+    return buildCodexStartPrompt(input);
+  }
+
+  return isResumeTurnContext(input)
+    ? buildCodexResumePrompt(toResumePromptInput(input))
+    : buildCodexStartPrompt(toStartPromptInput(input));
 }

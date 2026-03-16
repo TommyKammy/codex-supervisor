@@ -1,6 +1,5 @@
 import {
   buildCodexPrompt,
-  buildCodexResumePrompt,
   extractBlockedReason,
   extractFailureSignature,
   extractStateHint,
@@ -162,45 +161,6 @@ function buildCodexExitFailureContext(
   );
 }
 
-function buildCodexPromptForTurn(context: AgentTurnContext): string {
-  if (context.kind === "resume") {
-    return buildCodexResumePrompt({
-      repoSlug: context.repoSlug,
-      issue: context.issue,
-      branch: context.branch,
-      workspacePath: context.workspacePath,
-      state: context.state,
-      journalPath: context.journalPath,
-      journalExcerpt: context.journalExcerpt,
-      failureContext: context.failureContext,
-      previousSummary: context.previousSummary,
-      previousError: context.previousError,
-    });
-  }
-
-  return buildCodexPrompt({
-    repoSlug: context.repoSlug,
-    issue: context.issue,
-    branch: context.branch,
-    workspacePath: context.workspacePath,
-    state: context.state,
-    pr: context.pr,
-    checks: context.checks,
-    reviewThreads: context.reviewThreads,
-    alwaysReadFiles: context.alwaysReadFiles,
-    onDemandMemoryFiles: context.onDemandMemoryFiles,
-    gsdEnabled: context.gsdEnabled,
-    gsdPlanningFiles: context.gsdPlanningFiles,
-    journalPath: context.journalPath,
-    journalExcerpt: context.journalExcerpt,
-    failureContext: context.failureContext,
-    previousSummary: context.previousSummary,
-    previousError: context.previousError,
-    localReviewRepairContext: context.localReviewRepairContext,
-    externalReviewMissContext: context.externalReviewMissContext,
-  });
-}
-
 export function createCodexAgentRunner(options: CreateCodexAgentRunnerOptions = {}): AgentRunner {
   const runCodexTurnImpl = options.runCodexTurnImpl ?? runCodexTurn;
   const classifyFailureImpl = options.classifyFailureImpl ?? classifyFailure;
@@ -211,7 +171,7 @@ export function createCodexAgentRunner(options: CreateCodexAgentRunnerOptions = 
     capabilities,
     async runTurn(context): Promise<AgentTurnResult> {
       try {
-        const prompt = buildCodexPromptForTurn(context);
+        const prompt = buildCodexPrompt(context);
         const result = await runCodexTurnImpl(
           context.config,
           context.workspacePath,

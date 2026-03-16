@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildCodexPrompt, buildCodexResumePrompt, shouldUseCompactResumePrompt } from "./codex-prompt";
 import { FailureContext, GitHubIssue, RunState } from "../core/types";
+import type { AgentTurnContext } from "../supervisor/agent-runner";
 
 const issue: GitHubIssue = {
   number: 46,
@@ -171,6 +172,88 @@ test("buildCodexResumePrompt falls back to current failure context when the jour
   assert.doesNotMatch(prompt, /Verification gap:/);
   assert.match(prompt, /Command\/source: npm run build/);
   assert.match(prompt, /Respond in this exact footer format at the end:/);
+});
+
+test("buildCodexPrompt accepts a normalized resume AgentTurnContext", () => {
+  const context = {
+    kind: "resume",
+    config: {
+      repoPath: "/tmp/repo",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "/tmp/workspaces",
+      stateBackend: "json",
+      stateFile: "/tmp/state.json",
+      codexBinary: "/usr/bin/codex",
+      codexModelStrategy: "inherit",
+      codexReasoningEffortByState: {},
+      codexReasoningEscalateOnRepeatedFailure: true,
+      sharedMemoryFiles: [],
+      gsdEnabled: false,
+      gsdAutoInstall: false,
+      gsdInstallScope: "global",
+      gsdPlanningFiles: [],
+      localReviewEnabled: false,
+      localReviewAutoDetect: true,
+      localReviewRoles: [],
+      localReviewArtifactDir: "/tmp/reviews",
+      localReviewConfidenceThreshold: 0.7,
+      localReviewReviewerThresholds: {
+        generic: {
+          confidenceThreshold: 0.7,
+          minimumSeverity: "low",
+        },
+        specialist: {
+          confidenceThreshold: 0.7,
+          minimumSeverity: "low",
+        },
+      },
+      localReviewPolicy: "block_ready",
+      localReviewHighSeverityAction: "retry",
+      reviewBotLogins: [],
+      humanReviewBlocksMerge: true,
+      issueJournalRelativePath: ".codex-supervisor/issue-journal.md",
+      issueJournalMaxChars: 6000,
+      skipTitlePrefixes: [],
+      branchPrefix: "codex/issue-",
+      pollIntervalSeconds: 60,
+      copilotReviewWaitMinutes: 10,
+      copilotReviewTimeoutAction: "continue",
+      codexExecTimeoutMinutes: 30,
+      maxCodexAttemptsPerIssue: 5,
+      maxImplementationAttemptsPerIssue: 5,
+      maxRepairAttemptsPerIssue: 5,
+      timeoutRetryLimit: 2,
+      blockedVerificationRetryLimit: 3,
+      sameBlockerRepeatLimit: 2,
+      sameFailureSignatureRepeatLimit: 3,
+      maxDoneWorkspaces: 24,
+      cleanupDoneWorkspacesAfterHours: 24,
+      mergeMethod: "squash",
+      draftPrAfterAttempt: 1,
+    },
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "reproducing" satisfies RunState,
+    record: null,
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+    journalExcerpt: `## Codex Working Notes
+### Current Handoff
+- What changed: Added turn-context normalization.
+- Next exact step: Route prompt building through the normalized context.`,
+    failureContext: null,
+    previousSummary: "Added turn-context normalization.",
+    previousError: null,
+    sessionId: "session-123",
+  } satisfies AgentTurnContext;
+
+  const prompt = buildCodexPrompt(context);
+
+  assert.match(prompt, /You are resuming work inside the existing Codex session for owner\/repo\./);
+  assert.match(prompt, /Route prompt building through the normalized context\./);
+  assert.doesNotMatch(prompt, /Issue body:/);
 });
 
 test("buildCodexPrompt emphasizes compressed local-review root causes during local_review_fix", () => {
