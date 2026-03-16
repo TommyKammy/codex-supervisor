@@ -290,4 +290,5 @@ export interface CliOptions {
   command: "run-once" | "loop" | "status";
   configPath?: string;
   dryRun: boolean;
+  why: boolean;
 }

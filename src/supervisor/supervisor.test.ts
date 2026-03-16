@@ -2292,6 +2292,149 @@ Execution order: 3 of 3`,
   );
 });
 
+test("status --why explains why the current runnable issue was selected", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "91": createRecord({
+        issue_number: 91,
+        state: "done",
+        branch: branchName(fixture.config, 91),
+        workspace: path.join(fixture.workspaceRoot, "issue-91"),
+        journal_path: null,
+        blocked_reason: null,
+        last_error: null,
+      }),
+      "92": createRecord({
+        issue_number: 92,
+        state: "done",
+        branch: branchName(fixture.config, 92),
+        workspace: path.join(fixture.workspaceRoot, "issue-92"),
+        journal_path: null,
+        blocked_reason: null,
+        last_error: null,
+      }),
+      "95": createRecord({
+        issue_number: 95,
+        state: "blocked",
+        branch: branchName(fixture.config, 95),
+        workspace: path.join(fixture.workspaceRoot, "issue-95"),
+        journal_path: null,
+        blocked_reason: "verification",
+        last_error: "verification still failing",
+        blocked_verification_retry_count: 1,
+        repeated_blocker_count: fixture.config.sameBlockerRepeatLimit,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const blockedIssue: GitHubIssue = {
+    number: 95,
+    title: "Blocked verification retry",
+    body: `## Summary
+Retry the failing verification.
+
+## Scope
+- rerun the failing check
+
+## Acceptance criteria
+- verification can pass
+
+## Verification
+- npm test -- src/supervisor.test.ts`,
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: "https://example.test/issues/95",
+    state: "OPEN",
+  };
+  const predecessorIssueOne: GitHubIssue = {
+    number: 91,
+    title: "Step 1",
+    body: `## Summary
+Ship the first step.
+
+## Scope
+- start the execution order chain
+
+## Acceptance criteria
+- step one lands first
+
+## Verification
+- npm test -- src/supervisor.test.ts
+
+Part of: #150
+Execution order: 1 of 3`,
+    createdAt: "2026-03-12T23:55:00Z",
+    updatedAt: "2026-03-12T23:55:00Z",
+    url: "https://example.test/issues/91",
+    state: "CLOSED",
+  };
+  const predecessorIssueTwo: GitHubIssue = {
+    number: 92,
+    title: "Step 2",
+    body: `## Summary
+Ship the second step.
+
+## Scope
+- continue the execution order chain
+
+## Acceptance criteria
+- step two lands after step one
+
+## Verification
+- npm test -- src/supervisor.test.ts
+
+Part of: #150
+Execution order: 2 of 3`,
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: "https://example.test/issues/92",
+    state: "CLOSED",
+  };
+  const selectedIssue: GitHubIssue = {
+    number: 93,
+    title: "Step 3",
+    body: `## Summary
+Ship the third step.
+
+## Scope
+- build after the first two steps land
+
+## Acceptance criteria
+- status explains why this issue is selected
+
+## Verification
+- npm test -- src/supervisor.test.ts
+
+Depends on: #91
+Part of: #150
+Execution order: 3 of 3`,
+    createdAt: "2026-03-13T00:05:00Z",
+    updatedAt: "2026-03-13T00:05:00Z",
+    url: "https://example.test/issues/93",
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listAllIssues: async () => [predecessorIssueOne, predecessorIssueTwo, blockedIssue, selectedIssue],
+    listCandidateIssues: async () => [blockedIssue, selectedIssue],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const status = await supervisor.status({ why: true });
+
+  assert.match(status, /selected_issue=#93/);
+  assert.match(
+    status,
+    /selection_reason=ready execution_ready=yes depends_on=91:done execution_order=150\/3 predecessors=91\|92:done retry_state=fresh/,
+  );
+});
+
 test("status includes a compact handoff summary for an active blocker", async () => {
   const fixture = await createSupervisorFixture();
   const journalPath = path.join(fixture.workspaceRoot, "issue-92", ".codex-supervisor", "issue-journal.md");
