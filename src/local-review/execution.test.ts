@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runLocalReviewExecution, selectVerifierFindings } from "./local-review-execution";
-import { type LocalReviewRoleResult, type LocalReviewVerifierReport } from "./local-review-types";
-import { type LocalReviewRoleSelection } from "./review-role-detector";
-import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "./types";
+import { runLocalReviewExecution, selectVerifierFindings } from "./execution";
+import { type LocalReviewRoleResult, type LocalReviewVerifierReport } from "./types";
+import { type LocalReviewRoleSelection } from "../review-role-detector";
+import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "../types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {

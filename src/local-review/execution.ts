@@ -1,10 +1,10 @@
-import { dedupeFindings } from "./local-review-finalize";
-import { findingMeetsReviewerThreshold, reviewerTypeForRole } from "./local-review-thresholds";
-import { runRoleReview as defaultRunRoleReview, runVerifierReview as defaultRunVerifierReview } from "./local-review-runner";
-import { type ExternalReviewMissPattern } from "./external-review-misses";
-import { type LocalReviewFinding, type LocalReviewRoleResult, type LocalReviewVerifierReport } from "./local-review-types";
-import { type LocalReviewRoleSelection } from "./review-role-detector";
-import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "./types";
+import { dedupeFindings } from "./finalize";
+import { findingMeetsReviewerThreshold, reviewerTypeForRole } from "./thresholds";
+import { runRoleReview as defaultRunRoleReview, runVerifierReview as defaultRunVerifierReview } from "./runner";
+import { type ExternalReviewMissPattern } from "../external-review-misses";
+import { type LocalReviewFinding, type LocalReviewRoleResult, type LocalReviewVerifierReport } from "./types";
+import { type LocalReviewRoleSelection } from "../review-role-detector";
+import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "../types";
 
 export function selectVerifierFindings(args: {
   config: SupervisorConfig;

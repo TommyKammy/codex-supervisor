@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { loadLocalReviewRepairContext } from "./local-review-repair-context";
+import { loadLocalReviewRepairContext } from "./repair-context";
 
 test("loadLocalReviewRepairContext derives the findings path and trims prompt context", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-fix-test-"));

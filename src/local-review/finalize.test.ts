@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { finalizeLocalReview } from "./local-review-finalize";
-import { createConfig, createDetectedRoles } from "./local-review-test-helpers";
+import { finalizeLocalReview } from "./finalize";
+import { createConfig, createDetectedRoles } from "./test-helpers";
 
 test("finalizeLocalReview keeps raw high-severity findings separate from dismissed verifier results", () => {
   const result = finalizeLocalReview({
@@ -334,7 +334,7 @@ test("finalizeLocalReview merges root-cause groups connected by a bridging findi
             role: "reviewer",
             title: "Auth refresh misses invalid session guard",
             body: "The auth refresh path can continue after an invalid session token and retry stale work.",
-            file: "src/local-review.ts",
+            file: "src/local-review/index.ts",
             start: 10,
             end: 12,
             severity: "high",
@@ -346,7 +346,7 @@ test("finalizeLocalReview merges root-cause groups connected by a bridging findi
             role: "reviewer",
             title: "Bridge finding links the same stale session retry path",
             body: "The auth refresh retry path keeps using the same stale session token after invalidation.",
-            file: "src/local-review.ts",
+            file: "src/local-review/index.ts",
             start: 15,
             end: 17,
             severity: "high",
@@ -358,7 +358,7 @@ test("finalizeLocalReview merges root-cause groups connected by a bridging findi
             role: "explorer",
             title: "Retry loop keeps invalid session token alive",
             body: "The auth refresh retry loop can keep an invalid session token alive and repeat stale work.",
-            file: "src/local-review.ts",
+            file: "src/local-review/index.ts",
             start: 21,
             end: 23,
             severity: "high",

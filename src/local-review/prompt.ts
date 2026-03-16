@@ -1,15 +1,15 @@
-import { type ExternalReviewMissPattern } from "./external-review-misses";
-import { type GitHubIssue, type GitHubPullRequest } from "./types";
-import { truncate } from "./utils";
-import { renderLines } from "./local-review-artifacts";
-import { findingKey } from "./local-review-finalize";
-import { type VerifierGuardrailRule } from "./verifier-guardrails";
+import { type ExternalReviewMissPattern } from "../external-review-misses";
+import { type GitHubIssue, type GitHubPullRequest } from "../types";
+import { truncate } from "../utils";
+import { renderLines } from "./artifacts";
+import { findingKey } from "./finalize";
+import { type VerifierGuardrailRule } from "../verifier-guardrails";
 import {
   type LocalReviewFinding,
   type LocalReviewVerificationFinding,
   type ParsedRoleFooter,
   type ParsedVerifierFooter,
-} from "./local-review-types";
+} from "./types";
 
 interface RolePromptArgs {
   repoSlug: string;

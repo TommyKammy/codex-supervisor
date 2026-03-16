@@ -2,11 +2,11 @@ import path from "node:path";
 import {
   EXTERNAL_REVIEW_GUARDRAILS_PATH,
   VERIFIER_GUARDRAILS_PATH,
-} from "./committed-guardrails";
-import { type ExternalReviewMissPattern } from "./external-review-misses";
-import { type FinalizedLocalReview, type LocalReviewResult, type LocalReviewVerifierReport } from "./local-review-types";
-import { truncate } from "./utils";
-import { type SupervisorConfig } from "./types";
+} from "../committed-guardrails";
+import { type ExternalReviewMissPattern } from "../external-review-misses";
+import { type FinalizedLocalReview, type LocalReviewResult, type LocalReviewVerifierReport } from "./types";
+import { truncate } from "../utils";
+import { type SupervisorConfig } from "../types";
 
 export const LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY = "degraded local review; inspect the saved artifact";
 

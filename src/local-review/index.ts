@@ -1,18 +1,18 @@
 import {
   formatLocalReviewResult,
   prepareLocalReviewGuardrailProvenance,
-} from "./local-review-result";
-import { ensureDir, nowIso } from "./utils";
-import { finalizeLocalReview } from "./local-review-finalize";
-import { reviewDir, writeLocalReviewArtifacts } from "./local-review-artifacts";
-import { runLocalReviewExecution } from "./local-review-execution";
+} from "./result";
+import { ensureDir, nowIso } from "../utils";
+import { finalizeLocalReview } from "./finalize";
+import { reviewDir, writeLocalReviewArtifacts } from "./artifacts";
+import { runLocalReviewExecution } from "./execution";
 import {
   collectLocalReviewChangedFiles,
   loadLocalReviewExternalReviewContext,
   prepareLocalReviewRoleSelection,
-} from "./local-review-preparation";
-import { GitHubIssue, GitHubPullRequest, SupervisorConfig } from "./types";
-import { type LocalReviewResult } from "./local-review-types";
+} from "./preparation";
+import { GitHubIssue, GitHubPullRequest, SupervisorConfig } from "../types";
+import { type LocalReviewResult } from "./types";
 
 export type {
   ActionableSeverity,
@@ -28,11 +28,11 @@ export type {
   ParsedRoleFooter,
   ParsedVerifierFooter,
   VerificationVerdict,
-} from "./local-review-types";
+} from "./types";
 export {
   buildLocalReviewBlockerSummary,
   LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY,
-} from "./local-review-result";
+} from "./result";
 
 export function localReviewHasActionableFindings(
   record: Pick<IssueRunRecordLike, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation">,

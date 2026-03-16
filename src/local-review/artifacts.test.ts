@@ -3,9 +3,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { writeLocalReviewArtifacts } from "./local-review-artifacts";
-import { finalizeLocalReview } from "./local-review-finalize";
-import { createConfig } from "./local-review-test-helpers";
+import { writeLocalReviewArtifacts } from "./artifacts";
+import { finalizeLocalReview } from "./finalize";
+import { createConfig } from "./test-helpers";
 
 test("writeLocalReviewArtifacts renders durable guardrail provenance compactly", async () => {
   const config = createConfig({

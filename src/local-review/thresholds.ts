@@ -1,6 +1,6 @@
-import { type LocalReviewRoleSelection } from "./review-role-detector";
-import { type ActionableSeverity, type LocalReviewFinding, type LocalReviewReviewerThresholdConfig, type LocalReviewReviewerType } from "./local-review-types";
-import { type SupervisorConfig } from "./types";
+import { type LocalReviewRoleSelection } from "../review-role-detector";
+import { type ActionableSeverity, type LocalReviewFinding, type LocalReviewReviewerThresholdConfig, type LocalReviewReviewerType } from "./types";
+import { type SupervisorConfig } from "../types";
 
 const SEVERITY_WEIGHT: Record<ActionableSeverity, number> = {
   low: 1,

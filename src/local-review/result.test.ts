@@ -5,9 +5,9 @@ import {
   formatLocalReviewResult,
   LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY,
   prepareLocalReviewGuardrailProvenance,
-} from "./local-review-result";
-import { finalizeLocalReview } from "./local-review-finalize";
-import { createConfig, createMissPattern } from "./local-review-test-helpers";
+} from "./result";
+import { finalizeLocalReview } from "./finalize";
+import { createConfig, createMissPattern } from "./test-helpers";
 
 test("prepareLocalReviewGuardrailProvenance groups runtime sources and keeps artifact-relative paths", () => {
   const config = createConfig({
