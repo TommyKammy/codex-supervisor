@@ -1,5 +1,5 @@
-import { buildChecksFailureContext, buildConflictFailureContext } from "./pull-request-failure-context";
-import { buildCopilotReviewTimeoutFailureContext } from "./pull-request-state";
+import { buildChecksFailureContext, buildConflictFailureContext } from "../pull-request-failure-context";
+import { buildCopilotReviewTimeoutFailureContext } from "../pull-request-state";
 import {
   configuredBotReviewThreads,
   buildManualReviewFailureContext,
@@ -8,14 +8,14 @@ import {
   buildStalledBotReviewFailureContext,
   manualReviewThreads,
   pendingBotReviewThreads,
-} from "./review-thread-reporting";
+} from "../review-thread-reporting";
 import {
   localReviewBlocksMerge,
   localReviewFailureContext,
   localReviewHighSeverityNeedsBlock,
   localReviewRetryLoopStalled,
   localReviewStallFailureContext,
-} from "./review-handling";
+} from "../review-handling";
 import { mergeConflictDetected, summarizeChecks } from "./supervisor-reporting";
 import {
   FailureContext,
@@ -24,7 +24,7 @@ import {
   PullRequestCheck,
   ReviewThread,
   SupervisorConfig,
-} from "./types";
+} from "../types";
 
 export function inferFailureContext(
   config: SupervisorConfig,

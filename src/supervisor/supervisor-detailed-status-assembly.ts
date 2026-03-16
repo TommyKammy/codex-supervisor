@@ -1,6 +1,6 @@
 import {
   localReviewRetryLoopStalled,
-} from "./review-handling";
+} from "../review-handling";
 import {
   formatRecentRecord,
   listChecksByBucket,
@@ -17,7 +17,7 @@ import {
   reviewBotDiagnostics,
 } from "./supervisor-status-review-bot";
 import type { BuildDetailedStatusModelArgs } from "./supervisor-status-model";
-import { truncate } from "./utils";
+import { truncate } from "../utils";
 
 function unresolvedReviewThreads(reviewThreads: BuildDetailedStatusModelArgs["reviewThreads"]) {
   return reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);

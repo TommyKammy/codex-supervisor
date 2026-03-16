@@ -7,7 +7,7 @@ import {
   inferReviewBotProfile,
   reviewBotDiagnostics,
 } from "./supervisor-status-review-bot";
-import { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "./types";
+import { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "../types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {

@@ -1,9 +1,9 @@
 import path from "node:path";
-import { loadConfig } from "./config";
-import { GitHubClient } from "./github";
-import { describeGsdIntegration } from "./gsd";
-import { issueJournalPath } from "./journal";
-import { acquireFileLock, LockHandle } from "./lock";
+import { loadConfig } from "../config";
+import { GitHubClient } from "../github";
+import { describeGsdIntegration } from "../gsd";
+import { issueJournalPath } from "../journal";
+import { acquireFileLock, LockHandle } from "../lock";
 import {
   cleanupExpiredDoneWorkspaces,
   formatRecoveryLog,
@@ -14,7 +14,7 @@ import {
   reconcileStaleActiveIssueReservation,
   reconcileStaleFailedIssueStates,
   reconcileTrackedMergedButOpenIssues,
-} from "./recovery-reconciliation";
+} from "../recovery-reconciliation";
 import {
   blockedReasonFromReviewState,
   buildCopilotReviewTimeoutFailureContext,
@@ -22,8 +22,8 @@ import {
   syncCopilotReviewRequestObservation,
   syncCopilotReviewTimeoutState,
   syncReviewWaitWindow,
-} from "./pull-request-state";
-import { inferStateWithoutPullRequest } from "./no-pull-request-state";
+} from "../pull-request-state";
+import { inferStateWithoutPullRequest } from "../no-pull-request-state";
 import {
   hasProcessedReviewThread,
   localReviewBlocksMerge,
@@ -37,33 +37,32 @@ import {
   localReviewStallFailureContext,
   nextLocalReviewSignatureTracking,
   processedReviewThreadKey,
-} from "./review-handling";
+} from "../review-handling";
 import {
   isRestartRunOnce,
   IssueJournalSync,
   MemoryArtifacts,
   prepareIssueExecutionContext,
   PreparedIssueExecutionContext,
-} from "./run-once-issue-preparation";
+} from "../run-once-issue-preparation";
 import {
   CodexTurnContext,
   CodexTurnResult,
   CodexTurnShortCircuit,
   executeCodexTurnPhase,
   loadLocalReviewRepairContext,
-} from "./run-once-turn-execution";
-import { nextExternalReviewMissPatch } from "./external-review-miss-state";
+} from "../run-once-turn-execution";
 import {
   handlePostTurnPullRequestTransitionsPhase,
   PostTurnPullRequestContext,
   PostTurnPullRequestResult,
-} from "./post-turn-pull-request";
-import { buildChecksFailureContext, buildConflictFailureContext } from "./pull-request-failure-context";
+} from "../post-turn-pull-request";
+import { buildChecksFailureContext, buildConflictFailureContext } from "../pull-request-failure-context";
 import {
   resolveRunnableIssueContext as resolveIssueSelectionContext,
   RestartRunOnce as SelectionRestartRunOnce,
-} from "./run-once-issue-selection";
-import { RecoveryEvent, runOnceCyclePrelude } from "./run-once-cycle-prelude";
+} from "../run-once-issue-selection";
+import { RecoveryEvent, runOnceCyclePrelude } from "../run-once-cycle-prelude";
 import {
   applyFailureSignature,
   buildCodexFailureContext,
@@ -89,7 +88,7 @@ import {
   summarizeSupervisorStatusRecords,
 } from "./supervisor-selection-status";
 import { inferFailureContext } from "./supervisor-failure-context";
-import { StateStore } from "./state-store";
+import { StateStore } from "../state-store";
 import {
   blockedReasonForLifecycleState,
   derivePullRequestLifecycleSnapshot,
@@ -112,7 +111,7 @@ import {
   configuredBotReviewThreads,
   manualReviewThreads,
   pendingBotReviewThreads,
-} from "./review-thread-reporting";
+} from "../review-thread-reporting";
 import {
   BlockedReason,
   CliOptions,
@@ -126,13 +125,13 @@ import {
   SupervisorConfig,
   SupervisorStateFile,
   WorkspaceStatus,
-} from "./types";
-import { nowIso, truncate } from "./utils";
+} from "../types";
+import { nowIso, truncate } from "../utils";
 import {
   ensureWorkspace,
   getWorkspaceStatus,
   pushBranch,
-} from "./workspace";
+} from "../workspace";
 
 interface ReadyIssueContext {
   kind: "ready";

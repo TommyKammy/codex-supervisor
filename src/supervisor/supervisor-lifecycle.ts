@@ -1,19 +1,19 @@
-import { shouldPreserveNoPrFailureTracking } from "./no-pull-request-state";
-import type { PullRequestLifecycleSnapshot } from "./post-turn-pull-request";
+import { shouldPreserveNoPrFailureTracking } from "../no-pull-request-state";
+import type { PullRequestLifecycleSnapshot } from "../post-turn-pull-request";
 import {
   blockedReasonFromReviewState,
   inferStateFromPullRequest,
   syncCopilotReviewRequestObservation,
   syncCopilotReviewTimeoutState,
   syncReviewWaitWindow,
-} from "./pull-request-state";
+} from "../pull-request-state";
 import {
   localReviewHighSeverityNeedsBlock,
   localReviewRetryLoopStalled,
-} from "./review-handling";
+} from "../review-handling";
 import { inferFailureContext } from "./supervisor-failure-context";
 import { mergeConflictDetected, summarizeChecks } from "./supervisor-status-rendering";
-import { configuredBotReviewThreads, manualReviewThreads } from "./review-thread-reporting";
+import { configuredBotReviewThreads, manualReviewThreads } from "../review-thread-reporting";
 import {
   FailureContext,
   GitHubPullRequest,
@@ -22,7 +22,7 @@ import {
   ReviewThread,
   RunState,
   SupervisorConfig,
-} from "./types";
+} from "../types";
 
 export function shouldStopForRepeatedFailureSignature(record: IssueRunRecord, config: SupervisorConfig): boolean {
   return (

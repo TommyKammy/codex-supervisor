@@ -1,11 +1,11 @@
-import { GitHubClient } from "./github";
+import { GitHubClient } from "../github";
 import {
   findBlockingIssue,
   findHighRiskBlockingAmbiguity,
   lintExecutionReadyIssueBody,
   parseIssueMetadata,
-} from "./issue-metadata";
-import { readIssueJournal, summarizeIssueJournalHandoff } from "./journal";
+} from "../issue-metadata";
+import { readIssueJournal, summarizeIssueJournalHandoff } from "../journal";
 import {
   formatExecutionReadyMissingFields,
   isEligibleForSelection,
@@ -20,7 +20,7 @@ import {
   ReviewThread,
   SupervisorConfig,
   SupervisorStateFile,
-} from "./types";
+} from "../types";
 
 type ReadinessSummaryGitHub = Pick<GitHubClient, "listCandidateIssues">;
 type ActiveStatusGitHub = Pick<
