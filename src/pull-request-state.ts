@@ -23,10 +23,15 @@ import {
   RunState,
   SupervisorConfig,
 } from "./core/types";
+import {
+  configuredReviewBotLogins,
+  repoExpectsConfiguredBotReview,
+  repoExpectsLifecycleBotReview,
+  repoUsesCopilotOnlyReviewBot,
+} from "./core/review-providers";
 import { nowIso } from "./core/utils";
 
 const COPILOT_REVIEW_PROPAGATION_GRACE_MS = 5_000;
-const COPILOT_REVIEWER_LOGIN = "copilot-pull-request-reviewer";
 
 interface CopilotReviewTimeoutStatus {
   timedOut: boolean;
@@ -49,21 +54,8 @@ function reviewSatisfied(pr: GitHubPullRequest): boolean {
   );
 }
 
-function configuredReviewBots(config: SupervisorConfig): string[] {
-  return config.reviewBotLogins.map((login) => login.trim()).filter((login) => login.length > 0);
-}
-
-function repoExpectsConfiguredBotReview(config: SupervisorConfig): boolean {
-  return configuredReviewBots(config).length > 0;
-}
-
-function repoUsesCopilotOnlyReviewBot(config: SupervisorConfig): boolean {
-  const bots = configuredReviewBots(config);
-  return bots.length === 1 && bots[0].toLowerCase() === COPILOT_REVIEWER_LOGIN;
-}
-
 function configuredReviewBotLabel(config: SupervisorConfig): string {
-  const bots = configuredReviewBots(config);
+  const bots = configuredReviewBotLogins(config);
   if (repoUsesCopilotOnlyReviewBot(config)) {
     return "Copilot";
   }
@@ -107,7 +99,7 @@ function hasObservedCopilotRequest(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
 ): boolean {
-  if (!repoExpectsConfiguredBotReview(config)) {
+  if (!repoExpectsLifecycleBotReview(config)) {
     return false;
   }
 
@@ -131,7 +123,7 @@ function copilotReviewTimeoutStart(config: SupervisorConfig, record: IssueRunRec
     return pr.copilotReviewRequestedAt;
   }
 
-  if (record.copilot_review_requested_head_sha === pr.headRefOid) {
+  if (hasObservedCopilotRequest(config, record, pr)) {
     return record.copilot_review_requested_observed_at;
   }
 
@@ -180,7 +172,7 @@ function shouldWaitForCopilotReviewPropagation(
   pr: GitHubPullRequest,
 ): boolean {
   if (
-    !repoExpectsConfiguredBotReview(config) ||
+    !repoExpectsLifecycleBotReview(config) ||
     config.copilotReviewWaitMinutes <= 0 ||
     pr.isDraft ||
     pr.headRefOid !== record.review_wait_head_sha
@@ -301,7 +293,7 @@ export function syncCopilotReviewRequestObservation(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
 ): Partial<IssueRunRecord> {
-  if (!repoExpectsConfiguredBotReview(config) || pr.isDraft || copilotReviewArrived(pr)) {
+  if (!repoExpectsLifecycleBotReview(config) || pr.isDraft || copilotReviewArrived(pr)) {
     return {
       copilot_review_requested_observed_at: null,
       copilot_review_requested_head_sha: null,

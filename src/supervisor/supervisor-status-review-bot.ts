@@ -1,6 +1,10 @@
+import {
+  configuredReviewBotLogins,
+  repoExpectsConfiguredBotReview,
+  repoUsesCopilotOnlyReviewBot,
+  reviewProviderProfileFromConfig,
+} from "../core/review-providers";
 import { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "../core/types";
-
-const COPILOT_REVIEWER_LOGIN = "copilot-pull-request-reviewer";
 
 type ReviewThreadClassifier = (config: SupervisorConfig, reviewThreads: ReviewThread[]) => ReviewThread[];
 
@@ -20,7 +24,7 @@ export interface ReviewBotDiagnostics {
 }
 
 export function configuredReviewBots(config: SupervisorConfig): string[] {
-  return config.reviewBotLogins.map((login) => login.trim()).filter((login) => login.length > 0);
+  return configuredReviewBotLogins(config);
 }
 
 export function configuredBotRateLimitWaitWindow(
@@ -45,15 +49,6 @@ export function configuredBotRateLimitWaitWindow(
   };
 }
 
-export function repoExpectsConfiguredBotReview(config: SupervisorConfig): boolean {
-  return configuredReviewBots(config).length > 0;
-}
-
-export function repoUsesCopilotOnlyReviewBot(config: SupervisorConfig): boolean {
-  const bots = configuredReviewBots(config);
-  return bots.length === 1 && bots[0].toLowerCase() === COPILOT_REVIEWER_LOGIN;
-}
-
 export function configuredReviewStatusLabel(config: SupervisorConfig): string {
   return !repoExpectsConfiguredBotReview(config) || repoUsesCopilotOnlyReviewBot(config)
     ? "copilot_review"
@@ -65,56 +60,7 @@ function unresolvedReviewThreads(reviewThreads: ReviewThread[]): ReviewThread[] 
 }
 
 export function inferReviewBotProfile(config: SupervisorConfig): ReviewBotProfileSummary {
-  const reviewers = configuredReviewBots(config);
-  const normalized = reviewers.map((reviewer) => reviewer.toLowerCase());
-  const normalizedSet = new Set(normalized);
-
-  if (normalized.length === 0) {
-    return {
-      profile: "none",
-      provider: "none",
-      reviewers,
-      signalSource: "none",
-    };
-  }
-
-  if (normalized.length === 1 && normalized[0] === COPILOT_REVIEWER_LOGIN) {
-    return {
-      profile: "copilot",
-      provider: COPILOT_REVIEWER_LOGIN,
-      reviewers,
-      signalSource: "copilot_lifecycle",
-    };
-  }
-
-  if (normalized.length === 1 && normalized[0] === "chatgpt-codex-connector") {
-    return {
-      profile: "codex",
-      provider: "chatgpt-codex-connector",
-      reviewers,
-      signalSource: "review_threads",
-    };
-  }
-
-  if (
-    normalized.length === 2 &&
-    normalizedSet.has("coderabbitai") &&
-    normalizedSet.has("coderabbitai[bot]")
-  ) {
-    return {
-      profile: "coderabbit",
-      provider: "coderabbitai",
-      reviewers,
-      signalSource: "review_threads",
-    };
-  }
-
-  return {
-    profile: "custom",
-    provider: reviewers.join(",") || "custom",
-    reviewers,
-    signalSource: normalized.includes(COPILOT_REVIEWER_LOGIN) ? "copilot_lifecycle+review_threads" : "review_threads",
-  };
+  return reviewProviderProfileFromConfig(config);
 }
 
 export function summarizeObservedReviewSignal(

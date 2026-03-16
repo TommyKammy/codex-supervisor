@@ -29,6 +29,14 @@ export type LocalReviewPolicy = "advisory" | "block_ready" | "block_merge";
 export type LocalReviewHighSeverityAction = "retry" | "blocked";
 export type CopilotReviewState = "not_requested" | "requested" | "arrived";
 export type CopilotReviewTimeoutAction = "continue" | "block";
+export type ConfiguredReviewProviderKind = "copilot" | "codex" | "coderabbit" | "custom";
+export type ConfiguredReviewSignalSource = "copilot_lifecycle" | "review_threads";
+
+export interface ConfiguredReviewProvider {
+  kind: ConfiguredReviewProviderKind;
+  reviewerLogins: string[];
+  signalSource: ConfiguredReviewSignalSource;
+}
 
 export interface SupervisorConfig {
   repoPath: string;
@@ -58,6 +66,7 @@ export interface SupervisorConfig {
   localReviewPolicy: LocalReviewPolicy;
   localReviewHighSeverityAction: LocalReviewHighSeverityAction;
   reviewBotLogins: string[];
+  configuredReviewProviders?: ConfiguredReviewProvider[];
   humanReviewBlocksMerge: boolean;
   issueJournalRelativePath: string;
   issueJournalMaxChars: number;
