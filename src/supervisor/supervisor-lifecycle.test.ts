@@ -103,7 +103,7 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     blocked_verification_retry_count: 0,
     repeated_blocker_count: 0,
     repeated_failure_signature_count: 0,
-    last_head_sha: "abcdef1",
+    last_head_sha: "head123",
     last_codex_summary: null,
     last_recovery_reason: null,
     last_recovery_at: null,
@@ -201,6 +201,16 @@ test("shouldRunCodex only returns true for actionable supervisor states", () => 
       createRecord({ state: "repairing_ci" }),
       createPullRequest({ mergeStateStatus: "CLEAN" }),
       [{ name: "build", state: "FAILURE", bucket: "fail", workflow: "CI" }],
+      reviewThreads,
+      config,
+    ),
+    true,
+  );
+  assert.equal(
+    shouldRunCodex(
+      createRecord({ state: "ready_to_merge", last_head_sha: "head-old" }),
+      createPullRequest({ headRefOid: "head-new" }),
+      checks,
       reviewThreads,
       config,
     ),

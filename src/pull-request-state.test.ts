@@ -104,7 +104,7 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     blocked_verification_retry_count: 0,
     repeated_blocker_count: 0,
     repeated_failure_signature_count: 1,
-    last_head_sha: "abcdef1",
+    last_head_sha: "head123",
     last_codex_summary: null,
     last_recovery_reason: null,
     last_recovery_at: null,
@@ -220,6 +220,45 @@ test("inferStateFromPullRequest does not wait for Copilot when no lifecycle sign
     inferStateFromPullRequest(config, record, createPullRequest({ createdAt: now }), checks, []),
     "ready_to_merge",
   );
+});
+
+test("inferStateFromPullRequest does not report ready_to_merge when the tracked head is stale", () => {
+  const config = createConfig();
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head-old",
+  });
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, createPullRequest({ headRefOid: "head-new" }), checks, []),
+    "stabilizing",
+  );
+});
+
+test("inferStateFromPullRequest keeps review-required PRs out of ready_to_merge", () => {
+  const config = createConfig();
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head123",
+  });
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, createPullRequest({ reviewDecision: "REVIEW_REQUIRED" }), checks, []),
+    "pr_open",
+  );
+});
+
+test("inferStateFromPullRequest keeps pending checks from reaching ready_to_merge", () => {
+  const config = createConfig();
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head123",
+  });
+  const checks: PullRequestCheck[] = [{ name: "build", state: "IN_PROGRESS", bucket: "pending", workflow: "CI" }];
+
+  assert.equal(inferStateFromPullRequest(config, record, createPullRequest(), checks, []), "waiting_ci");
 });
 
 test("inferStateFromPullRequest waits briefly after ready-for-review for Copilot request propagation", () => {
@@ -848,6 +887,7 @@ test("inferStateFromPullRequest covers local review policy gating combinations",
       config: { localReviewEnabled: true, localReviewPolicy: "block_merge", copilotReviewWaitMinutes: 0 },
       record: {
         state: "pr_open",
+        last_head_sha: "newhead",
         local_review_head_sha: "oldhead",
         local_review_findings_count: 2,
         local_review_recommendation: "changes_requested",
