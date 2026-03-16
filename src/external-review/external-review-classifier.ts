@@ -1,4 +1,4 @@
-import { type LocalReviewSeverity } from "./local-review/types";
+import { type LocalReviewSeverity } from "../local-review/types";
 import { type NormalizedExternalReviewFinding } from "./external-review-normalization";
 
 export type ExternalReviewMatch = "matched" | "near_match" | "missed_by_local_review";

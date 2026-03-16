@@ -1,4 +1,4 @@
-import { type ExternalReviewMissPattern } from "../external-review-misses";
+import { type ExternalReviewMissPattern } from "../external-review/external-review-misses";
 import { type GitHubIssue, type GitHubPullRequest } from "../types";
 import { truncate } from "../utils";
 import { renderLines } from "./artifacts";

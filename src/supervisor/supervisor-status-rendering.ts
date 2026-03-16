@@ -6,7 +6,7 @@ import {
   loadCommittedExternalReviewGuardrails,
   VERIFIER_GUARDRAILS_PATH,
 } from "../committed-guardrails";
-import { loadRelevantExternalReviewMissPatterns } from "../external-review-misses";
+import { loadRelevantExternalReviewMissPatterns } from "../external-review/external-review-misses";
 import { reviewDir } from "../local-review/artifacts";
 import {
   configuredBotReviewThreads,

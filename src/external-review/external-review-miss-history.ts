@@ -3,8 +3,8 @@ import path from "node:path";
 import {
   compareExternalReviewPatterns,
   loadCommittedExternalReviewGuardrails,
-} from "./committed-guardrails";
-import { parseJson } from "./utils";
+} from "../committed-guardrails";
+import { parseJson } from "../utils";
 import { legacyReusableMissPatterns } from "./external-review-miss-patterns";
 import { type ExternalReviewMissFinding } from "./external-review-classifier";
 import {

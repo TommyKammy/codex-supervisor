@@ -3,7 +3,7 @@ import {
   hasActionableReviewText,
   isActionableTopLevelReview,
   isRateLimitReviewText,
-} from "../external-review-signal-heuristics";
+} from "../external-review/external-review-signal-heuristics";
 import { CopilotReviewState } from "../types";
 
 export interface CopilotReviewLifecycleFacts {

@@ -1,5 +1,5 @@
 import { extractIssueJournalHandoff } from "../journal";
-import { ExternalReviewMissContext, type ExternalReviewMissPattern } from "../external-review-misses";
+import { ExternalReviewMissContext, type ExternalReviewMissPattern } from "../external-review/external-review-misses";
 import {
   FailureContext,
   GitHubIssue,

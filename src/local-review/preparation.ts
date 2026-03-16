@@ -3,7 +3,7 @@ import {
   loadCommittedExternalReviewGuardrails,
 } from "../committed-guardrails";
 import { runCommand } from "../command";
-import { loadRelevantExternalReviewMissPatterns, type ExternalReviewMissPattern } from "../external-review-misses";
+import { loadRelevantExternalReviewMissPatterns, type ExternalReviewMissPattern } from "../external-review/external-review-misses";
 import { reviewDir } from "./artifacts";
 import { compareRef } from "./prompt";
 import { detectLocalReviewRoleSelections, type LocalReviewRoleSelection } from "../review-role-detector";

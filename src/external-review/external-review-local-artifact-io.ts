@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parseJson } from "./utils";
+import { parseJson } from "../utils";
 import { type LocalReviewArtifactLike } from "./external-review-classifier";
 
 export async function loadLocalReviewArtifact(summaryPath: string | null): Promise<{

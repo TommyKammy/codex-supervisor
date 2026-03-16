@@ -8,8 +8,8 @@ import {
   collectExternalReviewSignals,
   ExternalReviewMissContext,
   writeExternalReviewMissArtifact,
-} from "./external-review-misses";
-import { syncExternalReviewMissState } from "./external-review-miss-state";
+} from "./external-review/external-review-misses";
+import { syncExternalReviewMissState } from "./external-review/external-review-miss-state";
 import { GitHubClient } from "./github";
 import { loadLocalReviewRepairContext } from "./local-review/repair-context";
 import {

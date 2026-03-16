@@ -3,7 +3,7 @@ import {
   EXTERNAL_REVIEW_GUARDRAILS_PATH,
   VERIFIER_GUARDRAILS_PATH,
 } from "../committed-guardrails";
-import { type ExternalReviewMissPattern } from "../external-review-misses";
+import { type ExternalReviewMissPattern } from "../external-review/external-review-misses";
 import { type FinalizedLocalReview, type LocalReviewResult, type LocalReviewVerifierReport } from "./types";
 import { truncate } from "../utils";
 import { type SupervisorConfig } from "../types";
