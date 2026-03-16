@@ -21,6 +21,7 @@ import { StateStore } from "./core/state-store";
 import {
   nextProcessedReviewThreadPatch,
   prepareCodexTurnPrompt,
+  shouldResumeAgentTurn,
 } from "./turn-execution-orchestration";
 import {
   FailureContext,
@@ -244,10 +245,14 @@ export async function executeCodexTurnPhase(
 
     const journalContent = (await readIssueJournalImpl(journalPath)) ?? "";
     const preRunState = record.state;
+    const shouldResumeTurn = shouldResumeAgentTurn({
+      record,
+      agentRunnerCapabilities: agentRunner.capabilities,
+    });
     const sessionLock =
       args.sessionLock ??
-      (record.codex_session_id && agentRunner.capabilities.supportsResume
-        ? await args.acquireSessionLock(record.codex_session_id)
+      (shouldResumeTurn
+        ? await args.acquireSessionLock(record.codex_session_id!)
         : null);
     if (sessionLock && !sessionLock.acquired) {
       return {

@@ -4,7 +4,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { buildCodexPrompt } from "./codex";
-import { nextProcessedReviewThreadPatch, prepareCodexTurnPrompt } from "./turn-execution-orchestration";
+import {
+  nextProcessedReviewThreadPatch,
+  prepareCodexTurnPrompt,
+  shouldResumeAgentTurn,
+} from "./turn-execution-orchestration";
 import { SupervisorStateFile } from "./core/types";
 import {
   createConfig,
@@ -59,6 +63,33 @@ test("nextProcessedReviewThreadPatch refreshes reprocessed same-head ids to the 
   assert.equal(
     patch.processed_review_thread_fingerprints[patch.processed_review_thread_fingerprints.length - 1],
     "thread-0@head-a#comment-0",
+  );
+});
+
+test("shouldResumeAgentTurn rejects persisted sessions for non-compact resume states", () => {
+  assert.equal(
+    shouldResumeAgentTurn({
+      record: {
+        codex_session_id: "session-existing",
+        state: "addressing_review",
+      },
+      agentRunnerCapabilities: {
+        supportsResume: true,
+      },
+    }),
+    false,
+  );
+  assert.equal(
+    shouldResumeAgentTurn({
+      record: {
+        codex_session_id: "session-existing",
+        state: "implementing",
+      },
+      agentRunnerCapabilities: {
+        supportsResume: true,
+      },
+    }),
+    true,
   );
 });
 
