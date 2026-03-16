@@ -311,7 +311,7 @@ export class Supervisor {
       };
     }
 
-    const sessionLock = record.codex_session_id
+    const sessionLock = record.codex_session_id && this.agentRunner.capabilities.supportsResume
       ? await acquireFileLock(
           this.lockPath("sessions", `session-${record.codex_session_id}`),
           `session-${record.codex_session_id}`,

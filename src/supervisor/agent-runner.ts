@@ -68,7 +68,7 @@ export function detectCodexCliCapabilities(
   config?: Pick<SupervisorConfig, "codexBinary"> | null,
 ): AgentRunnerCapabilities {
   const binaryName = basename(config?.codexBinary ?? "codex").toLowerCase();
-  const looksLikeCodex = binaryName === "codex" || binaryName.startsWith("codex.");
+  const looksLikeCodex = binaryName.includes("codex");
 
   return {
     supportsResume: looksLikeCodex,
