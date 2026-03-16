@@ -7,7 +7,7 @@ import {
 import {
   mergeConflictDetected,
   summarizeChecks,
-} from "./supervisor-reporting";
+} from "./supervisor/supervisor-reporting";
 import {
   configuredBotReviewThreads,
   manualReviewThreads,

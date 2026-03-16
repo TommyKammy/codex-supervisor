@@ -6,4 +6,4 @@ export {
   sanitizeStatusValue,
   summarizeChecks,
 } from "./supervisor-status-rendering";
-export { configuredBotReviewThreads, manualReviewThreads, pendingBotReviewThreads } from "./review-thread-reporting";
+export { configuredBotReviewThreads, manualReviewThreads, pendingBotReviewThreads } from "../review-thread-reporting";

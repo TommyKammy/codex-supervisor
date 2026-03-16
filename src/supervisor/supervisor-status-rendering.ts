@@ -1,27 +1,27 @@
 import path from "node:path";
-import { runCommand } from "./command";
+import { runCommand } from "../command";
 import {
   compareExternalReviewPatterns,
   EXTERNAL_REVIEW_GUARDRAILS_PATH,
   loadCommittedExternalReviewGuardrails,
   VERIFIER_GUARDRAILS_PATH,
-} from "./committed-guardrails";
-import { loadRelevantExternalReviewMissPatterns } from "./external-review-misses";
-import { reviewDir } from "./local-review/artifacts";
+} from "../committed-guardrails";
+import { loadRelevantExternalReviewMissPatterns } from "../external-review-misses";
+import { reviewDir } from "../local-review/artifacts";
 import {
   configuredBotReviewThreads,
   latestReviewComment,
   manualReviewThreads,
   pendingBotReviewThreads,
-} from "./review-thread-reporting";
+} from "../review-thread-reporting";
 import {
   buildDetailedStatusModel,
   buildDetailedStatusSummaryLines,
   sanitizeStatusValue,
 } from "./supervisor-status-model";
 import { displayRelativeArtifactPath } from "./supervisor-status-summary-helpers";
-import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "./types";
-import { loadRelevantVerifierGuardrails } from "./verifier-guardrails";
+import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../types";
+import { loadRelevantVerifierGuardrails } from "../verifier-guardrails";
 
 export function summarizeChecks(
   checks: PullRequestCheck[],

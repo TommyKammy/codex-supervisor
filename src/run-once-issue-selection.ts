@@ -9,12 +9,12 @@ import { issueJournalPath, syncIssueJournal } from "./journal";
 import { acquireFileLock, LockHandle } from "./lock";
 import {
   applyFailureSignature,
-} from "./supervisor-failure-helpers";
+} from "./supervisor/supervisor-failure-helpers";
 import {
   formatExecutionReadyMissingFields,
   isEligibleForSelection,
   shouldEnforceExecutionReady,
-} from "./supervisor-execution-policy";
+} from "./supervisor/supervisor-execution-policy";
 import { StateStore } from "./state-store";
 import {
   FailureContext,

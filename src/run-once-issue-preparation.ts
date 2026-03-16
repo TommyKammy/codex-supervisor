@@ -5,7 +5,7 @@ import { RecoveryEvent } from "./run-once-cycle-prelude";
 import {
   applyFailureSignature,
   buildCodexFailureContext,
-} from "./supervisor-failure-helpers";
+} from "./supervisor/supervisor-failure-helpers";
 import { StateStore } from "./state-store";
 import {
   CliOptions,

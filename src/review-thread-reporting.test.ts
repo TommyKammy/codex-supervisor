@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { configuredBotReviewThreads, manualReviewThreads } from "./supervisor-reporting";
+import { configuredBotReviewThreads, manualReviewThreads } from "./supervisor/supervisor-reporting";
 import { ReviewThread, SupervisorConfig } from "./types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {

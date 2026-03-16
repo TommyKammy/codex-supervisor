@@ -12,7 +12,7 @@ import {
   shouldAutoRetryHandoffMissing,
   shouldEnforceExecutionReady,
 } from "./supervisor-execution-policy";
-import { GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "./types";
+import { GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
