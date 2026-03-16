@@ -178,7 +178,7 @@ test("inferReviewBotProfile identifies configured provider patterns", () => {
     {
       profile: "coderabbit",
       provider: "coderabbitai",
-      reviewers: ["CodeRabbitAI", "coderabbitai[bot]"],
+      reviewers: ["coderabbitai", "coderabbitai[bot]"],
       signalSource: "review_threads",
     },
   );

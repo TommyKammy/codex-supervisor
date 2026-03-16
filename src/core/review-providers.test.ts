@@ -131,6 +131,29 @@ test("reviewProviderProfileFromConfig summarizes the mapped internal provider mo
   );
 });
 
+test("reviewProviderProfileFromConfig uses configuredReviewProviders as the canonical reviewer source", () => {
+  assert.deepEqual(
+    reviewProviderProfileFromConfig(
+      createConfig({
+        reviewBotLogins: ["legacy-bot"],
+        configuredReviewProviders: [
+          {
+            kind: "coderabbit",
+            reviewerLogins: ["coderabbitai", "coderabbitai[bot]"],
+            signalSource: "review_threads",
+          },
+        ],
+      }),
+    ),
+    {
+      profile: "coderabbit",
+      provider: "coderabbitai",
+      reviewers: ["coderabbitai", "coderabbitai[bot]"],
+      signalSource: "review_threads",
+    },
+  );
+});
+
 test("configuredReviewProviderKinds reports the normalized kinds in config order", () => {
   assert.deepEqual(
     configuredReviewProviderKinds(

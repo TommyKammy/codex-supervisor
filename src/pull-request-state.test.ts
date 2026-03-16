@@ -282,11 +282,17 @@ test("inferStateFromPullRequest does not time out immediately when configured re
   );
 });
 
-test("inferStateFromPullRequest waits briefly after ready-for-review for configured bot request propagation", () => {
+test("inferStateFromPullRequest does not wait for review-threads-only providers without a requested signal", () => {
   withStubbedDateNow("2026-03-13T05:42:40Z", () => {
     const config = createConfig({
       copilotReviewWaitMinutes: 10,
-      reviewBotLogins: ["chatgpt-codex-connector"],
+      configuredReviewProviders: [
+        {
+          kind: "codex",
+          reviewerLogins: ["chatgpt-codex-connector"],
+          signalSource: "review_threads",
+        },
+      ],
     });
     const record = createRecord({
       state: "pr_open",
@@ -308,7 +314,7 @@ test("inferStateFromPullRequest waits briefly after ready-for-review for configu
         checks,
         [],
       ),
-      "waiting_ci",
+      "ready_to_merge",
     );
   });
 });
@@ -344,11 +350,17 @@ test("inferStateFromPullRequest allows merge after the Copilot propagation grace
   });
 });
 
-test("inferStateFromPullRequest keeps waiting when a configured bot request was observed on the current head but has not arrived", () => {
+test("inferStateFromPullRequest ignores observed request fallbacks for review-threads-only providers", () => {
   withStubbedDateNow("2026-03-11T00:10:00Z", () => {
     const config = createConfig({
       copilotReviewWaitMinutes: 10,
-      reviewBotLogins: ["chatgpt-codex-connector"],
+      configuredReviewProviders: [
+        {
+          kind: "codex",
+          reviewerLogins: ["chatgpt-codex-connector"],
+          signalSource: "review_threads",
+        },
+      ],
     });
     const record = createRecord({
       state: "waiting_ci",
@@ -371,7 +383,7 @@ test("inferStateFromPullRequest keeps waiting when a configured bot request was 
         checks,
         [],
       ),
-      "waiting_ci",
+      "ready_to_merge",
     );
   });
 });
@@ -657,12 +669,18 @@ test("inferStateFromPullRequest can time out from the observed Copilot request t
   });
 });
 
-test("inferStateFromPullRequest can block when a configured bot review times out from the observed request timestamp", () => {
+test("inferStateFromPullRequest does not time out review-threads-only providers from observed request fallback timestamps", () => {
   withStubbedDateNow("2026-03-11T00:30:00Z", () => {
     const config = createConfig({
       copilotReviewWaitMinutes: 10,
       copilotReviewTimeoutAction: "block",
-      reviewBotLogins: ["chatgpt-codex-connector"],
+      configuredReviewProviders: [
+        {
+          kind: "codex",
+          reviewerLogins: ["chatgpt-codex-connector"],
+          signalSource: "review_threads",
+        },
+      ],
     });
     const record = createRecord({
       state: "waiting_ci",
@@ -685,7 +703,7 @@ test("inferStateFromPullRequest can block when a configured bot review times out
         checks,
         [],
       ),
-      "blocked",
+      "waiting_ci",
     );
   });
 });

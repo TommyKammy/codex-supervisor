@@ -78,6 +78,10 @@ export function repoExpectsConfiguredBotReview(config: Pick<SupervisorConfig, "r
   return configuredReviewProviders(config).length > 0;
 }
 
+export function repoExpectsLifecycleBotReview(config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">): boolean {
+  return configuredReviewProviders(config).some((provider) => provider.signalSource === "copilot_lifecycle");
+}
+
 export function repoUsesCopilotOnlyReviewBot(config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">): boolean {
   const providers = configuredReviewProviders(config);
   return providers.length === 1 && providers[0]?.kind === "copilot" && providers[0].reviewerLogins.length === 1;
@@ -87,7 +91,7 @@ export function reviewProviderProfileFromConfig(
   config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">,
 ): ReviewProviderProfileSummary {
   const providers = configuredReviewProviders(config);
-  const reviewers = trimReviewBotLogins(config.reviewBotLogins);
+  const reviewers = configuredReviewBotLogins(config);
 
   if (providers.length === 0) {
     return {

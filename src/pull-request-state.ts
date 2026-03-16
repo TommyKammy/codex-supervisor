@@ -26,6 +26,7 @@ import {
 import {
   configuredReviewBotLogins,
   repoExpectsConfiguredBotReview,
+  repoExpectsLifecycleBotReview,
   repoUsesCopilotOnlyReviewBot,
 } from "./core/review-providers";
 import { nowIso } from "./core/utils";
@@ -98,7 +99,7 @@ function hasObservedCopilotRequest(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
 ): boolean {
-  if (!repoExpectsConfiguredBotReview(config)) {
+  if (!repoExpectsLifecycleBotReview(config)) {
     return false;
   }
 
@@ -122,7 +123,7 @@ function copilotReviewTimeoutStart(config: SupervisorConfig, record: IssueRunRec
     return pr.copilotReviewRequestedAt;
   }
 
-  if (record.copilot_review_requested_head_sha === pr.headRefOid) {
+  if (hasObservedCopilotRequest(config, record, pr)) {
     return record.copilot_review_requested_observed_at;
   }
 
@@ -171,7 +172,7 @@ function shouldWaitForCopilotReviewPropagation(
   pr: GitHubPullRequest,
 ): boolean {
   if (
-    !repoExpectsConfiguredBotReview(config) ||
+    !repoExpectsLifecycleBotReview(config) ||
     config.copilotReviewWaitMinutes <= 0 ||
     pr.isDraft ||
     pr.headRefOid !== record.review_wait_head_sha
@@ -292,7 +293,7 @@ export function syncCopilotReviewRequestObservation(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
 ): Partial<IssueRunRecord> {
-  if (!repoExpectsConfiguredBotReview(config) || pr.isDraft || copilotReviewArrived(pr)) {
+  if (!repoExpectsLifecycleBotReview(config) || pr.isDraft || copilotReviewArrived(pr)) {
     return {
       copilot_review_requested_observed_at: null,
       copilot_review_requested_head_sha: null,
