@@ -92,7 +92,7 @@ import {
 } from "./supervisor-selection-status";
 import { inferFailureContext } from "./supervisor-failure-context";
 import { StateStore } from "../core/state-store";
-import { diagnoseSupervisorHost, renderDoctorReport } from "../doctor";
+import { diagnoseSupervisorHost, loadStateReadonlyForDoctor, renderDoctorReport } from "../doctor";
 import {
   blockedReasonForLifecycleState,
   derivePullRequestLifecycleSnapshot,
@@ -631,7 +631,7 @@ export class Supervisor {
       await diagnoseSupervisorHost({
         config: this.config,
         authStatus: () => this.github.authStatus(),
-        loadState: () => this.stateStore.load(),
+        loadState: () => loadStateReadonlyForDoctor(this.config),
       }),
     );
   }

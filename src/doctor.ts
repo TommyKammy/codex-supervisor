@@ -3,9 +3,8 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { GitHubClient } from "./github";
 import { runCommand } from "./core/command";
-import { StateStore } from "./core/state-store";
 import { parseJson } from "./core/utils";
-import { type SupervisorConfig, type SupervisorStateFile } from "./core/types";
+import { type IssueRunRecord, type SupervisorConfig, type SupervisorStateFile } from "./core/types";
 
 export type DoctorCheckStatus = "pass" | "warn" | "fail";
 
@@ -25,6 +24,13 @@ interface DiagnoseSupervisorHostArgs {
   config: SupervisorConfig;
   authStatus?: () => Promise<{ ok: boolean; message: string | null }>;
   loadState?: () => Promise<SupervisorStateFile>;
+}
+
+function emptyDoctorState(): SupervisorStateFile {
+  return {
+    activeIssueNumber: null,
+    issues: {},
+  };
 }
 
 function sanitizeDoctorValue(value: string): string {
@@ -187,6 +193,74 @@ async function diagnoseStateFile(config: SupervisorConfig): Promise<DoctorCheck>
   }
 }
 
+function parseReadonlySqliteState(db: DatabaseSync): SupervisorStateFile {
+  const activeRow = db
+    .prepare("SELECT value FROM metadata WHERE key = 'activeIssueNumber'")
+    .get() as { value?: string } | undefined;
+  const rows = db
+    .prepare("SELECT issue_number, record_json FROM issues ORDER BY issue_number ASC")
+    .all() as Array<{ issue_number: number; record_json: string }>;
+  const issues = Object.fromEntries(
+    rows.map((row) => [
+      String(row.issue_number),
+      parseJson<IssueRunRecord>(row.record_json, `sqlite issues row ${row.issue_number}`),
+    ]),
+  );
+  const rawActiveIssueNumber = activeRow?.value?.trim();
+
+  if (!rawActiveIssueNumber) {
+    return {
+      activeIssueNumber: null,
+      issues,
+    };
+  }
+
+  const activeIssueNumber = Number.parseInt(rawActiveIssueNumber, 10);
+  if (!Number.isInteger(activeIssueNumber)) {
+    throw new Error(`Invalid activeIssueNumber value in sqlite metadata: ${rawActiveIssueNumber}`);
+  }
+
+  return {
+    activeIssueNumber,
+    issues,
+  };
+}
+
+export async function loadStateReadonlyForDoctor(config: SupervisorConfig): Promise<SupervisorStateFile> {
+  if (config.stateBackend === "json") {
+    try {
+      const raw = await fs.readFile(config.stateFile, "utf8");
+      return parseJson<SupervisorStateFile>(raw, config.stateFile);
+    } catch (error) {
+      const maybeErr = error as NodeJS.ErrnoException;
+      if (maybeErr.code === "ENOENT") {
+        return emptyDoctorState();
+      }
+
+      throw error;
+    }
+  }
+
+  try {
+    await fs.access(config.stateFile, fs.constants.R_OK);
+  } catch (error) {
+    const maybeErr = error as NodeJS.ErrnoException;
+    if (maybeErr.code === "ENOENT") {
+      return emptyDoctorState();
+    }
+
+    throw error;
+  }
+
+  let db: DatabaseSync | null = null;
+  try {
+    db = new DatabaseSync(config.stateFile, { readOnly: true });
+    return parseReadonlySqliteState(db);
+  } finally {
+    db?.close();
+  }
+}
+
 function parseWorktreeList(stdout: string): Set<string> {
   const worktrees = new Set<string>();
   for (const line of stdout.split(/\r?\n/)) {
@@ -270,11 +344,7 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
     (() => new GitHubClient(args.config).authStatus());
   const loadState =
     args.loadState ??
-    (() =>
-      new StateStore(args.config.stateFile, {
-        backend: args.config.stateBackend,
-        bootstrapFilePath: args.config.stateBootstrapFile,
-      }).load());
+    (() => loadStateReadonlyForDoctor(args.config));
 
   const checks = await Promise.all([
     diagnoseGitHubAuth(authStatus),

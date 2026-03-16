@@ -280,6 +280,31 @@ async function createSupervisorFixture(options: {
   };
 }
 
+test("doctor uses the diagnostic-only state loader instead of StateStore.load", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  await fs.writeFile(fixture.stateFile, "{not-json}\n", "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+  };
+
+  const stateStore = (supervisor as unknown as { stateStore: StateStore }).stateStore;
+  stateStore.load = async () => {
+    throw new Error("StateStore.load should not be used by doctor");
+  };
+
+  const report = await supervisor.doctor();
+
+  assert.match(report, /doctor_check name=github_auth status=pass/);
+  assert.match(report, /doctor_check name=state_file status=fail/);
+  assert.match(report, /doctor_check name=worktrees status=fail/);
+});
+
 test("shouldAutoRetryHandoffMissing only retries recoverable blocked handoffs", () => {
   const config = createConfig({
     maxImplementationAttemptsPerIssue: 3,
