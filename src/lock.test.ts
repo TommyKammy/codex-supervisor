@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { acquireFileLock } from "./lock";
+import { acquireFileLock } from "./core/lock";
 
 test("acquireFileLock self-heals malformed lock payloads", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-lock-"));

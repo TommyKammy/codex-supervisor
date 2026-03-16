@@ -5,12 +5,12 @@ import {
   findParentIssuesReadyToClose,
   lintExecutionReadyIssueBody,
 } from "./issue-metadata";
-import { inspectFileLock } from "./lock";
+import { inspectFileLock } from "./core/lock";
 import { RecoveryEvent } from "./run-once-cycle-prelude";
-import { StateStore } from "./state-store";
-import { GitHubIssue, IssueRunRecord, PullRequestCheck, ReviewThread, RunState, SupervisorConfig, SupervisorStateFile } from "./types";
-import { hoursSince, nowIso } from "./utils";
-import { branchNameForIssue, cleanupWorkspace, isSafeCleanupTarget } from "./workspace";
+import { StateStore } from "./core/state-store";
+import { GitHubIssue, IssueRunRecord, PullRequestCheck, ReviewThread, RunState, SupervisorConfig, SupervisorStateFile } from "./core/types";
+import { hoursSince, nowIso } from "./core/utils";
+import { branchNameForIssue, cleanupWorkspace, isSafeCleanupTarget } from "./core/workspace";
 
 const OWNER_GUARDED_ACTIVE_STATES = new Set<RunState>([
   "planning",

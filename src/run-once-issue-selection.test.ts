@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { resolveRunnableIssueContext } from "./run-once-issue-selection";
-import { GitHubIssue, IssueRunRecord, SupervisorConfig, SupervisorStateFile } from "./types";
+import { GitHubIssue, IssueRunRecord, SupervisorConfig, SupervisorStateFile } from "./core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {

@@ -4,7 +4,7 @@ import { runRoleReview as defaultRunRoleReview, runVerifierReview as defaultRunV
 import { type ExternalReviewMissPattern } from "../external-review/external-review-misses";
 import { type LocalReviewFinding, type LocalReviewRoleResult, type LocalReviewVerifierReport } from "./types";
 import { type LocalReviewRoleSelection } from "../review-role-detector";
-import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "../types";
+import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "../core/types";
 
 export function selectVerifierFindings(args: {
   config: SupervisorConfig;

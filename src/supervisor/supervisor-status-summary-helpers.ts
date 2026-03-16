@@ -1,6 +1,6 @@
 import path from "node:path";
 import { localReviewBlocksMerge, localReviewBlocksReady } from "../review-handling";
-import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, SupervisorConfig } from "../types";
+import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, SupervisorConfig } from "../core/types";
 
 export function summarizeCheckBuckets(checks: PullRequestCheck[]): string {
   if (checks.length === 0) {

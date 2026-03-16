@@ -1,4 +1,4 @@
-import type { GitHubIssue } from "../types";
+import type { GitHubIssue } from "../core/types";
 import {
   parseExecutionOrder,
 } from "./issue-metadata-parser";

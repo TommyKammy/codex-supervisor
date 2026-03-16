@@ -11,7 +11,7 @@ import {
   writeExternalReviewMissArtifact,
 } from "./external-review-misses";
 import { loadLocalReviewArtifact } from "./external-review-local-artifact-io";
-import { IssueComment, PullRequestReview, ReviewThread } from "../types";
+import { IssueComment, PullRequestReview, ReviewThread } from "../core/types";
 
 function createReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
   return {

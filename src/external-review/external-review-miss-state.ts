@@ -1,10 +1,10 @@
 import { type ExternalReviewMissContext } from "./external-review-misses";
-import { type StateStore } from "../state-store";
+import { type StateStore } from "../core/state-store";
 import {
   type GitHubPullRequest,
   type IssueRunRecord,
   type SupervisorStateFile,
-} from "../types";
+} from "../core/types";
 
 export function nextExternalReviewMissPatch(
   record: Pick<

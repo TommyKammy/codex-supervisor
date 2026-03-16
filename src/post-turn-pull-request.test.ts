@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { handlePostTurnPullRequestTransitionsPhase } from "./post-turn-pull-request";
-import { PullRequestCheck, ReviewThread, SupervisorStateFile } from "./types";
+import { PullRequestCheck, ReviewThread, SupervisorStateFile } from "./core/types";
 import { createConfig, createFailureContext, createIssue, createPullRequest, createRecord } from "./turn-execution-test-helpers";
 
 test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking ready", async () => {

@@ -1,6 +1,6 @@
 import { shouldAutoRetryTimeout } from "./supervisor-failure-helpers";
-import { GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../types";
-import { isTerminalState } from "../utils";
+import { GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../core/types";
+import { isTerminalState } from "../core/utils";
 
 export type AttemptLane = "implementation" | "repair";
 

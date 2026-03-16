@@ -1,6 +1,6 @@
 import { type LocalReviewRoleSelection } from "../review-role-detector";
-import { type SupervisorConfig } from "../types";
-import { truncate } from "../utils";
+import { type SupervisorConfig } from "../core/types";
+import { truncate } from "../core/utils";
 import { findingMeetsReviewerThreshold, reviewerTypeForRole, thresholdsForReviewerType } from "./thresholds";
 import {
   type FinalizedLocalReview,

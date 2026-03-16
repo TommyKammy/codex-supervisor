@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { SupervisorConfig } from "./types";
+import { SupervisorConfig } from "./core/types";
 
 export interface LocalReviewRoleReason {
   kind: "baseline" | "repo_signal" | "config_signal";

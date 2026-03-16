@@ -19,8 +19,8 @@ import {
   reconcileStaleActiveIssueReservation,
   reconcileTrackedMergedButOpenIssues,
 } from "../recovery-reconciliation";
-import { StateStore } from "../state-store";
-import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig, SupervisorStateFile } from "../types";
+import { StateStore } from "../core/state-store";
+import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig, SupervisorStateFile } from "../core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {

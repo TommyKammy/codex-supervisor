@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { GitHubIssue, SupervisorStateFile } from "./types";
+import { GitHubIssue, SupervisorStateFile } from "./core/types";
 import { RecoveryEvent, runOnceCyclePrelude } from "./run-once-cycle-prelude";
 
 test("runOnceCyclePrelude loads state and aggregates recovery setup events in order", async () => {

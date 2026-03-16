@@ -22,7 +22,7 @@ import {
   ReviewThread,
   RunState,
   SupervisorConfig,
-} from "../types";
+} from "../core/types";
 
 export function shouldStopForRepeatedFailureSignature(record: IssueRunRecord, config: SupervisorConfig): boolean {
   return (

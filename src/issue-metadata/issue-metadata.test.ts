@@ -6,7 +6,7 @@ import {
   lintExecutionReadyIssueBody,
   parseIssueMetadata,
 } from "./issue-metadata";
-import { GitHubIssue } from "../types";
+import { GitHubIssue } from "../core/types";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return {

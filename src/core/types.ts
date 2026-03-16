@@ -1,6 +1,6 @@
-import type { LocalReviewReviewerThresholdConfig, LocalReviewReviewerType } from "./local-review/types";
+import type { LocalReviewReviewerThresholdConfig, LocalReviewReviewerType } from "../local-review/types";
 
-export type { LocalReviewReviewerThresholdConfig, LocalReviewReviewerType } from "./local-review/types";
+export type { LocalReviewReviewerThresholdConfig, LocalReviewReviewerType } from "../local-review/types";
 
 export type RunState =
   | "queued"

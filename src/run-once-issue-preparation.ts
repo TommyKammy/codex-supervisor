@@ -1,12 +1,12 @@
 import { GitHubClient } from "./github";
-import { issueJournalPath, syncIssueJournal as syncIssueJournalImpl } from "./journal";
-import { syncMemoryArtifacts as syncMemoryArtifactsImpl } from "./memory";
+import { issueJournalPath, syncIssueJournal as syncIssueJournalImpl } from "./core/journal";
+import { syncMemoryArtifacts as syncMemoryArtifactsImpl } from "./core/memory";
 import { RecoveryEvent } from "./run-once-cycle-prelude";
 import {
   applyFailureSignature,
   buildCodexFailureContext,
 } from "./supervisor/supervisor-failure-helpers";
-import { StateStore } from "./state-store";
+import { StateStore } from "./core/state-store";
 import {
   CliOptions,
   GitHubIssue,
@@ -17,13 +17,13 @@ import {
   SupervisorConfig,
   SupervisorStateFile,
   WorkspaceStatus,
-} from "./types";
-import { nowIso } from "./utils";
+} from "./core/types";
+import { nowIso } from "./core/utils";
 import {
   ensureWorkspace as ensureWorkspaceImpl,
   getWorkspaceStatus as getWorkspaceStatusImpl,
   pushBranch as pushBranchImpl,
-} from "./workspace";
+} from "./core/workspace";
 
 export type IssueJournalSync = (record: IssueRunRecord) => Promise<void>;
 export type MemoryArtifacts = Awaited<ReturnType<typeof syncMemoryArtifactsImpl>>;

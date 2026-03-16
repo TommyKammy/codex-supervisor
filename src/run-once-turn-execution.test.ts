@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { executeCodexTurnPhase } from "./run-once-turn-execution";
-import { GitHubIssue, GitHubPullRequest, SupervisorStateFile } from "./types";
+import { GitHubIssue, GitHubPullRequest, SupervisorStateFile } from "./core/types";
 import { createConfig, createIssue, createPullRequest, createRecord, createReviewThread } from "./turn-execution-test-helpers";
 
 test("executeCodexTurnPhase does not mark review threads processed for a refreshed PR head it did not evaluate", async () => {

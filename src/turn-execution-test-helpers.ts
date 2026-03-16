@@ -5,7 +5,7 @@ import {
   IssueRunRecord,
   ReviewThread,
   SupervisorConfig,
-} from "./types";
+} from "./core/types";
 
 export function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {

@@ -1,4 +1,4 @@
-import { IssueRunRecord, RunState, WorkspaceStatus } from "./types";
+import { IssueRunRecord, RunState, WorkspaceStatus } from "./core/types";
 
 export function shouldPreserveNoPrFailureTracking(
   record: Pick<

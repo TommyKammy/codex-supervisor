@@ -1,4 +1,4 @@
-import { truncate } from "../utils";
+import { truncate } from "../core/utils";
 import {
   createExternalReviewMissPatternFingerprint,
 } from "./external-review-normalization";

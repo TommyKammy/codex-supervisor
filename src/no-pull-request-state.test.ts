@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { inferStateWithoutPullRequest, shouldPreserveNoPrFailureTracking } from "./no-pull-request-state";
-import { IssueRunRecord, WorkspaceStatus } from "./types";
+import { IssueRunRecord, WorkspaceStatus } from "./core/types";
 
 function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
   return {

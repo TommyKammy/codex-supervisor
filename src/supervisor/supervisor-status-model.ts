@@ -6,8 +6,8 @@ import {
 import {
   displayRelativeArtifactPath,
 } from "./supervisor-status-summary-helpers";
-import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../types";
-import { truncate } from "../utils";
+import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
+import { truncate } from "../core/utils";
 
 type ReviewThreadClassifier = (config: SupervisorConfig, reviewThreads: ReviewThread[]) => ReviewThread[];
 type PendingReviewThreadClassifier = (
