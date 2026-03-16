@@ -20,7 +20,7 @@ import type {
   ResumeAgentTurnContext,
   StartAgentTurnContext,
 } from "./agent-runner";
-import { createCodexAgentRunner, detectCodexCliCapabilities } from "./agent-runner";
+import { createCodexAgentRunner, detectCodexCliCapabilities, parseAgentTurnStructuredResult } from "./agent-runner";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
@@ -270,6 +270,42 @@ test("agent turn result supports both parsed and raw supervisor output", () => {
   assert.equal(parsedResult.structuredResult?.failureSignature, "missing-test");
 });
 
+test("parseAgentTurnStructuredResult only keeps canonical blocked and failure fields for blocked or failed hints", () => {
+  const implementing = parseAgentTurnStructuredResult([
+    "Summary: making progress",
+    "State hint: implementing",
+    "Blocked reason: verification",
+    "Failure signature: should-not-apply",
+    "Tests: not run",
+    "Next action: continue",
+  ].join("\n"));
+  const blocked = parseAgentTurnStructuredResult([
+    "Summary: waiting on verification",
+    "State hint: blocked",
+    "Blocked reason: verification",
+    "Failure signature: missing-test",
+  ].join("\n"));
+  const failed = parseAgentTurnStructuredResult([
+    "Summary: implementation failed",
+    "State hint: failed",
+    "Blocked reason: verification",
+    "Failure signature: compile-error",
+  ].join("\n"));
+
+  assert.deepEqual(implementing, {
+    summary: "making progress",
+    stateHint: "implementing",
+    blockedReason: null,
+    failureSignature: null,
+    nextAction: "continue",
+    tests: "not run",
+  });
+  assert.equal(blocked?.blockedReason, "verification");
+  assert.equal(blocked?.failureSignature, "missing-test");
+  assert.equal(failed?.blockedReason, null);
+  assert.equal(failed?.failureSignature, "compile-error");
+});
+
 test("createCodexAgentRunner adapts normalized start and resume turn contexts to Codex CLI turns", async () => {
   const config = createConfig();
   const issue: GitHubIssue = {
@@ -407,9 +443,7 @@ test("createCodexAgentRunner adapts normalized start and resume turn contexts to
   assert.equal(startResult.structuredResult?.tests, "npx tsx --test src/supervisor/agent-runner.test.ts");
   assert.equal(resumeResult.sessionId, "session-123");
   assert.equal(resumeResult.failureKind, "codex_exit");
-  assert.equal(resumeResult.structuredResult?.stateHint, "blocked");
-  assert.equal(resumeResult.structuredResult?.blockedReason, "verification");
-  assert.equal(resumeResult.structuredResult?.failureSignature, "reproduced-contract-gap");
+  assert.equal(resumeResult.structuredResult, null);
   assert.match(resumeResult.failureContext?.summary ?? "", /exited non-zero/i);
 });
 
