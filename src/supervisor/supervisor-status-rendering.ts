@@ -14,6 +14,7 @@ import {
   manualReviewThreads,
   pendingBotReviewThreads,
 } from "../review-thread-reporting";
+import { detectDeterministicChangeClasses } from "../issue-metadata";
 import {
   buildDetailedStatusModel,
   buildDetailedStatusSummaryLines,
@@ -53,7 +54,10 @@ export function mergeConflictDetected(pr: GitHubPullRequest): boolean {
   return pr.mergeStateStatus === "DIRTY";
 }
 
-async function loadStatusChangedFiles(config: SupervisorConfig, workspacePath: string): Promise<string[]> {
+export async function loadStatusChangedFiles(
+  config: SupervisorConfig,
+  workspacePath: string,
+): Promise<string[]> {
   let result;
   try {
     result = await runCommand(
@@ -76,12 +80,23 @@ async function loadStatusChangedFiles(config: SupervisorConfig, workspacePath: s
   )].sort();
 }
 
+export function buildChangeClassesStatusLine(changedFiles: string[]): string | null {
+  const changeClasses = detectDeterministicChangeClasses(changedFiles);
+  if (changeClasses.length === 0) {
+    return null;
+  }
+
+  return `change_classes=${changeClasses.join(", ")}`;
+}
+
 export async function buildDurableGuardrailStatusLine(args: {
   config: SupervisorConfig;
   activeRecord: Pick<IssueRunRecord, "branch" | "issue_number" | "last_head_sha" | "workspace">;
   pr: Pick<GitHubPullRequest, "headRefOid"> | null;
+  changedFiles?: string[];
 }): Promise<string | null> {
-  const changedFiles = await loadStatusChangedFiles(args.config, args.activeRecord.workspace);
+  const changedFiles =
+    args.changedFiles ?? (await loadStatusChangedFiles(args.config, args.activeRecord.workspace));
   if (changedFiles.length === 0) {
     return null;
   }
@@ -165,6 +180,7 @@ export function formatDetailedStatus(args: {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
   handoffSummary?: string | null;
+  changeClassesSummary?: string | null;
   durableGuardrailSummary?: string | null;
 }): string {
   const lines = buildDetailedStatusModel({
@@ -187,6 +203,7 @@ export function formatDetailedStatus(args: {
     activeRecord: args.activeRecord,
     latestRecoveryRecord: args.latestRecoveryRecord,
     handoffSummary: args.handoffSummary,
+    changeClassesSummary: args.changeClassesSummary,
     durableGuardrailSummary: args.durableGuardrailSummary,
   });
   return [...lines, ...summaryLines].join("\n");

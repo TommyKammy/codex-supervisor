@@ -613,6 +613,7 @@ export class Supervisor {
       checks: activeStatus.checks,
       reviewThreads: activeStatus.reviewThreads,
       handoffSummary: activeStatus.handoffSummary,
+      changeClassesSummary: activeStatus.changeClassesSummary,
       durableGuardrailSummary: activeStatus.durableGuardrailSummary,
     });
 

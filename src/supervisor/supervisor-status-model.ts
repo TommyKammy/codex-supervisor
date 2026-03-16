@@ -45,6 +45,7 @@ export interface BuildDetailedStatusSummaryLinesArgs {
   activeRecord: IssueRunRecord | null;
   latestRecoveryRecord?: IssueRunRecord | null;
   handoffSummary?: string | null;
+  changeClassesSummary?: string | null;
   durableGuardrailSummary?: string | null;
 }
 
@@ -64,12 +65,17 @@ export function buildDetailedStatusSummaryLines(args: BuildDetailedStatusSummary
     activeRecord,
     latestRecoveryRecord = null,
     handoffSummary = null,
+    changeClassesSummary = null,
     durableGuardrailSummary = null,
   } = args;
   const lines: string[] = [];
 
   if (handoffSummary) {
     lines.push(`handoff_summary=${truncate(sanitizeStatusValue(handoffSummary), 200)}`);
+  }
+
+  if (changeClassesSummary) {
+    lines.push(truncate(sanitizeStatusValue(changeClassesSummary), 200) ?? "");
   }
 
   if (durableGuardrailSummary) {
