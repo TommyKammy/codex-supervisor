@@ -3,7 +3,7 @@ import {
   buildCodexPrompt,
   buildCodexResumePrompt,
   shouldUseCompactResumePrompt,
-} from "./codex-prompt";
+} from "./codex/codex-prompt";
 import {
   collectExternalReviewSignals,
   ExternalReviewMissContext,

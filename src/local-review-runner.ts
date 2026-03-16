@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runCommand } from "./command";
-import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "./codex-policy";
+import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "./codex/codex-policy";
 import { loadRelevantExternalReviewMissPatterns, type ExternalReviewMissPattern } from "./external-review-misses";
 import { reviewDir } from "./local-review-artifacts";
 import { buildRolePrompt, buildVerifierPrompt, parseRoleFooter, parseVerifierFooter } from "./local-review-prompt";

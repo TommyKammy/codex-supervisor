@@ -7,7 +7,7 @@
     "build": "tsc -p tsconfig.json",
     "guardrails:check": "tsx src/committed-guardrails-cli.ts check",
     "guardrails:fix": "tsx src/committed-guardrails-cli.ts fix",
-    "test": "tsx --test src/*.test.ts",
+    "test": "tsx --test \"src/**/*.test.ts\"",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js"
   },

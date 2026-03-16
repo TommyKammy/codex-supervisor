@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test, { mock } from "node:test";
 import { runCodexTurn } from "./codex-runner";
-import { SupervisorConfig } from "./types";
+import { SupervisorConfig } from "../types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
