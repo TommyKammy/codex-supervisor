@@ -248,6 +248,30 @@ test("isEligibleForSelection retries only terminal states with an allowed retry 
     ),
     false,
   );
+  assert.equal(
+    isEligibleForSelection(
+      createRecord({
+        state: "blocked",
+        blocked_reason: "verification",
+        last_error: "Verification failed: vitest assertion still failing.",
+        blocked_verification_retry_count: config.blockedVerificationRetryLimit,
+      }),
+      config,
+    ),
+    false,
+  );
+  assert.equal(
+    isEligibleForSelection(
+      createRecord({
+        state: "blocked",
+        blocked_reason: "verification",
+        last_error: "Verification failed: vitest assertion still failing.",
+        repeated_failure_signature_count: config.sameFailureSignatureRepeatLimit,
+      }),
+      config,
+    ),
+    false,
+  );
 });
 
 test("shouldAutoRetryHandoffMissing only retries recoverable blocked handoffs", () => {
