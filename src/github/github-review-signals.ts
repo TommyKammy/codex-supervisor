@@ -3,8 +3,8 @@ import {
   hasActionableReviewText,
   isActionableTopLevelReview,
   isRateLimitReviewText,
-} from "./external-review-signal-heuristics";
-import { CopilotReviewState } from "./types";
+} from "../external-review-signal-heuristics";
+import { CopilotReviewState } from "../types";
 
 export interface CopilotReviewLifecycleFacts {
   reviewRequests: string[];

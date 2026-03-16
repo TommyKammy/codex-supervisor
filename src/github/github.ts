@@ -7,8 +7,8 @@ import {
   PullRequestCheck,
   ReviewThread,
   SupervisorConfig,
-} from "./types";
-import { CommandOptions, runCommand } from "./command";
+} from "../types";
+import { CommandOptions, runCommand } from "../command";
 import {
   normalizeRollupChecks,
   PullRequestStatusCheckRollupResponse,
@@ -16,7 +16,7 @@ import {
 import { GitHubPullRequestHydrator } from "./github-pull-request-hydrator";
 import { GitHubTransport } from "./github-transport";
 import type { GitHubCommandRunner } from "./github-transport";
-import { parseJson, truncate } from "./utils";
+import { parseJson, truncate } from "../utils";
 
 export { isTransientGitHubCommandFailure } from "./github-transport";
 export { inferCopilotReviewLifecycle } from "./github-review-signals";

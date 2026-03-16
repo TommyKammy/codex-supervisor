@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { GitHubClient } from "./github";
-import { GitHubIssue, GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "./types";
+import { GitHubIssue, GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
@@ -169,7 +169,7 @@ test("GitHubClient fetches the newest unresolved review thread comments", async 
                       id: "thread-1",
                       isResolved: false,
                       isOutdated: false,
-                      path: "src/github.ts",
+                      path: "src/github/github.ts",
                       line: 803,
                       comments: {
                         nodes: [
