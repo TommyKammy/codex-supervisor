@@ -197,3 +197,61 @@ test("prepareCodexTurnPrompt clears stale external-review miss state when review
   assert.equal(prepared.record.external_review_near_match_findings_count, 0);
   assert.equal(prepared.record.external_review_missed_findings_count, 0);
 });
+
+test("prepareCodexTurnPrompt falls back to the full start prompt when the runner cannot resume", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "reproducing",
+        codex_session_id: "session-stale",
+      }),
+    },
+  };
+
+  const prepared = await prepareCodexTurnPrompt({
+    config: createConfig(),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    state,
+    record: state.issues["102"]!,
+    issue: createIssue({
+      title: "Use the full issue prompt when resume is unavailable",
+      body: "## Summary\nThe fresh session still needs the issue body.",
+    }),
+    previousCodexSummary: "Earlier attempt wrote a restart handoff.",
+    previousError: "resume unsupported",
+    workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    journalPath: path.join("/tmp/workspaces", "issue-102/.codex-supervisor/issue-journal.md"),
+    journalContent: [
+      "## Codex Working Notes",
+      "### Current Handoff",
+      "- Hypothesis: a resume-capable runner can continue from the compact handoff.",
+      "- Next exact step: resume the existing session.",
+    ].join("\n"),
+    syncJournal: async () => undefined,
+    memoryArtifacts: {
+      alwaysReadFiles: [],
+      onDemandFiles: [],
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+    },
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    github: {
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    agentRunnerCapabilities: {
+      supportsResume: false,
+    },
+  });
+
+  assert.doesNotMatch(prepared.prompt, /Resume only from the current durable state below\./);
+  assert.match(prepared.prompt, /## Summary/);
+  assert.match(prepared.prompt, /The fresh session still needs the issue body\./);
+});

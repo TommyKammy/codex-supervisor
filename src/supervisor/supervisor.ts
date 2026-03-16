@@ -212,7 +212,7 @@ export class Supervisor {
       backend: config.stateBackend,
       bootstrapFilePath: config.stateBootstrapFile,
     });
-    this.agentRunner = options.agentRunner ?? createCodexAgentRunner();
+    this.agentRunner = options.agentRunner ?? createCodexAgentRunner({ config });
   }
 
   static fromConfig(configPath?: string): Supervisor {
@@ -311,7 +311,7 @@ export class Supervisor {
       };
     }
 
-    const sessionLock = record.codex_session_id
+    const sessionLock = record.codex_session_id && this.agentRunner.capabilities.supportsResume
       ? await acquireFileLock(
           this.lockPath("sessions", `session-${record.codex_session_id}`),
           `session-${record.codex_session_id}`,

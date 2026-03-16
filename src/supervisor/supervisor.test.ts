@@ -1466,6 +1466,151 @@ test("executeCodexTurn does not consume attempts when the Codex session lock is 
   assert.equal(persisted.issues[String(issueNumber)]?.repair_attempt_count, 1);
 });
 
+test("executeCodexTurn ignores a held session lock when the agent runner cannot resume", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 121;
+  const branch = branchName(fixture.config, issueNumber);
+  const workspacePath = path.join(fixture.workspaceRoot, `issue-${issueNumber}`);
+  const journalPath = path.join(workspacePath, ".codex-supervisor/issue-journal.md");
+  const initialRecord = createRecord({
+    issue_number: issueNumber,
+    state: "stabilizing",
+    branch,
+    workspace: workspacePath,
+    journal_path: journalPath,
+    codex_session_id: "session-1",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: initialRecord,
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  await fs.mkdir(path.join(workspacePath, ".codex-supervisor"), { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    ["## Codex Working Notes", "### Current Handoff", "- Hypothesis: retry with a fresh start."].join("\n"),
+    "utf8",
+  );
+
+  const lockPath = path.join(path.dirname(fixture.stateFile), "locks", "sessions", "session-session-1.lock");
+  await fs.mkdir(path.dirname(lockPath), { recursive: true });
+  await fs.writeFile(
+    lockPath,
+    `${JSON.stringify({ pid: process.pid, label: "session-session-1", acquired_at: "2026-03-13T00:00:00Z" }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const requests: AgentTurnRequest[] = [];
+  const supervisor = new Supervisor(fixture.config, {
+    agentRunner: {
+      capabilities: {
+        supportsResume: false,
+        supportsStructuredResult: false,
+      },
+      async runTurn(request) {
+        requests.push(request);
+        return {
+          exitCode: 1,
+          sessionId: null,
+          supervisorMessage: "runner fallback executed",
+          stderr: "fallback failure",
+          stdout: "",
+          structuredResult: null,
+          failureKind: "codex_exit",
+          failureContext: null,
+        };
+      },
+    },
+  });
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Proceed without resume support when the old session lock is held",
+    body: executionReadyBody("Fallback start turns should ignore stale session locks."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      executeCodexTurn: (context: {
+        state: SupervisorStateFile;
+        record: IssueRunRecord;
+        issue: GitHubIssue;
+        previousCodexSummary: string | null;
+        previousError: string | null;
+        workspacePath: string;
+        journalPath: string;
+        syncJournal: (record: IssueRunRecord) => Promise<void>;
+        memoryArtifacts: {
+          alwaysReadFiles: string[];
+          onDemandFiles: string[];
+          contextIndexPath: string;
+          agentsPath: string;
+        };
+        workspaceStatus: {
+          branch: string;
+          headSha: string;
+          hasUncommittedChanges: boolean;
+          baseAhead: number;
+          baseBehind: number;
+          remoteBranchExists: boolean;
+          remoteAhead: number;
+          remoteBehind: number;
+        };
+        pr: GitHubPullRequest | null;
+        checks: PullRequestCheck[];
+        reviewThreads: ReviewThread[];
+        options: { dryRun: boolean };
+      }) => Promise<{ kind: "returned"; message: string }>;
+    }
+  ).executeCodexTurn({
+    state,
+    record: initialRecord,
+    issue,
+    previousCodexSummary: null,
+    previousError: null,
+    workspacePath,
+    journalPath,
+    syncJournal: async () => {
+      await fs.writeFile(
+        journalPath,
+        ["## Codex Working Notes", "### Current Handoff", "- Hypothesis: retry with a fresh start."].join("\n"),
+        "utf8",
+      );
+    },
+    memoryArtifacts: {
+      alwaysReadFiles: [],
+      onDemandFiles: [],
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+    },
+    workspaceStatus: {
+      branch,
+      headSha: "head-121",
+      hasUncommittedChanges: false,
+      baseAhead: 0,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    },
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    options: { dryRun: false },
+  });
+
+  assert.equal(result.kind, "returned");
+  assert.match(result.message, /Codex turn failed for issue #121/);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.kind, "start");
+});
+
 test("runOnce returns no matching issue when no runnable candidate is available", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {

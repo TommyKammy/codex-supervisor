@@ -28,6 +28,7 @@ import {
   SupervisorConfig,
   SupervisorStateFile,
 } from "./core/types";
+import type { AgentRunnerCapabilities } from "./supervisor/agent-runner";
 import { truncate } from "./core/utils";
 
 function shouldLoadExternalReviewContext(args: {
@@ -84,6 +85,7 @@ export async function prepareCodexTurnPrompt(args: {
   checks: import("./core/types").PullRequestCheck[];
   reviewThreads: ReviewThread[];
   github: Pick<GitHubClient, "getExternalReviewSurface">;
+  agentRunnerCapabilities?: Pick<AgentRunnerCapabilities, "supportsResume">;
 }): Promise<{
   record: IssueRunRecord;
   prompt: string;
@@ -138,7 +140,8 @@ export async function prepareCodexTurnPrompt(args: {
     syncJournal: args.syncJournal,
   });
 
-  const prompt = record.codex_session_id && shouldUseCompactResumePrompt(record.state)
+  const canResume = args.agentRunnerCapabilities?.supportsResume ?? true;
+  const prompt = record.codex_session_id && canResume && shouldUseCompactResumePrompt(record.state)
     ? buildCodexResumePrompt({
         repoSlug: args.config.repoSlug,
         issue: args.issue,
