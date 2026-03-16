@@ -7,6 +7,8 @@ import {
 } from "../issue-metadata";
 import { readIssueJournal, summarizeIssueJournalHandoff } from "../core/journal";
 import {
+  attemptBudgetForLane,
+  hasAttemptBudgetRemaining,
   formatExecutionReadyMissingFields,
   isEligibleForSelection,
   shouldAutoRetryBlockedVerification,
@@ -27,6 +29,7 @@ import {
 
 type ReadinessSummaryGitHub = Pick<GitHubClient, "listCandidateIssues">;
 type SelectionWhyGitHub = Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">;
+type ExplainIssueGitHub = Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues">;
 type ActiveStatusGitHub = Pick<
   GitHubClient,
   "resolvePullRequestForBranch" | "getChecks" | "getUnresolvedReviewThreads"
@@ -213,6 +216,142 @@ export async function buildSelectionWhySummary(
   }
 
   return ["selected_issue=none", "selection_reason=no_runnable_issue"];
+}
+
+function buildNonRunnableLocalStateReasons(record: IssueRunRecord, config: SupervisorConfig): string[] {
+  const reasons: string[] = [];
+
+  if (record.state === "blocked") {
+    if (record.blocked_reason === "manual_review" || record.blocked_reason === "manual_pr_closed") {
+      reasons.push(`manual_block ${record.blocked_reason}`);
+    } else if (record.blocked_reason === "verification" && !shouldAutoRetryBlockedVerification(record, config)) {
+      if (!hasAttemptBudgetRemaining(record, config, "implementation")) {
+        reasons.push(
+          `retry_budget implementation_attempt_count=${record.implementation_attempt_count}/${attemptBudgetForLane(config, "implementation")}`,
+        );
+      }
+      if (record.blocked_verification_retry_count >= config.blockedVerificationRetryLimit) {
+        reasons.push(
+          `retry_budget blocked_verification_retry_count=${record.blocked_verification_retry_count}/${config.blockedVerificationRetryLimit}`,
+        );
+      }
+      if (record.repeated_blocker_count >= config.sameBlockerRepeatLimit) {
+        reasons.push(`retry_budget repeated_blocker_count=${record.repeated_blocker_count}/${config.sameBlockerRepeatLimit}`);
+      }
+      if (record.repeated_failure_signature_count >= config.sameFailureSignatureRepeatLimit) {
+        reasons.push(
+          `retry_budget repeated_failure_signature_count=${record.repeated_failure_signature_count}/${config.sameFailureSignatureRepeatLimit}`,
+        );
+      }
+    } else if (record.blocked_reason === "handoff_missing" && !shouldAutoRetryHandoffMissing(record, config)) {
+      if (!hasAttemptBudgetRemaining(record, config, "implementation")) {
+        reasons.push(
+          `retry_budget implementation_attempt_count=${record.implementation_attempt_count}/${attemptBudgetForLane(config, "implementation")}`,
+        );
+      }
+      if (record.repeated_failure_signature_count >= config.sameFailureSignatureRepeatLimit) {
+        reasons.push(
+          `retry_budget repeated_failure_signature_count=${record.repeated_failure_signature_count}/${config.sameFailureSignatureRepeatLimit}`,
+        );
+      }
+    } else if (
+      record.blocked_reason === "requirements" ||
+      record.blocked_reason === "clarification" ||
+      record.blocked_reason === "permissions" ||
+      record.blocked_reason === "secrets" ||
+      record.blocked_reason === "review_bot_timeout" ||
+      record.blocked_reason === "copilot_timeout" ||
+      record.blocked_reason === "unknown"
+    ) {
+      reasons.push(`blocked_reason ${record.blocked_reason}`);
+    }
+  } else if (record.state === "failed" && !shouldAutoRetryTimeout(record, config)) {
+    if (record.last_failure_kind === "timeout" && record.timeout_retry_count >= config.timeoutRetryLimit) {
+      reasons.push(`retry_budget timeout_retry_count=${record.timeout_retry_count}/${config.timeoutRetryLimit}`);
+    } else {
+      reasons.push(`blocked_failure ${record.last_failure_kind ?? "unknown"}`);
+    }
+  } else if (record.state === "done") {
+    reasons.push("completed done");
+  } else {
+    reasons.push(`local_state ${record.state}`);
+    return reasons;
+  }
+
+  reasons.push(`local_state ${record.state}`);
+  return reasons;
+}
+
+export async function buildIssueExplainSummary(
+  github: ExplainIssueGitHub,
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+  issueNumber: number,
+): Promise<string[]> {
+  const [issue, issues, candidateIssues] = await Promise.all([
+    github.getIssue(issueNumber),
+    github.listAllIssues(),
+    github.listCandidateIssues(),
+  ]);
+  const record = state.issues[String(issue.number)];
+  const readiness = lintExecutionReadyIssueBody(issue);
+  const clarificationBlock = findHighRiskBlockingAmbiguity(issue);
+  const blockingIssue = findBlockingIssue(issue, issues, state);
+  const matchingSkipPrefix = config.skipTitlePrefixes.find((prefix) => issue.title.startsWith(prefix)) ?? null;
+  const candidateIssueNumbers = new Set(candidateIssues.map((candidate) => candidate.number));
+  const reasons: string[] = [];
+
+  if (matchingSkipPrefix) {
+    reasons.push(`skip_title_prefix ${matchingSkipPrefix}`);
+  }
+
+  if (!candidateIssueNumbers.has(issue.number)) {
+    reasons.push("candidate filtered_by_candidate_list");
+  }
+
+  if (shouldEnforceExecutionReady(record) && !readiness.isExecutionReady) {
+    reasons.push(`requirements missing=${formatExecutionReadyMissingFields(readiness.missingRequired)}`);
+  }
+
+  if (clarificationBlock) {
+    reasons.push(
+      `clarification ambiguity=${clarificationBlock.ambiguityClasses.join("|")} risky_change=${clarificationBlock.riskyChangeClasses.join("|")}`,
+    );
+  }
+
+  if (blockingIssue) {
+    reasons.push(`dependency ${blockingIssue.reason}`);
+  }
+
+  if (record && !isEligibleForSelection(record, config)) {
+    reasons.push(...buildNonRunnableLocalStateReasons(record, config));
+  }
+
+  const runnable = reasons.length === 0;
+  const lines = [
+    `issue=#${issue.number}`,
+    `title=${issue.title}`,
+    `state=${record?.state ?? "untracked"}`,
+    `blocked_reason=${record?.blocked_reason ?? "none"}`,
+    `runnable=${runnable ? "yes" : "no"}`,
+  ];
+
+  if (runnable) {
+    lines.push(`selection_reason=${formatSelectionReason(issue, issues, state, record, readiness.isExecutionReady, config)}`);
+  } else {
+    reasons.forEach((reason, index) => {
+      lines.push(`reason_${index + 1}=${reason}`);
+    });
+  }
+
+  if (record?.last_error) {
+    lines.push(`last_error=${record.last_error}`);
+  }
+  if (record?.last_failure_context?.summary) {
+    lines.push(`failure_summary=${record.last_failure_context.summary}`);
+  }
+
+  return lines;
 }
 
 function formatRunnableReadinessReason(

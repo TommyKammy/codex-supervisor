@@ -9,6 +9,7 @@ export function parseArgs(argv: string[]): CliOptions {
   let configPath: string | undefined;
   let dryRun = false;
   let why = false;
+  let issueNumber: number | undefined;
 
   while (args.length > 0) {
     const token = args.shift();
@@ -16,7 +17,7 @@ export function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
-    if (token === "run-once" || token === "loop" || token === "status") {
+    if (token === "run-once" || token === "loop" || token === "status" || token === "explain") {
       command = token;
       continue;
     }
@@ -36,6 +37,13 @@ export function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
+    if (command === "explain" && issueNumber === undefined) {
+      if (/^[1-9]\d*$/.test(token)) {
+        issueNumber = Number(token);
+        continue;
+      }
+    }
+
     throw new Error(`Unknown argument: ${token}`);
   }
 
@@ -43,7 +51,11 @@ export function parseArgs(argv: string[]): CliOptions {
     throw new Error("The --why flag is only supported with the status command.");
   }
 
-  return { command, configPath, dryRun, why };
+  if (command === "explain" && issueNumber === undefined) {
+    throw new Error("The explain command requires one issue number.");
+  }
+
+  return { command, configPath, dryRun, why, issueNumber };
 }
 
 async function runOnceWithSupervisorLock(
@@ -79,7 +91,7 @@ async function main(): Promise<void> {
   process.once("SIGINT", () => requestStop("SIGINT"));
   process.once("SIGTERM", () => requestStop("SIGTERM"));
 
-  if (options.command !== "status") {
+  if (options.command !== "status" && options.command !== "explain") {
     const installMessage = await ensureGsdInstalled(supervisor.config);
     if (installMessage) {
       console.log(installMessage);
@@ -88,6 +100,11 @@ async function main(): Promise<void> {
 
   if (options.command === "status") {
     console.log(await supervisor.status({ why: options.why }));
+    return;
+  }
+
+  if (options.command === "explain") {
+    console.log(await supervisor.explain(options.issueNumber!));
     return;
   }
 

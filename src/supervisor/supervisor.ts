@@ -84,6 +84,7 @@ import {
   shouldAutoRetryHandoffMissing,
 } from "./supervisor-execution-policy";
 import {
+  buildIssueExplainSummary,
   buildReadinessSummary,
   buildSelectionWhySummary,
   loadActiveIssueStatusSnapshot,
@@ -617,6 +618,11 @@ export class Supervisor {
       : detailedStatus]
       .filter(Boolean)
       .join("\n");
+  }
+
+  async explain(issueNumber: number): Promise<string> {
+    const state = await this.stateStore.load();
+    return buildIssueExplainSummary(this.github, this.config, state, issueNumber).then((lines) => lines.join("\n"));
   }
 
   async runOnce(options: Pick<CliOptions, "dryRun">): Promise<string> {
