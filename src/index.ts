@@ -1,15 +1,23 @@
+import { loadConfig } from "./core/config";
 import { ensureGsdInstalled } from "./gsd";
 import { Supervisor } from "./supervisor";
 import { CliOptions } from "./core/types";
 import { sleep } from "./core/utils";
+import {
+  formatSupervisorCycleReplay,
+  loadSupervisorCycleDecisionSnapshot,
+  replaySupervisorCycleDecisionSnapshot,
+} from "./supervisor/supervisor-cycle-replay";
 
 export function parseArgs(argv: string[]): CliOptions {
   const args = [...argv];
   let command: CliOptions["command"] = "run-once";
+  let commandSeen = false;
   let configPath: string | undefined;
   let dryRun = false;
   let why = false;
   let issueNumber: number | undefined;
+  let snapshotPath: string | undefined;
 
   while (args.length > 0) {
     const token = args.shift();
@@ -17,8 +25,19 @@ export function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
-    if (token === "run-once" || token === "loop" || token === "status" || token === "explain" || token === "doctor") {
+    if (
+      token === "run-once" ||
+      token === "loop" ||
+      token === "status" ||
+      token === "explain" ||
+      token === "doctor" ||
+      token === "replay"
+    ) {
+      if (commandSeen) {
+        throw new Error(`Unexpected second command: ${token}`);
+      }
       command = token;
+      commandSeen = true;
       continue;
     }
 
@@ -44,6 +63,11 @@ export function parseArgs(argv: string[]): CliOptions {
       }
     }
 
+    if (command === "replay" && snapshotPath === undefined) {
+      snapshotPath = token;
+      continue;
+    }
+
     throw new Error(`Unknown argument: ${token}`);
   }
 
@@ -55,7 +79,11 @@ export function parseArgs(argv: string[]): CliOptions {
     throw new Error("The explain command requires one issue number.");
   }
 
-  return { command, configPath, dryRun, why, issueNumber };
+  if (command === "replay" && snapshotPath === undefined) {
+    throw new Error("The replay command requires one snapshot path.");
+  }
+
+  return { command, configPath, dryRun, why, issueNumber, snapshotPath };
 }
 
 async function runOnceWithSupervisorLock(
@@ -77,6 +105,18 @@ async function runOnceWithSupervisorLock(
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
+  if (options.command === "replay") {
+    const config = loadConfig(options.configPath);
+    const snapshot = await loadSupervisorCycleDecisionSnapshot(options.snapshotPath!);
+    const replayResult = replaySupervisorCycleDecisionSnapshot(snapshot, config);
+    console.log(formatSupervisorCycleReplay({
+      snapshotPath: options.snapshotPath!,
+      replayResult,
+      snapshot,
+    }));
+    return;
+  }
+
   const supervisor = Supervisor.fromConfig(options.configPath);
   const pollIntervalMs = supervisor.pollIntervalMs();
   let shouldStop = false;

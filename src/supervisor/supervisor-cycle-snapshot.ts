@@ -11,9 +11,7 @@ import {
   SupervisorConfig,
   WorkspaceStatus,
 } from "../core/types";
-import { inferStateFromPullRequest } from "../pull-request-state";
-import { blockedReasonForLifecycleState, shouldRunCodex } from "./supervisor-lifecycle";
-import { inferFailureContext } from "./supervisor-failure-context";
+import { replaySupervisorCycleDecisionSnapshot } from "./supervisor-cycle-replay";
 
 export interface SupervisorCycleDecisionSnapshot {
   schemaVersion: 1;
@@ -89,7 +87,69 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
   reviewThreads: ReviewThread[];
 }): SupervisorCycleDecisionSnapshot {
   const { config, capturedAt, issue, record, workspaceStatus, pr, checks, reviewThreads } = args;
-  const nextState = pr ? inferStateFromPullRequest(config, record, pr, checks, reviewThreads) : record.state;
+  const replay = replaySupervisorCycleDecisionSnapshot({
+    schemaVersion: 1,
+    capturedAt,
+    issue: {
+      number: issue.number,
+      title: issue.title,
+      url: issue.url,
+      state: issue.state,
+      updatedAt: issue.updatedAt,
+    },
+    local: {
+      record: {
+        issue_number: record.issue_number,
+        state: record.state,
+        branch: record.branch,
+        pr_number: record.pr_number,
+        workspace: record.workspace,
+        journal_path: record.journal_path,
+        attempt_count: record.attempt_count,
+        implementation_attempt_count: record.implementation_attempt_count,
+        repair_attempt_count: record.repair_attempt_count,
+        blocked_reason: record.blocked_reason,
+        last_error: record.last_error,
+        last_failure_signature: record.last_failure_signature,
+        last_head_sha: record.last_head_sha,
+        review_wait_started_at: record.review_wait_started_at,
+        review_wait_head_sha: record.review_wait_head_sha,
+        copilot_review_requested_observed_at: record.copilot_review_requested_observed_at,
+        copilot_review_requested_head_sha: record.copilot_review_requested_head_sha,
+        copilot_review_timed_out_at: record.copilot_review_timed_out_at,
+        copilot_review_timeout_action: record.copilot_review_timeout_action,
+        copilot_review_timeout_reason: record.copilot_review_timeout_reason,
+        local_review_head_sha: record.local_review_head_sha,
+        local_review_blocker_summary: record.local_review_blocker_summary,
+        local_review_summary_path: record.local_review_summary_path,
+        local_review_run_at: record.local_review_run_at,
+        local_review_max_severity: record.local_review_max_severity,
+        local_review_findings_count: record.local_review_findings_count,
+        local_review_root_cause_count: record.local_review_root_cause_count,
+        local_review_verified_max_severity: record.local_review_verified_max_severity,
+        local_review_verified_findings_count: record.local_review_verified_findings_count,
+        local_review_recommendation: record.local_review_recommendation,
+        local_review_degraded: record.local_review_degraded,
+        last_local_review_signature: record.last_local_review_signature,
+        repeated_local_review_signature_count: record.repeated_local_review_signature_count,
+        processed_review_thread_ids: [...record.processed_review_thread_ids],
+        processed_review_thread_fingerprints: [...record.processed_review_thread_fingerprints],
+        updated_at: record.updated_at,
+      },
+      workspaceStatus,
+    },
+    github: {
+      pullRequest: pr,
+      checks,
+      reviewThreads,
+    },
+    decision: {
+      nextState: record.state,
+      shouldRunCodex: false,
+      blockedReason: null,
+      failureContext: null,
+    },
+  }, config);
 
   return {
     schemaVersion: 1,
@@ -147,12 +207,7 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
       checks,
       reviewThreads,
     },
-    decision: {
-      nextState,
-      shouldRunCodex: shouldRunCodex(record, pr, checks, reviewThreads, config),
-      blockedReason: pr ? blockedReasonForLifecycleState(config, record, pr, checks, reviewThreads) : null,
-      failureContext: inferFailureContext(config, record, pr, checks, reviewThreads),
-    },
+    decision: replay.replayedDecision,
   };
 }
 
