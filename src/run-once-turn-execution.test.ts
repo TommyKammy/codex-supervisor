@@ -631,7 +631,7 @@ test("executeCodexTurnPhase falls back to a fresh start when the agent runner ca
   assert.equal(sessionLockCalls, 0);
   assert.equal(requests.length, 1);
   assert.equal(requests[0]?.kind, "start");
-  assert.match(requests[0]?.prompt ?? "", /Fresh sessions still need the full issue prompt\./);
-  assert.doesNotMatch(requests[0]?.prompt ?? "", /Resume only from the current durable state below\./);
+  assert.equal(requests[0]?.issue.body, "## Summary\nFresh sessions still need the full issue prompt.");
+  assert.equal(requests[0]?.journalExcerpt?.includes("restart from the issue body."), true);
   assert.equal(state.issues["102"]?.state, "stabilizing");
 });

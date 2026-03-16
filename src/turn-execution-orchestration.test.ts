@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { buildCodexPrompt } from "./codex";
 import { nextProcessedReviewThreadPatch, prepareCodexTurnPrompt } from "./turn-execution-orchestration";
 import { SupervisorStateFile } from "./core/types";
 import {
@@ -133,9 +134,14 @@ test("prepareCodexTurnPrompt loads local-review repair context for local_review_
       },
     });
 
-    assert.match(prepared.prompt, /Active local-review repair context:/);
-    assert.match(prepared.prompt, /Permission guard retry path is fragile/);
-    assert.match(prepared.prompt, /file=src\/auth\.ts lines=40-44/);
+    assert.equal(prepared.turnContext.kind, "start");
+    if (prepared.turnContext.kind !== "start") {
+      throw new Error("expected a start turn context");
+    }
+    const prompt = buildCodexPrompt(prepared.turnContext);
+    assert.match(prompt, /Active local-review repair context:/);
+    assert.match(prompt, /Permission guard retry path is fragile/);
+    assert.match(prompt, /file=src\/auth\.ts lines=40-44/);
   } finally {
     await fs.rm(workspaceDir, { recursive: true, force: true });
   }
@@ -251,7 +257,12 @@ test("prepareCodexTurnPrompt falls back to the full start prompt when the runner
     },
   });
 
-  assert.doesNotMatch(prepared.prompt, /Resume only from the current durable state below\./);
-  assert.match(prepared.prompt, /## Summary/);
-  assert.match(prepared.prompt, /The fresh session still needs the issue body\./);
+  assert.equal(prepared.turnContext.kind, "start");
+  if (prepared.turnContext.kind !== "start") {
+    throw new Error("expected a start turn context");
+  }
+  const prompt = buildCodexPrompt(prepared.turnContext);
+  assert.doesNotMatch(prompt, /Resume only from the current durable state below\./);
+  assert.match(prompt, /## Summary/);
+  assert.match(prompt, /The fresh session still needs the issue body\./);
 });
