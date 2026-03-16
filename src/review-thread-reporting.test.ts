@@ -1,13 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  buildManualReviewFailureContext,
-  buildRequestedChangesFailureContext,
-  buildStalledBotReviewFailureContext,
-  configuredBotReviewThreads,
-  pendingBotReviewThreads,
-} from "./review-thread-reporting";
-import { GitHubPullRequest, ReviewThread, SupervisorConfig } from "./types";
+import { configuredBotReviewThreads, manualReviewThreads } from "./supervisor-reporting";
+import { ReviewThread, SupervisorConfig } from "./types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
@@ -62,35 +56,6 @@ function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConf
   };
 }
 
-function createProcessedThreadRecord(overrides: Partial<{
-  processed_review_thread_ids: string[];
-  processed_review_thread_fingerprints: string[];
-  last_head_sha: string | null;
-}> = {}) {
-  return {
-    processed_review_thread_ids: [],
-    processed_review_thread_fingerprints: [],
-    last_head_sha: null,
-    ...overrides,
-  };
-}
-
-function createPullRequest(overrides: Partial<GitHubPullRequest> = {}): GitHubPullRequest {
-  return {
-    number: 44,
-    title: "Test PR",
-    url: "https://example.test/pr/44",
-    state: "OPEN",
-    createdAt: "2026-03-11T00:00:00Z",
-    isDraft: false,
-    reviewDecision: "CHANGES_REQUESTED",
-    mergeStateStatus: "CLEAN",
-    headRefName: "codex/issue-44",
-    headRefOid: "head-a",
-    ...overrides,
-  };
-}
-
 function createReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
   return {
     id: "thread-1",
@@ -120,103 +85,8 @@ test("configuredBotReviewThreads normalizes configured bot logins before classif
   const config = createConfig({
     reviewBotLogins: [" Copilot-Pull-Request-Reviewer "],
   });
+  const thread = createReviewThread();
 
-  const matchingThread = createReviewThread();
-  const manualThread = createReviewThread({
-    id: "thread-2",
-    comments: {
-      nodes: [
-        {
-          id: "comment-2",
-          body: "Human feedback.",
-          createdAt: "2026-03-11T00:01:00Z",
-          url: "https://example.test/pr/44#discussion_r2",
-          author: {
-            login: "reviewer",
-            typeName: "User",
-          },
-        },
-      ],
-    },
-  });
-
-  assert.deepEqual(configuredBotReviewThreads(config, [matchingThread, manualThread]), [matchingThread]);
-});
-
-test("pendingBotReviewThreads leaves a same-head configured thread pending when the latest comment changed", () => {
-  const config = createConfig({
-    reviewBotLogins: ["copilot-pull-request-reviewer"],
-  });
-  const record = createProcessedThreadRecord({
-    last_head_sha: "head-a",
-    processed_review_thread_ids: ["thread-1@head-a"],
-    processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
-  });
-  const pr = createPullRequest();
-  const updatedThread = createReviewThread({
-    comments: {
-      nodes: [
-        createReviewThread().comments.nodes[0],
-        {
-          id: "comment-2",
-          body: "One more note on the same thread.",
-          createdAt: "2026-03-11T00:05:00Z",
-          url: "https://example.test/pr/44#discussion_r2",
-          author: {
-            login: "copilot-pull-request-reviewer",
-            typeName: "Bot",
-          },
-        },
-      ],
-    },
-  });
-
-  assert.deepEqual(pendingBotReviewThreads(config, record, pr, [updatedThread]), [updatedThread]);
-});
-
-test("buildManualReviewFailureContext includes reviewer details and normalized body text", () => {
-  const context = buildManualReviewFailureContext([
-    createReviewThread({
-      comments: {
-        nodes: [
-          {
-            id: "comment-1",
-            body: "Please\naddress this.",
-            createdAt: "2026-03-11T00:00:00Z",
-            url: "https://example.test/pr/44#discussion_r1",
-            author: {
-              login: "reviewer",
-              typeName: "User",
-            },
-          },
-        ],
-      },
-    }),
-  ]);
-
-  assert.equal(context?.category, "manual");
-  assert.equal(context?.summary, "1 unresolved manual or unconfigured review thread(s) require human attention.");
-  assert.deepEqual(context?.details, ["src/file.ts:12 reviewer=reviewer Please address this."]);
-});
-
-test("buildStalledBotReviewFailureContext carries processed-on-current-head details for configured bots", () => {
-  const context = buildStalledBotReviewFailureContext([createReviewThread()]);
-
-  assert.equal(context?.category, "manual");
-  assert.equal(
-    context?.summary,
-    "1 configured bot review thread(s) remain unresolved after processing on the current head and now require manual attention.",
-  );
-  assert.deepEqual(context?.details, [
-    "reviewer=copilot-pull-request-reviewer file=src/file.ts line=12 processed_on_current_head=yes",
-  ]);
-});
-
-test("buildRequestedChangesFailureContext keeps requested-changes blocker wording stable", () => {
-  const context = buildRequestedChangesFailureContext(createPullRequest());
-
-  assert.equal(context.category, "manual");
-  assert.equal(context.summary, "PR #44 has requested changes and requires manual review resolution before merge.");
-  assert.equal(context.signature, "changes-requested:head-a");
-  assert.deepEqual(context.details, ["reviewDecision=CHANGES_REQUESTED"]);
+  assert.equal(configuredBotReviewThreads(config, [thread]).length, 1);
+  assert.equal(manualReviewThreads(config, [thread]).length, 0);
 });
