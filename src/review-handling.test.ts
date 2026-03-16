@@ -252,6 +252,35 @@ test("local review high-severity actions distinguish retry from blocked", () => 
   assert.equal(localReviewHighSeverityNeedsBlock(createConfig({ localReviewHighSeverityAction: "retry" }), record, pr), false);
 });
 
+test("localReviewHighSeverityNeedsRetry only escalates verifier-confirmed high findings", () => {
+  const config = createConfig({ localReviewPolicy: "block_ready", localReviewHighSeverityAction: "retry" });
+  const pr = createPullRequest();
+
+  assert.equal(
+    localReviewHighSeverityNeedsRetry(
+      config,
+      {
+        local_review_head_sha: "deadbeef",
+        local_review_verified_max_severity: "none",
+      },
+      pr,
+    ),
+    false,
+  );
+
+  assert.equal(
+    localReviewHighSeverityNeedsRetry(
+      config,
+      {
+        local_review_head_sha: "deadbeef",
+        local_review_verified_max_severity: "high",
+      },
+      pr,
+    ),
+    true,
+  );
+});
+
 test("local review retry loop helpers require a clean path and stall after repeated identical signatures", () => {
   const config = createConfig({
     localReviewPolicy: "block_ready",
