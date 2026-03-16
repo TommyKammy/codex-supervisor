@@ -38,9 +38,8 @@ export function parseArgs(argv: string[]): CliOptions {
     }
 
     if (command === "explain" && issueNumber === undefined) {
-      const parsed = Number.parseInt(token, 10);
-      if (Number.isInteger(parsed) && parsed > 0) {
-        issueNumber = parsed;
+      if (/^[1-9]\d*$/.test(token)) {
+        issueNumber = Number(token);
         continue;
       }
     }

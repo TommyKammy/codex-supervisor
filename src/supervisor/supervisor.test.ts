@@ -2488,6 +2488,7 @@ Depends on: #91`,
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     getIssue: async () => blockedIssue,
     listAllIssues: async () => [dependencyIssue, blockedIssue],
+    listCandidateIssues: async () => [dependencyIssue, blockedIssue],
   };
 
   const explanation = await supervisor.explain(93);
@@ -2496,6 +2497,39 @@ Depends on: #91`,
   assert.match(explanation, /^state=untracked$/m);
   assert.match(explanation, /^runnable=no$/m);
   assert.match(explanation, /^reason_1=dependency depends on #91$/m);
+});
+
+test("explain reports candidate filtering for a non-candidate issue", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const filteredIssue: GitHubIssue = {
+    number: 94,
+    title: "Filtered out of candidate selection",
+    body: executionReadyBody("Explain should report when scheduler filters out the issue."),
+    createdAt: "2026-03-13T00:05:00Z",
+    updatedAt: "2026-03-13T00:05:00Z",
+    url: "https://example.test/issues/94",
+    state: "CLOSED",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => filteredIssue,
+    listAllIssues: async () => [filteredIssue],
+    listCandidateIssues: async () => [],
+  };
+
+  const explanation = await supervisor.explain(94);
+
+  assert.match(explanation, /^issue=#94$/m);
+  assert.match(explanation, /^state=untracked$/m);
+  assert.match(explanation, /^runnable=no$/m);
+  assert.match(explanation, /^reason_1=candidate filtered_by_candidate_list$/m);
 });
 
 test("explain reports retry-budget blockers for verification-blocked issues", async () => {
@@ -2543,6 +2577,7 @@ Retry the failing verification.
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     getIssue: async () => blockedIssue,
     listAllIssues: async () => [blockedIssue],
+    listCandidateIssues: async () => [blockedIssue],
   };
 
   const explanation = await supervisor.explain(95);
@@ -2600,6 +2635,7 @@ Wait for a human review before proceeding.
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     getIssue: async () => blockedIssue,
     listAllIssues: async () => [blockedIssue],
+    listCandidateIssues: async () => [blockedIssue],
   };
 
   const explanation = await supervisor.explain(97);

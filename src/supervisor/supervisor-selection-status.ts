@@ -29,7 +29,7 @@ import {
 
 type ReadinessSummaryGitHub = Pick<GitHubClient, "listCandidateIssues">;
 type SelectionWhyGitHub = Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">;
-type ExplainIssueGitHub = Pick<GitHubClient, "getIssue" | "listAllIssues">;
+type ExplainIssueGitHub = Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues">;
 type ActiveStatusGitHub = Pick<
   GitHubClient,
   "resolvePullRequestForBranch" | "getChecks" | "getUnresolvedReviewThreads"
@@ -288,17 +288,25 @@ export async function buildIssueExplainSummary(
   state: SupervisorStateFile,
   issueNumber: number,
 ): Promise<string[]> {
-  const issue = await github.getIssue(issueNumber);
-  const issues = await github.listAllIssues();
+  const [issue, issues, candidateIssues] = await Promise.all([
+    github.getIssue(issueNumber),
+    github.listAllIssues(),
+    github.listCandidateIssues(),
+  ]);
   const record = state.issues[String(issue.number)];
   const readiness = lintExecutionReadyIssueBody(issue);
   const clarificationBlock = findHighRiskBlockingAmbiguity(issue);
   const blockingIssue = findBlockingIssue(issue, issues, state);
   const matchingSkipPrefix = config.skipTitlePrefixes.find((prefix) => issue.title.startsWith(prefix)) ?? null;
+  const candidateIssueNumbers = new Set(candidateIssues.map((candidate) => candidate.number));
   const reasons: string[] = [];
 
   if (matchingSkipPrefix) {
     reasons.push(`skip_title_prefix ${matchingSkipPrefix}`);
+  }
+
+  if (!candidateIssueNumbers.has(issue.number)) {
+    reasons.push("candidate filtered_by_candidate_list");
   }
 
   if (shouldEnforceExecutionReady(record) && !readiness.isExecutionReady) {
