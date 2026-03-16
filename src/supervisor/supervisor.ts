@@ -453,11 +453,9 @@ export class Supervisor {
         ...resetNoPrLifecycleFailureTracking(record),
       });
     }
-    state.issues[String(record.issue_number)] = record;
-    await this.stateStore.save(state);
-    await syncJournal(record);
+    const shouldExecuteCodex = shouldRunCodex(record, pr, checks, reviewThreads, this.config);
 
-    if (shouldRunCodex(record, pr, checks, reviewThreads, this.config)) {
+    if (shouldExecuteCodex) {
       const codexTurn = await this.executeCodexTurn({
         state,
         record,
@@ -483,6 +481,10 @@ export class Supervisor {
       pr = codexTurn.pr;
       checks = codexTurn.checks;
       reviewThreads = codexTurn.reviewThreads;
+    } else {
+      state.issues[String(record.issue_number)] = record;
+      await this.stateStore.save(state);
+      await syncJournal(record);
     }
 
     if (pr) {
