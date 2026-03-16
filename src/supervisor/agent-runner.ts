@@ -82,6 +82,9 @@ export interface AgentTurnResult {
   supervisorMessage: string;
   stderr: string;
   stdout: string;
+  // Structured output is only the normalized machine-readable footer from a
+  // successful turn. Runner failures must be expressed via failureKind and
+  // failureContext instead of mixing both channels.
   structuredResult: AgentTurnStructuredResult | null;
   failureKind: FailureKind;
   failureContext: FailureContext | null;
@@ -129,8 +132,9 @@ function extractLabeledValue(message: string, label: string): string | null {
 export function parseAgentTurnStructuredResult(message: string): AgentTurnStructuredResult | null {
   const summary = extractLabeledValue(message, "Summary");
   const stateHint = extractStateHint(message);
-  const blockedReason = extractBlockedReason(message);
-  const failureSignature = extractFailureSignature(message);
+  const blockedReason = stateHint === "blocked" ? extractBlockedReason(message) : null;
+  const failureSignature =
+    stateHint === "blocked" || stateHint === "failed" ? extractFailureSignature(message) : null;
   const tests = extractLabeledValue(message, "Tests");
   const nextAction = extractLabeledValue(message, "Next action");
 
@@ -180,8 +184,8 @@ export function createCodexAgentRunner(options: CreateCodexAgentRunnerOptions = 
           context.record,
           context.kind === "resume" ? context.sessionId : undefined,
         );
-        const structuredResult = parseAgentTurnStructuredResult(result.lastMessage);
         const failureKind: FailureKind = result.exitCode === 0 ? null : "codex_exit";
+        const structuredResult = failureKind === null ? parseAgentTurnStructuredResult(result.lastMessage) : null;
 
         return {
           exitCode: result.exitCode,
