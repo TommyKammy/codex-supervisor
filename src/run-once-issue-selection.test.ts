@@ -91,6 +91,64 @@ function createTouchStateStore(savedStates: SupervisorStateFile[]) {
   };
 }
 
+function createRecord(issueNumber: number, overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
+  return {
+    issue_number: issueNumber,
+    state: "queued",
+    branch: `codex/reopen-issue-${issueNumber}`,
+    pr_number: null,
+    workspace: `/tmp/workspaces/issue-${issueNumber}`,
+    journal_path: null,
+    review_wait_started_at: null,
+    review_wait_head_sha: null,
+    copilot_review_requested_observed_at: null,
+    copilot_review_requested_head_sha: null,
+    copilot_review_timed_out_at: null,
+    copilot_review_timeout_action: null,
+    copilot_review_timeout_reason: null,
+    codex_session_id: null,
+    local_review_head_sha: null,
+    local_review_blocker_summary: null,
+    local_review_summary_path: null,
+    local_review_run_at: null,
+    local_review_max_severity: null,
+    local_review_findings_count: 0,
+    local_review_root_cause_count: 0,
+    local_review_verified_max_severity: null,
+    local_review_verified_findings_count: 0,
+    local_review_recommendation: null,
+    local_review_degraded: false,
+    last_local_review_signature: null,
+    repeated_local_review_signature_count: 0,
+    external_review_head_sha: null,
+    external_review_misses_path: null,
+    external_review_matched_findings_count: 0,
+    external_review_near_match_findings_count: 0,
+    external_review_missed_findings_count: 0,
+    attempt_count: 0,
+    implementation_attempt_count: 0,
+    repair_attempt_count: 0,
+    timeout_retry_count: 0,
+    blocked_verification_retry_count: 0,
+    repeated_blocker_count: 0,
+    repeated_failure_signature_count: 0,
+    last_head_sha: null,
+    last_codex_summary: null,
+    last_recovery_reason: null,
+    last_recovery_at: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_blocker_signature: null,
+    last_failure_signature: null,
+    blocked_reason: null,
+    processed_review_thread_ids: [],
+    processed_review_thread_fingerprints: [],
+    updated_at: "2026-03-15T00:00:00Z",
+    ...overrides,
+  };
+}
+
 test("resolveRunnableIssueContext blocks non-ready issues, syncs journals, and releases the issue lock before restarting", async () => {
   const config = createConfig();
   const issue: GitHubIssue = {
@@ -229,6 +287,68 @@ test("resolveRunnableIssueContext does not persist a new active reservation when
   assert.equal(result, "Skipped issue #93: lock held by pid 123 for issue-93.");
   assert.equal(state.activeIssueNumber, null);
   assert.deepEqual(state.issues, {});
+  assert.equal(savedStates.length, 0);
+});
+
+test("resolveRunnableIssueContext reuses the current reserved issue instead of claiming another candidate in the same cycle", async () => {
+  const config = createConfig();
+  const currentIssue: GitHubIssue = {
+    number: 92,
+    title: "Already reserved issue",
+    body: executionReadyBody("Keep working on the already reserved issue."),
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/92",
+    state: "OPEN",
+  };
+  const otherIssue: GitHubIssue = {
+    number: 93,
+    title: "Another ready issue",
+    body: executionReadyBody("This issue should not be claimed in the same cycle."),
+    createdAt: "2026-03-15T00:05:00Z",
+    updatedAt: "2026-03-15T00:05:00Z",
+    url: "https://example.test/issues/93",
+    state: "OPEN",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 92,
+    issues: {
+      "92": createRecord(92, {
+        state: "queued",
+        blocked_reason: "verification",
+        blocked_verification_retry_count: 1,
+        last_error: "Auto-retrying after verification failure (1/3). Previous blocker: verification still failing",
+      }),
+    },
+  };
+  const savedStates: SupervisorStateFile[] = [];
+  const requestedIssueNumbers: number[] = [];
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [otherIssue],
+      getIssue: async (issueNumber) => {
+        requestedIssueNumbers.push(issueNumber);
+        return issueNumber === currentIssue.number ? currentIssue : otherIssue;
+      },
+    },
+    config,
+    stateStore: createTouchStateStore(savedStates),
+    state,
+    currentRecord: state.issues["92"] ?? null,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {},
+    }),
+  });
+
+  assert.ok(typeof result !== "string");
+  assert.equal(result.kind, "ready");
+  assert.equal(result.record.issue_number, 92);
+  assert.equal(result.issue.number, 92);
+  assert.deepEqual(requestedIssueNumbers, [92]);
+  assert.equal(state.activeIssueNumber, 92);
+  assert.deepEqual(Object.keys(state.issues), ["92"]);
   assert.equal(savedStates.length, 0);
 });
 
