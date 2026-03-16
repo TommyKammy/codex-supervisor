@@ -243,6 +243,10 @@ function mergeConditionsSatisfied(pr: GitHubPullRequest, checks: PullRequestChec
   );
 }
 
+function pullRequestHeadMatchesRecord(record: Pick<IssueRunRecord, "last_head_sha">, pr: GitHubPullRequest): boolean {
+  return record.last_head_sha === null || record.last_head_sha === pr.headRefOid;
+}
+
 export function blockedReasonFromReviewState(
   config: SupervisorConfig,
   record: IssueRunRecord,
@@ -471,6 +475,10 @@ export function inferStateFromPullRequest(
 
   if (copilotReviewPending(config, record, pr) && !copilotTimeout.timedOut) {
     return "waiting_ci";
+  }
+
+  if (!pullRequestHeadMatchesRecord(record, pr) && mergeConditionsSatisfied(pr, checks)) {
+    return "stabilizing";
   }
 
   if (mergeConditionsSatisfied(pr, checks)) {
