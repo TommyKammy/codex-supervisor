@@ -1,5 +1,5 @@
-import { type LocalReviewRoleSelection } from "./review-role-detector";
-import { type VerifierGuardrailRule } from "./verifier-guardrails";
+import { type LocalReviewRoleSelection } from "../review-role-detector";
+import { type VerifierGuardrailRule } from "../verifier-guardrails";
 
 export type LocalReviewSeverity = "none" | "low" | "medium" | "high";
 

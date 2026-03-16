@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildRolePrompt, buildVerifierPrompt } from "./local-review-prompt";
-import { createIssue, createPullRequest } from "./local-review-test-helpers";
-import { type VerifierGuardrailRule } from "./verifier-guardrails";
+import { buildRolePrompt, buildVerifierPrompt } from "./prompt";
+import { createIssue, createPullRequest } from "./test-helpers";
+import { type VerifierGuardrailRule } from "../verifier-guardrails";
 
 test("buildRolePrompt includes bounded relevant prior external misses", () => {
   const prompt = buildRolePrompt({
@@ -338,7 +338,7 @@ test("buildVerifierPrompt distinguishes drift-prone and legitimate line-sensitiv
         role: "reviewer",
         title: "Brittle line-number assertion",
         body: "The new test hard-codes a source line number even though it could anchor to the same guardrail id and behavior.",
-        file: "src/local-review.test.ts",
+        file: "src/local-review/index.test.ts",
         start: 1,
         end: 20,
         severity: "high",

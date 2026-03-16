@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { localReviewHasActionableFindings, shouldRunLocalReview } from "./local-review";
-import { createConfig, createPullRequest } from "./local-review-test-helpers";
+import { localReviewHasActionableFindings, shouldRunLocalReview } from "./index";
+import { createConfig, createPullRequest } from "./test-helpers";
 
 test("shouldRunLocalReview covers draft and ready policy gating combinations", () => {
   const cases: Array<{

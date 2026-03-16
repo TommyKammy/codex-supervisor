@@ -1,5 +1,5 @@
 import { truncate } from "./utils";
-import { type LocalReviewSeverity } from "./local-review-types";
+import { type LocalReviewSeverity } from "./local-review/types";
 import { hasActionableReviewText, isActionableTopLevelReview } from "./external-review-signal-heuristics";
 import { type IssueComment, type PullRequestReview, type ReviewThread } from "./types";
 

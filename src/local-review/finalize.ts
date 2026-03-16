@@ -1,7 +1,7 @@
-import { type LocalReviewRoleSelection } from "./review-role-detector";
-import { type SupervisorConfig } from "./types";
-import { truncate } from "./utils";
-import { findingMeetsReviewerThreshold, reviewerTypeForRole, thresholdsForReviewerType } from "./local-review-thresholds";
+import { type LocalReviewRoleSelection } from "../review-role-detector";
+import { type SupervisorConfig } from "../types";
+import { truncate } from "../utils";
+import { findingMeetsReviewerThreshold, reviewerTypeForRole, thresholdsForReviewerType } from "./thresholds";
 import {
   type FinalizedLocalReview,
   type LocalReviewGuardrailProvenance,
@@ -12,7 +12,7 @@ import {
   type LocalReviewRoleResult,
   type LocalReviewSeverity,
   type LocalReviewVerifierReport,
-} from "./local-review-types";
+} from "./types";
 
 function severityWeight(severity: LocalReviewFinding["severity"]): number {
   switch (severity) {

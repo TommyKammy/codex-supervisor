@@ -53,7 +53,7 @@ function isOpenPullRequest(pr: GitHubPullRequest | null): pr is GitHubPullReques
   return pr !== null && pr.state === "OPEN" && !pr.mergedAt;
 }
 
-export { loadLocalReviewRepairContext } from "./local-review-repair-context";
+export { loadLocalReviewRepairContext } from "./local-review/repair-context";
 
 export interface CodexTurnContext {
   state: SupervisorStateFile;

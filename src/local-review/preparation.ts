@@ -1,13 +1,13 @@
 import {
   compareExternalReviewPatterns,
   loadCommittedExternalReviewGuardrails,
-} from "./committed-guardrails";
-import { runCommand } from "./command";
-import { loadRelevantExternalReviewMissPatterns, type ExternalReviewMissPattern } from "./external-review-misses";
-import { reviewDir } from "./local-review-artifacts";
-import { compareRef } from "./local-review-prompt";
-import { detectLocalReviewRoleSelections, type LocalReviewRoleSelection } from "./review-role-detector";
-import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "./types";
+} from "../committed-guardrails";
+import { runCommand } from "../command";
+import { loadRelevantExternalReviewMissPatterns, type ExternalReviewMissPattern } from "../external-review-misses";
+import { reviewDir } from "./artifacts";
+import { compareRef } from "./prompt";
+import { detectLocalReviewRoleSelections, type LocalReviewRoleSelection } from "../review-role-detector";
+import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "../types";
 
 export function selectLocalReviewRoles(args: {
   config: Pick<SupervisorConfig, "localReviewRoles">;

@@ -6,9 +6,9 @@ import {
   loadLocalReviewExternalReviewContext,
   prepareLocalReviewRoleSelection,
   selectLocalReviewRoles,
-} from "./local-review-preparation";
-import { createConfig, createDetectedRoles, createMissPattern } from "./local-review-test-helpers";
-import { type LocalReviewRoleSelection } from "./review-role-detector";
+} from "./preparation";
+import { createConfig, createDetectedRoles, createMissPattern } from "./test-helpers";
+import { type LocalReviewRoleSelection } from "../review-role-detector";
 
 test("selectLocalReviewRoles preserves configured roles before detected or default roles", () => {
   assert.deepEqual(

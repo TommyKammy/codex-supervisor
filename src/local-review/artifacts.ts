@@ -1,8 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { type LocalReviewRoleSelection } from "./review-role-detector";
-import { type SupervisorConfig } from "./types";
-import { type FinalizedLocalReview, type LocalReviewFinding, type LocalReviewResult, type LocalReviewRoleResult, type LocalReviewVerifierReport } from "./local-review-types";
+import { type LocalReviewRoleSelection } from "../review-role-detector";
+import { type SupervisorConfig } from "../types";
+import {
+  type FinalizedLocalReview,
+  type LocalReviewFinding,
+  type LocalReviewResult,
+  type LocalReviewRoleResult,
+  type LocalReviewVerifierReport,
+} from "./types";
 
 function safeSlug(input: string): string {
   return input.replace(/[^a-zA-Z0-9._-]+/g, "-");

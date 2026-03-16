@@ -11,7 +11,7 @@ import {
 } from "./external-review-misses";
 import { syncExternalReviewMissState } from "./external-review-miss-state";
 import { GitHubClient } from "./github";
-import { loadLocalReviewRepairContext } from "./local-review-repair-context";
+import { loadLocalReviewRepairContext } from "./local-review/repair-context";
 import {
   hasProcessedReviewThread,
   latestReviewThreadCommentFingerprint,

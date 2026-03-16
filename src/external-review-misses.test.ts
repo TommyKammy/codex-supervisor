@@ -1217,18 +1217,18 @@ test("repo-committed durable external-review guardrails teach stable anchors for
     artifactDir: path.join(repoRoot, ".local", "reviews"),
     branch: "codex/issue-203",
     currentHeadSha: "currenthead",
-    changedFiles: ["src/local-review.test.ts"],
+    changedFiles: ["src/local-review/index.test.ts"],
     limit: 10,
     workspacePath: repoRoot,
   });
 
   assert.deepEqual(
-    patterns.filter((pattern) => pattern.fingerprint === "src/local-review.test.ts|avoid-drift-prone-line-coupling"),
+    patterns.filter((pattern) => pattern.fingerprint === "src/local-review/index.test.ts|avoid-drift-prone-line-coupling"),
     [
       {
-        fingerprint: "src/local-review.test.ts|avoid-drift-prone-line-coupling",
+        fingerprint: "src/local-review/index.test.ts|avoid-drift-prone-line-coupling",
         reviewerLogin: "copilot-pull-request-reviewer",
-        file: "src/local-review.test.ts",
+        file: "src/local-review/index.test.ts",
         line: null,
         summary:
           "Flag tests or promoted guardrails that hard-code exact source line numbers when a stable behavior, identifier, or nearby intent anchor would verify the same invariant.",
@@ -1248,18 +1248,18 @@ test("repo-committed durable external-review guardrails prefer the real behavior
     artifactDir: path.join(repoRoot, ".local", "reviews"),
     branch: "codex/issue-204",
     currentHeadSha: "currenthead",
-    changedFiles: ["src/local-review-prompt.ts"],
+    changedFiles: ["src/local-review/prompt.ts"],
     limit: 10,
     workspacePath: repoRoot,
   });
 
   assert.deepEqual(
-    patterns.filter((pattern) => pattern.fingerprint === "src/local-review-prompt.ts|anchor-findings-to-real-boundary"),
+    patterns.filter((pattern) => pattern.fingerprint === "src/local-review/prompt.ts|anchor-findings-to-real-boundary"),
     [
       {
-        fingerprint: "src/local-review-prompt.ts|anchor-findings-to-real-boundary",
+        fingerprint: "src/local-review/prompt.ts|anchor-findings-to-real-boundary",
         reviewerLogin: "copilot-pull-request-reviewer",
-        file: "src/local-review-prompt.ts",
+        file: "src/local-review/prompt.ts",
         line: null,
         summary:
           "Flag findings or promoted guardrails that anchor to an earlier or adjacent implementation step when the real behavioral boundary is a later transition or invariant.",
