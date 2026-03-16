@@ -4,7 +4,7 @@ import {
   type DurableExternalReviewGuardrails,
   type ExternalReviewMissPattern,
 } from "./external-review/external-review-miss-artifact-types";
-import { parseJson, writeJsonAtomic } from "./utils";
+import { parseJson, writeJsonAtomic } from "./core/utils";
 import { type VerifierGuardrailRule } from "./verifier-guardrails";
 
 interface DurableVerifierGuardrails {

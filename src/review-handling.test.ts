@@ -10,7 +10,7 @@ import {
   localReviewRetryLoopStalled,
   nextLocalReviewSignatureTracking,
 } from "./review-handling";
-import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "./types";
+import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "./core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {

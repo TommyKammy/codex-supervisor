@@ -2,12 +2,12 @@ import {
   compareExternalReviewPatterns,
   loadCommittedExternalReviewGuardrails,
 } from "../committed-guardrails";
-import { runCommand } from "../command";
+import { runCommand } from "../core/command";
 import { loadRelevantExternalReviewMissPatterns, type ExternalReviewMissPattern } from "../external-review/external-review-misses";
 import { reviewDir } from "./artifacts";
 import { compareRef } from "./prompt";
 import { detectLocalReviewRoleSelections, type LocalReviewRoleSelection } from "../review-role-detector";
-import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "../types";
+import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "../core/types";
 
 export function selectLocalReviewRoles(args: {
   config: Pick<SupervisorConfig, "localReviewRoles">;

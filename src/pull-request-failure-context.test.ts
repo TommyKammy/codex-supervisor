@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildChecksFailureContext, buildConflictFailureContext } from "./pull-request-failure-context";
-import { GitHubPullRequest, PullRequestCheck } from "./types";
+import { GitHubPullRequest, PullRequestCheck } from "./core/types";
 
 function createPullRequest(overrides: Partial<GitHubPullRequest> = {}): GitHubPullRequest {
   return {

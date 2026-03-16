@@ -1,5 +1,5 @@
 import path from "node:path";
-import { runCommand } from "../command";
+import { runCommand } from "../core/command";
 import {
   compareExternalReviewPatterns,
   EXTERNAL_REVIEW_GUARDRAILS_PATH,
@@ -20,7 +20,7 @@ import {
   sanitizeStatusValue,
 } from "./supervisor-status-model";
 import { displayRelativeArtifactPath } from "./supervisor-status-summary-helpers";
-import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../types";
+import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
 import { loadRelevantVerifierGuardrails } from "../verifier-guardrails";
 
 export function summarizeChecks(

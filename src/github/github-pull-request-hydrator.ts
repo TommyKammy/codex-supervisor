@@ -1,12 +1,12 @@
-import { CommandOptions, CommandResult } from "../command";
+import { CommandOptions, CommandResult } from "../core/command";
 import {
   applyConfiguredBotReviewSummary,
   buildConfiguredBotReviewSummary,
   PullRequestCopilotReviewLifecycleResponse,
 } from "./github-hydration";
 import { ConfiguredBotReviewSummary } from "./github-review-signals";
-import { CopilotReviewState, GitHubPullRequest, SupervisorConfig } from "../types";
-import { parseJson, truncate } from "../utils";
+import { CopilotReviewState, GitHubPullRequest, SupervisorConfig } from "../core/types";
+import { parseJson, truncate } from "../core/utils";
 
 const COPILOT_REVIEW_TRANSITION_CACHE_TTL_MS = 30_000;
 const COPILOT_REVIEW_CACHE_MAX_ENTRIES = 128;

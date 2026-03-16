@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { type LocalReviewRoleSelection } from "../review-role-detector";
-import { type SupervisorConfig } from "../types";
+import { type SupervisorConfig } from "../core/types";
 import {
   type FinalizedLocalReview,
   type LocalReviewFinding,

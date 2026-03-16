@@ -9,8 +9,8 @@ import { GitHubClient } from "./github";
 import {
   hasMeaningfulJournalHandoff,
   readIssueJournal,
-} from "./journal";
-import { LockHandle } from "./lock";
+} from "./core/journal";
+import { LockHandle } from "./core/lock";
 import {
   persistCodexTurnExecutionFailure,
   persistCodexTurnExitFailure,
@@ -23,7 +23,7 @@ import {
   PullRequestLifecycleSnapshot,
 } from "./post-turn-pull-request";
 import { IssueJournalSync, MemoryArtifacts } from "./run-once-issue-preparation";
-import { StateStore } from "./state-store";
+import { StateStore } from "./core/state-store";
 import {
   nextProcessedReviewThreadPatch,
   prepareCodexTurnPrompt,
@@ -39,9 +39,9 @@ import {
   SupervisorConfig,
   SupervisorStateFile,
   WorkspaceStatus,
-} from "./types";
-import { truncate } from "./utils";
-import { getWorkspaceStatus, pushBranch } from "./workspace";
+} from "./core/types";
+import { truncate } from "./core/utils";
+import { getWorkspaceStatus, pushBranch } from "./core/workspace";
 
 export {
   handlePostTurnPullRequestTransitionsPhase,
@@ -159,7 +159,7 @@ interface ExecuteCodexTurnPhaseArgs {
     record: IssueRunRecord;
     syncJournal: (record: IssueRunRecord) => Promise<void>;
     issueNumber: number;
-    codexResult: Pick<import("./types").CodexTurnResult, "lastMessage" | "stderr" | "stdout">;
+    codexResult: Pick<import("./core/types").CodexTurnResult, "lastMessage" | "stderr" | "stdout">;
     classifyFailure: (message: string | null | undefined) => "timeout" | "command_error";
     buildCodexFailureContext: (
       category: FailureContext["category"],

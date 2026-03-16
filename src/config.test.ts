@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadConfig } from "./config";
+import { loadConfig } from "./core/config";
 
 test("loadConfig leaves bare codexBinary values unresolved for PATH lookup", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));

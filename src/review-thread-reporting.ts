@@ -1,6 +1,6 @@
 import { hasProcessedReviewThread } from "./review-handling";
-import { FailureContext, GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "./types";
-import { nowIso } from "./utils";
+import { FailureContext, GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "./core/types";
+import { nowIso } from "./core/utils";
 
 function configuredReviewBots(config: SupervisorConfig): string[] {
   return config.reviewBotLogins.map((login) => login.trim()).filter((login) => login.length > 0);

@@ -1,4 +1,4 @@
-import { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "../types";
+import { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "../core/types";
 
 const COPILOT_REVIEWER_LOGIN = "copilot-pull-request-reviewer";
 

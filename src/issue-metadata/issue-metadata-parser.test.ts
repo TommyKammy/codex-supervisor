@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseIssueMetadata } from "./issue-metadata-parser";
-import { GitHubIssue } from "../types";
+import { GitHubIssue } from "../core/types";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return {

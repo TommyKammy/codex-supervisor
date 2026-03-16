@@ -1,7 +1,7 @@
 import { ensureGsdInstalled } from "./gsd";
 import { Supervisor } from "./supervisor";
-import { CliOptions } from "./types";
-import { sleep } from "./utils";
+import { CliOptions } from "./core/types";
+import { sleep } from "./core/utils";
 
 function parseArgs(argv: string[]): CliOptions {
   const args = [...argv];

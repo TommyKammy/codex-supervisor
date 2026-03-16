@@ -1,5 +1,5 @@
-import { CommandOptions, CommandResult, runCommand } from "../command";
-import { truncate } from "../utils";
+import { CommandOptions, CommandResult, runCommand } from "../core/command";
+import { truncate } from "../core/utils";
 
 const TRANSIENT_GITHUB_RETRY_LIMIT = 2;
 const TRANSIENT_GITHUB_RETRY_BASE_DELAY_MS = 200;

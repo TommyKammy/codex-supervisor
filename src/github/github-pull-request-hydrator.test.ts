@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { GitHubPullRequestHydrator } from "./github-pull-request-hydrator";
-import { GitHubPullRequest, SupervisorConfig } from "../types";
+import { GitHubPullRequest, SupervisorConfig } from "../core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {

@@ -3,7 +3,7 @@ import test from "node:test";
 import { runLocalReviewExecution, selectVerifierFindings } from "./execution";
 import { type LocalReviewRoleResult, type LocalReviewVerifierReport } from "./types";
 import { type LocalReviewRoleSelection } from "../review-role-detector";
-import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "../types";
+import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "../core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {

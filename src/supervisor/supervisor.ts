@@ -1,9 +1,9 @@
 import path from "node:path";
-import { loadConfig } from "../config";
+import { loadConfig } from "../core/config";
 import { GitHubClient } from "../github";
 import { describeGsdIntegration } from "../gsd";
-import { issueJournalPath } from "../journal";
-import { acquireFileLock, LockHandle } from "../lock";
+import { issueJournalPath } from "../core/journal";
+import { acquireFileLock, LockHandle } from "../core/lock";
 import {
   cleanupExpiredDoneWorkspaces,
   formatRecoveryLog,
@@ -88,7 +88,7 @@ import {
   summarizeSupervisorStatusRecords,
 } from "./supervisor-selection-status";
 import { inferFailureContext } from "./supervisor-failure-context";
-import { StateStore } from "../state-store";
+import { StateStore } from "../core/state-store";
 import {
   blockedReasonForLifecycleState,
   derivePullRequestLifecycleSnapshot,
@@ -125,13 +125,13 @@ import {
   SupervisorConfig,
   SupervisorStateFile,
   WorkspaceStatus,
-} from "../types";
-import { nowIso, truncate } from "../utils";
+} from "../core/types";
+import { nowIso, truncate } from "../core/utils";
 import {
   ensureWorkspace,
   getWorkspaceStatus,
   pushBranch,
-} from "../workspace";
+} from "../core/workspace";
 
 interface ReadyIssueContext {
   kind: "ready";

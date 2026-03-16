@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { nextProcessedReviewThreadPatch, prepareCodexTurnPrompt } from "./turn-execution-orchestration";
-import { SupervisorStateFile } from "./types";
+import { SupervisorStateFile } from "./core/types";
 import {
   createConfig,
   createFailureContext,

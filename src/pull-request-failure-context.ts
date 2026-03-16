@@ -1,5 +1,5 @@
-import { FailureContext, GitHubPullRequest, PullRequestCheck } from "./types";
-import { nowIso } from "./utils";
+import { FailureContext, GitHubPullRequest, PullRequestCheck } from "./core/types";
+import { nowIso } from "./core/utils";
 
 export function buildChecksFailureContext(pr: GitHubPullRequest, checks: PullRequestCheck[]): FailureContext | null {
   const failingChecks = checks.filter((check) => check.bucket === "fail");

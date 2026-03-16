@@ -6,8 +6,8 @@ import {
   PullRequestCheck,
   ReviewThread,
   SupervisorConfig,
-} from "./types";
-import { nowIso } from "./utils";
+} from "./core/types";
+import { nowIso } from "./core/utils";
 
 export function processedReviewThreadKey(threadId: string, headSha: string): string {
   return `${threadId}@${headSha}`;

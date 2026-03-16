@@ -1,4 +1,4 @@
-import type { GitHubIssue } from "../types";
+import type { GitHubIssue } from "../core/types";
 
 const RISKY_CHANGE_CLASSES = [
   "auth",

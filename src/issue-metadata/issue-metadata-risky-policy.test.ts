@@ -4,7 +4,7 @@ import {
   detectRiskyChangeClasses,
   parseRiskyChangeApprovalList,
 } from "./issue-metadata-risky-policy";
-import { GitHubIssue } from "../types";
+import { GitHubIssue } from "../core/types";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return {

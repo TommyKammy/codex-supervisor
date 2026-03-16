@@ -1,6 +1,6 @@
 import { type ExternalReviewMissPattern } from "../external-review/external-review-misses";
-import { type GitHubIssue, type GitHubPullRequest } from "../types";
-import { truncate } from "../utils";
+import { type GitHubIssue, type GitHubPullRequest } from "../core/types";
+import { truncate } from "../core/utils";
 import { renderLines } from "./artifacts";
 import { findingKey } from "./finalize";
 import { type VerifierGuardrailRule } from "../verifier-guardrails";

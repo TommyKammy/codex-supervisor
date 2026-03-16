@@ -1,5 +1,5 @@
 import { GitHubClient } from "../github";
-import { StateStore } from "../state-store";
+import { StateStore } from "../core/state-store";
 import {
   FailureContext,
   GitHubIssue,
@@ -8,8 +8,8 @@ import {
   SupervisorConfig,
   SupervisorStateFile,
   WorkspaceStatus,
-} from "../types";
-import { nowIso, truncate } from "../utils";
+} from "../core/types";
+import { nowIso, truncate } from "../core/utils";
 
 type AuthFailureGitHub = Pick<GitHubClient, "authStatus">;
 type FailureHelperStateStore = Pick<StateStore, "save" | "touch">;

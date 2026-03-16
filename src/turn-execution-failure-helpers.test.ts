@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { persistHintedCodexTurnState } from "./turn-execution-failure-helpers";
-import { SupervisorStateFile } from "./types";
+import { SupervisorStateFile } from "./core/types";
 import { createRecord } from "./turn-execution-test-helpers";
 
 test("persistHintedCodexTurnState records blocked reasons and repeated blocker bookkeeping from Codex hints", async () => {

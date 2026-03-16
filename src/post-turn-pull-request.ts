@@ -16,7 +16,7 @@ import {
   nextLocalReviewSignatureTracking,
 } from "./review-handling";
 import { IssueJournalSync, MemoryArtifacts } from "./run-once-issue-preparation";
-import { StateStore } from "./state-store";
+import { StateStore } from "./core/state-store";
 import {
   FailureContext,
   GitHubIssue,
@@ -27,8 +27,8 @@ import {
   RunState,
   SupervisorConfig,
   SupervisorStateFile,
-} from "./types";
-import { nowIso, truncate } from "./utils";
+} from "./core/types";
+import { nowIso, truncate } from "./core/utils";
 
 export interface PostTurnPullRequestContext {
   state: SupervisorStateFile;

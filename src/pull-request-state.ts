@@ -22,8 +22,8 @@ import {
   ReviewThread,
   RunState,
   SupervisorConfig,
-} from "./types";
-import { nowIso } from "./utils";
+} from "./core/types";
+import { nowIso } from "./core/utils";
 
 const COPILOT_REVIEW_PROPAGATION_GRACE_MS = 5_000;
 const COPILOT_REVIEWER_LOGIN = "copilot-pull-request-reviewer";

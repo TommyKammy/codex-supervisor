@@ -1,4 +1,4 @@
-import { GitHubIssue, SupervisorStateFile } from "./types";
+import { GitHubIssue, SupervisorStateFile } from "./core/types";
 
 export interface RecoveryEvent {
   issueNumber: number;

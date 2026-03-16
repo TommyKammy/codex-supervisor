@@ -19,7 +19,7 @@ import {
   processedReviewThreadKey,
 } from "./review-handling";
 import { IssueJournalSync, MemoryArtifacts } from "./run-once-issue-preparation";
-import { StateStore } from "./state-store";
+import { StateStore } from "./core/state-store";
 import {
   GitHubIssue,
   GitHubPullRequest,
@@ -27,8 +27,8 @@ import {
   ReviewThread,
   SupervisorConfig,
   SupervisorStateFile,
-} from "./types";
-import { truncate } from "./utils";
+} from "./core/types";
+import { truncate } from "./core/utils";
 
 function shouldLoadExternalReviewContext(args: {
   preRunState: IssueRunRecord["state"];
@@ -81,7 +81,7 @@ export async function prepareCodexTurnPrompt(args: {
   syncJournal: IssueJournalSync;
   memoryArtifacts: MemoryArtifacts;
   pr: GitHubPullRequest | null;
-  checks: import("./types").PullRequestCheck[];
+  checks: import("./core/types").PullRequestCheck[];
   reviewThreads: ReviewThread[];
   github: Pick<GitHubClient, "getExternalReviewSurface">;
 }): Promise<{

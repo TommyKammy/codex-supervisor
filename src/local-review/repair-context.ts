@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { type LocalReviewRepairContext } from "../codex/codex-prompt";
 import { loadRelevantExternalReviewMissPatterns } from "../external-review/external-review-misses";
-import { parseJson } from "../utils";
+import { parseJson } from "../core/utils";
 import { loadRelevantVerifierGuardrails } from "../verifier-guardrails";
 
 function isRecord(value: unknown): value is Record<string, unknown> {

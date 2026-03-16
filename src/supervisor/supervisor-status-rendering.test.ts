@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { formatDetailedStatus } from "./supervisor-status-rendering";
-import { GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../types";
+import { GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {

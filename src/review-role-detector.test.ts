@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { detectLocalReviewRoleSelections, detectLocalReviewRoles } from "./review-role-detector";
-import { SupervisorConfig } from "./types";
+import { SupervisorConfig } from "./core/types";
 
 function createConfig(repoPath: string, overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {

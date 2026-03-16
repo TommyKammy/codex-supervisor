@@ -24,7 +24,7 @@ import {
   PullRequestCheck,
   ReviewThread,
   SupervisorConfig,
-} from "../types";
+} from "../core/types";
 
 export function inferFailureContext(
   config: SupervisorConfig,

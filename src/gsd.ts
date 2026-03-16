@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { runCommand } from "./command";
-import { SupervisorConfig } from "./types";
+import { runCommand } from "./core/command";
+import { SupervisorConfig } from "./core/types";
 
 const REQUIRED_GSD_SKILLS = [
   "gsd-help",

@@ -4,7 +4,7 @@ import {
   findHighRiskBlockingAmbiguity,
   lintExecutionReadyIssueBody,
 } from "./issue-metadata-gates";
-import { GitHubIssue } from "../types";
+import { GitHubIssue } from "../core/types";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return {

@@ -2,7 +2,7 @@ import {
   formatLocalReviewResult,
   prepareLocalReviewGuardrailProvenance,
 } from "./result";
-import { ensureDir, nowIso } from "../utils";
+import { ensureDir, nowIso } from "../core/utils";
 import { finalizeLocalReview } from "./finalize";
 import { reviewDir, writeLocalReviewArtifacts } from "./artifacts";
 import { runLocalReviewExecution } from "./execution";
@@ -11,7 +11,7 @@ import {
   loadLocalReviewExternalReviewContext,
   prepareLocalReviewRoleSelection,
 } from "./preparation";
-import { GitHubIssue, GitHubPullRequest, SupervisorConfig } from "../types";
+import { GitHubIssue, GitHubPullRequest, SupervisorConfig } from "../core/types";
 import { type LocalReviewResult } from "./types";
 
 export type {

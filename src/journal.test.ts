@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { syncIssueJournal } from "./journal";
-import { GitHubIssue, IssueRunRecord } from "./types";
+import { syncIssueJournal } from "./core/journal";
+import { GitHubIssue, IssueRunRecord } from "./core/types";
 
 const issue: GitHubIssue = {
   number: 177,

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildCodexPrompt, buildCodexResumePrompt, shouldUseCompactResumePrompt } from "./codex-prompt";
-import { FailureContext, GitHubIssue, RunState } from "../types";
+import { FailureContext, GitHubIssue, RunState } from "../core/types";
 
 const issue: GitHubIssue = {
   number: 46,

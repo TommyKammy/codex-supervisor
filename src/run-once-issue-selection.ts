@@ -5,8 +5,8 @@ import {
   findHighRiskBlockingAmbiguity,
   lintExecutionReadyIssueBody,
 } from "./issue-metadata";
-import { issueJournalPath, syncIssueJournal } from "./journal";
-import { acquireFileLock, LockHandle } from "./lock";
+import { issueJournalPath, syncIssueJournal } from "./core/journal";
+import { acquireFileLock, LockHandle } from "./core/lock";
 import {
   applyFailureSignature,
 } from "./supervisor/supervisor-failure-helpers";
@@ -15,16 +15,16 @@ import {
   isEligibleForSelection,
   shouldEnforceExecutionReady,
 } from "./supervisor/supervisor-execution-policy";
-import { StateStore } from "./state-store";
+import { StateStore } from "./core/state-store";
 import {
   FailureContext,
   GitHubIssue,
   IssueRunRecord,
   SupervisorConfig,
   SupervisorStateFile,
-} from "./types";
-import { nowIso, truncate } from "./utils";
-import { branchNameForIssue, ensureWorkspace, workspacePathForIssue } from "./workspace";
+} from "./core/types";
+import { nowIso, truncate } from "./core/utils";
+import { branchNameForIssue, ensureWorkspace, workspacePathForIssue } from "./core/workspace";
 
 export interface ReadyIssueContext {
   kind: "ready";

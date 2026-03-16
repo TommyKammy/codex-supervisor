@@ -1,6 +1,6 @@
 import { type ExternalReviewMissPattern } from "../external-review/external-review-misses";
 import { type LocalReviewRoleSelection } from "../review-role-detector";
-import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "../types";
+import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "../core/types";
 
 export function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   const baseConfig: SupervisorConfig = {
