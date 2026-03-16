@@ -10,6 +10,7 @@ import type {
   ResumeAgentTurnRequest,
   StartAgentTurnRequest,
 } from "./agent-runner";
+import { createCodexAgentRunner } from "./agent-runner";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
@@ -176,6 +177,130 @@ test("agent turn result supports both parsed and raw supervisor output", () => {
   assert.equal(parsedResult.structuredResult?.stateHint, "blocked");
   assert.equal(parsedResult.structuredResult?.blockedReason, "verification");
   assert.equal(parsedResult.structuredResult?.failureSignature, "missing-test");
+});
+
+test("createCodexAgentRunner adapts start and resume requests to Codex CLI turns", async () => {
+  const config = createConfig();
+  const seenCalls: Array<{
+    workspacePath: string;
+    prompt: string;
+    state: RunState;
+    record:
+      | {
+          repeated_failure_signature_count: number;
+          blocked_verification_retry_count: number;
+          timeout_retry_count: number;
+        }
+      | null
+      | undefined;
+    sessionId: string | null | undefined;
+  }> = [];
+  const runner = createCodexAgentRunner({
+    runCodexTurnImpl: async (_config, workspacePath, prompt, state, record, sessionId) => {
+      seenCalls.push({
+        workspacePath,
+        prompt,
+        state,
+        record,
+        sessionId,
+      });
+      return {
+        exitCode: sessionId ? 1 : 0,
+        sessionId: sessionId ?? "session-new",
+        lastMessage: [
+          "Summary: Codex adapter result",
+          `State hint: ${sessionId ? "blocked" : "implementing"}`,
+          `Blocked reason: ${sessionId ? "verification" : "none"}`,
+          "Failure signature: reproduced-contract-gap",
+          "Tests: npx tsx --test src/supervisor/agent-runner.test.ts",
+          "Next action: continue with focused verification",
+        ].join("\n"),
+        stderr: sessionId ? "resume failed" : "",
+        stdout: sessionId ? "resume output" : "fresh output",
+      };
+    },
+  });
+
+  const startResult = await runner.runTurn({
+    kind: "start",
+    config,
+    workspacePath: "/tmp/workspace",
+    prompt: "Investigate the failing path.",
+    state: "reproducing",
+    record: {
+      repeated_failure_signature_count: 0,
+      blocked_verification_retry_count: 0,
+      timeout_retry_count: 0,
+    },
+  });
+  const resumeResult = await runner.runTurn({
+    kind: "resume",
+    config,
+    workspacePath: "/tmp/workspace",
+    prompt: "Continue from the previous session.",
+    state: "implementing",
+    sessionId: "session-123",
+    record: null,
+  });
+
+  assert.equal(runner.capabilities.supportsResume, true);
+  assert.equal(runner.capabilities.supportsStructuredResult, true);
+  assert.deepEqual(seenCalls, [
+    {
+      workspacePath: "/tmp/workspace",
+      prompt: "Investigate the failing path.",
+      state: "reproducing",
+      record: {
+        repeated_failure_signature_count: 0,
+        blocked_verification_retry_count: 0,
+        timeout_retry_count: 0,
+      },
+      sessionId: undefined,
+    },
+    {
+      workspacePath: "/tmp/workspace",
+      prompt: "Continue from the previous session.",
+      state: "implementing",
+      record: null,
+      sessionId: "session-123",
+    },
+  ]);
+  assert.equal(startResult.sessionId, "session-new");
+  assert.equal(startResult.failureKind, null);
+  assert.equal(startResult.structuredResult?.summary, "Codex adapter result");
+  assert.equal(startResult.structuredResult?.stateHint, "implementing");
+  assert.equal(startResult.structuredResult?.blockedReason, null);
+  assert.equal(startResult.structuredResult?.tests, "npx tsx --test src/supervisor/agent-runner.test.ts");
+  assert.equal(resumeResult.sessionId, "session-123");
+  assert.equal(resumeResult.failureKind, "codex_exit");
+  assert.equal(resumeResult.structuredResult?.stateHint, "blocked");
+  assert.equal(resumeResult.structuredResult?.blockedReason, "verification");
+  assert.equal(resumeResult.structuredResult?.failureSignature, "reproduced-contract-gap");
+  assert.match(resumeResult.failureContext?.summary ?? "", /exited non-zero/i);
+});
+
+test("createCodexAgentRunner normalizes Codex execution errors into the shared failure shape", async () => {
+  const runner = createCodexAgentRunner({
+    runCodexTurnImpl: async () => {
+      throw new Error("Command timed out after 1800000ms");
+    },
+  });
+
+  const result = await runner.runTurn({
+    kind: "start",
+    config: createConfig(),
+    workspacePath: "/tmp/workspace",
+    prompt: "Retry the focused verification command.",
+    state: "repairing_ci",
+    record: null,
+  });
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.sessionId, null);
+  assert.equal(result.structuredResult, null);
+  assert.equal(result.failureKind, "timeout");
+  assert.equal(result.failureContext?.category, "codex");
+  assert.match(result.failureContext?.details[0] ?? "", /Command timed out after 1800000ms/);
 });
 
 void ([
