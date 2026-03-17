@@ -4,6 +4,9 @@ import {
   buildExternalReviewMissArtifact,
   readExternalReviewMissArtifactPatterns,
 } from "./external-review-miss-artifact";
+import {
+  buildExternalReviewMissFollowUpDigest,
+} from "./external-review-miss-digest";
 
 test("readExternalReviewMissArtifactPatterns prefers persisted reusable patterns", () => {
   const artifactPath = "/tmp/external-review-misses-head-newest.json";
@@ -291,4 +294,87 @@ test("buildExternalReviewMissArtifact assigns one deterministic prevention targe
       },
     ],
   );
+});
+
+test("buildExternalReviewMissFollowUpDigest groups missed findings by target and flags stale active heads", () => {
+  const artifact = buildExternalReviewMissArtifact({
+    issueNumber: 58,
+    prNumber: 91,
+    branch: "codex/issue-58",
+    headSha: "deadbeefcafebabe",
+    localReviewSummaryPath: "/tmp/head-deadbeef.md",
+    localReviewFindingsPath: "/tmp/head-deadbeef.json",
+    artifactPath: "/tmp/external-review-misses-head-deadbeefcafe.json",
+    findings: [
+      {
+        classification: "missed_by_local_review",
+        reviewerLogin: "copilot-pull-request-reviewer",
+        file: "src/auth.ts",
+        line: 42,
+        summary: "Permission guard is bypassed.",
+        rationale: "Check the permission guard before the fallback write path.",
+        url: "https://example.test/pr/1#discussion_r1",
+        sourceKind: "review_thread",
+        sourceId: "thread-1",
+        sourceUrl: "https://example.test/pr/1#discussion_r1",
+        threadId: "thread-1",
+        source: "external_bot",
+        severity: "high",
+        confidence: 0.9,
+        matchedLocalReference: null,
+        matchReason: "no same-file local-review match",
+      },
+      {
+        classification: "missed_by_local_review",
+        reviewerLogin: "coderabbitai[bot]",
+        file: null,
+        line: null,
+        summary: "Issue instructions should call out rollout expectations.",
+        rationale: "Issue instructions should call out rollout expectations.",
+        url: "https://example.test/pr/1#issuecomment-1",
+        sourceKind: "issue_comment",
+        sourceId: "issue-comment-1",
+        sourceUrl: "https://example.test/pr/1#issuecomment-1",
+        threadId: null,
+        source: "external_bot",
+        severity: "medium",
+        confidence: 0.9,
+        matchedLocalReference: null,
+        matchReason: "no same-file local-review match",
+      },
+      {
+        classification: "matched",
+        reviewerLogin: "copilot-pull-request-reviewer",
+        file: "src/retry.ts",
+        line: 12,
+        summary: "Matched finding should stay out of the digest.",
+        rationale: "Matched finding should stay out of the digest.",
+        url: "https://example.test/pr/1#discussion_r3",
+        sourceKind: "review_thread",
+        sourceId: "thread-3",
+        sourceUrl: "https://example.test/pr/1#discussion_r3",
+        threadId: "thread-3",
+        source: "external_bot",
+        severity: "medium",
+        confidence: 0.9,
+        matchedLocalReference: "actionable:1",
+        matchReason: "same-file overlap=0.40 line_distance=0 same_hunk=yes",
+      },
+    ],
+  });
+
+  const digest = buildExternalReviewMissFollowUpDigest({
+    artifactPath: "/tmp/external-review-misses-head-deadbeefcafe.json",
+    artifact,
+    activeHeadSha: "feedfacecafebabe",
+    localReviewSummaryPath: "/tmp/head-feedface.md",
+    localReviewHeadSha: "feedfacecafebabe",
+  });
+
+  assert.match(digest, /- Head status: stale-head \(digest does not match the active PR head\)/);
+  assert.match(digest, /## Durable guardrail \(1 finding\)/);
+  assert.match(digest, /## Issue template \(1 finding\)/);
+  assert.match(digest, /- Prevention target: durable_guardrail/);
+  assert.match(digest, /- Prevention target: issue_template/);
+  assert.doesNotMatch(digest, /Matched finding should stay out of the digest\./);
 });

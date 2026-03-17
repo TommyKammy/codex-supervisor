@@ -18,6 +18,10 @@ import {
   buildExternalReviewMissArtifact,
   createExternalReviewMissContext,
 } from "./external-review-miss-artifact";
+import {
+  buildExternalReviewMissFollowUpDigest,
+  externalReviewMissFollowUpDigestPath,
+} from "./external-review-miss-digest";
 import { loadLocalReviewArtifact } from "./external-review-local-artifact-io";
 import { type ReviewThread } from "../core/types";
 
@@ -62,8 +66,17 @@ export async function writeExternalReviewMissArtifact(args: {
     findings,
     artifactPath,
   });
+  const digestPath = externalReviewMissFollowUpDigestPath(artifactPath);
+  const digest = buildExternalReviewMissFollowUpDigest({
+    artifactPath,
+    artifact,
+    activeHeadSha: args.headSha,
+    localReviewSummaryPath: args.localReviewSummaryPath,
+    localReviewHeadSha: localArtifact.headSha ?? null,
+  });
 
   await fs.writeFile(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
+  await fs.writeFile(digestPath, digest, "utf8");
 
   return createExternalReviewMissContext({
     artifactPath,
