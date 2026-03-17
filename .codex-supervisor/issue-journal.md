@@ -3,33 +3,45 @@
 ## Supervisor Snapshot
 - Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/505
 - Branch: codex/issue-505
-- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-505
-- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-505/.codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 1cb60c7562c7e36938b0087246ec272d873d2d1b
+- Workspace: .
+- Journal: .codex-supervisor/issue-journal.md
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=1, repair=2)
+- Last head SHA: 693e30b62880fccc5aa402687b52a1efae64190f
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-17T21:11:26.908Z
+- Last failure signature: PRRT_kwDORgvdZ850_ne4
+- Repeated failure signature count: 1
+- Updated at: 2026-03-17T21:31:57.000Z
 
 ## Latest Codex Summary
-- Added a normalized change-risk decision summary that combines issue-metadata risk signals, risky approvals, and deterministic changed-file classes with explicit `issue_metadata` over `changed_files` precedence on ties; wired prompt/status consumers to reuse it.
+Repaired the tracked issue journal for PR #508 by converting the workspace fields and newly added file links to repo-relative paths, and by restoring the truncated scratchpad tail that had been committed in `693e30b`. The underlying #505 implementation from [src/issue-metadata/issue-metadata-change-risk-decision.ts](../src/issue-metadata/issue-metadata-change-risk-decision.ts) remains unchanged.
+
+The shared normalized change-risk decision, prompt coverage, and focused decision tests from [src/codex/codex-prompt.ts](../src/codex/codex-prompt.ts), [src/codex/codex-prompt.test.ts](../src/codex/codex-prompt.test.ts), and [src/issue-metadata/issue-metadata-change-risk-decision.test.ts](../src/issue-metadata/issue-metadata-change-risk-decision.test.ts) remain as shipped in `395a11c`; this turn only addresses the CodeRabbit journal-path review on draft PR #508: https://github.com/TommyKammy/codex-supervisor/pull/508
+
+One local untracked path remains: `.codex-supervisor/replay/`. I left it untouched.
+
+Summary: Normalized the tracked journal paths to repo-relative form, converted the new journal file links to repo-relative targets, and restored the truncated scratchpad tail on PR #508.
+State hint: addressing_review
+Blocked reason: none
+Tests: `git diff --check`
+Failure signature: none
+Next action: Push the journal repair, resolve thread `PRRT_kwDORgvdZ850_ne4`, and monitor PR #508 for follow-up review feedback.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: change-risk explainability should be normalized by one shared decision object so prompt guidance and other consumers stop inferring precedence separately from issue metadata and changed-file classes.
-- What changed: added `summarizeChangeRiskDecision`, covered mixed-source precedence in focused tests, updated the Codex prompt to render risky metadata inputs plus the winning source, routed the existing change-class status helper through the same summary object without expanding status output, committed the work as `395a11c` (`Normalize change-risk decisions`), pushed `codex/issue-505`, and opened draft PR #508.
+- Hypothesis: the tracked issue journal should use repo-relative paths consistently, including markdown link targets, so review artifacts stay shareable without leaking a contributor-specific workspace path.
+- What changed: normalized the journal `Workspace` and `Journal` fields plus the new latest-summary links to repo-relative targets, reduced the copied CodeRabbit failure context to a neutral summary, and restored the truncated #477 scratchpad tail; the underlying #505 change-risk implementation from `395a11c` remains unchanged.
 - Current blocker: none
-- Next exact step: Monitor draft PR #508 for CI and review feedback; if CI reports anything unstable, reproduce it locally and repair on this branch.
-- Verification gap: none; the focused issue-metadata and prompt tests passed, and `npm run build` passed after restoring the local toolchain with `npm ci`.
-- Files touched: `src/issue-metadata/issue-metadata-change-risk-decision.ts`, `src/issue-metadata/issue-metadata-change-risk-decision.test.ts`, `src/issue-metadata/issue-metadata.ts`, `src/codex/codex-prompt.ts`, `src/codex/codex-prompt.test.ts`, `src/supervisor/supervisor-status-rendering.ts`
-- Rollback concern: removing the shared decision helper would re-fragment precedence between prompt/status callers and drop the explicit higher-risk source that #505 needs.
-- Last focused command: `npx tsx --test src/issue-metadata/issue-metadata-change-risk-decision.test.ts src/issue-metadata/issue-metadata-risky-policy.test.ts src/issue-metadata/issue-metadata-change-classification.test.ts src/issue-metadata/issue-metadata.test.ts src/codex/codex-prompt.test.ts`
+- Next exact step: Push this journal-only repair, resolve CodeRabbit thread `PRRT_kwDORgvdZ850_ne4`, and monitor PR #508 for any follow-up review.
+- Verification gap: none for this repair; `git diff --check` passed and no source files changed.
+- Files touched: `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this repair would reintroduce workspace-specific absolute paths into the tracked journal and restore the malformed scratchpad tail from `693e30b`.
+- Last focused command: `git diff --check`
 ### Scratchpad (workspace-local date in Asia/Tokyo unless noted)
+- 2026-03-18 (JST): Review repair for PR #508 normalized the tracked journal `Workspace`/`Journal` fields and new summary links to repo-relative paths, reduced the copied CodeRabbit failure context to a neutral summary, restored the truncated #477 scratchpad tail from `HEAD^`, and passed `git diff --check`.
 - 2026-03-18 (JST): Committed `395a11c` (`Normalize change-risk decisions`), pushed `codex/issue-505`, and opened draft PR #508 (`https://github.com/TommyKammy/codex-supervisor/pull/508`).
 - 2026-03-18 (JST): Added `summarizeChangeRiskDecision` so prompt/status consumers share one normalized risk decision with `issue_metadata` tie precedence, risky approval inputs, deterministic changed-file classes, and the resulting verification intensity.
 - 2026-03-18 (JST): Focused reproducer for #505 was a new `issue-metadata-change-risk-decision` test asserting `auth` metadata plus docs/tests changed files should still resolve to `verificationIntensity=strong` with `higherRiskSource=issue_metadata`.
