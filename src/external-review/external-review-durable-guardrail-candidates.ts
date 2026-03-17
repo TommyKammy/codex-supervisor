@@ -5,6 +5,7 @@ import {
   type ExternalReviewDurableGuardrailCandidateCategory,
 } from "./external-review-miss-artifact-types";
 import { type ExternalReviewSignalSourceKind } from "./external-review-signals";
+import { qualifyRegressionCandidateFinding } from "./external-review-regression-candidate-qualification";
 
 interface CandidateQualificationRule {
   reason: string;
@@ -170,7 +171,41 @@ export function toDurableGuardrailCandidates(args: {
   localReviewFindingsPath: string | null;
   finding: ExternalReviewMissFinding;
 }): ExternalReviewDurableGuardrailCandidate[] {
-  return CANDIDATE_SPECS.flatMap((spec) => {
+  return CANDIDATE_SPECS.flatMap<ExternalReviewDurableGuardrailCandidate>((spec) => {
+    if (spec.category === "regression_test") {
+      const qualification = qualifyRegressionCandidateFinding(args.finding);
+      if (!qualification) {
+        return [];
+      }
+
+      return [{
+        id: createDurableGuardrailCandidateId(spec.category, args.finding),
+        category: spec.category,
+        title: formatTitle(spec.titlePrefix, args.finding.summary),
+        reviewerLogin: args.finding.reviewerLogin,
+        file: qualification.file,
+        line: qualification.line,
+        summary: args.finding.summary,
+        rationale: args.finding.rationale,
+        qualificationReasons: qualification.qualificationReasons,
+        provenance: {
+          issueNumber: args.issueNumber,
+          prNumber: args.prNumber,
+          branch: args.branch,
+          headSha: args.headSha,
+          sourceKind: args.finding.sourceKind,
+          sourceId: args.finding.sourceId,
+          sourceThreadId: args.finding.threadId,
+          sourceUrl: args.finding.url ?? null,
+          sourceArtifactPath: args.sourceArtifactPath,
+          localReviewSummaryPath: args.localReviewSummaryPath,
+          localReviewFindingsPath: args.localReviewFindingsPath,
+          matchedLocalReference: args.finding.matchedLocalReference,
+          matchReason: args.finding.matchReason,
+        },
+      }];
+    }
+
     const { qualified, qualificationReasons } = qualifies(args.finding, spec);
     if (!qualified) {
       return [];

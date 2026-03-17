@@ -1,37 +1,37 @@
-# Issue #492: External-review cleanup: separate miss persistence/state patching from miss-history loading
+# Issue #493: External-review cleanup: refine durable guardrail and regression-candidate boundaries
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/492
-- Branch: codex/issue-492
-- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-492
-- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-492/.codex-supervisor/issue-journal.md
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/493
+- Branch: codex/issue-493
+- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-493
+- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-493/.codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 6d5213c6f8fadfa54fb20bbe10024782fa88068d
+- Last head SHA: 365427b2402cc4000cfe3d41647dfad22d689fd8
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-17T16:35:29.871Z
+- Updated at: 2026-03-17T17:18:00.937Z
 
 ## Latest Codex Summary
-- Added a focused miss-artifact boundary test, extracted shared miss-artifact helpers into `src/external-review/external-review-miss-artifact.ts`, and narrowed `external-review-miss-history.ts` to historical loading/ordering while `external-review-miss-persistence.ts` keeps persistence and context creation. Focused miss suites and `npm run build` pass after `npm ci`.
+- Extracted shared regression-candidate qualification from the external-review durable guardrail module, kept durable promotion shaping separate from regression payload shaping, added a focused qualification test, and re-verified the external-review candidate/persistence suites plus `npm run build` after restoring the local toolchain with `npm ci`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: #492 stays behavior-neutral by moving miss-artifact shaping and legacy pattern fallback into a shared artifact helper, leaving `external-review-miss-history.ts` focused on loading/ordering historical patterns and `external-review-miss-persistence.ts` focused on artifact persistence plus context creation.
-- What changed: added `src/external-review/external-review-miss-artifact.test.ts` as the focused reproducer for artifact-pattern extraction, extracted `buildExternalReviewMissArtifact`, `createExternalReviewMissContext`, and `readExternalReviewMissArtifactPatterns` into `src/external-review/external-review-miss-artifact.ts`, updated `external-review-miss-history.ts` to consume the shared artifact reader, and updated `external-review-miss-persistence.ts` to consume the shared artifact/context builders instead of owning artifact shaping inline.
+- Hypothesis: the durable guardrail family stays behavior-neutral if regression eligibility is qualified in one focused helper, with `external-review-durable-guardrail-candidates.ts` responsible only for durable promotion shaping/provenance and `external-review-regression-candidates.ts` responsible only for regression payload shaping.
+- What changed: added `src/external-review/external-review-regression-candidate-qualification.test.ts` as the focused reproducer for the shared regression boundary, extracted `qualifyRegressionCandidateFinding` into `src/external-review/external-review-regression-candidate-qualification.ts`, updated `external-review-regression-candidates.ts` to build persisted regression candidates from that helper, and updated `external-review-durable-guardrail-candidates.ts` to derive its `regression_test` durable category from the same qualification path while preserving its existing deterministic output/provenance shape.
 - Current blocker: none
-- Next exact step: Commit the miss-artifact boundary cleanup on `codex/issue-492`, then check whether the branch already has a PR before opening or updating a draft PR.
-- Verification gap: none for the focused miss suites or `npm run build`; `npm ci` was required first because `tsx`/`tsc` were initially unavailable locally in this worktree.
-- Files touched: `src/external-review/external-review-miss-artifact.ts`, `src/external-review/external-review-miss-artifact.test.ts`, `src/external-review/external-review-miss-history.ts`, `src/external-review/external-review-miss-persistence.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this cleanup would put legacy miss-pattern extraction back inside `external-review-miss-history.ts` and artifact/context shaping back inside `external-review-miss-persistence.ts`, widening future changes across loading and persistence paths again.
+- Next exact step: Commit the regression-boundary cleanup on `codex/issue-493`, then check whether the branch already has a PR before opening or updating a draft PR.
+- Verification gap: none for the focused durable-guardrail/regression suites or `npm run build`; `npm ci` was required first because `tsc` was initially unavailable locally in this worktree.
+- Files touched: `src/external-review/external-review-durable-guardrail-candidates.ts`, `src/external-review/external-review-regression-candidate-qualification.ts`, `src/external-review/external-review-regression-candidate-qualification.test.ts`, `src/external-review/external-review-regression-candidates.ts`, `.codex-supervisor/issue-journal.md`, `package-lock.json`, `node_modules/`
+- Rollback concern: reverting this cleanup would put the regression qualification bar back in two separate modules, making future learning-loop changes more likely to drift between durable promotion and regression payload generation.
 - Last focused command: `npm run build`
 ### Scratchpad
-- 2026-03-17: Focused reproducer for #492 was `npx tsx --test src/external-review/external-review-miss-artifact.test.ts src/external-review/external-review-miss-history.test.ts` initially failing with `Cannot find module './external-review-miss-artifact'` before the shared artifact helper existed.
-- 2026-03-17: Verification for #492 was `npx tsx --test src/external-review/external-review-miss-artifact.test.ts src/external-review/external-review-miss-persistence.test.ts src/external-review/external-review-miss-history.test.ts src/external-review/external-review-miss-state.test.ts` and `npm run build`, both passing after `npm ci`.
+- 2026-03-18: Focused reproducer for #493 was a missing shared regression-qualification seam; `external-review-regression-candidate-qualification.test.ts` locked the regression bar to review-thread, missed-by-local-review, non-low-severity, high-confidence, file-scoped, line-scoped findings without asserting durable-only title/provenance shaping.
+- 2026-03-18: Verification for #493 was `npx tsx --test src/external-review/external-review-regression-candidate-qualification.test.ts src/external-review/external-review-regression-candidates.test.ts src/external-review/external-review-durable-guardrail-candidates.test.ts src/external-review/external-review-miss-persistence.test.ts` and `npm run build`; `npm run build` first failed with `sh: 1: tsc: not found`, then `npm ci` restored the local toolchain and both commands passed.
 - 2026-03-17: Pushed `codex/issue-478` to `origin` and opened draft PR #481 (`https://github.com/TommyKammy/codex-supervisor/pull/481`) after confirming there was no existing PR for the branch.
 - 2026-03-17: Review repair for PR #481 adds the same per-bot removal guard to `draftSkipAt` that rate-limit warnings already used, plus a regression test for stale draft-skip comments after request removal.
 - 2026-03-17: Cleaned the copied review-context links in this journal so they use repository-relative markdown targets instead of local `/home/...` paths.
