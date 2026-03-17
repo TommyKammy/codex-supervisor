@@ -282,7 +282,23 @@ function inferConfiguredBotCurrentHeadObservedAt(
       : [];
   });
 
-  return latestTimestamp([...currentHeadReviewTimes, ...currentHeadCommentTimes]);
+  const latestCurrentHeadObservedAt = latestTimestamp([...currentHeadReviewTimes, ...currentHeadCommentTimes]);
+  if (!latestCurrentHeadObservedAt) {
+    return null;
+  }
+
+  const latestCurrentHeadObservedAtMs = parseTimestamp(latestCurrentHeadObservedAt);
+  const followUpIssueCommentTimes = facts.issueComments.flatMap((comment) => {
+    const authorLogin = normalizeLogin(comment.authorLogin);
+    return authorLogin &&
+      configuredReviewBots.has(authorLogin) &&
+      hasActionableReviewText(comment.body) &&
+      parseTimestamp(comment.createdAt) >= latestCurrentHeadObservedAtMs
+      ? [comment.createdAt]
+      : [];
+  });
+
+  return latestTimestamp([latestCurrentHeadObservedAt, ...followUpIssueCommentTimes]);
 }
 
 function inferConfiguredBotRateLimitWarningAt(

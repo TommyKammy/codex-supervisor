@@ -665,3 +665,66 @@ test("GitHubPullRequestHydrator records the latest configured-bot observation sc
   assert.match(lifecycleQuery, /reviewThreads\(first:\s*100\)[\s\S]*originalCommit\s*\{\s*oid\s*\}/);
   assert.equal(observedAt, "2026-03-13T02:04:00Z");
 });
+
+test("GitHubPullRequestHydrator extends current-head observation with later actionable configured-bot issue comments", async () => {
+  const config = createConfig({ reviewBotLogins: ["coderabbitai[bot]"] });
+  const hydrator = new GitHubPullRequestHydrator(config, async (args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: {
+                  nodes: [],
+                },
+                reviews: {
+                  nodes: [
+                    {
+                      submittedAt: "2026-03-13T02:02:00Z",
+                      state: "COMMENTED",
+                      body: "Nitpick: prefer the simpler branch here.",
+                      commit: {
+                        oid: "head-44",
+                      },
+                      author: {
+                        login: "coderabbitai[bot]",
+                      },
+                    },
+                  ],
+                },
+                comments: {
+                  nodes: [
+                    {
+                      createdAt: "2026-03-13T02:04:00Z",
+                      body: "Nitpick: return early before mutating shared state.",
+                      author: {
+                        login: "coderabbitai[bot]",
+                      },
+                    },
+                  ],
+                },
+                reviewThreads: {
+                  nodes: [],
+                },
+                timelineItems: {
+                  nodes: [],
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const pr = await hydrator.hydrate(createPullRequest());
+  const observedAt = (pr as GitHubPullRequest & { configuredBotCurrentHeadObservedAt?: string | null })
+    ?.configuredBotCurrentHeadObservedAt;
+
+  assert.equal(observedAt, "2026-03-13T02:04:00Z");
+});
