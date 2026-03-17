@@ -666,6 +666,72 @@ test("GitHubPullRequestHydrator records the latest configured-bot observation sc
   assert.equal(observedAt, "2026-03-13T02:04:00Z");
 });
 
+test("GitHubPullRequestHydrator treats summary-only configured-bot reviews on the current head as observations", async () => {
+  const config = createConfig({ reviewBotLogins: ["coderabbitai[bot]"] });
+  const hydrator = new GitHubPullRequestHydrator(config, async (args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: {
+                  nodes: [],
+                },
+                reviews: {
+                  nodes: [
+                    {
+                      submittedAt: "2026-03-13T02:03:04Z",
+                      state: "COMMENTED",
+                      body: "## Summary\nCodeRabbit reviewed this pull request and found no actionable issues.",
+                      commit: {
+                        oid: "stale-head-oid",
+                      },
+                      author: {
+                        login: "coderabbitai[bot]",
+                      },
+                    },
+                    {
+                      submittedAt: "2026-03-13T02:02:00Z",
+                      state: "COMMENTED",
+                      body: "## Summary\nCodeRabbit reviewed this pull request and found no actionable issues.",
+                      commit: {
+                        oid: "head-44",
+                      },
+                      author: {
+                        login: "coderabbitai[bot]",
+                      },
+                    },
+                  ],
+                },
+                comments: {
+                  nodes: [],
+                },
+                reviewThreads: {
+                  nodes: [],
+                },
+                timelineItems: {
+                  nodes: [],
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const pr = await hydrator.hydrate(createPullRequest());
+  const observedAt = (pr as GitHubPullRequest & { configuredBotCurrentHeadObservedAt?: string | null })
+    ?.configuredBotCurrentHeadObservedAt;
+
+  assert.equal(observedAt, "2026-03-13T02:02:00Z");
+});
+
 test("GitHubPullRequestHydrator extends current-head observation with later actionable configured-bot issue comments", async () => {
   const config = createConfig({ reviewBotLogins: ["coderabbitai[bot]"] });
   const hydrator = new GitHubPullRequestHydrator(config, async (args) => {

@@ -504,6 +504,45 @@ test("buildConfiguredBotReviewSummary records the latest configured-bot observat
   });
 });
 
+test("buildConfiguredBotReviewSummary treats summary-only configured-bot reviews on the current head as observations", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [
+      {
+        authorLogin: "coderabbitai[bot]",
+        submittedAt: "2026-03-13T02:02:00Z",
+        commitOid: "head-44",
+        state: "COMMENTED",
+        body: "## Summary\nCodeRabbit reviewed this pull request and found no actionable issues.",
+      },
+      {
+        authorLogin: "coderabbitai[bot]",
+        submittedAt: "2026-03-13T02:03:00Z",
+        commitOid: "stale-head",
+        state: "COMMENTED",
+        body: "## Summary\nCodeRabbit reviewed this pull request and found no actionable issues.",
+      },
+    ],
+    comments: [],
+    issueComments: [],
+    timeline: [],
+  };
+
+  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["coderabbitai[bot]"], "head-44"), {
+    lifecycle: {
+      state: "not_requested",
+      requestedAt: null,
+      arrivedAt: null,
+    },
+    topLevelReview: {
+      strength: null,
+      submittedAt: null,
+    },
+    currentHeadObservedAt: "2026-03-13T02:02:00Z",
+    rateLimitWarningAt: null,
+  });
+});
+
 test("buildConfiguredBotReviewSummary extends current-head observation with later actionable configured-bot issue comments", () => {
   const facts: CopilotReviewLifecycleFacts = {
     reviewRequests: [],
