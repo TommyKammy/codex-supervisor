@@ -44,6 +44,7 @@ export function createConfig(overrides: Partial<SupervisorConfig> = {}): Supervi
     copilotReviewWaitMinutes: 10,
     copilotReviewTimeoutAction: "continue",
     configuredBotRateLimitWaitMinutes: 0,
+    configuredBotInitialGraceWaitSeconds: 90,
     codexExecTimeoutMinutes: 30,
     maxCodexAttemptsPerIssue: 5,
     maxImplementationAttemptsPerIssue: 5,

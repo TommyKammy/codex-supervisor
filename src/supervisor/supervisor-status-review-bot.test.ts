@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  configuredBotInitialGraceWaitWindow,
   configuredBotSettledWaitWindow,
   configuredBotRateLimitWaitWindow,
   configuredBotTopLevelReviewEffect,
@@ -53,6 +54,7 @@ function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConf
     pollIntervalSeconds: 60,
     copilotReviewWaitMinutes: 10,
     copilotReviewTimeoutAction: "continue",
+    configuredBotInitialGraceWaitSeconds: 90,
     codexExecTimeoutMinutes: 30,
     maxCodexAttemptsPerIssue: 5,
     maxImplementationAttemptsPerIssue: 5,
@@ -317,6 +319,51 @@ test("configuredBotSettledWaitWindow reports the active CodeRabbit quiet period"
       configuredBotSettledWaitWindow(
         createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] }),
         createPr({ configuredBotCurrentHeadObservedAt: "2026-03-16T00:00:00.000Z" }),
+      ),
+      {
+        status: "inactive",
+        provider: "none",
+        pauseReason: "none",
+        recentObservation: "none",
+        observedAt: "2026-03-16T00:00:00.000Z",
+        waitUntil: null,
+      },
+    );
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test("configuredBotInitialGraceWaitWindow reports the active CodeRabbit startup grace period after checks turn green", () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-03-16T00:01:00.000Z");
+
+  try {
+    assert.deepEqual(
+      configuredBotInitialGraceWaitWindow(
+        createConfig({ reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"] }),
+        createPr({ currentHeadCiGreenAt: "2026-03-16T00:00:00.000Z" }),
+      ),
+      {
+        status: "active",
+        provider: "coderabbit",
+        pauseReason: "awaiting_initial_provider_activity",
+        recentObservation: "required_checks_green",
+        observedAt: "2026-03-16T00:00:00.000Z",
+        waitUntil: "2026-03-16T00:01:30.000Z",
+      },
+    );
+
+    assert.deepEqual(
+      configuredBotInitialGraceWaitWindow(
+        createConfig({
+          reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+          configuredBotInitialGraceWaitSeconds: 60,
+        }),
+        createPr({
+          currentHeadCiGreenAt: "2026-03-16T00:00:00.000Z",
+          configuredBotCurrentHeadObservedAt: "2026-03-16T00:00:30.000Z",
+        }),
       ),
       {
         status: "inactive",

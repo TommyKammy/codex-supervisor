@@ -380,6 +380,81 @@ test("inferStateFromPullRequest waits briefly after a recent CodeRabbit current-
   });
 });
 
+test("inferStateFromPullRequest waits briefly after required checks turn green for a silent CodeRabbit provider", () => {
+  withStubbedDateNow("2026-03-13T02:05:45Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+    });
+    config.configuredBotInitialGraceWaitSeconds = 90;
+
+    assert.equal(
+      inferStateFromPullRequest(
+        config,
+        createRecord({ state: "waiting_ci" }),
+        createPullRequest({
+          copilotReviewState: "not_requested",
+          copilotReviewArrivedAt: null,
+          currentHeadCiGreenAt: "2026-03-13T02:05:00Z",
+          configuredBotCurrentHeadObservedAt: null,
+        }),
+        passingChecks(),
+        [],
+      ),
+      "waiting_ci",
+    );
+  });
+});
+
+test("inferStateFromPullRequest hands off from the initial CodeRabbit grace wait to the settled wait after provider activity begins", () => {
+  withStubbedDateNow("2026-03-13T02:06:17Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+    });
+    config.configuredBotInitialGraceWaitSeconds = 90;
+
+    assert.equal(
+      inferStateFromPullRequest(
+        config,
+        createRecord({ state: "waiting_ci" }),
+        createPullRequest({
+          copilotReviewState: "arrived",
+          copilotReviewArrivedAt: "2026-03-13T02:06:16Z",
+          currentHeadCiGreenAt: "2026-03-13T02:05:00Z",
+          configuredBotCurrentHeadObservedAt: "2026-03-13T02:06:15Z",
+        }),
+        passingChecks(),
+        [],
+      ),
+      "waiting_ci",
+    );
+  });
+});
+
+test("inferStateFromPullRequest does not wait after the initial CodeRabbit grace window expires without provider activity", () => {
+  withStubbedDateNow("2026-03-13T02:06:31Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+    });
+    config.configuredBotInitialGraceWaitSeconds = 90;
+
+    assert.equal(
+      inferStateFromPullRequest(
+        config,
+        createRecord({ state: "waiting_ci" }),
+        createPullRequest({
+          copilotReviewState: "not_requested",
+          copilotReviewArrivedAt: null,
+          currentHeadCiGreenAt: "2026-03-13T02:05:00Z",
+          configuredBotCurrentHeadObservedAt: null,
+        }),
+        passingChecks(),
+        [],
+      ),
+      "ready_to_merge",
+    );
+  });
+});
+
 test("inferStateFromPullRequest waits on a recent summary-only CodeRabbit current-head observation", () => {
   withStubbedDateNow("2026-03-13T02:04:03Z", () => {
     const config = createConfig({

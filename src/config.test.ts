@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { loadConfig } from "./core/config";
+import { SupervisorConfig } from "./core/types";
 
 test("loadConfig leaves bare codexBinary values unresolved for PATH lookup", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
@@ -233,6 +234,35 @@ test("loadConfig accepts an explicit configuredBotSettledWaitSeconds override", 
   };
 
   assert.equal(config.configuredBotSettledWaitSeconds, 3);
+});
+
+test("loadConfig accepts an explicit configuredBotInitialGraceWaitSeconds override", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      configuredBotInitialGraceWaitSeconds: 120,
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath) as SupervisorConfig & {
+    configuredBotInitialGraceWaitSeconds?: number;
+  };
+
+  assert.equal(config.configuredBotInitialGraceWaitSeconds, 120);
 });
 
 test("loadConfig defaults localReviewHighSeverityAction to blocked", async (t) => {
