@@ -661,3 +661,43 @@ test("buildConfiguredBotReviewSummary leaves current-head observation empty when
     rateLimitWarningAt: null,
   });
 });
+
+test("buildConfiguredBotReviewSummary treats current-head CodeRabbit status contexts as observations and excludes stale-head statuses", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [],
+    comments: [],
+    issueComments: [],
+    statusContexts: [
+      {
+        creatorLogin: "coderabbitai",
+        context: "CodeRabbit",
+        description: "CodeRabbit finished preparing its review.",
+        createdAt: "2026-03-13T02:06:00Z",
+        commitOid: "stale-head",
+      },
+      {
+        creatorLogin: "coderabbitai",
+        context: "CodeRabbit",
+        description: "CodeRabbit started reviewing the current head.",
+        createdAt: "2026-03-13T02:04:00Z",
+        commitOid: "head-44",
+      },
+    ],
+    timeline: [],
+  };
+
+  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["coderabbitai", "coderabbitai[bot]"], "head-44"), {
+    lifecycle: {
+      state: "not_requested",
+      requestedAt: null,
+      arrivedAt: null,
+    },
+    topLevelReview: {
+      strength: null,
+      submittedAt: null,
+    },
+    currentHeadObservedAt: "2026-03-13T02:04:00Z",
+    rateLimitWarningAt: null,
+  });
+});

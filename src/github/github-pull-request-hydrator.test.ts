@@ -794,3 +794,95 @@ test("GitHubPullRequestHydrator extends current-head observation with later acti
 
   assert.equal(observedAt, "2026-03-13T02:04:00Z");
 });
+
+test("GitHubPullRequestHydrator treats current-head CodeRabbit status contexts as observations and excludes stale-head statuses", async () => {
+  const config = createConfig({ reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"] });
+  let lifecycleQuery: string | null = null;
+  const hydrator = new GitHubPullRequestHydrator(config, async (args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      lifecycleQuery = args.find((arg) => arg.startsWith("query=")) ?? null;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: {
+                  nodes: [],
+                },
+                reviews: {
+                  nodes: [],
+                },
+                comments: {
+                  nodes: [],
+                },
+                reviewThreads: {
+                  nodes: [],
+                },
+                timelineItems: {
+                  nodes: [],
+                },
+                commits: {
+                  nodes: [
+                    {
+                      commit: {
+                        oid: "head-44",
+                        statusCheckRollup: {
+                          contexts: {
+                            nodes: [
+                              {
+                                __typename: "StatusContext",
+                                context: "CodeRabbit",
+                                description: "CodeRabbit started reviewing the current head.",
+                                createdAt: "2026-03-13T02:04:00Z",
+                                creator: {
+                                  login: "coderabbitai",
+                                },
+                              },
+                            ],
+                          },
+                        },
+                      },
+                    },
+                    {
+                      commit: {
+                        oid: "stale-head-oid",
+                        statusCheckRollup: {
+                          contexts: {
+                            nodes: [
+                              {
+                                __typename: "StatusContext",
+                                context: "CodeRabbit",
+                                description: "Newer stale-head status should be ignored.",
+                                createdAt: "2026-03-13T02:06:00Z",
+                                creator: {
+                                  login: "coderabbitai",
+                                },
+                              },
+                            ],
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const pr = await hydrator.hydrate(createPullRequest());
+  const observedAt = (pr as GitHubPullRequest & { configuredBotCurrentHeadObservedAt?: string | null })
+    ?.configuredBotCurrentHeadObservedAt;
+
+  assert.ok(lifecycleQuery);
+  assert.match(lifecycleQuery, /commits\(last:\s*1\)[\s\S]*statusCheckRollup[\s\S]*contexts\(last:\s*100\)/);
+  assert.match(lifecycleQuery, /StatusContext[\s\S]*createdAt[\s\S]*creator\s*\{\s*login\s*\}/);
+  assert.equal(observedAt, "2026-03-13T02:04:00Z");
+});
