@@ -1,5 +1,6 @@
 import {
   configuredReviewBotLogins,
+  configuredReviewProviderKinds,
   repoExpectsConfiguredBotReview,
   repoUsesCopilotOnlyReviewBot,
   reviewProviderProfileFromConfig,
@@ -7,6 +8,7 @@ import {
 import { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "../core/types";
 
 type ReviewThreadClassifier = (config: SupervisorConfig, reviewThreads: ReviewThread[]) => ReviewThread[];
+const CODERABBIT_CURRENT_HEAD_QUIET_PERIOD_MS = 5_000;
 
 export type ReviewBotProfileId = "none" | "copilot" | "codex" | "coderabbit" | "custom";
 
@@ -45,6 +47,43 @@ export function configuredBotRateLimitWaitWindow(
   return {
     status: Date.now() < Date.parse(waitUntil) ? "active" : "expired",
     observedAt: pr.configuredBotRateLimitedAt,
+    waitUntil,
+  };
+}
+
+export function configuredBotSettledWaitWindow(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+): {
+  status: "inactive" | "active" | "expired";
+  provider: "none" | "coderabbit";
+  observedAt: string | null;
+  waitUntil: string | null;
+} {
+  if (!configuredReviewProviderKinds(config).includes("coderabbit") || pr.isDraft || !pr.configuredBotCurrentHeadObservedAt) {
+    return {
+      status: "inactive",
+      provider: "none",
+      observedAt: pr.configuredBotCurrentHeadObservedAt ?? null,
+      waitUntil: null,
+    };
+  }
+
+  const observedAtMs = Date.parse(pr.configuredBotCurrentHeadObservedAt);
+  if (Number.isNaN(observedAtMs)) {
+    return {
+      status: "inactive",
+      provider: "coderabbit",
+      observedAt: pr.configuredBotCurrentHeadObservedAt,
+      waitUntil: null,
+    };
+  }
+
+  const waitUntil = new Date(observedAtMs + CODERABBIT_CURRENT_HEAD_QUIET_PERIOD_MS).toISOString();
+  return {
+    status: Date.now() < Date.parse(waitUntil) ? "active" : "expired",
+    provider: "coderabbit",
+    observedAt: pr.configuredBotCurrentHeadObservedAt,
     waitUntil,
   };
 }

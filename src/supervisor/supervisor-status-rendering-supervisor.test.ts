@@ -132,6 +132,16 @@ function createPullRequest(overrides: Partial<GitHubPullRequest> = {}): GitHubPu
   };
 }
 
+function withStubbedDateNow<T>(nowIso: string, run: () => T): T {
+  const realDateNow = Date.now;
+  Date.now = () => Date.parse(nowIso);
+  try {
+    return run();
+  } finally {
+    Date.now = realDateNow;
+  }
+}
+
 test("summarizeChecks treats cancelled runs as waiting, not failing", () => {
   const summary = summarizeChecks([{ name: "merge-queue", state: "CANCELLED", bucket: "cancel", workflow: "CI" }]);
 
@@ -477,6 +487,36 @@ test("formatDetailedStatus detects the CodeRabbit profile for canonical and reve
       /review_bot_profile profile=coderabbit provider=coderabbitai .* signal_source=review_threads/,
     );
   }
+});
+
+test("formatDetailedStatus surfaces an active CodeRabbit settled wait after a current-head observation", () => {
+  withStubbedDateNow("2026-03-13T02:04:03Z", () => {
+    const status = formatDetailedStatus({
+      config: createConfig({
+        reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      }),
+      activeRecord: createRecord({
+        pr_number: 44,
+        state: "waiting_ci",
+      }),
+      latestRecord: null,
+      trackedIssueCount: 1,
+      pr: createPullRequest({
+        number: 44,
+        headRefName: "codex/issue-38",
+        copilotReviewState: "arrived",
+        copilotReviewArrivedAt: "2026-03-13T02:04:00Z",
+        configuredBotCurrentHeadObservedAt: "2026-03-13T02:04:00Z",
+      }),
+      checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [],
+    });
+
+    assert.match(
+      status,
+      /configured_bot_settled_wait status=active provider=coderabbit observed_at=2026-03-13T02:04:00Z wait_until=2026-03-13T02:04:05\.000Z/,
+    );
+  });
 });
 
 test("formatDetailedStatus preserves Copilot-specific timeout wording for Copilot-only repos", () => {
