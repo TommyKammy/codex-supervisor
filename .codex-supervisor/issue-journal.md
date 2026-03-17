@@ -1,42 +1,37 @@
-# Issue #491: External-review cleanup: tighten the signal-heuristics and normalization boundary
+# Issue #492: External-review cleanup: separate miss persistence/state patching from miss-history loading
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/491
-- Branch: codex/issue-491
-- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-491
-- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-491/.codex-supervisor/issue-journal.md
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/492
+- Branch: codex/issue-492
+- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-492
+- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-492/.codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 18af0964675dd972a9db716197af125cf9b75cba
+- Last head SHA: 6d5213c6f8fadfa54fb20bbe10024782fa88068d
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-17T16:15:30.271Z
+- Updated at: 2026-03-17T16:35:29.871Z
 
 ## Latest Codex Summary
-- None yet.
+- Added a focused miss-artifact boundary test, extracted shared miss-artifact helpers into `src/external-review/external-review-miss-artifact.ts`, and narrowed `external-review-miss-history.ts` to historical loading/ordering while `external-review-miss-persistence.ts` keeps persistence and context creation. Focused miss suites and `npm run build` pass after `npm ci`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: #491 can stay behavior-neutral by moving provider-specific external-review signal collection out of `external-review-normalization.ts`, leaving normalization focused on shaping preselected signal envelopes into findings.
-- What changed: added focused `external-review-signal-collection.test.ts` coverage for provider-activity filtering, extracted `collectExternalReviewSignals` and the thread/review/comment selection helpers into `src/external-review/external-review-signal-collection.ts`, moved shared signal types into `src/external-review/external-review-signals.ts`, and updated normalization/classifier/miss-persistence tests to use the explicit `signal -> normalized finding` boundary.
+- Hypothesis: #492 stays behavior-neutral by moving miss-artifact shaping and legacy pattern fallback into a shared artifact helper, leaving `external-review-miss-history.ts` focused on loading/ordering historical patterns and `external-review-miss-persistence.ts` focused on artifact persistence plus context creation.
+- What changed: added `src/external-review/external-review-miss-artifact.test.ts` as the focused reproducer for artifact-pattern extraction, extracted `buildExternalReviewMissArtifact`, `createExternalReviewMissContext`, and `readExternalReviewMissArtifactPatterns` into `src/external-review/external-review-miss-artifact.ts`, updated `external-review-miss-history.ts` to consume the shared artifact reader, and updated `external-review-miss-persistence.ts` to consume the shared artifact/context builders instead of owning artifact shaping inline.
 - Current blocker: none
-- Next exact step: Commit the external-review boundary cleanup on `codex/issue-491`, then check whether a draft PR already exists for the branch before opening or updating one.
-- Verification gap: none for the focused external-review suites or `npm run build`; `npm ci` was required first because `tsc` was initially unavailable locally in this worktree.
-- Files touched: `src/external-review/external-review-signal-collection.ts`, `src/external-review/external-review-signals.ts`, `src/external-review/external-review-normalization.ts`, `src/external-review/external-review-misses.ts`, `src/external-review/external-review-miss-persistence.ts`, `src/external-review/external-review-durable-guardrail-candidates.ts`, `src/external-review/external-review-miss-artifact-types.ts`, `src/external-review/external-review-signal-collection.test.ts`, `src/external-review/external-review-normalization.test.ts`, `src/external-review/external-review-classifier.test.ts`, `src/external-review/external-review-miss-persistence.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this cleanup would put configured-bot selection and actionable filtering back into normalization, which makes future provider-signal changes span both collection and finding-shaping code paths again.
+- Next exact step: Commit the miss-artifact boundary cleanup on `codex/issue-492`, then check whether the branch already has a PR before opening or updating a draft PR.
+- Verification gap: none for the focused miss suites or `npm run build`; `npm ci` was required first because `tsx`/`tsc` were initially unavailable locally in this worktree.
+- Files touched: `src/external-review/external-review-miss-artifact.ts`, `src/external-review/external-review-miss-artifact.test.ts`, `src/external-review/external-review-miss-history.ts`, `src/external-review/external-review-miss-persistence.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this cleanup would put legacy miss-pattern extraction back inside `external-review-miss-history.ts` and artifact/context shaping back inside `external-review-miss-persistence.ts`, widening future changes across loading and persistence paths again.
 - Last focused command: `npm run build`
 ### Scratchpad
-- 2026-03-18: Focused reproducer for #491 was a new `external-review-signal-collection.test.ts` suite that pins provider-activity behavior separately from `normalizeExternalReviewSignal`, including last-configured-bot thread comment selection, actionable state-only top-level reviews, and closed-PR issue-comment filtering.
-- 2026-03-18: #491 cleanup extracts provider signal collection into `external-review-signal-collection.ts` and shared signal types into `external-review-signals.ts`; `external-review-normalization.ts` now only shapes signal envelopes into normalized findings.
-- 2026-03-18: Focused verification for #491 was `npx tsx --test src/external-review/external-review-signal-collection.test.ts src/external-review/external-review-normalization.test.ts src/external-review/external-review-classifier.test.ts src/external-review/external-review-miss-persistence.test.ts`.
-- 2026-03-18: `npm run build` initially failed with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain, then the rerun of the focused suites and `npm run build` passed.
-- 2026-03-18: `npm run build` initially failed with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain and the rerun of `npm run build` passed.
-- 2026-03-17: Review repair for PR #497 updates the guardrail provenance fixtures so committed shared-memory files are added before `headSha` is captured; focused verification was `npx tsx --test src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts` and `npm run build`.
-- 2026-03-17: Added `draftSkipAt` to configured-bot summaries and hydrated PRs; focused verification was `npx tsx --test src/github/github-review-signals.test.ts src/github/github-pull-request-hydrator.test.ts`, followed by `npm ci` and `npm run build`.
+- 2026-03-17: Focused reproducer for #492 was `npx tsx --test src/external-review/external-review-miss-artifact.test.ts src/external-review/external-review-miss-history.test.ts` initially failing with `Cannot find module './external-review-miss-artifact'` before the shared artifact helper existed.
+- 2026-03-17: Verification for #492 was `npx tsx --test src/external-review/external-review-miss-artifact.test.ts src/external-review/external-review-miss-persistence.test.ts src/external-review/external-review-miss-history.test.ts src/external-review/external-review-miss-state.test.ts` and `npm run build`, both passing after `npm ci`.
 - 2026-03-17: Pushed `codex/issue-478` to `origin` and opened draft PR #481 (`https://github.com/TommyKammy/codex-supervisor/pull/481`) after confirming there was no existing PR for the branch.
 - 2026-03-17: Review repair for PR #481 adds the same per-bot removal guard to `draftSkipAt` that rate-limit warnings already used, plus a regression test for stale draft-skip comments after request removal.
 - 2026-03-17: Cleaned the copied review-context links in this journal so they use repository-relative markdown targets instead of local `/home/...` paths.
