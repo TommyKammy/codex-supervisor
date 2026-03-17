@@ -59,6 +59,7 @@ class ConfiguredBotReviewSummaryCache {
         lifecycle: { state: "not_requested", requestedAt: null, arrivedAt: null },
         topLevelReview: { strength: null, submittedAt: null },
         currentHeadObservedAt: null,
+        currentHeadCiGreenAt: null,
         rateLimitWarningAt: null,
       }),
     };
@@ -247,10 +248,20 @@ export class GitHubPullRequestHydrator {
                         ... on StatusContext {
                           context
                           description
+                          state
                           createdAt
+                          isRequired(pullRequestNumber: $number)
                           creator {
                             login
                           }
+                        }
+                        ... on CheckRun {
+                          name
+                          status
+                          conclusion
+                          startedAt
+                          completedAt
+                          isRequired(pullRequestNumber: $number)
                         }
                       }
                     }

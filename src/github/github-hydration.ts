@@ -85,8 +85,15 @@ export interface PullRequestCopilotReviewLifecycleResponse {
             nodes?: Array<{
               __typename?: string | null;
               context?: string | null;
+              name?: string | null;
               description?: string | null;
+              state?: string | null;
+              status?: string | null;
+              conclusion?: string | null;
               createdAt?: string | null;
+              startedAt?: string | null;
+              completedAt?: string | null;
+              isRequired?: boolean | null;
               creator?: {
                 login?: string | null;
               } | null;
@@ -257,7 +264,30 @@ export function mapCopilotReviewLifecycleFacts(
               creatorLogin: normalizeLogin(contextNode?.creator?.login ?? null),
               context: contextNode?.context ?? null,
               description: contextNode?.description ?? null,
+              state: contextNode?.state ?? null,
               createdAt: contextNode?.createdAt ?? null,
+              isRequired: contextNode?.isRequired ?? null,
+              commitOid,
+            }];
+          }) ?? []
+        );
+      }) ?? [],
+    checkRuns:
+      lifecycle?.commits?.nodes?.flatMap((node) => {
+        const commitOid = node?.commit?.oid ?? null;
+        return (
+          node?.commit?.statusCheckRollup?.contexts?.nodes?.flatMap((contextNode) => {
+            if (contextNode?.__typename !== "CheckRun" && !contextNode?.name) {
+              return [];
+            }
+
+            return [{
+              name: contextNode?.name ?? null,
+              status: contextNode?.status ?? null,
+              conclusion: contextNode?.conclusion ?? null,
+              startedAt: contextNode?.startedAt ?? null,
+              completedAt: contextNode?.completedAt ?? null,
+              isRequired: contextNode?.isRequired ?? null,
               commitOid,
             }];
           }) ?? []
@@ -306,6 +336,7 @@ export function applyConfiguredBotReviewSummary(
     copilotReviewRequestedAt: summary?.lifecycle.requestedAt ?? null,
     copilotReviewArrivedAt: summary?.lifecycle.arrivedAt ?? null,
     configuredBotCurrentHeadObservedAt: summary?.currentHeadObservedAt ?? null,
+    currentHeadCiGreenAt: summary?.currentHeadCiGreenAt ?? null,
     configuredBotRateLimitedAt: summary?.rateLimitWarningAt ?? null,
     configuredBotTopLevelReviewStrength: summary?.topLevelReview.strength ?? null,
     configuredBotTopLevelReviewSubmittedAt: summary?.topLevelReview.submittedAt ?? null,

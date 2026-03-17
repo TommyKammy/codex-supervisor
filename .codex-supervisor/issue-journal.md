@@ -1,38 +1,36 @@
-# Issue #464: Test refactor: finish splitting supervisor.test.ts by execution and PR lifecycle boundaries
+# Issue #469: CodeRabbit initial grace wait: record the current-head CI-green timestamp for provider-start waiting
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/464
-- Branch: codex/issue-464
-- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-464
-- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-464/.codex-supervisor/issue-journal.md
-- Current phase: reproducing
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/469
+- Branch: codex/issue-469
+- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-469
+- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-469/.codex-supervisor/issue-journal.md
+- Current phase: stabilizing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 23c2337fa46bf8e4d4e95751c70d7cfbd96eb9ca
+- Last head SHA: 1c6bc037675a3da061798ece74d4ceca6fca84e1
 - Blocked reason: none
-- Last failure signature: none
+- Last failure signature: missing-current-head-ci-green-at
 - Repeated failure signature count: 0
-- Updated at: 2026-03-17T18:57:00+09:00
+- Updated at: 2026-03-17T10:16:58Z
 
 ## Latest Codex Summary
-- Extracted the remaining execution-path, PR lifecycle, and injected agent-runner coverage from `src/supervisor/supervisor.test.ts` into focused suites, leaving only a minimal facade export smoke test behind.
+- Added current-head CI-green timestamp derivation for required checks in configured-bot hydration/review-signal summaries and exposed it on hydrated pull requests without changing merge-state behavior.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
-### Current Handoff
-- Hypothesis: the remaining run-once execution, PR lifecycle, and agent-runner wiring coverage can live in dedicated suites without changing supervisor semantics, leaving `supervisor.test.ts` as a thin facade.
-- What changed: Added `src/supervisor/supervisor-execution.test.ts`, `src/supervisor/supervisor-pr-lifecycle.test.ts`, and `src/supervisor/supervisor-agent-runner.test.ts`; moved the remaining execution-path, PR transition/review-blocker, and injected runner coverage out of `src/supervisor/supervisor.test.ts`; reduced `src/supervisor/supervisor.test.ts` to a single export smoke test.
+- Hypothesis: the initial provider-start grace window needs a stable current-head CI-ready timestamp derived from required current-head checks, and that data can be exposed via configured-bot hydration without affecting current merge decisions.
+- What changed: Added `currentHeadCiGreenAt` to configured-bot review summaries and hydrated PRs; extended the GraphQL hydration query to collect required `StatusContext` and `CheckRun` metadata on the current head; derived the timestamp as the latest completion among required current-head checks only when every required current-head check is already passing/skipping.
 - Current blocker: none
-- Next exact step: Review the final diff and commit the focused suite split on `codex/issue-464`.
-- Verification gap: none; the focused execution, PR lifecycle, and agent-runner suites plus `npm run build` pass locally after reinstalling dependencies.
-- Files touched: src/supervisor/supervisor.test.ts; src/supervisor/supervisor-execution.test.ts; src/supervisor/supervisor-pr-lifecycle.test.ts; src/supervisor/supervisor-agent-runner.test.ts; .codex-supervisor/issue-journal.md
-- Rollback concern: keep the new suites aligned to supervisor module boundaries; if future cases start mixing execution and lifecycle concerns back together, the split will regress into the same monolith under different filenames.
+- Next exact step: review the diff, commit the checkpoint on `codex/issue-469`, and use it as the base for the later provider-start grace-window behavior.
+- Verification gap: none for the recorded timestamp slice; focused hydration/review-signal tests, pull-request-state compatibility coverage, and `npm run build` all pass locally after reinstalling dependencies.
+- Files touched: src/core/types.ts; src/github/github-hydration.ts; src/github/github-pull-request-hydrator.ts; src/github/github-review-signals.ts; src/github/github-pull-request-hydrator.test.ts; src/github/github-review-signals.test.ts; .codex-supervisor/issue-journal.md
+- Rollback concern: `currentHeadCiGreenAt` intentionally stays observational for now; later grace-window logic should use it only for the matching current head and avoid falling back to stale-head required checks or optional checks.
 - Last focused command: `npm run build`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
-- Reproducing signature before the fix: `src/supervisor/supervisor.test.ts` still held 2671 lines of execution-path, PR lifecycle, and agent-runner coverage after the diagnostics/recovery split.
-- Focused extraction result: `src/supervisor/supervisor.test.ts` is now 7 lines; extracted suites are 1671 lines (`supervisor-execution.test.ts`), 915 lines (`supervisor-pr-lifecycle.test.ts`), and 97 lines (`supervisor-agent-runner.test.ts`).
-- Focused failure during extraction: the first PR lifecycle split used a synchronous `withStubbedDateNow`, which restored `Date.now` before async `runOnce` calls completed and left Copilot-wait tests in `stabilizing`; converting the helper to `async` fixed the focused failures.
-- Verification commands: `npx tsx --test src/supervisor/supervisor-execution.test.ts`; `npx tsx --test src/supervisor/supervisor-pr-lifecycle.test.ts`; `npx tsx --test src/supervisor/supervisor-agent-runner.test.ts src/supervisor/supervisor.test.ts`; `npx tsx --test src/supervisor/supervisor-execution.test.ts src/supervisor/supervisor-pr-lifecycle.test.ts src/supervisor/supervisor-agent-runner.test.ts src/supervisor/supervisor.test.ts`; `npm ci`; `npm run build`.
-- Local failure resolved: `npm run build` initially failed with `sh: 1: tsc: not found` because `node_modules` was absent in this worktree; `npm ci` restored the local toolchain for the acceptance build.
+- Reproducing signature before the fix: required current-head CI completion metadata was absent from configured-bot hydration, so no stable `currentHeadCiGreenAt` value existed for later CodeRabbit provider-start wait logic.
+- Focused derivation rule: use the latest completion timestamp among required current-head checks, but only when every required current-head check on the tracked head is already passing/skipping; otherwise leave the field null.
+- Verification commands: `npx tsx --test src/github/github-review-signals.test.ts src/github/github-pull-request-hydrator.test.ts`; `npx tsx --test src/pull-request-state-provider-waits.test.ts`; `npm ci`; `npm run build`.
+- Local failure resolved: `npm run build` initially failed with `sh: 1: tsc: not found` because this worktree was missing `node_modules`; `npm ci` restored the local toolchain and the acceptance build passed afterward.
