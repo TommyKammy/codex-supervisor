@@ -24,6 +24,7 @@ export interface ReviewProviderWaitPolicy {
   shouldTrackRequestedState: boolean;
   shouldApplyRequestedReviewTimeout: boolean;
   shouldApplyRateLimitCooldown: boolean;
+  shouldApplyCurrentHeadQuietPeriod: boolean;
 }
 
 function trimReviewBotLogins(reviewBotLogins: string[]): string[] {
@@ -101,6 +102,7 @@ export function reviewProviderWaitPolicyFromConfig(
 ): ReviewProviderWaitPolicy {
   const reviewers = configuredReviewBotLogins(config);
   const usesLifecycleSignals = repoExpectsLifecycleBotReview(config);
+  const providerKinds = configuredReviewProviderKinds(config);
   return {
     botLabel: repoUsesCopilotOnlyReviewBot(config)
       ? "Copilot"
@@ -114,6 +116,7 @@ export function reviewProviderWaitPolicyFromConfig(
     shouldTrackRequestedState: usesLifecycleSignals,
     shouldApplyRequestedReviewTimeout: usesLifecycleSignals,
     shouldApplyRateLimitCooldown: reviewers.length > 0,
+    shouldApplyCurrentHeadQuietPeriod: providerKinds.includes("coderabbit"),
   };
 }
 

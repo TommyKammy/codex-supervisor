@@ -172,6 +172,7 @@ test("reviewProviderWaitPolicyFromConfig normalizes wait and timeout behavior be
     shouldTrackRequestedState: false,
     shouldApplyRequestedReviewTimeout: false,
     shouldApplyRateLimitCooldown: false,
+    shouldApplyCurrentHeadQuietPeriod: false,
   });
 
   assert.deepEqual(
@@ -183,6 +184,7 @@ test("reviewProviderWaitPolicyFromConfig normalizes wait and timeout behavior be
       shouldTrackRequestedState: true,
       shouldApplyRequestedReviewTimeout: true,
       shouldApplyRateLimitCooldown: true,
+      shouldApplyCurrentHeadQuietPeriod: false,
     },
   );
 
@@ -195,6 +197,7 @@ test("reviewProviderWaitPolicyFromConfig normalizes wait and timeout behavior be
       shouldTrackRequestedState: false,
       shouldApplyRequestedReviewTimeout: false,
       shouldApplyRateLimitCooldown: true,
+      shouldApplyCurrentHeadQuietPeriod: true,
     },
   );
 
@@ -209,6 +212,7 @@ test("reviewProviderWaitPolicyFromConfig normalizes wait and timeout behavior be
       shouldTrackRequestedState: true,
       shouldApplyRequestedReviewTimeout: true,
       shouldApplyRateLimitCooldown: true,
+      shouldApplyCurrentHeadQuietPeriod: false,
     },
   );
 });

@@ -607,6 +607,56 @@ test("inferStateFromPullRequest allows merge again after a configured-bot rate l
   });
 });
 
+test("inferStateFromPullRequest waits briefly after a recent CodeRabbit current-head observation", () => {
+  withStubbedDateNow("2026-03-13T02:04:03Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+    });
+    const record = createRecord({ state: "waiting_ci" });
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+    assert.equal(
+      inferStateFromPullRequest(
+        config,
+        record,
+        createPullRequest({
+          copilotReviewState: "arrived",
+          copilotReviewArrivedAt: "2026-03-13T02:04:00Z",
+          configuredBotCurrentHeadObservedAt: "2026-03-13T02:04:00Z",
+        }),
+        checks,
+        [],
+      ),
+      "waiting_ci",
+    );
+  });
+});
+
+test("inferStateFromPullRequest does not wait on stale CodeRabbit current-head observations", () => {
+  withStubbedDateNow("2026-03-13T02:04:06Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+    });
+    const record = createRecord({ state: "waiting_ci" });
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+    assert.equal(
+      inferStateFromPullRequest(
+        config,
+        record,
+        createPullRequest({
+          copilotReviewState: "arrived",
+          copilotReviewArrivedAt: "2026-03-13T02:04:00Z",
+          configuredBotCurrentHeadObservedAt: "2026-03-13T02:04:00Z",
+        }),
+        checks,
+        [],
+      ),
+      "ready_to_merge",
+    );
+  });
+});
+
 test("inferStateFromPullRequest softens nitpick-only configured-bot top-level changes requests when no configured-bot threads remain", () => {
   const config = createConfig({
     reviewBotLogins: ["coderabbitai[bot]"],
