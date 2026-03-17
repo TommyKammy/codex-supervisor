@@ -3,33 +3,47 @@
 ## Supervisor Snapshot
 - Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/507
 - Branch: codex/issue-507
-- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-507
-- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-507/.codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: c1025d7bed1213ae9009e4923f8a465e227b16e1
+- Workspace: .
+- Journal: .codex-supervisor/issue-journal.md
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 388d9baea1abf0337a09c4ee7b5ab2269d100cb7
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-17T22:52:35.679Z
+- Last failure signature: PRRT_kwDORgvdZ851AkY9
+- Repeated failure signature count: 1
+- Updated at: 2026-03-17T23:02:43.584Z
 
 ## Latest Codex Summary
-- Explain diagnostics now reuse the normalized change-risk status lines, including `verification_policy` for risky ambiguity blockers and both `change_classes` plus `verification_policy` for tracked blocked issues with deterministic changed files.
+Explain diagnostics now emit the same normalized risk lines status already uses. In [supervisor-selection-status.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-507/src/supervisor/supervisor-selection-status.ts#L44) I added a shared explain-side loader for `change_classes` and `verification_policy`, and [supervisor-diagnostics-explain.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-507/src/supervisor/supervisor-diagnostics-explain.test.ts#L227) now covers both a risky auth ambiguity case and a tracked blocked docs-only case. I also updated the issue journal and committed the change as `388d9ba`.
+
+Verification passed with `npx tsx --test src/supervisor/supervisor-diagnostics-explain.test.ts`, `npx tsx --test src/supervisor/supervisor-diagnostics.test.ts`, `npx tsx --test src/supervisor/supervisor-change-risk-status.test.ts src/issue-metadata/issue-metadata-change-risk-decision.test.ts`, and `npm run build`. `npm run build` initially failed because `tsc` was missing in this worktree, so I ran `npm ci` first. Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/516
+
+Summary: Reused the normalized change-risk summary in explain diagnostics, added focused regressions, passed focused tests and build, and opened draft PR #516.
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/supervisor-diagnostics-explain.test.ts`; `npx tsx --test src/supervisor/supervisor-diagnostics.test.ts`; `npx tsx --test src/supervisor/supervisor-change-risk-status.test.ts src/issue-metadata/issue-metadata-change-risk-decision.test.ts`; `npm ci`; `npm run build`
+Failure signature: none
+Next action: Wait for PR #516 review/CI and address any feedback or failures.
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/516#discussion_r2949964503
+- Details:
+  - .codex-supervisor/issue-journal.md:7 _⚠️ Potential issue_ | _🟡 Minor_ **Avoid committing machine-specific absolute paths in journal snapshot.** Line 6 and Line 7 expose local filesystem details (`/home/tommy/...`) and make the journal less portable. Prefer repo-relative values for committed metadata. <details> <summary>Suggested update</summary> ```diff -- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-507 -- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-507/.codex-supervisor/issue-journal.md +- Workspace: . +- Journal: .codex-supervisor/issue-journal.md ``` </details> <!-- suggestion_start --> <details> <summary>📝 Committable suggestion</summary> > ‼️ **IMPORTANT** > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements. ```suggestion - Workspace: . - Journal: .codex-supervisor/issue-journal.md ``` </details> <!-- suggestion_end --> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In @.codex-supervisor/issue-journal.md around lines 6 - 7, The journal contains machine-specific absolute paths on the lines starting with "Workspace:" and "Journal:" — replace those absolute paths with repository-relative paths or placeholders (e.g., "./" or ".codex-supervisor/issue-journal.md") so the committed metadata is portable; update the values for the "Workspace:" and "Journal:" entries in .codex-supervisor/issue-journal.md to use repo-relative references or environment-derived variables instead of hard-coded /home/tommy/... paths. ``` </details> <!-- fingerprinting:phantom:poseidon:hawk --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: explain-style diagnostics were still hand-assembling blocker text without the normalized change-risk summary, so piping explain through the existing status helpers should align operator-facing risk reasoning across status, execution policy, and explain.
-- What changed: updated `src/supervisor/supervisor-selection-status.ts` so `buildIssueExplainSummary` loads the tracked workspace diff when available and emits the same `change_classes`/`verification_policy` summaries used by status; added focused regressions in `src/supervisor/supervisor-diagnostics-explain.test.ts` for a risky auth ambiguity blocker and a blocked docs-only tracked issue.
+- Hypothesis: the remaining PR #516 review thread is valid because the journal snapshot still commits machine-specific absolute `Workspace`/`Journal` paths; those snapshot fields should stay repo-relative while preserving the prior explain diagnostics repair.
+- What changed: normalized the Supervisor Snapshot `Workspace` and `Journal` entries in this journal to `.` and `.codex-supervisor/issue-journal.md` so the committed metadata stays portable across worktrees and machines.
 - Current blocker: none
-- Next exact step: commit the explain change-risk reuse on `codex/issue-507`, then push the branch and open or update the draft PR for issue #507.
-- Verification gap: none; `npx tsx --test src/supervisor/supervisor-diagnostics-explain.test.ts`, `npx tsx --test src/supervisor/supervisor-diagnostics.test.ts`, `npx tsx --test src/supervisor/supervisor-change-risk-status.test.ts src/issue-metadata/issue-metadata-change-risk-decision.test.ts`, and `npm run build` passed after restoring the local toolchain with `npm ci`.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-selection-status.ts`, `src/supervisor/supervisor-diagnostics-explain.test.ts`
-- Rollback concern: reverting this change would put explain back on divergent ad hoc risk wording and drop deterministic changed-file policy context from blocked explain output.
-- Last focused command: `npm run build`
+- Next exact step: run focused diff verification, commit the journal portability repair on `codex/issue-507`, push the branch, and resolve the remaining CodeRabbit thread on PR #516.
+- Verification gap: none after focused diff verification for the journal-only repair.
+- Files touched: `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this repair would reintroduce machine-specific absolute paths into committed journal metadata.
+- Last focused command: `rg -n "^- Workspace:|^- Journal:" .codex-supervisor/issue-journal.md`
 ### Scratchpad (workspace-local date in Asia/Tokyo unless noted)
+- 2026-03-18 (JST): Local review repair for PR #516 normalizes the committed journal snapshot `Workspace`/`Journal` fields to repo-relative values (`.` and `.codex-supervisor/issue-journal.md`) to address CodeRabbit thread `PRRT_kwDORgvdZ851AkY9`. Focused verification target: `git diff --check`.
 - 2026-03-18 (JST): Issue #507 now reuses the normalized change-risk status lines in explain diagnostics; focused reproducer first failed because explain omitted `verification_policy`/`change_classes`, then passed after wiring `buildIssueExplainSummary` through the shared status helpers. Verification: `npx tsx --test src/supervisor/supervisor-diagnostics-explain.test.ts`, `npx tsx --test src/supervisor/supervisor-diagnostics.test.ts`, `npx tsx --test src/supervisor/supervisor-change-risk-status.test.ts src/issue-metadata/issue-metadata-change-risk-decision.test.ts`, `npm ci`, `npm run build`.
 - 2026-03-18 (JST): Review repair for PR #515 now renders tracked journal `Workspace`/`Journal` snapshot fields relative to the workspace root, adds a focused regression in `src/journal.test.ts`, and passes `npx tsx --test src/journal.test.ts` plus `npm run build`.
 - 2026-03-18 (JST): Pushed `646ea24` (`Clear stale journal failure context`) to `origin/codex/issue-506` and resolved CodeRabbit thread `PRRT_kwDORgvdZ851ANbp` with `gh api graphql` after removing the stale copied failure context and restoring the inherited scratchpad tail.
@@ -47,8 +61,4 @@
 - 2026-03-18 (JST): Review repair for PR #503 clarifies that scratchpad entries use the workspace-local date basis while the Supervisor Snapshot `Updated at` field remains UTC.
 - 2026-03-18 (JST): `npm run build` initially failed with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain and the next `npm run build` passed.
 - 2026-03-17: Pushed `codex/issue-478` to `origin` and opened draft PR #481 (`https://github.com/TommyKammy/codex-supervisor/pull/481`) after confirming there was no existing PR for the branch.
-- 2026-03-17: Review repair for PR #481 adds the same per-bot removal guard to `draftSkipAt` that rate-limit warnings already used, plus a regression test for stale draft-skip comments after request removal.
-- 2026-03-17: Cleaned the copied review-context links in this journal so they use repository-relative markdown targets instead of local `/home/...` paths.
-- 2026-03-17: Repair verification for the stale draft-skip fix was `npx tsx --test src/github/github-review-signals.test.ts src/github/github-pull-request-hydrator.test.ts` and `npm run build`, both passing before commit `e7c4170`.
-- 2026-03-17: Focused reproducer for #480 was `inferStateFromPullRequest` returning `ready_to_merge` instead of `waiting_ci` when `review_wait_started_at=2026-03-13T02:30:00Z`, `configuredBotDraftSkipAt=2026-03-13T02:25:00Z`, `currentHeadCiGreenAt=2026-03-13T02:05:00Z`, and no fresh CodeRabbit signal had arrived after ready-for-review.
-- 2026-03-17: The fix reuses the refreshed review-wait window after ready-for-review for CodeRabbit draft-skip case
+- 2026-03-17: Review repair f
