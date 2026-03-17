@@ -1,37 +1,38 @@
-# Issue #493: External-review cleanup: refine durable guardrail and regression-candidate boundaries
+# Issue #494: External-review cleanup: align tests with the refined external-review module boundaries
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/493
-- Branch: codex/issue-493
-- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-493
-- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-493/.codex-supervisor/issue-journal.md
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/494
+- Branch: codex/issue-494
+- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-494
+- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-494/.codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 365427b2402cc4000cfe3d41647dfad22d689fd8
+- Last head SHA: 7a140af41563ee414a3e1a85d3618e17378cc39a
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-17T17:18:00.937Z
+- Updated at: 2026-03-17T17:52:55.383Z
 
 ## Latest Codex Summary
-- Extracted shared regression-candidate qualification from the external-review durable guardrail module, kept durable promotion shaping separate from regression payload shaping, added a focused qualification test, and re-verified the external-review candidate/persistence suites plus `npm run build` after restoring the local toolchain with `npm ci`.
+- Tightened the external-review test boundaries around the extracted regression qualification helper, added a focused external-review family layout guard, updated the broad family directory expectation to the current runtime file set, and re-verified the focused external-review suites plus `npm run build` after restoring the local toolchain with `npm ci`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the durable guardrail family stays behavior-neutral if regression eligibility is qualified in one focused helper, with `external-review-durable-guardrail-candidates.ts` responsible only for durable promotion shaping/provenance and `external-review-regression-candidates.ts` responsible only for regression payload shaping.
-- What changed: added `src/external-review/external-review-regression-candidate-qualification.test.ts` as the focused reproducer for the shared regression boundary, extracted `qualifyRegressionCandidateFinding` into `src/external-review/external-review-regression-candidate-qualification.ts`, updated `external-review-regression-candidates.ts` to build persisted regression candidates from that helper, and updated `external-review-durable-guardrail-candidates.ts` to derive its `regression_test` durable category from the same qualification path while preserving its existing deterministic output/provenance shape.
+- Hypothesis: the external-review test family stays stable if qualification-boundary assertions live only with `external-review-regression-candidate-qualification`, payload-shaping assertions live only with `external-review-regression-candidates`, and a focused layout guard makes the refined external-review module/test boundaries explicit.
+- What changed: added `src/external-review/external-review-family-layout.test.ts` to pin the external-review runtime/test file set, expanded `external-review-regression-candidate-qualification.test.ts` so it owns the regression-boundary rejections, narrowed `external-review-regression-candidates.test.ts` to payload shaping plus null-on-failed-qualification behavior, and updated `src/family-directory-layout.test.ts` to match the current root/external-review/supervisor runtime module lists.
 - Current blocker: none
-- Next exact step: Commit the regression-boundary cleanup on `codex/issue-493`, then check whether the branch already has a PR before opening or updating a draft PR.
-- Verification gap: none for the focused durable-guardrail/regression suites or `npm run build`; `npm ci` was required first because `tsc` was initially unavailable locally in this worktree.
-- Files touched: `src/external-review/external-review-durable-guardrail-candidates.ts`, `src/external-review/external-review-regression-candidate-qualification.ts`, `src/external-review/external-review-regression-candidate-qualification.test.ts`, `src/external-review/external-review-regression-candidates.ts`, `.codex-supervisor/issue-journal.md`, `package-lock.json`, `node_modules/`
-- Rollback concern: reverting this cleanup would put the regression qualification bar back in two separate modules, making future learning-loop changes more likely to drift between durable promotion and regression payload generation.
+- Next exact step: Commit the external-review test-boundary cleanup on `codex/issue-494`, then check whether the branch already has a PR before opening or updating a draft PR.
+- Verification gap: none for the focused external-review suites or `npm run build`; `npm ci` was required first because `tsc` was initially unavailable locally in this worktree.
+- Files touched: `src/external-review/external-review-family-layout.test.ts`, `src/external-review/external-review-regression-candidate-qualification.test.ts`, `src/external-review/external-review-regression-candidates.test.ts`, `src/family-directory-layout.test.ts`, `.codex-supervisor/issue-journal.md`, `package-lock.json`, `node_modules/`
+- Rollback concern: reverting this cleanup would blur the extracted regression qualification boundary again by leaving payload-shaping tests responsible for qualification behavior and by dropping the focused external-review layout guard.
 - Last focused command: `npm run build`
 ### Scratchpad
-- 2026-03-18: Focused reproducer for #493 was a missing shared regression-qualification seam; `external-review-regression-candidate-qualification.test.ts` locked the regression bar to review-thread, missed-by-local-review, non-low-severity, high-confidence, file-scoped, line-scoped findings without asserting durable-only title/provenance shaping.
-- 2026-03-18: Verification for #493 was `npx tsx --test src/external-review/external-review-regression-candidate-qualification.test.ts src/external-review/external-review-regression-candidates.test.ts src/external-review/external-review-durable-guardrail-candidates.test.ts src/external-review/external-review-miss-persistence.test.ts` and `npm run build`; `npm run build` first failed with `sh: 1: tsc: not found`, then `npm ci` restored the local toolchain and both commands passed.
+- 2026-03-18: Focused reproducer for #494 was `npx tsx --test src/family-directory-layout.test.ts`, which failed because the external-review runtime list still omitted `external-review-regression-candidate-qualification.ts` and related refined-boundary modules; the same stale layout guard also omitted current root/supervisor helper modules.
+- 2026-03-18: Focused external-review verification for #494 was `npx tsx --test src/external-review/external-review-family-layout.test.ts src/external-review/external-review-regression-candidate-qualification.test.ts src/external-review/external-review-regression-candidates.test.ts src/external-review/external-review-durable-guardrail-candidates.test.ts`, passing after narrowing the regression-candidate suite back to payload shaping.
+- 2026-03-18: `npm run build` initially failed with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain and the next `npm run build` passed.
 - 2026-03-17: Pushed `codex/issue-478` to `origin` and opened draft PR #481 (`https://github.com/TommyKammy/codex-supervisor/pull/481`) after confirming there was no existing PR for the branch.
 - 2026-03-17: Review repair for PR #481 adds the same per-bot removal guard to `draftSkipAt` that rate-limit warnings already used, plus a regression test for stale draft-skip comments after request removal.
 - 2026-03-17: Cleaned the copied review-context links in this journal so they use repository-relative markdown targets instead of local `/home/...` paths.
