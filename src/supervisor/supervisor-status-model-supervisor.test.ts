@@ -249,6 +249,56 @@ test("buildDetailedStatusModel explains why an active CodeRabbit settled wait is
   }
 });
 
+test("buildDetailedStatusModel explains why an active CodeRabbit initial grace wait is pausing merge progression", () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-03-16T00:01:00.000Z");
+
+  try {
+    const lines = buildDetailedStatusModel({
+      config: createConfig({
+        reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+        configuredBotInitialGraceWaitSeconds: 90,
+      }),
+      activeRecord: createRecord({
+        pr_number: 44,
+        state: "waiting_ci",
+        blocked_reason: null,
+        last_error: null,
+      }),
+      latestRecord: null,
+      trackedIssueCount: 1,
+      pr: createPullRequest({
+        currentHeadCiGreenAt: "2026-03-16T00:00:00.000Z",
+        configuredBotCurrentHeadObservedAt: null,
+      }),
+      checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [],
+      manualReviewThreads,
+      configuredBotReviewThreads,
+      pendingBotReviewThreads: (innerConfig, innerRecord, innerPr, innerReviewThreads) =>
+        configuredBotReviewThreads(innerConfig, innerReviewThreads).filter(
+          (thread) =>
+            !innerRecord.processed_review_thread_ids.includes(thread.id) &&
+            innerRecord.last_head_sha === innerPr.headRefOid,
+        ),
+      summarizeChecks: (checks) => ({
+        allPassing: checks.every((check) => check.bucket === "pass"),
+        hasPending: checks.some((check) => check.bucket === "pending" || check.bucket === "cancel"),
+        hasFailing: checks.some((check) => check.bucket === "fail"),
+      }),
+      mergeConflictDetected: (pr) => pr.mergeStateStatus === "DIRTY",
+    });
+
+    assert.ok(
+      lines.includes(
+        "configured_bot_initial_grace_wait status=active provider=coderabbit pause_reason=awaiting_initial_provider_activity recent_observation=required_checks_green observed_at=2026-03-16T00:00:00.000Z wait_until=2026-03-16T00:01:30.000Z",
+      ),
+    );
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
 test("buildDetailedStatusSummaryLines shapes optional summaries and artifact paths", () => {
   const config = createConfig({
     localReviewArtifactDir: "/tmp/reviews",

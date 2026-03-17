@@ -78,6 +78,7 @@ export interface SupervisorConfig {
   copilotReviewWaitMinutes: number;
   copilotReviewTimeoutAction: CopilotReviewTimeoutAction;
   configuredBotRateLimitWaitMinutes?: number;
+  configuredBotInitialGraceWaitSeconds?: number;
   configuredBotSettledWaitSeconds?: number;
   codexExecTimeoutMinutes: number;
   maxCodexAttemptsPerIssue: number;

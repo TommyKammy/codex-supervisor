@@ -519,6 +519,38 @@ test("formatDetailedStatus surfaces an active CodeRabbit settled wait after a cu
   });
 });
 
+test("formatDetailedStatus surfaces an active CodeRabbit initial grace wait after checks turn green", () => {
+  withStubbedDateNow("2026-03-13T02:05:45Z", () => {
+    const status = formatDetailedStatus({
+      config: createConfig({
+        reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+        configuredBotInitialGraceWaitSeconds: 90,
+      }),
+      activeRecord: createRecord({
+        pr_number: 44,
+        state: "waiting_ci",
+      }),
+      latestRecord: null,
+      trackedIssueCount: 1,
+      pr: createPullRequest({
+        number: 44,
+        headRefName: "codex/issue-38",
+        copilotReviewState: "not_requested",
+        copilotReviewArrivedAt: null,
+        currentHeadCiGreenAt: "2026-03-13T02:05:00Z",
+        configuredBotCurrentHeadObservedAt: null,
+      }),
+      checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [],
+    });
+
+    assert.match(
+      status,
+      /configured_bot_initial_grace_wait status=active provider=coderabbit pause_reason=awaiting_initial_provider_activity recent_observation=required_checks_green observed_at=2026-03-13T02:05:00Z wait_until=2026-03-13T02:06:30\.000Z/,
+    );
+  });
+});
+
 test("formatDetailedStatus preserves Copilot-specific timeout wording for Copilot-only repos", () => {
   const config = createConfig({
     reviewBotLogins: ["copilot-pull-request-reviewer"],

@@ -9,6 +9,7 @@ import {
   summarizeCheckBuckets,
 } from "./supervisor-status-summary-helpers";
 import {
+  configuredBotInitialGraceWaitWindow,
   configuredBotSettledWaitWindow,
   configuredBotRateLimitWaitWindow,
   configuredBotTopLevelReviewEffect,
@@ -140,6 +141,12 @@ export function buildActiveDetailedStatusLines(
     if (configuredBotRateLimit.observedAt) {
       lines.push(
         `configured_bot_rate_limit status=${configuredBotRateLimit.status} observed_at=${configuredBotRateLimit.observedAt} wait_until=${configuredBotRateLimit.waitUntil ?? "none"}`,
+      );
+    }
+    const configuredBotInitialGraceWait = configuredBotInitialGraceWaitWindow(config, pr);
+    if (configuredBotInitialGraceWait.status === "active") {
+      lines.push(
+        `configured_bot_initial_grace_wait status=${configuredBotInitialGraceWait.status} provider=${configuredBotInitialGraceWait.provider} pause_reason=${configuredBotInitialGraceWait.pauseReason} recent_observation=${configuredBotInitialGraceWait.recentObservation} observed_at=${configuredBotInitialGraceWait.observedAt ?? "none"} wait_until=${configuredBotInitialGraceWait.waitUntil ?? "none"}`,
       );
     }
     const configuredBotSettledWait = configuredBotSettledWaitWindow(config, pr);

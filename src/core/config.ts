@@ -286,6 +286,12 @@ export function loadConfig(configPath?: string): SupervisorConfig {
       raw.configuredBotRateLimitWaitMinutes >= 0
         ? raw.configuredBotRateLimitWaitMinutes
         : 0,
+    configuredBotInitialGraceWaitSeconds:
+      typeof raw.configuredBotInitialGraceWaitSeconds === "number" &&
+      Number.isFinite(raw.configuredBotInitialGraceWaitSeconds) &&
+      raw.configuredBotInitialGraceWaitSeconds >= 0
+        ? raw.configuredBotInitialGraceWaitSeconds
+        : 90,
     configuredBotSettledWaitSeconds:
       typeof raw.configuredBotSettledWaitSeconds === "number" &&
       Number.isFinite(raw.configuredBotSettledWaitSeconds) &&

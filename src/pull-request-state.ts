@@ -31,6 +31,7 @@ import { nowIso } from "./core/utils";
 
 const COPILOT_REVIEW_PROPAGATION_GRACE_MS = 5_000;
 const DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS = 5_000;
+const DEFAULT_CONFIGURED_BOT_INITIAL_GRACE_WAIT_MS = 90_000;
 
 interface CopilotReviewTimeoutStatus {
   timedOut: boolean;
@@ -223,6 +224,30 @@ function shouldWaitForConfiguredBotCurrentHeadQuietPeriod(
 
   const settledWaitMs = (config.configuredBotSettledWaitSeconds ?? DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS / 1_000) * 1_000;
   return Date.now() < observedAtMs + settledWaitMs;
+}
+
+function shouldWaitForConfiguredBotInitialGracePeriod(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+): boolean {
+  const policy = reviewProviderWaitPolicyFromConfig(config);
+  if (
+    !policy.shouldApplyCurrentHeadQuietPeriod ||
+    pr.isDraft ||
+    pr.configuredBotCurrentHeadObservedAt ||
+    !pr.currentHeadCiGreenAt
+  ) {
+    return false;
+  }
+
+  const ciGreenAtMs = Date.parse(pr.currentHeadCiGreenAt);
+  if (Number.isNaN(ciGreenAtMs)) {
+    return false;
+  }
+
+  const initialGraceWaitMs =
+    (config.configuredBotInitialGraceWaitSeconds ?? DEFAULT_CONFIGURED_BOT_INITIAL_GRACE_WAIT_MS / 1_000) * 1_000;
+  return Date.now() < ciGreenAtMs + initialGraceWaitMs;
 }
 
 export function buildCopilotReviewTimeoutFailureContext(
@@ -486,6 +511,10 @@ export function inferStateFromPullRequest(
   const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
   if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
     return "blocked";
+  }
+
+  if (shouldWaitForConfiguredBotInitialGracePeriod(config, pr)) {
+    return "waiting_ci";
   }
 
   if (shouldWaitForConfiguredBotCurrentHeadQuietPeriod(config, pr)) {

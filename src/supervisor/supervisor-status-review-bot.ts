@@ -9,6 +9,7 @@ import { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } fro
 
 type ReviewThreadClassifier = (config: SupervisorConfig, reviewThreads: ReviewThread[]) => ReviewThread[];
 const DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS = 5_000;
+const DEFAULT_CONFIGURED_BOT_INITIAL_GRACE_WAIT_MS = 90_000;
 
 export type ReviewBotProfileId = "none" | "copilot" | "codex" | "coderabbit" | "custom";
 
@@ -93,6 +94,53 @@ export function configuredBotSettledWaitWindow(
     pauseReason: "recent_current_head_observation",
     recentObservation: "current_head_activity",
     observedAt: pr.configuredBotCurrentHeadObservedAt,
+    waitUntil,
+  };
+}
+
+export function configuredBotInitialGraceWaitWindow(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+): {
+  status: "inactive" | "active" | "expired";
+  provider: "none" | "coderabbit";
+  pauseReason: "none" | "awaiting_initial_provider_activity";
+  recentObservation: "none" | "required_checks_green";
+  observedAt: string | null;
+  waitUntil: string | null;
+} {
+  if (!configuredReviewProviderKinds(config).includes("coderabbit") || pr.isDraft || pr.configuredBotCurrentHeadObservedAt || !pr.currentHeadCiGreenAt) {
+    return {
+      status: "inactive",
+      provider: "none",
+      pauseReason: "none",
+      recentObservation: "none",
+      observedAt: pr.currentHeadCiGreenAt ?? null,
+      waitUntil: null,
+    };
+  }
+
+  const observedAtMs = Date.parse(pr.currentHeadCiGreenAt);
+  if (Number.isNaN(observedAtMs)) {
+    return {
+      status: "inactive",
+      provider: "coderabbit",
+      pauseReason: "awaiting_initial_provider_activity",
+      recentObservation: "required_checks_green",
+      observedAt: pr.currentHeadCiGreenAt,
+      waitUntil: null,
+    };
+  }
+
+  const initialGraceWaitMs =
+    (config.configuredBotInitialGraceWaitSeconds ?? DEFAULT_CONFIGURED_BOT_INITIAL_GRACE_WAIT_MS / 1_000) * 1_000;
+  const waitUntil = new Date(observedAtMs + initialGraceWaitMs).toISOString();
+  return {
+    status: Date.now() < Date.parse(waitUntil) ? "active" : "expired",
+    provider: "coderabbit",
+    pauseReason: "awaiting_initial_provider_activity",
+    recentObservation: "required_checks_green",
+    observedAt: pr.currentHeadCiGreenAt,
     waitUntil,
   };
 }
