@@ -1,44 +1,51 @@
-# Issue #494: External-review cleanup: align tests with the refined external-review module boundaries
+# Issue #505: Change-risk explainability: normalize risk decisions with explicit source precedence
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/494
-- Branch: codex/issue-494
-- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-494
-- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-494/.codex-supervisor/issue-journal.md
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/505
+- Branch: codex/issue-505
+- Workspace: .
+- Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 90ece797d3ff86ac512dcf7788d31e7d2c3beff6
+- Attempt count: 3 (implementation=1, repair=2)
+- Last head SHA: 693e30b62880fccc5aa402687b52a1efae64190f
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ8508oYP
+- Last failure signature: PRRT_kwDORgvdZ850_ne4
 - Repeated failure signature count: 1
-- Updated at: 2026-03-17T18:03:57.796Z
+- Updated at: 2026-03-17T21:31:57.000Z
 
 ## Latest Codex Summary
-Aligned the external-review tests with the refined module split. The main change is that qualification-boundary assertions now live in [external-review-regression-candidate-qualification.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-494/src/external-review/external-review-regression-candidate-qualification.test.ts), while payload-shaping assertions stay in [external-review-regression-candidates.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-494/src/external-review/external-review-regression-candidates.test.ts). I also added a focused family layout guard in [external-review-family-layout.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-494/src/external-review/external-review-family-layout.test.ts) and refreshed [family-directory-layout.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-494/src/family-directory-layout.test.ts) so the runtime module lists match the current tree.
+Repaired the tracked issue journal for PR #508 by converting the workspace fields and newly added file links to repo-relative paths, and by restoring the truncated scratchpad tail that had been committed in `693e30b`. The underlying #505 implementation from [src/issue-metadata/issue-metadata-change-risk-decision.ts](../src/issue-metadata/issue-metadata-change-risk-decision.ts) remains unchanged.
 
-Verification passed with the focused external-review suite and `npm run build`. `npm ci` was needed first because `tsc` was missing in this worktree. I committed the cleanup as `90ece79` (`Align external-review tests with module boundaries`), pushed `codex/issue-494`, and opened draft PR #503: https://github.com/TommyKammy/codex-supervisor/pull/503. The only remaining local dirt is the untracked `.codex-supervisor/replay/` directory, which I left alone.
+The shared normalized change-risk decision, prompt coverage, and focused decision tests from [src/codex/codex-prompt.ts](../src/codex/codex-prompt.ts), [src/codex/codex-prompt.test.ts](../src/codex/codex-prompt.test.ts), and [src/issue-metadata/issue-metadata-change-risk-decision.test.ts](../src/issue-metadata/issue-metadata-change-risk-decision.test.ts) remain as shipped in `395a11c`; this turn only addresses the CodeRabbit journal-path review on draft PR #508: https://github.com/TommyKammy/codex-supervisor/pull/508
 
-Summary: External-review test boundaries now match the refined qualification/candidate split, focused layout coverage was added, verification passed, and draft PR #503 is open.
-State hint: pr_open
+One local untracked path remains: `.codex-supervisor/replay/`. I left it untouched.
+
+Summary: Normalized the tracked journal paths to repo-relative form, converted the new journal file links to repo-relative targets, and restored the truncated scratchpad tail on PR #508.
+State hint: addressing_review
 Blocked reason: none
-Tests: `npx tsx --test src/external-review/external-review-family-layout.test.ts src/external-review/external-review-regression-candidate-qualification.test.ts src/external-review/external-review-regression-candidates.test.ts src/external-review/external-review-durable-guardrail-candidates.test.ts`; `npm ci`; `npm run build`
+Tests: `git diff --check`
 Failure signature: none
-Next action: Wait for PR review on #503 and address any feedback or CI failures if they appear.
+Next action: Push the journal repair, resolve thread `PRRT_kwDORgvdZ850_ne4`, and monitor PR #508 for follow-up review feedback.
 
 ## Active Failure Context
-- None recorded. The CodeRabbit thread on scratchpad date-basis ambiguity was fixed in commit `30b3066` and resolved on PR #503.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the external-review cleanup is stable, and the only follow-up needed was to keep the journal metadata self-consistent by making the scratchpad's local-date basis explicit alongside the UTC snapshot field.
-- What changed: clarified the scratchpad date basis in this journal, pushed commit `30b3066` (`Clarify journal scratchpad date basis`) to `origin/codex/issue-494`, and resolved the remaining CodeRabbit thread on PR #503.
+- Hypothesis: the tracked issue journal should use repo-relative paths consistently, including Markdown link targets, so review artifacts stay shareable without leaking a contributor-specific workspace path.
+- What changed: normalized the journal `Workspace` and `Journal` fields plus the new latest-summary links to repo-relative targets, reduced the copied CodeRabbit failure context to a neutral summary, and restored the truncated #477 scratchpad tail; the underlying #505 change-risk implementation from `395a11c` remains unchanged.
 - Current blocker: none
-- Next exact step: Monitor PR #503 for any additional review or CI changes.
-- Verification gap: none beyond confirming the journal diff; this change does not alter runtime code or tests.
+- Next exact step: Push this journal-only repair, resolve CodeRabbit thread `PRRT_kwDORgvdZ850_ne4`, and monitor PR #508 for any follow-up review.
+- Verification gap: none for this repair; `git diff --check` passed and no source files changed.
 - Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: removing the timezone note would reintroduce the same UTC-vs-local timeline ambiguity that triggered the review thread.
-- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ8508oYP`
+- Rollback concern: reverting this repair would reintroduce workspace-specific absolute paths into the tracked journal and restore the malformed scratchpad tail from `693e30b`.
+- Last focused command: `git diff --check`
 ### Scratchpad (workspace-local date in Asia/Tokyo unless noted)
+- 2026-03-18 (JST): Review repair for PR #508 normalized the tracked journal `Workspace`/`Journal` fields and new summary links to repo-relative paths, reduced the copied CodeRabbit failure context to a neutral summary, restored the truncated #477 scratchpad tail from `HEAD^`, and passed `git diff --check`.
+- 2026-03-18 (JST): Committed `395a11c` (`Normalize change-risk decisions`), pushed `codex/issue-505`, and opened draft PR #508 (`https://github.com/TommyKammy/codex-supervisor/pull/508`).
+- 2026-03-18 (JST): Added `summarizeChangeRiskDecision` so prompt/status consumers share one normalized risk decision with `issue_metadata` tie precedence, risky approval inputs, deterministic changed-file classes, and the resulting verification intensity.
+- 2026-03-18 (JST): Focused reproducer for #505 was a new `issue-metadata-change-risk-decision` test asserting `auth` metadata plus docs/tests changed files should still resolve to `verificationIntensity=strong` with `higherRiskSource=issue_metadata`.
+- 2026-03-18 (JST): `npm run build` first failed with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain, then the focused issue-metadata/prompt tests and `npm run build` both passed.
 - 2026-03-18 (JST): Pushed `30b3066` (`Clarify journal scratchpad date basis`) to `origin/codex/issue-494` and resolved CodeRabbit thread `PRRT_kwDORgvdZ8508oYP` on PR #503 with `gh api graphql`.
 - 2026-03-18 (JST): Review repair for PR #503 clarifies that scratchpad entries use the workspace-local date basis while the Supervisor Snapshot `Updated at` field remains UTC.
 - 2026-03-18 (JST): `npm run build` initially failed with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain and the next `npm run build` passed.

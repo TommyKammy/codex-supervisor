@@ -220,8 +220,13 @@ test("buildCodexPrompt applies focused verification guidance for lower-risk chan
   });
 
   assert.match(prompt, /Verification policy:/);
-  assert.match(prompt, /Computed change classes: docs, tests/);
+  assert.match(prompt, /Risky issue-metadata classes: none/);
+  assert.match(prompt, /Approved risky classes: none/);
+  assert.match(prompt, /Deterministic changed-file classes: docs, tests/);
+  assert.match(prompt, /Issue-metadata intensity: none/);
+  assert.match(prompt, /Changed-files intensity: focused/);
   assert.match(prompt, /Verification intensity: focused/);
+  assert.match(prompt, /Higher-risk source: changed_files/);
   assert.match(
     prompt,
     /Keep verification focused on the directly affected documentation or tests unless another signal justifies broader coverage\./,
@@ -245,12 +250,51 @@ test("buildCodexPrompt keeps stronger verification guidance for workflow-like ch
   });
 
   assert.match(prompt, /Verification policy:/);
-  assert.match(prompt, /Computed change classes: backend, workflow/);
+  assert.match(prompt, /Risky issue-metadata classes: none/);
+  assert.match(prompt, /Deterministic changed-file classes: backend, workflow/);
+  assert.match(prompt, /Changed-files intensity: strong/);
   assert.match(prompt, /Verification intensity: strong/);
+  assert.match(prompt, /Higher-risk source: changed_files/);
   assert.match(
     prompt,
-    /Keep stronger verification for workflow, schema, or infrastructure changes, including the most relevant higher-signal checks before concluding the work is done\./,
+    /Keep stronger verification when issue metadata or deterministic file classes indicate elevated change risk, including the most relevant higher-signal checks before concluding the work is done\./,
   );
+});
+
+test("buildCodexPrompt gives risky issue metadata precedence over lower-risk changed files", () => {
+  const prompt = buildCodexPrompt({
+    repoSlug: "owner/repo",
+    issue: {
+      ...issue,
+      title: "Refresh auth docs",
+      body: `## Summary
+Document the auth flow.
+
+## Scope
+- update the operator guide
+
+Risky changes approved: auth
+`,
+    },
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "implementing" satisfies RunState,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+    changeClasses: ["docs", "tests"],
+  });
+
+  assert.match(prompt, /Risky issue-metadata classes: auth/);
+  assert.match(prompt, /Approved risky classes: auth/);
+  assert.match(prompt, /Deterministic changed-file classes: docs, tests/);
+  assert.match(prompt, /Issue-metadata intensity: strong/);
+  assert.match(prompt, /Changed-files intensity: focused/);
+  assert.match(prompt, /Verification intensity: strong/);
+  assert.match(prompt, /Higher-risk source: issue_metadata/);
 });
 
 test("buildCodexPrompt requires config before treating input as an AgentTurnContext", () => {

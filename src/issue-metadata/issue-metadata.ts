@@ -7,20 +7,22 @@ export {
   classifyChangedFiles,
   detectDeterministicChangeClasses,
 } from "./issue-metadata-change-classification";
+export { summarizeChangeRiskDecision } from "./issue-metadata-change-risk-decision";
 export {
   findHighRiskBlockingAmbiguity,
   lintExecutionReadyIssueBody,
 } from "./issue-metadata-gates";
 export type {
+  ChangeRiskDecisionSummary,
+  ChangeRiskSource,
+  ChangeRiskVerificationIntensity,
+} from "./issue-metadata-change-risk-decision";
+export type {
   ClassifiedChangedFile,
   DeterministicChangeClass,
 } from "./issue-metadata-change-classification";
-export type {
-  ClarificationBlock,
-  ExecutionReadyLintResult,
-  HighRiskAmbiguityClass,
-  RiskyChangeClass,
-} from "./issue-metadata-gates";
+export type { ClarificationBlock, ExecutionReadyLintResult, HighRiskAmbiguityClass } from "./issue-metadata-gates";
+export type { RiskyChangeClass } from "./issue-metadata-risky-policy";
 
 export interface IssueMetadata {
   parentIssueNumber: number | null;
