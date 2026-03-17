@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { inferStateFromPullRequest } from "./pull-request-state";
-import { SupervisorConfig } from "./core/types";
 import {
   createConfig,
   createPullRequest,
@@ -455,7 +454,7 @@ test("inferStateFromPullRequest uses configuredBotSettledWaitSeconds for recent 
     const config = createConfig({
       reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
     });
-    (config as SupervisorConfig & { configuredBotSettledWaitSeconds?: number }).configuredBotSettledWaitSeconds = 3;
+    config.configuredBotSettledWaitSeconds = 3;
 
     assert.equal(
       inferStateFromPullRequest(
