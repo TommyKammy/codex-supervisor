@@ -484,7 +484,10 @@ function inferConfiguredBotDraftSkipAt(
     return null;
   }
 
-  const { activeRequestStartedAt } = summarizeConfiguredBotRequestWindow(facts.timeline, configuredReviewBots);
+  const { activeRequestStartedAt, latestRemovedByBot } = summarizeConfiguredBotRequestWindow(
+    facts.timeline,
+    configuredReviewBots,
+  );
   const activeRequestStartedAtMs = parseTimestamp(activeRequestStartedAt);
   const scopedToActiveRequest = (value: string | null | undefined): value is string =>
     value !== null &&
@@ -494,10 +497,12 @@ function inferConfiguredBotDraftSkipAt(
   return latestTimestamp(
     facts.issueComments.flatMap((comment) => {
       const authorLogin = normalizeLogin(comment.authorLogin);
+      const latestRemovedAt = authorLogin ? latestRemovedByBot.get(authorLogin) ?? null : null;
       return authorLogin &&
         configuredReviewBots.has(authorLogin) &&
         isDraftSkipReviewText(comment.body) &&
-        scopedToActiveRequest(comment.createdAt)
+        scopedToActiveRequest(comment.createdAt) &&
+        (latestRemovedAt === null || parseTimestamp(comment.createdAt) > parseTimestamp(latestRemovedAt))
         ? [comment.createdAt]
         : [];
     }),

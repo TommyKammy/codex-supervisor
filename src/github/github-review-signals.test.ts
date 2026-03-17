@@ -462,6 +462,49 @@ test("buildConfiguredBotReviewSummary records draft-skip issue comments distinct
   });
 });
 
+test("buildConfiguredBotReviewSummary ignores configured-bot draft-skip signals that were superseded by a later request removal", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [],
+    comments: [],
+    issueComments: [
+      {
+        authorLogin: "coderabbitai",
+        createdAt: "2026-03-13T03:15:00Z",
+        body: "Skipping review because this pull request is still in draft.",
+      },
+    ],
+    timeline: [
+      {
+        type: "requested",
+        createdAt: "2026-03-13T03:00:00Z",
+        reviewerLogin: "coderabbitai",
+      },
+      {
+        type: "removed",
+        createdAt: "2026-03-13T03:20:00Z",
+        reviewerLogin: "coderabbitai",
+      },
+    ],
+  };
+
+  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["coderabbitai", "coderabbitai[bot]"]), {
+    lifecycle: {
+      state: "not_requested",
+      requestedAt: null,
+      arrivedAt: null,
+    },
+    topLevelReview: {
+      strength: null,
+      submittedAt: null,
+    },
+    currentHeadObservedAt: null,
+    currentHeadCiGreenAt: null,
+    rateLimitWarningAt: null,
+    draftSkipAt: null,
+  });
+});
+
 test("buildConfiguredBotReviewSummary ignores configured-bot rate limit warnings that were superseded by a later request removal", () => {
   const facts: CopilotReviewLifecycleFacts = {
     reviewRequests: [],
