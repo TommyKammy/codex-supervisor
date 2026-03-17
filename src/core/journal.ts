@@ -209,6 +209,15 @@ function normalizeHandoffSummaryValue(value: string | undefined): string | null 
   return collapsed;
 }
 
+function formatTrackedJournalPath(workspacePath: string, targetPath: string): string {
+  const relativePath = path.relative(workspacePath, targetPath);
+  if (relativePath.length === 0) {
+    return ".";
+  }
+
+  return relativePath.split(path.sep).join("/");
+}
+
 export function summarizeIssueJournalHandoff(content: string | null): string | null {
   const values = parseCurrentHandoffValues(content);
   const blocker = normalizeHandoffSummaryValue(values.get("Current blocker"));
@@ -267,8 +276,8 @@ function buildSupervisorSnapshot(args: {
     "## Supervisor Snapshot",
     `- Issue URL: ${issue.url}`,
     `- Branch: ${record.branch}`,
-    `- Workspace: ${record.workspace}`,
-    `- Journal: ${journalPath}`,
+    `- Workspace: ${formatTrackedJournalPath(record.workspace, record.workspace)}`,
+    `- Journal: ${formatTrackedJournalPath(record.workspace, journalPath)}`,
     `- Current phase: ${record.state}`,
     `- Attempt count: ${record.attempt_count} (implementation=${record.implementation_attempt_count}, repair=${record.repair_attempt_count})`,
     `- Last head SHA: ${record.last_head_sha ?? "unknown"}`,

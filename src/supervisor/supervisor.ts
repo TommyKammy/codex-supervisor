@@ -614,6 +614,7 @@ export class Supervisor {
       reviewThreads: activeStatus.reviewThreads,
       handoffSummary: activeStatus.handoffSummary,
       changeClassesSummary: activeStatus.changeClassesSummary,
+      verificationPolicySummary: activeStatus.verificationPolicySummary,
       durableGuardrailSummary: activeStatus.durableGuardrailSummary,
     });
 

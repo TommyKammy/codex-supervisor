@@ -93,6 +93,22 @@ test("syncIssueJournal writes the structured handoff schema for new journals", a
   assert.match(content, /- Rollback concern:/);
 });
 
+test("syncIssueJournal writes workspace metadata as workspace-relative paths", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-relative-paths-"));
+  const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
+
+  await syncIssueJournal({
+    issue,
+    record: createRecord({ workspace: tempDir, journal_path: journalPath }),
+    journalPath,
+  });
+
+  const content = await fs.readFile(journalPath, "utf8");
+  assert.match(content, /- Workspace: \./);
+  assert.match(content, /- Journal: \.codex-supervisor\/issue-journal\.md/);
+  assert.doesNotMatch(content, new RegExp(tempDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
 test("syncIssueJournal preserves legacy handoff content by normalizing old field names", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-legacy-"));
   const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");

@@ -1,46 +1,55 @@
-# Issue #505: Change-risk explainability: normalize risk decisions with explicit source precedence
+# Issue #506: Change-risk explainability: surface the applied verification policy in status output
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/505
-- Branch: codex/issue-505
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/506
+- Branch: codex/issue-506
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 3 (implementation=1, repair=2)
-- Last head SHA: 693e30b62880fccc5aa402687b52a1efae64190f
+- Attempt count: 5 (implementation=2, repair=3)
+- Last head SHA: 646ea24338b7d9a259f30e38ae1d1963bdc17725
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ850_ne4
+- Last failure signature: PRRT_kwDORgvdZ851ATvh
 - Repeated failure signature count: 1
-- Updated at: 2026-03-17T21:31:57.000Z
+- Updated at: 2026-03-17T22:37:13.000Z
 
 ## Latest Codex Summary
-Repaired the tracked issue journal for PR #508 by converting the workspace fields and newly added file links to repo-relative paths, and by restoring the truncated scratchpad tail that had been committed in `693e30b`. The underlying #505 implementation from [src/issue-metadata/issue-metadata-change-risk-decision.ts](../src/issue-metadata/issue-metadata-change-risk-decision.ts) remains unchanged.
+Updated [`src/core/journal.ts`](../src/core/journal.ts) so tracked journal snapshots render `Workspace` as `.` and `Journal` relative to the workspace root instead of serializing absolute local filesystem paths. Added a focused regression in [`src/journal.test.ts`](../src/journal.test.ts) and normalized this tracked journal snapshot to the new format.
 
-The shared normalized change-risk decision, prompt coverage, and focused decision tests from [src/codex/codex-prompt.ts](../src/codex/codex-prompt.ts), [src/codex/codex-prompt.test.ts](../src/codex/codex-prompt.test.ts), and [src/issue-metadata/issue-metadata-change-risk-decision.test.ts](../src/issue-metadata/issue-metadata-change-risk-decision.test.ts) remain as shipped in `395a11c`; this turn only addresses the CodeRabbit journal-path review on draft PR #508: https://github.com/TommyKammy/codex-supervisor/pull/508
+Focused verification passed: `npx tsx --test src/journal.test.ts` and `npm run build`.
 
-One local untracked path remains: `.codex-supervisor/replay/`. I left it untouched.
-
-Summary: Normalized the tracked journal paths to repo-relative form, converted the new journal file links to repo-relative targets, and restored the truncated scratchpad tail on PR #508.
-State hint: addressing_review
+Summary: Prepared the PR #515 review repair by making tracked journal paths workspace-relative and covering the output with a regression test.
+State hint: local_review_fix
 Blocked reason: none
-Tests: `git diff --check`
-Failure signature: none
-Next action: Push the journal repair, resolve thread `PRRT_kwDORgvdZ850_ne4`, and monitor PR #508 for follow-up review feedback.
+Tests: `npx tsx --test src/journal.test.ts`; `npm run build`
+Failure signature: PRRT_kwDORgvdZ851ATvh
+Next action: Commit and push this review repair to `codex/issue-506`, then resolve CodeRabbit thread `PRRT_kwDORgvdZ851ATvh` on PR #515 if it remains open.
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/515#discussion_r2949876357
+- Details:
+  - .codex-supervisor/issue-journal.md:7 _⚠️ Potential issue_ | _🟠 Major_ **Avoid committing absolute local filesystem paths in journal metadata.** These values expose local environment details (`/home/tommy/...`) and make the journal less portable across contributors/worktrees. Prefer repo-relative values in tracked files. <details> <summary>🔧 Suggested change</summary> ```diff -- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-506 -- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-506/.codex-supervisor/issue-journal.md +- Workspace: . +- Journal: .codex-supervisor/issue-journal.md ``` </details> <!-- suggestion_start --> <details> <summary>📝 Committable suggestion</summary> > ‼️ **IMPORTANT** > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements. ```suggestion - Workspace: . - Journal: .codex-supervisor/issue-journal.md ``` </details> <!-- suggestion_end --> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In @.codex-supervisor/issue-journal.md around lines 6 - 7, The journal currently contains absolute local paths for the keys "Workspace" and "Journal" which leaks user-specific filesystem info; update the file .codex-supervisor/issue-journal.md (the "Workspace" and "Journal" entries) to use repo-relative paths (e.g., paths relative to repository root or ./worktree-name) or canonical placeholders, and if there is code that generates this metadata, change the writer to compute and store repo-relative paths (use path.relative(repoRoot, absPath) or equivalent) instead of absolute paths so committed journal files remain portable across machines. ``` </details> <!-- fingerprinting:phantom:triton:hawk --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the tracked issue journal should use repo-relative paths consistently, including Markdown link targets, so review artifacts stay shareable without leaking a contributor-specific workspace path.
-- What changed: normalized the journal `Workspace` and `Journal` fields plus the new latest-summary links to repo-relative targets, reduced the copied CodeRabbit failure context to a neutral summary, and restored the truncated #477 scratchpad tail; the underlying #505 change-risk implementation from `395a11c` remains unchanged.
+- Hypothesis: the remaining PR #515 review thread is caused by the journal snapshot serializer still emitting absolute local paths, so making the tracked `Workspace`/`Journal` lines workspace-relative should clear it without changing runtime record paths.
+- What changed: updated `src/core/journal.ts` to render tracked `Workspace`/`Journal` paths relative to the workspace root, added a focused regression in `src/journal.test.ts`, normalized this journal snapshot to match, and restored the inherited scratchpad tail after the local journal update truncated it again.
 - Current blocker: none
-- Next exact step: Push this journal-only repair, resolve CodeRabbit thread `PRRT_kwDORgvdZ850_ne4`, and monitor PR #508 for any follow-up review.
-- Verification gap: none for this repair; `git diff --check` passed and no source files changed.
-- Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this repair would reintroduce workspace-specific absolute paths into the tracked journal and restore the malformed scratchpad tail from `693e30b`.
-- Last focused command: `git diff --check`
+- Next exact step: commit and push this review repair to `codex/issue-506`, then resolve CodeRabbit thread `PRRT_kwDORgvdZ851ATvh` on PR #515 if it remains open.
+- Verification gap: none; `npx tsx --test src/journal.test.ts` and `npm run build` passed for the serializer change.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/core/journal.ts`, `src/journal.test.ts`
+- Rollback concern: reverting this repair would re-expose absolute local paths in tracked journal snapshots and likely reopen the current review issue.
+- Last focused command: `npm run build`
 ### Scratchpad (workspace-local date in Asia/Tokyo unless noted)
+- 2026-03-18 (JST): Review repair for PR #515 now renders tracked journal `Workspace`/`Journal` snapshot fields relative to the workspace root, adds a focused regression in `src/journal.test.ts`, and passes `npx tsx --test src/journal.test.ts` plus `npm run build`.
+- 2026-03-18 (JST): Pushed `646ea24` (`Clear stale journal failure context`) to `origin/codex/issue-506` and resolved CodeRabbit thread `PRRT_kwDORgvdZ851ANbp` with `gh api graphql` after removing the stale copied failure context and restoring the inherited scratchpad tail.
+- 2026-03-18 (JST): Local review repair for PR #515 removes the stale Active Failure Context copied from the resolved line-54 truncation report and restores the inherited scratchpad tail from `HEAD`; focused verification target is `git diff --check`.
+- 2026-03-18 (JST): Committed and pushed `3a85dbe` (`Fix truncated journal scratchpad entry`) on `codex/issue-506`, restoring the inherited `#477` scratchpad tail plus the omitted follow-on notes and resolving CodeRabbit thread `PRRT_kwDORgvdZ851AJNQ`.
+- 2026-03-18 (JST): Pushed `3458587` (`Explain verification policy in status`) to `origin/codex/issue-506` and opened draft PR #515 (`https://github.com/TommyKammy/codex-supervisor/pull/515`).
+- 2026-03-18 (JST): Issue #506 now renders `verification_policy intensity=<...> driver=<source>:<classes>` in status output; focused coverage includes docs-only `changed_files` and stronger `issue_metadata` auth cases.
+- 2026-03-18 (JST): Focused verification for #506 was `npx tsx --test src/supervisor/supervisor-status-rendering.test.ts src/supervisor/supervisor-change-risk-status.test.ts`; `npm run build` initially failed with `sh: 1: tsc: not found`, `npm ci` restored the toolchain, and the rerun passed.
 - 2026-03-18 (JST): Review repair for PR #508 normalized the tracked journal `Workspace`/`Journal` fields and new summary links to repo-relative paths, reduced the copied CodeRabbit failure context to a neutral summary, restored the truncated #477 scratchpad tail from `HEAD^`, and passed `git diff --check`.
 - 2026-03-18 (JST): Committed `395a11c` (`Normalize change-risk decisions`), pushed `codex/issue-505`, and opened draft PR #508 (`https://github.com/TommyKammy/codex-supervisor/pull/508`).
 - 2026-03-18 (JST): Added `summarizeChangeRiskDecision` so prompt/status consumers share one normalized risk decision with `issue_metadata` tie precedence, risky approval inputs, deterministic changed-file classes, and the resulting verification intensity.

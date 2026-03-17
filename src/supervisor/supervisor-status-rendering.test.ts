@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildChangeClassesStatusLine, formatDetailedStatus } from "./supervisor-status-rendering";
-import { GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../core/types";
+import {
+  buildChangeClassesStatusLine,
+  buildVerificationPolicyStatusLine,
+  formatDetailedStatus,
+} from "./supervisor-status-rendering";
+import { GitHubIssue, GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
@@ -120,6 +124,19 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
   };
 }
 
+function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
+  return {
+    number: 58,
+    title: "Issue",
+    body: "",
+    createdAt: "2026-03-11T14:00:00Z",
+    updatedAt: "2026-03-11T14:00:00Z",
+    url: "https://example.test/issues/58",
+    state: "OPEN",
+    ...overrides,
+  };
+}
+
 test("formatDetailedStatus renders core lines before appended summaries", () => {
   const config = createConfig({ localReviewArtifactDir: "/tmp/reviews" });
   const record = createRecord({
@@ -166,6 +183,7 @@ test("formatDetailedStatus renders core lines before appended summaries", () => 
     reviewThreads: [],
     handoffSummary: "blocked\nneeds reproduction",
     changeClassesSummary: "change_classes=backend, docs, tests",
+    verificationPolicySummary: "verification_policy intensity=standard driver=changed_files:backend|docs|tests",
     durableGuardrailSummary:
       "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=runtime:owner-repo/issue-58/external-review-misses-head-deadbeef.json#2",
   });
@@ -197,6 +215,7 @@ test("formatDetailedStatus renders core lines before appended summaries", () => 
       "review_threads bot_pending=0 bot_unresolved=0 manual=0",
       "handoff_summary=blocked\\nneeds reproduction",
       "change_classes=backend, docs, tests",
+      "verification_policy intensity=standard driver=changed_files:backend|docs|tests",
       "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=runtime:owner-repo/issue-58/external-review-misses-head-deadbeef.json#2",
       "latest_recovery issue=#57 at=2026-03-13T00:20:00Z reason=merged_pr_convergence: tracked PR #157 merged; marked issue #57 done",
       "local_review_summary_path=owner-repo/issue-58/local-review-summary.md",
@@ -214,6 +233,38 @@ test("buildChangeClassesStatusLine reports a sorted multi-class summary", () => 
       "src/supervisor.ts",
     ]),
     "change_classes=backend, docs, tests",
+  );
+});
+
+test("buildVerificationPolicyStatusLine reports focused policy for docs-only changes", () => {
+  assert.equal(
+    buildVerificationPolicyStatusLine({
+      changedFiles: ["docs/getting-started.md"],
+    }),
+    "verification_policy intensity=focused driver=changed_files:docs",
+  );
+});
+
+test("buildVerificationPolicyStatusLine gives issue metadata precedence when it drives a higher policy", () => {
+  assert.equal(
+    buildVerificationPolicyStatusLine({
+      issue: createIssue({
+        title: "Clarify auth rollout",
+        body: `## Summary
+Document the auth rollout plan.
+
+## Scope
+- keep the rollout notes aligned with auth token handling
+
+## Acceptance criteria
+- the docs cover the current auth rollout
+
+## Verification
+- npm test -- src/supervisor/supervisor-status-rendering.test.ts`,
+      }),
+      changedFiles: ["docs/getting-started.md"],
+    }),
+    "verification_policy intensity=strong driver=issue_metadata:auth",
   );
 });
 
