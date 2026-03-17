@@ -542,6 +542,7 @@ test("buildCodexPrompt suppresses stale handoff next actions during addressing_r
           summary: "Live review guidance should take priority over stale handoff steps.",
           rationale: "The active thread already describes the blocker to resolve before merge.",
           url: "https://example.test/thread-1#comment-1",
+          preventionTarget: "review_prompt",
         },
       ],
     },
@@ -594,6 +595,7 @@ test("buildCodexPrompt keeps explicit operator overrides during addressing_revie
           summary: "Live review guidance should take priority over stale handoff steps.",
           rationale: "The active thread already describes the blocker to resolve before merge.",
           url: "https://example.test/thread-1#comment-1",
+          preventionTarget: "review_prompt",
         },
       ],
     },
@@ -723,6 +725,7 @@ test("buildCodexPrompt surfaces saved external review misses during addressing_r
           summary: "Permission guard is bypassed.",
           rationale: "This fallback skips the permission guard and lets unauthorized callers update records.".repeat(20),
           url: "https://example.test/thread-1#comment-1",
+          preventionTarget: "durable_guardrail",
         },
         {
           sourceKind: "review_thread",
@@ -734,6 +737,7 @@ test("buildCodexPrompt surfaces saved external review misses during addressing_r
           summary: "Second finding",
           rationale: "Second rationale",
           url: "https://example.test/thread-2#comment-1",
+          preventionTarget: "regression_test",
         },
         {
           sourceKind: "review_thread",
@@ -745,6 +749,7 @@ test("buildCodexPrompt surfaces saved external review misses during addressing_r
           summary: "Third finding",
           rationale: "Third rationale",
           url: "https://example.test/thread-3#comment-1",
+          preventionTarget: "review_prompt",
         },
         {
           sourceKind: "review_thread",
@@ -756,6 +761,7 @@ test("buildCodexPrompt surfaces saved external review misses during addressing_r
           summary: "Fourth finding",
           rationale: "Fourth rationale",
           url: "https://example.test/thread-4#comment-1",
+          preventionTarget: "review_prompt",
         },
       ],
     },

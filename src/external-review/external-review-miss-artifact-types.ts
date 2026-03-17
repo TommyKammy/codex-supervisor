@@ -1,10 +1,15 @@
 import { type ExternalReviewMissFinding } from "./external-review-classifier";
+import { type ExternalReviewPreventionTarget } from "./external-review-prevention-targets";
 import { type ExternalReviewSignalSourceKind } from "./external-review-signals";
 
 export type ExternalReviewPromptFinding = Pick<
-  ExternalReviewMissFinding,
-  "sourceKind" | "sourceId" | "sourceUrl" | "reviewerLogin" | "file" | "line" | "summary" | "rationale" | "url"
+  ExternalReviewArtifactFinding,
+  "sourceKind" | "sourceId" | "sourceUrl" | "reviewerLogin" | "file" | "line" | "summary" | "rationale" | "url" | "preventionTarget"
 >;
+
+export interface ExternalReviewArtifactFinding extends ExternalReviewMissFinding {
+  preventionTarget: ExternalReviewPreventionTarget | null;
+}
 
 export interface ExternalReviewMissPattern {
   fingerprint: string;
@@ -78,7 +83,7 @@ export interface ExternalReviewMissArtifact {
   generatedAt: string;
   localReviewSummaryPath: string | null;
   localReviewFindingsPath: string | null;
-  findings: ExternalReviewMissFinding[];
+  findings: ExternalReviewArtifactFinding[];
   reusableMissPatterns: ExternalReviewMissPattern[];
   durableGuardrailCandidates: ExternalReviewDurableGuardrailCandidate[];
   regressionTestCandidates: ExternalReviewRegressionCandidate[];
