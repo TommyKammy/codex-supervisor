@@ -27,48 +27,23 @@ Next action: Monitor PR #496 for any new review or CI signals
 
 ## Active Failure Context
 - Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
+- Summary: No unresolved automated review thread(s) remain after resolving the final CodeRabbit payload-formatting comment.
 - Reference: https://github.com/TommyKammy/codex-supervisor/pull/496#discussion_r2947318955
 - Details:
-  - .codex-supervisor/issue-journal.md:33 _⚠️ Potential issue_ | _🟡 Minor_ **Reformat this embedded review payload into multiline Markdown blocks.** Line 33 is packed into a single inline block (`<details>` + fenced text), which triggers markdownlint MD038 and is difficult to edit safely. Please expand it into proper multiline Markdown.
-
-    <details>
-    <summary>🧰 Tools</summary>
-
-    <details>
-    <summary>🪛 markdownlint-cli2 (0.21.0)</summary>
-
-    ```text
-    [warning] 33-33: Spaces inside code span elements (MD038, no-space-in-code)
-    ---
-    [warning] 33-33: Spaces inside code span elements (MD038, no-space-in-code)
-    ```
-
-    </details>
-    </details>
-
-    <details>
-    <summary>🤖 Prompt for AI Agents</summary>
-
-    ````text
-    Verify each finding against the current code and only fix it if needed. In @.codex-supervisor/issue-journal.md at line 33, The embedded review payload inside .codex-supervisor/issue-journal.md is currently crammed into a single inline <details> block with a fenced ```diff``` payload, which triggers MD038 and is hard to edit; open that inline block into proper multiline Markdown by replacing the single-line <details>...```diff```...</details> construct with a multiline <details> containing a separate <summary> line, a standalone fenced code block (```diff) with its contents on separate lines, and closing fences and </details> on their own lines, and do the same for the committable suggestion and Prompt for AI Agents sections so each <details>, <summary>, and fenced block (e.g., the suggestion and prompt) are multiline and easy to edit.
-    ````
-
-    </details>
-    <!-- fingerprinting:phantom:poseidon:hawk -->
-    <!-- This is an auto-generated comment by CodeRabbit -->
+  - Resolved review thread `PRRT_kwDORgvdZ8504_WU` after reflowing the copied payload in `.codex-supervisor/issue-journal.md`, pushing `9d36cc5`, and calling `resolveReviewThread` via `gh api graphql`.
 
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: #487 can stay behavior-neutral by moving the recovery reconciliation assertions into their own focused suite and isolating dirty-worktree/unexpected-failure recovery flows in a separate file, with the original test path kept only as a facade import.
-- What changed: split `src/supervisor/supervisor-recovery.test.ts` into `src/supervisor/supervisor-recovery-reconciliation.test.ts` and `src/supervisor/supervisor-recovery-failure-flows.test.ts`, and reduced `src/supervisor/supervisor-recovery.test.ts` to two side-effect imports.
+- What changed: split `src/supervisor/supervisor-recovery.test.ts` into `src/supervisor/supervisor-recovery-reconciliation.test.ts` and `src/supervisor/supervisor-recovery-failure-flows.test.ts`, reduced `src/supervisor/supervisor-recovery.test.ts` to two side-effect imports, and reflowed the remaining copied CodeRabbit payload in `.codex-supervisor/issue-journal.md` into multiline markdown blocks.
 - Current blocker: none
-- Next exact step: Verify the multiline markdown repair in `.codex-supervisor/issue-journal.md`, then commit, push, and resolve the remaining CodeRabbit thread on PR #496.
-- Verification gap: full-file `markdownlint-cli2` still reports longstanding journal-wide style violations, but the targeted `MD038` signal for this copied review payload no longer appears.
+- Next exact step: Monitor PR #496 for any follow-up review or CI signals now that the final configured-bot thread is resolved.
+- Verification gap: full-file `markdownlint-cli2` still reports longstanding journal-wide style violations, but the targeted `MD038` signal for this copied review payload is gone and the review thread is resolved.
 - Files touched: `src/supervisor/supervisor-recovery.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor-recovery-failure-flows.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this cleanup would put reconciliation helper coverage and heavier recovery integration flows back into one file, increasing edit overlap and making failures less localized.
-- Last focused command: `bash -lc 'npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg "MD038|Summary:"'`
+- Last focused command: `gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { id isResolved } } }' -F threadId=PRRT_kwDORgvdZ8504_WU`
 ### Scratchpad
+- 2026-03-17: Pushed `9d36cc5` (`Reflow copied review payload in journal`) to `origin/codex/issue-487` and resolved CodeRabbit thread `PRRT_kwDORgvdZ8504_WU` with `gh api graphql`.
 - 2026-03-17: Reflowed the remaining copied CodeRabbit payload in `.codex-supervisor/issue-journal.md` into multiline `<details>` blocks so markdownlint no longer sees inline code-span spacing around the embedded fenced content.
 - 2026-03-17: Review repair for PR #496 switched the live journal summary links from absolute `/home/...` targets to repository-relative paths and updated the dirty-worktree recovery test to derive its issue lock path via `Supervisor.lockPath`; focused verification was `npx tsx --test src/supervisor/supervisor-recovery-failure-flows.test.ts` and `npm run build`.
 - 2026-03-17: Added `draftSkipAt` to configured-bot summaries and hydrated PRs; focused verification was `npx tsx --test src/github/github-review-signals.test.ts src/github/github-pull-request-hydrator.test.ts`, followed by `npm ci` and `npm run build`.
