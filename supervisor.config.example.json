@@ -68,6 +68,7 @@
   "pollIntervalSeconds": 120,
   "copilotReviewWaitMinutes": 10,
   "copilotReviewTimeoutAction": "continue",
+  "configuredBotSettledWaitSeconds": 5,
   "codexExecTimeoutMinutes": 30,
   "maxCodexAttemptsPerIssue": 30,
   "maxImplementationAttemptsPerIssue": 30,

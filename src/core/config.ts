@@ -286,6 +286,12 @@ export function loadConfig(configPath?: string): SupervisorConfig {
       raw.configuredBotRateLimitWaitMinutes >= 0
         ? raw.configuredBotRateLimitWaitMinutes
         : 0,
+    configuredBotSettledWaitSeconds:
+      typeof raw.configuredBotSettledWaitSeconds === "number" &&
+      Number.isFinite(raw.configuredBotSettledWaitSeconds) &&
+      raw.configuredBotSettledWaitSeconds >= 0
+        ? raw.configuredBotSettledWaitSeconds
+        : 5,
     codexExecTimeoutMinutes:
       typeof raw.codexExecTimeoutMinutes === "number" && raw.codexExecTimeoutMinutes > 0
         ? raw.codexExecTimeoutMinutes

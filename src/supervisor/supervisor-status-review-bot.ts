@@ -8,7 +8,7 @@ import {
 import { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "../core/types";
 
 type ReviewThreadClassifier = (config: SupervisorConfig, reviewThreads: ReviewThread[]) => ReviewThread[];
-const CODERABBIT_CURRENT_HEAD_QUIET_PERIOD_MS = 5_000;
+const DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS = 5_000;
 
 export type ReviewBotProfileId = "none" | "copilot" | "codex" | "coderabbit" | "custom";
 
@@ -79,7 +79,8 @@ export function configuredBotSettledWaitWindow(
     };
   }
 
-  const waitUntil = new Date(observedAtMs + CODERABBIT_CURRENT_HEAD_QUIET_PERIOD_MS).toISOString();
+  const settledWaitMs = (config.configuredBotSettledWaitSeconds ?? DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS / 1_000) * 1_000;
+  const waitUntil = new Date(observedAtMs + settledWaitMs).toISOString();
   return {
     status: Date.now() < Date.parse(waitUntil) ? "active" : "expired",
     provider: "coderabbit",

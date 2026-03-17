@@ -30,7 +30,7 @@ import {
 import { nowIso } from "./core/utils";
 
 const COPILOT_REVIEW_PROPAGATION_GRACE_MS = 5_000;
-const CODERABBIT_CURRENT_HEAD_QUIET_PERIOD_MS = 5_000;
+const DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS = 5_000;
 
 interface CopilotReviewTimeoutStatus {
   timedOut: boolean;
@@ -221,7 +221,8 @@ function shouldWaitForConfiguredBotCurrentHeadQuietPeriod(
     return false;
   }
 
-  return Date.now() < observedAtMs + CODERABBIT_CURRENT_HEAD_QUIET_PERIOD_MS;
+  const settledWaitMs = (config.configuredBotSettledWaitSeconds ?? DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS / 1_000) * 1_000;
+  return Date.now() < observedAtMs + settledWaitMs;
 }
 
 export function buildCopilotReviewTimeoutFailureContext(

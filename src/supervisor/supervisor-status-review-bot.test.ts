@@ -327,3 +327,28 @@ test("configuredBotSettledWaitWindow reports the active CodeRabbit quiet period"
     Date.now = originalNow;
   }
 });
+
+test("configuredBotSettledWaitWindow uses configuredBotSettledWaitSeconds when provided", () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-03-16T00:00:03.500Z");
+
+  try {
+    assert.deepEqual(
+      configuredBotSettledWaitWindow(
+        createConfig({
+          reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+          configuredBotSettledWaitSeconds: 3,
+        }),
+        createPr({ configuredBotCurrentHeadObservedAt: "2026-03-16T00:00:00.000Z" }),
+      ),
+      {
+        status: "expired",
+        provider: "coderabbit",
+        observedAt: "2026-03-16T00:00:00.000Z",
+        waitUntil: "2026-03-16T00:00:03.000Z",
+      },
+    );
+  } finally {
+    Date.now = originalNow;
+  }
+});

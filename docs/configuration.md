@@ -38,6 +38,7 @@ Each shipped profile only covers supervisor-side expectations. You still need th
 ### CodeRabbit profile
 
 - Supervisor-side: use `supervisor.config.coderabbit.json`, which tracks both `coderabbitai` and `coderabbitai[bot]`, waits up to 30 minutes after a CodeRabbit `Rate limit exceeded` warning before continuing, and applies a short settled wait after a fresh CodeRabbit current-head observation.
+- Tuning: `configuredBotSettledWaitSeconds` controls that CodeRabbit quiet period. The default is `5`, which preserves current behavior.
 - Provider-side: install CodeRabbit. Add `.coderabbit.yaml` only when you intentionally want repo-specific CodeRabbit behavior; it is not required just to make the supervisor wait through temporary rate limits.
 - Operator note: while that short settled wait is active, `status` shows `configured_bot_settled_wait status=active provider=coderabbit ...`. That means the supervisor saw CodeRabbit on the current PR head and is deliberately pausing merge progression for a few seconds so late-arriving review signals can land first.
 - Verify: open a PR and confirm CodeRabbit posts review activity under one of the configured bot identities.
@@ -78,6 +79,7 @@ Review and merge policy:
 - `reviewBotLogins`
 - `humanReviewBlocksMerge`
 - `copilotReviewWaitMinutes`, `copilotReviewTimeoutAction`
+- `configuredBotRateLimitWaitMinutes`, `configuredBotSettledWaitSeconds`
 - `localReviewEnabled`, `localReviewAutoDetect`, `localReviewRoles`
 - `localReviewPolicy`, `localReviewHighSeverityAction`
 - `localReviewArtifactDir`, `localReviewConfidenceThreshold`, `localReviewReviewerThresholds`

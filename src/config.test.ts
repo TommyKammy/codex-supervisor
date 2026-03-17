@@ -206,6 +206,35 @@ test("loadConfig rejects non-finite configuredBotRateLimitWaitMinutes by falling
   assert.equal(config.configuredBotRateLimitWaitMinutes, 0);
 });
 
+test("loadConfig accepts an explicit configuredBotSettledWaitSeconds override", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      configuredBotSettledWaitSeconds: 3,
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath) as ReturnType<typeof loadConfig> & {
+    configuredBotSettledWaitSeconds?: number;
+  };
+
+  assert.equal(config.configuredBotSettledWaitSeconds, 3);
+});
+
 test("loadConfig defaults localReviewHighSeverityAction to blocked", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
   t.after(async () => {

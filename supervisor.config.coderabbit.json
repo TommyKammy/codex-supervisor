@@ -70,6 +70,7 @@
   "copilotReviewWaitMinutes": 10,
   "copilotReviewTimeoutAction": "continue",
   "configuredBotRateLimitWaitMinutes": 30,
+  "configuredBotSettledWaitSeconds": 5,
   "codexExecTimeoutMinutes": 30,
   "maxCodexAttemptsPerIssue": 30,
   "maxImplementationAttemptsPerIssue": 30,
