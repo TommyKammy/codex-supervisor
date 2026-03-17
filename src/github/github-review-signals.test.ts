@@ -341,6 +341,7 @@ test("buildConfiguredBotReviewSummary treats actionable configured-bot issue com
       strength: null,
       submittedAt: null,
     },
+    currentHeadObservedAt: null,
     rateLimitWarningAt: null,
   });
 });
@@ -377,6 +378,7 @@ test("buildConfiguredBotReviewSummary keeps top-level review strength scoped to 
       strength: "nitpick_only",
       submittedAt: "2026-03-13T02:03:04Z",
     },
+    currentHeadObservedAt: null,
     rateLimitWarningAt: null,
   });
 });
@@ -406,6 +408,7 @@ test("buildConfiguredBotReviewSummary treats configured-bot rate limit issue com
       strength: null,
       submittedAt: null,
     },
+    currentHeadObservedAt: null,
     rateLimitWarningAt: "2026-03-13T03:15:00Z",
   });
 });
@@ -446,6 +449,95 @@ test("buildConfiguredBotReviewSummary ignores configured-bot rate limit warnings
       strength: null,
       submittedAt: null,
     },
+    currentHeadObservedAt: null,
+    rateLimitWarningAt: null,
+  });
+});
+
+test("buildConfiguredBotReviewSummary records the latest configured-bot observation on the current head", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [
+      {
+        authorLogin: "coderabbitai[bot]",
+        submittedAt: "2026-03-13T02:02:00Z",
+        commitOid: "head-44",
+        state: "COMMENTED",
+        body: "Current head top-level review.",
+      },
+      {
+        authorLogin: "coderabbitai[bot]",
+        submittedAt: "2026-03-13T02:03:00Z",
+        commitOid: "stale-head",
+        state: "COMMENTED",
+        body: "Newer stale-head top-level review.",
+      },
+    ],
+    comments: [
+      {
+        authorLogin: "coderabbitai[bot]",
+        createdAt: "2026-03-13T02:04:00Z",
+        originalCommitOid: "head-44",
+      },
+      {
+        authorLogin: "coderabbitai[bot]",
+        createdAt: "2026-03-13T02:05:00Z",
+        originalCommitOid: "stale-head",
+      },
+    ],
+    issueComments: [],
+    timeline: [],
+  };
+
+  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["coderabbitai[bot]"], "head-44"), {
+    lifecycle: {
+      state: "arrived",
+      requestedAt: null,
+      arrivedAt: "2026-03-13T02:05:00Z",
+    },
+    topLevelReview: {
+      strength: null,
+      submittedAt: null,
+    },
+    currentHeadObservedAt: "2026-03-13T02:04:00Z",
+    rateLimitWarningAt: null,
+  });
+});
+
+test("buildConfiguredBotReviewSummary leaves current-head observation empty when only stale-head evidence exists", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [
+      {
+        authorLogin: "coderabbitai[bot]",
+        submittedAt: "2026-03-13T02:03:00Z",
+        commitOid: "stale-head",
+        state: "COMMENTED",
+        body: "Stale-head top-level review.",
+      },
+    ],
+    comments: [
+      {
+        authorLogin: "coderabbitai[bot]",
+        createdAt: "2026-03-13T02:05:00Z",
+        originalCommitOid: "stale-head",
+      },
+    ],
+    issueComments: [],
+    timeline: [],
+  };
+
+  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["coderabbitai[bot]"], "head-44"), {
+    lifecycle: {
+      state: "arrived",
+      requestedAt: null,
+      arrivedAt: "2026-03-13T02:05:00Z",
+    },
+    topLevelReview: {
+      strength: null,
+      submittedAt: null,
+    },
+    currentHeadObservedAt: null,
     rateLimitWarningAt: null,
   });
 });
