@@ -26,23 +26,20 @@ Failure signature: none
 Next action: Wait for PR review on #503 and address any feedback or CI failures if they appear.
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/503#discussion_r2948602314
-- Details:
-  - .codex-supervisor/issue-journal.md:35 _⚠️ Potential issue_ | _🟡 Minor_ **Clarify the date basis in scratchpad entries.** Line 14 says the journal was updated on **2026-03-17 (UTC)**, while these entries are labeled **2026-03-18**. Please align dates or append timezone context to avoid timeline ambiguity. <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In @.codex-supervisor/issue-journal.md around lines 33 - 35, The journal's date headers are inconsistent: the top note says "2026-03-17 (UTC)" while entries are stamped "2026-03-18"; update the entries in .codex-supervisor/issue-journal.md so the dates are aligned (either change the entry dates to 2026-03-17 or add explicit timezone context to each entry), or append an explicit timezone/clock reference to the 2026-03-18 lines to remove ambiguity; ensure the header and entry date strings (e.g., "2026-03-17 (UTC)" and "2026-03-18") consistently reflect the same basis. ``` </details> <!-- fingerprinting:phantom:poseidon:hawk --> <!-- This is an auto-generated comment by CodeRabbit -->
+- None recorded. The CodeRabbit thread on scratchpad date-basis ambiguity was fixed in commit `30b3066` and resolved on PR #503.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining PR #503 review thread is a journal-only ambiguity, and the safest fix is to preserve the existing scratchpad dates while labeling them as workspace-local Asia/Tokyo dates so they no longer conflict with the UTC snapshot timestamp.
-- What changed: clarified the scratchpad date basis in this journal, kept the previously recorded external-review test-boundary cleanup intact, and added a note that the review repair is journal-only.
+- Hypothesis: the external-review cleanup is stable, and the only follow-up needed was to keep the journal metadata self-consistent by making the scratchpad's local-date basis explicit alongside the UTC snapshot field.
+- What changed: clarified the scratchpad date basis in this journal, pushed commit `30b3066` (`Clarify journal scratchpad date basis`) to `origin/codex/issue-494`, and resolved the remaining CodeRabbit thread on PR #503.
 - Current blocker: none
-- Next exact step: Commit and push the journal-only review repair on `codex/issue-494`, then resolve the remaining CodeRabbit thread on PR #503.
+- Next exact step: Monitor PR #503 for any additional review or CI changes.
 - Verification gap: none beyond confirming the journal diff; this change does not alter runtime code or tests.
 - Files touched: `.codex-supervisor/issue-journal.md`
 - Rollback concern: removing the timezone note would reintroduce the same UTC-vs-local timeline ambiguity that triggered the review thread.
-- Last focused command: `git diff -- .codex-supervisor/issue-journal.md`
+- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ8508oYP`
 ### Scratchpad (workspace-local date in Asia/Tokyo unless noted)
+- 2026-03-18 (JST): Pushed `30b3066` (`Clarify journal scratchpad date basis`) to `origin/codex/issue-494` and resolved CodeRabbit thread `PRRT_kwDORgvdZ8508oYP` on PR #503 with `gh api graphql`.
 - 2026-03-18 (JST): Review repair for PR #503 clarifies that scratchpad entries use the workspace-local date basis while the Supervisor Snapshot `Updated at` field remains UTC.
 - 2026-03-18 (JST): `npm run build` initially failed with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain and the next `npm run build` passed.
 - 2026-03-17: Pushed `codex/issue-478` to `origin` and opened draft PR #481 (`https://github.com/TommyKammy/codex-supervisor/pull/481`) after confirming there was no existing PR for the branch.
