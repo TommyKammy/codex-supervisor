@@ -24,12 +24,13 @@
 - Hypothesis: #486 can stay behavior-neutral by extracting `supervisor-execution.test.ts` into two focused suites: issue-selection/orchestration coverage and workspace/lock/cleanup-heavy execution coverage, with the legacy path preserved as a facade import.
 - What changed: split the execution suite into `src/supervisor/supervisor-execution-orchestration.test.ts` and `src/supervisor/supervisor-execution-cleanup.test.ts`, and reduced `src/supervisor/supervisor-execution.test.ts` to a thin facade import file.
 - Current blocker: none
-- Next exact step: Stage the split execution suites, commit the cleanup on `codex/issue-486`, and open or update the draft PR if needed.
+- Next exact step: Monitor draft PR #498 for review or CI feedback and handle any verification signal on `codex/issue-486`.
 - Verification gap: none for the split execution suites or `npm run build`; `npm ci` was required first because `tsc` was initially unavailable locally.
 - Files touched: `src/supervisor/supervisor-execution.test.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts`, `src/supervisor/supervisor-execution-cleanup.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this cleanup would push orchestration, session-lock, orphan cleanup, and reservation recovery assertions back into one 1.6k-line suite, making failures harder to localize.
 - Last focused command: `npm run build`
 ### Scratchpad
+- 2026-03-18: Committed the split as `c7b7f41` (`Split supervisor execution test coverage`), pushed `codex/issue-486`, and opened draft PR #498 (`https://github.com/TommyKammy/codex-supervisor/pull/498`).
 - 2026-03-18: Split `src/supervisor/supervisor-execution.test.ts` into orchestration and cleanup suites behind a facade import; focused verification was `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts src/supervisor/supervisor-execution-cleanup.test.ts src/supervisor/supervisor-execution.test.ts`.
 - 2026-03-18: `npm run build` initially failed with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain and the rerun of `npm run build` passed.
 - 2026-03-17: Review repair for PR #497 updates the guardrail provenance fixtures so committed shared-memory files are added before `headSha` is captured; focused verification was `npx tsx --test src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts` and `npm run build`.
