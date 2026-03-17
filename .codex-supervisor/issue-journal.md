@@ -1,37 +1,47 @@
-# Issue #493: External-review cleanup: refine durable guardrail and regression-candidate boundaries
+# Issue #494: External-review cleanup: align tests with the refined external-review module boundaries
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/493
-- Branch: codex/issue-493
-- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-493
-- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-493/.codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 365427b2402cc4000cfe3d41647dfad22d689fd8
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/494
+- Branch: codex/issue-494
+- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-494
+- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-494/.codex-supervisor/issue-journal.md
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 90ece797d3ff86ac512dcf7788d31e7d2c3beff6
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-17T17:18:00.937Z
+- Last failure signature: PRRT_kwDORgvdZ8508oYP
+- Repeated failure signature count: 1
+- Updated at: 2026-03-17T18:03:57.796Z
 
 ## Latest Codex Summary
-- Extracted shared regression-candidate qualification from the external-review durable guardrail module, kept durable promotion shaping separate from regression payload shaping, added a focused qualification test, and re-verified the external-review candidate/persistence suites plus `npm run build` after restoring the local toolchain with `npm ci`.
+Aligned the external-review tests with the refined module split. The main change is that qualification-boundary assertions now live in [external-review-regression-candidate-qualification.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-494/src/external-review/external-review-regression-candidate-qualification.test.ts), while payload-shaping assertions stay in [external-review-regression-candidates.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-494/src/external-review/external-review-regression-candidates.test.ts). I also added a focused family layout guard in [external-review-family-layout.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-494/src/external-review/external-review-family-layout.test.ts) and refreshed [family-directory-layout.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-494/src/family-directory-layout.test.ts) so the runtime module lists match the current tree.
+
+Verification passed with the focused external-review suite and `npm run build`. `npm ci` was needed first because `tsc` was missing in this worktree. I committed the cleanup as `90ece79` (`Align external-review tests with module boundaries`), pushed `codex/issue-494`, and opened draft PR #503: https://github.com/TommyKammy/codex-supervisor/pull/503. The only remaining local dirt is the untracked `.codex-supervisor/replay/` directory, which I left alone.
+
+Summary: External-review test boundaries now match the refined qualification/candidate split, focused layout coverage was added, verification passed, and draft PR #503 is open.
+State hint: pr_open
+Blocked reason: none
+Tests: `npx tsx --test src/external-review/external-review-family-layout.test.ts src/external-review/external-review-regression-candidate-qualification.test.ts src/external-review/external-review-regression-candidates.test.ts src/external-review/external-review-durable-guardrail-candidates.test.ts`; `npm ci`; `npm run build`
+Failure signature: none
+Next action: Wait for PR review on #503 and address any feedback or CI failures if they appear.
 
 ## Active Failure Context
-- None recorded.
+- None recorded. The CodeRabbit thread on scratchpad date-basis ambiguity was fixed in commit `30b3066` and resolved on PR #503.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the durable guardrail family stays behavior-neutral if regression eligibility is qualified in one focused helper, with `external-review-durable-guardrail-candidates.ts` responsible only for durable promotion shaping/provenance and `external-review-regression-candidates.ts` responsible only for regression payload shaping.
-- What changed: added `src/external-review/external-review-regression-candidate-qualification.test.ts` as the focused reproducer for the shared regression boundary, extracted `qualifyRegressionCandidateFinding` into `src/external-review/external-review-regression-candidate-qualification.ts`, updated `external-review-regression-candidates.ts` to build persisted regression candidates from that helper, and updated `external-review-durable-guardrail-candidates.ts` to derive its `regression_test` durable category from the same qualification path while preserving its existing deterministic output/provenance shape.
+- Hypothesis: the external-review cleanup is stable, and the only follow-up needed was to keep the journal metadata self-consistent by making the scratchpad's local-date basis explicit alongside the UTC snapshot field.
+- What changed: clarified the scratchpad date basis in this journal, pushed commit `30b3066` (`Clarify journal scratchpad date basis`) to `origin/codex/issue-494`, and resolved the remaining CodeRabbit thread on PR #503.
 - Current blocker: none
-- Next exact step: Commit the regression-boundary cleanup on `codex/issue-493`, then check whether the branch already has a PR before opening or updating a draft PR.
-- Verification gap: none for the focused durable-guardrail/regression suites or `npm run build`; `npm ci` was required first because `tsc` was initially unavailable locally in this worktree.
-- Files touched: `src/external-review/external-review-durable-guardrail-candidates.ts`, `src/external-review/external-review-regression-candidate-qualification.ts`, `src/external-review/external-review-regression-candidate-qualification.test.ts`, `src/external-review/external-review-regression-candidates.ts`, `.codex-supervisor/issue-journal.md`, `package-lock.json`, `node_modules/`
-- Rollback concern: reverting this cleanup would put the regression qualification bar back in two separate modules, making future learning-loop changes more likely to drift between durable promotion and regression payload generation.
-- Last focused command: `npm run build`
-### Scratchpad
-- 2026-03-18: Focused reproducer for #493 was a missing shared regression-qualification seam; `external-review-regression-candidate-qualification.test.ts` locked the regression bar to review-thread, missed-by-local-review, non-low-severity, high-confidence, file-scoped, line-scoped findings without asserting durable-only title/provenance shaping.
-- 2026-03-18: Verification for #493 was `npx tsx --test src/external-review/external-review-regression-candidate-qualification.test.ts src/external-review/external-review-regression-candidates.test.ts src/external-review/external-review-durable-guardrail-candidates.test.ts src/external-review/external-review-miss-persistence.test.ts` and `npm run build`; `npm run build` first failed with `sh: 1: tsc: not found`, then `npm ci` restored the local toolchain and both commands passed.
+- Next exact step: Monitor PR #503 for any additional review or CI changes.
+- Verification gap: none beyond confirming the journal diff; this change does not alter runtime code or tests.
+- Files touched: `.codex-supervisor/issue-journal.md`
+- Rollback concern: removing the timezone note would reintroduce the same UTC-vs-local timeline ambiguity that triggered the review thread.
+- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ8508oYP`
+### Scratchpad (workspace-local date in Asia/Tokyo unless noted)
+- 2026-03-18 (JST): Pushed `30b3066` (`Clarify journal scratchpad date basis`) to `origin/codex/issue-494` and resolved CodeRabbit thread `PRRT_kwDORgvdZ8508oYP` on PR #503 with `gh api graphql`.
+- 2026-03-18 (JST): Review repair for PR #503 clarifies that scratchpad entries use the workspace-local date basis while the Supervisor Snapshot `Updated at` field remains UTC.
+- 2026-03-18 (JST): `npm run build` initially failed with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain and the next `npm run build` passed.
 - 2026-03-17: Pushed `codex/issue-478` to `origin` and opened draft PR #481 (`https://github.com/TommyKammy/codex-supervisor/pull/481`) after confirming there was no existing PR for the branch.
 - 2026-03-17: Review repair for PR #481 adds the same per-bot removal guard to `draftSkipAt` that rate-limit warnings already used, plus a regression test for stale draft-skip comments after request removal.
 - 2026-03-17: Cleaned the copied review-context links in this journal so they use repository-relative markdown targets instead of local `/home/...` paths.

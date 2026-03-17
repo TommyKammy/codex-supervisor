@@ -42,6 +42,14 @@ test("qualifyRegressionCandidateFinding rejects misses outside the regression bo
   assert.equal(
     qualifyRegressionCandidateFinding(
       createMissFinding({
+        severity: "low",
+      }),
+    ),
+    null,
+  );
+  assert.equal(
+    qualifyRegressionCandidateFinding(
+      createMissFinding({
         sourceKind: "top_level_review",
         sourceId: "review-1",
         sourceUrl: "https://example.test/pr/1#pullrequestreview-1",
@@ -54,7 +62,27 @@ test("qualifyRegressionCandidateFinding rejects misses outside the regression bo
   assert.equal(
     qualifyRegressionCandidateFinding(
       createMissFinding({
+        sourceKind: "issue_comment",
+        sourceId: "issue-comment-1",
+        sourceUrl: "https://example.test/pr/1#issuecomment-1",
+        threadId: null,
+        url: "https://example.test/pr/1#issuecomment-1",
+      }),
+    ),
+    null,
+  );
+  assert.equal(
+    qualifyRegressionCandidateFinding(
+      createMissFinding({
         confidence: 0.74,
+      }),
+    ),
+    null,
+  );
+  assert.equal(
+    qualifyRegressionCandidateFinding(
+      createMissFinding({
+        file: "   ",
       }),
     ),
     null,

@@ -43,51 +43,35 @@ test("toRegressionTestCandidate keeps persisted ids and qualification reasons st
   });
 });
 
-test("toRegressionTestCandidate rejects misses that do not meet the durable regression bar", () => {
-  assert.equal(
-    toRegressionTestCandidate(
-      createMissFinding({
-        severity: "low",
-      }),
-    ),
-    null,
+test("toRegressionTestCandidate trims only the title text while keeping source payload intact", () => {
+  const candidate = toRegressionTestCandidate(
+    createMissFinding({
+      summary: "This fallback skips the permission guard and lets unauthorized callers update records!!!",
+      rationale: "This fallback skips the permission guard and lets unauthorized callers update records!!!",
+    }),
   );
+
+  assert.deepEqual(candidate, {
+    id: "src/auth.ts|42|this fallback skips the permission guard and lets unauthorized callers update records!!!",
+    title: "Add regression coverage for This fallback skips the permission guard and lets unauthorized callers update records",
+    file: "src/auth.ts",
+    line: 42,
+    summary: "This fallback skips the permission guard and lets unauthorized callers update records!!!",
+    rationale: "This fallback skips the permission guard and lets unauthorized callers update records!!!",
+    reviewerLogin: "copilot-pull-request-reviewer",
+    sourceKind: "review_thread",
+    sourceId: "thread-1",
+    sourceThreadId: "thread-1",
+    sourceUrl: "https://example.test/thread-1#comment-1",
+    qualificationReasons: ["missed_by_local_review", "non_low_severity", "high_confidence", "file_scoped", "line_scoped"],
+  });
+});
+
+test("toRegressionTestCandidate returns null when qualification fails", () => {
   assert.equal(
     toRegressionTestCandidate(
       createMissFinding({
-        confidence: 0.74,
-      }),
-    ),
-    null,
-  );
-  assert.equal(
-    toRegressionTestCandidate(
-      createMissFinding({
-        line: null,
-      }),
-    ),
-    null,
-  );
-  assert.equal(
-    toRegressionTestCandidate(
-      createMissFinding({
-        sourceKind: "top_level_review",
-        sourceId: "review-1",
-        sourceUrl: "https://example.test/pr/1#pullrequestreview-1",
-        threadId: null,
-        url: "https://example.test/pr/1#pullrequestreview-1",
-      }),
-    ),
-    null,
-  );
-  assert.equal(
-    toRegressionTestCandidate(
-      createMissFinding({
-        sourceKind: "issue_comment",
-        sourceId: "issue-comment-1",
-        sourceUrl: "https://example.test/pr/1#issuecomment-1",
-        threadId: null,
-        url: "https://example.test/pr/1#issuecomment-1",
+        classification: "matched",
       }),
     ),
     null,
