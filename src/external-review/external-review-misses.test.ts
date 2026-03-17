@@ -183,6 +183,19 @@ test("collectExternalReviewSignals preserves actionable top-level reviews that o
   ]);
 });
 
+test("collectExternalReviewSignals ignores late configured-bot closed-PR follow-up issue comments", () => {
+  const signals = collectExternalReviewSignals({
+    issueComments: [
+      createIssueComment({
+        body: "This pull request is already closed. Please ignore this follow-up review comment.",
+      }),
+    ],
+    reviewBotLogins: ["coderabbitai[bot]"],
+  });
+
+  assert.deepEqual(signals, []);
+});
+
 test("classifyExternalReviewFinding marks unmatched configured-bot feedback as missed_by_local_review", () => {
   const normalized = normalizeExternalReviewFinding(createReviewThread(), ["copilot-pull-request-reviewer"]);
   assert.ok(normalized);
