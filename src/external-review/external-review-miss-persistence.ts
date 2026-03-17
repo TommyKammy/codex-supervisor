@@ -7,11 +7,11 @@ import {
   type LocalReviewArtifactLike,
 } from "./external-review-classifier";
 import {
-  collectExternalReviewSignals,
   normalizeExternalReviewSignal,
   type NormalizedExternalReviewFinding,
-  type ExternalReviewSignalEnvelope,
 } from "./external-review-normalization";
+import { collectExternalReviewSignals } from "./external-review-signal-collection";
+import { type ExternalReviewSignalEnvelope } from "./external-review-signals";
 import {
   type ExternalReviewMissArtifact,
   type ExternalReviewDurableGuardrailCandidate,

@@ -1,5 +1,5 @@
 import { type ExternalReviewMissFinding } from "./external-review-classifier";
-import { type ExternalReviewSignalSourceKind } from "./external-review-normalization";
+import { type ExternalReviewSignalSourceKind } from "./external-review-signals";
 
 export type ExternalReviewPromptFinding = Pick<
   ExternalReviewMissFinding,

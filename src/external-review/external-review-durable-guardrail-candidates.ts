@@ -4,7 +4,7 @@ import {
   type ExternalReviewDurableGuardrailCandidate,
   type ExternalReviewDurableGuardrailCandidateCategory,
 } from "./external-review-miss-artifact-types";
-import { type ExternalReviewSignalSourceKind } from "./external-review-normalization";
+import { type ExternalReviewSignalSourceKind } from "./external-review-signals";
 
 interface CandidateQualificationRule {
   reason: string;
