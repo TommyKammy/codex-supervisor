@@ -311,6 +311,7 @@ test("configuredBotSettledWaitWindow reports the active CodeRabbit quiet period"
         pauseReason: "recent_current_head_observation",
         recentObservation: "current_head_activity",
         observedAt: "2026-03-16T00:00:00.000Z",
+        configuredWaitSeconds: 5,
         waitUntil: "2026-03-16T00:00:05.000Z",
       },
     );
@@ -326,6 +327,7 @@ test("configuredBotSettledWaitWindow reports the active CodeRabbit quiet period"
         pauseReason: "none",
         recentObservation: "none",
         observedAt: "2026-03-16T00:00:00.000Z",
+        configuredWaitSeconds: null,
         waitUntil: null,
       },
     );
@@ -350,6 +352,7 @@ test("configuredBotInitialGraceWaitWindow reports the active CodeRabbit startup 
         pauseReason: "awaiting_initial_provider_activity",
         recentObservation: "required_checks_green",
         observedAt: "2026-03-16T00:00:00.000Z",
+        configuredWaitSeconds: 90,
         waitUntil: "2026-03-16T00:01:30.000Z",
       },
     );
@@ -371,6 +374,7 @@ test("configuredBotInitialGraceWaitWindow reports the active CodeRabbit startup 
         pauseReason: "none",
         recentObservation: "none",
         observedAt: "2026-03-16T00:00:00.000Z",
+        configuredWaitSeconds: null,
         waitUntil: null,
       },
     );
@@ -398,6 +402,7 @@ test("configuredBotSettledWaitWindow uses configuredBotSettledWaitSeconds when p
         pauseReason: "recent_current_head_observation",
         recentObservation: "current_head_activity",
         observedAt: "2026-03-16T00:00:00.000Z",
+        configuredWaitSeconds: 3,
         waitUntil: "2026-03-16T00:00:03.000Z",
       },
     );

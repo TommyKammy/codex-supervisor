@@ -514,7 +514,7 @@ test("formatDetailedStatus surfaces an active CodeRabbit settled wait after a cu
 
     assert.match(
       status,
-      /configured_bot_settled_wait status=active provider=coderabbit pause_reason=recent_current_head_observation recent_observation=current_head_activity observed_at=2026-03-13T02:04:00Z wait_until=2026-03-13T02:04:05\.000Z/,
+      /configured_bot_settled_wait status=active provider=coderabbit pause_reason=recent_current_head_observation recent_observation=current_head_activity observed_at=2026-03-13T02:04:00Z configured_wait_seconds=5 wait_until=2026-03-13T02:04:05\.000Z/,
     );
   });
 });
@@ -546,7 +546,7 @@ test("formatDetailedStatus surfaces an active CodeRabbit initial grace wait afte
 
     assert.match(
       status,
-      /configured_bot_initial_grace_wait status=active provider=coderabbit pause_reason=awaiting_initial_provider_activity recent_observation=required_checks_green observed_at=2026-03-13T02:05:00Z wait_until=2026-03-13T02:06:30\.000Z/,
+      /configured_bot_initial_grace_wait status=active provider=coderabbit pause_reason=awaiting_initial_provider_activity recent_observation=required_checks_green observed_at=2026-03-13T02:05:00Z configured_wait_seconds=90 wait_until=2026-03-13T02:06:30\.000Z/,
     );
   });
 });

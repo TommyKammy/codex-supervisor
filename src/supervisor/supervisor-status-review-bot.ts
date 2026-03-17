@@ -61,6 +61,7 @@ export function configuredBotSettledWaitWindow(
   pauseReason: "none" | "recent_current_head_observation";
   recentObservation: "none" | "current_head_activity";
   observedAt: string | null;
+  configuredWaitSeconds: number | null;
   waitUntil: string | null;
 } {
   if (!configuredReviewProviderKinds(config).includes("coderabbit") || pr.isDraft || !pr.configuredBotCurrentHeadObservedAt) {
@@ -70,11 +71,13 @@ export function configuredBotSettledWaitWindow(
       pauseReason: "none",
       recentObservation: "none",
       observedAt: pr.configuredBotCurrentHeadObservedAt ?? null,
+      configuredWaitSeconds: null,
       waitUntil: null,
     };
   }
 
   const observedAtMs = Date.parse(pr.configuredBotCurrentHeadObservedAt);
+  const configuredWaitSeconds = config.configuredBotSettledWaitSeconds ?? DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS / 1_000;
   if (Number.isNaN(observedAtMs)) {
     return {
       status: "inactive",
@@ -82,11 +85,12 @@ export function configuredBotSettledWaitWindow(
       pauseReason: "recent_current_head_observation",
       recentObservation: "current_head_activity",
       observedAt: pr.configuredBotCurrentHeadObservedAt,
+      configuredWaitSeconds,
       waitUntil: null,
     };
   }
 
-  const settledWaitMs = (config.configuredBotSettledWaitSeconds ?? DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS / 1_000) * 1_000;
+  const settledWaitMs = configuredWaitSeconds * 1_000;
   const waitUntil = new Date(observedAtMs + settledWaitMs).toISOString();
   return {
     status: Date.now() < Date.parse(waitUntil) ? "active" : "expired",
@@ -94,6 +98,7 @@ export function configuredBotSettledWaitWindow(
     pauseReason: "recent_current_head_observation",
     recentObservation: "current_head_activity",
     observedAt: pr.configuredBotCurrentHeadObservedAt,
+    configuredWaitSeconds,
     waitUntil,
   };
 }
@@ -107,6 +112,7 @@ export function configuredBotInitialGraceWaitWindow(
   pauseReason: "none" | "awaiting_initial_provider_activity";
   recentObservation: "none" | "required_checks_green";
   observedAt: string | null;
+  configuredWaitSeconds: number | null;
   waitUntil: string | null;
 } {
   if (!configuredReviewProviderKinds(config).includes("coderabbit") || pr.isDraft || pr.configuredBotCurrentHeadObservedAt || !pr.currentHeadCiGreenAt) {
@@ -116,11 +122,14 @@ export function configuredBotInitialGraceWaitWindow(
       pauseReason: "none",
       recentObservation: "none",
       observedAt: pr.currentHeadCiGreenAt ?? null,
+      configuredWaitSeconds: null,
       waitUntil: null,
     };
   }
 
   const observedAtMs = Date.parse(pr.currentHeadCiGreenAt);
+  const configuredWaitSeconds =
+    config.configuredBotInitialGraceWaitSeconds ?? DEFAULT_CONFIGURED_BOT_INITIAL_GRACE_WAIT_MS / 1_000;
   if (Number.isNaN(observedAtMs)) {
     return {
       status: "inactive",
@@ -128,12 +137,12 @@ export function configuredBotInitialGraceWaitWindow(
       pauseReason: "awaiting_initial_provider_activity",
       recentObservation: "required_checks_green",
       observedAt: pr.currentHeadCiGreenAt,
+      configuredWaitSeconds,
       waitUntil: null,
     };
   }
 
-  const initialGraceWaitMs =
-    (config.configuredBotInitialGraceWaitSeconds ?? DEFAULT_CONFIGURED_BOT_INITIAL_GRACE_WAIT_MS / 1_000) * 1_000;
+  const initialGraceWaitMs = configuredWaitSeconds * 1_000;
   const waitUntil = new Date(observedAtMs + initialGraceWaitMs).toISOString();
   return {
     status: Date.now() < Date.parse(waitUntil) ? "active" : "expired",
@@ -141,6 +150,7 @@ export function configuredBotInitialGraceWaitWindow(
     pauseReason: "awaiting_initial_provider_activity",
     recentObservation: "required_checks_green",
     observedAt: pr.currentHeadCiGreenAt,
+    configuredWaitSeconds,
     waitUntil,
   };
 }
