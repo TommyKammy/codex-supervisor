@@ -140,7 +140,13 @@ test("writeExternalReviewMissArtifact persists missed external findings for the 
     headSha: string;
     reusableMissPatterns: Array<{ file: string; summary: string }>;
     counts: { missedByLocalReview: number };
-    findings: Array<{ classification: string; reviewerLogin: string; file: string | null; line: number | null }>;
+    findings: Array<{
+      classification: string;
+      preventionTarget: string | null;
+      reviewerLogin: string;
+      file: string | null;
+      line: number | null;
+    }>;
   };
   assert.equal(artifact.headSha, "deadbeefcafebabe");
   assert.equal(artifact.counts.missedByLocalReview, 1);
@@ -148,13 +154,15 @@ test("writeExternalReviewMissArtifact persists missed external findings for the 
   assert.equal(artifact.reusableMissPatterns[0]?.file, "src/auth.ts");
   assert.match(artifact.reusableMissPatterns[0]?.summary ?? "", /permission guard/i);
   assert.deepEqual(artifact.findings.map((finding) => ({
-    classification: finding.classification,
-    reviewerLogin: finding.reviewerLogin,
-    file: finding.file,
-    line: finding.line,
-  })), [
+      classification: finding.classification,
+      preventionTarget: finding.preventionTarget,
+      reviewerLogin: finding.reviewerLogin,
+      file: finding.file,
+      line: finding.line,
+    })), [
     {
       classification: "missed_by_local_review",
+      preventionTarget: "regression_test",
       reviewerLogin: "copilot-pull-request-reviewer",
       file: "src/auth.ts",
       line: 42,
@@ -502,7 +510,7 @@ test("writeExternalReviewMissArtifact derives deterministic regression-test cand
       line: 42,
       summary: "This fallback skips the permission guard and lets unauthorized callers update records.",
       rationale: "This fallback skips the permission guard and lets unauthorized callers update records.",
-      qualificationReasons: ["missed_by_local_review", "high_confidence", "file_scoped", "non_low_severity", "line_scoped"],
+      qualificationReasons: ["missed_by_local_review", "non_low_severity", "high_confidence", "file_scoped", "line_scoped"],
       provenance: {
         issueNumber: 63,
         prNumber: 91,

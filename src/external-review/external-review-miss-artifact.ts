@@ -1,6 +1,7 @@
 import { nowIso } from "../core/utils";
 import { type ExternalReviewMissFinding } from "./external-review-classifier";
 import {
+  type ExternalReviewArtifactFinding,
   type ExternalReviewDurableGuardrailCandidate,
   type ExternalReviewMissArtifact,
   type ExternalReviewMissContext,
@@ -10,6 +11,7 @@ import {
 import { legacyReusableMissPatterns } from "./external-review-miss-patterns";
 import { toDurableGuardrailCandidates } from "./external-review-durable-guardrail-candidates";
 import { toReusableMissPattern } from "./external-review-miss-patterns";
+import { assignExternalReviewPreventionTarget } from "./external-review-prevention-targets";
 import { toRegressionTestCandidate } from "./external-review-regression-candidates";
 
 export interface ExternalReviewMissArtifactLike {
@@ -41,11 +43,15 @@ export function buildExternalReviewMissArtifact(args: {
   artifactPath: string;
 }): ExternalReviewMissArtifact {
   const generatedAt = nowIso();
+  const findings: ExternalReviewArtifactFinding[] = args.findings.map((finding) => ({
+    ...finding,
+    preventionTarget: assignExternalReviewPreventionTarget(finding),
+  }));
 
-  const reusableMissPatterns: ExternalReviewMissPattern[] = args.findings
+  const reusableMissPatterns: ExternalReviewMissPattern[] = findings
     .filter((finding) => finding.classification === "missed_by_local_review" && typeof finding.file === "string" && finding.file.trim() !== "")
     .map((finding) => toReusableMissPattern(finding, args.artifactPath, args.headSha, generatedAt));
-  const durableGuardrailCandidates: ExternalReviewDurableGuardrailCandidate[] = args.findings.flatMap((finding) =>
+  const durableGuardrailCandidates: ExternalReviewDurableGuardrailCandidate[] = findings.flatMap((finding) =>
     toDurableGuardrailCandidates({
       issueNumber: args.issueNumber,
       prNumber: args.prNumber,
@@ -57,7 +63,7 @@ export function buildExternalReviewMissArtifact(args: {
       finding,
     }),
   );
-  const regressionTestCandidates = args.findings
+  const regressionTestCandidates = findings
     .map((finding) => toRegressionTestCandidate(finding))
     .filter((candidate): candidate is ExternalReviewRegressionCandidate => candidate !== null);
 
@@ -69,14 +75,14 @@ export function buildExternalReviewMissArtifact(args: {
     generatedAt,
     localReviewSummaryPath: args.localReviewSummaryPath,
     localReviewFindingsPath: args.localReviewFindingsPath,
-    findings: args.findings,
+    findings,
     reusableMissPatterns,
     durableGuardrailCandidates,
     regressionTestCandidates,
     counts: {
-      matched: args.findings.filter((finding) => finding.classification === "matched").length,
-      nearMatch: args.findings.filter((finding) => finding.classification === "near_match").length,
-      missedByLocalReview: args.findings.filter((finding) => finding.classification === "missed_by_local_review").length,
+      matched: findings.filter((finding) => finding.classification === "matched").length,
+      nearMatch: findings.filter((finding) => finding.classification === "near_match").length,
+      missedByLocalReview: findings.filter((finding) => finding.classification === "missed_by_local_review").length,
     },
   };
 }
