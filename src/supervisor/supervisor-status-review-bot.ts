@@ -11,6 +11,63 @@ type ReviewThreadClassifier = (config: SupervisorConfig, reviewThreads: ReviewTh
 const DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS = 5_000;
 const DEFAULT_CONFIGURED_BOT_INITIAL_GRACE_WAIT_MS = 90_000;
 
+function latestConfiguredBotActionableSignalAt(pr: GitHubPullRequest): string | null {
+  const candidates = [
+    pr.configuredBotCurrentHeadObservedAt,
+    pr.copilotReviewArrivedAt,
+    pr.configuredBotTopLevelReviewSubmittedAt,
+  ]
+    .map((value) => {
+      if (typeof value !== "string" || value.length === 0) {
+        return null;
+      }
+
+      const timestampMs = Date.parse(value);
+      if (Number.isNaN(timestampMs)) {
+        return null;
+      }
+
+      return { value, timestampMs };
+    })
+    .filter((candidate): candidate is { value: string; timestampMs: number } => candidate !== null);
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  return candidates.reduce((latest, candidate) => (candidate.timestampMs > latest.timestampMs ? candidate : latest)).value;
+}
+
+function configuredBotDraftSkipRewaitStartAt(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+  record?: Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha"> | null,
+): string | null {
+  if (!configuredReviewProviderKinds(config).includes("coderabbit") || pr.isDraft || !pr.configuredBotDraftSkipAt) {
+    return null;
+  }
+
+  if (!record?.review_wait_started_at || record.review_wait_head_sha !== pr.headRefOid) {
+    return null;
+  }
+
+  const draftSkipAtMs = Date.parse(pr.configuredBotDraftSkipAt);
+  const reviewWaitStartedAtMs = Date.parse(record.review_wait_started_at);
+  if (Number.isNaN(draftSkipAtMs) || Number.isNaN(reviewWaitStartedAtMs) || reviewWaitStartedAtMs <= draftSkipAtMs) {
+    return null;
+  }
+
+  const actionableSignalAt = latestConfiguredBotActionableSignalAt(pr);
+  if (actionableSignalAt) {
+    const actionableSignalAtMs = Date.parse(actionableSignalAt);
+    if (!Number.isNaN(actionableSignalAtMs) && actionableSignalAtMs >= reviewWaitStartedAtMs) {
+      return null;
+    }
+  }
+
+  return record.review_wait_started_at;
+}
+
 export type ReviewBotProfileId = "none" | "copilot" | "codex" | "coderabbit" | "custom";
 
 export interface ReviewBotProfileSummary {
@@ -106,15 +163,46 @@ export function configuredBotSettledWaitWindow(
 export function configuredBotInitialGraceWaitWindow(
   config: SupervisorConfig,
   pr: GitHubPullRequest,
+  record?: Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha"> | null,
 ): {
   status: "inactive" | "active" | "expired";
   provider: "none" | "coderabbit";
-  pauseReason: "none" | "awaiting_initial_provider_activity";
-  recentObservation: "none" | "required_checks_green";
+  pauseReason: "none" | "awaiting_initial_provider_activity" | "awaiting_fresh_provider_review_after_draft_skip";
+  recentObservation: "none" | "required_checks_green" | "ready_for_review_reopened_wait";
   observedAt: string | null;
   configuredWaitSeconds: number | null;
   waitUntil: string | null;
 } {
+  const draftSkipRewaitStartedAt = configuredBotDraftSkipRewaitStartAt(config, pr, record);
+  if (draftSkipRewaitStartedAt) {
+    const observedAtMs = Date.parse(draftSkipRewaitStartedAt);
+    const configuredWaitSeconds =
+      config.configuredBotInitialGraceWaitSeconds ?? DEFAULT_CONFIGURED_BOT_INITIAL_GRACE_WAIT_MS / 1_000;
+    if (Number.isNaN(observedAtMs)) {
+      return {
+        status: "inactive",
+        provider: "coderabbit",
+        pauseReason: "awaiting_fresh_provider_review_after_draft_skip",
+        recentObservation: "ready_for_review_reopened_wait",
+        observedAt: draftSkipRewaitStartedAt,
+        configuredWaitSeconds,
+        waitUntil: null,
+      };
+    }
+
+    const initialGraceWaitMs = configuredWaitSeconds * 1_000;
+    const waitUntil = new Date(observedAtMs + initialGraceWaitMs).toISOString();
+    return {
+      status: Date.now() < Date.parse(waitUntil) ? "active" : "expired",
+      provider: "coderabbit",
+      pauseReason: "awaiting_fresh_provider_review_after_draft_skip",
+      recentObservation: "ready_for_review_reopened_wait",
+      observedAt: draftSkipRewaitStartedAt,
+      configuredWaitSeconds,
+      waitUntil,
+    };
+  }
+
   if (!configuredReviewProviderKinds(config).includes("coderabbit") || pr.isDraft || pr.configuredBotCurrentHeadObservedAt || !pr.currentHeadCiGreenAt) {
     return {
       status: "inactive",

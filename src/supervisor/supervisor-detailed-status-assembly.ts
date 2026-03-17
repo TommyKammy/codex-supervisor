@@ -143,7 +143,7 @@ export function buildActiveDetailedStatusLines(
         `configured_bot_rate_limit status=${configuredBotRateLimit.status} observed_at=${configuredBotRateLimit.observedAt} wait_until=${configuredBotRateLimit.waitUntil ?? "none"}`,
       );
     }
-    const configuredBotInitialGraceWait = configuredBotInitialGraceWaitWindow(config, pr);
+    const configuredBotInitialGraceWait = configuredBotInitialGraceWaitWindow(config, pr, activeRecord);
     if (configuredBotInitialGraceWait.status === "active") {
       lines.push(
         `configured_bot_initial_grace_wait status=${configuredBotInitialGraceWait.status} provider=${configuredBotInitialGraceWait.provider} pause_reason=${configuredBotInitialGraceWait.pauseReason} recent_observation=${configuredBotInitialGraceWait.recentObservation} observed_at=${configuredBotInitialGraceWait.observedAt ?? "none"} configured_wait_seconds=${configuredBotInitialGraceWait.configuredWaitSeconds ?? "none"} wait_until=${configuredBotInitialGraceWait.waitUntil ?? "none"}`,

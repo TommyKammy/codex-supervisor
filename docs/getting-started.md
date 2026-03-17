@@ -157,6 +157,8 @@ Use `status` whenever you want the current issue, PR, check, review, and mergeab
 
 If you use the CodeRabbit profile, `status` can first show `configured_bot_initial_grace_wait status=active provider=coderabbit pause_reason=awaiting_initial_provider_activity ... configured_wait_seconds=90 wait_until=...` right after required checks turn green. That indicates an intentional startup grace window for CodeRabbit and makes longer tuned waits obvious.
 
+If CodeRabbit's latest earlier signal was only a draft-skip while the PR was still a draft, and the PR later becomes ready for review, `status` can instead show `configured_bot_initial_grace_wait status=active provider=coderabbit pause_reason=awaiting_fresh_provider_review_after_draft_skip recent_observation=ready_for_review_reopened_wait ... configured_wait_seconds=90 wait_until=...`. That means the supervisor intentionally restarted the CodeRabbit grace window from the ready-for-review transition because the earlier draft skip does not count as a fresh ready-state review.
+
 After CodeRabbit posts on the current PR head, `status` can switch to `configured_bot_settled_wait status=active provider=coderabbit pause_reason=recent_current_head_observation ... configured_wait_seconds=5 wait_until=...`. That later line is a separate short quiet period before merge progression resumes.
 
 ## Common operator decisions

@@ -383,6 +383,39 @@ test("configuredBotInitialGraceWaitWindow reports the active CodeRabbit startup 
   }
 });
 
+test("configuredBotInitialGraceWaitWindow reports the active CodeRabbit re-wait after a draft skip when the PR becomes ready", () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-03-16T00:00:45.000Z");
+
+  try {
+    assert.deepEqual(
+      configuredBotInitialGraceWaitWindow(
+        createConfig({ reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"] }),
+        createPr({
+          currentHeadCiGreenAt: "2026-03-16T00:00:00.000Z",
+          configuredBotCurrentHeadObservedAt: null,
+          configuredBotDraftSkipAt: "2026-03-15T23:59:00.000Z",
+        }),
+        createRecord({
+          review_wait_started_at: "2026-03-16T00:00:30.000Z",
+          review_wait_head_sha: "head-sha",
+        }),
+      ),
+      {
+        status: "active",
+        provider: "coderabbit",
+        pauseReason: "awaiting_fresh_provider_review_after_draft_skip",
+        recentObservation: "ready_for_review_reopened_wait",
+        observedAt: "2026-03-16T00:00:30.000Z",
+        configuredWaitSeconds: 90,
+        waitUntil: "2026-03-16T00:02:00.000Z",
+      },
+    );
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
 test("configuredBotSettledWaitWindow uses configuredBotSettledWaitSeconds when provided", () => {
   const originalNow = Date.now;
   Date.now = () => Date.parse("2026-03-16T00:00:03.500Z");
