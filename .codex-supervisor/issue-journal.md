@@ -7,21 +7,21 @@
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: draft_pr
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 55659cd72678ce093c3a52aba08798ec806ced27
+- Last head SHA: 41c598a55c248971cd69ffbb548635c227de33b1
 - Blocked reason: none
 - Last failure signature: missing-prevention-target
 - Repeated failure signature count: 0
-- Updated at: 2026-03-17T23:25:08Z
+- Updated at: 2026-03-17T23:26:08Z
 
 ## Latest Codex Summary
-- Added deterministic external-review prevention-target assignment at artifact build time so every missed finding now carries exactly one normalized next harness action. Focused coverage proves mixed `review_thread`/`top_level_review`/`issue_comment` cases and persisted artifact output; `npm ci` restored `tsc`, then focused prompt/external-review tests and `npm run build` passed.
+- Added deterministic external-review prevention-target assignment at artifact build time so every missed finding now carries exactly one normalized next harness action. Focused coverage proves mixed `review_thread`/`top_level_review`/`issue_comment` cases and persisted artifact output; `npm ci` restored `tsc`, then focused prompt/external-review tests and `npm run build` passed. Committed as `41c598a` and opened draft PR #517.
 
 Summary: Added deterministic prevention targets to external-review miss artifacts and verified the focused miss-classification/build path.
 State hint: draft_pr
 Blocked reason: none
 Tests: `npx tsx --test src/codex/codex-prompt.test.ts src/external-review/external-review-classifier.test.ts src/external-review/external-review-miss-artifact.test.ts src/external-review/external-review-miss-persistence.test.ts`; `npm ci`; `npm run build`
 Failure signature: none
-Next action: Commit this checkpoint on `codex/issue-510`, then open or update the draft PR for issue #510.
+Next action: Monitor PR #517 CI and address any review or build feedback if it appears.
 
 ## Active Failure Context
 - None recorded.
@@ -31,7 +31,7 @@ Next action: Commit this checkpoint on `codex/issue-510`, then open or update th
 - Hypothesis: issue #510 is locally complete; the artifact should be the only place that needs the normalized prevention target because match classification behavior did not need to change.
 - What changed: added `external-review-prevention-targets.ts`, enriched persisted artifact findings with `preventionTarget`, updated focused artifact/persistence coverage, and fixed prompt fixtures to carry the new required field.
 - Current blocker: none
-- Next exact step: commit the working tree and open or update the draft PR with the focused verification results.
+- Next exact step: watch PR #517 (`https://github.com/TommyKammy/codex-supervisor/pull/517`) for CI or review feedback and only re-enter implementation if new failures appear.
 - Verification gap: none locally after rerunning focused prompt/external-review tests and `npm run build`.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/codex/codex-prompt.test.ts`, `src/external-review/external-review-prevention-targets.ts`, `src/external-review/external-review-miss-artifact-types.ts`, `src/external-review/external-review-miss-artifact.ts`, `src/external-review/external-review-miss-artifact.test.ts`, `src/external-review/external-review-miss-persistence.test.ts`
 - Rollback concern: removing the artifact-level enrichment would reintroduce misses with no explicit next harness action and break the new artifact/prompt type expectations.
