@@ -632,6 +632,31 @@ test("inferStateFromPullRequest waits briefly after a recent CodeRabbit current-
   });
 });
 
+test("inferStateFromPullRequest waits on a recent summary-only CodeRabbit current-head observation", () => {
+  withStubbedDateNow("2026-03-13T02:04:03Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+    });
+    const record = createRecord({ state: "waiting_ci" });
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+    assert.equal(
+      inferStateFromPullRequest(
+        config,
+        record,
+        createPullRequest({
+          copilotReviewState: "not_requested",
+          copilotReviewArrivedAt: null,
+          configuredBotCurrentHeadObservedAt: "2026-03-13T02:04:00Z",
+        }),
+        checks,
+        [],
+      ),
+      "waiting_ci",
+    );
+  });
+});
+
 test("inferStateFromPullRequest waits on later actionable CodeRabbit issue comments after a current-head observation", () => {
   withStubbedDateNow("2026-03-13T02:04:03Z", () => {
     const config = createConfig({
