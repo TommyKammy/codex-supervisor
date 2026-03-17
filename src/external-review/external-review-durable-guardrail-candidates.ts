@@ -177,18 +177,17 @@ export function toDurableGuardrailCandidates(args: {
       if (!qualification) {
         return [];
       }
-      const normalizedFile = normalizeCandidateFile(args.finding.file);
 
       return [{
         id: createDurableGuardrailCandidateId(spec.category, args.finding),
         category: spec.category,
         title: formatTitle(spec.titlePrefix, args.finding.summary),
         reviewerLogin: args.finding.reviewerLogin,
-        file: normalizedFile,
-        line: args.finding.line,
+        file: qualification.file,
+        line: qualification.line,
         summary: args.finding.summary,
         rationale: args.finding.rationale,
-        qualificationReasons: ["missed_by_local_review", "high_confidence", "file_scoped", "non_low_severity", "line_scoped"],
+        qualificationReasons: qualification.qualificationReasons,
         provenance: {
           issueNumber: args.issueNumber,
           prNumber: args.prNumber,

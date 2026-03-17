@@ -99,7 +99,7 @@ test("toDurableGuardrailCandidates emits explicit categories with deterministic 
       line: 42,
       summary: "This fallback skips the permission guard and lets unauthorized callers update records.",
       rationale: "This fallback skips the permission guard and lets unauthorized callers update records.",
-      qualificationReasons: ["missed_by_local_review", "high_confidence", "file_scoped", "non_low_severity", "line_scoped"],
+      qualificationReasons: ["missed_by_local_review", "non_low_severity", "high_confidence", "file_scoped", "line_scoped"],
       provenance: {
         issueNumber: 85,
         prNumber: 144,
