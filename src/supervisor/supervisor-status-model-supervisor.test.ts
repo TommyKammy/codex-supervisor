@@ -241,7 +241,7 @@ test("buildDetailedStatusModel explains why an active CodeRabbit settled wait is
 
     assert.ok(
       lines.includes(
-        "configured_bot_settled_wait status=active provider=coderabbit pause_reason=recent_current_head_observation recent_observation=current_head_activity observed_at=2026-03-16T00:00:00.000Z wait_until=2026-03-16T00:00:05.000Z",
+        "configured_bot_settled_wait status=active provider=coderabbit pause_reason=recent_current_head_observation recent_observation=current_head_activity observed_at=2026-03-16T00:00:00.000Z configured_wait_seconds=5 wait_until=2026-03-16T00:00:05.000Z",
       ),
     );
   } finally {
@@ -291,7 +291,7 @@ test("buildDetailedStatusModel explains why an active CodeRabbit initial grace w
 
     assert.ok(
       lines.includes(
-        "configured_bot_initial_grace_wait status=active provider=coderabbit pause_reason=awaiting_initial_provider_activity recent_observation=required_checks_green observed_at=2026-03-16T00:00:00.000Z wait_until=2026-03-16T00:01:30.000Z",
+        "configured_bot_initial_grace_wait status=active provider=coderabbit pause_reason=awaiting_initial_provider_activity recent_observation=required_checks_green observed_at=2026-03-16T00:00:00.000Z configured_wait_seconds=90 wait_until=2026-03-16T00:01:30.000Z",
       ),
     );
   } finally {

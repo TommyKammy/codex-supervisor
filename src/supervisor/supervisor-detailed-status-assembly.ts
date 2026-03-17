@@ -146,13 +146,13 @@ export function buildActiveDetailedStatusLines(
     const configuredBotInitialGraceWait = configuredBotInitialGraceWaitWindow(config, pr);
     if (configuredBotInitialGraceWait.status === "active") {
       lines.push(
-        `configured_bot_initial_grace_wait status=${configuredBotInitialGraceWait.status} provider=${configuredBotInitialGraceWait.provider} pause_reason=${configuredBotInitialGraceWait.pauseReason} recent_observation=${configuredBotInitialGraceWait.recentObservation} observed_at=${configuredBotInitialGraceWait.observedAt ?? "none"} wait_until=${configuredBotInitialGraceWait.waitUntil ?? "none"}`,
+        `configured_bot_initial_grace_wait status=${configuredBotInitialGraceWait.status} provider=${configuredBotInitialGraceWait.provider} pause_reason=${configuredBotInitialGraceWait.pauseReason} recent_observation=${configuredBotInitialGraceWait.recentObservation} observed_at=${configuredBotInitialGraceWait.observedAt ?? "none"} configured_wait_seconds=${configuredBotInitialGraceWait.configuredWaitSeconds ?? "none"} wait_until=${configuredBotInitialGraceWait.waitUntil ?? "none"}`,
       );
     }
     const configuredBotSettledWait = configuredBotSettledWaitWindow(config, pr);
     if (configuredBotSettledWait.status === "active") {
       lines.push(
-        `configured_bot_settled_wait status=${configuredBotSettledWait.status} provider=${configuredBotSettledWait.provider} pause_reason=${configuredBotSettledWait.pauseReason} recent_observation=${configuredBotSettledWait.recentObservation} observed_at=${configuredBotSettledWait.observedAt ?? "none"} wait_until=${configuredBotSettledWait.waitUntil ?? "none"}`,
+        `configured_bot_settled_wait status=${configuredBotSettledWait.status} provider=${configuredBotSettledWait.provider} pause_reason=${configuredBotSettledWait.pauseReason} recent_observation=${configuredBotSettledWait.recentObservation} observed_at=${configuredBotSettledWait.observedAt ?? "none"} configured_wait_seconds=${configuredBotSettledWait.configuredWaitSeconds ?? "none"} wait_until=${configuredBotSettledWait.waitUntil ?? "none"}`,
       );
     }
     if (activeRecord.copilot_review_timeout_reason) {
