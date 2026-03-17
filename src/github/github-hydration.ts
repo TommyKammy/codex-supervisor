@@ -37,6 +37,9 @@ export interface PullRequestCopilotReviewLifecycleResponse {
       author?: {
         login?: string | null;
       } | null;
+      commit?: {
+        oid?: string | null;
+      } | null;
       submittedAt?: string | null;
       state?: string | null;
       body?: string | null;
@@ -56,6 +59,9 @@ export interface PullRequestCopilotReviewLifecycleResponse {
       comments?: {
         nodes?: Array<{
           createdAt?: string | null;
+          originalCommit?: {
+            oid?: string | null;
+          } | null;
           author?: {
             login?: string | null;
           } | null;
@@ -199,6 +205,7 @@ export function mapCopilotReviewLifecycleFacts(
     reviews:
       lifecycle?.reviews?.nodes?.map((node) => ({
         authorLogin: normalizeLogin(node?.author?.login ?? null),
+        commitOid: node?.commit?.oid ?? null,
         submittedAt: node?.submittedAt ?? null,
         state: node?.state ?? null,
         body: node?.body ?? null,
@@ -208,6 +215,7 @@ export function mapCopilotReviewLifecycleFacts(
         (thread?.comments?.nodes ?? []).map((comment) => ({
           authorLogin: normalizeLogin(comment?.author?.login ?? null),
           createdAt: comment?.createdAt ?? null,
+          originalCommitOid: comment?.originalCommit?.oid ?? null,
         })),
       ) ?? [],
     issueComments:
@@ -244,8 +252,9 @@ export function mapCopilotReviewLifecycleFacts(
 export function buildConfiguredBotReviewSummary(
   lifecycle: PullRequestCopilotReviewLifecycleResponse | null | undefined,
   reviewBotLogins: string[],
+  currentHeadOid?: string | null,
 ): ConfiguredBotReviewSummary {
-  return summarizeConfiguredBotReviewSignals(mapCopilotReviewLifecycleFacts(lifecycle), reviewBotLogins);
+  return summarizeConfiguredBotReviewSignals(mapCopilotReviewLifecycleFacts(lifecycle), reviewBotLogins, currentHeadOid);
 }
 
 export function applyConfiguredBotReviewSummary(
@@ -257,6 +266,7 @@ export function applyConfiguredBotReviewSummary(
     copilotReviewState: summary?.lifecycle.state ?? null,
     copilotReviewRequestedAt: summary?.lifecycle.requestedAt ?? null,
     copilotReviewArrivedAt: summary?.lifecycle.arrivedAt ?? null,
+    configuredBotCurrentHeadObservedAt: summary?.currentHeadObservedAt ?? null,
     configuredBotRateLimitedAt: summary?.rateLimitWarningAt ?? null,
     configuredBotTopLevelReviewStrength: summary?.topLevelReview.strength ?? null,
     configuredBotTopLevelReviewSubmittedAt: summary?.topLevelReview.submittedAt ?? null,

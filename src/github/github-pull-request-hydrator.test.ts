@@ -561,3 +561,107 @@ test("GitHubPullRequestHydrator ignores summary-only and draft-skip configured-b
   assert.equal(pr?.copilotReviewRequestedAt, "2026-03-13T01:02:03Z");
   assert.equal(pr?.copilotReviewArrivedAt, null);
 });
+
+test("GitHubPullRequestHydrator records the latest configured-bot observation scoped to the current head", async () => {
+  const config = createConfig({ reviewBotLogins: ["coderabbitai[bot]"] });
+  let lifecycleQuery: string | null = null;
+  const hydrator = new GitHubPullRequestHydrator(config, async (args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      lifecycleQuery = args.find((arg) => arg.startsWith("query=")) ?? null;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: {
+                  nodes: [],
+                },
+                reviews: {
+                  nodes: [
+                    {
+                      submittedAt: "2026-03-13T02:03:04Z",
+                      state: "COMMENTED",
+                      body: "Stale review from the previous head.",
+                      commit: {
+                        oid: "stale-head-oid",
+                      },
+                      author: {
+                        login: "coderabbitai[bot]",
+                      },
+                    },
+                    {
+                      submittedAt: "2026-03-13T02:02:00Z",
+                      state: "COMMENTED",
+                      body: "Current head review should win over newer stale observations.",
+                      commit: {
+                        oid: "head-44",
+                      },
+                      author: {
+                        login: "coderabbitai[bot]",
+                      },
+                    },
+                  ],
+                },
+                comments: {
+                  nodes: [],
+                },
+                reviewThreads: {
+                  nodes: [
+                    {
+                      comments: {
+                        nodes: [
+                          {
+                            createdAt: "2026-03-13T02:05:00Z",
+                            originalCommit: {
+                              oid: "stale-head-oid",
+                            },
+                            author: {
+                              login: "coderabbitai[bot]",
+                            },
+                          },
+                          {
+                            createdAt: "2026-03-13T02:04:00Z",
+                            originalCommit: {
+                              oid: "head-44",
+                            },
+                            author: {
+                              login: "coderabbitai[bot]",
+                            },
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+                timelineItems: {
+                  nodes: [
+                    {
+                      __typename: "ReviewRequestedEvent",
+                      createdAt: "2026-03-13T01:02:03Z",
+                      requestedReviewer: {
+                        login: "coderabbitai[bot]",
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const pr = await hydrator.hydrate(createPullRequest());
+  const observedAt = (pr as GitHubPullRequest & { configuredBotCurrentHeadObservedAt?: string | null })
+    ?.configuredBotCurrentHeadObservedAt;
+
+  assert.ok(lifecycleQuery);
+  assert.match(lifecycleQuery, /reviews\(last:\s*100\)[\s\S]*commit\s*\{\s*oid\s*\}/);
+  assert.match(lifecycleQuery, /reviewThreads\(first:\s*100\)[\s\S]*originalCommit\s*\{\s*oid\s*\}/);
+  assert.equal(observedAt, "2026-03-13T02:04:00Z");
+});

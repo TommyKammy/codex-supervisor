@@ -58,6 +58,7 @@ class ConfiguredBotReviewSummaryCache {
       promise: Promise.resolve({
         lifecycle: { state: "not_requested", requestedAt: null, arrivedAt: null },
         topLevelReview: { strength: null, submittedAt: null },
+        currentHeadObservedAt: null,
         rateLimitWarningAt: null,
       }),
     };
@@ -119,7 +120,7 @@ export class GitHubPullRequestHydrator {
 
     const summaryPromise = this.reviewSummaryCache.set(
       cacheKey,
-      () => this.fetchConfiguredBotReviewSummary(pr.number),
+      () => this.fetchConfiguredBotReviewSummary(pr.number, pr.headRefOid),
     );
 
     try {
@@ -132,7 +133,10 @@ export class GitHubPullRequestHydrator {
     }
   }
 
-  private async fetchConfiguredBotReviewSummary(prNumber: number): Promise<ConfiguredBotReviewSummary> {
+  private async fetchConfiguredBotReviewSummary(
+    prNumber: number,
+    currentHeadOid: string,
+  ): Promise<ConfiguredBotReviewSummary> {
     const { owner, repo } = repoOwnerAndName(this.config.repoSlug);
     const query = `
       query($owner: String!, $repo: String!, $number: Int!) {
@@ -161,6 +165,9 @@ export class GitHubPullRequestHydrator {
                 submittedAt
                 state
                 body
+                commit {
+                  oid
+                }
                 author {
                   login
                 }
@@ -180,6 +187,9 @@ export class GitHubPullRequestHydrator {
                 comments(last: 100) {
                   nodes {
                     createdAt
+                    originalCommit {
+                      oid
+                    }
                     author {
                       login
                     }
@@ -252,7 +262,7 @@ export class GitHubPullRequestHydrator {
       };
     }>(result.stdout, `gh api graphql copilot review lifecycle pr=${prNumber}`);
 
-    return buildConfiguredBotReviewSummary(payload.data?.repository?.pullRequest, this.config.reviewBotLogins);
+    return buildConfiguredBotReviewSummary(payload.data?.repository?.pullRequest, this.config.reviewBotLogins, currentHeadOid);
   }
 }
 

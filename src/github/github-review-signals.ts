@@ -12,12 +12,14 @@ export interface CopilotReviewLifecycleFacts {
   reviews: Array<{
     authorLogin: string | null;
     submittedAt: string | null;
+    commitOid?: string | null;
     state?: string | null;
     body?: string | null;
   }>;
   comments: Array<{
     authorLogin: string | null;
     createdAt: string | null;
+    originalCommitOid?: string | null;
   }>;
   issueComments: Array<{
     authorLogin: string | null;
@@ -45,6 +47,7 @@ export interface ConfiguredBotTopLevelReviewSummary {
 export interface ConfiguredBotReviewSummary {
   lifecycle: CopilotReviewLifecycle;
   topLevelReview: ConfiguredBotTopLevelReviewSummary;
+  currentHeadObservedAt: string | null;
   rateLimitWarningAt: string | null;
 }
 
@@ -245,6 +248,43 @@ function inferConfiguredBotTopLevelReviewSummary(
   return latestConfiguredReview;
 }
 
+function inferConfiguredBotCurrentHeadObservedAt(
+  facts: CopilotReviewLifecycleFacts,
+  reviewBotLogins: string[],
+  currentHeadOid: string | null | undefined,
+): string | null {
+  const normalizedCurrentHeadOid = currentHeadOid?.trim();
+  if (!normalizedCurrentHeadOid) {
+    return null;
+  }
+
+  const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
+  if (configuredReviewBots.size === 0) {
+    return null;
+  }
+
+  const currentHeadReviewTimes = facts.reviews.flatMap((review) => {
+    const authorLogin = normalizeLogin(review.authorLogin);
+    return authorLogin &&
+      configuredReviewBots.has(authorLogin) &&
+      review.commitOid === normalizedCurrentHeadOid &&
+      isActionableTopLevelReview(review)
+      ? [review.submittedAt]
+      : [];
+  });
+
+  const currentHeadCommentTimes = facts.comments.flatMap((comment) => {
+    const authorLogin = normalizeLogin(comment.authorLogin);
+    return authorLogin &&
+      configuredReviewBots.has(authorLogin) &&
+      comment.originalCommitOid === normalizedCurrentHeadOid
+      ? [comment.createdAt]
+      : [];
+  });
+
+  return latestTimestamp([...currentHeadReviewTimes, ...currentHeadCommentTimes]);
+}
+
 function inferConfiguredBotRateLimitWarningAt(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
@@ -279,10 +319,12 @@ function inferConfiguredBotRateLimitWarningAt(
 export function buildConfiguredBotReviewSummary(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
+  currentHeadOid?: string | null,
 ): ConfiguredBotReviewSummary {
   return {
     lifecycle: inferCopilotReviewLifecycle(facts, reviewBotLogins),
     topLevelReview: inferConfiguredBotTopLevelReviewSummary(facts, reviewBotLogins),
+    currentHeadObservedAt: inferConfiguredBotCurrentHeadObservedAt(facts, reviewBotLogins, currentHeadOid),
     rateLimitWarningAt: inferConfiguredBotRateLimitWarningAt(facts, reviewBotLogins),
   };
 }
