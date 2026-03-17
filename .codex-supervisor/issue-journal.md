@@ -22,14 +22,15 @@
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: change-risk explainability should be normalized by one shared decision object so prompt guidance and other consumers stop inferring precedence separately from issue metadata and changed-file classes.
-- What changed: added `summarizeChangeRiskDecision`, covered mixed-source precedence in focused tests, updated the Codex prompt to render risky metadata inputs plus the winning source, and routed the existing change-class status helper through the same summary object without expanding status output.
+- What changed: added `summarizeChangeRiskDecision`, covered mixed-source precedence in focused tests, updated the Codex prompt to render risky metadata inputs plus the winning source, routed the existing change-class status helper through the same summary object without expanding status output, committed the work as `395a11c` (`Normalize change-risk decisions`), pushed `codex/issue-505`, and opened draft PR #508.
 - Current blocker: none
-- Next exact step: Commit the normalized change-risk decision work, then check whether `codex/issue-505` already has a PR or needs a draft PR opened.
+- Next exact step: Monitor draft PR #508 for CI and review feedback; if CI reports anything unstable, reproduce it locally and repair on this branch.
 - Verification gap: none; the focused issue-metadata and prompt tests passed, and `npm run build` passed after restoring the local toolchain with `npm ci`.
 - Files touched: `src/issue-metadata/issue-metadata-change-risk-decision.ts`, `src/issue-metadata/issue-metadata-change-risk-decision.test.ts`, `src/issue-metadata/issue-metadata.ts`, `src/codex/codex-prompt.ts`, `src/codex/codex-prompt.test.ts`, `src/supervisor/supervisor-status-rendering.ts`
 - Rollback concern: removing the shared decision helper would re-fragment precedence between prompt/status callers and drop the explicit higher-risk source that #505 needs.
 - Last focused command: `npx tsx --test src/issue-metadata/issue-metadata-change-risk-decision.test.ts src/issue-metadata/issue-metadata-risky-policy.test.ts src/issue-metadata/issue-metadata-change-classification.test.ts src/issue-metadata/issue-metadata.test.ts src/codex/codex-prompt.test.ts`
 ### Scratchpad (workspace-local date in Asia/Tokyo unless noted)
+- 2026-03-18 (JST): Committed `395a11c` (`Normalize change-risk decisions`), pushed `codex/issue-505`, and opened draft PR #508 (`https://github.com/TommyKammy/codex-supervisor/pull/508`).
 - 2026-03-18 (JST): Added `summarizeChangeRiskDecision` so prompt/status consumers share one normalized risk decision with `issue_metadata` tie precedence, risky approval inputs, deterministic changed-file classes, and the resulting verification intensity.
 - 2026-03-18 (JST): Focused reproducer for #505 was a new `issue-metadata-change-risk-decision` test asserting `auth` metadata plus docs/tests changed files should still resolve to `verificationIntensity=strong` with `higherRiskSource=issue_metadata`.
 - 2026-03-18 (JST): `npm run build` first failed with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain, then the focused issue-metadata/prompt tests and `npm run build` both passed.
