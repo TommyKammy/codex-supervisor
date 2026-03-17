@@ -1,46 +1,35 @@
-# Issue #480: CodeRabbit draft-skip handling: re-arm review waiting after ready-for-review
+# Issue #477: CodeRabbit draft-skip handling: explain re-wait behavior in status output and docs
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/480
-- Branch: codex/issue-480
-- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-480
-- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-480/.codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 5 (implementation=2, repair=3)
-- Last head SHA: 9a7289c4ebdda3639119dc1510dfb0b88913708f
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/477
+- Branch: codex/issue-477
+- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-477
+- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-477/.codex-supervisor/issue-journal.md
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: cc4d64785fdd3c3093b34e9b6ff7dfd8d279d3bd
 - Blocked reason: none
 - Last failure signature: none
-- Repeated failure signature count: 1
-- Updated at: 2026-03-17T12:59:10Z
+- Repeated failure signature count: 0
+- Updated at: 2026-03-17T13:13:51.855Z
 
 ## Latest Codex Summary
-Updated the live journal links for [src/pull-request-state.ts](../src/pull-request-state.ts) and [src/pull-request-state-provider-waits.test.ts](../src/pull-request-state-provider-waits.test.ts) so PR #482 no longer points reviewers at local `/home/...` filesystem paths. The fix is committed as `9a7289c` (`Use repo-relative journal links`) and pushed to `origin/codex/issue-480`.
-
-No code paths changed, so I verified the repair by diffing the journal and confirming the only remaining absolute paths are inside the quoted CodeRabbit failure context. I then resolved review thread `PRRT_kwDORgvdZ850206I` via `gh api graphql`. The worktree is clean aside from the pre-existing untracked `.codex-supervisor/replay/` directory.
-
-Summary: Fixed the remaining PR #482 review thread by replacing broken local journal links with repository-relative markdown targets, pushed commit `9a7289c`, and resolved the thread.
-State hint: waiting_ci
-Blocked reason: none
-Tests: not run (journal-only markdown change); verified with `git diff -- .codex-supervisor/issue-journal.md` and `rg -n '\\]\\(/home/tommy/Dev/codex-supervisor-self-worktrees/issue-480/' .codex-supervisor/issue-journal.md`
-Failure signature: none
-Next action: Watch PR #482 CI/review results for commit `9a7289c` and handle any follow-up review noise if it appears.
+- Status output now distinguishes CodeRabbit's post-ready draft-skip re-wait from the existing startup grace and settled waits, and the docs explain that the supervisor intentionally re-waits for a fresh ready-state review signal.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the reported review thread was valid and was fully addressed by switching the live journal links to repository-relative targets; no runtime code changes were needed.
-- What changed: replaced the live summary links in this journal with repository-relative `../src/...` targets, pushed commit `9a7289c`, and resolved the corresponding CodeRabbit review thread after confirming the diff.
+- Hypothesis: the operator confusion comes from status reusing the generic initial CodeRabbit grace wording after ready-for-review, even when the actual reason is that the last prior CodeRabbit signal was only a draft skip.
+- What changed: taught `configuredBotInitialGraceWaitWindow` to detect the draft-skip re-wait from `review_wait_started_at`, emit distinct `pause_reason=awaiting_fresh_provider_review_after_draft_skip` and `recent_observation=ready_for_review_reopened_wait`, threaded the active record into status assembly, added focused helper/model/rendering tests, and documented the re-wait in `README.md`, `docs/getting-started.md`, and `docs/configuration.md`.
 - Current blocker: none
-- Next exact step: Monitor PR #482 CI/review results for commit `9a7289c` and only re-enter review repair if a new thread appears.
-- Verification gap: no automated checks rerun because this change is journal markdown only.
-- Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this repair would only restore broken local-path links in the journal; it does not affect runtime behavior.
-- Last focused command: `git push origin codex/issue-480`; `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ850206I`
+- Next exact step: Commit the status/docs change on `codex/issue-477`, then open or update the draft PR and monitor CI/review.
+- Verification gap: none locally after restoring `node_modules` with `npm ci`.
+- Files touched: `src/supervisor/supervisor-status-review-bot.ts`, `src/supervisor/supervisor-detailed-status-assembly.ts`, `src/supervisor/supervisor-status-review-bot.test.ts`, `src/supervisor/supervisor-status-model-supervisor.test.ts`, `src/supervisor/supervisor-status-rendering-supervisor.test.ts`, `README.md`, `docs/getting-started.md`, `docs/configuration.md`
+- Rollback concern: reverting this change would collapse the new draft-skip re-wait wording back into the generic initial-grace label, making post-ready waits look like unexplained loops again.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-status-review-bot.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-status-rendering-supervisor.test.ts`; `npm ci`; `npm run build`
 ### Scratchpad
-- Keep this section short. The supervisor may compact older notes automatically.
-- Reproducing signature before the fix: required current-head CI completion metadata was absent from configured-bot hydration, so no stable `currentHeadCiGreenAt` value existed for later CodeRabbit provider-start wait logic.
 - Focused derivation rule: use the latest completion timestamp among required current-head checks, but only when every required current-head check on the tracked head is already passing/skipping; otherwise leave the field null.
 - Verification commands: `npx tsx --test src/supervisor/supervisor-status-review-bot.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-status-rendering-supervisor.test.ts`; `npm ci`; `npm run build`.
 - Local failure resolved: `npm run build` initially failed with `sh: 1: tsc: not found` because this worktree was missing `node_modules`; `npm ci` restored the local toolchain and the acceptance build passed afterward.
@@ -59,3 +48,6 @@ Next action: Watch PR #482 CI/review results for commit `9a7289c` and handle any
 - 2026-03-17: Review repair for PR #482 filters malformed configured-bot timestamps before selecting the latest actionable signal; focused regression/verification was `npx tsx --test src/pull-request-state-provider-waits.test.ts` and `npm run build`.
 - 2026-03-17: Follow-up review repair for PR #482 updates the live journal summary links from absolute `/home/...` targets to repository-relative `../src/...` paths so CodeRabbit readers can open them from the repo view.
 - 2026-03-17: Pushed `9a7289c` (`Use repo-relative journal links`) to `origin/codex/issue-480` and resolved CodeRabbit thread `PRRT_kwDORgvdZ850206I` with `gh api graphql`.
+- 2026-03-17: Focused reproducer for #477 was status still emitting `configured_bot_initial_grace_wait pause_reason=awaiting_initial_provider_activity recent_observation=required_checks_green` after ready-for-review when `review_wait_started_at=2026-03-13T02:30:00Z`, `configuredBotDraftSkipAt=2026-03-13T02:25:00Z`, and no fresh CodeRabbit signal had arrived since the draft skip.
+- 2026-03-17: Status fix for #477 keys the draft-skip re-wait off `review_wait_started_at`/`review_wait_head_sha`, reuses the configured initial grace duration, and surfaces it distinctly as `pause_reason=awaiting_fresh_provider_review_after_draft_skip` with `recent_observation=ready_for_review_reopened_wait`.
+- 2026-03-17: Verification for #477 was `npx tsx --test src/supervisor/supervisor-status-review-bot.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-status-rendering-supervisor.test.ts`; `npm run build` first failed with `sh: 1: tsc: not found`, then `npm ci` restored the local toolchain and both the focused tests and `npm run build` passed.

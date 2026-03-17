@@ -299,6 +299,59 @@ test("buildDetailedStatusModel explains why an active CodeRabbit initial grace w
   }
 });
 
+test("buildDetailedStatusModel explains when CodeRabbit is re-waiting after a draft skip and ready-for-review", () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-03-16T00:00:45.000Z");
+
+  try {
+    const lines = buildDetailedStatusModel({
+      config: createConfig({
+        reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+        configuredBotInitialGraceWaitSeconds: 90,
+      }),
+      activeRecord: createRecord({
+        pr_number: 44,
+        state: "waiting_ci",
+        review_wait_started_at: "2026-03-16T00:00:30.000Z",
+        review_wait_head_sha: "deadbeef",
+        blocked_reason: null,
+        last_error: null,
+      }),
+      latestRecord: null,
+      trackedIssueCount: 1,
+      pr: createPullRequest({
+        currentHeadCiGreenAt: "2026-03-16T00:00:00.000Z",
+        configuredBotCurrentHeadObservedAt: null,
+        configuredBotDraftSkipAt: "2026-03-15T23:59:00.000Z",
+      }),
+      checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [],
+      manualReviewThreads,
+      configuredBotReviewThreads,
+      pendingBotReviewThreads: (innerConfig, innerRecord, innerPr, innerReviewThreads) =>
+        configuredBotReviewThreads(innerConfig, innerReviewThreads).filter(
+          (thread) =>
+            !innerRecord.processed_review_thread_ids.includes(thread.id) &&
+            innerRecord.last_head_sha === innerPr.headRefOid,
+        ),
+      summarizeChecks: (checks) => ({
+        allPassing: checks.every((check) => check.bucket === "pass"),
+        hasPending: checks.some((check) => check.bucket === "pending" || check.bucket === "cancel"),
+        hasFailing: checks.some((check) => check.bucket === "fail"),
+      }),
+      mergeConflictDetected: (pr) => pr.mergeStateStatus === "DIRTY",
+    });
+
+    assert.ok(
+      lines.includes(
+        "configured_bot_initial_grace_wait status=active provider=coderabbit pause_reason=awaiting_fresh_provider_review_after_draft_skip recent_observation=ready_for_review_reopened_wait observed_at=2026-03-16T00:00:30.000Z configured_wait_seconds=90 wait_until=2026-03-16T00:02:00.000Z",
+      ),
+    );
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
 test("buildDetailedStatusSummaryLines shapes optional summaries and artifact paths", () => {
   const config = createConfig({
     localReviewArtifactDir: "/tmp/reviews",
