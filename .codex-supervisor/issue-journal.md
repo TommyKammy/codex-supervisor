@@ -6,44 +6,70 @@
 - Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-487
 - Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-487/.codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 69052193e41942432a77f18538337acf06cfee15
+- Attempt count: 4 (implementation=2, repair=2)
+- Last head SHA: bd2b93474e51ce2ad29fd71f625e1b4b849ce11f
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ8504uSJ|PRRT_kwDORgvdZ8504uSQ
+- Last failure signature: PRRT_kwDORgvdZ8504_WU
 - Repeated failure signature count: 1
-- Updated at: 2026-03-17T14:40:35.556Z
+- Updated at: 2026-03-17T14:50:03.280Z
 
 ## Latest Codex Summary
-Split is already in place and now published cleanly. The recovery coverage remains in `531ef48`, with reconciliation tests in [src/supervisor/supervisor-recovery-reconciliation.test.ts](../src/supervisor/supervisor-recovery-reconciliation.test.ts), failure flows in [src/supervisor/supervisor-recovery-failure-flows.test.ts](../src/supervisor/supervisor-recovery-failure-flows.test.ts), and the original entrypoint reduced to a thin facade at [src/supervisor/supervisor-recovery.test.ts](../src/supervisor/supervisor-recovery.test.ts). This review-repair pass switches those journal links to repo-relative targets and makes the dirty-worktree recovery assertion derive its issue lock path through `Supervisor.lockPath`, matching production naming. Draft PR [#496](https://github.com/TommyKammy/codex-supervisor/pull/496) is ready for the repair commit to be pushed.
+Applied the two valid review fixes in [supervisor-recovery-failure-flows.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-487/src/supervisor/supervisor-recovery-failure-flows.test.ts) and [issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-487/.codex-supervisor/issue-journal.md). The failure-flow test now derives the issue lock path through `Supervisor.lockPath`, and the journal’s live summary links now use repo-relative targets instead of `/home/...` paths.
 
-Focused verification for the repair passed with `npx tsx --test src/supervisor/supervisor-recovery-failure-flows.test.ts` and `npm run build`. The only remaining local artifact is untracked `.codex-supervisor/replay/`, which I left untouched.
+Focused verification passed with `npx tsx --test src/supervisor/supervisor-recovery-failure-flows.test.ts` and `npm run build`. I committed the repair as `bd2b934`, pushed `codex/issue-487`, and resolved both CodeRabbit threads on PR #496. The only remaining local artifact is untracked `.codex-supervisor/replay/`.
 
-Summary: Applied the PR #496 review repair for repo-relative journal links and production-derived issue lock assertions
+Summary: Applied and pushed the PR #496 review repair, then resolved both CodeRabbit threads
 State hint: addressing_review
 Blocked reason: none
 Tests: `npx tsx --test src/supervisor/supervisor-recovery-failure-flows.test.ts`; `npm run build`
-Failure signature: PRRT_kwDORgvdZ8504uSJ|PRRT_kwDORgvdZ8504uSQ
-Next action: Commit the review repair, push `codex/issue-487`, and resolve the two CodeRabbit threads on PR #496
+Failure signature: none
+Next action: Monitor PR #496 for any new review or CI signals
 
 ## Active Failure Context
 - Category: review
-- Summary: 2 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/496#discussion_r2947226697
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/496#discussion_r2947318955
 - Details:
-  - .codex-supervisor/issue-journal.md:17 _⚠️ Potential issue_ | _🟡 Minor_ **Switch these Markdown links back to repo-relative targets.** The `/home/...` links are broken in the repo view and they expose a local workstation path. `../src/...` keeps them clickable without leaking filesystem details. <details> <summary>📝 Suggested edit</summary> ```diff -Split the mixed recovery suite into focused files: reconciliation coverage now lives in [src/supervisor/supervisor-recovery-reconciliation.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-487/src/supervisor/supervisor-recovery-reconciliation.test.ts), failure-recovery flows live in [src/supervisor/supervisor-recovery-failure-flows.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-487/src/supervisor/supervisor-recovery-failure-flows.test.ts), and [src/supervisor/supervisor-recovery.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-487/src/supervisor/supervisor-recovery.test.ts) is now a thin facade. The implementation commit is still `531ef48` (`Split supervisor recovery test coverage`), and I pushed `codex/issue-487` plus opened draft PR `#496`: https://github.com/TommyKammy/codex-supervisor/pull/496. +Split the mixed recovery suite into focused files: reconciliation coverage now lives in [src/supervisor/supervisor-recovery-reconciliation.test.ts](../src/supervisor/supervisor-recovery-reconciliation.test.ts), failure-recovery flows live in [src/supervisor/supervisor-recovery-failure-flows.test.ts](../src/supervisor/supervisor-recovery-failure-flows.test.ts), and [src/supervisor/supervisor-recovery.test.ts](../src/supervisor/supervisor-recovery.test.ts) is now a thin facade. The implementation commit is still `531ef48` (`Split supervisor recovery test coverage`), and I pushed `codex/issue-487` plus opened draft PR `#496`: https://github.com/TommyKammy/codex-supervisor/pull/496. ``` </details> <!-- suggestion_start --> <details> <summary>📝 Committable suggestion</summary> > ‼️ **IMPORTANT** > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements. ```suggestion Split the mixed recovery suite into focused files: reconciliation coverage now lives in [src/supervisor/supervisor-recovery-reconciliation.test.ts](../src/supervisor/supervisor-recovery-reconciliation.test.ts), failure-recovery flows live in [src/supervisor/supervisor-recovery-failure-flows.test.ts](../src/supervisor/supervisor-recovery-failure-flows.test.ts), and [src/supervisor/supervisor-recovery.test.ts](../src/supervisor/supervisor-recovery.test.ts) is now a thin facade. The implementation commit is still `531ef48` (`Split supervisor recovery test coverage`), and I pushed `codex/issue-487` plus opened draft PR `#496`: https://github.com/TommyKammy/codex-supervisor/pull/496. ``` </details> <!-- suggestion_end --> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In @.codex-supervisor/issue-journal.md at line 17, Replace the absolute filesystem links in .codex-supervisor/issue-journal.md with repo-relative paths so they work in the repo viewer and don't leak local paths: update occurrences of /home/tommy/.../src/supervisor/supervisor-recovery-reconciliation.test.ts, /home/tommy/.../src/supervisor/supervisor-recovery-failure-flows.test.ts and /home/tommy/.../src/supervisor/supervisor-recovery.test.ts to relative links such as ../src/supervisor/supervisor-recovery-reconciliation.test.ts, ../src/supervisor/supervisor-recovery-failure-flows.test.ts and ../src/supervisor/supervisor-recovery.test.ts respectively, preserving the Markdown link text and formatting. ``` </details> <!-- fingerprinting:phantom:medusa:grasshopper --> <!-- This is an auto-generated comment by CodeRabbit -->
-  - src/supervisor/supervisor-recovery-failure-flows.test.ts:100 _⚠️ Potential issue_ | _🟡 Minor_ **Derive the lock path from the production helper before asserting absence.** `assert.rejects(fs.access(issueLockPath))` also passes when the path itself is wrong, so hardcoding `issue-${issueNumber}.lock` can turn this into a false positive if the lock naming ever changes. Please build this path via the same helper/config `Supervisor` uses. <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/supervisor/supervisor-recovery-failure-flows.test.ts` around lines 96 - 100, The test is constructing the issue lock path manually which can mask regressions; instead derive the path using the same helper/config that the Supervisor uses (e.g., the Supervisor method that builds lock paths such as getIssueLockPath or the Supervisor.lockPath helper) rather than hardcoding `issue-${issueNumber}.lock`; replace the manual join using `fixture.stateFile` with a call to that Supervisor lock-path helper (passing the same issue identifier) and then assert.rejects(fs.access(derivedLockPath)). ``` </details> <!-- fingerprinting:phantom:medusa:grasshopper --> <!-- This is an auto-generated comment by CodeRabbit -->
+  - .codex-supervisor/issue-journal.md:33 _⚠️ Potential issue_ | _🟡 Minor_ **Reformat this embedded review payload into multiline Markdown blocks.** Line 33 is packed into a single inline block (`<details>` + fenced text), which triggers markdownlint MD038 and is difficult to edit safely. Please expand it into proper multiline Markdown.
+
+    <details>
+    <summary>🧰 Tools</summary>
+
+    <details>
+    <summary>🪛 markdownlint-cli2 (0.21.0)</summary>
+
+    ```text
+    [warning] 33-33: Spaces inside code span elements (MD038, no-space-in-code)
+    ---
+    [warning] 33-33: Spaces inside code span elements (MD038, no-space-in-code)
+    ```
+
+    </details>
+    </details>
+
+    <details>
+    <summary>🤖 Prompt for AI Agents</summary>
+
+    ````text
+    Verify each finding against the current code and only fix it if needed. In @.codex-supervisor/issue-journal.md at line 33, The embedded review payload inside .codex-supervisor/issue-journal.md is currently crammed into a single inline <details> block with a fenced ```diff``` payload, which triggers MD038 and is hard to edit; open that inline block into proper multiline Markdown by replacing the single-line <details>...```diff```...</details> construct with a multiline <details> containing a separate <summary> line, a standalone fenced code block (```diff) with its contents on separate lines, and closing fences and </details> on their own lines, and do the same for the committable suggestion and Prompt for AI Agents sections so each <details>, <summary>, and fenced block (e.g., the suggestion and prompt) are multiline and easy to edit.
+    ````
+
+    </details>
+    <!-- fingerprinting:phantom:poseidon:hawk -->
+    <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: #487 can stay behavior-neutral by moving the recovery reconciliation assertions into their own focused suite and isolating dirty-worktree/unexpected-failure recovery flows in a separate file, with the original test path kept only as a facade import.
 - What changed: split `src/supervisor/supervisor-recovery.test.ts` into `src/supervisor/supervisor-recovery-reconciliation.test.ts` and `src/supervisor/supervisor-recovery-failure-flows.test.ts`, and reduced `src/supervisor/supervisor-recovery.test.ts` to two side-effect imports.
 - Current blocker: none
-- Next exact step: Commit and push the current review repair, then resolve the two CodeRabbit threads on PR #496.
-- Verification gap: none locally after rerunning the focused recovery suites and `npm run build`.
+- Next exact step: Verify the multiline markdown repair in `.codex-supervisor/issue-journal.md`, then commit, push, and resolve the remaining CodeRabbit thread on PR #496.
+- Verification gap: full-file `markdownlint-cli2` still reports longstanding journal-wide style violations, but the targeted `MD038` signal for this copied review payload no longer appears.
 - Files touched: `src/supervisor/supervisor-recovery.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor-recovery-failure-flows.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this cleanup would put reconciliation helper coverage and heavier recovery integration flows back into one file, increasing edit overlap and making failures less localized.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-recovery-failure-flows.test.ts`; `npm run build`
+- Last focused command: `bash -lc 'npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg "MD038|Summary:"'`
 ### Scratchpad
+- 2026-03-17: Reflowed the remaining copied CodeRabbit payload in `.codex-supervisor/issue-journal.md` into multiline `<details>` blocks so markdownlint no longer sees inline code-span spacing around the embedded fenced content.
 - 2026-03-17: Review repair for PR #496 switched the live journal summary links from absolute `/home/...` targets to repository-relative paths and updated the dirty-worktree recovery test to derive its issue lock path via `Supervisor.lockPath`; focused verification was `npx tsx --test src/supervisor/supervisor-recovery-failure-flows.test.ts` and `npm run build`.
 - 2026-03-17: Added `draftSkipAt` to configured-bot summaries and hydrated PRs; focused verification was `npx tsx --test src/github/github-review-signals.test.ts src/github/github-pull-request-hydrator.test.ts`, followed by `npm ci` and `npm run build`.
 - 2026-03-17: Pushed `codex/issue-478` to `origin` and opened draft PR #481 (`https://github.com/TommyKammy/codex-supervisor/pull/481`) after confirming there was no existing PR for the branch.
