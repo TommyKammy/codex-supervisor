@@ -342,6 +342,7 @@ test("buildConfiguredBotReviewSummary treats actionable configured-bot issue com
       submittedAt: null,
     },
     currentHeadObservedAt: null,
+    currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
   });
 });
@@ -379,6 +380,7 @@ test("buildConfiguredBotReviewSummary keeps top-level review strength scoped to 
       submittedAt: "2026-03-13T02:03:04Z",
     },
     currentHeadObservedAt: null,
+    currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
   });
 });
@@ -409,6 +411,7 @@ test("buildConfiguredBotReviewSummary treats configured-bot rate limit issue com
       submittedAt: null,
     },
     currentHeadObservedAt: null,
+    currentHeadCiGreenAt: null,
     rateLimitWarningAt: "2026-03-13T03:15:00Z",
   });
 });
@@ -450,6 +453,7 @@ test("buildConfiguredBotReviewSummary ignores configured-bot rate limit warnings
       submittedAt: null,
     },
     currentHeadObservedAt: null,
+    currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
   });
 });
@@ -500,6 +504,7 @@ test("buildConfiguredBotReviewSummary records the latest configured-bot observat
       submittedAt: null,
     },
     currentHeadObservedAt: "2026-03-13T02:04:00Z",
+    currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
   });
 });
@@ -539,6 +544,7 @@ test("buildConfiguredBotReviewSummary treats summary-only configured-bot reviews
       submittedAt: null,
     },
     currentHeadObservedAt: "2026-03-13T02:02:00Z",
+    currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
   });
 });
@@ -582,6 +588,7 @@ test("buildConfiguredBotReviewSummary extends current-head observation with late
       submittedAt: null,
     },
     currentHeadObservedAt: "2026-03-13T02:04:00Z",
+    currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
   });
 });
@@ -620,6 +627,7 @@ test("buildConfiguredBotReviewSummary extends current-head observation with late
       submittedAt: null,
     },
     currentHeadObservedAt: "2026-03-13T02:04:00Z",
+    currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
   });
 });
@@ -658,6 +666,7 @@ test("buildConfiguredBotReviewSummary keeps weakly anchored CodeRabbit review co
       submittedAt: null,
     },
     currentHeadObservedAt: null,
+    currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
   });
 });
@@ -696,6 +705,7 @@ test("buildConfiguredBotReviewSummary ignores late configured-bot closed-PR foll
       submittedAt: null,
     },
     currentHeadObservedAt: "2026-03-13T02:02:00Z",
+    currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
   });
 });
@@ -734,6 +744,7 @@ test("buildConfiguredBotReviewSummary leaves current-head observation empty when
       submittedAt: null,
     },
     currentHeadObservedAt: null,
+    currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
   });
 });
@@ -774,6 +785,129 @@ test("buildConfiguredBotReviewSummary treats current-head CodeRabbit status cont
       submittedAt: null,
     },
     currentHeadObservedAt: "2026-03-13T02:04:00Z",
+    currentHeadCiGreenAt: null,
+    rateLimitWarningAt: null,
+  });
+});
+
+test("buildConfiguredBotReviewSummary records the current-head CI-green timestamp from required passing checks only", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [],
+    comments: [],
+    issueComments: [],
+    statusContexts: [
+      {
+        creatorLogin: "github-actions",
+        context: "lint",
+        createdAt: "2026-03-13T02:01:00Z",
+        state: "SUCCESS",
+        isRequired: true,
+        commitOid: "head-44",
+      },
+      {
+        creatorLogin: "github-actions",
+        context: "optional-docs",
+        createdAt: "2026-03-13T02:07:00Z",
+        state: "SUCCESS",
+        isRequired: false,
+        commitOid: "head-44",
+      },
+      {
+        creatorLogin: "github-actions",
+        context: "stale-required",
+        createdAt: "2026-03-13T02:09:00Z",
+        state: "SUCCESS",
+        isRequired: true,
+        commitOid: "stale-head",
+      },
+    ],
+    checkRuns: [
+      {
+        name: "build",
+        status: "COMPLETED",
+        conclusion: "SUCCESS",
+        completedAt: "2026-03-13T02:05:00Z",
+        isRequired: true,
+        commitOid: "head-44",
+      },
+      {
+        name: "test",
+        status: "COMPLETED",
+        conclusion: "FAILURE",
+        completedAt: "2026-03-13T02:06:00Z",
+        isRequired: false,
+        commitOid: "head-44",
+      },
+    ],
+    timeline: [],
+  };
+
+  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["coderabbitai[bot]"], "head-44"), {
+    lifecycle: {
+      state: "not_requested",
+      requestedAt: null,
+      arrivedAt: null,
+    },
+    topLevelReview: {
+      strength: null,
+      submittedAt: null,
+    },
+    currentHeadObservedAt: null,
+    currentHeadCiGreenAt: "2026-03-13T02:05:00Z",
+    rateLimitWarningAt: null,
+  });
+});
+
+test("buildConfiguredBotReviewSummary leaves current-head CI-green timestamp empty until all required current-head checks pass", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [],
+    comments: [],
+    issueComments: [],
+    statusContexts: [
+      {
+        creatorLogin: "github-actions",
+        context: "lint",
+        createdAt: "2026-03-13T02:01:00Z",
+        state: "SUCCESS",
+        isRequired: true,
+        commitOid: "head-44",
+      },
+    ],
+    checkRuns: [
+      {
+        name: "build",
+        status: "IN_PROGRESS",
+        conclusion: null,
+        completedAt: null,
+        isRequired: true,
+        commitOid: "head-44",
+      },
+      {
+        name: "stale-build",
+        status: "COMPLETED",
+        conclusion: "SUCCESS",
+        completedAt: "2026-03-13T02:05:00Z",
+        isRequired: true,
+        commitOid: "stale-head",
+      },
+    ],
+    timeline: [],
+  };
+
+  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["coderabbitai[bot]"], "head-44"), {
+    lifecycle: {
+      state: "not_requested",
+      requestedAt: null,
+      arrivedAt: null,
+    },
+    topLevelReview: {
+      strength: null,
+      submittedAt: null,
+    },
+    currentHeadObservedAt: null,
+    currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
   });
 });

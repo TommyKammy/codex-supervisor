@@ -955,3 +955,93 @@ test("GitHubPullRequestHydrator treats current-head CodeRabbit status contexts a
   assert.match(lifecycleQuery, /StatusContext[\s\S]*createdAt[\s\S]*creator\s*\{\s*login\s*\}/);
   assert.equal(observedAt, "2026-03-13T02:04:00Z");
 });
+
+test("GitHubPullRequestHydrator records the current-head CI-green timestamp from required current-head checks", async () => {
+  const config = createConfig({ reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"] });
+  let lifecycleQuery: string | null = null;
+  const hydrator = new GitHubPullRequestHydrator(config, async (args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      lifecycleQuery = args.find((arg) => arg.startsWith("query=")) ?? null;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: {
+                  nodes: [],
+                },
+                reviews: {
+                  nodes: [],
+                },
+                comments: {
+                  nodes: [],
+                },
+                reviewThreads: {
+                  nodes: [],
+                },
+                timelineItems: {
+                  nodes: [],
+                },
+                commits: {
+                  nodes: [
+                    {
+                      commit: {
+                        oid: "head-44",
+                        statusCheckRollup: {
+                          contexts: {
+                            nodes: [
+                              {
+                                __typename: "StatusContext",
+                                context: "lint",
+                                state: "SUCCESS",
+                                createdAt: "2026-03-13T02:01:00Z",
+                                isRequired: true,
+                                creator: {
+                                  login: "github-actions",
+                                },
+                              },
+                              {
+                                __typename: "CheckRun",
+                                name: "build",
+                                status: "COMPLETED",
+                                conclusion: "SUCCESS",
+                                startedAt: "2026-03-13T02:02:00Z",
+                                completedAt: "2026-03-13T02:05:00Z",
+                                isRequired: true,
+                              },
+                              {
+                                __typename: "CheckRun",
+                                name: "docs",
+                                status: "COMPLETED",
+                                conclusion: "SUCCESS",
+                                startedAt: "2026-03-13T02:03:00Z",
+                                completedAt: "2026-03-13T02:06:00Z",
+                                isRequired: false,
+                              },
+                            ],
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const pr = await hydrator.hydrate(createPullRequest());
+  const ciGreenAt = (pr as GitHubPullRequest & { currentHeadCiGreenAt?: string | null }).currentHeadCiGreenAt;
+
+  assert.ok(lifecycleQuery);
+  assert.match(lifecycleQuery, /isRequired\s*\(pullRequestNumber:\s*\$number\)/);
+  assert.match(lifecycleQuery, /CheckRun[\s\S]*completedAt/);
+  assert.equal(ciGreenAt, "2026-03-13T02:05:00Z");
+});

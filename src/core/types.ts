@@ -220,6 +220,7 @@ export interface GitHubPullRequest {
   copilotReviewRequestedAt?: string | null;
   copilotReviewArrivedAt?: string | null;
   configuredBotCurrentHeadObservedAt?: string | null;
+  currentHeadCiGreenAt?: string | null;
   configuredBotRateLimitedAt?: string | null;
   configuredBotTopLevelReviewStrength?: "nitpick_only" | "blocking" | null;
   configuredBotTopLevelReviewSubmittedAt?: string | null;

@@ -30,7 +30,18 @@ export interface CopilotReviewLifecycleFacts {
     creatorLogin: string | null;
     context: string | null;
     description?: string | null;
+    state?: string | null;
     createdAt: string | null;
+    isRequired?: boolean | null;
+    commitOid?: string | null;
+  }>;
+  checkRuns?: Array<{
+    name: string | null;
+    status: string | null;
+    conclusion?: string | null;
+    startedAt?: string | null;
+    completedAt: string | null;
+    isRequired?: boolean | null;
     commitOid?: string | null;
   }>;
   timeline: Array<{
@@ -55,6 +66,7 @@ export interface ConfiguredBotReviewSummary {
   lifecycle: CopilotReviewLifecycle;
   topLevelReview: ConfiguredBotTopLevelReviewSummary;
   currentHeadObservedAt: string | null;
+  currentHeadCiGreenAt: string | null;
   rateLimitWarningAt: string | null;
 }
 
@@ -90,6 +102,30 @@ function isConfiguredBotStatusContextActivity(args: {
   const normalizedContext = (args.context ?? "").trim().toLowerCase();
   const normalizedDescription = (args.description ?? "").trim().toLowerCase();
   return normalizedContext.includes("coderabbit") || normalizedDescription.includes("coderabbit");
+}
+
+function mapCheckBucket(args: {
+  state?: string | null;
+  conclusion?: string | null;
+}): "pass" | "fail" | "pending" | "skipping" | "cancel" | string {
+  const outcome = (args.conclusion ?? args.state ?? "").toLowerCase();
+  if (["success", "successful", "pass", "passed"].includes(outcome)) {
+    return "pass";
+  }
+  if (["pending", "queued", "in_progress", "expected", "waiting", "requested"].includes(outcome)) {
+    return "pending";
+  }
+  if (["failure", "failed", "error", "timed_out", "action_required", "startup_failure"].includes(outcome)) {
+    return "fail";
+  }
+  if (["cancelled", "canceled", "cancel"].includes(outcome)) {
+    return "cancel";
+  }
+  if (["neutral", "skipped", "stale", "skipping"].includes(outcome)) {
+    return "skipping";
+  }
+
+  return outcome || "unknown";
 }
 
 function latestTimestamp(values: Array<string | null | undefined>): string | null {
@@ -357,6 +393,55 @@ function inferConfiguredBotCurrentHeadObservedAt(
   ]);
 }
 
+function inferCurrentHeadCiGreenAt(
+  facts: CopilotReviewLifecycleFacts,
+  currentHeadOid: string | null | undefined,
+): string | null {
+  const normalizedCurrentHeadOid = currentHeadOid?.trim();
+  if (!normalizedCurrentHeadOid) {
+    return null;
+  }
+
+  const requiredChecks = [
+    ...(facts.statusContexts ?? [])
+      .filter((statusContext) => statusContext.isRequired && statusContext.commitOid === normalizedCurrentHeadOid)
+      .map((statusContext) => ({
+        bucket: mapCheckBucket({ state: statusContext.state }),
+        completedAt: statusContext.createdAt,
+      })),
+    ...(facts.checkRuns ?? [])
+      .filter((checkRun) => checkRun.isRequired && checkRun.commitOid === normalizedCurrentHeadOid)
+      .map((checkRun) => ({
+        bucket: mapCheckBucket({ state: checkRun.status, conclusion: checkRun.conclusion }),
+        completedAt: checkRun.completedAt ?? checkRun.startedAt ?? null,
+      })),
+  ];
+
+  if (requiredChecks.length === 0) {
+    return null;
+  }
+
+  let ciGreenAt: string | null = null;
+  let ciGreenAtMs = 0;
+  for (const check of requiredChecks) {
+    if (check.bucket !== "pass" && check.bucket !== "skipping") {
+      return null;
+    }
+
+    const completedAtMs = parseTimestamp(check.completedAt);
+    if (!check.completedAt || completedAtMs === 0) {
+      return null;
+    }
+
+    if (!ciGreenAt || completedAtMs >= ciGreenAtMs) {
+      ciGreenAt = check.completedAt;
+      ciGreenAtMs = completedAtMs;
+    }
+  }
+
+  return ciGreenAt;
+}
+
 function inferConfiguredBotRateLimitWarningAt(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
@@ -397,6 +482,7 @@ export function buildConfiguredBotReviewSummary(
     lifecycle: inferCopilotReviewLifecycle(facts, reviewBotLogins),
     topLevelReview: inferConfiguredBotTopLevelReviewSummary(facts, reviewBotLogins),
     currentHeadObservedAt: inferConfiguredBotCurrentHeadObservedAt(facts, reviewBotLogins, currentHeadOid),
+    currentHeadCiGreenAt: inferCurrentHeadCiGreenAt(facts, currentHeadOid),
     rateLimitWarningAt: inferConfiguredBotRateLimitWarningAt(facts, reviewBotLogins),
   };
 }
