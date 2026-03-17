@@ -1,51 +1,37 @@
-# Issue #487: Test cleanup: split supervisor recovery coverage by reconciliation and failure flows
+# Issue #485: Test cleanup: split supervisor diagnostics coverage by status and explanation boundaries
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/487
-- Branch: codex/issue-487
-- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-487
-- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-487/.codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 4 (implementation=2, repair=2)
-- Last head SHA: bd2b93474e51ce2ad29fd71f625e1b4b849ce11f
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/485
+- Branch: codex/issue-485
+- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-485
+- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-485/.codex-supervisor/issue-journal.md
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 13ea09dc5bc68ba9dedf4036da6bef2856cb9520
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ8504_WU
-- Repeated failure signature count: 1
-- Updated at: 2026-03-17T14:50:03.280Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-18T00:04:40+09:00
 
 ## Latest Codex Summary
-Applied the two valid review fixes in [supervisor-recovery-failure-flows.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-487/src/supervisor/supervisor-recovery-failure-flows.test.ts) and [issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-487/.codex-supervisor/issue-journal.md). The failure-flow test now derives the issue lock path through `Supervisor.lockPath`, and the journal’s live summary links now use repo-relative targets instead of `/home/...` paths.
-
-Focused verification passed with `npx tsx --test src/supervisor/supervisor-recovery-failure-flows.test.ts` and `npm run build`. I committed the repair as `bd2b934`, pushed `codex/issue-487`, and resolved both CodeRabbit threads on PR #496. The only remaining local artifact is untracked `.codex-supervisor/replay/`.
-
-Summary: Applied and pushed the PR #496 review repair, then resolved both CodeRabbit threads
-State hint: addressing_review
-Blocked reason: none
-Tests: `npx tsx --test src/supervisor/supervisor-recovery-failure-flows.test.ts`; `npm run build`
-Failure signature: none
-Next action: Monitor PR #496 for any new review or CI signals
+- Split `src/supervisor/supervisor-diagnostics.test.ts` into focused status-selection, explain, handoff-summary, and guardrail-reporting suites while keeping the original file as a side-effect import facade. Focused diagnostics/status-reporting tests and `npm run build` pass after restoring missing dev dependencies with `npm ci`.
 
 ## Active Failure Context
-- Category: review
-- Summary: No unresolved automated review thread(s) remain after resolving the final CodeRabbit payload-formatting comment.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/496#discussion_r2947318955
-- Details:
-  - Resolved review thread `PRRT_kwDORgvdZ8504_WU` after reflowing the copied payload in `.codex-supervisor/issue-journal.md`, pushing `9d36cc5`, and calling `resolveReviewThread` via `gh api graphql`.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: #487 can stay behavior-neutral by moving the recovery reconciliation assertions into their own focused suite and isolating dirty-worktree/unexpected-failure recovery flows in a separate file, with the original test path kept only as a facade import.
-- What changed: split `src/supervisor/supervisor-recovery.test.ts` into `src/supervisor/supervisor-recovery-reconciliation.test.ts` and `src/supervisor/supervisor-recovery-failure-flows.test.ts`, reduced `src/supervisor/supervisor-recovery.test.ts` to two side-effect imports, and reflowed the remaining copied CodeRabbit payload in `.codex-supervisor/issue-journal.md` into multiline markdown blocks.
+- Hypothesis: #485 can stay behavior-neutral by extracting supervisor diagnostics coverage into four files that match the existing ownership boundaries: doctor/status selection, explain, handoff summary, and guardrail provenance, with the legacy path preserved as a facade import.
+- What changed: added `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-diagnostics-explain.test.ts`, `src/supervisor/supervisor-diagnostics-handoff-summary.test.ts`, and `src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts`; reduced `src/supervisor/supervisor-diagnostics.test.ts` to side-effect imports only; restored the local toolchain with `npm ci` after `npm run build` initially failed with `sh: 1: tsc: not found`.
 - Current blocker: none
-- Next exact step: Monitor PR #496 for any follow-up review or CI signals now that the final configured-bot thread is resolved.
-- Verification gap: full-file `markdownlint-cli2` still reports longstanding journal-wide style violations, but the targeted `MD038` signal for this copied review payload is gone and the review thread is resolved.
-- Files touched: `src/supervisor/supervisor-recovery.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor-recovery-failure-flows.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this cleanup would put reconciliation helper coverage and heavier recovery integration flows back into one file, increasing edit overlap and making failures less localized.
-- Last focused command: `gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { id isResolved } } }' -F threadId=PRRT_kwDORgvdZ8504_WU`
+- Next exact step: Commit the split on `codex/issue-485`, then open or update the draft PR if needed.
+- Verification gap: none for the focused diagnostics/status-reporting suites or `npm run build`.
+- Files touched: `src/supervisor/supervisor-diagnostics.test.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-diagnostics-explain.test.ts`, `src/supervisor/supervisor-diagnostics-handoff-summary.test.ts`, `src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this cleanup would collapse unrelated diagnostics assertions back into a single 1k+ line file, increasing churn and making focused failures harder to localize.
+- Last focused command: `npm run build`
 ### Scratchpad
-- 2026-03-17: Pushed `9d36cc5` (`Reflow copied review payload in journal`) to `origin/codex/issue-487` and resolved CodeRabbit thread `PRRT_kwDORgvdZ8504_WU` with `gh api graphql`.
-- 2026-03-17: Reflowed the remaining copied CodeRabbit payload in `.codex-supervisor/issue-journal.md` into multiline `<details>` blocks so markdownlint no longer sees inline code-span spacing around the embedded fenced content.
-- 2026-03-17: Review repair for PR #496 switched the live journal summary links from absolute `/home/...` targets to repository-relative paths and updated the dirty-worktree recovery test to derive its issue lock path via `Supervisor.lockPath`; focused verification was `npx tsx --test src/supervisor/supervisor-recovery-failure-flows.test.ts` and `npm run build`.
+- 2026-03-18: Focused reproducer for #485 was the existing monolithic `src/supervisor/supervisor-diagnostics.test.ts` passing as a single 1113-line file; cleanup kept assertions behavior-neutral by moving the same coverage into four targeted suites plus a 4-line facade.
+- 2026-03-18: Verification for #485 was `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-diagnostics-handoff-summary.test.ts src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts`, `npx tsx --test src/supervisor/supervisor-diagnostics.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-status-rendering-supervisor.test.ts src/supervisor/supervisor-status-review-bot.test.ts`, `npm ci`, and `npm run build`.
 - 2026-03-17: Added `draftSkipAt` to configured-bot summaries and hydrated PRs; focused verification was `npx tsx --test src/github/github-review-signals.test.ts src/github/github-pull-request-hydrator.test.ts`, followed by `npm ci` and `npm run build`.
 - 2026-03-17: Pushed `codex/issue-478` to `origin` and opened draft PR #481 (`https://github.com/TommyKammy/codex-supervisor/pull/481`) after confirming there was no existing PR for the branch.
 - 2026-03-17: Review repair for PR #481 adds the same per-bot removal guard to `draftSkipAt` that rate-limit warnings already used, plus a regression test for stale draft-skip comments after request removal.
