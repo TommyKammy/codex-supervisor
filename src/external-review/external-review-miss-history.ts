@@ -5,21 +5,8 @@ import {
   loadCommittedExternalReviewGuardrails,
 } from "../committed-guardrails";
 import { parseJson } from "../core/utils";
-import { legacyReusableMissPatterns } from "./external-review-miss-patterns";
-import { type ExternalReviewMissFinding } from "./external-review-classifier";
-import {
-  type ExternalReviewMissPattern,
-  type ExternalReviewRegressionCandidate,
-} from "./external-review-miss-artifact-types";
-
-interface ExternalReviewMissArtifactLike {
-  branch?: string;
-  headSha?: string;
-  generatedAt?: string;
-  findings?: ExternalReviewMissFinding[];
-  reusableMissPatterns?: ExternalReviewMissPattern[];
-  regressionTestCandidates?: ExternalReviewRegressionCandidate[];
-}
+import { type ExternalReviewMissPattern } from "./external-review-miss-artifact-types";
+import { type ExternalReviewMissArtifactLike, readExternalReviewMissArtifactPatterns } from "./external-review-miss-artifact";
 
 function mergeRelevantPatterns(
   deduped: Map<string, ExternalReviewMissPattern>,
@@ -88,11 +75,7 @@ export async function loadRelevantExternalReviewMissPatterns(args: {
       continue;
     }
 
-    const reusableMissPatterns =
-      Array.isArray(artifact.reusableMissPatterns) && artifact.reusableMissPatterns.length > 0
-        ? artifact.reusableMissPatterns
-        : legacyReusableMissPatterns(artifact, artifactPath);
-    mergeRelevantPatterns(deduped, reusableMissPatterns, changedFileSet);
+    mergeRelevantPatterns(deduped, readExternalReviewMissArtifactPatterns(artifact, artifactPath), changedFileSet);
   }
 
   return [...deduped.values()]

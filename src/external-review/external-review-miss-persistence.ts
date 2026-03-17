@@ -1,9 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { ensureDir, nowIso } from "../core/utils";
+import { ensureDir } from "../core/utils";
 import {
   classifyExternalReviewFinding,
-  type ExternalReviewMissFinding,
   type LocalReviewArtifactLike,
 } from "./external-review-classifier";
 import {
@@ -13,15 +12,12 @@ import {
 import { collectExternalReviewSignals } from "./external-review-signal-collection";
 import { type ExternalReviewSignalEnvelope } from "./external-review-signals";
 import {
-  type ExternalReviewMissArtifact,
-  type ExternalReviewDurableGuardrailCandidate,
   type ExternalReviewMissContext,
-  type ExternalReviewMissPattern,
-  type ExternalReviewRegressionCandidate,
 } from "./external-review-miss-artifact-types";
-import { toDurableGuardrailCandidates } from "./external-review-durable-guardrail-candidates";
-import { toReusableMissPattern } from "./external-review-miss-patterns";
-import { toRegressionTestCandidate } from "./external-review-regression-candidates";
+import {
+  buildExternalReviewMissArtifact,
+  createExternalReviewMissContext,
+} from "./external-review-miss-artifact";
 import { loadLocalReviewArtifact } from "./external-review-local-artifact-io";
 import { type ReviewThread } from "../core/types";
 
@@ -69,65 +65,10 @@ export async function writeExternalReviewMissArtifact(args: {
 
   await fs.writeFile(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
 
-  return {
+  return createExternalReviewMissContext({
     artifactPath,
-    missedFindings: findings.filter((finding) => finding.classification === "missed_by_local_review"),
-    regressionTestCandidates: artifact.regressionTestCandidates,
-    matchedCount: artifact.counts.matched,
-    nearMatchCount: artifact.counts.nearMatch,
-    missedCount: artifact.counts.missedByLocalReview,
-  };
+    artifact,
+  });
 }
 
-function buildExternalReviewMissArtifact(args: {
-  issueNumber: number;
-  prNumber: number;
-  branch: string;
-  headSha: string;
-  localReviewSummaryPath: string | null;
-  localReviewFindingsPath: string | null;
-  findings: ExternalReviewMissFinding[];
-  artifactPath: string;
-}): ExternalReviewMissArtifact {
-  const generatedAt = nowIso();
-
-  const reusableMissPatterns: ExternalReviewMissPattern[] = args.findings
-    .filter((finding) => finding.classification === "missed_by_local_review" && typeof finding.file === "string" && finding.file.trim() !== "")
-    .map((finding) => toReusableMissPattern(finding, args.artifactPath, args.headSha, generatedAt));
-  const durableGuardrailCandidates: ExternalReviewDurableGuardrailCandidate[] = args.findings.flatMap((finding) =>
-    toDurableGuardrailCandidates({
-      issueNumber: args.issueNumber,
-      prNumber: args.prNumber,
-      branch: args.branch,
-      headSha: args.headSha,
-      sourceArtifactPath: args.artifactPath,
-      localReviewSummaryPath: args.localReviewSummaryPath,
-      localReviewFindingsPath: args.localReviewFindingsPath,
-      finding,
-    }),
-  );
-  const regressionTestCandidates = args.findings
-    .map((finding) => toRegressionTestCandidate(finding))
-    .filter((candidate): candidate is ExternalReviewRegressionCandidate => candidate !== null);
-
-  return {
-    issueNumber: args.issueNumber,
-    prNumber: args.prNumber,
-    branch: args.branch,
-    headSha: args.headSha,
-    generatedAt,
-    localReviewSummaryPath: args.localReviewSummaryPath,
-    localReviewFindingsPath: args.localReviewFindingsPath,
-    findings: args.findings,
-    reusableMissPatterns,
-    durableGuardrailCandidates,
-    regressionTestCandidates,
-    counts: {
-      matched: args.findings.filter((finding) => finding.classification === "matched").length,
-      nearMatch: args.findings.filter((finding) => finding.classification === "near_match").length,
-      missedByLocalReview: args.findings.filter((finding) => finding.classification === "missed_by_local_review").length,
-    },
-  };
-}
-
-export type { LocalReviewArtifactLike, ExternalReviewMissPattern };
+export type { LocalReviewArtifactLike };
