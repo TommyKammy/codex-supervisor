@@ -5,25 +5,25 @@
 - Branch: codex/issue-485
 - Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-485
 - Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-485/.codex-supervisor/issue-journal.md
-- Current phase: draft_pr
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: e64c9bdcddd2d653c7f423899768359c1f2f7a65
+- Current phase: addressing_review
+- Attempt count: 4 (implementation=2, repair=2)
+- Last head SHA: 5ce1e8181e8992a0c408f8daff2b6e95bc257056
 - Blocked reason: none
 - Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-18T01:15:00+09:00
+- Repeated failure signature count: 1
+- Updated at: 2026-03-17T15:23:15Z
 
 ## Latest Codex Summary
-Split the diagnostics monolith into four focused suites and reduced the original entrypoint to a thin facade at [src/supervisor/supervisor-diagnostics.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-485/src/supervisor/supervisor-diagnostics.test.ts). The new coverage boundaries are [src/supervisor/supervisor-diagnostics-status-selection.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-485/src/supervisor/supervisor-diagnostics-status-selection.test.ts), [src/supervisor/supervisor-diagnostics-explain.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-485/src/supervisor/supervisor-diagnostics-explain.test.ts), [src/supervisor/supervisor-diagnostics-handoff-summary.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-485/src/supervisor/supervisor-diagnostics-handoff-summary.test.ts), and [src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-485/src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts). I also updated the handoff notes in [issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-485/.codex-supervisor/issue-journal.md).
+Prepared a review-repair follow-up for PR [#497](https://github.com/TommyKammy/codex-supervisor/pull/497): the guardrail provenance tests now commit shared-memory fixtures before capturing `headSha`, so the mocked PR head truly represents committed durable guidance. The journal handoff summary still avoids absolute workspace markdown links, which addresses the repo-link review comment once this turn is committed.
 
-Focused diagnostics/status-reporting verification passed, and `npm run build` passed after restoring missing dev dependencies with `npm ci`. Checkpoint commit is `e64c9bd` (`Split supervisor diagnostics coverage`). I pushed `codex/issue-485` to `origin` and opened draft PR #497: https://github.com/TommyKammy/codex-supervisor/pull/497. The only remaining workspace noise is unrelated untracked state under `.codex-supervisor/replay/`.
+Focused verification passed after the repair: `npx tsx --test src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts` and `npm run build`. An intermediate failed test run caught an ordering mistake where I tried to stage `external-review-guardrails.json` before writing it; that was corrected before the passing rerun.
 
-Summary: Split supervisor diagnostics coverage into focused status-selection, explain, handoff-summary, and guardrail-reporting suites; kept the legacy diagnostics file as a facade import and committed the cleanup as `e64c9bd`.
-State hint: draft_pr
+Summary: Repaired the PR #497 review findings locally by committing shared-memory guardrail fixtures before `headSha` capture and preserving repo-safe journal summary links.
+State hint: addressing_review
 Blocked reason: none
-Tests: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-diagnostics-handoff-summary.test.ts src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts`; `npx tsx --test src/supervisor/supervisor-diagnostics.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-status-rendering-supervisor.test.ts src/supervisor/supervisor-status-review-bot.test.ts`; `npm ci`; `npm run build`
+Tests: `npx tsx --test src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts`; `npm run build`
 Failure signature: none
-Next action: Monitor draft PR #497, let CI/reporting settle, and address any review or verification failures if they appear.
+Next action: Commit and push this review repair to `codex/issue-485`, then re-check PR #497 and clear the addressed review threads.
 
 ## Active Failure Context
 - None recorded.
@@ -31,15 +31,15 @@ Next action: Monitor draft PR #497, let CI/reporting settle, and address any rev
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: #485 can stay behavior-neutral by extracting supervisor diagnostics coverage into four files that match the existing ownership boundaries: doctor/status selection, explain, handoff summary, and guardrail provenance, with the legacy path preserved as a facade import.
-- What changed: added `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-diagnostics-explain.test.ts`, `src/supervisor/supervisor-diagnostics-handoff-summary.test.ts`, and `src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts`; reduced `src/supervisor/supervisor-diagnostics.test.ts` to side-effect imports only; restored the local toolchain with `npm ci` after `npm run build` initially failed with `sh: 1: tsc: not found`.
+- What changed: kept the diagnostics split intact and repaired `src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts` so both provenance tests commit `docs/shared-memory/*.json` before capturing `headSha`; retained the repo-safe journal summary text instead of reintroducing absolute workspace markdown links.
 - Current blocker: none
-- Next exact step: Watch draft PR #497 for CI and review signals; if merge state stays dirty or checks fail, reproduce locally and repair on `codex/issue-485`.
-- Verification gap: none for the focused diagnostics/status-reporting suites or `npm run build`.
+- Next exact step: Push the review-repair commit to `origin/codex/issue-485`, then re-check PR #497 for fresh CI/review signals and resolve the addressed threads if the remote matches.
+- Verification gap: none for the touched guardrail provenance suite or `npm run build`.
 - Files touched: `src/supervisor/supervisor-diagnostics.test.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-diagnostics-explain.test.ts`, `src/supervisor/supervisor-diagnostics-handoff-summary.test.ts`, `src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this cleanup would collapse unrelated diagnostics assertions back into a single 1k+ line file, increasing churn and making focused failures harder to localize.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-485 --title "test: split supervisor diagnostics coverage" ...`
+- Last focused command: `npm run build`
 ### Scratchpad
-- 2026-03-18: Pushed `codex/issue-485` to `origin` and opened draft PR #497 (`https://github.com/TommyKammy/codex-supervisor/pull/497`); initial PR merge state was `UNSTABLE`.
+- 2026-03-17: Review repair for PR #497 updates the guardrail provenance fixtures so committed shared-memory files are added before `headSha` is captured; focused verification was `npx tsx --test src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts` and `npm run build`.
 - 2026-03-17: Added `draftSkipAt` to configured-bot summaries and hydrated PRs; focused verification was `npx tsx --test src/github/github-review-signals.test.ts src/github/github-pull-request-hydrator.test.ts`, followed by `npm ci` and `npm run build`.
 - 2026-03-17: Pushed `codex/issue-478` to `origin` and opened draft PR #481 (`https://github.com/TommyKammy/codex-supervisor/pull/481`) after confirming there was no existing PR for the branch.
 - 2026-03-17: Review repair for PR #481 adds the same per-bot removal guard to `draftSkipAt` that rate-limit warnings already used, plus a regression test for stale draft-skip comments after request removal.

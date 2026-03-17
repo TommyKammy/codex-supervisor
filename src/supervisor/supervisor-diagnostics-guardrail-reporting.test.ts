@@ -24,9 +24,6 @@ test("status shows durable guardrail provenance for active committed and runtime
     "export function canUpdateRecord(): boolean {\n  return true;\n}\n",
     "utf8",
   );
-  git(["add", "src/auth.ts"], fixture.repoPath);
-  git(["commit", "-m", "Add auth change"], fixture.repoPath);
-  const headSha = git(["rev-parse", "HEAD"], fixture.repoPath);
 
   await fs.mkdir(path.join(fixture.repoPath, "docs", "shared-memory"), { recursive: true });
   await fs.writeFile(
@@ -66,6 +63,17 @@ test("status shows durable guardrail provenance for active committed and runtime
     }, null, 2)}\n`,
     "utf8",
   );
+  git(
+    [
+      "add",
+      "src/auth.ts",
+      "docs/shared-memory/verifier-guardrails.json",
+      "docs/shared-memory/external-review-guardrails.json",
+    ],
+    fixture.repoPath,
+  );
+  git(["commit", "-m", "Add auth change and shared-memory guardrails"], fixture.repoPath);
+  const headSha = git(["rev-parse", "HEAD"], fixture.repoPath);
 
   const artifactDir = path.join(fixture.config.localReviewArtifactDir, "owner-repo", `issue-${issueNumber}`);
   await fs.mkdir(artifactDir, { recursive: true });
@@ -160,9 +168,6 @@ test("status guardrail provenance reflects the merged active external-review win
     "export function canUpdateRecord(): boolean {\n  return true;\n}\n",
     "utf8",
   );
-  git(["add", "src/auth.ts"], fixture.repoPath);
-  git(["commit", "-m", "Add auth change"], fixture.repoPath);
-  const headSha = git(["rev-parse", "HEAD"], fixture.repoPath);
 
   await fs.mkdir(path.join(fixture.repoPath, "docs", "shared-memory"), { recursive: true });
   await fs.writeFile(
@@ -185,6 +190,12 @@ test("status guardrail provenance reflects the merged active external-review win
     }, null, 2)}\n`,
     "utf8",
   );
+  git(
+    ["add", "src/auth.ts", "docs/shared-memory/external-review-guardrails.json"],
+    fixture.repoPath,
+  );
+  git(["commit", "-m", "Add auth change and shared-memory guardrails"], fixture.repoPath);
+  const headSha = git(["rev-parse", "HEAD"], fixture.repoPath);
 
   const artifactDir = path.join(fixture.config.localReviewArtifactDir, "owner-repo", `issue-${issueNumber}`);
   await fs.mkdir(artifactDir, { recursive: true });
