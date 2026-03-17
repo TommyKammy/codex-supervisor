@@ -1,38 +1,51 @@
-# Issue #484: Test cleanup: split pull-request-state provider-wait coverage by policy boundary
+# Issue #487: Test cleanup: split supervisor recovery coverage by reconciliation and failure flows
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/484
-- Branch: codex/issue-484
-- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-484
-- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-484/.codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: b3d5315529f69d0475f0c5c2096f2b92491bc821
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/487
+- Branch: codex/issue-487
+- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-487
+- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-487/.codex-supervisor/issue-journal.md
+- Current phase: addressing_review
+- Attempt count: 4 (implementation=2, repair=2)
+- Last head SHA: bd2b93474e51ce2ad29fd71f625e1b4b849ce11f
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-17T13:58:22Z
+- Last failure signature: PRRT_kwDORgvdZ8504_WU
+- Repeated failure signature count: 1
+- Updated at: 2026-03-17T14:50:03.280Z
 
 ## Latest Codex Summary
-- Split the combined provider-wait coverage into `src/pull-request-state-provider-wait-policy.test.ts` and `src/pull-request-state-coderabbit-settled-waits.test.ts`, preserving the existing 28 assertions while making the CodeRabbit settled/draft-skip boundary explicit.
+Applied the two valid review fixes in [supervisor-recovery-failure-flows.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-487/src/supervisor/supervisor-recovery-failure-flows.test.ts) and [issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-487/.codex-supervisor/issue-journal.md). The failure-flow test now derives the issue lock path through `Supervisor.lockPath`, and the journal’s live summary links now use repo-relative targets instead of `/home/...` paths.
+
+Focused verification passed with `npx tsx --test src/supervisor/supervisor-recovery-failure-flows.test.ts` and `npm run build`. I committed the repair as `bd2b934`, pushed `codex/issue-487`, and resolved both CodeRabbit threads on PR #496. The only remaining local artifact is untracked `.codex-supervisor/replay/`.
+
+Summary: Applied and pushed the PR #496 review repair, then resolved both CodeRabbit threads
+State hint: addressing_review
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/supervisor-recovery-failure-flows.test.ts`; `npm run build`
+Failure signature: none
+Next action: Monitor PR #496 for any new review or CI signals
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: No unresolved automated review thread(s) remain after resolving the final CodeRabbit payload-formatting comment.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/496#discussion_r2947318955
+- Details:
+  - Resolved review thread `PRRT_kwDORgvdZ8504_WU` after reflowing the copied payload in `.codex-supervisor/issue-journal.md`, pushing `9d36cc5`, and calling `resolveReviewThread` via `gh api graphql`.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the cleanup can stay behavior-neutral by moving the generic provider/Copilot wait policy and timeout assertions out of the combined file, leaving CodeRabbit settled-wait and draft-skip behavior in a dedicated suite.
-- What changed: deleted `src/pull-request-state-provider-waits.test.ts`, moved provider-neutral wait/timeout coverage into `src/pull-request-state-provider-wait-policy.test.ts`, and moved CodeRabbit current-head, initial-grace, settled-wait, and draft-skip re-wait coverage into `src/pull-request-state-coderabbit-settled-waits.test.ts`.
+- Hypothesis: #487 can stay behavior-neutral by moving the recovery reconciliation assertions into their own focused suite and isolating dirty-worktree/unexpected-failure recovery flows in a separate file, with the original test path kept only as a facade import.
+- What changed: split `src/supervisor/supervisor-recovery.test.ts` into `src/supervisor/supervisor-recovery-reconciliation.test.ts` and `src/supervisor/supervisor-recovery-failure-flows.test.ts`, reduced `src/supervisor/supervisor-recovery.test.ts` to two side-effect imports, and reflowed the remaining copied CodeRabbit payload in `.codex-supervisor/issue-journal.md` into multiline markdown blocks.
 - Current blocker: none
-- Next exact step: Monitor draft PR #495 (`https://github.com/TommyKammy/codex-supervisor/pull/495`) for CI and review feedback.
-- Verification gap: none locally after restoring `node_modules` with `npm ci`.
-- Files touched: `src/pull-request-state-provider-wait-policy.test.ts`, `src/pull-request-state-coderabbit-settled-waits.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this cleanup would re-concentrate unrelated provider policy changes into one large test file, bringing back unnecessary churn around CodeRabbit-only edits.
-- Last focused command: `npx tsx --test src/pull-request-state-provider-wait-policy.test.ts src/pull-request-state-coderabbit-settled-waits.test.ts`; `npm ci`; `npm run build`
+- Next exact step: Monitor PR #496 for any follow-up review or CI signals now that the final configured-bot thread is resolved.
+- Verification gap: full-file `markdownlint-cli2` still reports longstanding journal-wide style violations, but the targeted `MD038` signal for this copied review payload is gone and the review thread is resolved.
+- Files touched: `src/supervisor/supervisor-recovery.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor-recovery-failure-flows.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this cleanup would put reconciliation helper coverage and heavier recovery integration flows back into one file, increasing edit overlap and making failures less localized.
+- Last focused command: `gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { id isResolved } } }' -F threadId=PRRT_kwDORgvdZ8504_WU`
 ### Scratchpad
-- 2026-03-17: Committed the split as `b3d5315` (`Split provider wait policy tests`), pushed `codex/issue-484`, and opened draft PR #495 (`https://github.com/TommyKammy/codex-supervisor/pull/495`).
-- 2026-03-17: Focused baseline for #484 was `npx tsx --test src/pull-request-state-provider-waits.test.ts`, which passed with 28 assertions before the file split.
-- 2026-03-17: Split provider wait coverage into `src/pull-request-state-provider-wait-policy.test.ts` and `src/pull-request-state-coderabbit-settled-waits.test.ts`; focused verification was `npx tsx --test src/pull-request-state-provider-wait-policy.test.ts src/pull-request-state-coderabbit-settled-waits.test.ts`, then `npm ci` and `npm run build`.
+- 2026-03-17: Pushed `9d36cc5` (`Reflow copied review payload in journal`) to `origin/codex/issue-487` and resolved CodeRabbit thread `PRRT_kwDORgvdZ8504_WU` with `gh api graphql`.
+- 2026-03-17: Reflowed the remaining copied CodeRabbit payload in `.codex-supervisor/issue-journal.md` into multiline `<details>` blocks so markdownlint no longer sees inline code-span spacing around the embedded fenced content.
+- 2026-03-17: Review repair for PR #496 switched the live journal summary links from absolute `/home/...` targets to repository-relative paths and updated the dirty-worktree recovery test to derive its issue lock path via `Supervisor.lockPath`; focused verification was `npx tsx --test src/supervisor/supervisor-recovery-failure-flows.test.ts` and `npm run build`.
 - 2026-03-17: Added `draftSkipAt` to configured-bot summaries and hydrated PRs; focused verification was `npx tsx --test src/github/github-review-signals.test.ts src/github/github-pull-request-hydrator.test.ts`, followed by `npm ci` and `npm run build`.
 - 2026-03-17: Pushed `codex/issue-478` to `origin` and opened draft PR #481 (`https://github.com/TommyKammy/codex-supervisor/pull/481`) after confirming there was no existing PR for the branch.
 - 2026-03-17: Review repair for PR #481 adds the same per-bot removal guard to `draftSkipAt` that rate-limit warnings already used, plus a regression test for stale draft-skip comments after request removal.
