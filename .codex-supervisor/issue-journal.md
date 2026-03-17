@@ -1,36 +1,38 @@
-# Issue #484: Test cleanup: split pull-request-state provider-wait coverage by policy boundary
+# Issue #487: Test cleanup: split supervisor recovery coverage by reconciliation and failure flows
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/484
-- Branch: codex/issue-484
-- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-484
-- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-484/.codex-supervisor/issue-journal.md
-- Current phase: stabilizing
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/487
+- Branch: codex/issue-487
+- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-487
+- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-487/.codex-supervisor/issue-journal.md
+- Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: b3d5315529f69d0475f0c5c2096f2b92491bc821
+- Last head SHA: 95a13947e1fe7973c2a3314d87bf708909d4a7be
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-17T13:58:22Z
+- Updated at: 2026-03-17T14:13:46.856Z
 
 ## Latest Codex Summary
-- Split the combined provider-wait coverage into `src/pull-request-state-provider-wait-policy.test.ts` and `src/pull-request-state-coderabbit-settled-waits.test.ts`, preserving the existing 28 assertions while making the CodeRabbit settled/draft-skip boundary explicit.
+- Split the mixed supervisor recovery test coverage into dedicated reconciliation and failure-flow suites, leaving `src/supervisor/supervisor-recovery.test.ts` as a thin facade that imports both focused files. Focused recovery tests and `npm run build` pass after restoring the local toolchain with `npm ci`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the cleanup can stay behavior-neutral by moving the generic provider/Copilot wait policy and timeout assertions out of the combined file, leaving CodeRabbit settled-wait and draft-skip behavior in a dedicated suite.
-- What changed: deleted `src/pull-request-state-provider-waits.test.ts`, moved provider-neutral wait/timeout coverage into `src/pull-request-state-provider-wait-policy.test.ts`, and moved CodeRabbit current-head, initial-grace, settled-wait, and draft-skip re-wait coverage into `src/pull-request-state-coderabbit-settled-waits.test.ts`.
+- Hypothesis: #487 can stay behavior-neutral by moving the recovery reconciliation assertions into their own focused suite and isolating dirty-worktree/unexpected-failure recovery flows in a separate file, with the original test path kept only as a facade import.
+- What changed: split `src/supervisor/supervisor-recovery.test.ts` into `src/supervisor/supervisor-recovery-reconciliation.test.ts` and `src/supervisor/supervisor-recovery-failure-flows.test.ts`, and reduced `src/supervisor/supervisor-recovery.test.ts` to two side-effect imports.
 - Current blocker: none
-- Next exact step: Monitor draft PR #495 (`https://github.com/TommyKammy/codex-supervisor/pull/495`) for CI and review feedback.
-- Verification gap: none locally after restoring `node_modules` with `npm ci`.
-- Files touched: `src/pull-request-state-provider-wait-policy.test.ts`, `src/pull-request-state-coderabbit-settled-waits.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this cleanup would re-concentrate unrelated provider policy changes into one large test file, bringing back unnecessary churn around CodeRabbit-only edits.
-- Last focused command: `npx tsx --test src/pull-request-state-provider-wait-policy.test.ts src/pull-request-state-coderabbit-settled-waits.test.ts`; `npm ci`; `npm run build`
+- Next exact step: Review the split diff for any import-path or test-discovery concerns, then commit the cleanup on `codex/issue-487`.
+- Verification gap: none locally after rerunning the focused recovery suites and `npm run build`.
+- Files touched: `src/supervisor/supervisor-recovery.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor-recovery-failure-flows.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this cleanup would put reconciliation helper coverage and heavier recovery integration flows back into one file, increasing edit overlap and making failures less localized.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-recovery-failure-flows.test.ts`; `npx tsx --test src/supervisor/supervisor-recovery.test.ts`; `npm ci`; `npm run build`
 ### Scratchpad
-- 2026-03-17: Committed the split as `b3d5315` (`Split provider wait policy tests`), pushed `codex/issue-484`, and opened draft PR #495 (`https://github.com/TommyKammy/codex-supervisor/pull/495`).
+- 2026-03-17: Baseline for #487 was `npx tsx --test src/supervisor/supervisor-recovery.test.ts`, which passed with 11 tests before the split and exposed a clean seam of 8 reconciliation tests plus 3 failure-flow tests.
+- 2026-03-17: Split recovery coverage into `src/supervisor/supervisor-recovery-reconciliation.test.ts` and `src/supervisor/supervisor-recovery-failure-flows.test.ts`, leaving `src/supervisor/supervisor-recovery.test.ts` as a thin import-only facade.
+- 2026-03-17: Focused verification for #487 was `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-recovery-failure-flows.test.ts` and `npx tsx --test src/supervisor/supervisor-recovery.test.ts`; `npm run build` initially failed with `sh: 1: tsc: not found`, then `npm ci` restored the toolchain and `npm run build` passed.
 - 2026-03-17: Focused baseline for #484 was `npx tsx --test src/pull-request-state-provider-waits.test.ts`, which passed with 28 assertions before the file split.
 - 2026-03-17: Split provider wait coverage into `src/pull-request-state-provider-wait-policy.test.ts` and `src/pull-request-state-coderabbit-settled-waits.test.ts`; focused verification was `npx tsx --test src/pull-request-state-provider-wait-policy.test.ts src/pull-request-state-coderabbit-settled-waits.test.ts`, then `npm ci` and `npm run build`.
 - 2026-03-17: Added `draftSkipAt` to configured-bot summaries and hydrated PRs; focused verification was `npx tsx --test src/github/github-review-signals.test.ts src/github/github-pull-request-hydrator.test.ts`, followed by `npm ci` and `npm run build`.
