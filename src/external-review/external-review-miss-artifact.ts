@@ -25,7 +25,7 @@ export function readExternalReviewMissArtifactPatterns(
   artifact: ExternalReviewMissArtifactLike,
   artifactPath: string,
 ): ExternalReviewMissPattern[] {
-  return Array.isArray(artifact.reusableMissPatterns) && artifact.reusableMissPatterns.length > 0
+  return Array.isArray(artifact.reusableMissPatterns)
     ? artifact.reusableMissPatterns
     : legacyReusableMissPatterns(artifact, artifactPath);
 }

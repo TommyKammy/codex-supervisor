@@ -53,6 +53,40 @@ test("readExternalReviewMissArtifactPatterns prefers persisted reusable patterns
   ]);
 });
 
+test("readExternalReviewMissArtifactPatterns honors persisted empty reusable patterns", () => {
+  const artifactPath = "/tmp/external-review-misses-head-empty.json";
+  const patterns = readExternalReviewMissArtifactPatterns(
+    {
+      generatedAt: "2026-03-12T00:00:00Z",
+      headSha: "emptyhead",
+      reusableMissPatterns: [],
+      findings: [
+        {
+          classification: "missed_by_local_review",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 19,
+          summary: "Legacy fallback summary should not be reused.",
+          rationale: "Legacy fallback rationale should not be reused.",
+          url: "https://example.test/pr/1#discussion_r4",
+          sourceKind: "review_thread",
+          sourceId: "thread-4",
+          sourceUrl: "https://example.test/pr/1#discussion_r4",
+          threadId: "thread-4",
+          source: "external_bot",
+          severity: "medium",
+          confidence: 0.9,
+          matchedLocalReference: null,
+          matchReason: "no same-file local-review match",
+        },
+      ],
+    },
+    artifactPath,
+  );
+
+  assert.deepEqual(patterns, []);
+});
+
 test("readExternalReviewMissArtifactPatterns derives reusable patterns from legacy missed findings", () => {
   const artifactPath = "/tmp/external-review-misses-head-legacy.json";
   const patterns = readExternalReviewMissArtifactPatterns(
