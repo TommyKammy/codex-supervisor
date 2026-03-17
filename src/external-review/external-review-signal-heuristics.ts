@@ -3,6 +3,8 @@ function normalizeReviewText(value: string | null | undefined): string {
 }
 
 const RATE_LIMIT_REVIEW_TEXT_PATTERN = /\brate limit exceeded\b/;
+const CLOSED_PULL_REQUEST_REVIEW_TEXT_PATTERN =
+  /\b(?:pull request|pr)\b[^.!?\n\r]*\balready closed\b|\balready closed\b[^.!?\n\r]*\b(?:pull request|pr)\b/;
 
 const NITPICK_REVIEW_TEXT_PATTERN =
   /\b(nit|nitpick|nits|style|format|formatting|typo|wording|docs?|documentation|comment|comments|naming|rename|readability|consistency|prefer)\b/;
@@ -23,7 +25,8 @@ export function isInformationalReviewText(value: string | null | undefined): boo
     normalized.includes("skip review") ||
     normalized.includes("still in draft") ||
     normalized.includes("pull request is in draft") ||
-    normalized.includes("pull request is still in draft")
+    normalized.includes("pull request is still in draft") ||
+    CLOSED_PULL_REQUEST_REVIEW_TEXT_PATTERN.test(normalized)
   );
 }
 

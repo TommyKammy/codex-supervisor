@@ -586,6 +586,44 @@ test("buildConfiguredBotReviewSummary extends current-head observation with late
   });
 });
 
+test("buildConfiguredBotReviewSummary ignores late configured-bot closed-PR follow-up comments after a current-head observation", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [
+      {
+        authorLogin: "coderabbitai[bot]",
+        submittedAt: "2026-03-13T02:02:00Z",
+        commitOid: "head-44",
+        state: "COMMENTED",
+        body: "## Summary\nCodeRabbit reviewed this pull request and found no actionable issues.",
+      },
+    ],
+    comments: [],
+    issueComments: [
+      {
+        authorLogin: "coderabbitai[bot]",
+        createdAt: "2026-03-13T02:04:00Z",
+        body: "This pull request is already closed. Please ignore this follow-up review comment.",
+      },
+    ],
+    timeline: [],
+  };
+
+  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["coderabbitai[bot]"], "head-44"), {
+    lifecycle: {
+      state: "not_requested",
+      requestedAt: null,
+      arrivedAt: null,
+    },
+    topLevelReview: {
+      strength: null,
+      submittedAt: null,
+    },
+    currentHeadObservedAt: "2026-03-13T02:02:00Z",
+    rateLimitWarningAt: null,
+  });
+});
+
 test("buildConfiguredBotReviewSummary leaves current-head observation empty when only stale-head evidence exists", () => {
   const facts: CopilotReviewLifecycleFacts = {
     reviewRequests: [],
