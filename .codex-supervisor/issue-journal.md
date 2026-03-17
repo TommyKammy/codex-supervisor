@@ -1,35 +1,36 @@
-# Issue #462: Test refactor: split external-review miss tests by normalization and durable-guardrail coverage
+# Issue #465: Test refactor: split pull-request-state tests by provider waits and state-policy coverage
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/462
-- Branch: codex/issue-462
-- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-462
-- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-462/.codex-supervisor/issue-journal.md
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/465
+- Branch: codex/issue-465
+- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-465
+- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-465/.codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 9f566dee933873fd345c89c4a3a7a0fea426ed9d
+- Last head SHA: 03b254de8e91c35b076752054b5ffcdb7e958046
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-17T08:27:30Z
+- Updated at: 2026-03-17T08:41:58.259Z
 
 ## Latest Codex Summary
-- Split the monolithic external-review misses suite into focused normalization, classifier, persistence, and miss-history test files; removed the old combined test file after preserving its assertions.
+- Split `src/pull-request-state.test.ts` into focused provider-wait, state-policy, and thread-reprocessing suites with a shared deterministic fixture helper; restored local dependencies with `npm ci`; focused tests and `npm run build` now pass.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The external-review miss coverage is easier to maintain when assertions live beside the normalization, classifier, persistence, and miss-history module seams instead of a single shared suite.
-- What changed: Added `external-review-normalization.test.ts`, `external-review-classifier.test.ts`, `external-review-miss-persistence.test.ts`, and `external-review-miss-history.test.ts`; moved the existing assertions into those files with local fixtures and deleted `external-review-misses.test.ts`.
+- Hypothesis: `pull-request-state` coverage is easier to maintain when provider wait behavior, merge/local-review policy, and same-head review-thread reprocessing are isolated into separate suites with a tiny shared fixture module.
+- What changed: Added `pull-request-state-test-helpers.ts`, `pull-request-state-provider-waits.test.ts`, `pull-request-state-policy.test.ts`, and `pull-request-state-thread-reprocessing.test.ts`; moved the existing assertions into those files and deleted `pull-request-state.test.ts`.
 - Current blocker: none
-- Next exact step: Commit the extracted test suites on `codex/issue-462` and open or update the draft PR if needed.
-- Verification gap: none for the requested external-review normalization, misses, guardrail-loading, and build checks after `npm ci` restored missing local dependencies.
-- Files touched: src/external-review/external-review-normalization.test.ts; src/external-review/external-review-classifier.test.ts; src/external-review/external-review-miss-persistence.test.ts; src/external-review/external-review-miss-history.test.ts; src/external-review/external-review-misses.test.ts; .codex-supervisor/issue-journal.md
-- Rollback concern: The new suites intentionally duplicate a few tiny fixture builders to keep module-local coverage independent; collapsing them back into a shared helper would reintroduce cross-file coupling and blur the boundaries this issue is trying to restore.
+- Next exact step: Stage the split suites on `codex/issue-465`, commit the checkpoint, and open or update the draft PR if the supervisor wants an early PR.
+- Verification gap: none after restoring `node_modules` with `npm ci`, rerunning the focused pull-request-state suites, and rerunning `npm run build`.
+- Files touched: src/pull-request-state-test-helpers.ts; src/pull-request-state-provider-waits.test.ts; src/pull-request-state-policy.test.ts; src/pull-request-state-thread-reprocessing.test.ts; src/pull-request-state.test.ts; .codex-supervisor/issue-journal.md
+- Rollback concern: The helper is intentionally limited to deterministic fixture builders; pushing more policy logic into shared helpers would blur the suite boundaries this refactor is restoring.
 - Last focused command: npm run build
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
-- Reproducing signature before the fix: `external-review-misses.test.ts` mixed normalization, matching, persistence, and durable guardrail loading in one 22-test file, so edits and failures crossed module boundaries.
-- Verification commands: `npx tsx --test src/external-review/external-review-normalization.test.ts`; `npx tsx --test src/external-review/external-review-classifier.test.ts`; `npx tsx --test src/external-review/external-review-miss-persistence.test.ts`; `npx tsx --test src/external-review/external-review-miss-history.test.ts`; `npx tsx --test src/external-review/*.test.ts`; `npm ci`; `npm run build`.
+- Reproducing signature before the fix: `src/pull-request-state.test.ts` was a single 1327-line, 38-test file mixing provider waits, settled waits, merge gating, local-review policy, and same-head review-thread reprocessing.
+- Verification commands: `npx tsx --test src/pull-request-state.test.ts`; `npx tsx --test src/pull-request-state-provider-waits.test.ts src/pull-request-state-policy.test.ts src/pull-request-state-thread-reprocessing.test.ts`; `npx tsx --test src/pull-request-state-*.test.ts`; `npm ci`; `npm run build`.
+- Local failure resolved: `npm run build` initially failed with `sh: 1: tsc: not found` because `node_modules` was absent in this worktree.
