@@ -250,6 +250,53 @@ function shouldWaitForConfiguredBotInitialGracePeriod(
   return Date.now() < ciGreenAtMs + initialGraceWaitMs;
 }
 
+function latestConfiguredBotActionableSignalAt(pr: GitHubPullRequest): string | null {
+  const candidates = [
+    pr.configuredBotCurrentHeadObservedAt,
+    pr.copilotReviewArrivedAt,
+    pr.configuredBotTopLevelReviewSubmittedAt,
+  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  return candidates.reduce((latest, candidate) => (Date.parse(candidate) > Date.parse(latest) ? candidate : latest));
+}
+
+function shouldWaitForConfiguredBotDraftSkipRearm(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+): boolean {
+  const policy = reviewProviderWaitPolicyFromConfig(config);
+  if (!policy.shouldApplyCurrentHeadQuietPeriod || pr.isDraft || !pr.configuredBotDraftSkipAt || !record.review_wait_started_at) {
+    return false;
+  }
+
+  if (record.review_wait_head_sha !== pr.headRefOid) {
+    return false;
+  }
+
+  const draftSkipAtMs = Date.parse(pr.configuredBotDraftSkipAt);
+  const reviewWaitStartedAtMs = Date.parse(record.review_wait_started_at);
+  if (Number.isNaN(draftSkipAtMs) || Number.isNaN(reviewWaitStartedAtMs) || reviewWaitStartedAtMs <= draftSkipAtMs) {
+    return false;
+  }
+
+  const actionableSignalAt = latestConfiguredBotActionableSignalAt(pr);
+  if (actionableSignalAt) {
+    const actionableSignalAtMs = Date.parse(actionableSignalAt);
+    if (!Number.isNaN(actionableSignalAtMs) && actionableSignalAtMs >= reviewWaitStartedAtMs) {
+      return false;
+    }
+  }
+
+  const initialGraceWaitMs =
+    (config.configuredBotInitialGraceWaitSeconds ?? DEFAULT_CONFIGURED_BOT_INITIAL_GRACE_WAIT_MS / 1_000) * 1_000;
+  return Date.now() < reviewWaitStartedAtMs + initialGraceWaitMs;
+}
+
 export function buildCopilotReviewTimeoutFailureContext(
   config: SupervisorConfig,
   record: IssueRunRecord,
@@ -511,6 +558,10 @@ export function inferStateFromPullRequest(
   const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
   if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
     return "blocked";
+  }
+
+  if (shouldWaitForConfiguredBotDraftSkipRearm(config, record, pr)) {
+    return "waiting_ci";
   }
 
   if (shouldWaitForConfiguredBotInitialGracePeriod(config, pr)) {

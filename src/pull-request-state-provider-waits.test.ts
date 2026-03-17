@@ -455,6 +455,37 @@ test("inferStateFromPullRequest does not wait after the initial CodeRabbit grace
   });
 });
 
+test("inferStateFromPullRequest re-arms CodeRabbit waiting after ready-for-review when the latest prior signal was a draft skip", () => {
+  withStubbedDateNow("2026-03-13T02:30:10Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      configuredBotInitialGraceWaitSeconds: 90,
+    });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-03-13T02:30:00Z",
+      review_wait_head_sha: "head123",
+    });
+
+    assert.equal(
+      inferStateFromPullRequest(
+        config,
+        record,
+        createPullRequest({
+          copilotReviewState: "not_requested",
+          copilotReviewArrivedAt: null,
+          currentHeadCiGreenAt: "2026-03-13T02:05:00Z",
+          configuredBotCurrentHeadObservedAt: null,
+          configuredBotDraftSkipAt: "2026-03-13T02:25:00Z",
+        }),
+        passingChecks(),
+        [],
+      ),
+      "waiting_ci",
+    );
+  });
+});
+
 test("inferStateFromPullRequest waits on a recent summary-only CodeRabbit current-head observation", () => {
   withStubbedDateNow("2026-03-13T02:04:03Z", () => {
     const config = createConfig({

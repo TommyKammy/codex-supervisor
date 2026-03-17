@@ -224,6 +224,33 @@ test("derivePullRequestLifecycleSnapshot keeps silent CodeRabbit repos in waitin
   });
 });
 
+test("derivePullRequestLifecycleSnapshot re-arms CodeRabbit waiting after ready-for-review when draft skip was the latest prior signal", () => {
+  withStubbedDateNow("2026-03-13T02:30:10Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      configuredBotInitialGraceWaitSeconds: 90,
+    });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-03-13T02:30:00Z",
+      review_wait_head_sha: "head123",
+    });
+    const pr = createPullRequest({
+      copilotReviewState: "not_requested",
+      copilotReviewArrivedAt: null,
+      currentHeadCiGreenAt: "2026-03-13T02:05:00Z",
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotDraftSkipAt: "2026-03-13T02:25:00Z",
+    });
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+    const reviewThreads: ReviewThread[] = [];
+
+    const snapshot = derivePullRequestLifecycleSnapshot(config, record, pr, checks, reviewThreads);
+
+    assert.equal(snapshot.nextState, "waiting_ci");
+  });
+});
+
 test("derivePullRequestLifecycleSnapshot keeps CodeRabbit repos in waiting_ci for summary-only current-head observations", () => {
   withStubbedDateNow("2026-03-13T02:04:03Z", () => {
     const config = createConfig({
