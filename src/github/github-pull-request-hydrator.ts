@@ -61,6 +61,7 @@ class ConfiguredBotReviewSummaryCache {
         currentHeadObservedAt: null,
         currentHeadCiGreenAt: null,
         rateLimitWarningAt: null,
+        draftSkipAt: null,
       }),
     };
     const lifecyclePromise = lifecyclePromiseFactory()
