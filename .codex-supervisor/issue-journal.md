@@ -1,45 +1,38 @@
-# Issue #485: Test cleanup: split supervisor diagnostics coverage by status and explanation boundaries
+# Issue #486: Test cleanup: split supervisor execution coverage by orchestration and cleanup boundaries
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/485
-- Branch: codex/issue-485
-- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-485
-- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-485/.codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 4 (implementation=2, repair=2)
-- Last head SHA: 4ecf965703c7c057f25066ec23f83d2cc82797da
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/486
+- Branch: codex/issue-486
+- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-486
+- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-486/.codex-supervisor/issue-journal.md
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 3d7ddc8b15777802ca72436dce98f9e17dc1d5fb
 - Blocked reason: none
 - Last failure signature: none
-- Repeated failure signature count: 1
-- Updated at: 2026-03-17T15:25:02Z
+- Repeated failure signature count: 0
+- Updated at: 2026-03-17T15:33:07.995Z
 
 ## Latest Codex Summary
-Pushed `4ecf965` (`test: fix diagnostics review follow-ups`) to `origin/codex/issue-485` for PR [#497](https://github.com/TommyKammy/codex-supervisor/pull/497). The repair keeps the diagnostics split behavior-neutral while tightening the guardrail provenance tests so committed shared-memory fixtures are written, added, and committed before `headSha` is captured; the journal summary also stays free of absolute workspace markdown links.
-
-Focused verification passed after the repair: `npx tsx --test src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts` and `npm run build`. After the push, I resolved both CodeRabbit review threads (`PRRT_kwDORgvdZ8505wKg` and `PRRT_kwDORgvdZ8505wKi`) with `gh api graphql`.
-
-Summary: Pushed the PR #497 review repair for committed guardrail provenance and cleared the two addressed CodeRabbit threads.
-State hint: addressing_review
-Blocked reason: none
-Tests: `npx tsx --test src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts`; `npm run build`
-Failure signature: none
-Next action: Monitor PR #497 for the post-push CI run and any fresh review feedback.
+- None yet.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: #485 can stay behavior-neutral by extracting supervisor diagnostics coverage into four files that match the existing ownership boundaries: doctor/status selection, explain, handoff summary, and guardrail provenance, with the legacy path preserved as a facade import.
-- What changed: kept the diagnostics split intact and repaired `src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts` so both provenance tests commit `docs/shared-memory/*.json` before capturing `headSha`; retained the repo-safe journal summary text instead of reintroducing absolute workspace markdown links.
+- Hypothesis: #486 can stay behavior-neutral by extracting `supervisor-execution.test.ts` into two focused suites: issue-selection/orchestration coverage and workspace/lock/cleanup-heavy execution coverage, with the legacy path preserved as a facade import.
+- What changed: split the execution suite into `src/supervisor/supervisor-execution-orchestration.test.ts` and `src/supervisor/supervisor-execution-cleanup.test.ts`, and reduced `src/supervisor/supervisor-execution.test.ts` to a thin facade import file.
 - Current blocker: none
-- Next exact step: Monitor PR #497 for the CI run triggered by `4ecf965` and handle any new review or verification signal on `codex/issue-485`.
-- Verification gap: none for the touched guardrail provenance suite or `npm run build`.
-- Files touched: `src/supervisor/supervisor-diagnostics.test.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-diagnostics-explain.test.ts`, `src/supervisor/supervisor-diagnostics-handoff-summary.test.ts`, `src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this cleanup would collapse unrelated diagnostics assertions back into a single 1k+ line file, increasing churn and making focused failures harder to localize.
+- Next exact step: Monitor draft PR #498 for review or CI feedback and handle any verification signal on `codex/issue-486`.
+- Verification gap: none for the split execution suites or `npm run build`; `npm ci` was required first because `tsc` was initially unavailable locally.
+- Files touched: `src/supervisor/supervisor-execution.test.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts`, `src/supervisor/supervisor-execution-cleanup.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this cleanup would push orchestration, session-lock, orphan cleanup, and reservation recovery assertions back into one 1.6k-line suite, making failures harder to localize.
 - Last focused command: `npm run build`
 ### Scratchpad
-- 2026-03-17: Pushed `4ecf965` to `origin/codex/issue-485` and resolved CodeRabbit threads `PRRT_kwDORgvdZ8505wKg` and `PRRT_kwDORgvdZ8505wKi` after verifying `npx tsx --test src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts` and `npm run build`.
+- 2026-03-18: Committed the split as `c7b7f41` (`Split supervisor execution test coverage`), pushed `codex/issue-486`, and opened draft PR #498 (`https://github.com/TommyKammy/codex-supervisor/pull/498`).
+- 2026-03-18: Split `src/supervisor/supervisor-execution.test.ts` into orchestration and cleanup suites behind a facade import; focused verification was `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts src/supervisor/supervisor-execution-cleanup.test.ts src/supervisor/supervisor-execution.test.ts`.
+- 2026-03-18: `npm run build` initially failed with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain and the rerun of `npm run build` passed.
 - 2026-03-17: Review repair for PR #497 updates the guardrail provenance fixtures so committed shared-memory files are added before `headSha` is captured; focused verification was `npx tsx --test src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts` and `npm run build`.
 - 2026-03-17: Added `draftSkipAt` to configured-bot summaries and hydrated PRs; focused verification was `npx tsx --test src/github/github-review-signals.test.ts src/github/github-pull-request-hydrator.test.ts`, followed by `npm ci` and `npm run build`.
 - 2026-03-17: Pushed `codex/issue-478` to `origin` and opened draft PR #481 (`https://github.com/TommyKammy/codex-supervisor/pull/481`) after confirming there was no existing PR for the branch.
