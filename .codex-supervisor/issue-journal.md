@@ -5,39 +5,39 @@
 - Branch: codex/issue-480
 - Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-480
 - Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-480/.codex-supervisor/issue-journal.md
-- Current phase: draft_pr
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: ca3acc60d31393fbc3bdd1612ea168840dda7cf7
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: 27f8fee3d3c2bcb0ec9ba147e7f05b431faa34a1
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-17T12:39:41.653Z
+- Last failure signature: PRRT_kwDORgvdZ8502s12
+- Repeated failure signature count: 1
+- Updated at: 2026-03-17T21:48:34+09:00
 
 ## Latest Codex Summary
-Implemented the CodeRabbit draft-skip re-arm fix in [src/pull-request-state.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-480/src/pull-request-state.ts). The state machine now reuses `review_wait_started_at` after a PR becomes ready for review when the latest prior configured-bot signal was a draft skip, and it stops that re-wait as soon as a newer actionable bot signal arrives.
+Addressed the remaining CodeRabbit review on PR [#482](https://github.com/TommyKammy/codex-supervisor/pull/482) by hardening `latestConfiguredBotActionableSignalAt` in [src/pull-request-state.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-480/src/pull-request-state.ts) so it pre-parses configured-bot timestamps, drops malformed values, and selects the newest valid actionable signal.
 
-Added focused regressions in [src/pull-request-state-provider-waits.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-480/src/pull-request-state-provider-waits.test.ts) and [src/supervisor/supervisor-lifecycle.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-480/src/supervisor/supervisor-lifecycle.test.ts), committed the change as `ca3acc6` (`Re-arm CodeRabbit wait after draft skip`), reran the focused tests plus `npm run build`, pushed `codex/issue-480` to `origin`, and opened draft PR #482 (`https://github.com/TommyKammy/codex-supervisor/pull/482`). The only remaining workspace change is the pre-existing untracked `.codex-supervisor/replay/` directory.
+Added a focused regression in [src/pull-request-state-provider-waits.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-480/src/pull-request-state-provider-waits.test.ts) covering a draft-skip re-arm case where `configuredBotCurrentHeadObservedAt` is malformed but a newer valid top-level review timestamp should still clear the wait. Verification passed with `npx tsx --test src/pull-request-state-provider-waits.test.ts` and `npm run build`.
 
-Summary: Re-armed CodeRabbit review waiting after ready-for-review when the prior signal was a draft skip, reran focused verification, pushed `codex/issue-480`, and opened draft PR #482.
-State hint: draft_pr
+Summary: Fixed the malformed configured-bot timestamp selection noted in PR #482, added a focused regression, and reran the targeted test file plus `npm run build`.
+State hint: addressing_review
 Blocked reason: none
-Tests: `npx tsx --test src/pull-request-state-provider-waits.test.ts src/supervisor/supervisor-lifecycle.test.ts`; `npm run build`
-Failure signature: none
-Next action: Watch PR #482 for CI and review feedback, then address any follow-up.
+Tests: `npx tsx --test src/pull-request-state-provider-waits.test.ts`; `npm run build`
+Failure signature: PRRT_kwDORgvdZ8502s12
+Next action: Commit and push the review fix to `codex/issue-480`, then watch PR #482 for any follow-up.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: after a PR is marked ready for review, a prior CodeRabbit draft-skip comment was not re-arming the configured-bot wait because state inference only looked at stale CI/current-head timestamps and ignored the refreshed `review_wait_started_at` window.
-- What changed: added a draft-skip-specific CodeRabbit re-wait rule in `inferStateFromPullRequest` keyed off `review_wait_started_at > configuredBotDraftSkipAt`, with the wait clearing once a fresh actionable configured-bot signal arrives after ready-for-review; added focused regression tests at both the state-inference and lifecycle layers.
+- Hypothesis: the remaining review thread is valid because `latestConfiguredBotActionableSignalAt` still compares raw timestamp strings, so a malformed earlier value can mask a newer valid configured-bot signal and incorrectly keep the draft-skip re-wait active.
+- What changed: `latestConfiguredBotActionableSignalAt` now pre-parses the configured-bot timestamp candidates, drops invalid values, and reduces over numeric epochs; added a regression proving a malformed `configuredBotCurrentHeadObservedAt` no longer blocks a newer `configuredBotTopLevelReviewSubmittedAt` from clearing the re-armed wait.
 - Current blocker: none
-- Next exact step: Monitor PR #482 CI/review results and address any follow-up if the draft checkpoint draws feedback.
+- Next exact step: Push the review-fix commit to PR #482 and monitor CI/review for any remaining follow-up.
 - Verification gap: none locally.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/pull-request-state.ts`, `src/pull-request-state-provider-waits.test.ts`, `src/supervisor/supervisor-lifecycle.test.ts`
-- Rollback concern: reverting this issue should remove only the draft-skip re-arm check that depends on `review_wait_started_at`; the existing CodeRabbit initial-grace and settled-wait behaviors should stay intact.
-- Last focused command: `npx tsx --test src/pull-request-state-provider-waits.test.ts src/supervisor/supervisor-lifecycle.test.ts`; `npm run build`; `git push -u origin codex/issue-480`; `gh pr create --draft --base main --head codex/issue-480 ...`
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/pull-request-state.ts`, `src/pull-request-state-provider-waits.test.ts`
+- Rollback concern: reverting this repair should only affect malformed configured-bot timestamp handling; the draft-skip re-arm logic from `ca3acc6` should remain intact.
+- Last focused command: `npx tsx --test src/pull-request-state-provider-waits.test.ts`; `npm run build`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
 - Reproducing signature before the fix: required current-head CI completion metadata was absent from configured-bot hydration, so no stable `currentHeadCiGreenAt` value existed for later CodeRabbit provider-start wait logic.
@@ -56,3 +56,4 @@ Next action: Watch PR #482 for CI and review feedback, then address any follow-u
 - 2026-03-17: The fix reuses the refreshed review-wait window after ready-for-review for CodeRabbit draft-skip cases, but only until either `configuredBotInitialGraceWaitSeconds` expires or a newer actionable configured-bot signal arrives (`configuredBotCurrentHeadObservedAt`, `copilotReviewArrivedAt`, or `configuredBotTopLevelReviewSubmittedAt`).
 - 2026-03-17: Verification for #480 was `npx tsx --test src/pull-request-state-provider-waits.test.ts src/supervisor/supervisor-lifecycle.test.ts`; `npm run build` initially failed with `sh: 1: tsc: not found`, then `npm ci` restored the toolchain and both the focused tests and `npm run build` passed.
 - 2026-03-17: Re-ran `npx tsx --test src/pull-request-state-provider-waits.test.ts src/supervisor/supervisor-lifecycle.test.ts` and `npm run build`, both passing before pushing `codex/issue-480` and opening draft PR #482 (`https://github.com/TommyKammy/codex-supervisor/pull/482`).
+- 2026-03-17: Review repair for PR #482 filters malformed configured-bot timestamps before selecting the latest actionable signal; focused regression/verification was `npx tsx --test src/pull-request-state-provider-waits.test.ts` and `npm run build`.

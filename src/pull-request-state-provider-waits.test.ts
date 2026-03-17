@@ -486,6 +486,38 @@ test("inferStateFromPullRequest re-arms CodeRabbit waiting after ready-for-revie
   });
 });
 
+test("inferStateFromPullRequest ignores malformed earlier CodeRabbit timestamps when a fresh actionable signal clears the re-armed wait", () => {
+  withStubbedDateNow("2026-03-13T02:30:10Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      configuredBotInitialGraceWaitSeconds: 90,
+    });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-03-13T02:30:00Z",
+      review_wait_head_sha: "head123",
+    });
+
+    assert.equal(
+      inferStateFromPullRequest(
+        config,
+        record,
+        createPullRequest({
+          copilotReviewState: "not_requested",
+          copilotReviewArrivedAt: null,
+          currentHeadCiGreenAt: "2026-03-13T02:05:00Z",
+          configuredBotCurrentHeadObservedAt: "not-a-timestamp",
+          configuredBotDraftSkipAt: "2026-03-13T02:25:00Z",
+          configuredBotTopLevelReviewSubmittedAt: "2026-03-13T02:30:05Z",
+        }),
+        passingChecks(),
+        [],
+      ),
+      "ready_to_merge",
+    );
+  });
+});
+
 test("inferStateFromPullRequest waits on a recent summary-only CodeRabbit current-head observation", () => {
   withStubbedDateNow("2026-03-13T02:04:03Z", () => {
     const config = createConfig({

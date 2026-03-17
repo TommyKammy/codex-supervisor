@@ -255,13 +255,26 @@ function latestConfiguredBotActionableSignalAt(pr: GitHubPullRequest): string | 
     pr.configuredBotCurrentHeadObservedAt,
     pr.copilotReviewArrivedAt,
     pr.configuredBotTopLevelReviewSubmittedAt,
-  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+  ]
+    .map((value) => {
+      if (typeof value !== "string" || value.length === 0) {
+        return null;
+      }
+
+      const timestampMs = Date.parse(value);
+      if (Number.isNaN(timestampMs)) {
+        return null;
+      }
+
+      return { value, timestampMs };
+    })
+    .filter((candidate): candidate is { value: string; timestampMs: number } => candidate !== null);
 
   if (candidates.length === 0) {
     return null;
   }
 
-  return candidates.reduce((latest, candidate) => (Date.parse(candidate) > Date.parse(latest) ? candidate : latest));
+  return candidates.reduce((latest, candidate) => (candidate.timestampMs > latest.timestampMs ? candidate : latest)).value;
 }
 
 function shouldWaitForConfiguredBotDraftSkipRearm(
