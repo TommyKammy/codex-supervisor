@@ -155,7 +155,7 @@ In normal operation, the supervisor will:
 
 Use `status` whenever you want the current issue, PR, check, review, and mergeability summary without advancing the loop.
 
-If you use the CodeRabbit profile, `status` can briefly show `configured_bot_settled_wait status=active provider=coderabbit ...` after CodeRabbit posts on the current PR head. That indicates a short intentional quiet period before merge progression resumes.
+If you use the CodeRabbit profile, `status` can briefly show `configured_bot_settled_wait status=active provider=coderabbit pause_reason=recent_current_head_observation ... wait_until=...` after CodeRabbit posts on the current PR head. That indicates a short intentional quiet period before merge progression resumes and tells you when it will end.
 
 ## Common operator decisions
 

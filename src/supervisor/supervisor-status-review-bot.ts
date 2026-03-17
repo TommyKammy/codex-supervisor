@@ -57,6 +57,8 @@ export function configuredBotSettledWaitWindow(
 ): {
   status: "inactive" | "active" | "expired";
   provider: "none" | "coderabbit";
+  pauseReason: "none" | "recent_current_head_observation";
+  recentObservation: "none" | "current_head_activity";
   observedAt: string | null;
   waitUntil: string | null;
 } {
@@ -64,6 +66,8 @@ export function configuredBotSettledWaitWindow(
     return {
       status: "inactive",
       provider: "none",
+      pauseReason: "none",
+      recentObservation: "none",
       observedAt: pr.configuredBotCurrentHeadObservedAt ?? null,
       waitUntil: null,
     };
@@ -74,6 +78,8 @@ export function configuredBotSettledWaitWindow(
     return {
       status: "inactive",
       provider: "coderabbit",
+      pauseReason: "recent_current_head_observation",
+      recentObservation: "current_head_activity",
       observedAt: pr.configuredBotCurrentHeadObservedAt,
       waitUntil: null,
     };
@@ -84,6 +90,8 @@ export function configuredBotSettledWaitWindow(
   return {
     status: Date.now() < Date.parse(waitUntil) ? "active" : "expired",
     provider: "coderabbit",
+    pauseReason: "recent_current_head_observation",
+    recentObservation: "current_head_activity",
     observedAt: pr.configuredBotCurrentHeadObservedAt,
     waitUntil,
   };
