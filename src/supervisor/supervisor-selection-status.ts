@@ -41,6 +41,31 @@ type ActiveStatusGitHub = Pick<
 >;
 type ActiveStatusIssueGitHub = Pick<GitHubClient, "getIssue">;
 
+async function buildExplainChangeRiskSummary(args: {
+  config: SupervisorConfig;
+  issue: GitHubIssue;
+  record: IssueRunRecord | undefined;
+}): Promise<string[]> {
+  const changedFiles = args.record?.workspace
+    ? await loadStatusChangedFiles(args.config, args.record.workspace)
+    : [];
+  const lines: string[] = [];
+  const changeClassesSummary = buildChangeClassesStatusLine(changedFiles);
+  const verificationPolicySummary = buildVerificationPolicyStatusLine({
+    issue: args.issue,
+    changedFiles,
+  });
+
+  if (changeClassesSummary) {
+    lines.push(changeClassesSummary);
+  }
+  if (verificationPolicySummary) {
+    lines.push(verificationPolicySummary);
+  }
+
+  return lines;
+}
+
 export interface SupervisorStatusRecords {
   activeRecord: IssueRunRecord | null;
   latestRecord: IssueRunRecord | null;
@@ -319,6 +344,11 @@ export async function buildIssueExplainSummary(
   const matchingSkipPrefix = config.skipTitlePrefixes.find((prefix) => issue.title.startsWith(prefix)) ?? null;
   const candidateIssueNumbers = new Set(candidateIssues.map((candidate) => candidate.number));
   const reasons: string[] = [];
+  const changeRiskLines = await buildExplainChangeRiskSummary({
+    config,
+    issue,
+    record,
+  });
 
   if (matchingSkipPrefix) {
     reasons.push(`skip_title_prefix ${matchingSkipPrefix}`);
@@ -353,6 +383,7 @@ export async function buildIssueExplainSummary(
     `state=${record?.state ?? "untracked"}`,
     `blocked_reason=${record?.blocked_reason ?? "none"}`,
     `runnable=${runnable ? "yes" : "no"}`,
+    ...changeRiskLines,
   ];
 
   if (runnable) {

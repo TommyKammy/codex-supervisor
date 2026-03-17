@@ -9,6 +9,7 @@ import {
   createRecord,
   createSupervisorFixture,
   executionReadyBody,
+  git,
 } from "./supervisor-test-helpers";
 
 test("explain reports dependency blockers for a non-runnable issue", async () => {
@@ -221,4 +222,97 @@ Wait for a human review before proceeding.
   assert.match(explanation, /^runnable=no$/m);
   assert.match(explanation, /^reason_1=manual_block manual_review$/m);
   assert.match(explanation, /^reason_2=local_state blocked$/m);
+});
+
+test("explain reuses normalized change-risk policy for risky ambiguity blockers", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const ambiguousIssue: GitHubIssue = {
+    number: 98,
+    title: "Decide which auth flow should ship",
+    body: `## Summary
+Decide whether to keep the current auth token flow or replace it before rollout.
+
+## Scope
+- choose the production authentication path for service-to-service traffic
+
+## Acceptance criteria
+- the operator confirms which auth flow should ship
+
+## Verification
+- npm test -- src/supervisor.test.ts`,
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: "https://example.test/issues/98",
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => ambiguousIssue,
+    listAllIssues: async () => [ambiguousIssue],
+    listCandidateIssues: async () => [ambiguousIssue],
+  };
+
+  const explanation = await supervisor.explain(98);
+
+  assert.match(explanation, /^runnable=no$/m);
+  assert.match(explanation, /^verification_policy intensity=strong driver=issue_metadata:auth$/m);
+  assert.match(explanation, /^reason_1=clarification ambiguity=unresolved_choice risky_change=auth$/m);
+});
+
+test("explain reuses normalized changed-file policy for blocked tracked issues", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 99;
+  const branch = branchName(fixture.config, issueNumber);
+  git(["checkout", "-b", branch], fixture.repoPath);
+  await fs.mkdir(path.join(fixture.repoPath, "docs"), { recursive: true });
+  await fs.writeFile(path.join(fixture.repoPath, "docs", "guide.md"), "# guide\n", "utf8");
+  git(["add", "docs/guide.md"], fixture.repoPath);
+  git(["commit", "-m", "Update docs"], fixture.repoPath);
+
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "99": createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        workspace: fixture.repoPath,
+        journal_path: null,
+        blocked_reason: "manual_review",
+        last_error: "waiting on human review",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const blockedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Blocked docs review",
+    body: executionReadyBody("Refresh the operator guide."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: "https://example.test/issues/99",
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => blockedIssue,
+    listAllIssues: async () => [blockedIssue],
+    listCandidateIssues: async () => [blockedIssue],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(explanation, /^state=blocked$/m);
+  assert.match(explanation, /^change_classes=docs$/m);
+  assert.match(explanation, /^verification_policy intensity=focused driver=changed_files:docs$/m);
+  assert.match(explanation, /^reason_1=manual_block manual_review$/m);
 });
