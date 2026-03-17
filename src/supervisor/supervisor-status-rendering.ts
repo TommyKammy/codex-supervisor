@@ -14,7 +14,7 @@ import {
   manualReviewThreads,
   pendingBotReviewThreads,
 } from "../review-thread-reporting";
-import { detectDeterministicChangeClasses } from "../issue-metadata";
+import { summarizeChangeRiskDecision } from "../issue-metadata";
 import {
   buildDetailedStatusModel,
   buildDetailedStatusSummaryLines,
@@ -81,7 +81,7 @@ export async function loadStatusChangedFiles(
 }
 
 export function buildChangeClassesStatusLine(changedFiles: string[]): string | null {
-  const changeClasses = detectDeterministicChangeClasses(changedFiles);
+  const changeClasses = summarizeChangeRiskDecision({ changedFiles }).deterministicChangeClasses;
   if (changeClasses.length === 0) {
     return null;
   }

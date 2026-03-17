@@ -10,7 +10,11 @@ import {
 } from "../core/types";
 import { truncate } from "../core/utils";
 import { type VerifierGuardrailRule } from "../verifier-guardrails";
-import type { DeterministicChangeClass } from "../issue-metadata";
+import {
+  summarizeChangeRiskDecision,
+  type ChangeRiskDecisionSummary,
+  type DeterministicChangeClass,
+} from "../issue-metadata";
 import type {
   AgentTurnContext,
   ResumeAgentTurnContext,
@@ -220,33 +224,40 @@ export interface BuildCodexResumePromptInput {
   previousError?: string | null;
 }
 
-type VerificationIntensity = "focused" | "standard" | "strong";
-
 function describeVerificationPolicy(
-  changeClasses: DeterministicChangeClass[] | undefined,
-): { changeClasses: string; intensity: VerificationIntensity; guidance: string } | null {
-  if (!changeClasses || changeClasses.length === 0) {
+  decision: ChangeRiskDecisionSummary,
+): {
+  riskyChangeClasses: string;
+  approvedRiskyChangeClasses: string;
+  deterministicChangeClasses: string;
+  issueMetadataIntensity: string;
+  changedFilesIntensity: string;
+  intensity: string;
+  higherRiskSource: string;
+  guidance: string;
+} | null {
+  if (decision.verificationIntensity === "none") {
     return null;
   }
 
-  const normalizedChangeClasses = [...new Set(changeClasses)].sort();
-  const hasStrongClass = normalizedChangeClasses.some((changeClass) =>
-    ["infrastructure", "schema", "workflow"].includes(changeClass),
-  );
-  const onlyFocusedClasses = normalizedChangeClasses.every((changeClass) =>
-    ["docs", "tests"].includes(changeClass),
-  );
-  const intensity: VerificationIntensity = hasStrongClass ? "strong" : onlyFocusedClasses ? "focused" : "standard";
   const guidance =
-    intensity === "strong"
-      ? "Keep stronger verification for workflow, schema, or infrastructure changes, including the most relevant higher-signal checks before concluding the work is done."
-      : intensity === "focused"
+    decision.verificationIntensity === "strong"
+      ? "Keep stronger verification when issue metadata or deterministic file classes indicate elevated change risk, including the most relevant higher-signal checks before concluding the work is done."
+      : decision.verificationIntensity === "focused"
         ? "Keep verification focused on the directly affected documentation or tests unless another signal justifies broader coverage."
         : "Use focused verification for the changed behavior, but keep at least the normal implementation safety bar for code changes.";
 
   return {
-    changeClasses: normalizedChangeClasses.join(", "),
-    intensity,
+    riskyChangeClasses:
+      decision.riskyChangeClasses.length > 0 ? decision.riskyChangeClasses.join(", ") : "none",
+    approvedRiskyChangeClasses:
+      decision.approvedRiskyChangeClasses.length > 0 ? decision.approvedRiskyChangeClasses.join(", ") : "none",
+    deterministicChangeClasses:
+      decision.deterministicChangeClasses.length > 0 ? decision.deterministicChangeClasses.join(", ") : "none",
+    issueMetadataIntensity: decision.issueMetadataIntensity,
+    changedFilesIntensity: decision.changedFilesIntensity,
+    intensity: decision.verificationIntensity,
+    higherRiskSource: decision.higherRiskSource,
     guidance,
   };
 }
@@ -398,7 +409,12 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
             : ["- No saved external review miss artifact is available for the current PR head."]),
         ]
       : [];
-  const verificationPolicy = describeVerificationPolicy(input.changeClasses);
+  const verificationPolicy = describeVerificationPolicy(
+    summarizeChangeRiskDecision({
+      issue: input.issue,
+      deterministicChangeClasses: input.changeClasses,
+    }),
+  );
 
   return [
     `You are operating inside a dedicated worktree for ${input.repoSlug}.`,
@@ -414,8 +430,13 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
       ? [
           "",
           "Verification policy:",
-          `- Computed change classes: ${verificationPolicy.changeClasses}`,
+          `- Risky issue-metadata classes: ${verificationPolicy.riskyChangeClasses}`,
+          `- Approved risky classes: ${verificationPolicy.approvedRiskyChangeClasses}`,
+          `- Deterministic changed-file classes: ${verificationPolicy.deterministicChangeClasses}`,
+          `- Issue-metadata intensity: ${verificationPolicy.issueMetadataIntensity}`,
+          `- Changed-files intensity: ${verificationPolicy.changedFilesIntensity}`,
           `- Verification intensity: ${verificationPolicy.intensity}`,
+          `- Higher-risk source: ${verificationPolicy.higherRiskSource}`,
           `- Guidance: ${verificationPolicy.guidance}`,
         ]
       : []),

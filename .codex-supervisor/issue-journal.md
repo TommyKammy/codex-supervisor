@@ -1,44 +1,38 @@
-# Issue #494: External-review cleanup: align tests with the refined external-review module boundaries
+# Issue #505: Change-risk explainability: normalize risk decisions with explicit source precedence
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/494
-- Branch: codex/issue-494
-- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-494
-- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-494/.codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 90ece797d3ff86ac512dcf7788d31e7d2c3beff6
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/505
+- Branch: codex/issue-505
+- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-505
+- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-505/.codex-supervisor/issue-journal.md
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 1cb60c7562c7e36938b0087246ec272d873d2d1b
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ8508oYP
-- Repeated failure signature count: 1
-- Updated at: 2026-03-17T18:03:57.796Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-17T21:11:26.908Z
 
 ## Latest Codex Summary
-Aligned the external-review tests with the refined module split. The main change is that qualification-boundary assertions now live in [external-review-regression-candidate-qualification.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-494/src/external-review/external-review-regression-candidate-qualification.test.ts), while payload-shaping assertions stay in [external-review-regression-candidates.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-494/src/external-review/external-review-regression-candidates.test.ts). I also added a focused family layout guard in [external-review-family-layout.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-494/src/external-review/external-review-family-layout.test.ts) and refreshed [family-directory-layout.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-494/src/family-directory-layout.test.ts) so the runtime module lists match the current tree.
-
-Verification passed with the focused external-review suite and `npm run build`. `npm ci` was needed first because `tsc` was missing in this worktree. I committed the cleanup as `90ece79` (`Align external-review tests with module boundaries`), pushed `codex/issue-494`, and opened draft PR #503: https://github.com/TommyKammy/codex-supervisor/pull/503. The only remaining local dirt is the untracked `.codex-supervisor/replay/` directory, which I left alone.
-
-Summary: External-review test boundaries now match the refined qualification/candidate split, focused layout coverage was added, verification passed, and draft PR #503 is open.
-State hint: pr_open
-Blocked reason: none
-Tests: `npx tsx --test src/external-review/external-review-family-layout.test.ts src/external-review/external-review-regression-candidate-qualification.test.ts src/external-review/external-review-regression-candidates.test.ts src/external-review/external-review-durable-guardrail-candidates.test.ts`; `npm ci`; `npm run build`
-Failure signature: none
-Next action: Wait for PR review on #503 and address any feedback or CI failures if they appear.
+- Added a normalized change-risk decision summary that combines issue-metadata risk signals, risky approvals, and deterministic changed-file classes with explicit `issue_metadata` over `changed_files` precedence on ties; wired prompt/status consumers to reuse it.
 
 ## Active Failure Context
-- None recorded. The CodeRabbit thread on scratchpad date-basis ambiguity was fixed in commit `30b3066` and resolved on PR #503.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the external-review cleanup is stable, and the only follow-up needed was to keep the journal metadata self-consistent by making the scratchpad's local-date basis explicit alongside the UTC snapshot field.
-- What changed: clarified the scratchpad date basis in this journal, pushed commit `30b3066` (`Clarify journal scratchpad date basis`) to `origin/codex/issue-494`, and resolved the remaining CodeRabbit thread on PR #503.
+- Hypothesis: change-risk explainability should be normalized by one shared decision object so prompt guidance and other consumers stop inferring precedence separately from issue metadata and changed-file classes.
+- What changed: added `summarizeChangeRiskDecision`, covered mixed-source precedence in focused tests, updated the Codex prompt to render risky metadata inputs plus the winning source, and routed the existing change-class status helper through the same summary object without expanding status output.
 - Current blocker: none
-- Next exact step: Monitor PR #503 for any additional review or CI changes.
-- Verification gap: none beyond confirming the journal diff; this change does not alter runtime code or tests.
-- Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: removing the timezone note would reintroduce the same UTC-vs-local timeline ambiguity that triggered the review thread.
-- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ8508oYP`
+- Next exact step: Commit the normalized change-risk decision work, then check whether `codex/issue-505` already has a PR or needs a draft PR opened.
+- Verification gap: none; the focused issue-metadata and prompt tests passed, and `npm run build` passed after restoring the local toolchain with `npm ci`.
+- Files touched: `src/issue-metadata/issue-metadata-change-risk-decision.ts`, `src/issue-metadata/issue-metadata-change-risk-decision.test.ts`, `src/issue-metadata/issue-metadata.ts`, `src/codex/codex-prompt.ts`, `src/codex/codex-prompt.test.ts`, `src/supervisor/supervisor-status-rendering.ts`
+- Rollback concern: removing the shared decision helper would re-fragment precedence between prompt/status callers and drop the explicit higher-risk source that #505 needs.
+- Last focused command: `npx tsx --test src/issue-metadata/issue-metadata-change-risk-decision.test.ts src/issue-metadata/issue-metadata-risky-policy.test.ts src/issue-metadata/issue-metadata-change-classification.test.ts src/issue-metadata/issue-metadata.test.ts src/codex/codex-prompt.test.ts`
 ### Scratchpad (workspace-local date in Asia/Tokyo unless noted)
+- 2026-03-18 (JST): Added `summarizeChangeRiskDecision` so prompt/status consumers share one normalized risk decision with `issue_metadata` tie precedence, risky approval inputs, deterministic changed-file classes, and the resulting verification intensity.
+- 2026-03-18 (JST): Focused reproducer for #505 was a new `issue-metadata-change-risk-decision` test asserting `auth` metadata plus docs/tests changed files should still resolve to `verificationIntensity=strong` with `higherRiskSource=issue_metadata`.
+- 2026-03-18 (JST): `npm run build` first failed with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain, then the focused issue-metadata/prompt tests and `npm run build` both passed.
 - 2026-03-18 (JST): Pushed `30b3066` (`Clarify journal scratchpad date basis`) to `origin/codex/issue-494` and resolved CodeRabbit thread `PRRT_kwDORgvdZ8508oYP` on PR #503 with `gh api graphql`.
 - 2026-03-18 (JST): Review repair for PR #503 clarifies that scratchpad entries use the workspace-local date basis while the Supervisor Snapshot `Updated at` field remains UTC.
 - 2026-03-18 (JST): `npm run build` initially failed with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain and the next `npm run build` passed.
