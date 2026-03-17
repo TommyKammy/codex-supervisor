@@ -26,6 +26,13 @@ export interface CopilotReviewLifecycleFacts {
     createdAt: string | null;
     body: string | null;
   }>;
+  statusContexts?: Array<{
+    creatorLogin: string | null;
+    context: string | null;
+    description?: string | null;
+    createdAt: string | null;
+    commitOid?: string | null;
+  }>;
   timeline: Array<{
     type: "requested" | "removed";
     createdAt: string | null;
@@ -63,6 +70,22 @@ function parseTimestamp(value: string | null | undefined): number {
 function normalizeLogin(value: string | null | undefined): string | null {
   const trimmed = value?.trim().toLowerCase();
   return trimmed ? trimmed : null;
+}
+
+function isConfiguredBotStatusContextActivity(args: {
+  creatorLogin: string | null | undefined;
+  context: string | null | undefined;
+  description?: string | null | undefined;
+  configuredReviewBots: Set<string>;
+}): boolean {
+  const creatorLogin = normalizeLogin(args.creatorLogin);
+  if (creatorLogin && args.configuredReviewBots.has(creatorLogin)) {
+    return true;
+  }
+
+  const normalizedContext = (args.context ?? "").trim().toLowerCase();
+  const normalizedDescription = (args.description ?? "").trim().toLowerCase();
+  return normalizedContext.includes("coderabbit") || normalizedDescription.includes("coderabbit");
 }
 
 function latestTimestamp(values: Array<string | null | undefined>): string | null {
@@ -281,7 +304,23 @@ function inferConfiguredBotCurrentHeadObservedAt(
       : [];
   });
 
-  const latestCurrentHeadObservedAt = latestTimestamp([...currentHeadReviewTimes, ...currentHeadCommentTimes]);
+  const currentHeadStatusContextTimes = (facts.statusContexts ?? []).flatMap((statusContext) =>
+    statusContext.commitOid === normalizedCurrentHeadOid &&
+    isConfiguredBotStatusContextActivity({
+      creatorLogin: statusContext.creatorLogin,
+      context: statusContext.context,
+      description: statusContext.description,
+      configuredReviewBots,
+    })
+      ? [statusContext.createdAt]
+      : [],
+  );
+
+  const latestCurrentHeadObservedAt = latestTimestamp([
+    ...currentHeadReviewTimes,
+    ...currentHeadCommentTimes,
+    ...currentHeadStatusContextTimes,
+  ]);
   if (!latestCurrentHeadObservedAt) {
     return null;
   }

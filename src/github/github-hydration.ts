@@ -76,6 +76,26 @@ export interface PullRequestCopilotReviewLifecycleResponse {
       requestedReviewer?: ReviewActor | null;
     } | null>;
   } | null;
+  commits?: {
+    nodes?: Array<{
+      commit?: {
+        oid?: string | null;
+        statusCheckRollup?: {
+          contexts?: {
+            nodes?: Array<{
+              __typename?: string | null;
+              context?: string | null;
+              description?: string | null;
+              createdAt?: string | null;
+              creator?: {
+                login?: string | null;
+              } | null;
+            } | null>;
+          } | null;
+        } | null;
+      } | null;
+    } | null>;
+  } | null;
 }
 
 function mapCheckBucket(args: {
@@ -224,6 +244,25 @@ export function mapCopilotReviewLifecycleFacts(
         createdAt: comment?.createdAt ?? null,
         body: comment?.body ?? null,
       })) ?? [],
+    statusContexts:
+      lifecycle?.commits?.nodes?.flatMap((node) => {
+        const commitOid = node?.commit?.oid ?? null;
+        return (
+          node?.commit?.statusCheckRollup?.contexts?.nodes?.flatMap((contextNode) => {
+            if (contextNode?.__typename !== "StatusContext" && !contextNode?.context) {
+              return [];
+            }
+
+            return [{
+              creatorLogin: normalizeLogin(contextNode?.creator?.login ?? null),
+              context: contextNode?.context ?? null,
+              description: contextNode?.description ?? null,
+              createdAt: contextNode?.createdAt ?? null,
+              commitOid,
+            }];
+          }) ?? []
+        );
+      }) ?? [],
     timeline:
       lifecycle?.timelineItems?.nodes
         ?.map((node) => {

@@ -236,6 +236,28 @@ export class GitHubPullRequestHydrator {
                 }
               }
             }
+            commits(last: 1) {
+              nodes {
+                commit {
+                  oid
+                  statusCheckRollup {
+                    contexts(last: 100) {
+                      nodes {
+                        __typename
+                        ... on StatusContext {
+                          context
+                          description
+                          createdAt
+                          creator {
+                            login
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
