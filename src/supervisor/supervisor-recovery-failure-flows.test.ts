@@ -13,6 +13,12 @@ import {
   git,
 } from "./supervisor-test-helpers";
 
+function issueLockPath(supervisor: Supervisor, issueNumber: number): string {
+  return (supervisor as unknown as {
+    lockPath(kind: "issues" | "sessions" | "supervisor", key: string): string;
+  }).lockPath("issues", `issue-${issueNumber}`);
+}
+
 test("runOnce recovers when post-codex refresh throws after leaving a dirty worktree", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 87;
@@ -96,8 +102,7 @@ test("runOnce recovers when post-codex refresh throws after leaving a dirty work
   const worktreeStatus = git(["-C", path.join(fixture.workspaceRoot, `issue-${issueNumber}`), "status", "--short"]);
   assert.match(worktreeStatus, /dirty\.txt/);
 
-  const issueLockPath = path.join(path.dirname(fixture.stateFile), "locks", "issues", `issue-${issueNumber}.lock`);
-  await assert.rejects(fs.access(issueLockPath));
+  await assert.rejects(fs.access(issueLockPath(supervisor, issueNumber)));
 });
 
 test("recoverUnexpectedCodexTurnFailure preserves dirty recovery context and timeout bookkeeping", async () => {
