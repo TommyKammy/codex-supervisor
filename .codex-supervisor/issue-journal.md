@@ -5,16 +5,25 @@
 - Branch: codex/issue-487
 - Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-487
 - Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-487/.codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 95a13947e1fe7973c2a3314d87bf708909d4a7be
+- Current phase: draft_pr
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: 531ef4863cd07b1bb4852c0cacea3e894188d6a8
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-17T14:13:46.856Z
+- Updated at: 2026-03-17T14:24:38Z
 
 ## Latest Codex Summary
-- Split the mixed supervisor recovery test coverage into dedicated reconciliation and failure-flow suites, leaving `src/supervisor/supervisor-recovery.test.ts` as a thin facade that imports both focused files. Focused recovery tests and `npm run build` pass after restoring the local toolchain with `npm ci`.
+Split the mixed recovery suite into focused files: reconciliation coverage now lives in [src/supervisor/supervisor-recovery-reconciliation.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-487/src/supervisor/supervisor-recovery-reconciliation.test.ts), failure-recovery flows live in [src/supervisor/supervisor-recovery-failure-flows.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-487/src/supervisor/supervisor-recovery-failure-flows.test.ts), and [src/supervisor/supervisor-recovery.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-487/src/supervisor/supervisor-recovery.test.ts) is now a thin facade. The implementation commit is still `531ef48` (`Split supervisor recovery test coverage`), and I pushed `codex/issue-487` plus opened draft PR #496: https://github.com/TommyKammy/codex-supervisor/pull/496.
+
+Focused verification passed again locally with `npx tsx --test src/supervisor/supervisor-recovery.test.ts`, `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-recovery-failure-flows.test.ts`, and `npm run build`. The only remaining untracked item is `.codex-supervisor/replay/`, which I left untouched.
+
+Summary: Split supervisor recovery tests by reconciliation vs failure flows, left a thin facade, updated the issue journal, and committed the cleanup as `531ef48`
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/supervisor-recovery.test.ts`; `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-recovery-failure-flows.test.ts`; `npm run build` (after `npm ci`)
+Failure signature: none
+Next action: Monitor CI and review feedback on draft PR #496 for `codex/issue-487`
 
 ## Active Failure Context
 - None recorded.
@@ -24,16 +33,13 @@
 - Hypothesis: #487 can stay behavior-neutral by moving the recovery reconciliation assertions into their own focused suite and isolating dirty-worktree/unexpected-failure recovery flows in a separate file, with the original test path kept only as a facade import.
 - What changed: split `src/supervisor/supervisor-recovery.test.ts` into `src/supervisor/supervisor-recovery-reconciliation.test.ts` and `src/supervisor/supervisor-recovery-failure-flows.test.ts`, and reduced `src/supervisor/supervisor-recovery.test.ts` to two side-effect imports.
 - Current blocker: none
-- Next exact step: Review the split diff for any import-path or test-discovery concerns, then commit the cleanup on `codex/issue-487`.
+- Next exact step: Monitor CI on draft PR #496 and address any review or check failures on `codex/issue-487`.
 - Verification gap: none locally after rerunning the focused recovery suites and `npm run build`.
 - Files touched: `src/supervisor/supervisor-recovery.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor-recovery-failure-flows.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this cleanup would put reconciliation helper coverage and heavier recovery integration flows back into one file, increasing edit overlap and making failures less localized.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-recovery-failure-flows.test.ts`; `npx tsx --test src/supervisor/supervisor-recovery.test.ts`; `npm ci`; `npm run build`
+- Last focused command: `npx tsx --test src/supervisor/supervisor-recovery.test.ts`; `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-recovery-failure-flows.test.ts`; `npm run build`; `git push -u origin codex/issue-487`; `gh pr create --repo TommyKammy/codex-supervisor --draft --base main --head TommyKammy:codex/issue-487 ...`
 ### Scratchpad
-- 2026-03-17: Baseline for #487 was `npx tsx --test src/supervisor/supervisor-recovery.test.ts`, which passed with 11 tests before the split and exposed a clean seam of 8 reconciliation tests plus 3 failure-flow tests.
-- 2026-03-17: Split recovery coverage into `src/supervisor/supervisor-recovery-reconciliation.test.ts` and `src/supervisor/supervisor-recovery-failure-flows.test.ts`, leaving `src/supervisor/supervisor-recovery.test.ts` as a thin import-only facade.
-- 2026-03-17: Focused verification for #487 was `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-recovery-failure-flows.test.ts` and `npx tsx --test src/supervisor/supervisor-recovery.test.ts`; `npm run build` initially failed with `sh: 1: tsc: not found`, then `npm ci` restored the toolchain and `npm run build` passed.
-- 2026-03-17: Focused baseline for #484 was `npx tsx --test src/pull-request-state-provider-waits.test.ts`, which passed with 28 assertions before the file split.
+- 2026-03-17: Re-ran the focused recovery suites and `npm run build`, pushed `codex/issue-487` to `origin`, and opened draft PR #496 (`https://github.com/TommyKammy/codex-supervisor/pull/496`).
 - 2026-03-17: Split provider wait coverage into `src/pull-request-state-provider-wait-policy.test.ts` and `src/pull-request-state-coderabbit-settled-waits.test.ts`; focused verification was `npx tsx --test src/pull-request-state-provider-wait-policy.test.ts src/pull-request-state-coderabbit-settled-waits.test.ts`, then `npm ci` and `npm run build`.
 - 2026-03-17: Added `draftSkipAt` to configured-bot summaries and hydrated PRs; focused verification was `npx tsx --test src/github/github-review-signals.test.ts src/github/github-pull-request-hydrator.test.ts`, followed by `npm ci` and `npm run build`.
 - 2026-03-17: Pushed `codex/issue-478` to `origin` and opened draft PR #481 (`https://github.com/TommyKammy/codex-supervisor/pull/481`) after confirming there was no existing PR for the branch.
