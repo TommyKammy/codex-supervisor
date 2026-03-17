@@ -306,6 +306,8 @@ test("configuredBotSettledWaitWindow reports the active CodeRabbit quiet period"
       {
         status: "active",
         provider: "coderabbit",
+        pauseReason: "recent_current_head_observation",
+        recentObservation: "current_head_activity",
         observedAt: "2026-03-16T00:00:00.000Z",
         waitUntil: "2026-03-16T00:00:05.000Z",
       },
@@ -319,6 +321,8 @@ test("configuredBotSettledWaitWindow reports the active CodeRabbit quiet period"
       {
         status: "inactive",
         provider: "none",
+        pauseReason: "none",
+        recentObservation: "none",
         observedAt: "2026-03-16T00:00:00.000Z",
         waitUntil: null,
       },
@@ -344,6 +348,8 @@ test("configuredBotSettledWaitWindow uses configuredBotSettledWaitSeconds when p
       {
         status: "expired",
         provider: "coderabbit",
+        pauseReason: "recent_current_head_observation",
+        recentObservation: "current_head_activity",
         observedAt: "2026-03-16T00:00:00.000Z",
         waitUntil: "2026-03-16T00:00:03.000Z",
       },

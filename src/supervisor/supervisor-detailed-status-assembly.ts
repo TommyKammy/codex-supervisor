@@ -145,7 +145,7 @@ export function buildActiveDetailedStatusLines(
     const configuredBotSettledWait = configuredBotSettledWaitWindow(config, pr);
     if (configuredBotSettledWait.status === "active") {
       lines.push(
-        `configured_bot_settled_wait status=${configuredBotSettledWait.status} provider=${configuredBotSettledWait.provider} observed_at=${configuredBotSettledWait.observedAt ?? "none"} wait_until=${configuredBotSettledWait.waitUntil ?? "none"}`,
+        `configured_bot_settled_wait status=${configuredBotSettledWait.status} provider=${configuredBotSettledWait.provider} pause_reason=${configuredBotSettledWait.pauseReason} recent_observation=${configuredBotSettledWait.recentObservation} observed_at=${configuredBotSettledWait.observedAt ?? "none"} wait_until=${configuredBotSettledWait.waitUntil ?? "none"}`,
       );
     }
     if (activeRecord.copilot_review_timeout_reason) {
