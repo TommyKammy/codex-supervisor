@@ -9,6 +9,7 @@ import {
   summarizeCheckBuckets,
 } from "./supervisor-status-summary-helpers";
 import {
+  configuredBotSettledWaitWindow,
   configuredBotRateLimitWaitWindow,
   configuredBotTopLevelReviewEffect,
   configuredReviewBots,
@@ -139,6 +140,12 @@ export function buildActiveDetailedStatusLines(
     if (configuredBotRateLimit.observedAt) {
       lines.push(
         `configured_bot_rate_limit status=${configuredBotRateLimit.status} observed_at=${configuredBotRateLimit.observedAt} wait_until=${configuredBotRateLimit.waitUntil ?? "none"}`,
+      );
+    }
+    const configuredBotSettledWait = configuredBotSettledWaitWindow(config, pr);
+    if (configuredBotSettledWait.status === "active") {
+      lines.push(
+        `configured_bot_settled_wait status=${configuredBotSettledWait.status} provider=${configuredBotSettledWait.provider} observed_at=${configuredBotSettledWait.observedAt ?? "none"} wait_until=${configuredBotSettledWait.waitUntil ?? "none"}`,
       );
     }
     if (activeRecord.copilot_review_timeout_reason) {

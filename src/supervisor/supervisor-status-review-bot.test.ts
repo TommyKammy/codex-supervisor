@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  configuredBotSettledWaitWindow,
   configuredBotRateLimitWaitWindow,
   configuredBotTopLevelReviewEffect,
   configuredReviewStatusLabel,
@@ -285,6 +286,41 @@ test("configuredBotRateLimitWaitWindow reports active and expired windows", () =
         status: "expired",
         observedAt: "2026-03-16T00:00:00.000Z",
         waitUntil: "2026-03-16T00:03:00.000Z",
+      },
+    );
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test("configuredBotSettledWaitWindow reports the active CodeRabbit quiet period", () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-03-16T00:00:03.000Z");
+
+  try {
+    assert.deepEqual(
+      configuredBotSettledWaitWindow(
+        createConfig({ reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"] }),
+        createPr({ configuredBotCurrentHeadObservedAt: "2026-03-16T00:00:00.000Z" }),
+      ),
+      {
+        status: "active",
+        provider: "coderabbit",
+        observedAt: "2026-03-16T00:00:00.000Z",
+        waitUntil: "2026-03-16T00:00:05.000Z",
+      },
+    );
+
+    assert.deepEqual(
+      configuredBotSettledWaitWindow(
+        createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] }),
+        createPr({ configuredBotCurrentHeadObservedAt: "2026-03-16T00:00:00.000Z" }),
+      ),
+      {
+        status: "inactive",
+        provider: "none",
+        observedAt: "2026-03-16T00:00:00.000Z",
+        waitUntil: null,
       },
     );
   } finally {
