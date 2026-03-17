@@ -72,6 +72,10 @@ function normalizeLogin(value: string | null | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
+function isCodeRabbitLogin(value: string | null | undefined): boolean {
+  return (normalizeLogin(value) ?? "").includes("coderabbit");
+}
+
 function isConfiguredBotStatusContextActivity(args: {
   creatorLogin: string | null | undefined;
   context: string | null | undefined;
@@ -316,27 +320,41 @@ function inferConfiguredBotCurrentHeadObservedAt(
       : [],
   );
 
-  const latestCurrentHeadObservedAt = latestTimestamp([
+  const latestStrongCurrentHeadObservedAt = latestTimestamp([
     ...currentHeadReviewTimes,
     ...currentHeadCommentTimes,
     ...currentHeadStatusContextTimes,
   ]);
-  if (!latestCurrentHeadObservedAt) {
+  if (!latestStrongCurrentHeadObservedAt) {
     return null;
   }
 
-  const latestCurrentHeadObservedAtMs = parseTimestamp(latestCurrentHeadObservedAt);
+  const latestStrongCurrentHeadObservedAtMs = parseTimestamp(latestStrongCurrentHeadObservedAt);
+  const weaklyAnchoredCodeRabbitCommentTimes = facts.comments.flatMap((comment) => {
+    const authorLogin = normalizeLogin(comment.authorLogin);
+    return authorLogin &&
+      configuredReviewBots.has(authorLogin) &&
+      isCodeRabbitLogin(authorLogin) &&
+      !comment.originalCommitOid &&
+      parseTimestamp(comment.createdAt) >= latestStrongCurrentHeadObservedAtMs
+      ? [comment.createdAt]
+      : [];
+  });
   const followUpIssueCommentTimes = facts.issueComments.flatMap((comment) => {
     const authorLogin = normalizeLogin(comment.authorLogin);
     return authorLogin &&
       configuredReviewBots.has(authorLogin) &&
       hasActionableReviewText(comment.body) &&
-      parseTimestamp(comment.createdAt) >= latestCurrentHeadObservedAtMs
+      parseTimestamp(comment.createdAt) >= latestStrongCurrentHeadObservedAtMs
       ? [comment.createdAt]
       : [];
   });
 
-  return latestTimestamp([latestCurrentHeadObservedAt, ...followUpIssueCommentTimes]);
+  return latestTimestamp([
+    latestStrongCurrentHeadObservedAt,
+    ...weaklyAnchoredCodeRabbitCommentTimes,
+    ...followUpIssueCommentTimes,
+  ]);
 }
 
 function inferConfiguredBotRateLimitWarningAt(

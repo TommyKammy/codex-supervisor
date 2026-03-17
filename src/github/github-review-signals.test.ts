@@ -586,6 +586,82 @@ test("buildConfiguredBotReviewSummary extends current-head observation with late
   });
 });
 
+test("buildConfiguredBotReviewSummary extends current-head observation with later weakly anchored CodeRabbit review comments", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [
+      {
+        authorLogin: "coderabbitai[bot]",
+        submittedAt: "2026-03-13T02:02:00Z",
+        commitOid: "head-44",
+        state: "COMMENTED",
+        body: "## Summary\nCodeRabbit reviewed this pull request and found no actionable issues.",
+      },
+    ],
+    comments: [
+      {
+        authorLogin: "coderabbitai[bot]",
+        createdAt: "2026-03-13T02:04:00Z",
+        originalCommitOid: null,
+      },
+    ],
+    issueComments: [],
+    timeline: [],
+  };
+
+  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["coderabbitai[bot]"], "head-44"), {
+    lifecycle: {
+      state: "arrived",
+      requestedAt: null,
+      arrivedAt: "2026-03-13T02:04:00Z",
+    },
+    topLevelReview: {
+      strength: null,
+      submittedAt: null,
+    },
+    currentHeadObservedAt: "2026-03-13T02:04:00Z",
+    rateLimitWarningAt: null,
+  });
+});
+
+test("buildConfiguredBotReviewSummary keeps weakly anchored CodeRabbit review comments from stale-head history out of current-head observation", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [
+      {
+        authorLogin: "coderabbitai[bot]",
+        submittedAt: "2026-03-13T02:02:00Z",
+        commitOid: "stale-head",
+        state: "COMMENTED",
+        body: "## Summary\nCodeRabbit reviewed this pull request and found no actionable issues.",
+      },
+    ],
+    comments: [
+      {
+        authorLogin: "coderabbitai[bot]",
+        createdAt: "2026-03-13T02:04:00Z",
+        originalCommitOid: null,
+      },
+    ],
+    issueComments: [],
+    timeline: [],
+  };
+
+  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["coderabbitai[bot]"], "head-44"), {
+    lifecycle: {
+      state: "arrived",
+      requestedAt: null,
+      arrivedAt: "2026-03-13T02:04:00Z",
+    },
+    topLevelReview: {
+      strength: null,
+      submittedAt: null,
+    },
+    currentHeadObservedAt: null,
+    rateLimitWarningAt: null,
+  });
+});
+
 test("buildConfiguredBotReviewSummary ignores late configured-bot closed-PR follow-up comments after a current-head observation", () => {
   const facts: CopilotReviewLifecycleFacts = {
     reviewRequests: [],
