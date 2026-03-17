@@ -7,23 +7,23 @@
 - Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-480/.codex-supervisor/issue-journal.md
 - Current phase: addressing_review
 - Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 27f8fee3d3c2bcb0ec9ba147e7f05b431faa34a1
+- Last head SHA: 2e70af0a377fb7866940d1d9dd1b59db5568dcd6
 - Blocked reason: none
 - Last failure signature: PRRT_kwDORgvdZ8502s12
 - Repeated failure signature count: 1
-- Updated at: 2026-03-17T21:48:34+09:00
+- Updated at: 2026-03-17T21:49:38+09:00
 
 ## Latest Codex Summary
-Addressed the remaining CodeRabbit review on PR [#482](https://github.com/TommyKammy/codex-supervisor/pull/482) by hardening `latestConfiguredBotActionableSignalAt` in [src/pull-request-state.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-480/src/pull-request-state.ts) so it pre-parses configured-bot timestamps, drops malformed values, and selects the newest valid actionable signal.
+Addressed the remaining CodeRabbit review on PR [#482](https://github.com/TommyKammy/codex-supervisor/pull/482) by hardening `latestConfiguredBotActionableSignalAt` in [src/pull-request-state.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-480/src/pull-request-state.ts) so it pre-parses configured-bot timestamps, drops malformed values, and selects the newest valid actionable signal. The repair is committed as `2e70af0` (`Ignore malformed configured-bot timestamps`) and pushed to `origin/codex/issue-480`.
 
 Added a focused regression in [src/pull-request-state-provider-waits.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-480/src/pull-request-state-provider-waits.test.ts) covering a draft-skip re-arm case where `configuredBotCurrentHeadObservedAt` is malformed but a newer valid top-level review timestamp should still clear the wait. Verification passed with `npx tsx --test src/pull-request-state-provider-waits.test.ts` and `npm run build`.
 
-Summary: Fixed the malformed configured-bot timestamp selection noted in PR #482, added a focused regression, and reran the targeted test file plus `npm run build`.
-State hint: addressing_review
+Summary: Fixed the malformed configured-bot timestamp selection noted in PR #482, added a focused regression, reran the targeted test file plus `npm run build`, and pushed commit `2e70af0`.
+State hint: waiting_ci
 Blocked reason: none
 Tests: `npx tsx --test src/pull-request-state-provider-waits.test.ts`; `npm run build`
-Failure signature: PRRT_kwDORgvdZ8502s12
-Next action: Commit and push the review fix to `codex/issue-480`, then watch PR #482 for any follow-up.
+Failure signature: none
+Next action: Watch PR #482 CI/review results and resolve or answer the CodeRabbit thread if any follow-up remains.
 
 ## Active Failure Context
 - None recorded.
@@ -33,11 +33,11 @@ Next action: Commit and push the review fix to `codex/issue-480`, then watch PR 
 - Hypothesis: the remaining review thread is valid because `latestConfiguredBotActionableSignalAt` still compares raw timestamp strings, so a malformed earlier value can mask a newer valid configured-bot signal and incorrectly keep the draft-skip re-wait active.
 - What changed: `latestConfiguredBotActionableSignalAt` now pre-parses the configured-bot timestamp candidates, drops invalid values, and reduces over numeric epochs; added a regression proving a malformed `configuredBotCurrentHeadObservedAt` no longer blocks a newer `configuredBotTopLevelReviewSubmittedAt` from clearing the re-armed wait.
 - Current blocker: none
-- Next exact step: Push the review-fix commit to PR #482 and monitor CI/review for any remaining follow-up.
+- Next exact step: Watch PR #482 CI/review results for commit `2e70af0` and resolve or answer the CodeRabbit thread if it needs explicit follow-up.
 - Verification gap: none locally.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/pull-request-state.ts`, `src/pull-request-state-provider-waits.test.ts`
 - Rollback concern: reverting this repair should only affect malformed configured-bot timestamp handling; the draft-skip re-arm logic from `ca3acc6` should remain intact.
-- Last focused command: `npx tsx --test src/pull-request-state-provider-waits.test.ts`; `npm run build`
+- Last focused command: `npx tsx --test src/pull-request-state-provider-waits.test.ts`; `npm run build`; `git push origin codex/issue-480`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
 - Reproducing signature before the fix: required current-head CI completion metadata was absent from configured-bot hydration, so no stable `currentHeadCiGreenAt` value existed for later CodeRabbit provider-start wait logic.
