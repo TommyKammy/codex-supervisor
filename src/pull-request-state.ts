@@ -30,6 +30,7 @@ import {
 import { nowIso } from "./core/utils";
 
 const COPILOT_REVIEW_PROPAGATION_GRACE_MS = 5_000;
+const CODERABBIT_CURRENT_HEAD_QUIET_PERIOD_MS = 5_000;
 
 interface CopilotReviewTimeoutStatus {
   timedOut: boolean;
@@ -204,6 +205,23 @@ function shouldWaitForCopilotReviewPropagation(
   }
 
   return Date.now() < startedAtMs + COPILOT_REVIEW_PROPAGATION_GRACE_MS;
+}
+
+function shouldWaitForConfiguredBotCurrentHeadQuietPeriod(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+): boolean {
+  const policy = reviewProviderWaitPolicyFromConfig(config);
+  if (!policy.shouldApplyCurrentHeadQuietPeriod || pr.isDraft || !pr.configuredBotCurrentHeadObservedAt) {
+    return false;
+  }
+
+  const observedAtMs = Date.parse(pr.configuredBotCurrentHeadObservedAt);
+  if (Number.isNaN(observedAtMs)) {
+    return false;
+  }
+
+  return Date.now() < observedAtMs + CODERABBIT_CURRENT_HEAD_QUIET_PERIOD_MS;
 }
 
 export function buildCopilotReviewTimeoutFailureContext(
@@ -467,6 +485,10 @@ export function inferStateFromPullRequest(
   const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
   if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
     return "blocked";
+  }
+
+  if (shouldWaitForConfiguredBotCurrentHeadQuietPeriod(config, pr)) {
+    return "waiting_ci";
   }
 
   if (shouldWaitForCopilotReviewPropagation(config, record, pr)) {

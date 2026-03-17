@@ -182,6 +182,26 @@ test("derivePullRequestLifecycleSnapshot applies review-bot lifecycle patches be
   });
 });
 
+test("derivePullRequestLifecycleSnapshot keeps CodeRabbit repos in waiting_ci during the short current-head quiet period", () => {
+  withStubbedDateNow("2026-03-13T02:04:03Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+    });
+    const record = createRecord({ state: "waiting_ci" });
+    const pr = createPullRequest({
+      copilotReviewState: "arrived",
+      copilotReviewArrivedAt: "2026-03-13T02:04:00Z",
+      configuredBotCurrentHeadObservedAt: "2026-03-13T02:04:00Z",
+    });
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+    const reviewThreads: ReviewThread[] = [];
+
+    const snapshot = derivePullRequestLifecycleSnapshot(config, record, pr, checks, reviewThreads);
+
+    assert.equal(snapshot.nextState, "waiting_ci");
+  });
+});
+
 test("shouldRunCodex only returns true for actionable supervisor states", () => {
   const config = createConfig();
   const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
