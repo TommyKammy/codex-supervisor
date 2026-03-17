@@ -32,7 +32,7 @@ Next action: Push the journal repair, resolve thread `PRRT_kwDORgvdZ850_ne4`, an
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the tracked issue journal should use repo-relative paths consistently, including markdown link targets, so review artifacts stay shareable without leaking a contributor-specific workspace path.
+- Hypothesis: the tracked issue journal should use repo-relative paths consistently, including Markdown link targets, so review artifacts stay shareable without leaking a contributor-specific workspace path.
 - What changed: normalized the journal `Workspace` and `Journal` fields plus the new latest-summary links to repo-relative targets, reduced the copied CodeRabbit failure context to a neutral summary, and restored the truncated #477 scratchpad tail; the underlying #505 change-risk implementation from `395a11c` remains unchanged.
 - Current blocker: none
 - Next exact step: Push this journal-only repair, resolve CodeRabbit thread `PRRT_kwDORgvdZ850_ne4`, and monitor PR #508 for any follow-up review.
