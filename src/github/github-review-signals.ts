@@ -267,8 +267,7 @@ function inferConfiguredBotCurrentHeadObservedAt(
     const authorLogin = normalizeLogin(review.authorLogin);
     return authorLogin &&
       configuredReviewBots.has(authorLogin) &&
-      review.commitOid === normalizedCurrentHeadOid &&
-      isActionableTopLevelReview(review)
+      review.commitOid === normalizedCurrentHeadOid
       ? [review.submittedAt]
       : [];
   });
