@@ -7,23 +7,23 @@
 - Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-485/.codex-supervisor/issue-journal.md
 - Current phase: addressing_review
 - Attempt count: 4 (implementation=2, repair=2)
-- Last head SHA: 5ce1e8181e8992a0c408f8daff2b6e95bc257056
+- Last head SHA: 4ecf965703c7c057f25066ec23f83d2cc82797da
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 1
-- Updated at: 2026-03-17T15:23:15Z
+- Updated at: 2026-03-17T15:25:02Z
 
 ## Latest Codex Summary
-Prepared a review-repair follow-up for PR [#497](https://github.com/TommyKammy/codex-supervisor/pull/497): the guardrail provenance tests now commit shared-memory fixtures before capturing `headSha`, so the mocked PR head truly represents committed durable guidance. The journal handoff summary still avoids absolute workspace markdown links, which addresses the repo-link review comment once this turn is committed.
+Pushed `4ecf965` (`test: fix diagnostics review follow-ups`) to `origin/codex/issue-485` for PR [#497](https://github.com/TommyKammy/codex-supervisor/pull/497). The repair keeps the diagnostics split behavior-neutral while tightening the guardrail provenance tests so committed shared-memory fixtures are written, added, and committed before `headSha` is captured; the journal summary also stays free of absolute workspace markdown links.
 
-Focused verification passed after the repair: `npx tsx --test src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts` and `npm run build`. An intermediate failed test run caught an ordering mistake where I tried to stage `external-review-guardrails.json` before writing it; that was corrected before the passing rerun.
+Focused verification passed after the repair: `npx tsx --test src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts` and `npm run build`. After the push, I resolved both CodeRabbit review threads (`PRRT_kwDORgvdZ8505wKg` and `PRRT_kwDORgvdZ8505wKi`) with `gh api graphql`.
 
-Summary: Repaired the PR #497 review findings locally by committing shared-memory guardrail fixtures before `headSha` capture and preserving repo-safe journal summary links.
+Summary: Pushed the PR #497 review repair for committed guardrail provenance and cleared the two addressed CodeRabbit threads.
 State hint: addressing_review
 Blocked reason: none
 Tests: `npx tsx --test src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts`; `npm run build`
 Failure signature: none
-Next action: Commit and push this review repair to `codex/issue-485`, then re-check PR #497 and clear the addressed review threads.
+Next action: Monitor PR #497 for the post-push CI run and any fresh review feedback.
 
 ## Active Failure Context
 - None recorded.
@@ -33,12 +33,13 @@ Next action: Commit and push this review repair to `codex/issue-485`, then re-ch
 - Hypothesis: #485 can stay behavior-neutral by extracting supervisor diagnostics coverage into four files that match the existing ownership boundaries: doctor/status selection, explain, handoff summary, and guardrail provenance, with the legacy path preserved as a facade import.
 - What changed: kept the diagnostics split intact and repaired `src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts` so both provenance tests commit `docs/shared-memory/*.json` before capturing `headSha`; retained the repo-safe journal summary text instead of reintroducing absolute workspace markdown links.
 - Current blocker: none
-- Next exact step: Push the review-repair commit to `origin/codex/issue-485`, then re-check PR #497 for fresh CI/review signals and resolve the addressed threads if the remote matches.
+- Next exact step: Monitor PR #497 for the CI run triggered by `4ecf965` and handle any new review or verification signal on `codex/issue-485`.
 - Verification gap: none for the touched guardrail provenance suite or `npm run build`.
 - Files touched: `src/supervisor/supervisor-diagnostics.test.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-diagnostics-explain.test.ts`, `src/supervisor/supervisor-diagnostics-handoff-summary.test.ts`, `src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this cleanup would collapse unrelated diagnostics assertions back into a single 1k+ line file, increasing churn and making focused failures harder to localize.
 - Last focused command: `npm run build`
 ### Scratchpad
+- 2026-03-17: Pushed `4ecf965` to `origin/codex/issue-485` and resolved CodeRabbit threads `PRRT_kwDORgvdZ8505wKg` and `PRRT_kwDORgvdZ8505wKi` after verifying `npx tsx --test src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts` and `npm run build`.
 - 2026-03-17: Review repair for PR #497 updates the guardrail provenance fixtures so committed shared-memory files are added before `headSha` is captured; focused verification was `npx tsx --test src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts` and `npm run build`.
 - 2026-03-17: Added `draftSkipAt` to configured-bot summaries and hydrated PRs; focused verification was `npx tsx --test src/github/github-review-signals.test.ts src/github/github-pull-request-hydrator.test.ts`, followed by `npm ci` and `npm run build`.
 - 2026-03-17: Pushed `codex/issue-478` to `origin` and opened draft PR #481 (`https://github.com/TommyKammy/codex-supervisor/pull/481`) after confirming there was no existing PR for the branch.
