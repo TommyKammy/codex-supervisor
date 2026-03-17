@@ -7,11 +7,11 @@
 - Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-484/.codex-supervisor/issue-journal.md
 - Current phase: stabilizing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 1134d2017fe57336a35e41aa6d70ba3b67b7aacb
+- Last head SHA: b3d5315529f69d0475f0c5c2096f2b92491bc821
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-17T13:57:33Z
+- Updated at: 2026-03-17T13:58:22Z
 
 ## Latest Codex Summary
 - Split the combined provider-wait coverage into `src/pull-request-state-provider-wait-policy.test.ts` and `src/pull-request-state-coderabbit-settled-waits.test.ts`, preserving the existing 28 assertions while making the CodeRabbit settled/draft-skip boundary explicit.
@@ -24,12 +24,13 @@
 - Hypothesis: the cleanup can stay behavior-neutral by moving the generic provider/Copilot wait policy and timeout assertions out of the combined file, leaving CodeRabbit settled-wait and draft-skip behavior in a dedicated suite.
 - What changed: deleted `src/pull-request-state-provider-waits.test.ts`, moved provider-neutral wait/timeout coverage into `src/pull-request-state-provider-wait-policy.test.ts`, and moved CodeRabbit current-head, initial-grace, settled-wait, and draft-skip re-wait coverage into `src/pull-request-state-coderabbit-settled-waits.test.ts`.
 - Current blocker: none
-- Next exact step: Commit the test split on `codex/issue-484`, then open or update the draft PR if needed.
+- Next exact step: Monitor draft PR #495 (`https://github.com/TommyKammy/codex-supervisor/pull/495`) for CI and review feedback.
 - Verification gap: none locally after restoring `node_modules` with `npm ci`.
 - Files touched: `src/pull-request-state-provider-wait-policy.test.ts`, `src/pull-request-state-coderabbit-settled-waits.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this cleanup would re-concentrate unrelated provider policy changes into one large test file, bringing back unnecessary churn around CodeRabbit-only edits.
 - Last focused command: `npx tsx --test src/pull-request-state-provider-wait-policy.test.ts src/pull-request-state-coderabbit-settled-waits.test.ts`; `npm ci`; `npm run build`
 ### Scratchpad
+- 2026-03-17: Committed the split as `b3d5315` (`Split provider wait policy tests`), pushed `codex/issue-484`, and opened draft PR #495 (`https://github.com/TommyKammy/codex-supervisor/pull/495`).
 - 2026-03-17: Focused baseline for #484 was `npx tsx --test src/pull-request-state-provider-waits.test.ts`, which passed with 28 assertions before the file split.
 - 2026-03-17: Split provider wait coverage into `src/pull-request-state-provider-wait-policy.test.ts` and `src/pull-request-state-coderabbit-settled-waits.test.ts`; focused verification was `npx tsx --test src/pull-request-state-provider-wait-policy.test.ts src/pull-request-state-coderabbit-settled-waits.test.ts`, then `npm ci` and `npm run build`.
 - 2026-03-17: Added `draftSkipAt` to configured-bot summaries and hydrated PRs; focused verification was `npx tsx --test src/github/github-review-signals.test.ts src/github/github-pull-request-hydrator.test.ts`, followed by `npm ci` and `npm run build`.
