@@ -19,6 +19,7 @@ import { shouldAutoRetryTimeout } from "./supervisor-failure-helpers";
 import {
   buildChangeClassesStatusLine,
   buildDurableGuardrailStatusLine,
+  buildVerificationPolicyStatusLine,
   loadStatusChangedFiles,
 } from "./supervisor-status-rendering";
 import {
@@ -38,6 +39,7 @@ type ActiveStatusGitHub = Pick<
   GitHubClient,
   "resolvePullRequestForBranch" | "getChecks" | "getUnresolvedReviewThreads"
 >;
+type ActiveStatusIssueGitHub = Pick<GitHubClient, "getIssue">;
 
 export interface SupervisorStatusRecords {
   activeRecord: IssueRunRecord | null;
@@ -52,6 +54,7 @@ export interface ActiveIssueStatusSnapshot {
   reviewThreads: ReviewThread[];
   handoffSummary: string | null;
   changeClassesSummary: string | null;
+  verificationPolicySummary: string | null;
   durableGuardrailSummary: string | null;
   warningMessage: string | null;
 }
@@ -89,7 +92,7 @@ export function summarizeSupervisorStatusRecords(state: SupervisorStateFile): Su
 }
 
 export async function loadActiveIssueStatusSnapshot(args: {
-  github: ActiveStatusGitHub;
+  github: ActiveStatusGitHub & Partial<ActiveStatusIssueGitHub>;
   config: SupervisorConfig;
   activeRecord: IssueRunRecord;
 }): Promise<ActiveIssueStatusSnapshot> {
@@ -98,6 +101,7 @@ export async function loadActiveIssueStatusSnapshot(args: {
   let checks: PullRequestCheck[] = [];
   let reviewThreads: ReviewThread[] = [];
   let changeClassesSummary: string | null = null;
+  let verificationPolicySummary: string | null = null;
   let durableGuardrailSummary: string | null = null;
   let warningMessage: string | null = null;
 
@@ -110,11 +114,15 @@ export async function loadActiveIssueStatusSnapshot(args: {
   }
 
   try {
+    const changedFiles = await loadStatusChangedFiles(args.config, args.activeRecord.workspace);
+    const issue = args.github.getIssue
+      ? await args.github.getIssue(args.activeRecord.issue_number)
+      : null;
     pr = await args.github.resolvePullRequestForBranch(args.activeRecord.branch, args.activeRecord.pr_number);
     checks = isOpenPullRequest(pr) ? await args.github.getChecks(pr.number) : [];
     reviewThreads = isOpenPullRequest(pr) ? await args.github.getUnresolvedReviewThreads(pr.number) : [];
-    const changedFiles = await loadStatusChangedFiles(args.config, args.activeRecord.workspace);
     changeClassesSummary = buildChangeClassesStatusLine(changedFiles);
+    verificationPolicySummary = buildVerificationPolicyStatusLine({ issue, changedFiles });
     durableGuardrailSummary = await buildDurableGuardrailStatusLine({
       config: args.config,
       activeRecord: args.activeRecord,
@@ -132,6 +140,7 @@ export async function loadActiveIssueStatusSnapshot(args: {
     reviewThreads,
     handoffSummary,
     changeClassesSummary,
+    verificationPolicySummary,
     durableGuardrailSummary,
     warningMessage,
   };

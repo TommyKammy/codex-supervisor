@@ -1,46 +1,37 @@
-# Issue #505: Change-risk explainability: normalize risk decisions with explicit source precedence
+# Issue #506: Change-risk explainability: surface the applied verification policy in status output
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/505
-- Branch: codex/issue-505
-- Workspace: .
-- Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 3 (implementation=1, repair=2)
-- Last head SHA: 693e30b62880fccc5aa402687b52a1efae64190f
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/506
+- Branch: codex/issue-506
+- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-506
+- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-506/.codex-supervisor/issue-journal.md
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 4b6837c6048cbd686963cdb9872d1269d0b7705d
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ850_ne4
-- Repeated failure signature count: 1
-- Updated at: 2026-03-17T21:31:57.000Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-17T21:56:52.195Z
 
 ## Latest Codex Summary
-Repaired the tracked issue journal for PR #508 by converting the workspace fields and newly added file links to repo-relative paths, and by restoring the truncated scratchpad tail that had been committed in `693e30b`. The underlying #505 implementation from [src/issue-metadata/issue-metadata-change-risk-decision.ts](../src/issue-metadata/issue-metadata-change-risk-decision.ts) remains unchanged.
-
-The shared normalized change-risk decision, prompt coverage, and focused decision tests from [src/codex/codex-prompt.ts](../src/codex/codex-prompt.ts), [src/codex/codex-prompt.test.ts](../src/codex/codex-prompt.test.ts), and [src/issue-metadata/issue-metadata-change-risk-decision.test.ts](../src/issue-metadata/issue-metadata-change-risk-decision.test.ts) remain as shipped in `395a11c`; this turn only addresses the CodeRabbit journal-path review on draft PR #508: https://github.com/TommyKammy/codex-supervisor/pull/508
-
-One local untracked path remains: `.codex-supervisor/replay/`. I left it untouched.
-
-Summary: Normalized the tracked journal paths to repo-relative form, converted the new journal file links to repo-relative targets, and restored the truncated scratchpad tail on PR #508.
-State hint: addressing_review
-Blocked reason: none
-Tests: `git diff --check`
-Failure signature: none
-Next action: Push the journal repair, resolve thread `PRRT_kwDORgvdZ850_ne4`, and monitor PR #508 for follow-up review feedback.
+- None yet.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the tracked issue journal should use repo-relative paths consistently, including Markdown link targets, so review artifacts stay shareable without leaking a contributor-specific workspace path.
-- What changed: normalized the journal `Workspace` and `Journal` fields plus the new latest-summary links to repo-relative targets, reduced the copied CodeRabbit failure context to a neutral summary, and restored the truncated #477 scratchpad tail; the underlying #505 change-risk implementation from `395a11c` remains unchanged.
+- Hypothesis: status should render one compact `verification_policy` line from the normalized change-risk decision so operators can see both the applied verification intensity and the source that drove it without reading explain diagnostics.
+- What changed: added `buildVerificationPolicyStatusLine`, threaded `verificationPolicySummary` through active status loading and summary rendering, fetched the active issue when available so issue metadata can override low-risk changed files, and added focused renderer plus `supervisor.status()` coverage for docs-only and metadata-driven cases.
 - Current blocker: none
-- Next exact step: Push this journal-only repair, resolve CodeRabbit thread `PRRT_kwDORgvdZ850_ne4`, and monitor PR #508 for any follow-up review.
-- Verification gap: none for this repair; `git diff --check` passed and no source files changed.
-- Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this repair would reintroduce workspace-specific absolute paths into the tracked journal and restore the malformed scratchpad tail from `693e30b`.
-- Last focused command: `git diff --check`
+- Next exact step: Commit the status explainability change on `codex/issue-506`, then push the branch or open/update the draft PR if one is needed.
+- Verification gap: none at the code level; focused supervisor status tests and `npm run build` passed after restoring the local toolchain with `npm ci`.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-change-risk-status.test.ts`, `src/supervisor/supervisor-selection-status.ts`, `src/supervisor/supervisor-status-model.ts`, `src/supervisor/supervisor-status-rendering.test.ts`, `src/supervisor/supervisor-status-rendering.ts`, `src/supervisor/supervisor.ts`
+- Rollback concern: reverting this change would remove the new status explainability line and leave metadata-driven verification intensity visible only indirectly through change classes or prompt generation.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-status-rendering.test.ts src/supervisor/supervisor-change-risk-status.test.ts && npm run build`
 ### Scratchpad (workspace-local date in Asia/Tokyo unless noted)
+- 2026-03-18 (JST): Issue #506 now renders `verification_policy intensity=<...> driver=<source>:<classes>` in status output; focused coverage includes docs-only `changed_files` and stronger `issue_metadata` auth cases.
+- 2026-03-18 (JST): Focused verification for #506 was `npx tsx --test src/supervisor/supervisor-status-rendering.test.ts src/supervisor/supervisor-change-risk-status.test.ts`; `npm run build` initially failed with `sh: 1: tsc: not found`, `npm ci` restored the toolchain, and the rerun passed.
 - 2026-03-18 (JST): Review repair for PR #508 normalized the tracked journal `Workspace`/`Journal` fields and new summary links to repo-relative paths, reduced the copied CodeRabbit failure context to a neutral summary, restored the truncated #477 scratchpad tail from `HEAD^`, and passed `git diff --check`.
 - 2026-03-18 (JST): Committed `395a11c` (`Normalize change-risk decisions`), pushed `codex/issue-505`, and opened draft PR #508 (`https://github.com/TommyKammy/codex-supervisor/pull/508`).
 - 2026-03-18 (JST): Added `summarizeChangeRiskDecision` so prompt/status consumers share one normalized risk decision with `issue_metadata` tie precedence, risky approval inputs, deterministic changed-file classes, and the resulting verification intensity.
@@ -60,6 +51,4 @@ Next action: Push the journal repair, resolve thread `PRRT_kwDORgvdZ850_ne4`, an
 - 2026-03-17: Review repair for PR #482 filters malformed configured-bot timestamps before selecting the latest actionable signal; focused regression/verification was `npx tsx --test src/pull-request-state-provider-waits.test.ts` and `npm run build`.
 - 2026-03-17: Follow-up review repair for PR #482 updates the live journal summary links from absolute `/home/...` targets to repository-relative `../src/...` paths so CodeRabbit readers can open them from the repo view.
 - 2026-03-17: Pushed `9a7289c` (`Use repo-relative journal links`) to `origin/codex/issue-480` and resolved CodeRabbit thread `PRRT_kwDORgvdZ850206I` with `gh api graphql`.
-- 2026-03-17: Focused reproducer for #477 was status still emitting `configured_bot_initial_grace_wait pause_reason=awaiting_initial_provider_activity recent_observation=required_checks_green` after ready-for-review when `review_wait_started_at=2026-03-13T02:30:00Z`, `configuredBotDraftSkipAt=2026-03-13T02:25:00Z`, and no fresh CodeRabbit signal had arrived since the draft skip.
-- 2026-03-17: Status fix for #477 keys the draft-skip re-wait off `review_wait_started_at`/`review_wait_head_sha`, reuses the configured initial grace duration, and surfaces it distinctly as `pause_reason=awaiting_fresh_provider_review_after_draft_skip` with `recent_observation=ready_for_review_reopened_wait`.
-- 2026-03-17: Verification for #477 was `npx tsx --test src/supervisor/supervisor-status-review-bot.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-status-rendering-supervisor.test.ts`; `npm run build` first failed with `sh: 1: tsc: not found`, then `npm ci` restored the local toolchain and both the focused tests and `npm run build` passed.
+- 2026-03-17: Focused reproducer for #477 was status still emitting `configured_bot_initial_grace_wait pause_reason=awaiting_initial_provider_activity recent_observation=required_checks_green` after ready-for-review when `review_wait_started_at=2026-03-13T02:30:00Z`, `configuredBotDraftSkipAt=2026-03-13T02:25:00Z`, and no fresh CodeRabbit signal had arrived since the d

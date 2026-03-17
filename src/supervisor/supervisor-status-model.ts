@@ -46,6 +46,7 @@ export interface BuildDetailedStatusSummaryLinesArgs {
   latestRecoveryRecord?: IssueRunRecord | null;
   handoffSummary?: string | null;
   changeClassesSummary?: string | null;
+  verificationPolicySummary?: string | null;
   durableGuardrailSummary?: string | null;
 }
 
@@ -66,6 +67,7 @@ export function buildDetailedStatusSummaryLines(args: BuildDetailedStatusSummary
     latestRecoveryRecord = null,
     handoffSummary = null,
     changeClassesSummary = null,
+    verificationPolicySummary = null,
     durableGuardrailSummary = null,
   } = args;
   const lines: string[] = [];
@@ -76,6 +78,10 @@ export function buildDetailedStatusSummaryLines(args: BuildDetailedStatusSummary
 
   if (changeClassesSummary) {
     lines.push(truncate(sanitizeStatusValue(changeClassesSummary), 200) ?? "");
+  }
+
+  if (verificationPolicySummary) {
+    lines.push(truncate(sanitizeStatusValue(verificationPolicySummary), 200) ?? "");
   }
 
   if (durableGuardrailSummary) {

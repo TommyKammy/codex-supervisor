@@ -21,7 +21,7 @@ import {
   sanitizeStatusValue,
 } from "./supervisor-status-model";
 import { displayRelativeArtifactPath } from "./supervisor-status-summary-helpers";
-import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
+import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
 import { loadRelevantVerifierGuardrails } from "../verifier-guardrails";
 
 export function summarizeChecks(
@@ -87,6 +87,29 @@ export function buildChangeClassesStatusLine(changedFiles: string[]): string | n
   }
 
   return `change_classes=${changeClasses.join(", ")}`;
+}
+
+export function buildVerificationPolicyStatusLine(args: {
+  issue?: Pick<GitHubIssue, "title" | "body"> | null;
+  changedFiles: string[];
+}): string | null {
+  const decision = summarizeChangeRiskDecision({
+    issue: args.issue,
+    changedFiles: args.changedFiles,
+  });
+  if (decision.verificationIntensity === "none") {
+    return null;
+  }
+
+  const driverInputs =
+    decision.higherRiskSource === "issue_metadata"
+      ? decision.riskyChangeClasses
+      : decision.higherRiskSource === "changed_files"
+        ? decision.deterministicChangeClasses
+        : [];
+  const driverDetail = driverInputs.length > 0 ? driverInputs.join("|") : "none";
+
+  return `verification_policy intensity=${decision.verificationIntensity} driver=${decision.higherRiskSource}:${driverDetail}`;
 }
 
 export async function buildDurableGuardrailStatusLine(args: {
@@ -181,6 +204,7 @@ export function formatDetailedStatus(args: {
   reviewThreads: ReviewThread[];
   handoffSummary?: string | null;
   changeClassesSummary?: string | null;
+  verificationPolicySummary?: string | null;
   durableGuardrailSummary?: string | null;
 }): string {
   const lines = buildDetailedStatusModel({
@@ -204,6 +228,7 @@ export function formatDetailedStatus(args: {
     latestRecoveryRecord: args.latestRecoveryRecord,
     handoffSummary: args.handoffSummary,
     changeClassesSummary: args.changeClassesSummary,
+    verificationPolicySummary: args.verificationPolicySummary,
     durableGuardrailSummary: args.durableGuardrailSummary,
   });
   return [...lines, ...summaryLines].join("\n");
