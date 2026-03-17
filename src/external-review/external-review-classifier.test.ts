@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { classifyExternalReviewFinding } from "./external-review-classifier";
-import { normalizeExternalReviewFinding } from "./external-review-normalization";
+import { normalizeExternalReviewSignal } from "./external-review-normalization";
+import { toExternalReviewThreadSignal } from "./external-review-signal-collection";
 import { ReviewThread } from "../core/types";
+
+function normalizeThreadFinding(thread: ReviewThread) {
+  const signal = toExternalReviewThreadSignal(thread, ["copilot-pull-request-reviewer"]);
+  return signal ? normalizeExternalReviewSignal(signal) : null;
+}
 
 function createReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
   return {
@@ -30,7 +36,7 @@ function createReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread
 }
 
 test("classifyExternalReviewFinding marks unmatched configured-bot feedback as missed_by_local_review", () => {
-  const normalized = normalizeExternalReviewFinding(createReviewThread(), ["copilot-pull-request-reviewer"]);
+  const normalized = normalizeThreadFinding(createReviewThread());
   assert.ok(normalized);
 
   const classified = classifyExternalReviewFinding(normalized, {
@@ -61,7 +67,7 @@ test("classifyExternalReviewFinding marks unmatched configured-bot feedback as m
 });
 
 test("classifyExternalReviewFinding marks same-hunk findings as matched even with low text overlap", () => {
-  const normalized = normalizeExternalReviewFinding(
+  const normalized = normalizeThreadFinding(
     createReviewThread({
       path: "src/auth.ts",
       line: 44,
@@ -80,7 +86,6 @@ test("classifyExternalReviewFinding marks same-hunk findings as matched even wit
         ],
       },
     }),
-    ["copilot-pull-request-reviewer"],
   );
   assert.ok(normalized);
 
@@ -113,7 +118,7 @@ test("classifyExternalReviewFinding marks same-hunk findings as matched even wit
 });
 
 test("classifyExternalReviewFinding keeps nearby same-file findings as near_match with stable match reasons", () => {
-  const normalized = normalizeExternalReviewFinding(
+  const normalized = normalizeThreadFinding(
     createReviewThread({
       path: "src/auth.ts",
       line: 42,
@@ -132,7 +137,6 @@ test("classifyExternalReviewFinding keeps nearby same-file findings as near_matc
         ],
       },
     }),
-    ["copilot-pull-request-reviewer"],
   );
   assert.ok(normalized);
 

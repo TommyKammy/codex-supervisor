@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  collectExternalReviewSignals,
-  normalizeExternalReviewFinding,
-} from "./external-review-normalization";
-import { IssueComment, PullRequestReview, ReviewThread } from "../core/types";
+import { normalizeExternalReviewSignal } from "./external-review-normalization";
+import { toExternalReviewThreadSignal } from "./external-review-signal-collection";
+import { ReviewThread } from "../core/types";
 
 function createReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
   return {
@@ -31,36 +29,7 @@ function createReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread
   };
 }
 
-function createTopLevelReview(overrides: Partial<PullRequestReview> = {}): PullRequestReview {
-  return {
-    id: "review-1",
-    body: "Nitpick: this nil check is inverted and can mask the error path.",
-    submittedAt: "2026-03-12T00:03:00Z",
-    url: "https://example.test/pr/1#pullrequestreview-1",
-    state: "COMMENTED",
-    author: {
-      login: "coderabbitai[bot]",
-      typeName: "Bot",
-    },
-    ...overrides,
-  };
-}
-
-function createIssueComment(overrides: Partial<IssueComment> = {}): IssueComment {
-  return {
-    id: "issue-comment-1",
-    body: "Suggestion: the fallback path should guard against unauthorized writes before persisting.",
-    createdAt: "2026-03-12T00:04:00Z",
-    url: "https://example.test/pr/1#issuecomment-1",
-    author: {
-      login: "coderabbitai[bot]",
-      typeName: "Bot",
-    },
-    ...overrides,
-  };
-}
-
-test("normalizeExternalReviewFinding uses the final configured-bot comment", () => {
+test("normalizeExternalReviewSignal shapes the selected configured-bot thread signal into a finding", () => {
   const thread = createReviewThread({
     comments: {
       nodes: [
@@ -98,93 +67,12 @@ test("normalizeExternalReviewFinding uses the final configured-bot comment", () 
     },
   });
 
-  const finding = normalizeExternalReviewFinding(thread, ["copilot-pull-request-reviewer"]);
+  const signal = toExternalReviewThreadSignal(thread, ["copilot-pull-request-reviewer"]);
+  const finding = signal ? normalizeExternalReviewSignal(signal) : null;
   assert.equal(finding?.reviewerLogin, "copilot-pull-request-reviewer");
   assert.equal(finding?.file, "src/auth.ts");
   assert.equal(finding?.line, 42);
   assert.match(finding?.summary ?? "", /permission guard/i);
   assert.equal(finding?.severity, "medium");
   assert.equal(finding?.confidence, 0.75);
-});
-
-test("collectExternalReviewSignals normalizes thread, top-level review, and issue comment sources through one shared model", () => {
-  const signals = collectExternalReviewSignals({
-    reviewThreads: [createReviewThread()],
-    reviews: [createTopLevelReview()],
-    issueComments: [createIssueComment()],
-    reviewBotLogins: ["copilot-pull-request-reviewer", "coderabbitai[bot]"],
-  });
-
-  assert.deepEqual(
-    signals.map((signal) => ({
-      sourceKind: signal.sourceKind,
-      sourceId: signal.sourceId,
-      file: signal.file,
-      line: signal.line,
-      threadId: signal.threadId,
-    })),
-    [
-      {
-        sourceKind: "review_thread",
-        sourceId: "thread-1",
-        file: "src/auth.ts",
-        line: 42,
-        threadId: "thread-1",
-      },
-      {
-        sourceKind: "top_level_review",
-        sourceId: "review-1",
-        file: null,
-        line: null,
-        threadId: null,
-      },
-      {
-        sourceKind: "issue_comment",
-        sourceId: "issue-comment-1",
-        file: null,
-        line: null,
-        threadId: null,
-      },
-    ],
-  );
-});
-
-test("collectExternalReviewSignals preserves actionable top-level reviews that only expose review state", () => {
-  const signals = collectExternalReviewSignals({
-    reviews: [
-      createTopLevelReview({
-        id: "review-state-only",
-        body: null,
-        state: "CHANGES_REQUESTED",
-        url: "https://example.test/pr/1#pullrequestreview-2",
-      }),
-    ],
-    reviewBotLogins: ["coderabbitai[bot]"],
-  });
-
-  assert.deepEqual(signals, [
-    {
-      sourceKind: "top_level_review",
-      sourceId: "review-state-only",
-      sourceUrl: "https://example.test/pr/1#pullrequestreview-2",
-      reviewerLogin: "coderabbitai[bot]",
-      body: "CHANGES_REQUESTED",
-      file: null,
-      line: null,
-      threadId: null,
-    },
-  ]);
-});
-
-test("collectExternalReviewSignals ignores late configured-bot closed-PR follow-up issue comments", () => {
-  const signals = collectExternalReviewSignals({
-    issueComments: [
-      createIssueComment({
-        body: "This pull request is already closed. Please ignore this follow-up review comment.",
-      }),
-    ],
-    reviewBotLogins: ["coderabbitai[bot]"],
-  });
-
-  assert.deepEqual(signals, []);
 });

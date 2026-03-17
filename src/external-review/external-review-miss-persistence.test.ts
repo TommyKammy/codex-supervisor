@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { loadLocalReviewArtifact } from "./external-review-local-artifact-io";
 import { writeExternalReviewMissArtifact } from "./external-review-miss-persistence";
-import { collectExternalReviewSignals } from "./external-review-normalization";
+import { collectExternalReviewSignals } from "./external-review-signal-collection";
 import { IssueComment, PullRequestReview, ReviewThread } from "../core/types";
 
 function createReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
