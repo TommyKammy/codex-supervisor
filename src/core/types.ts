@@ -223,6 +223,7 @@ export interface GitHubPullRequest {
   configuredBotCurrentHeadObservedAt?: string | null;
   currentHeadCiGreenAt?: string | null;
   configuredBotRateLimitedAt?: string | null;
+  configuredBotDraftSkipAt?: string | null;
   configuredBotTopLevelReviewStrength?: "nitpick_only" | "blocking" | null;
   configuredBotTopLevelReviewSubmittedAt?: string | null;
   mergedAt?: string | null;

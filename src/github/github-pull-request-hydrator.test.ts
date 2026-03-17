@@ -560,6 +560,7 @@ test("GitHubPullRequestHydrator ignores summary-only and draft-skip configured-b
   assert.equal(pr?.copilotReviewState, "requested");
   assert.equal(pr?.copilotReviewRequestedAt, "2026-03-13T01:02:03Z");
   assert.equal(pr?.copilotReviewArrivedAt, null);
+  assert.equal(pr?.configuredBotDraftSkipAt, "2026-03-13T02:25:00Z");
 });
 
 test("GitHubPullRequestHydrator records the latest configured-bot observation scoped to the current head", async () => {

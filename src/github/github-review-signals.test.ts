@@ -344,6 +344,7 @@ test("buildConfiguredBotReviewSummary treats actionable configured-bot issue com
     currentHeadObservedAt: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
+    draftSkipAt: null,
   });
 });
 
@@ -382,6 +383,7 @@ test("buildConfiguredBotReviewSummary keeps top-level review strength scoped to 
     currentHeadObservedAt: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
+    draftSkipAt: null,
   });
 });
 
@@ -413,6 +415,50 @@ test("buildConfiguredBotReviewSummary treats configured-bot rate limit issue com
     currentHeadObservedAt: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: "2026-03-13T03:15:00Z",
+    draftSkipAt: null,
+  });
+});
+
+test("buildConfiguredBotReviewSummary records draft-skip issue comments distinctly from actionable arrival", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: ["coderabbitai[bot]"],
+    reviews: [],
+    comments: [],
+    issueComments: [
+      {
+        authorLogin: "coderabbitai[bot]",
+        createdAt: "2026-03-13T03:14:00Z",
+        body: "## Summary\nCodeRabbit reviewed this pull request and found no actionable issues.",
+      },
+      {
+        authorLogin: "coderabbitai[bot]",
+        createdAt: "2026-03-13T03:15:00Z",
+        body: "Skipping review because this pull request is still in draft.",
+      },
+    ],
+    timeline: [
+      {
+        type: "requested",
+        createdAt: "2026-03-13T03:00:00Z",
+        reviewerLogin: "coderabbitai[bot]",
+      },
+    ],
+  };
+
+  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["coderabbitai[bot]"]), {
+    lifecycle: {
+      state: "requested",
+      requestedAt: "2026-03-13T03:00:00Z",
+      arrivedAt: null,
+    },
+    topLevelReview: {
+      strength: null,
+      submittedAt: null,
+    },
+    currentHeadObservedAt: null,
+    currentHeadCiGreenAt: null,
+    rateLimitWarningAt: null,
+    draftSkipAt: "2026-03-13T03:15:00Z",
   });
 });
 
@@ -455,6 +501,7 @@ test("buildConfiguredBotReviewSummary ignores configured-bot rate limit warnings
     currentHeadObservedAt: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
+    draftSkipAt: null,
   });
 });
 
@@ -506,6 +553,7 @@ test("buildConfiguredBotReviewSummary records the latest configured-bot observat
     currentHeadObservedAt: "2026-03-13T02:04:00Z",
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
+    draftSkipAt: null,
   });
 });
 
@@ -546,6 +594,7 @@ test("buildConfiguredBotReviewSummary treats summary-only configured-bot reviews
     currentHeadObservedAt: "2026-03-13T02:02:00Z",
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
+    draftSkipAt: null,
   });
 });
 
@@ -590,6 +639,7 @@ test("buildConfiguredBotReviewSummary extends current-head observation with late
     currentHeadObservedAt: "2026-03-13T02:04:00Z",
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
+    draftSkipAt: null,
   });
 });
 
@@ -629,6 +679,7 @@ test("buildConfiguredBotReviewSummary extends current-head observation with late
     currentHeadObservedAt: "2026-03-13T02:04:00Z",
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
+    draftSkipAt: null,
   });
 });
 
@@ -668,6 +719,7 @@ test("buildConfiguredBotReviewSummary keeps weakly anchored CodeRabbit review co
     currentHeadObservedAt: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
+    draftSkipAt: null,
   });
 });
 
@@ -707,6 +759,7 @@ test("buildConfiguredBotReviewSummary ignores late configured-bot closed-PR foll
     currentHeadObservedAt: "2026-03-13T02:02:00Z",
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
+    draftSkipAt: null,
   });
 });
 
@@ -746,6 +799,7 @@ test("buildConfiguredBotReviewSummary leaves current-head observation empty when
     currentHeadObservedAt: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
+    draftSkipAt: null,
   });
 });
 
@@ -787,6 +841,7 @@ test("buildConfiguredBotReviewSummary treats current-head CodeRabbit status cont
     currentHeadObservedAt: "2026-03-13T02:04:00Z",
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
+    draftSkipAt: null,
   });
 });
 
@@ -856,6 +911,7 @@ test("buildConfiguredBotReviewSummary records the current-head CI-green timestam
     currentHeadObservedAt: null,
     currentHeadCiGreenAt: "2026-03-13T02:05:00Z",
     rateLimitWarningAt: null,
+    draftSkipAt: null,
   });
 });
 
@@ -909,5 +965,6 @@ test("buildConfiguredBotReviewSummary leaves current-head CI-green timestamp emp
     currentHeadObservedAt: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
+    draftSkipAt: null,
   });
 });

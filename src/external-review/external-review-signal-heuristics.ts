@@ -30,6 +30,21 @@ export function isInformationalReviewText(value: string | null | undefined): boo
   );
 }
 
+export function isDraftSkipReviewText(value: string | null | undefined): boolean {
+  const normalized = normalizeReviewText(value);
+  if (!normalized) {
+    return false;
+  }
+
+  return (
+    normalized.includes("skipping review") ||
+    normalized.includes("skip review") ||
+    normalized.includes("still in draft") ||
+    normalized.includes("pull request is in draft") ||
+    normalized.includes("pull request is still in draft")
+  );
+}
+
 export function isRateLimitReviewText(value: string | null | undefined): boolean {
   const normalized = normalizeReviewText(value);
   if (!normalized) {

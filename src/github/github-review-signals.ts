@@ -2,6 +2,7 @@ import {
   classifyConfiguredBotTopLevelReviewStrength,
   hasActionableReviewText,
   isActionableTopLevelReview,
+  isDraftSkipReviewText,
   isRateLimitReviewText,
 } from "../external-review/external-review-signal-heuristics";
 import { normalizeReviewBotLogins } from "../core/review-providers";
@@ -68,6 +69,7 @@ export interface ConfiguredBotReviewSummary {
   currentHeadObservedAt: string | null;
   currentHeadCiGreenAt: string | null;
   rateLimitWarningAt: string | null;
+  draftSkipAt: string | null;
 }
 
 function parseTimestamp(value: string | null | undefined): number {
@@ -473,6 +475,35 @@ function inferConfiguredBotRateLimitWarningAt(
   );
 }
 
+function inferConfiguredBotDraftSkipAt(
+  facts: CopilotReviewLifecycleFacts,
+  reviewBotLogins: string[],
+): string | null {
+  const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
+  if (configuredReviewBots.size === 0) {
+    return null;
+  }
+
+  const { activeRequestStartedAt } = summarizeConfiguredBotRequestWindow(facts.timeline, configuredReviewBots);
+  const activeRequestStartedAtMs = parseTimestamp(activeRequestStartedAt);
+  const scopedToActiveRequest = (value: string | null | undefined): value is string =>
+    value !== null &&
+    value !== undefined &&
+    (activeRequestStartedAt === null || parseTimestamp(value) >= activeRequestStartedAtMs);
+
+  return latestTimestamp(
+    facts.issueComments.flatMap((comment) => {
+      const authorLogin = normalizeLogin(comment.authorLogin);
+      return authorLogin &&
+        configuredReviewBots.has(authorLogin) &&
+        isDraftSkipReviewText(comment.body) &&
+        scopedToActiveRequest(comment.createdAt)
+        ? [comment.createdAt]
+        : [];
+    }),
+  );
+}
+
 export function buildConfiguredBotReviewSummary(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
@@ -484,5 +515,6 @@ export function buildConfiguredBotReviewSummary(
     currentHeadObservedAt: inferConfiguredBotCurrentHeadObservedAt(facts, reviewBotLogins, currentHeadOid),
     currentHeadCiGreenAt: inferCurrentHeadCiGreenAt(facts, currentHeadOid),
     rateLimitWarningAt: inferConfiguredBotRateLimitWarningAt(facts, reviewBotLogins),
+    draftSkipAt: inferConfiguredBotDraftSkipAt(facts, reviewBotLogins),
   };
 }

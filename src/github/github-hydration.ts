@@ -338,6 +338,7 @@ export function applyConfiguredBotReviewSummary(
     configuredBotCurrentHeadObservedAt: summary?.currentHeadObservedAt ?? null,
     currentHeadCiGreenAt: summary?.currentHeadCiGreenAt ?? null,
     configuredBotRateLimitedAt: summary?.rateLimitWarningAt ?? null,
+    configuredBotDraftSkipAt: summary?.draftSkipAt ?? null,
     configuredBotTopLevelReviewStrength: summary?.topLevelReview.strength ?? null,
     configuredBotTopLevelReviewSubmittedAt: summary?.topLevelReview.submittedAt ?? null,
   };
