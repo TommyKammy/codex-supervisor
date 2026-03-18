@@ -2,7 +2,7 @@
 
 `codex-supervisor` は、`codex exec` と `gh` を使って GitHub issue、PR、CI、review、merge の進行を継続監督するための deterministic な supervisor です。
 
-英語版の一次ソースは [README.md](../README.md) です。この文書は、日本語で全体像と入口を把握するための軽い案内として使ってください。実際のセットアップと運用手順は [docs/getting-started.ja.md](./getting-started.ja.md) に寄せています。
+英語版の一次ソースは [README.md](../README.md) です。この文書は、日本語で全体像と入口を把握するための軽い案内として使ってください。人がセットアップと運用手順を確認するときは [docs/getting-started.ja.md](./getting-started.ja.md) から始め、repo に入った AI agent は [docs/agent-instructions.ja.md](./agent-instructions.ja.md) を先に読んでください。
 
 ## 何をするツールか
 
@@ -12,6 +12,8 @@
 - runnable な issue を readiness-driven に選ぶ
 - issue ごとの worktree と issue journal を維持する
 - draft PR、CI 修復、review 対応、merge までの loop を継続する
+
+詳しい初回手順は [docs/getting-started.ja.md](./getting-started.ja.md)、AI agent 向けの bootstrap 手順は [docs/agent-instructions.ja.md](./agent-instructions.ja.md) に分けています。
 
 ## 向いているケース
 
@@ -52,10 +54,11 @@ Not a fit:
 4. `repoPath`、`repoSlug`、`workspaceRoot`、`codexBinary` などを設定します。
 5. まず `run-once` と `status` で挙動を確認し、その後 `loop` に切り替えます。
 
-より詳しい初回手順、issue の書き方、運用中の判断は [docs/getting-started.ja.md](./getting-started.ja.md) を参照してください。
+より詳しい初回手順、issue の書き方、運用中の判断は [docs/getting-started.ja.md](./getting-started.ja.md) を参照してください。AI agent が repo に入るときの読み順と escalation ルールは [docs/agent-instructions.ja.md](./agent-instructions.ja.md) を参照してください。
 
 ## ドキュメントマップ
 
+- [docs/agent-instructions.ja.md](./agent-instructions.ja.md): repo に入った AI agent 向けの bootstrap 読み順、初回確認、escalation ルール
 - [docs/getting-started.ja.md](./getting-started.ja.md): 日本語での詳しいセットアップ、issue readiness、初回実行、運用判断
 - [docs/getting-started.md](./getting-started.md): 英語版の getting started
 - [Configuration reference](./configuration.md): config 項目、provider profile、durable memory、実行ポリシー
