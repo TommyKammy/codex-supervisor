@@ -11,6 +11,7 @@ import {
 import {
   createCheckedInReplayCorpusConfig,
   formatReplayCorpusRunSummary,
+  promoteCapturedReplaySnapshot,
   runReplayCorpus,
   syncReplayCorpusMismatchDetailsArtifact,
 } from "./supervisor/replay-corpus";
@@ -24,6 +25,7 @@ export function parseArgs(argv: string[]): CliOptions {
   let why = false;
   let issueNumber: number | undefined;
   let snapshotPath: string | undefined;
+  let caseId: string | undefined;
   let corpusPath: string | undefined;
 
   while (args.length > 0) {
@@ -39,7 +41,8 @@ export function parseArgs(argv: string[]): CliOptions {
       token === "explain" ||
       token === "doctor" ||
       token === "replay" ||
-      token === "replay-corpus"
+      token === "replay-corpus" ||
+      token === "replay-corpus-promote"
     ) {
       if (commandSeen) {
         throw new Error(`Unexpected second command: ${token}`);
@@ -76,6 +79,23 @@ export function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
+    if (command === "replay-corpus-promote") {
+      if (snapshotPath === undefined) {
+        snapshotPath = token;
+        continue;
+      }
+
+      if (caseId === undefined) {
+        caseId = token;
+        continue;
+      }
+
+      if (corpusPath === undefined) {
+        corpusPath = token;
+        continue;
+      }
+    }
+
     if (command === "replay-corpus" && corpusPath === undefined) {
       corpusPath = token;
       continue;
@@ -96,6 +116,14 @@ export function parseArgs(argv: string[]): CliOptions {
     throw new Error("The replay command requires one snapshot path.");
   }
 
+  if (command === "replay-corpus-promote" && snapshotPath === undefined) {
+    throw new Error("The replay-corpus-promote command requires one snapshot path.");
+  }
+
+  if (command === "replay-corpus-promote" && caseId === undefined) {
+    throw new Error("The replay-corpus-promote command requires one case id.");
+  }
+
   return {
     command,
     configPath,
@@ -103,7 +131,11 @@ export function parseArgs(argv: string[]): CliOptions {
     why,
     issueNumber,
     snapshotPath,
-    corpusPath: command === "replay-corpus" ? (corpusPath ?? "replay-corpus") : undefined,
+    caseId,
+    corpusPath:
+      command === "replay-corpus" || command === "replay-corpus-promote"
+        ? (corpusPath ?? "replay-corpus")
+        : undefined,
   };
 }
 
@@ -153,6 +185,21 @@ async function main(): Promise<void> {
     }
 
     console.log(summary);
+    return;
+  }
+
+  if (options.command === "replay-corpus-promote") {
+    const config =
+      options.configPath === undefined && options.corpusPath === "replay-corpus"
+        ? createCheckedInReplayCorpusConfig(process.cwd())
+        : loadConfig(options.configPath);
+    const promoted = await promoteCapturedReplaySnapshot({
+      corpusRoot: options.corpusPath!,
+      snapshotPath: options.snapshotPath!,
+      caseId: options.caseId!,
+      config,
+    });
+    console.log(`Promoted replay corpus case "${promoted.id}" for issue #${promoted.metadata.issueNumber}.`);
     return;
   }
 
