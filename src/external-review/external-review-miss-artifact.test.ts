@@ -7,6 +7,7 @@ import {
 import {
   buildExternalReviewMissFollowUpDigest,
 } from "./external-review-miss-digest";
+import { type ExternalReviewMissArtifact } from "./external-review-miss-artifact-types";
 
 test("readExternalReviewMissArtifactPatterns prefers persisted reusable patterns", () => {
   const artifactPath = "/tmp/external-review-misses-head-newest.json";
@@ -377,4 +378,57 @@ test("buildExternalReviewMissFollowUpDigest groups missed findings by target and
   assert.match(digest, /- Prevention target: durable_guardrail/);
   assert.match(digest, /- Prevention target: issue_template/);
   assert.doesNotMatch(digest, /Matched finding should stay out of the digest\./);
+});
+
+test("buildExternalReviewMissFollowUpDigest throws when a missed finding lacks a prevention target", () => {
+  const artifact: ExternalReviewMissArtifact = {
+    issueNumber: 58,
+    prNumber: 91,
+    branch: "codex/issue-58",
+    headSha: "deadbeefcafebabe",
+    generatedAt: "2026-03-18T00:00:00Z",
+    localReviewSummaryPath: "/tmp/head-deadbeef.md",
+    localReviewFindingsPath: "/tmp/head-deadbeef.json",
+    findings: [
+      {
+        classification: "missed_by_local_review",
+        reviewerLogin: "coderabbitai[bot]",
+        file: null,
+        line: null,
+        summary: "Rollback expectations are missing from the issue guidance.",
+        rationale: "Rollback expectations are missing from the issue guidance.",
+        url: "https://example.test/pr/1#issuecomment-1",
+        sourceKind: "issue_comment",
+        sourceId: "issue-comment-1",
+        sourceUrl: "https://example.test/pr/1#issuecomment-1",
+        threadId: null,
+        source: "external_bot",
+        severity: "medium",
+        confidence: 0.9,
+        matchedLocalReference: null,
+        matchReason: "no same-file local-review match",
+        preventionTarget: null,
+      },
+    ],
+    reusableMissPatterns: [],
+    durableGuardrailCandidates: [],
+    regressionTestCandidates: [],
+    counts: {
+      matched: 0,
+      nearMatch: 0,
+      missedByLocalReview: 1,
+    },
+  };
+
+  assert.throws(
+    () =>
+      buildExternalReviewMissFollowUpDigest({
+        artifactPath: "/tmp/external-review-misses-head-deadbeefcafe.json",
+        artifact,
+        activeHeadSha: "deadbeefcafebabe",
+        localReviewSummaryPath: "/tmp/head-deadbeef.md",
+        localReviewHeadSha: "deadbeefcafebabe",
+      }),
+    /Found 1 missed finding\(s\) without a prevention target in \/tmp\/external-review-misses-head-deadbeefcafe\.json/,
+  );
 });

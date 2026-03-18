@@ -82,13 +82,21 @@ export function buildExternalReviewMissFollowUpDigest(args: {
   localReviewSummaryPath: string | null;
   localReviewHeadSha?: string | null;
 }): string {
-  const missedFindings = args.artifact.findings.filter(
-    (finding): finding is ExternalReviewArtifactFinding & { preventionTarget: ExternalReviewPreventionTarget } =>
-      finding.classification === "missed_by_local_review" && finding.preventionTarget !== null,
-  );
+  const missedFindings = args.artifact.findings.filter((finding) => finding.classification === "missed_by_local_review");
+  const missesWithoutTarget = missedFindings.filter((finding) => finding.preventionTarget === null);
+
+  if (missesWithoutTarget.length > 0) {
+    throw new Error(
+      `Found ${missesWithoutTarget.length} missed finding(s) without a prevention target in ${args.artifactPath}`,
+    );
+  }
+
+  const typedMissedFindings = missedFindings as Array<
+    ExternalReviewArtifactFinding & { preventionTarget: ExternalReviewPreventionTarget }
+  >;
   const grouped = new Map<ExternalReviewPreventionTarget, ExternalReviewArtifactFinding[]>();
 
-  for (const finding of missedFindings) {
+  for (const finding of typedMissedFindings) {
     const existing = grouped.get(finding.preventionTarget) ?? [];
     existing.push(finding);
     grouped.set(finding.preventionTarget, existing);
@@ -104,10 +112,10 @@ export function buildExternalReviewMissFollowUpDigest(args: {
     `- Active PR head SHA: ${args.activeHeadSha}`,
     `- Local review artifact head SHA: ${args.localReviewHeadSha ?? "unknown"}`,
     `- Head status: ${renderHeadStatus(args.artifact.headSha, args.activeHeadSha)}`,
-    `- Missed findings: ${missedFindings.length}`,
+    `- Missed findings: ${typedMissedFindings.length}`,
   ];
 
-  if (missedFindings.length === 0) {
+  if (typedMissedFindings.length === 0) {
     lines.push("", "No missed external-review findings were identified in this analysis.");
     return `${lines.join("\n")}\n`;
   }
