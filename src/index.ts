@@ -42,6 +42,7 @@ export function parseArgs(argv: string[]): CliOptions {
       token === "loop" ||
       token === "status" ||
       token === "explain" ||
+      token === "issue-lint" ||
       token === "doctor" ||
       token === "replay" ||
       token === "replay-corpus" ||
@@ -70,7 +71,7 @@ export function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
-    if (command === "explain" && issueNumber === undefined) {
+    if ((command === "explain" || command === "issue-lint") && issueNumber === undefined) {
       if (/^[1-9]\d*$/.test(token)) {
         issueNumber = Number(token);
         continue;
@@ -113,6 +114,10 @@ export function parseArgs(argv: string[]): CliOptions {
 
   if (command === "explain" && issueNumber === undefined) {
     throw new Error("The explain command requires one issue number.");
+  }
+
+  if (command === "issue-lint" && issueNumber === undefined) {
+    throw new Error("The issue-lint command requires one issue number.");
   }
 
   if (command === "replay" && snapshotPath === undefined) {
@@ -254,7 +259,12 @@ async function main(): Promise<void> {
   process.once("SIGINT", () => requestStop("SIGINT"));
   process.once("SIGTERM", () => requestStop("SIGTERM"));
 
-  if (options.command !== "status" && options.command !== "explain" && options.command !== "doctor") {
+  if (
+    options.command !== "status" &&
+    options.command !== "explain" &&
+    options.command !== "issue-lint" &&
+    options.command !== "doctor"
+  ) {
     const installMessage = await ensureGsdInstalled(supervisor.config);
     if (installMessage) {
       console.log(installMessage);
@@ -268,6 +278,11 @@ async function main(): Promise<void> {
 
   if (options.command === "explain") {
     console.log(await supervisor.explain(options.issueNumber!));
+    return;
+  }
+
+  if (options.command === "issue-lint") {
+    console.log(await supervisor.issueLint(options.issueNumber!));
     return;
   }
 

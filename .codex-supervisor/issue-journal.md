@@ -1,17 +1,17 @@
-# Issue #568: Getting started docs: add cross-links to the new agent bootstrap docs
+# Issue #572: Issue authoring diagnostics: add issue lint for required execution-ready sections
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/568
-- Branch: codex/issue-568
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/572
+- Branch: codex/issue-572
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: b2d3448de538c77dfebff64e86fecdf7641d5391
+- Last head SHA: 2f62e58325a0c047385a08d6fd95a34b80224aab
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-18T18:38:42.006Z
+- Updated at: 2026-03-18T18:56:51.890Z
 
 ## Latest Codex Summary
 - None yet.
@@ -21,17 +21,16 @@
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `docs/getting-started.md` and `docs/getting-started.ja.md` lacked explicit handoffs to the new agent bootstrap docs, so a narrow getting-started docs regression should fail until both operator guides link to the matching `agent-instructions` doc without duplicating bootstrap protocol content.
-- What changed: extended `src/getting-started-docs.test.ts` to require the English and Japanese agent bootstrap links; updated both getting-started guides to point AI operators at the matching `agent-instructions` doc from the intro/related-docs sections while keeping the pages focused on human operator flow.
+- Hypothesis: the repo already had reusable execution-ready issue-body linting, but lacked a dedicated single-issue authoring diagnostic, so a narrow supervisor diagnostic test should fail until a focused `issue-lint` command reports required-section gaps deterministically for one target issue.
+- What changed: added `Supervisor.issueLint(...)` plus `buildIssueLintSummary(...)`, wired a new `issue-lint <issueNumber>` CLI command, and added focused coverage for one complete issue, one incomplete issue, and `parseArgs(...)` support for the new command.
 - Current blocker: none
-- Next exact step: monitor draft PR #587 for CI or review feedback and only make further changes if a concrete docs-flow or build issue appears.
-- Verification gap: none beyond the focused getting-started/agent-instructions doc regressions and required build; no broader suite was needed for this docs-only slice.
-- Files touched: `.codex-supervisor/issue-journal.md`, `docs/getting-started.md`, `docs/getting-started.ja.md`, `src/getting-started-docs.test.ts`
-- Rollback concern: reverting this change would remove the explicit AI bootstrap handoff from both operator guides and drop the regression that keeps those cross-links present.
-- Last focused command: `npx tsx --test src/getting-started-docs.test.ts`; `npx tsx --test src/getting-started-docs.test.ts src/agent-instructions-docs.test.ts`; `npm install`; `npm run build`
+- Next exact step: commit the `issue-lint` slice, open or update the draft PR, and watch for CI or review feedback.
+- Verification gap: none beyond the focused issue-metadata and issue-lint diagnostic coverage plus the required build.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/core/types.ts`, `src/index.test.ts`, `src/index.ts`, `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`, `src/supervisor/supervisor-selection-status.ts`, `src/supervisor/supervisor.ts`
+- Rollback concern: reverting this change would remove the dedicated single-issue authoring diagnostic and its focused regression coverage, pushing authors back to broader scheduler diagnostics only.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint.test.ts`; `npx tsx --test src/index.test.ts --test-name-pattern "issue-lint|doctor as a command|replay-corpus|replay with a snapshot path|explain rejects malformed issue numbers"`; `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts`; `npm install`; `npm run build`
 ### Scratchpad
-- 2026-03-19 (JST): Committed the getting-started/bootstrap cross-link slice as `bb1cdc8`, pushed `codex/issue-568`, and opened draft PR #587 (`https://github.com/TommyKammy/codex-supervisor/pull/587`).
-- 2026-03-19 (JST): Reproduced issue #568 by tightening `src/getting-started-docs.test.ts` so the English and Japanese getting-started guides must link to `docs/agent-instructions.md` and `docs/agent-instructions.ja.md`; the focused test failed because neither guide contained the new AI bootstrap handoff. Added the cross-links in the intro/related-docs sections of both guides while keeping bootstrap protocol detail delegated to the agent docs. Focused verification passed with `npx tsx --test src/getting-started-docs.test.ts` and `npx tsx --test src/getting-started-docs.test.ts src/agent-instructions-docs.test.ts`; `npm run build` initially failed because `tsc` was missing locally, so restored dev dependencies with `npm install` and reran `npm run build` successfully.
+- 2026-03-19 (JST): Reproduced issue #572 by adding `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`; it failed with `TypeError: supervisor.issueLint is not a function`. Implemented `buildIssueLintSummary(...)`, added `Supervisor.issueLint(...)`, and wired the `issue-lint` CLI command plus `parseArgs(...)` coverage. Focused verification passed with `npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint.test.ts`, `npx tsx --test src/index.test.ts --test-name-pattern "issue-lint|doctor as a command|replay-corpus|replay with a snapshot path|explain rejects malformed issue numbers"`, `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts`, and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Reproduced issue #562 by extending `src/agent-instructions-docs.test.ts` with a Japanese bootstrap alignment check; it failed with `ENOENT` because `docs/agent-instructions.ja.md` did not exist. Added the Japanese bootstrap hub with mirrored section order and canonical links to `getting-started.ja.md`, `getting-started.md`, `configuration.md`, `issue-metadata.md`, and `local-review.md`. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts`; `npm run build` initially failed because `tsc` was missing locally, so restored dev dependencies with `npm install` and reran `npm run build` successfully.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.

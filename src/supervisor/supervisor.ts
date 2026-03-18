@@ -85,6 +85,7 @@ import {
 } from "./supervisor-execution-policy";
 import {
   buildIssueExplainSummary,
+  buildIssueLintSummary,
   buildReadinessSummary,
   buildSelectionWhySummary,
   loadActiveIssueStatusSnapshot,
@@ -629,6 +630,10 @@ export class Supervisor {
   async explain(issueNumber: number): Promise<string> {
     const state = await this.stateStore.load();
     return buildIssueExplainSummary(this.github, this.config, state, issueNumber).then((lines) => lines.join("\n"));
+  }
+
+  async issueLint(issueNumber: number): Promise<string> {
+    return buildIssueLintSummary(this.github, issueNumber).then((lines) => lines.join("\n"));
   }
 
   async doctor(): Promise<string> {
