@@ -24,6 +24,9 @@ import {
   loadStatusChangedFiles,
 } from "./supervisor-status-rendering";
 import {
+  formatLatestRecoveryStatusLine,
+} from "./supervisor-detailed-status-assembly";
+import {
   GitHubIssue,
   GitHubPullRequest,
   IssueRunRecord,
@@ -385,6 +388,7 @@ export async function buildIssueExplainSummary(
     github,
     record,
   });
+  const latestRecoverySummary = record ? formatLatestRecoveryStatusLine(record) : null;
 
   if (matchingSkipPrefix) {
     reasons.push(`skip_title_prefix ${matchingSkipPrefix}`);
@@ -421,6 +425,7 @@ export async function buildIssueExplainSummary(
     `runnable=${runnable ? "yes" : "no"}`,
     ...changeRiskLines,
     ...(externalReviewFollowUpSummary ? [externalReviewFollowUpSummary] : []),
+    ...(latestRecoverySummary ? [latestRecoverySummary] : []),
   ];
 
   if (runnable) {

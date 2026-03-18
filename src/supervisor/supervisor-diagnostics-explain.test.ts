@@ -418,3 +418,54 @@ test("explain reuses external-review follow-up reasoning for current-head action
     /^external_review_follow_up unresolved=2 actions=durable_guardrail:1\|regression_test:1$/m,
   );
 });
+
+test("explain reuses the recorded recovery reason for a recovered tracked PR issue", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 101;
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Reuse tracked PR recovery reason in explain",
+    body: executionReadyBody("Explain should show the persisted recovery story for tracked PR resumptions."),
+    createdAt: "2026-03-18T00:00:00Z",
+    updatedAt: "2026-03-18T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "reproducing",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: 191,
+        last_recovery_reason:
+          "tracked_pr_head_advanced: resumed issue #101 from blocked to reproducing after tracked PR #191 advanced from head-old-191 to head-new-191",
+        last_recovery_at: "2026-03-19T00:20:00Z",
+        blocked_reason: null,
+        last_error: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(explanation, /^state=reproducing$/m);
+  assert.match(explanation, /^runnable=yes$/m);
+  assert.match(
+    explanation,
+    /^latest_recovery issue=#101 at=2026-03-19T00:20:00Z reason=tracked_pr_head_advanced detail=resumed issue #101 from blocked to reproducing after tracked PR #191 advanced from head-old-191 to head-new-191$/m,
+  );
+});
