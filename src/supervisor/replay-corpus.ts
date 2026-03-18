@@ -714,6 +714,7 @@ function normalizePromotedInputSnapshot(snapshot: ReplayCorpusInputSnapshot): Re
         ...snapshot.local.record,
         workspace: ".",
         journal_path: snapshot.local.record.journal_path === null ? null : ".codex-supervisor/issue-journal.md",
+        local_review_summary_path: null,
       },
       workspaceStatus: {
         ...snapshot.local.workspaceStatus,
@@ -735,6 +736,9 @@ function buildPromotedCaseMetadata(snapshot: ReplayCorpusInputSnapshot, caseId: 
 
 export async function promoteCapturedReplaySnapshot(args: PromoteCapturedReplaySnapshotArgs): Promise<ReplayCorpusCaseBundle> {
   const manifest = await loadReplayCorpusManifestOrDefault(args.corpusRoot);
+  if (manifest.cases.length > 0) {
+    await loadReplayCorpus(args.corpusRoot);
+  }
   const caseId = expectCaseId(args.caseId, "Replay corpus promotion caseId");
   if (manifest.cases.some((entry) => entry.id === caseId)) {
     throw validationError(`Replay corpus manifest already contains case "${caseId}"`);
