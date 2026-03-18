@@ -5,28 +5,32 @@
 - Branch: codex/issue-547
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: waiting_ci
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 52b0683f16f8b2e9de17b7bfa7f6ced8054d0caf
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=1, repair=2)
+- Last head SHA: f5286b524069990c741f9480fcf2f83e93c44194
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-18T23:07:31+09:00
+- Last failure signature: PRRT_kwDORgvdZ851LV_Q
+- Repeated failure signature count: 1
+- Updated at: 2026-03-18T14:16:58.659Z
 
 ## Latest Codex Summary
-Added failure-only replay mismatch artifact handling in [replay-corpus.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-547/src/supervisor/replay-corpus.ts) and narrowed the CI upload path in [ci.yml](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-547/.github/workflows/ci.yml) so the replay mismatch details artifact is uploaded only when the `replay_corpus` step itself fails on Ubuntu. The workflow contract is locked in by [ci-workflow.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-547/src/ci-workflow.test.ts), and the remaining CodeRabbit thread on PR [#550](https://github.com/TommyKammy/codex-supervisor/pull/550) was resolved after pushing `52b0683`.
+Updated [ci.yml](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-547/.github/workflows/ci.yml#L32) so the replay artifact upload is tied to the `replay_corpus` step outcome instead of any prior job failure, and tightened [ci-workflow.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-547/src/ci-workflow.test.ts#L18) to lock that contract in. The review fix is pushed on `codex/issue-547` in `52b0683`, the journal was refreshed in `f5286b5`, and the remaining CodeRabbit thread on PR `#550` is resolved.
 
-Committed as `989aaa3`, `c830e3e`, and `52b0683`, pushed `codex/issue-547`, and updated the journal in [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-547/.codex-supervisor/issue-journal.md).
+Verification passed with `npx tsx --test src/supervisor/replay-corpus.test.ts src/index.test.ts src/ci-workflow.test.ts` and `npm run build`. Local status is clean aside from the pre-existing untracked `.codex-supervisor/replay/decision-cycle-snapshot.json`.
 
-Summary: Narrowed replay artifact upload to replay-step failures, verified locally, pushed the fix, and resolved the remaining PR review thread.
+Summary: Narrowed replay artifact upload to replay-step failures, pushed the fix, updated the issue journal, and resolved the remaining PR review thread.
 State hint: waiting_ci
 Blocked reason: none
-Tests: `npx tsx --test src/ci-workflow.test.ts`; `npm run build`
+Tests: `npx tsx --test src/supervisor/replay-corpus.test.ts src/index.test.ts src/ci-workflow.test.ts`; `npm run build`
 Failure signature: none
-Next action: Monitor PR #550 CI on commit `52b0683` and handle any follow-up review or workflow regressions if they appear.
+Next action: Monitor PR #550 CI on `f5286b5` and address any new review or workflow follow-up if it appears.
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/550#discussion_r2953731135
+- Details:
+  - .codex-supervisor/issue-journal.md:24 _⚠️ Potential issue_ | _🟡 Minor_ **Keep the “Tests” line aligned with the PR verification scope.** Line 24 currently lists only `src/ci-workflow.test.ts` + build, while the PR objective/testing section expects focused replay-corpus/CLI/workflow coverage. This can confuse reviewers reading the journal snapshot. <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In @.codex-supervisor/issue-journal.md at line 24, Update the "Tests" line in .codex-supervisor/issue-journal.md so it matches the PR verification scope: replace the current `npx tsx --test src/ci-workflow.test.ts; npm run build` entry with a combined command that runs the replay-corpus, CLI, and workflow tests (e.g., include `src/replay-corpus.test.ts`, `src/cli.test.ts`, and `src/ci-workflow.test.ts`) and the build step; ensure the updated Tests line explicitly lists those test files and `npm run build` so reviewers see focused coverage of replay-corpus/CLI/workflow. ``` </details> <!-- fingerprinting:phantom:triton:hawk --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
@@ -34,12 +38,11 @@ Next action: Monitor PR #550 CI on commit `52b0683` and handle any follow-up rev
 - What changed: added a `replay_corpus` step id in `.github/workflows/ci.yml`, narrowed the artifact upload condition to `failure() && steps.replay_corpus.outcome == 'failure'`, and updated `src/ci-workflow.test.ts` to lock in the narrower workflow contract.
 - Current blocker: none
 - Next exact step: monitor PR #550 CI on `52b0683` and handle any follow-up review or workflow regressions if they appear.
-- Verification gap: focused replay-corpus/CLI/workflow tests and `npm run build` passed locally; broader full-suite verification has not been run.
+- Verification gap: focused replay-corpus (`src/supervisor/replay-corpus.test.ts`), CLI (`src/index.test.ts`), and workflow (`src/ci-workflow.test.ts`) tests plus `npm run build` passed locally; broader full-suite verification has not been run.
 - Files touched: `.github/workflows/ci.yml`, `src/ci-workflow.test.ts`, `src/index.ts`, `src/supervisor/replay-corpus.ts`, `src/supervisor/replay-corpus.test.ts`
 - Rollback concern: removing the artifact sync would leave CI with only the compact summary and no deterministic mismatch details for failing replay-corpus runs, making review/debugging on failures materially worse again.
-- Last focused command: `npx tsx --test src/ci-workflow.test.ts`; `npm run build`
+- Last focused command: `npx tsx --test src/supervisor/replay-corpus.test.ts src/index.test.ts src/ci-workflow.test.ts`; `npm run build`
 ### Scratchpad
-- 2026-03-18 (JST): Pushed `52b0683` (`Narrow replay artifact upload to replay step failures`) to `codex/issue-547`, resolved CodeRabbit thread `PRRT_kwDORgvdZ851LKd-` via `gh api graphql`, and confirmed PR #550 has no remaining unresolved review threads.
 - 2026-03-18 (JST): Verified the remaining PR #550 CodeRabbit finding against `.github/workflows/ci.yml`; it was valid because the artifact upload used global `failure()`. Added a `replay_corpus` step id, gated upload on `steps.replay_corpus.outcome == 'failure'`, updated `src/ci-workflow.test.ts`, and reran `npx tsx --test src/ci-workflow.test.ts` plus `npm run build` successfully.
 - 2026-03-18 (JST): Added narrow `src/index.test.ts` repro coverage for `replay-corpus` argument parsing plus compact all-pass and mismatch CLI summaries; initial focused failures showed the command was missing and the existing CLI helper wrongly assumed `node_modules/tsx/dist/cli.mjs` existed in the workspace.
 - 2026-03-18 (JST): Implemented `replay-corpus` in `src/index.ts`, added compact replay corpus summary/mismatch formatters in `src/supervisor/replay-corpus.ts`, and added formatter tests in `src/supervisor/replay-corpus.test.ts`; `npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts` passed.
