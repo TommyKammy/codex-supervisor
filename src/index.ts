@@ -8,7 +8,11 @@ import {
   loadSupervisorCycleDecisionSnapshot,
   replaySupervisorCycleDecisionSnapshot,
 } from "./supervisor/supervisor-cycle-replay";
-import { formatReplayCorpusRunSummary, runReplayCorpus } from "./supervisor/replay-corpus";
+import {
+  createCheckedInReplayCorpusConfig,
+  formatReplayCorpusRunSummary,
+  runReplayCorpus,
+} from "./supervisor/replay-corpus";
 
 export function parseArgs(argv: string[]): CliOptions {
   const args = [...argv];
@@ -134,7 +138,10 @@ async function main(): Promise<void> {
   }
 
   if (options.command === "replay-corpus") {
-    const config = loadConfig(options.configPath);
+    const config =
+      options.configPath === undefined && options.corpusPath === "replay-corpus"
+        ? createCheckedInReplayCorpusConfig(process.cwd())
+        : loadConfig(options.configPath);
     const result = await runReplayCorpus(options.corpusPath!, config);
     const summary = formatReplayCorpusRunSummary(result);
     if (result.mismatchCount > 0) {

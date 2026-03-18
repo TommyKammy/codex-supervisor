@@ -6,6 +6,7 @@ import test from "node:test";
 import { GitHubIssue, GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig, WorkspaceStatus } from "../core/types";
 import { buildSupervisorCycleDecisionSnapshot } from "./supervisor-cycle-snapshot";
 import {
+  createCheckedInReplayCorpusConfig,
   loadReplayCorpus,
   formatReplayCorpusMismatchSummaryLine,
   formatReplayCorpusOutcomeMismatch,
@@ -65,13 +66,6 @@ function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConf
     draftPrAfterAttempt: 1,
     ...overrides,
   };
-}
-
-function createCheckedInReplayCorpusConfig(): SupervisorConfig {
-  return createConfig({
-    reviewBotLogins: ["copilot-pull-request-reviewer", "coderabbitai", "coderabbitai[bot]"],
-    configuredBotInitialGraceWaitSeconds: 90,
-  });
 }
 
 function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
@@ -481,7 +475,10 @@ test("loadReplayCorpus loads the checked-in safety case bundles", async () => {
 });
 
 test("runReplayCorpus replays the checked-in PR lifecycle safety cases without mismatches", async () => {
-  const result = await runReplayCorpus(path.join(process.cwd(), "replay-corpus"), createCheckedInReplayCorpusConfig());
+  const result = await runReplayCorpus(
+    path.join(process.cwd(), "replay-corpus"),
+    createCheckedInReplayCorpusConfig(process.cwd()),
+  );
 
   assert.equal(result.mismatchCount, 0);
   assert.deepEqual(result.results.map((entry) => entry.caseId), [
