@@ -5,17 +5,27 @@
 - Branch: codex/issue-513
 - Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-513
 - Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-513/.codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 5d63ab166ae3d75a8d823ca4c1311d0471d9ab93
+- Current phase: waiting_ci
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: 21a0d2841f69fcfccba0743aa52c00e2711de0ef
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-18T09:47:41+09:00
+- Updated at: 2026-03-18T00:56:10Z
 
 ## Latest Codex Summary
-- Explain now reuses the same digest-backed `external_review_follow_up unresolved=... actions=...` summary that `status` emits for current-head actionable misses, so operator diagnostics and status share one follow-up interpretation.
-- Added a focused explain reproducer for an active `addressing_review` issue with a current-head external-review follow-up digest, then verified with focused explain/follow-up suites plus `npm run build` after restoring the local TypeScript toolchain via `npm ci`.
+`explain` now reuses the same digest-backed `external_review_follow_up unresolved=... actions=...` summary that `status` emits for current-head actionable external-review misses. The change is in [src/supervisor/supervisor-selection-status.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-513/src/supervisor/supervisor-selection-status.ts), and the focused reproducer is in [src/supervisor/supervisor-diagnostics-explain.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-513/src/supervisor/supervisor-diagnostics-explain.test.ts). I also updated [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-513/.codex-supervisor/issue-journal.md) and committed the checkpoint as `21a0d28` (`Reuse external review follow-up summary in explain`).
+
+Verification passed with `npx tsx --test src/external-review/external-review-miss-persistence.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-diagnostics-external-review-follow-up.test.ts src/supervisor/supervisor-status-rendering.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts` and `npm run build`. I had to run `npm ci` first because the local toolchain was missing `tsc`. The only remaining workspace noise is untracked `.codex-supervisor/replay/`, which I left untouched.
+
+I pushed `codex/issue-513` to `origin` and opened draft PR [#520](https://github.com/TommyKammy/codex-supervisor/pull/520). The initial PR state is `UNSTABLE` only because the CI `build (ubuntu-latest)` and `build (macos-latest)` jobs are still in progress; CodeRabbit already reported success.
+
+Summary: Reused the shared external-review follow-up summary in `explain`, added a focused current-head reproducer, updated the journal, and committed the fix as `21a0d28`.
+State hint: waiting_ci
+Blocked reason: none
+Tests: `npx tsx --test src/external-review/external-review-miss-persistence.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-diagnostics-external-review-follow-up.test.ts src/supervisor/supervisor-status-rendering.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts`; `npm ci`; `npm run build`
+Failure signature: none
+Next action: Watch PR #520 CI to green, then handle any review or failure follow-up from that checkpoint.
 
 ## Active Failure Context
 - None recorded.
@@ -25,7 +35,7 @@
 - Hypothesis: `explain` should not synthesize its own external-review miss narrative; when a tracked issue has a current-head follow-up digest, it should surface the same compact digest-backed summary that `status` already trusts.
 - What changed: added a focused explain reproducer for a current-head actionable digest, taught `buildIssueExplainSummary()` to load the active-status snapshot when the GitHub client can resolve active review state, and append the shared `external_review_follow_up` summary line instead of inventing new reasoning.
 - Current blocker: none
-- Next exact step: review the diff, commit the explain follow-up reuse patch on `codex/issue-513`, and decide whether to open the draft PR immediately from this checkpoint.
+- Next exact step: watch PR #520 until CI settles, then address any failures or review comments from the published `21a0d28` checkpoint.
 - Verification gap: none locally after rerunning the focused explain/external-review suites and `npm run build`.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-diagnostics-explain.test.ts`, `src/supervisor/supervisor-selection-status.ts`
 - Rollback concern: if `explain` stops reusing the shared follow-up summary, operators get divergent miss-to-prevention stories between `status` and `explain`, which is the regression this issue closes.
@@ -49,3 +59,4 @@
 - 2026-03-18 (JST): Added `src/supervisor/supervisor-diagnostics-explain.test.ts` coverage for a current-head actionable follow-up digest; the first focused run failed because `explain` returned only selection fields and omitted `external_review_follow_up`, yielding failure signature `missing-explain-follow-up-summary`.
 - 2026-03-18 (JST): `buildIssueExplainSummary()` now reuses `loadActiveIssueStatusSnapshot()` to append the same digest-backed `external_review_follow_up unresolved=... actions=...` line that `status` emits when the GitHub client can resolve active review state.
 - 2026-03-18 (JST): `npm run build` first failed with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain, the rerun passed, and the focused explain/follow-up suites stayed green after the typing fix.
+- 2026-03-18 (JST): Pushed `codex/issue-513` to `origin`, opened draft PR #520 (`https://github.com/TommyKammy/codex-supervisor/pull/520`), and confirmed the initial PR state is `UNSTABLE` only because the CI build jobs are still running.
