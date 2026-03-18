@@ -121,12 +121,14 @@ test("validateIssueMetadataSyntax rejects zero and blank scheduling metadata val
     number: 55,
     body: `Part of: #0
 Depends on:
+Execution order:
 Parallelizable:`,
   });
 
   assert.deepEqual(validateIssueMetadataSyntax(issue), [
     "part of must reference a single issue as #<number>",
     "depends on must be none or comma-separated #<number> references",
+    "execution order must be N of M with 1 <= N <= M",
     "parallelizable must be Yes or No",
   ]);
 });

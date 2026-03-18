@@ -66,7 +66,7 @@ export function validateIssueMetadataSyntax(issue: Pick<GitHubIssue, "number" | 
     }
   }
 
-  const hasExecutionOrderLine = /^\s*Execution order:\s*.+$/im.test(issue.body);
+  const hasExecutionOrderLine = /^\s*Execution order:[^\r\n]*$/im.test(issue.body);
   const hasExecutionOrderHeading = /^\s*##\s*Execution order\s*$/im.test(issue.body);
   const executionOrder = parseExecutionOrder(issue.body);
   if (hasExecutionOrderLine || hasExecutionOrderHeading) {
