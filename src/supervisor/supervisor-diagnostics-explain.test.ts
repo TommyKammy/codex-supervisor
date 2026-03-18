@@ -409,9 +409,6 @@ test("explain reuses external-review follow-up reasoning for current-head action
     getIssue: async () => trackedIssue,
     listAllIssues: async () => [trackedIssue],
     listCandidateIssues: async () => [trackedIssue],
-    resolvePullRequestForBranch: async () => null,
-    getChecks: async () => [],
-    getUnresolvedReviewThreads: async () => [],
   };
 
   const explanation = await supervisor.explain(issueNumber);

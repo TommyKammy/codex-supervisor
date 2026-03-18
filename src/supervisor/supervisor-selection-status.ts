@@ -70,30 +70,25 @@ async function buildExplainChangeRiskSummary(args: {
 
 async function buildExplainExternalReviewFollowUpSummary(args: {
   github: ExplainIssueGitHub;
-  config: SupervisorConfig;
   record: IssueRunRecord | undefined;
 }): Promise<string | null> {
-  if (
-    !args.record ||
-    !args.github.resolvePullRequestForBranch ||
-    !args.github.getChecks ||
-    !args.github.getUnresolvedReviewThreads
-  ) {
+  if (!args.record) {
     return null;
   }
 
-  const activeStatus = await loadActiveIssueStatusSnapshot({
-    github: {
-      getIssue: args.github.getIssue,
-      resolvePullRequestForBranch: args.github.resolvePullRequestForBranch,
-      getChecks: args.github.getChecks,
-      getUnresolvedReviewThreads: args.github.getUnresolvedReviewThreads,
-    },
-    config: args.config,
-    activeRecord: args.record,
-  });
+  let pr: GitHubPullRequest | null = null;
+  try {
+    pr = args.github.resolvePullRequestForBranch
+      ? await args.github.resolvePullRequestForBranch(args.record.branch, args.record.pr_number)
+      : null;
+  } catch {
+    pr = null;
+  }
 
-  return activeStatus.externalReviewFollowUpSummary;
+  return buildExternalReviewFollowUpStatusLine({
+    activeRecord: args.record,
+    currentHeadSha: pr?.headRefOid ?? args.record.last_head_sha,
+  });
 }
 
 export interface SupervisorStatusRecords {
@@ -388,7 +383,6 @@ export async function buildIssueExplainSummary(
   });
   const externalReviewFollowUpSummary = await buildExplainExternalReviewFollowUpSummary({
     github,
-    config,
     record,
   });
 
