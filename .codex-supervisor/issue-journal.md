@@ -14,7 +14,7 @@
 - Updated at: 2026-03-18T17:41:15.332Z
 
 ## Latest Codex Summary
-- None yet.
+- Added `docs/agent-instructions.ja.md` as a Japanese bootstrap hub for AI agents, backed by a focused alignment regression and local build verification; opened draft PR #584.
 
 ## Active Failure Context
 - None recorded.
@@ -24,12 +24,13 @@
 - Hypothesis: The Japanese bootstrap entry can be added safely by extending the existing docs regression to require a Japanese peer doc with the same section order and delegation role as the English hub, then translating only the bootstrap protocol while linking back to canonical references.
 - What changed: extended `src/agent-instructions-docs.test.ts` with a focused Japanese alignment regression for `docs/agent-instructions.ja.md`; reproduced the issue with an `ENOENT` failure because the Japanese doc did not exist; added `docs/agent-instructions.ja.md` with the same bootstrap structure as the English hub, including prerequisites, read order, first-run sequence, escalation rules, and canonical-reference links to the existing docs.
 - Current blocker: none
-- Next exact step: commit the docs-and-test checkpoint on `codex/issue-562`, then open a draft PR for the branch because there is no existing PR yet.
+- Next exact step: monitor draft PR #584, review any doc-link feedback, and wait for CI or review signals before further changes.
 - Verification gap: no broader suite run beyond the focused docs coverage and required build; this issue only changed docs and a doc regression.
 - Files touched: `.codex-supervisor/issue-journal.md`, `docs/agent-instructions.ja.md`, `src/agent-instructions-docs.test.ts`
 - Rollback concern: removing the Japanese bootstrap hub or its regression would reintroduce a missing deterministic first-read path for Japanese AI agents and allow English/Japanese bootstrap structure to drift.
 - Last focused command: `npx tsx --test src/agent-instructions-docs.test.ts`; `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts`; `npm install`; `npm run build`
 ### Scratchpad
+- 2026-03-19 (JST): Committed the verified docs slice as `1571ad1` (`Add Japanese agent bootstrap doc`), pushed `codex/issue-562`, and opened draft PR #584 (`https://github.com/TommyKammy/codex-supervisor/pull/584`).
 - 2026-03-19 (JST): Reproduced issue #562 by extending `src/agent-instructions-docs.test.ts` with a Japanese bootstrap alignment check; it failed with `ENOENT` because `docs/agent-instructions.ja.md` did not exist. Added the Japanese bootstrap hub with mirrored section order and canonical links to `getting-started.ja.md`, `getting-started.md`, `configuration.md`, `issue-metadata.md`, and `local-review.md`. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts`; `npm run build` initially failed because `tsc` was missing locally, so restored dev dependencies with `npm install` and reran `npm run build` successfully.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
