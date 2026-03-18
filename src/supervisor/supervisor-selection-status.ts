@@ -36,6 +36,7 @@ import {
   SupervisorConfig,
   SupervisorStateFile,
 } from "../core/types";
+import type { ClarificationBlock, ExecutionReadyLintResult } from "../issue-metadata";
 
 type ReadinessSummaryGitHub = Pick<GitHubClient, "listCandidateIssues">;
 type SelectionWhyGitHub = Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">;
@@ -473,7 +474,88 @@ export async function buildIssueLintSummary(
     }`,
     `metadata_errors=${metadataErrors.length > 0 ? metadataErrors.join("; ") : "none"}`,
     `high_risk_blocking_ambiguity=${clarificationBlock?.reason ?? "none"}`,
+    ...buildIssueLintRepairGuidance(readiness, metadataErrors, clarificationBlock),
   ];
+}
+
+function buildIssueLintRepairGuidance(
+  readiness: ExecutionReadyLintResult,
+  metadataErrors: string[],
+  clarificationBlock: ClarificationBlock | null,
+): string[] {
+  const guidance: string[] = [];
+
+  for (const missingField of readiness.missingRequired) {
+    switch (missingField) {
+      case "summary":
+        guidance.push("Add a `## Summary` section describing the intended outcome in one short paragraph.");
+        break;
+      case "scope":
+        guidance.push("Add a `## Scope` section with bullet points describing the in-scope work.");
+        break;
+      case "acceptance criteria":
+        guidance.push("Add a `## Acceptance criteria` section listing the observable completion checks.");
+        break;
+      case "verification":
+        guidance.push("Add a `## Verification` section with the exact command, test file, or manual check to run.");
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (metadataErrors.length > 0) {
+    guidance.push(
+      "Replace invalid scheduling metadata with valid `Part of: #<number>`, `Depends on: none|#<number>`, `Execution order: N of M`, and `Parallelizable: Yes|No` lines.",
+    );
+  }
+
+  if (clarificationBlock) {
+    for (const ambiguityClass of clarificationBlock.ambiguityClasses) {
+      switch (ambiguityClass) {
+        case "unresolved_choice":
+          if (clarificationBlock.riskyChangeClasses.includes("auth")) {
+            guidance.push(
+              "Rewrite the issue to pick one auth path, remove the unresolved choice, and state the approved outcome explicitly.",
+            );
+          } else {
+            guidance.push(
+              "Rewrite the issue to pick one implementation path, remove the unresolved choice, and state the approved outcome explicitly.",
+            );
+          }
+          break;
+        case "open_question":
+          guidance.push("Replace the open question with a concrete decision or move it out of the execution issue before retrying.");
+          break;
+        case "operator_confirmation":
+          guidance.push("Record the required operator confirmation in the issue, then rewrite the task as an already-approved change.");
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  for (const missingField of readiness.missingRecommended) {
+    switch (missingField) {
+      case "depends on":
+        guidance.push("Add `Depends on: none` if nothing blocks this issue, or list blocking issues as `Depends on: #123, #456`.");
+        break;
+      case "execution order":
+        guidance.push("Add `Execution order: 1 of 1` if this issue stands alone, or `Execution order: N of M` for a sequenced series.");
+        break;
+      case "scope boundary":
+        guidance.push("Add one `## Scope` bullet that says what stays unchanged, excluded, or out of scope.");
+        break;
+      case "verification target":
+        guidance.push("Update `## Verification` so at least one step names the exact command, test file, or manual target.");
+        break;
+      default:
+        break;
+    }
+  }
+
+  return guidance.map((line, index) => `repair_guidance_${index + 1}=${line}`);
 }
 
 function formatRunnableReadinessReason(

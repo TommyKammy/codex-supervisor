@@ -117,6 +117,15 @@ Issue lint should report missing sections.`,
   assert.match(report, /^execution_ready=no$/m);
   assert.match(report, /^missing_required=scope, acceptance criteria, verification$/m);
   assert.match(report, /^missing_recommended=depends on, execution order$/m);
+  assert.match(report, /^repair_guidance_1=Add a `## Scope` section with bullet points describing the in-scope work\.$/m);
+  assert.match(
+    report,
+    /^repair_guidance_2=Add a `## Acceptance criteria` section listing the observable completion checks\.$/m,
+  );
+  assert.match(
+    report,
+    /^repair_guidance_3=Add a `## Verification` section with the exact command, test file, or manual check to run\.$/m,
+  );
 });
 
 test("issue lint reports malformed and locally inconsistent scheduling metadata", async () => {
@@ -162,6 +171,10 @@ Parallelizable: Later
   assert.match(report, /^issue=#104$/m);
   assert.match(report, /^metadata_errors=part of references the issue itself; depends on contains malformed references: #oops; depends on references the issue itself; depends on repeats #105; execution order must be N of M with 1 <= N <= M; parallelizable must be Yes or No$/m);
   assert.match(report, /^high_risk_blocking_ambiguity=none$/m);
+  assert.match(
+    report,
+    /^repair_guidance_1=Replace invalid scheduling metadata with valid `Part of: #<number>`, `Depends on: none|#<number>`, `Execution order: N of M`, and `Parallelizable: Yes|No` lines\.$/m,
+  );
 });
 
 test("issue lint reports high-risk blocking ambiguity distinctly", async () => {
@@ -205,5 +218,9 @@ Decide whether to keep the current production auth token flow or replace it befo
   assert.match(
     report,
     /^high_risk_blocking_ambiguity=high-risk blocking ambiguity \(unresolved_choice\) for auth changes$/m,
+  );
+  assert.match(
+    report,
+    /^repair_guidance_1=Rewrite the issue to pick one auth path, remove the unresolved choice, and state the approved outcome explicitly\.$/m,
   );
 });
