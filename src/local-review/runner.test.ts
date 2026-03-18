@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
-import { runRoleReview, type LocalReviewTurnRequest } from "./runner";
+import { runRoleReview, runVerifierReview, type LocalReviewTurnRequest } from "./runner";
 import { createConfig, createIssue, createMissPattern, createPullRequest } from "./test-helpers";
 
 test("runRoleReview routes reviewer turns through the injected execution contract", async () => {
@@ -95,4 +98,97 @@ test("runRoleReview routes reviewer turns through the injected execution contrac
     exitCode: 0,
     degraded: false,
   });
+});
+
+test("runVerifierReview routes verifier turns through the injected execution contract", async () => {
+  const requests: LocalReviewTurnRequest[] = [];
+  const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-verifier-runner-test-"));
+
+  try {
+    const result = await runVerifierReview({
+      config: createConfig(),
+      issue: createIssue({ number: 524, title: "Route verifier turns through a runner contract" }),
+      branch: "codex/issue-524",
+      workspacePath,
+      defaultBranch: "main",
+      pr: createPullRequest({ number: 89, headRefOid: "headsha524" }),
+      findings: [
+        {
+          role: "reviewer",
+          title: "Confirm the verifier seam",
+          body: "Verifier turns should execute through the injected runner contract.",
+          file: "src/local-review/runner.ts",
+          start: 142,
+          end: 168,
+          severity: "high",
+          confidence: 0.94,
+          category: "correctness",
+          evidence: "Direct verifier CLI invocation would bypass the shared runner-backed execution seam.",
+        },
+      ],
+      executeTurn: async (request) => {
+        requests.push(request);
+        return {
+          exitCode: 0,
+          rawOutput: [
+            "Verification summary: Runner-backed verifier result",
+            "Recommendation: changes_requested",
+            "REVIEW_VERIFIER_JSON_START",
+            JSON.stringify({
+              findings: [
+                {
+                  findingKey: "reviewer:src/local-review/runner.ts:142-168:Confirm the verifier seam",
+                  verdict: "confirmed",
+                  rationale: "The verifier contract executed through the injected runner abstraction.",
+                },
+              ],
+            }),
+            "REVIEW_VERIFIER_JSON_END",
+          ].join("\n"),
+        };
+      },
+    } as Parameters<typeof runVerifierReview>[0] & {
+      executeTurn: (request: LocalReviewTurnRequest) => Promise<{ exitCode: number; rawOutput: string }>;
+    });
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0]?.role, "verifier");
+    assert.equal(requests[0]?.workspacePath, workspacePath);
+    assert.equal(requests[0]?.outputFileName, "verifier.txt");
+    assert.match(requests[0]?.prompt ?? "", /Route verifier turns through a runner contract/);
+    assert.match(requests[0]?.prompt ?? "", /Confirm the verifier seam/);
+
+    assert.deepEqual(result, {
+      role: "verifier",
+      summary: "Runner-backed verifier result",
+      recommendation: "changes_requested",
+      findings: [
+        {
+          findingKey: "reviewer:src/local-review/runner.ts:142-168:Confirm the verifier seam",
+          verdict: "confirmed",
+          rationale: "The verifier contract executed through the injected runner abstraction.",
+        },
+      ],
+      rawOutput: [
+        "Verification summary: Runner-backed verifier result",
+        "Recommendation: changes_requested",
+        "REVIEW_VERIFIER_JSON_START",
+        JSON.stringify({
+          findings: [
+            {
+              findingKey: "reviewer:src/local-review/runner.ts:142-168:Confirm the verifier seam",
+              verdict: "confirmed",
+              rationale: "The verifier contract executed through the injected runner abstraction.",
+            },
+          ],
+        }),
+        "REVIEW_VERIFIER_JSON_END",
+      ].join("\n"),
+      exitCode: 0,
+      degraded: false,
+      verifierGuardrails: [],
+    });
+  } finally {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  }
 });

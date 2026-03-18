@@ -1,36 +1,36 @@
-# Issue #523: Local review abstraction: route reviewer turns through a runner-backed execution contract
+# Issue #524: Local review abstraction: route verifier turns through the same runner-backed abstraction style
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/523
-- Branch: codex/issue-523
-- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-523
-- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-523/.codex-supervisor/issue-journal.md
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/524
+- Branch: codex/issue-524
+- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-524
+- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-524/.codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: e8ccfc973166887dfa74db0339ed4e1cc396b526
+- Last head SHA: 3023c47b9d7e95d992e2d9a3e2ab1d80a049647d
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-18T01:58:26.690Z
+- Updated at: 2026-03-18T02:15:23.845Z
 
 ## Latest Codex Summary
-- Reviewer turns now execute through an injected local-review turn contract, with the default Codex CLI implementation preserved behind that seam.
+- Verifier turns now execute through the same injected local-review turn contract as reviewer turns, with the default Codex CLI implementation preserved behind that seam.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: reviewer orchestration is still tightly coupled to direct Codex CLI invocation inside `runRoleReview()`, so reviewer turns cannot be swapped to a runner-backed contract without changing orchestration code.
-- What changed: added `LocalReviewTurnRequest`/`LocalReviewTurnResult` plus `LocalReviewTurnExecutor` in `src/local-review/runner.ts`, updated `runRoleReview()` to route reviewer execution through the injected executor while keeping the default Codex-backed path and footer parsing unchanged, and added a focused regression in `src/local-review/runner.test.ts`.
+- Hypothesis: verifier orchestration still bypasses the shared runner-backed contract because `runVerifierReview()` directly invokes the Codex CLI instead of using the injected turn executor style already used by reviewer turns.
+- What changed: added a focused verifier regression in `src/local-review/runner.test.ts`, then updated `runVerifierReview()` in `src/local-review/runner.ts` to accept `executeTurn?: LocalReviewTurnExecutor` and route verifier execution through `args.executeTurn ?? runCodexReviewTurn` while preserving verifier prompts, guardrail loading, exit-code degradation, and footer parsing.
 - Current blocker: none
-- Next exact step: commit the reviewer-contract checkpoint on `codex/issue-523` and open or update a draft PR if one is not already present.
-- Verification gap: none locally after rerunning the focused reviewer tests and `npm run build`.
+- Next exact step: commit the verifier-contract checkpoint on `codex/issue-524` and open or update a draft PR if one is not already present.
+- Verification gap: none locally after rerunning the focused verifier tests and `npm run build`.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/local-review/runner.ts`, `src/local-review/runner.test.ts`
-- Rollback concern: if `runRoleReview()` is reverted to direct CLI construction, reviewer turns will bypass the injected execution contract and future runner abstractions will need orchestration changes again.
+- Rollback concern: if `runVerifierReview()` is reverted to direct CLI construction, verifier turns will bypass the shared execution contract and local-review orchestration will fork again on tool-specific calling code.
 - Last focused command: `npm run build`
 ### Scratchpad (workspace-local date in Asia/Tokyo unless noted)
-- 2026-03-18 (JST): Added `src/local-review/runner.test.ts` to prove `runRoleReview()` should use an injected reviewer-turn executor; the focused repro failed with `spawn /usr/bin/codex ENOENT`, yielding failure signature `local-review-reviewer-bypasses-runner-contract`.
-- 2026-03-18 (JST): Narrow fix: introduced `LocalReviewTurnRequest`, `LocalReviewTurnResult`, and `LocalReviewTurnExecutor`, then routed `runRoleReview()` through `args.executeTurn ?? runCodexReviewTurn` while preserving the existing prompt and footer parsing behavior.
+- 2026-03-18 (JST): Added `src/local-review/runner.test.ts` coverage for `runVerifierReview()` using an injected turn executor; the focused repro failed with assertion `0 !== 1` because no verifier request hit the injected contract, yielding failure signature `local-review-verifier-bypasses-runner-contract`.
+- 2026-03-18 (JST): Narrow fix: extended `runVerifierReview()` to accept `executeTurn?: LocalReviewTurnExecutor` and route verifier execution through `args.executeTurn ?? runCodexReviewTurn` while preserving verifier prompt generation, relevant prior-miss loading, guardrail loading, and parsed verifier footer semantics.
+- 2026-03-18 (JST): `npm run build` failed after the code fix with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain in this worktree.
 - 2026-03-18 (JST): Verified with `npx tsx --test src/local-review/runner.test.ts`, `npx tsx --test src/local-review/execution.test.ts`, `npx tsx --test src/local-review/runner.test.ts src/local-review/execution.test.ts`, and `npm run build`.
-- 2026-03-18 (JST): `npm run build` initially failed in this worktree with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain and the rerun passed.
