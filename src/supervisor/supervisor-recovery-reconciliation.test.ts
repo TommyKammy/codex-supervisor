@@ -226,6 +226,7 @@ test("reconcileStaleActiveIssueReservation clears a stale reservation and emits 
 });
 
 test("reconcileStaleActiveIssueReservation requeues a stale stabilizing issue without a tracked PR", async () => {
+  const config = createConfig();
   const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
   const state: SupervisorStateFile = {
     activeIssueNumber: 366,
@@ -259,6 +260,7 @@ test("reconcileStaleActiveIssueReservation requeues a stale stabilizing issue wi
     state,
     issueLockPath: (issueNumber) => path.join(lockRoot, "locks", "issues", String(issueNumber)),
     sessionLockPath: (sessionId) => path.join(lockRoot, "locks", "sessions", String(sessionId)),
+    sameFailureSignatureRepeatLimit: config.sameFailureSignatureRepeatLimit,
   });
 
   assert.equal(state.activeIssueNumber, null);
@@ -270,6 +272,71 @@ test("reconcileStaleActiveIssueReservation requeues a stale stabilizing issue wi
   assert.match(
     formatRecoveryLog(recoveryEvents) ?? "",
     /recovery issue=#366 reason=stale_state_cleanup: requeued stabilizing issue #366 after issue lock and session lock were missing/,
+  );
+});
+
+test("reconcileStaleActiveIssueReservation blocks a repeated stale stabilizing no-PR loop at the repeat limit", async () => {
+  const config = createConfig();
+  const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 366,
+    issues: {
+      "366": createRecord({
+        issue_number: 366,
+        state: "stabilizing",
+        pr_number: null,
+        codex_session_id: "session-366",
+        implementation_attempt_count: 2,
+        last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
+        repeated_failure_signature_count: config.sameFailureSignatureRepeatLimit - 1,
+      }),
+    },
+  };
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...record,
+        ...patch,
+        updated_at: "2026-03-11T06:33:08.821Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileStaleActiveIssueReservation({
+    stateStore,
+    state,
+    issueLockPath: (issueNumber) => path.join(lockRoot, "locks", "issues", String(issueNumber)),
+    sessionLockPath: (sessionId) => path.join(lockRoot, "locks", "sessions", String(sessionId)),
+    sameFailureSignatureRepeatLimit: config.sameFailureSignatureRepeatLimit,
+  });
+
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(state.issues["366"]?.state, "blocked");
+  assert.equal(state.issues["366"]?.pr_number, null);
+  assert.equal(state.issues["366"]?.codex_session_id, null);
+  assert.equal(state.issues["366"]?.blocked_reason, "manual_review");
+  assert.equal(
+    state.issues["366"]?.last_failure_signature,
+    "stale-stabilizing-no-pr-recovery-loop",
+  );
+  assert.equal(
+    state.issues["366"]?.repeated_failure_signature_count,
+    config.sameFailureSignatureRepeatLimit,
+  );
+  assert.match(
+    state.issues["366"]?.last_error ?? "",
+    /manual intervention is required/i,
+  );
+  assert.equal(saveCalls, 1);
+  assert.equal(recoveryEvents.length, 1);
+  assert.match(
+    formatRecoveryLog(recoveryEvents) ?? "",
+    /recovery issue=#366 reason=stale_state_manual_stop: blocked issue #366 after repeated stale stabilizing recovery without a tracked PR/,
   );
 });
 

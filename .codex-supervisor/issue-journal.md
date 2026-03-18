@@ -1,36 +1,36 @@
-# Issue #575: Issue authoring diagnostics: emit copy-pastable repair guidance from issue lint
+# Issue #591: Recovery gap: stop infinite stale-state cleanup loops for obsolete tracked issues without a PR
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/575
-- Branch: codex/issue-575
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/591
+- Branch: codex/issue-591
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: d99ee5434066d3b056cc9d9961765588d8fa3ce9
+- Last head SHA: ad17127d4debbfebc804da503cc9d4e13b460a90
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-18T21:40:57.240Z
+- Updated at: 2026-03-18T22:43:54.344Z
 
 ## Latest Codex Summary
-- Added deterministic `repair_guidance_<n>=...` lines to `issue-lint` so missing structure, invalid metadata, and blocking ambiguity findings each emit copy-pastable repair instructions.
+- None yet.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `issue-lint` findings are still higher-friction than necessary because authors can see what is wrong but do not get deterministic, copy-pastable repair text for missing sections, bad metadata, or high-risk ambiguity.
-- What changed: added focused `issue-lint` regressions for one missing-section case, one metadata case, and one auth ambiguity case; then extended `buildIssueLintSummary(...)` to append deterministic `repair_guidance_<n>=...` lines derived from the existing readiness, metadata, and ambiguity results.
+- Hypothesis: stale `stabilizing` reservations that have no surviving tracked PR can be requeued forever because stale cleanup never records a repeat-tracked signature for that exact no-PR recovery loop.
+- What changed: added a focused recovery reconciliation regression that reproduces the repeated stale `stabilizing` no-PR loop at the repeat limit, then taught `reconcileStaleActiveIssueReservation(...)` to record a stable failure signature for the narrow stale-no-PR case and converge it into `blocked` with `blocked_reason=manual_review` plus an operator-facing stop reason once the configured repeat limit is reached.
 - Current blocker: none
-- Next exact step: commit the repair-guidance slice, open or update the branch PR, and watch CI/review feedback.
-- Verification gap: none; `src/issue-metadata/issue-metadata.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`, and `npm run build` all passed after restoring local dependencies with `npm install`.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-selection-status.ts`, `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`
-- Rollback concern: reverting this change would remove the operator-facing repair path from `issue-lint`, forcing authors to reverse-engineer the lint rules again even though detection remains available.
-- Last focused command: `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts`; `npm run build`
+- Next exact step: commit the stale-loop convergence slice, open a draft PR for `codex/issue-591`, and watch CI/review feedback.
+- Verification gap: none; `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts --test-name-pattern "reclaims a stale stabilizing issue without carrying mismatched tracked PR context"`, and `npm run build` all passed after restoring local dependencies with `npm install`.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor.ts`
+- Rollback concern: reverting this change would restore the infinite stale cleanup loop for obsolete tracked issues that already lost their PR context, hiding the manual operator action behind repeated automatic retries again.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts --test-name-pattern "reclaims a stale stabilizing issue without carrying mismatched tracked PR context"`; `npm run build`
 ### Scratchpad
-- 2026-03-19 (JST): Reproduced issue #575 with a focused `issue-lint` regression: reports for missing required sections, malformed scheduling metadata, and unresolved auth ambiguity emitted only raw findings and no repair instructions. Fixed it by adding deterministic `repair_guidance_<n>=...` lines to `buildIssueLintSummary(...)`, ordering blocking ambiguity guidance ahead of recommended metadata hygiene, and verifying with `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts` plus `npm run build` after restoring local dependencies via `npm install`.
+- 2026-03-19 (JST): Reproduced issue #591 with a focused reconciliation regression: a `stabilizing` record whose locks were stale, `pr_number` was null, and the same stale no-PR recovery signature was already at `sameFailureSignatureRepeatLimit - 1` still requeued to `queued` instead of stopping. Fixed it by adding repeat-tracked stale-no-PR failure context in `reconcileStaleActiveIssueReservation(...)` and converting that narrow loop into `blocked(manual_review)` with a `stale_state_manual_stop` recovery reason at the repeat limit. Verification passed with `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`, `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts --test-name-pattern "reclaims a stale stabilizing issue without carrying mismatched tracked PR context"`, and `npm run build` after restoring local deps via `npm install`.
 - 2026-03-19 (JST): Reproduced issue #573 with a focused `issue-lint` regression: an authored issue containing `Part of: #104`, duplicate/self `Depends on`, `Execution order: 3 of 2`, and `Parallelizable: Later` still reported `execution_ready=yes` and no metadata problems. Fixed it by adding local metadata validation and a `metadata_errors=` summary line, then verified with `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts` and `npm run build` after restoring local deps via `npm install`.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
