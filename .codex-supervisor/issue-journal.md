@@ -1,46 +1,44 @@
-# Issue #524: Local review abstraction: route verifier turns through the same runner-backed abstraction style
+# Issue #525: Local review abstraction: support fake-runner focused tests for reviewer and verifier orchestration
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/524
-- Branch: codex/issue-524
-- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-524
-- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-524/.codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: ffb6c9f4e39d6b356f271108acd6b71b3e8a0876
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/525
+- Branch: codex/issue-525
+- Workspace: .
+- Journal: .codex-supervisor/issue-journal.md
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: c36827e84d1e2e964fce3b588bde0de8e4c3a27c
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-18T02:24:56.077Z
+- Last failure signature: PRRT_kwDORgvdZ851Du7Z|PRRT_kwDORgvdZ851Du7f
+- Repeated failure signature count: 1
+- Updated at: 2026-03-18T05:52:34Z
 
 ## Latest Codex Summary
-Verifier turns now use the same injected turn-executor seam as reviewer turns. In [src/local-review/runner.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-524/src/local-review/runner.ts), `runVerifierReview()` accepts `executeTurn?: LocalReviewTurnExecutor` and defaults to `runCodexReviewTurn`, preserving prompt construction, prior-miss loading, verifier guardrails, exit-code degradation, and footer parsing. In [src/local-review/runner.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-524/src/local-review/runner.test.ts), I added the focused regression that proved the verifier path bypassed the contract, then verified it now routes through the injected executor. I also updated [issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-524/.codex-supervisor/issue-journal.md) and committed the checkpoint as `ffb6c9f` (`Route local review verifier through turn executor`).
-
-Verification passed after restoring local dependencies with `npm ci`: `npx tsx --test src/local-review/runner.test.ts`, `npx tsx --test src/local-review/execution.test.ts`, `npx tsx --test src/local-review/runner.test.ts src/local-review/execution.test.ts`, and `npm run build`.
-
-Summary: Routed local-review verifier execution through the shared turn executor abstraction and added a focused verifier contract regression test.
-State hint: local_review
+Summary: Committed `c36827e` (`Fix fake local-review runner review follow-ups`), pushed `codex/issue-525`, and resolved both CodeRabbit threads on PR #529 after sanitizing the journal links, fixing fake-runner empty-string handling, and adding a regression test.
+State hint: pr_open
 Blocked reason: none
-Tests: `npx tsx --test src/local-review/runner.test.ts`; `npx tsx --test src/local-review/execution.test.ts`; `npx tsx --test src/local-review/runner.test.ts src/local-review/execution.test.ts`; `npm run build`
+Tests: `npx tsx --test src/local-review/runner.test.ts src/local-review/execution.test.ts`; `npm run build`
 Failure signature: none
-Next action: Open or update the draft PR for `codex/issue-524` with commit `ffb6c9f`.
+Next action: Monitor PR #529 for refreshed CI and any additional review feedback.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: confirmed and fixed; verifier orchestration had bypassed the shared runner-backed contract because `runVerifierReview()` directly invoked the Codex CLI instead of using the injected turn executor style already used by reviewer turns.
-- What changed: added a focused verifier regression in `src/local-review/runner.test.ts`, updated `runVerifierReview()` in `src/local-review/runner.ts` to accept `executeTurn?: LocalReviewTurnExecutor` and route verifier execution through `args.executeTurn ?? runCodexReviewTurn` while preserving verifier prompts, guardrail loading, exit-code degradation, and footer parsing, then pushed commit `ffb6c9f` and opened draft PR #527.
+- Hypothesis: the missing leverage point was not product code but test support; focused reviewer/verifier orchestration coverage needed a reusable fake runner that still exercised the real local-review runner parsing path instead of stubbing entire role/verifier functions.
+- What changed: validated the two CodeRabbit review comments, updated `.codex-supervisor/issue-journal.md` to use repo-relative links instead of workstation-local paths, changed `createFakeLocalReviewRunner()` in `src/local-review/test-helpers.ts` to treat empty-string outputs as configured values, added a regression test in `src/local-review/runner.test.ts` that exercises `runRoleReview()` with `rawOutput: ""`, committed the repair as `c36827e` (`Fix fake local-review runner review follow-ups`), pushed `codex/issue-525`, and resolved both review threads on PR #529.
 - Current blocker: none
-- Next exact step: monitor draft PR #527 (`https://github.com/TommyKammy/codex-supervisor/pull/527`) for CI and review feedback, then address any failures or comments.
-- Verification gap: none locally after rerunning the focused verifier tests and `npm run build`.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/local-review/runner.ts`, `src/local-review/runner.test.ts`
-- Rollback concern: if `runVerifierReview()` is reverted to direct CLI construction, verifier turns will bypass the shared execution contract and local-review orchestration will fork again on tool-specific calling code.
-- Last focused command: `npm run build`
-### Scratchpad (workspace-local date in Asia/Tokyo unless noted)
-- 2026-03-18 (JST): Added `src/local-review/runner.test.ts` coverage for `runVerifierReview()` using an injected turn executor; the focused repro failed with assertion `0 !== 1` because no verifier request hit the injected contract, yielding failure signature `local-review-verifier-bypasses-runner-contract`.
-- 2026-03-18 (JST): Narrow fix: extended `runVerifierReview()` to accept `executeTurn?: LocalReviewTurnExecutor` and route verifier execution through `args.executeTurn ?? runCodexReviewTurn` while preserving verifier prompt generation, relevant prior-miss loading, guardrail loading, and parsed verifier footer semantics.
-- 2026-03-18 (JST): `npm run build` failed after the code fix with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain in this worktree.
-- 2026-03-18 (JST): Verified with `npx tsx --test src/local-review/runner.test.ts`, `npx tsx --test src/local-review/execution.test.ts`, `npx tsx --test src/local-review/runner.test.ts src/local-review/execution.test.ts`, and `npm run build`.
-- 2026-03-18 (JST): Pushed `codex/issue-524` to origin and opened draft PR #527: `https://github.com/TommyKammy/codex-supervisor/pull/527`.
+- Next exact step: monitor PR #529 (`https://github.com/TommyKammy/codex-supervisor/pull/529`) for refreshed CI and any further review feedback.
+- Verification gap: none for the requested focused tests and build; broader suite was not rerun after the targeted verification.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/local-review/runner.test.ts`, `src/local-review/test-helpers.ts`
+- Rollback concern: removing the fake-runner helpers would push focused orchestration tests back toward live CLI dependence or coarse stubs, reducing confidence in reviewer/verifier wiring.
+- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId='PRRT_kwDORgvdZ851Du7f'`
+### Scratchpad
+- 2026-03-18 (JST): Added two narrow repro tests in `src/local-review/execution.test.ts`; initial focused failure was `TypeError: (0 , import_test_helpers.createRoleTurnOutput) is not a function`.
+- 2026-03-18 (JST): Implemented `createFakeLocalReviewRunner()`, `createRoleTurnOutput()`, and `createVerifierTurnOutput()` in `src/local-review/test-helpers.ts`; first pass exposed a shape mismatch (`Cannot read properties of undefined (reading 'match')`) because the helper accepted raw strings but did not normalize them into `{ exitCode, rawOutput }`.
+- 2026-03-18 (JST): Normalized string outputs inside the fake runner helper; `npx tsx --test src/local-review/execution.test.ts`, `npx tsx --test src/local-review/runner.test.ts src/local-review/execution.test.ts`, and `npm run build` then passed.
+- 2026-03-18 (JST): Resumed in stabilizing; confirmed HEAD `6d6d7fa`, no PR existed yet for `codex/issue-525`, and prepared the handoff for the push/PR step.
+- 2026-03-18 (JST): Pushed `codex/issue-525` to origin and opened draft PR #529: `https://github.com/TommyKammy/codex-supervisor/pull/529`.
+- 2026-03-18 (JST): Addressed the two CodeRabbit review findings by switching the fake runner to a `hasOwnProperty` lookup so `""` remains a valid configured `rawOutput`, sanitizing the journal's stored review snippet to repo-relative links, and adding a regression test; `npx tsx --test src/local-review/runner.test.ts src/local-review/execution.test.ts` and `npm run build` passed.
+- 2026-03-18 (JST): Committed the review follow-ups as `c36827e` (`Fix fake local-review runner review follow-ups`), pushed `codex/issue-525`, and resolved both CodeRabbit review threads via `gh api graphql`.

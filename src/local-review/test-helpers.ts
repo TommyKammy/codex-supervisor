@@ -1,6 +1,12 @@
 import { type ExternalReviewMissPattern } from "../external-review/external-review-misses";
 import { type LocalReviewRoleSelection } from "../review-role-detector";
 import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "../core/types";
+import {
+  type LocalReviewTurnExecutor,
+  type LocalReviewTurnRequest,
+  type LocalReviewTurnResult,
+} from "./runner";
+import { type LocalReviewFinding, type LocalReviewVerificationFinding } from "./types";
 
 export function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   const baseConfig: SupervisorConfig = {
@@ -133,5 +139,73 @@ export function createMissPattern(overrides: Partial<ExternalReviewMissPattern> 
     sourceHeadSha: "oldhead",
     lastSeenAt: "2026-03-11T00:00:00Z",
     ...overrides,
+  };
+}
+
+export function createRoleTurnOutput(args: {
+  summary: string;
+  recommendation: "ready" | "changes_requested";
+  findings: Array<Omit<LocalReviewFinding, "role">>;
+}): string {
+  return [
+    `Review summary: ${args.summary}`,
+    `Recommendation: ${args.recommendation}`,
+    "REVIEW_FINDINGS_JSON_START",
+    JSON.stringify({
+      findings: args.findings,
+    }),
+    "REVIEW_FINDINGS_JSON_END",
+  ].join("\n");
+}
+
+export function createVerifierTurnOutput(args: {
+  summary: string;
+  recommendation: "ready" | "changes_requested";
+  findings: LocalReviewVerificationFinding[];
+}): string {
+  return [
+    `Verification summary: ${args.summary}`,
+    `Recommendation: ${args.recommendation}`,
+    "REVIEW_VERIFIER_JSON_START",
+    JSON.stringify({
+      findings: args.findings,
+    }),
+    "REVIEW_VERIFIER_JSON_END",
+  ].join("\n");
+}
+
+export function createFakeLocalReviewRunner(outputs: Record<
+  string,
+  | string
+  | LocalReviewTurnResult
+  | ((request: LocalReviewTurnRequest) => Promise<LocalReviewTurnResult | string> | LocalReviewTurnResult | string)
+>): {
+  requests: LocalReviewTurnRequest[];
+  executeTurn: LocalReviewTurnExecutor;
+} {
+  const requests: LocalReviewTurnRequest[] = [];
+  const normalizeResult = (value: LocalReviewTurnResult | string): LocalReviewTurnResult =>
+    typeof value === "string"
+      ? {
+          exitCode: 0,
+          rawOutput: value,
+        }
+      : value;
+
+  return {
+    requests,
+    executeTurn: async (request) => {
+      requests.push(request);
+      if (!Object.prototype.hasOwnProperty.call(outputs, request.role)) {
+        throw new Error(`No fake local-review runner output configured for role ${request.role}`);
+      }
+      const output = outputs[request.role];
+
+      return normalizeResult(
+        typeof output === "function"
+          ? await output(request)
+          : output,
+      );
+    },
   };
 }

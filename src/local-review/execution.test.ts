@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { runLocalReviewExecution, selectVerifierFindings } from "./execution";
+import { runRoleReview, runVerifierReview } from "./runner";
 import { type LocalReviewRoleResult, type LocalReviewVerifierReport } from "./types";
 import { type LocalReviewRoleSelection } from "../review-role-detector";
 import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "../core/types";
+import {
+  createFakeLocalReviewRunner,
+  createRoleTurnOutput,
+  createVerifierTurnOutput,
+} from "./test-helpers";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
@@ -382,4 +388,99 @@ test("runLocalReviewExecution invokes verifier only when actionable high-severit
   });
 
   assert.equal(withoutVerifier.verifierReport, null);
+});
+
+test("runLocalReviewExecution supports fake-runner reviewer-only orchestration without codexBinary", async () => {
+  const fakeRunner = createFakeLocalReviewRunner({
+    reviewer: createRoleTurnOutput({
+      summary: "Reviewer found only medium risk follow-up",
+      recommendation: "changes_requested",
+      findings: [
+        {
+          title: "Medium follow-up",
+          body: "This should stay below the verifier path.",
+          file: "src/example.ts",
+          start: 7,
+          end: 8,
+          severity: "medium",
+          confidence: 0.93,
+          category: "tests",
+          evidence: "A fake runner can drive the reviewer path without a live CLI.",
+        },
+      ],
+    }),
+  });
+
+  const result = await runLocalReviewExecution({
+    config: createConfig({ codexBinary: "/definitely/not/used" }),
+    issue: createIssue(),
+    branch: "codex/issue-334",
+    workspacePath: "/tmp/repo",
+    defaultBranch: "main",
+    pr: createPullRequest(),
+    roles: ["reviewer"],
+    alwaysReadFiles: ["/tmp/repo/.codex-supervisor/issue-journal.md"],
+    onDemandFiles: ["/tmp/repo/README.md"],
+    priorMissPatterns: [],
+    runRoleReview: (args) => runRoleReview({ ...args, executeTurn: fakeRunner.executeTurn }),
+    runVerifierReview: (args) => runVerifierReview({ ...args, executeTurn: fakeRunner.executeTurn }),
+  });
+
+  assert.deepEqual(fakeRunner.requests.map((request) => request.role), ["reviewer"]);
+  assert.equal(result.roleResults[0]?.summary, "Reviewer found only medium risk follow-up");
+  assert.equal(result.roleResults[0]?.findings[0]?.severity, "medium");
+  assert.equal(result.verifierReport, null);
+});
+
+test("runLocalReviewExecution supports fake-runner verifier orchestration without codexBinary", async () => {
+  const fakeRunner = createFakeLocalReviewRunner({
+    reviewer: createRoleTurnOutput({
+      summary: "Reviewer found a high-severity issue",
+      recommendation: "changes_requested",
+      findings: [
+        {
+          title: "High-risk issue",
+          body: "This should trigger the verifier path.",
+          file: "src/example.ts",
+          start: 11,
+          end: 14,
+          severity: "high",
+          confidence: 0.96,
+          category: "correctness",
+          evidence: "The fake runner should be enough to reach verifier orchestration.",
+        },
+      ],
+    }),
+    verifier: createVerifierTurnOutput({
+      summary: "Verifier confirmed the reviewer finding",
+      recommendation: "changes_requested",
+      findings: [
+        {
+          findingKey: "reviewer|src/example.ts|11|14|high-risk issue|this should trigger the verifier path.",
+          verdict: "confirmed",
+          rationale: "The verifier path ran through the fake runner contract.",
+        },
+      ],
+    }),
+  });
+
+  const result = await runLocalReviewExecution({
+    config: createConfig({ codexBinary: "/definitely/not/used" }),
+    issue: createIssue(),
+    branch: "codex/issue-334",
+    workspacePath: "/tmp/repo",
+    defaultBranch: "main",
+    pr: createPullRequest(),
+    roles: ["reviewer"],
+    alwaysReadFiles: ["/tmp/repo/.codex-supervisor/issue-journal.md"],
+    onDemandFiles: ["/tmp/repo/README.md"],
+    priorMissPatterns: [],
+    runRoleReview: (args) => runRoleReview({ ...args, executeTurn: fakeRunner.executeTurn }),
+    runVerifierReview: (args) => runVerifierReview({ ...args, executeTurn: fakeRunner.executeTurn }),
+  });
+
+  assert.deepEqual(fakeRunner.requests.map((request) => request.role), ["reviewer", "verifier"]);
+  assert.equal(result.roleResults[0]?.summary, "Reviewer found a high-severity issue");
+  assert.equal(result.verifierReport?.summary, "Verifier confirmed the reviewer finding");
+  assert.equal(result.verifierReport?.findings[0]?.verdict, "confirmed");
 });
