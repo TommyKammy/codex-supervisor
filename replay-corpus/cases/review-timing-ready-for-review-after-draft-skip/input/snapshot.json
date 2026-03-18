@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-03-13T02:30:10Z",
+  "issue": {
+    "number": 539,
+    "title": "Ready-for-review re-arms the wait after a CodeRabbit draft skip",
+    "url": "https://example.test/issues/539",
+    "state": "OPEN",
+    "updatedAt": "2026-03-13T02:30:05Z"
+  },
+  "local": {
+    "record": {
+      "issue_number": 539,
+      "state": "waiting_ci",
+      "branch": "codex/issue-539",
+      "pr_number": 139,
+      "workspace": ".",
+      "journal_path": ".codex-supervisor/issue-journal.md",
+      "attempt_count": 2,
+      "implementation_attempt_count": 2,
+      "repair_attempt_count": 0,
+      "blocked_reason": null,
+      "last_error": null,
+      "last_failure_signature": null,
+      "last_head_sha": "head-review-timing",
+      "review_wait_started_at": "2026-03-13T02:30:00Z",
+      "review_wait_head_sha": "head-review-timing",
+      "copilot_review_requested_observed_at": null,
+      "copilot_review_requested_head_sha": null,
+      "copilot_review_timed_out_at": null,
+      "copilot_review_timeout_action": null,
+      "copilot_review_timeout_reason": null,
+      "local_review_head_sha": null,
+      "local_review_blocker_summary": null,
+      "local_review_summary_path": null,
+      "local_review_run_at": null,
+      "local_review_max_severity": null,
+      "local_review_findings_count": 0,
+      "local_review_root_cause_count": 0,
+      "local_review_verified_max_severity": null,
+      "local_review_verified_findings_count": 0,
+      "local_review_recommendation": null,
+      "local_review_degraded": false,
+      "last_local_review_signature": null,
+      "repeated_local_review_signature_count": 0,
+      "processed_review_thread_ids": [],
+      "processed_review_thread_fingerprints": [],
+      "updated_at": "2026-03-13T02:30:10Z"
+    },
+    "workspaceStatus": {
+      "branch": "codex/issue-539",
+      "headSha": "head-review-timing",
+      "hasUncommittedChanges": false,
+      "baseAhead": 1,
+      "baseBehind": 0,
+      "remoteBranchExists": true,
+      "remoteAhead": 0,
+      "remoteBehind": 0
+    }
+  },
+  "github": {
+    "pullRequest": {
+      "number": 139,
+      "title": "Pause again after ready-for-review",
+      "url": "https://example.test/pr/139",
+      "state": "OPEN",
+      "createdAt": "2026-03-13T02:00:00Z",
+      "isDraft": false,
+      "reviewDecision": "APPROVED",
+      "mergeStateStatus": "CLEAN",
+      "mergeable": "MERGEABLE",
+      "headRefName": "codex/issue-539",
+      "headRefOid": "head-review-timing",
+      "copilotReviewState": "not_requested",
+      "copilotReviewRequestedAt": null,
+      "copilotReviewArrivedAt": null,
+      "currentHeadCiGreenAt": "2026-03-13T02:05:00Z",
+      "configuredBotCurrentHeadObservedAt": null,
+      "configuredBotDraftSkipAt": "2026-03-13T02:25:00Z",
+      "mergedAt": null
+    },
+    "checks": [
+      {
+        "name": "build",
+        "state": "SUCCESS",
+        "bucket": "pass",
+        "workflow": "CI"
+      }
+    ],
+    "reviewThreads": []
+  },
+  "decision": {
+    "nextState": "waiting_ci",
+    "shouldRunCodex": false,
+    "blockedReason": null,
+    "failureContext": null
+  }
+}

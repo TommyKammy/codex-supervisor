@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-03-13T02:06:17Z",
+  "issue": {
+    "number": 538,
+    "title": "Fresh CodeRabbit observations keep merge in the settled wait",
+    "url": "https://example.test/issues/538",
+    "state": "OPEN",
+    "updatedAt": "2026-03-13T02:06:16Z"
+  },
+  "local": {
+    "record": {
+      "issue_number": 538,
+      "state": "waiting_ci",
+      "branch": "codex/issue-538",
+      "pr_number": 138,
+      "workspace": ".",
+      "journal_path": ".codex-supervisor/issue-journal.md",
+      "attempt_count": 2,
+      "implementation_attempt_count": 2,
+      "repair_attempt_count": 0,
+      "blocked_reason": null,
+      "last_error": null,
+      "last_failure_signature": null,
+      "last_head_sha": "head-provider-settled",
+      "review_wait_started_at": null,
+      "review_wait_head_sha": null,
+      "copilot_review_requested_observed_at": null,
+      "copilot_review_requested_head_sha": null,
+      "copilot_review_timed_out_at": null,
+      "copilot_review_timeout_action": null,
+      "copilot_review_timeout_reason": null,
+      "local_review_head_sha": null,
+      "local_review_blocker_summary": null,
+      "local_review_summary_path": null,
+      "local_review_run_at": null,
+      "local_review_max_severity": null,
+      "local_review_findings_count": 0,
+      "local_review_root_cause_count": 0,
+      "local_review_verified_max_severity": null,
+      "local_review_verified_findings_count": 0,
+      "local_review_recommendation": null,
+      "local_review_degraded": false,
+      "last_local_review_signature": null,
+      "repeated_local_review_signature_count": 0,
+      "processed_review_thread_ids": [],
+      "processed_review_thread_fingerprints": [],
+      "updated_at": "2026-03-13T02:06:17Z"
+    },
+    "workspaceStatus": {
+      "branch": "codex/issue-538",
+      "headSha": "head-provider-settled",
+      "hasUncommittedChanges": false,
+      "baseAhead": 1,
+      "baseBehind": 0,
+      "remoteBranchExists": true,
+      "remoteAhead": 0,
+      "remoteBehind": 0
+    }
+  },
+  "github": {
+    "pullRequest": {
+      "number": 138,
+      "title": "Pause after a fresh provider observation",
+      "url": "https://example.test/pr/138",
+      "state": "OPEN",
+      "createdAt": "2026-03-13T02:00:00Z",
+      "isDraft": false,
+      "reviewDecision": "APPROVED",
+      "mergeStateStatus": "CLEAN",
+      "mergeable": "MERGEABLE",
+      "headRefName": "codex/issue-538",
+      "headRefOid": "head-provider-settled",
+      "copilotReviewState": "arrived",
+      "copilotReviewRequestedAt": "2026-03-13T02:06:14Z",
+      "copilotReviewArrivedAt": "2026-03-13T02:06:16Z",
+      "currentHeadCiGreenAt": "2026-03-13T02:05:00Z",
+      "configuredBotCurrentHeadObservedAt": "2026-03-13T02:06:15Z",
+      "mergedAt": null
+    },
+    "checks": [
+      {
+        "name": "build",
+        "state": "SUCCESS",
+        "bucket": "pass",
+        "workflow": "CI"
+      }
+    ],
+    "reviewThreads": []
+  },
+  "decision": {
+    "nextState": "waiting_ci",
+    "shouldRunCodex": false,
+    "blockedReason": null,
+    "failureContext": null
+  }
+}

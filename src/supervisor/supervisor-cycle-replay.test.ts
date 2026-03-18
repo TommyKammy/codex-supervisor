@@ -194,6 +194,16 @@ function createReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread
   };
 }
 
+function withStubbedDateNow<T>(nowIso: string, run: () => T): T {
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse(nowIso);
+  try {
+    return run();
+  } finally {
+    Date.now = originalDateNow;
+  }
+}
+
 test("replaySupervisorCycleDecisionSnapshot re-runs the saved decision inputs without mutating them", () => {
   const config = createConfig();
   const snapshot = buildSupervisorCycleDecisionSnapshot({
@@ -219,4 +229,56 @@ test("replaySupervisorCycleDecisionSnapshot re-runs the saved decision inputs wi
   );
   assert.equal(replayed.effectiveRecord.state, snapshot.local.record.state);
   assert.equal(snapshot.local.record.state, "reproducing");
+});
+
+test("replaySupervisorCycleDecisionSnapshot evaluates timing-sensitive waits against capturedAt", () => {
+  const config = createConfig({
+    reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+    configuredBotInitialGraceWaitSeconds: 90,
+  });
+  const snapshot = withStubbedDateNow("2026-03-13T02:05:45Z", () =>
+    buildSupervisorCycleDecisionSnapshot({
+      config,
+      capturedAt: "2026-03-13T02:05:45Z",
+      issue: createIssue({
+        number: 536,
+        title: "Replay corpus: seed provider-wait and review-timing cases",
+        url: "https://example.test/issues/536",
+      }),
+      record: createRecord({
+        issue_number: 536,
+        state: "waiting_ci",
+        branch: "codex/issue-536",
+        last_head_sha: "head-536",
+      }),
+      workspaceStatus: createWorkspaceStatus({
+        branch: "codex/issue-536",
+        headSha: "head-536",
+      }),
+      pr: createPr({
+        number: 136,
+        title: "Provider grace wait snapshot",
+        url: "https://example.test/pull/136",
+        reviewDecision: "APPROVED",
+        headRefName: "codex/issue-536",
+        headRefOid: "head-536",
+        copilotReviewState: "not_requested",
+        copilotReviewRequestedAt: null,
+        copilotReviewArrivedAt: null,
+        currentHeadCiGreenAt: "2026-03-13T02:05:00Z",
+        configuredBotCurrentHeadObservedAt: null,
+      }),
+      checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [],
+    }),
+  );
+
+  const replayed = withStubbedDateNow("2026-03-18T00:00:00Z", () =>
+    replaySupervisorCycleDecisionSnapshot(snapshot, config),
+  );
+
+  assert.equal(snapshot.decision.nextState, "waiting_ci");
+  assert.equal(replayed.matchesCapturedDecision, true);
+  assert.equal(replayed.replayedDecision.nextState, "waiting_ci");
+  assert.equal(replayed.replayedDecision.shouldRunCodex, false);
 });

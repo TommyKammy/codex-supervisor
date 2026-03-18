@@ -6,6 +6,18 @@
       "path": "cases/review-blocked"
     },
     {
+      "id": "provider-wait-initial-grace",
+      "path": "cases/provider-wait-initial-grace"
+    },
+    {
+      "id": "provider-wait-settled-after-observation",
+      "path": "cases/provider-wait-settled-after-observation"
+    },
+    {
+      "id": "review-timing-ready-for-review-after-draft-skip",
+      "path": "cases/review-timing-ready-for-review-after-draft-skip"
+    },
+    {
       "id": "required-check-pending",
       "path": "cases/required-check-pending"
     },

@@ -1,17 +1,17 @@
-# Issue #535: Replay corpus: seed PR lifecycle and stale-head safety cases
+# Issue #536: Replay corpus: seed provider-wait and review-timing cases
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/535
-- Branch: codex/issue-535
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/536
+- Branch: codex/issue-536
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: bd15c238133c86ecfe38d2924c23377471aefbab
+- Last head SHA: e7b89c4ebdee74f894087c67f88b587a6c15679a
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-18T09:36:54.093Z
+- Updated at: 2026-03-18T09:57:23.330Z
 
 ## Latest Codex Summary
 - None yet.
@@ -21,17 +21,17 @@
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the narrowest fix is to seed the checked-in replay corpus itself with two more canonical bundles, one for required-check gating and one for stale-head merge prevention, and prove them through a focused checked-in corpus replay test rather than broad replay-framework changes.
-- What changed: extended `src/supervisor/replay-corpus.test.ts` so the checked-in corpus must contain `review-blocked`, `required-check-pending`, and `stale-head-prevents-merge`, and added a focused assertion that `runReplayCorpus()` replays those bundled cases without mismatches. Seeded `replay-corpus/manifest.json` with the two new cases, checked in narrow snapshot/expected bundles under `replay-corpus/cases/required-check-pending/` and `replay-corpus/cases/stale-head-prevents-merge/`, and refreshed the older `review-blocked` expected failure signature so it matches the current configured-bot replay behavior.
+- Hypothesis: the narrowest fix is to make replay evaluate timing-sensitive decisions against each snapshot's `capturedAt`, then seed the checked-in corpus with three canonical CodeRabbit timing bundles covering initial grace, fresh-observation settled wait, and ready-for-review after draft skip.
+- What changed: tightened `src/supervisor/replay-corpus.test.ts` so the checked-in corpus must include `provider-wait-initial-grace`, `provider-wait-settled-after-observation`, and `review-timing-ready-for-review-after-draft-skip` alongside the existing safety cases, and made the checked-in corpus replay use a config that enables the CodeRabbit wait policy. Added `src/supervisor/supervisor-cycle-replay.test.ts` coverage proving replay must honor `capturedAt` instead of live wall-clock time, then updated `src/supervisor/supervisor-cycle-replay.ts` to stub `Date.now()` to the snapshot capture time during replay. Seeded `replay-corpus/manifest.json` and checked in the three deterministic timing bundles under `replay-corpus/cases/`.
 - Current blocker: none
-- Next exact step: review the diff for readability, commit the seeded corpus bundles, and open/update the issue PR once the checkpoint is pushed.
-- Verification gap: none for the scoped acceptance checks; focused replay corpus, pull-request-state, supervisor lifecycle coverage, and `npm run build` all passed locally after installing worktree dependencies with `npm ci`.
-- Files touched: `replay-corpus/manifest.json`, `replay-corpus/cases/review-blocked/expected/replay-result.json`, `replay-corpus/cases/required-check-pending/`, `replay-corpus/cases/stale-head-prevents-merge/`, `src/supervisor/replay-corpus.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would drop the only checked-in stale-head and required-check safety cases, so replay-corpus regressions in those PR lifecycle decisions would stop failing deterministically.
-- Last focused command: `npx tsx --test src/supervisor/replay-corpus.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-pr-lifecycle.test.ts src/supervisor/supervisor-lifecycle.test.ts && npm run build`
+- Next exact step: review the diff one more time, commit the replay clock plus seeded timing bundles, and open a draft PR for `codex/issue-536` if one does not already exist.
+- Verification gap: none for the scoped acceptance checks; focused replay corpus, replay clock, provider wait/review-signal, supervisor lifecycle coverage, and `npm run build` all passed locally after running `npm ci` in this worktree.
+- Files touched: `replay-corpus/manifest.json`, `replay-corpus/cases/provider-wait-initial-grace/`, `replay-corpus/cases/provider-wait-settled-after-observation/`, `replay-corpus/cases/review-timing-ready-for-review-after-draft-skip/`, `src/supervisor/replay-corpus.test.ts`, `src/supervisor/supervisor-cycle-replay.ts`, `src/supervisor/supervisor-cycle-replay.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would remove the only checked-in deterministic timing replays for initial grace, fresh observation, and ready-for-review draft-skip transitions, and replay would fall back to live wall-clock timing for those cases.
+- Last focused command: `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/supervisor-cycle-replay.test.ts src/pull-request-state-provider-wait-policy.test.ts src/pull-request-state-coderabbit-settled-waits.test.ts src/github/github-review-signals.test.ts src/supervisor/supervisor-lifecycle.test.ts && npm run build`
 ### Scratchpad
-- 2026-03-18 (JST): Added the narrow failing repro first by asserting the checked-in replay corpus must include stale-head and required-check cases plus a clean `runReplayCorpus()` pass; seeded `required-check-pending` and `stale-head-prevents-merge` bundles under `replay-corpus/cases/`, aligned the older `review-blocked` expected signature with current configured-bot replay output, and verified with `npx tsx --test src/supervisor/replay-corpus.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-pr-lifecycle.test.ts src/supervisor/supervisor-lifecycle.test.ts` and `npm run build` after `npm ci`.
-- 2026-03-18 (JST): Addressed the two remaining PR #538 review threads locally by sanitizing `.codex-supervisor/issue-journal.md` links and validating replay corpus snapshots as full replay-ready objects; `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/supervisor-cycle-replay.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts` and `npm run build` both passed.
+- 2026-03-18 (JST): Added the narrow failing repro first by requiring three new checked-in timing case ids in `src/supervisor/replay-corpus.test.ts`; the focused failure showed the manifest was missing `provider-wait-initial-grace`, `provider-wait-settled-after-observation`, and `review-timing-ready-for-review-after-draft-skip`.
+- 2026-03-18 (JST): Added `src/supervisor/supervisor-cycle-replay.test.ts` coverage proving replay must evaluate timing-sensitive waits against `capturedAt`, implemented that replay clock behavior in `src/supervisor/supervisor-cycle-replay.ts`, seeded the three canonical timing bundles in `replay-corpus/cases/`, and verified with `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/supervisor-cycle-replay.test.ts src/pull-request-state-provider-wait-policy.test.ts src/pull-request-state-coderabbit-settled-waits.test.ts src/github/github-review-signals.test.ts src/supervisor/supervisor-lifecycle.test.ts` plus `npm run build` after `npm ci`.
 - 2026-03-18 (JST): Implemented `loadReplayCorpus()` in `src/supervisor/replay-corpus.ts` with strict manifest path rules, required bundle files, and consistency checks between `case.json` and `input/snapshot.json`.
 - 2026-03-18 (JST): Checked in `replay-corpus/manifest.json` and `replay-corpus/cases/review-blocked/` as the first example bundle; `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/supervisor-cycle-replay.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts` and `npm run build` passed after installing local npm dependencies and fixing one `expectInteger()` typing error.
 - 2026-03-18 (JST): Added a narrow repro in `src/supervisor/supervisor-recovery-reconciliation.test.ts` showing `reconcileStaleActiveIssueReservation()` left stale `stabilizing` records in place instead of requeueing when the reservation locks were gone and no PR was tracked.
