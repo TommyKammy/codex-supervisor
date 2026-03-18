@@ -1,51 +1,38 @@
-# Issue #546: Replay corpus CI: surface the compact summary in pull request output
+# Issue #547: Replay corpus artifacts: emit full mismatch details only for failing runs
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/546
-- Branch: codex/issue-546
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/547
+- Branch: codex/issue-547
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: repairing_ci
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 1e04150e9cabc51f4716cdd39a855134a3c519f7
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 71fae6ece7979ddc1a2f0e1aafe6d3b862ca30b6
 - Blocked reason: none
-- Last failure signature: build (ubuntu-latest):fail
-- Repeated failure signature count: 1
-- Updated at: 2026-03-18T13:33:49.050Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-18T13:53:34.090Z
 
 ## Latest Codex Summary
-Wired PR CI to print the compact replay-corpus summary by adding an Ubuntu-only `replay-corpus` step in [ci.yml](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-546/.github/workflows/ci.yml) before the build, and added a narrow workflow regression in [ci-workflow.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-546/src/ci-workflow.test.ts) to keep that path covered.
-
-Committed as `1e04150` (`Surface replay corpus summary in CI`), pushed `codex/issue-546`, and opened draft PR #549: https://github.com/TommyKammy/codex-supervisor/pull/549
-
-Summary: Added workflow coverage for PR-facing replay-corpus output and updated CI to surface the compact summary once per PR run.
-State hint: waiting_ci
-Blocked reason: none
-Tests: `npx tsx --test src/ci-workflow.test.ts`; `npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts`; `npm ci`; `npm run build`
-Failure signature: none
-Next action: Monitor draft PR #549 CI and address any review or workflow follow-up if the new replay-corpus step exposes issues.
+- Added failure-only replay-corpus mismatch artifact persistence in `src/supervisor/replay-corpus.ts`, wired `src/index.ts` to write or clear `.codex-supervisor/replay/replay-corpus-mismatch-details.json` around each replay-corpus run, and updated `.github/workflows/ci.yml` to upload that artifact only when the Ubuntu replay step fails.
+- Added focused regressions in `src/supervisor/replay-corpus.test.ts` for deterministic failure-only artifact emission and cleanup on success, plus `src/ci-workflow.test.ts` coverage for failure-only artifact upload. Focused replay-corpus/CLI/workflow tests and `npm run build` passed locally after restoring dependencies with `npm ci`.
 
 ## Active Failure Context
-- Category: checks
-- Summary: PR #549 has failing checks.
-- Command or source: gh pr checks
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/549
-- Details:
-  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23246580619/job/67576525574
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining Ubuntu CI failure is not in the workflow wiring itself; `src/index.ts` still required `supervisor.config.json` before running `replay-corpus`, so the new PR-facing step failed immediately in Actions because this repo does not check in a runtime supervisor config.
-- What changed: added a checked-in replay-corpus config helper in `src/supervisor/replay-corpus.ts`, taught `src/index.ts` to use it for the default `replay-corpus` command when `--config` is omitted, and added `src/index.test.ts` coverage for the config-free CLI path that CI invokes.
+- Hypothesis: the missing scope for #547 was a persistence/upload path, not replay evaluation itself; replay-corpus already had compact mismatch summaries, but it never wrote deterministic full details to disk or exposed a CI upload step gated on failure.
+- What changed: added deterministic failure-only replay mismatch artifact formatting/persistence in `src/supervisor/replay-corpus.ts`, called it from the `replay-corpus` CLI path in `src/index.ts`, and added an Ubuntu-only `actions/upload-artifact@v4` step in `.github/workflows/ci.yml` gated by `failure()`.
 - Current blocker: none
-- Next exact step: commit and push the replay-corpus config fallback, then monitor draft PR #549 for a green Ubuntu rerun.
-- Verification gap: focused replay-corpus CLI, replay-corpus/workflow tests, and `npm run build` passed locally; broader full-suite verification has not been run.
-- Files touched: `src/index.ts`, `src/index.test.ts`, `src/supervisor/replay-corpus.ts`, `src/supervisor/replay-corpus.test.ts`
-- Rollback concern: dropping the default replay-corpus config fallback would put PR CI back into a hard failure state whenever `supervisor.config.json` is absent, which is the normal state for this repository checkout.
-- Last focused command: `npx tsx src/index.ts replay-corpus && npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts src/ci-workflow.test.ts && npm run build`
+- Next exact step: commit the failure-only artifact changes, push `codex/issue-547`, and open or update the draft PR so CI can verify the new upload path on an actual mismatch.
+- Verification gap: focused replay-corpus/CLI/workflow tests and `npm run build` passed locally; broader full-suite verification has not been run.
+- Files touched: `.github/workflows/ci.yml`, `src/ci-workflow.test.ts`, `src/index.ts`, `src/supervisor/replay-corpus.ts`, `src/supervisor/replay-corpus.test.ts`
+- Rollback concern: removing the artifact sync would leave CI with only the compact summary and no deterministic mismatch details for failing replay-corpus runs, making review/debugging on failures materially worse again.
+- Last focused command: `npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts src/ci-workflow.test.ts && npm run build`
 ### Scratchpad
-- 2026-03-18 (JST): Pulled the failing Ubuntu Actions log for job `67576525574`; the new `npx tsx src/index.ts replay-corpus` step failed with `Config file not found: /home/runner/work/codex-supervisor/codex-supervisor/supervisor.config.json`. Added a checked-in replay-corpus config fallback plus a config-free CLI regression, then reran `npx tsx src/index.ts replay-corpus`, `npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts src/ci-workflow.test.ts`, and `npm run build` successfully.
-- 2026-03-18 (JST): Wired `.github/workflows/ci.yml` to run `npx tsx src/index.ts replay-corpus` on the Ubuntu matrix leg, adjusted the workflow regex test to match the YAML step block, and reran `npx tsx --test src/ci-workflow.test.ts`, `npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts`, `npm ci`, and `npm run build` successfully.
+- 2026-03-18 (JST): Added narrow failing regressions for failure-only replay mismatch artifacts in `src/supervisor/replay-corpus.test.ts` and failure-gated CI upload in `src/ci-workflow.test.ts`; initial failures were `TypeError: syncReplayCorpusMismatchDetailsArtifact is not a function` and a missing upload-artifact step in `.github/workflows/ci.yml`.
+- 2026-03-18 (JST): Implemented deterministic `replay-corpus-mismatch-details.json` formatting/persistence under `.codex-supervisor/replay`, removed stale artifacts on all-pass runs, wired the CLI path to sync that artifact, updated the CI workflow to upload it only on failed Ubuntu replay runs, ran `npm ci` to restore the local TypeScript toolchain, and verified with `npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts src/ci-workflow.test.ts` plus `npm run build`.
 - 2026-03-18 (JST): Added narrow `src/index.test.ts` repro coverage for `replay-corpus` argument parsing plus compact all-pass and mismatch CLI summaries; initial focused failures showed the command was missing and the existing CLI helper wrongly assumed `node_modules/tsx/dist/cli.mjs` existed in the workspace.
 - 2026-03-18 (JST): Implemented `replay-corpus` in `src/index.ts`, added compact replay corpus summary/mismatch formatters in `src/supervisor/replay-corpus.ts`, and added formatter tests in `src/supervisor/replay-corpus.test.ts`; `npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts` passed.
 - 2026-03-18 (JST): `npm run build` initially failed with `sh: 1: tsc: not found`; ran `npm install` to restore local toolchain, fixed a TypeScript narrowing error in `src/index.ts`, then reran `npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts && npm run build` successfully.

@@ -23,3 +23,12 @@ test("CI workflow surfaces the compact replay corpus summary in pull request out
     /-\s*if:\s*matrix\.os == 'ubuntu-latest'\s*[\s\S]*?run:\s*npx tsx src\/index\.ts replay-corpus(?:\s|$)/,
   );
 });
+
+test("CI workflow uploads replay corpus mismatch details only when the Ubuntu replay run fails", async () => {
+  const workflow = await fs.readFile(workflowPath, "utf8");
+
+  assert.match(
+    workflow,
+    /-\s*if:\s*\$\{\{\s*failure\(\)\s*&&\s*matrix\.os == 'ubuntu-latest'\s*\}\}\s*uses:\s*actions\/upload-artifact@v4[\s\S]*?name:\s*replay-corpus-mismatch-details[\s\S]*?path:\s*\.codex-supervisor\/replay\/replay-corpus-mismatch-details\.json(?:\s|$)/,
+  );
+});

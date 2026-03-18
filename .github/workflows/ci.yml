@@ -31,4 +31,9 @@ jobs:
       - run: npm ci
       - if: matrix.os == 'ubuntu-latest'
         run: npx tsx src/index.ts replay-corpus
+      - if: ${{ failure() && matrix.os == 'ubuntu-latest' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: replay-corpus-mismatch-details
+          path: .codex-supervisor/replay/replay-corpus-mismatch-details.json
       - run: npm run build
