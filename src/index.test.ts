@@ -553,6 +553,25 @@ test("replay-corpus-promote suggests deterministic case ids when no case id is p
   assert.match(result.stderr, /- issue-557-replay-corpus-promotion-suggest-normalized-case/);
 });
 
+test("replay-corpus-promote surfaces advisory promotion-worthiness hints for high-value snapshots", () => {
+  const hintedResult = runCli([
+    "replay-corpus-promote",
+    path.join(process.cwd(), "replay-corpus", "cases", "stale-head-prevents-merge", "input", "snapshot.json"),
+  ]);
+
+  assert.equal(hintedResult.status, 1);
+  assert.match(hintedResult.stderr, /Promotion hints:/);
+  assert.match(hintedResult.stderr, /- stale-head-safety: tracked head differs from the current PR head/);
+
+  const nonHintedResult = runCli([
+    "replay-corpus-promote",
+    path.join(process.cwd(), "replay-corpus", "cases", "required-check-pending", "input", "snapshot.json"),
+  ]);
+
+  assert.equal(nonHintedResult.status, 1);
+  assert.doesNotMatch(nonHintedResult.stderr, /Promotion hints:/);
+});
+
 test("replay-corpus-promote keeps the missing-case-id guidance when snapshot suggestions cannot be derived", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "replay-corpus-cli-suggest-malformed-"));
   const snapshotPath = path.join(tempDir, "captured-snapshot.json");
