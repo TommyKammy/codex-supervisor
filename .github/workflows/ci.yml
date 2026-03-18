@@ -29,9 +29,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - if: matrix.os == 'ubuntu-latest'
+      - id: replay_corpus
+        if: matrix.os == 'ubuntu-latest'
         run: npx tsx src/index.ts replay-corpus
-      - if: ${{ failure() && matrix.os == 'ubuntu-latest' }}
+      - if: ${{ failure() && matrix.os == 'ubuntu-latest' && steps.replay_corpus.outcome == 'failure' }}
         uses: actions/upload-artifact@v4
         with:
           name: replay-corpus-mismatch-details
