@@ -334,7 +334,9 @@ export async function reconcileTrackedMergedButOpenIssues(
     }
 
     let issue = issueByNumber.get(record.issue_number);
-    if (!issue) {
+    if (issue?.state === "OPEN" && record.state === "merging") {
+      issue = await github.getIssue(record.issue_number);
+    } else if (!issue) {
       issue = await github.getIssue(record.issue_number);
     }
 
