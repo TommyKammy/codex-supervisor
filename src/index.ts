@@ -13,6 +13,7 @@ import {
   formatReplayCorpusRunSummary,
   promoteCapturedReplaySnapshot,
   runReplayCorpus,
+  suggestReplayCorpusCaseIds,
   syncReplayCorpusMismatchDetailsArtifact,
 } from "./supervisor/replay-corpus";
 
@@ -120,10 +121,6 @@ export function parseArgs(argv: string[]): CliOptions {
     throw new Error("The replay-corpus-promote command requires one snapshot path.");
   }
 
-  if (command === "replay-corpus-promote" && caseId === undefined) {
-    throw new Error("The replay-corpus-promote command requires one case id.");
-  }
-
   return {
     command,
     configPath,
@@ -193,6 +190,24 @@ async function main(): Promise<void> {
       options.configPath === undefined && options.corpusPath === "replay-corpus"
         ? createCheckedInReplayCorpusConfig(process.cwd())
         : loadConfig(options.configPath);
+    if (options.caseId === undefined) {
+      const snapshot = await loadSupervisorCycleDecisionSnapshot(options.snapshotPath!);
+      let suggestions: string[] = [];
+      try {
+        suggestions = suggestReplayCorpusCaseIds(snapshot);
+      } catch {
+        console.error("Unable to derive case-id suggestions from the snapshot. Provide an explicit case id.");
+      }
+      console.error("The replay-corpus-promote command requires an explicit case id to write a new case.");
+      if (suggestions.length > 0) {
+        console.error("Suggested case ids:");
+        for (const suggestion of suggestions) {
+          console.error(`- ${suggestion}`);
+        }
+      }
+      process.exitCode = 1;
+      return;
+    }
     const promoted = await promoteCapturedReplaySnapshot({
       corpusRoot: options.corpusPath!,
       snapshotPath: options.snapshotPath!,

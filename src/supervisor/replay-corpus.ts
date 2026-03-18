@@ -147,6 +147,8 @@ export interface PromoteCapturedReplaySnapshotArgs {
   config: SupervisorConfig;
 }
 
+const CASE_ID_TITLE_WORD_LIMIT = 6;
+
 export function createCheckedInReplayCorpusConfig(repoRoot: string): SupervisorConfig {
   const reviewBotLogins = ["copilot-pull-request-reviewer", "coderabbitai", "coderabbitai[bot]"];
   const replayStateRoot = path.join(repoRoot, ".codex-supervisor", "replay");
@@ -834,6 +836,38 @@ function buildPromotedCaseMetadata(snapshot: ReplayCorpusInputSnapshot, caseId: 
     title: snapshot.issue.title,
     capturedAt: snapshot.capturedAt,
   };
+}
+
+function normalizeCaseIdSlug(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+}
+
+function buildSuggestedTitleCaseId(snapshot: ReplayCorpusInputSnapshot): string | null {
+  const titleWords = normalizeCaseIdSlug(snapshot.issue.title)
+    .split("-")
+    .filter((word) => word.length > 0)
+    .slice(0, CASE_ID_TITLE_WORD_LIMIT);
+  if (titleWords.length === 0) {
+    return null;
+  }
+
+  return `issue-${snapshot.issue.number}-${titleWords.join("-")}`;
+}
+
+export function suggestReplayCorpusCaseIds(snapshot: ReplayCorpusInputSnapshot): string[] {
+  const suggestions = new Set<string>();
+  suggestions.add(`issue-${snapshot.issue.number}-${snapshot.decision.nextState}`);
+
+  const titleSuggestion = buildSuggestedTitleCaseId(snapshot);
+  if (titleSuggestion) {
+    suggestions.add(titleSuggestion);
+  }
+
+  return [...suggestions];
 }
 
 export async function promoteCapturedReplaySnapshot(args: PromoteCapturedReplaySnapshotArgs): Promise<ReplayCorpusCaseBundle> {
