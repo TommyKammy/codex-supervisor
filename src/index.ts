@@ -192,7 +192,12 @@ async function main(): Promise<void> {
         : loadConfig(options.configPath);
     if (options.caseId === undefined) {
       const snapshot = await loadSupervisorCycleDecisionSnapshot(options.snapshotPath!);
-      const suggestions = suggestReplayCorpusCaseIds(snapshot);
+      let suggestions: string[] = [];
+      try {
+        suggestions = suggestReplayCorpusCaseIds(snapshot);
+      } catch {
+        console.error("Unable to derive case-id suggestions from the snapshot. Provide an explicit case id.");
+      }
       console.error("The replay-corpus-promote command requires an explicit case id to write a new case.");
       if (suggestions.length > 0) {
         console.error("Suggested case ids:");

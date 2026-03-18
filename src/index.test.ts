@@ -541,6 +541,62 @@ test("replay-corpus-promote suggests deterministic case ids when no case id is p
   assert.match(result.stderr, /- issue-557-replay-corpus-promotion-suggest-normalized-case/);
 });
 
+test("replay-corpus-promote keeps the missing-case-id guidance when snapshot suggestions cannot be derived", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "replay-corpus-cli-suggest-malformed-"));
+  const snapshotPath = path.join(tempDir, "captured-snapshot.json");
+
+  await fs.writeFile(snapshotPath, JSON.stringify({
+    schemaVersion: 1,
+    capturedAt: "2026-03-19T00:00:00Z",
+    issue: {
+      number: 557,
+      title: "Replay corpus promotion: suggest normalized case ids during promotion",
+      url: "https://example.test/issues/557",
+      state: "OPEN",
+      updatedAt: "2026-03-19T00:00:00Z",
+    },
+    local: {
+      record: {
+        issue_number: 557,
+        state: "planning",
+        branch: "codex/issue-557",
+        pr_number: null,
+        workspace: path.join(tempDir, "workspaces", "issue-557"),
+        journal_path: path.join(tempDir, "workspaces", "issue-557", ".codex-supervisor", "issue-journal.md"),
+        attempt_count: 0,
+        implementation_attempt_count: 0,
+        repair_attempt_count: 0,
+        updated_at: "2026-03-19T00:00:00Z",
+      },
+      workspaceStatus: {
+        branch: "codex/issue-557",
+        headSha: "head-557",
+        hasUncommittedChanges: false,
+        baseAhead: 0,
+        baseBehind: 0,
+        remoteBranchExists: false,
+        remoteAhead: 0,
+        remoteBehind: 0,
+      },
+    },
+    github: {
+      pullRequest: null,
+      checks: [],
+      reviewThreads: [],
+    },
+  }));
+
+  const result = runCli([
+    "replay-corpus-promote",
+    snapshotPath,
+  ]);
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Unable to derive case-id suggestions from the snapshot\. Provide an explicit case id\./);
+  assert.match(result.stderr, /The replay-corpus-promote command requires an explicit case id to write a new case\./);
+  assert.doesNotMatch(result.stderr, /Suggested case ids:/);
+});
+
 test("replay-corpus prints a compact all-pass summary", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "replay-corpus-cli-pass-"));
   const configPath = path.join(tempDir, "supervisor.config.json");
