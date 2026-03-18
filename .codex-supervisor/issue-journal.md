@@ -5,13 +5,13 @@
 - Branch: codex/issue-532
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
+- Current phase: draft_pr
 - Attempt count: 1 (implementation=1, repair=0)
 - Last head SHA: afd9ba775bfa9fb646e186b9813afab67c34bb9e
 - Blocked reason: none
-- Last failure signature: replay-corpus-loader-missing
+- Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-18T16:34:23+09:00
+- Updated at: 2026-03-18T16:35:09+09:00
 
 ## Latest Codex Summary
 - Added a canonical replay corpus manifest and case bundle loader, checked in one example case bundle, and verified the focused replay corpus tests plus `npm run build`.
@@ -21,15 +21,16 @@
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the missing replay corpus contract can stay narrow by standardizing a manifest-driven `replay-corpus/` layout around the existing supervisor cycle snapshot input and a minimal expected replay result file.
-- What changed: added `src/supervisor/replay-corpus.ts` to load `replay-corpus/manifest.json`, enforce canonical `cases/<id>/` bundle paths, require `case.json`, `input/snapshot.json`, and `expected/replay-result.json`, and validate manifest/metadata/snapshot consistency deterministically; added focused coverage in `src/supervisor/replay-corpus.test.ts`; checked in `replay-corpus/cases/review-blocked/` as the initial example bundle.
+- Hypothesis: the replay corpus contract is narrow enough if maintained cases are manifest-driven, each bundle has one metadata file plus one input snapshot and one expected replay result, and load-time validation rejects any cross-file drift immediately.
+- What changed: added `src/supervisor/replay-corpus.ts` to load `replay-corpus/manifest.json`, enforce canonical `cases/<id>/` bundle paths, require `case.json`, `input/snapshot.json`, and `expected/replay-result.json`, and validate manifest/metadata/snapshot consistency deterministically; added focused coverage in `src/supervisor/replay-corpus.test.ts`; checked in `replay-corpus/cases/review-blocked/` as the initial example bundle; committed as `1b4c3b2` and opened draft PR #538 (`https://github.com/TommyKammy/codex-supervisor/pull/538`).
 - Current blocker: none
-- Next exact step: commit the replay corpus contract on `codex/issue-532`, push the branch, and open the draft PR with the focused verification results.
+- Next exact step: wait for review on PR #538 or address any feedback/CI failures if they appear.
 - Verification gap: I ran the focused replay corpus tests and `npm run build`, but I did not run the full `npm test` suite because the issue only requires corpus loading/validation coverage and the branch already has a narrower proof.
 - Files touched: `.codex-supervisor/issue-journal.md`, `replay-corpus/manifest.json`, `replay-corpus/cases/review-blocked/case.json`, `replay-corpus/cases/review-blocked/input/snapshot.json`, `replay-corpus/cases/review-blocked/expected/replay-result.json`, `src/supervisor/replay-corpus.ts`, `src/supervisor/replay-corpus.test.ts`
 - Rollback concern: relaxing the manifest/case cross-checks would let inconsistent corpus metadata drift away from the replay input snapshot and make future maintained cases nondeterministic to review.
 - Last focused command: `npm run build`
 ### Scratchpad
+- 2026-03-18 (JST): Committed the replay corpus contract as `1b4c3b2` (`Define replay corpus case bundle format`), pushed `codex/issue-532`, and opened draft PR #538: `https://github.com/TommyKammy/codex-supervisor/pull/538`.
 - 2026-03-18 (JST): Added `src/supervisor/replay-corpus.test.ts` first; the focused repro failed with `Error: Cannot find module './replay-corpus'`, which established the missing loader surface for the canonical corpus format.
 - 2026-03-18 (JST): Implemented `loadReplayCorpus()` in `src/supervisor/replay-corpus.ts` with strict manifest path rules, required bundle files, and consistency checks between `case.json` and `input/snapshot.json`.
 - 2026-03-18 (JST): Checked in `replay-corpus/manifest.json` and `replay-corpus/cases/review-blocked/` as the first example bundle; `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/supervisor-cycle-replay.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts` and `npm run build` passed after installing local npm dependencies and fixing one `expectInteger()` typing error.
