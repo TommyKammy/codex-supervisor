@@ -455,6 +455,7 @@ export async function buildIssueLintSummary(
   const issue = await github.getIssue(issueNumber);
   const readiness = lintExecutionReadyIssueBody(issue);
   const metadataErrors = validateIssueMetadataSyntax(issue);
+  const clarificationBlock = findHighRiskBlockingAmbiguity(issue);
 
   return [
     `issue=#${issue.number}`,
@@ -471,6 +472,7 @@ export async function buildIssueLintSummary(
         : "none"
     }`,
     `metadata_errors=${metadataErrors.length > 0 ? metadataErrors.join("; ") : "none"}`,
+    `high_risk_blocking_ambiguity=${clarificationBlock?.reason ?? "none"}`,
   ];
 }
 

@@ -43,6 +43,48 @@ Parallelizable: No`,
   assert.match(report, /^missing_required=none$/m);
   assert.match(report, /^missing_recommended=none$/m);
   assert.match(report, /^metadata_errors=none$/m);
+  assert.match(report, /^high_risk_blocking_ambiguity=none$/m);
+});
+
+test("issue lint does not flag concrete risky work as blocking ambiguity", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: 106,
+    title: "Rotate production auth tokens",
+    body: `## Summary
+Rotate the production auth token flow for service-to-service requests.
+
+## Scope
+- update auth token issuance for production services
+- keep rollout audit-friendly
+
+## Acceptance criteria
+- production authentication changes are fully implemented
+
+## Verification
+- npm test -- src/supervisor/supervisor-diagnostics-issue-lint.test.ts`,
+    createdAt: "2026-03-19T00:00:00Z",
+    updatedAt: "2026-03-19T00:00:00Z",
+    url: "https://example.test/issues/106",
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => issue,
+  };
+
+  const report = await supervisor.issueLint(106);
+
+  assert.match(report, /^issue=#106$/m);
+  assert.match(report, /^execution_ready=yes$/m);
+  assert.match(report, /^high_risk_blocking_ambiguity=none$/m);
 });
 
 test("issue lint reports missing required execution-ready sections deterministically", async () => {
@@ -119,4 +161,49 @@ Parallelizable: Later
 
   assert.match(report, /^issue=#104$/m);
   assert.match(report, /^metadata_errors=part of references the issue itself; depends on contains malformed references: #oops; depends on references the issue itself; depends on repeats #105; execution order must be N of M with 1 <= N <= M; parallelizable must be Yes or No$/m);
+  assert.match(report, /^high_risk_blocking_ambiguity=none$/m);
+});
+
+test("issue lint reports high-risk blocking ambiguity distinctly", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: 107,
+    title: "Decide which production auth token flow to keep",
+    body: `## Summary
+Decide whether to keep the current production auth token flow or replace it before rollout.
+
+## Scope
+- choose the production authentication path for service-to-service traffic
+- keep rollout audit-friendly
+
+## Acceptance criteria
+- the operator confirms which auth flow should ship
+
+## Verification
+- npm test -- src/supervisor/supervisor-diagnostics-issue-lint.test.ts`,
+    createdAt: "2026-03-19T00:00:00Z",
+    updatedAt: "2026-03-19T00:00:00Z",
+    url: "https://example.test/issues/107",
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => issue,
+  };
+
+  const report = await supervisor.issueLint(107);
+
+  assert.match(report, /^issue=#107$/m);
+  assert.match(report, /^execution_ready=yes$/m);
+  assert.match(
+    report,
+    /^high_risk_blocking_ambiguity=high-risk blocking ambiguity \(unresolved_choice\) for auth changes$/m,
+  );
 });

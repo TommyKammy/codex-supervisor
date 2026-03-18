@@ -1,49 +1,36 @@
-# Issue #573: Issue authoring diagnostics: validate dependency and sequencing metadata syntax and local consistency in issue lint
+# Issue #574: Issue authoring diagnostics: report high-risk blocking ambiguity in issue lint
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/573
-- Branch: codex/issue-573
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/574
+- Branch: codex/issue-574
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 4 (implementation=2, repair=2)
-- Last head SHA: dfb03d94ad90c00fd3490066acefcbca88e42eaf
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: dc6963022cbe2b13e063b245759a80383b66039c
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ851RTo3
-- Repeated failure signature count: 1
-- Updated at: 2026-03-18T19:48:46.000Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-18T19:57:45.582Z
 
 ## Latest Codex Summary
-Patched [issue-metadata-validation.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-573/src/issue-metadata/issue-metadata-validation.ts#L69) so `validateIssueMetadataSyntax(...)` treats a blank `Execution order:` line as present metadata that must parse as `N of M`, instead of silently skipping validation. I extended the existing zero/blank regression in [issue-metadata.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-573/src/issue-metadata/issue-metadata.test.ts#L119) to include `Execution order:` with no value and assert the expected syntax error.
-
-The fix is committed as `dfb03d9` (`Catch blank execution order metadata`), pushed to `codex/issue-573`, and CodeRabbit thread `PRRT_kwDORgvdZ851RTo3` is resolved. Local verification passed with `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts` and `npm run build`.
-
-Summary: Fixed the remaining blank `Execution order:` review gap, pushed `dfb03d9`, and resolved the last open CodeRabbit thread on PR #589
-State hint: addressing_review
-Blocked reason: none
-Tests: `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts`; `npm run build`
-Failure signature: none
-Next action: Monitor PR #589 CI for the `dfb03d9` update and respond if any new review or integration feedback appears
+- Reproduced issue #574 with a focused `issue-lint` regression: lint output for both runnable risky auth work and explicit high-risk ambiguity cases had no ambiguity-specific diagnostic line, even though runtime selection already used `findHighRiskBlockingAmbiguity(...)` to stop on clarification blockers. Fixed `buildIssueLintSummary(...)` to emit a distinct `high_risk_blocking_ambiguity=` line and added focused coverage for both the normal risky case and the blocking ambiguity case.
 
 ## Active Failure Context
-- Category: none
-- Summary: No unresolved automated review threads remain after pushing `dfb03d9` and resolving `PRRT_kwDORgvdZ851RTo3`.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/589
-- Details:
-  - Waiting on CI rechecks for the branch update; no active local failure remains.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining CodeRabbit thread is valid because `validateIssueMetadataSyntax(...)` only checked execution order when the line had a non-empty value, so `Execution order:` by itself bypassed syntax validation.
-- What changed: broadened execution-order presence detection to match blank single-line metadata, then extended the existing zero/blank scheduling regression to include an empty `Execution order:` line and the corresponding validation error.
+- Hypothesis: `issue-lint` currently misses the same high-risk blocking ambiguity that runtime execution already treats as a clarification stop because the lint summary only reports readiness and metadata syntax.
+- What changed: added a focused `issue-lint` reproducer for one concrete risky auth issue and one unresolved-choice auth issue, then wired `buildIssueLintSummary(...)` to reuse `findHighRiskBlockingAmbiguity(...)` and emit `high_risk_blocking_ambiguity=<reason|none>` as a distinct operator-visible line.
 - Current blocker: none
-- Next exact step: watch PR #589 checks for `dfb03d9` and respond only if new review or CI feedback appears.
-- Verification gap: none; the focused issue-metadata and issue-lint tests plus `npm run build` passed before pushing `dfb03d9`.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/issue-metadata/issue-metadata-validation.ts`, `src/issue-metadata/issue-metadata.test.ts`
-- Rollback concern: reverting this change would reintroduce a blind spot where blank `Execution order:` metadata passes lint without any author-facing diagnostic.
+- Next exact step: commit the focused lint/ambiguity change and open or update a draft PR for branch `codex/issue-574`.
+- Verification gap: none; `src/issue-metadata/issue-metadata.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`, and `npm run build` all passed after restoring local dependencies with `npm install`.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-selection-status.ts`, `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`
+- Rollback concern: reverting this change would put `issue-lint` back out of sync with runtime clarification stops, so operators would miss authored high-risk ambiguity until selection time.
 - Last focused command: `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts`; `npm run build`
 ### Scratchpad
-- 2026-03-19 (JST): Committed the blank execution-order fix as `dfb03d9` (`Catch blank execution order metadata`), pushed it to `codex/issue-573`, and resolved CodeRabbit thread `PRRT_kwDORgvdZ851RTo3` via `gh api graphql`.
+- 2026-03-19 (JST): Reproduced issue #574 with a focused `issue-lint` regression by asserting a new `high_risk_blocking_ambiguity=` line for both a concrete risky auth issue and an unresolved-choice auth issue. The initial failure was that lint output stopped at `metadata_errors=...` and never surfaced ambiguity. Fixed `buildIssueLintSummary(...)` to reuse `findHighRiskBlockingAmbiguity(...)`, reran `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts`, then restored missing local TypeScript tooling with `npm install` and reran `npm run build`, all passing.
 - 2026-03-19 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851RTo3` as a real gap: the zero/blank scheduling test did not include `Execution order:`, and `validateIssueMetadataSyntax(...)` used `/^\\s*Execution order:\\s*.+$/im`, which skipped blank values. Fixed the gate to match blank execution-order lines, added the missing regression coverage, and reran `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts` plus `npm run build`, all passing.
 - 2026-03-19 (JST): Reproduced issue #573 with a focused `issue-lint` regression: an authored issue containing `Part of: #104`, duplicate/self `Depends on`, `Execution order: 3 of 2`, and `Parallelizable: Later` still reported `execution_ready=yes` and no metadata problems. Fixed it by adding local metadata validation and a `metadata_errors=` summary line, then verified with `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts` and `npm run build` after restoring local deps via `npm install`.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
