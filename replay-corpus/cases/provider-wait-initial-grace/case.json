@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "id": "provider-wait-initial-grace",
+  "issueNumber": 537,
+  "title": "CodeRabbit initial grace wait pauses merge after checks turn green",
+  "capturedAt": "2026-03-13T02:05:45Z"
+}

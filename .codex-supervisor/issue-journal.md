@@ -1,38 +1,53 @@
-# Issue #535: Replay corpus: seed PR lifecycle and stale-head safety cases
+# Issue #536: Replay corpus: seed provider-wait and review-timing cases
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/535
-- Branch: codex/issue-535
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/536
+- Branch: codex/issue-536
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: bd15c238133c86ecfe38d2924c23377471aefbab
+- Current phase: addressing_review
+- Attempt count: 4 (implementation=1, repair=3)
+- Last head SHA: 4cf9d14c2744464d6ff511d33629402f5f2c0bf3
 - Blocked reason: none
 - Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-18T09:36:54.093Z
+- Repeated failure signature count: 1
+- Updated at: 2026-03-18T10:38:29.000Z
 
 ## Latest Codex Summary
-- None yet.
+Updated [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-536/.codex-supervisor/issue-journal.md#L28) so the stored review snapshot no longer claims unresolved replay findings after commit `1e16ad4` resolved the underlying PR threads. Pushed the journal-only follow-up as commit `4cf9d14` and resolved CodeRabbit thread `PRRT_kwDORgvdZ851Hfko` on PR `#542`.
+
+Verified the journal-only change with `git diff --check` and a narrowed `markdownlint-cli2` run that disabled the journal's pre-existing file-wide MD013/MD022/MD032/MD034 violations while checking the edited block. The only remaining local dirt is the pre-existing untracked `.codex-supervisor/replay/` directory.
+
+Summary: Updated the issue journal review snapshot, pushed commit `4cf9d14`, and resolved the remaining CodeRabbit thread on PR #542.
+State hint: waiting_ci
+Blocked reason: none
+Tests: `git diff --check`; `cfg=$(mktemp --suffix=.markdownlint-cli2.jsonc) && printf '{ "config": { "MD013": false, "MD022": false, "MD032": false, "MD034": false } }\n' > "$cfg" && npx markdownlint-cli2 --config "$cfg" .codex-supervisor/issue-journal.md`
+Failure signature: none
+Next action: Monitor PR #542 for CI completion and any further review follow-up.
 
 ## Active Failure Context
-- None recorded.
+- Category: resolved
+- Summary: 0 unresolved automated review thread(s) remain for the replay timing changes covered by commit `1e16ad4`.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/542#discussion_r2952398185
+- Details:
+  - Commit `1e16ad4` resolved the substantive replay findings (`PRRT_kwDORgvdZ851HPh-` and `PRRT_kwDORgvdZ851HPiG`) by rejecting malformed replay `capturedAt` values and clearing inherited wait/local-review fields in the provider-grace fixture.
+  - This journal-only follow-up keeps the stored failure snapshot aligned with the resolved PR state so future turns do not treat those threads as still open.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the narrowest fix is to seed the checked-in replay corpus itself with two more canonical bundles, one for required-check gating and one for stale-head merge prevention, and prove them through a focused checked-in corpus replay test rather than broad replay-framework changes.
-- What changed: extended `src/supervisor/replay-corpus.test.ts` so the checked-in corpus must contain `review-blocked`, `required-check-pending`, and `stale-head-prevents-merge`, and added a focused assertion that `runReplayCorpus()` replays those bundled cases without mismatches. Seeded `replay-corpus/manifest.json` with the two new cases, checked in narrow snapshot/expected bundles under `replay-corpus/cases/required-check-pending/` and `replay-corpus/cases/stale-head-prevents-merge/`, and refreshed the older `review-blocked` expected failure signature so it matches the current configured-bot replay behavior.
+- Hypothesis: no substantive replay review issues remain; the only valid follow-up was to keep the durable journal snapshot aligned with the already-resolved PR review state.
+- What changed: rewrote the journal summary and active failure block so they explicitly record that commit `1e16ad4` resolved the replay timing review threads, committed the journal-only follow-up as `4cf9d14`, pushed `codex/issue-536`, and resolved thread `PRRT_kwDORgvdZ851Hfko` on PR #542.
 - Current blocker: none
-- Next exact step: review the diff for readability, commit the seeded corpus bundles, and open/update the issue PR once the checkpoint is pushed.
-- Verification gap: none for the scoped acceptance checks; focused replay corpus, pull-request-state, supervisor lifecycle coverage, and `npm run build` all passed locally after installing worktree dependencies with `npm ci`.
-- Files touched: `replay-corpus/manifest.json`, `replay-corpus/cases/review-blocked/expected/replay-result.json`, `replay-corpus/cases/required-check-pending/`, `replay-corpus/cases/stale-head-prevents-merge/`, `src/supervisor/replay-corpus.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would drop the only checked-in stale-head and required-check safety cases, so replay-corpus regressions in those PR lifecycle decisions would stop failing deterministically.
-- Last focused command: `npx tsx --test src/supervisor/replay-corpus.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-pr-lifecycle.test.ts src/supervisor/supervisor-lifecycle.test.ts && npm run build`
+- Next exact step: monitor PR #542 for CI completion and any additional review comments after the journal-only follow-up.
+- Verification gap: none for the scoped journal change; `git diff --check` and the narrowed `markdownlint-cli2` run cover the edited content without reformatting the whole generated journal.
+- Files touched: `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this update would leave the durable journal claiming an unresolved replay review state that no longer matches PR #542, which can mislead later supervisor turns.
+- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ851Hfko`
 ### Scratchpad
-- 2026-03-18 (JST): Added the narrow failing repro first by asserting the checked-in replay corpus must include stale-head and required-check cases plus a clean `runReplayCorpus()` pass; seeded `required-check-pending` and `stale-head-prevents-merge` bundles under `replay-corpus/cases/`, aligned the older `review-blocked` expected signature with current configured-bot replay output, and verified with `npx tsx --test src/supervisor/replay-corpus.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-pr-lifecycle.test.ts src/supervisor/supervisor-lifecycle.test.ts` and `npm run build` after `npm ci`.
-- 2026-03-18 (JST): Addressed the two remaining PR #538 review threads locally by sanitizing `.codex-supervisor/issue-journal.md` links and validating replay corpus snapshots as full replay-ready objects; `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/supervisor-cycle-replay.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts` and `npm run build` both passed.
-- 2026-03-18 (JST): Implemented `loadReplayCorpus()` in `src/supervisor/replay-corpus.ts` with strict manifest path rules, required bundle files, and consistency checks between `case.json` and `input/snapshot.json`.
+- 2026-03-18 (UTC): Committed the journal-only review-state fix as `4cf9d14` (`Fix replay journal review state`), pushed `codex/issue-536`, and resolved CodeRabbit thread `PRRT_kwDORgvdZ851Hfko` on PR #542 via `gh api graphql`.
+- 2026-03-18 (UTC): Updated the issue journal so the active failure context records the replay review threads as resolved after commit `1e16ad4`; `git diff --check` and a narrowed `markdownlint-cli2` run with MD013/MD022/MD032/MD034 disabled for this generated file passed.
+- 2026-03-18 (UTC): Committed the replay review follow-up as `1e16ad4` (`Fix replay timing review follow-ups`), pushed `codex/issue-536`, and resolved CodeRabbit threads `PRRT_kwDORgvdZ851HPh-` and `PRRT_kwDORgvdZ851HPiG` on PR #542 via `gh api graphql`.
+- 2026-03-18 (UTC): Addressed PR #542 review follow-up by making `withReplayClock()` throw on invalid `capturedAt`, clearing inherited review/local-review wait fields in the provider-grace replay fixture, and adding a malformed-`capturedAt` regression; `npx tsx --test src/supervisor/supervisor-cycle-replay.test.ts src/supervisor/replay-corpus.test.ts` and `npm run build` passed.
 - 2026-03-18 (JST): Checked in `replay-corpus/manifest.json` and `replay-corpus/cases/review-blocked/` as the first example bundle; `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/supervisor-cycle-replay.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts` and `npm run build` passed after installing local npm dependencies and fixing one `expectInteger()` typing error.
 - 2026-03-18 (JST): Added a narrow repro in `src/supervisor/supervisor-recovery-reconciliation.test.ts` showing `reconcileStaleActiveIssueReservation()` left stale `stabilizing` records in place instead of requeueing when the reservation locks were gone and no PR was tracked.
 - 2026-03-18 (JST): Added a supervisor dry-run regression in `src/supervisor/supervisor-execution-orchestration.test.ts` showing a stale `stabilizing` record with `pr_number=527` from another issue branch could be reclaimed with wrong PR context unless recovery cleared it first.

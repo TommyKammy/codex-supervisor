@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "id": "provider-wait-settled-after-observation",
+  "issueNumber": 538,
+  "title": "Fresh CodeRabbit observations keep merge in the settled wait",
+  "capturedAt": "2026-03-13T02:06:17Z"
+}

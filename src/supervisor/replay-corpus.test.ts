@@ -65,6 +65,13 @@ function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConf
   };
 }
 
+function createCheckedInReplayCorpusConfig(): SupervisorConfig {
+  return createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer", "coderabbitai", "coderabbitai[bot]"],
+    configuredBotInitialGraceWaitSeconds: 90,
+  });
+}
+
 function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
   return {
     issue_number: 532,
@@ -396,6 +403,9 @@ test("loadReplayCorpus loads the checked-in safety case bundles", async () => {
 
   assert.deepEqual(corpus.cases.map((bundle) => bundle.id), [
     "review-blocked",
+    "provider-wait-initial-grace",
+    "provider-wait-settled-after-observation",
+    "review-timing-ready-for-review-after-draft-skip",
     "required-check-pending",
     "stale-head-prevents-merge",
   ]);
@@ -414,6 +424,24 @@ test("loadReplayCorpus loads the checked-in safety case bundles", async () => {
         failureSignature: "stalled-bot:thread-1",
       },
       {
+        id: "provider-wait-initial-grace",
+        nextState: "waiting_ci",
+        blockedReason: null,
+        failureSignature: null,
+      },
+      {
+        id: "provider-wait-settled-after-observation",
+        nextState: "waiting_ci",
+        blockedReason: null,
+        failureSignature: null,
+      },
+      {
+        id: "review-timing-ready-for-review-after-draft-skip",
+        nextState: "waiting_ci",
+        blockedReason: null,
+        failureSignature: null,
+      },
+      {
         id: "required-check-pending",
         nextState: "waiting_ci",
         blockedReason: null,
@@ -430,11 +458,14 @@ test("loadReplayCorpus loads the checked-in safety case bundles", async () => {
 });
 
 test("runReplayCorpus replays the checked-in PR lifecycle safety cases without mismatches", async () => {
-  const result = await runReplayCorpus(path.join(process.cwd(), "replay-corpus"), createConfig());
+  const result = await runReplayCorpus(path.join(process.cwd(), "replay-corpus"), createCheckedInReplayCorpusConfig());
 
   assert.equal(result.mismatchCount, 0);
   assert.deepEqual(result.results.map((entry) => entry.caseId), [
     "review-blocked",
+    "provider-wait-initial-grace",
+    "provider-wait-settled-after-observation",
+    "review-timing-ready-for-review-after-draft-skip",
     "required-check-pending",
     "stale-head-prevents-merge",
   ]);

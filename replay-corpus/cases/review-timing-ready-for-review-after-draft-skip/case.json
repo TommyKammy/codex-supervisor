@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "id": "review-timing-ready-for-review-after-draft-skip",
+  "issueNumber": 539,
+  "title": "Ready-for-review re-arms the wait after a CodeRabbit draft skip",
+  "capturedAt": "2026-03-13T02:30:10Z"
+}

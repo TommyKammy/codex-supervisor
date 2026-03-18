@@ -37,6 +37,21 @@ function normalizeDecision(decision: SupervisorCycleDecisionSnapshot["decision"]
   };
 }
 
+function withReplayClock<T>(capturedAt: string, run: () => T): T {
+  const replayedNowMs = Date.parse(capturedAt);
+  if (Number.isNaN(replayedNowMs)) {
+    throw new Error(`Invalid supervisor cycle snapshot capturedAt: ${capturedAt}`);
+  }
+
+  const originalDateNow = Date.now;
+  Date.now = () => replayedNowMs;
+  try {
+    return run();
+  } finally {
+    Date.now = originalDateNow;
+  }
+}
+
 export async function loadSupervisorCycleDecisionSnapshot(snapshotPath: string): Promise<SupervisorCycleDecisionSnapshot> {
   const raw = await fs.readFile(snapshotPath, "utf8");
   const snapshot = parseJson<SupervisorCycleDecisionSnapshot>(raw, snapshotPath);
@@ -51,87 +66,89 @@ export function replaySupervisorCycleDecisionSnapshot(
   snapshot: SupervisorCycleDecisionSnapshot,
   config: SupervisorConfig,
 ): SupervisorCycleReplayResult {
-  if (snapshot.github.pullRequest) {
-    const lifecycle = derivePullRequestLifecycleSnapshot(
-      config,
-      snapshot.local.record as IssueRunRecord,
-      snapshot.github.pullRequest,
-      snapshot.github.checks,
-      snapshot.github.reviewThreads,
-    );
+  return withReplayClock(snapshot.capturedAt, () => {
+    if (snapshot.github.pullRequest) {
+      const lifecycle = derivePullRequestLifecycleSnapshot(
+        config,
+        snapshot.local.record as IssueRunRecord,
+        snapshot.github.pullRequest,
+        snapshot.github.checks,
+        snapshot.github.reviewThreads,
+      );
+      const replayedDecision = {
+        nextState: lifecycle.nextState,
+        shouldRunCodex: shouldRunCodex(
+          lifecycle.recordForState,
+          snapshot.github.pullRequest,
+          snapshot.github.checks,
+          snapshot.github.reviewThreads,
+          config,
+        ),
+        blockedReason: blockedReasonForLifecycleState(
+          config,
+          lifecycle.recordForState,
+          snapshot.github.pullRequest,
+          snapshot.github.checks,
+          snapshot.github.reviewThreads,
+        ),
+        failureContext: lifecycle.failureContext,
+      };
+
+      return {
+        replayedDecision,
+        effectiveRecord: {
+          state: lifecycle.recordForState.state,
+          review_wait_started_at: lifecycle.recordForState.review_wait_started_at,
+          review_wait_head_sha: lifecycle.recordForState.review_wait_head_sha,
+          copilot_review_requested_observed_at: lifecycle.recordForState.copilot_review_requested_observed_at,
+          copilot_review_requested_head_sha: lifecycle.recordForState.copilot_review_requested_head_sha,
+          copilot_review_timed_out_at: lifecycle.recordForState.copilot_review_timed_out_at,
+          copilot_review_timeout_action: lifecycle.recordForState.copilot_review_timeout_action,
+          copilot_review_timeout_reason: lifecycle.recordForState.copilot_review_timeout_reason,
+        },
+        matchesCapturedDecision:
+          JSON.stringify(normalizeDecision(replayedDecision)) === JSON.stringify(normalizeDecision(snapshot.decision)),
+      };
+    }
+
     const replayedDecision = {
-      nextState: lifecycle.nextState,
+      nextState: inferStateWithoutPullRequest(
+        snapshot.local.record as IssueRunRecord,
+        snapshot.local.workspaceStatus,
+      ),
       shouldRunCodex: shouldRunCodex(
-        lifecycle.recordForState,
-        snapshot.github.pullRequest,
+        snapshot.local.record as IssueRunRecord,
+        null,
         snapshot.github.checks,
         snapshot.github.reviewThreads,
         config,
       ),
-      blockedReason: blockedReasonForLifecycleState(
+      blockedReason: null,
+      failureContext: inferFailureContext(
         config,
-        lifecycle.recordForState,
-        snapshot.github.pullRequest,
+        snapshot.local.record as IssueRunRecord,
+        null,
         snapshot.github.checks,
         snapshot.github.reviewThreads,
       ),
-      failureContext: lifecycle.failureContext,
     };
 
     return {
       replayedDecision,
       effectiveRecord: {
-        state: lifecycle.recordForState.state,
-        review_wait_started_at: lifecycle.recordForState.review_wait_started_at,
-        review_wait_head_sha: lifecycle.recordForState.review_wait_head_sha,
-        copilot_review_requested_observed_at: lifecycle.recordForState.copilot_review_requested_observed_at,
-        copilot_review_requested_head_sha: lifecycle.recordForState.copilot_review_requested_head_sha,
-        copilot_review_timed_out_at: lifecycle.recordForState.copilot_review_timed_out_at,
-        copilot_review_timeout_action: lifecycle.recordForState.copilot_review_timeout_action,
-        copilot_review_timeout_reason: lifecycle.recordForState.copilot_review_timeout_reason,
+        state: replayedDecision.nextState,
+        review_wait_started_at: snapshot.local.record.review_wait_started_at,
+        review_wait_head_sha: snapshot.local.record.review_wait_head_sha,
+        copilot_review_requested_observed_at: snapshot.local.record.copilot_review_requested_observed_at,
+        copilot_review_requested_head_sha: snapshot.local.record.copilot_review_requested_head_sha,
+        copilot_review_timed_out_at: snapshot.local.record.copilot_review_timed_out_at,
+        copilot_review_timeout_action: snapshot.local.record.copilot_review_timeout_action,
+        copilot_review_timeout_reason: snapshot.local.record.copilot_review_timeout_reason,
       },
       matchesCapturedDecision:
         JSON.stringify(normalizeDecision(replayedDecision)) === JSON.stringify(normalizeDecision(snapshot.decision)),
     };
-  }
-
-  const replayedDecision = {
-    nextState: inferStateWithoutPullRequest(
-      snapshot.local.record as IssueRunRecord,
-      snapshot.local.workspaceStatus,
-    ),
-    shouldRunCodex: shouldRunCodex(
-      snapshot.local.record as IssueRunRecord,
-      null,
-      snapshot.github.checks,
-      snapshot.github.reviewThreads,
-      config,
-    ),
-    blockedReason: null,
-    failureContext: inferFailureContext(
-      config,
-      snapshot.local.record as IssueRunRecord,
-      null,
-      snapshot.github.checks,
-      snapshot.github.reviewThreads,
-    ),
-  };
-
-  return {
-    replayedDecision,
-    effectiveRecord: {
-      state: replayedDecision.nextState,
-      review_wait_started_at: snapshot.local.record.review_wait_started_at,
-      review_wait_head_sha: snapshot.local.record.review_wait_head_sha,
-      copilot_review_requested_observed_at: snapshot.local.record.copilot_review_requested_observed_at,
-      copilot_review_requested_head_sha: snapshot.local.record.copilot_review_requested_head_sha,
-      copilot_review_timed_out_at: snapshot.local.record.copilot_review_timed_out_at,
-      copilot_review_timeout_action: snapshot.local.record.copilot_review_timeout_action,
-      copilot_review_timeout_reason: snapshot.local.record.copilot_review_timeout_reason,
-    },
-    matchesCapturedDecision:
-      JSON.stringify(normalizeDecision(replayedDecision)) === JSON.stringify(normalizeDecision(snapshot.decision)),
-  };
+  });
 }
 
 export function formatSupervisorCycleReplay(args: {
