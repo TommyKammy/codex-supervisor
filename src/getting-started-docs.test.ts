@@ -40,6 +40,7 @@ test("getting-started stays focused on operator setup and flow", async () => {
   }
 
   assert.match(content, /\[README\]\(\.\.\/README\.md\)/);
+  assert.match(content, /\[Agent Bootstrap Protocol\]\(\.\/agent-instructions\.md\)/);
   assert.match(content, /\[Configuration reference\]\(\.\/configuration\.md\)/);
   assert.match(content, /\[Local review reference\]\(\.\/local-review\.md\)/);
   assert.match(content, /\[Issue metadata reference\]\(\.\/issue-metadata\.md\)/);
@@ -72,6 +73,7 @@ test("japanese docs keep overview and getting-started responsibilities separate"
 
   assert.match(gettingStarted, /\[README\]\(\.\.\/README\.md\)/);
   assert.match(gettingStarted, /\[README\.ja\]\(\.\/README\.ja\.md\)/);
+  assert.match(gettingStarted, /\[Agent Bootstrap Protocol\]\(\.\/agent-instructions\.ja\.md\)/);
   assert.match(gettingStarted, /\[Configuration reference\]\(\.\/configuration\.md\)/);
   assert.match(gettingStarted, /\[Local review reference\]\(\.\/local-review\.md\)/);
   assert.match(gettingStarted, /\[Issue metadata reference\]\(\.\/issue-metadata\.md\)/);

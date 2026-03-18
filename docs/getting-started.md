@@ -10,7 +10,7 @@ It focuses on the practical flow:
 - run a first pass, inspect the result, then switch to the loop
 - know which reference doc to open when you need deeper detail
 
-For the product overview, fit, and docs map, start with the [README](../README.md).
+For the product overview, fit, and docs map, start with the [README](../README.md). If you are handing the repo to an AI operator, send it to the [Agent Bootstrap Protocol](./agent-instructions.md) instead of duplicating that bootstrap sequence here.
 
 ## Before you start
 
@@ -189,6 +189,7 @@ Stop treating the issue as execution-ready. Tighten the issue body, split the wo
 ## Related docs
 
 - [README](../README.md) for the overview, fit, and docs map
+- [Agent Bootstrap Protocol](./agent-instructions.md) for the AI-agent bootstrap order, first-run checks, and escalation points
 - [Configuration reference](./configuration.md) for config fields, provider setup, model policy, and durable memory
 - [Local review reference](./local-review.md) for review roles, artifacts, thresholds, and merge policy
 - [Issue metadata reference](./issue-metadata.md) for execution-ready issue structure and scheduling inputs

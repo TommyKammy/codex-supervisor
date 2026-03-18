@@ -1,37 +1,37 @@
-# Issue #567: README.ja: add a Japanese AI handoff entry while keeping the landing page lightweight
+# Issue #568: Getting started docs: add cross-links to the new agent bootstrap docs
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/567
-- Branch: codex/issue-567
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/568
+- Branch: codex/issue-568
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: c273432a896ea37fe9ad3bd9961a8a6c1c9c2060
+- Last head SHA: b2d3448de538c77dfebff64e86fecdf7641d5391
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-18T18:20:12.667Z
+- Updated at: 2026-03-18T18:38:42.006Z
 
 ## Latest Codex Summary
-- Reproduced the missing Japanese AI handoff with a focused `src/readme-docs.test.ts` regression, then updated `docs/README.ja.md` to keep the landing page lightweight while routing humans to `docs/getting-started.ja.md` and AI agents to `docs/agent-instructions.ja.md`. Focused docs tests and `npm run build` now pass.
+- None yet.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `docs/README.ja.md` lacked an explicit AI bootstrap pointer, so a narrow README doc-flow regression should fail until the Japanese landing page names `docs/agent-instructions.ja.md` while still keeping the human getting-started route visible.
-- What changed: extended `src/readme-docs.test.ts` with a Japanese landing-page regression that locks section order and requires both the human getting-started link and the AI agent handoff link; updated `docs/README.ja.md` to add the AI handoff entry in the intro, overview, quick-start handoff, and docs map while keeping the page overview-oriented.
+- Hypothesis: `docs/getting-started.md` and `docs/getting-started.ja.md` lacked explicit handoffs to the new agent bootstrap docs, so a narrow getting-started docs regression should fail until both operator guides link to the matching `agent-instructions` doc without duplicating bootstrap protocol content.
+- What changed: extended `src/getting-started-docs.test.ts` to require the English and Japanese agent bootstrap links; updated both getting-started guides to point AI operators at the matching `agent-instructions` doc from the intro/related-docs sections while keeping the pages focused on human operator flow.
 - Current blocker: none
-- Next exact step: monitor draft PR #586 for review or CI signals and only make further changes if a concrete doc-flow or build failure appears.
-- Verification gap: none beyond the focused README/doc-flow regressions and required build; no broader suite was needed for this docs-only slice.
-- Files touched: `.codex-supervisor/issue-journal.md`, `docs/README.ja.md`, `src/readme-docs.test.ts`
-- Rollback concern: reverting this change would drop the explicit Japanese AI bootstrap entry and remove the regression that guards the lightweight landing-page routing.
-- Last focused command: `npx tsx --test src/readme-docs.test.ts`; `npx tsx --test src/getting-started-docs.test.ts src/agent-instructions-docs.test.ts`; `npm install`; `npm run build`
+- Next exact step: monitor draft PR #587 for CI or review feedback and only make further changes if a concrete docs-flow or build issue appears.
+- Verification gap: none beyond the focused getting-started/agent-instructions doc regressions and required build; no broader suite was needed for this docs-only slice.
+- Files touched: `.codex-supervisor/issue-journal.md`, `docs/getting-started.md`, `docs/getting-started.ja.md`, `src/getting-started-docs.test.ts`
+- Rollback concern: reverting this change would remove the explicit AI bootstrap handoff from both operator guides and drop the regression that keeps those cross-links present.
+- Last focused command: `npx tsx --test src/getting-started-docs.test.ts`; `npx tsx --test src/getting-started-docs.test.ts src/agent-instructions-docs.test.ts`; `npm install`; `npm run build`
 ### Scratchpad
-- 2026-03-19 (JST): Committed the Japanese README handoff slice as `54ccb3a`, pushed `codex/issue-567`, and opened draft PR #586 (`https://github.com/TommyKammy/codex-supervisor/pull/586`).
-- 2026-03-19 (JST): Reproduced issue #567 by extending `src/readme-docs.test.ts` with a Japanese landing-page regression; it failed because `docs/README.ja.md` linked humans to `docs/getting-started.ja.md` but never routed AI agents to `docs/agent-instructions.ja.md`. Updated the lightweight Japanese overview to point humans to the getting-started guide and AI agents to the bootstrap hub in the intro, overview, quick-start handoff, and docs map. Focused verification passed with `npx tsx --test src/readme-docs.test.ts`, `npx tsx --test src/getting-started-docs.test.ts src/agent-instructions-docs.test.ts`, and `npm run build` after restoring local dev dependencies via `npm install`.
+- 2026-03-19 (JST): Committed the getting-started/bootstrap cross-link slice as `bb1cdc8`, pushed `codex/issue-568`, and opened draft PR #587 (`https://github.com/TommyKammy/codex-supervisor/pull/587`).
+- 2026-03-19 (JST): Reproduced issue #568 by tightening `src/getting-started-docs.test.ts` so the English and Japanese getting-started guides must link to `docs/agent-instructions.md` and `docs/agent-instructions.ja.md`; the focused test failed because neither guide contained the new AI bootstrap handoff. Added the cross-links in the intro/related-docs sections of both guides while keeping bootstrap protocol detail delegated to the agent docs. Focused verification passed with `npx tsx --test src/getting-started-docs.test.ts` and `npx tsx --test src/getting-started-docs.test.ts src/agent-instructions-docs.test.ts`; `npm run build` initially failed because `tsc` was missing locally, so restored dev dependencies with `npm install` and reran `npm run build` successfully.
 - 2026-03-19 (JST): Reproduced issue #562 by extending `src/agent-instructions-docs.test.ts` with a Japanese bootstrap alignment check; it failed with `ENOENT` because `docs/agent-instructions.ja.md` did not exist. Added the Japanese bootstrap hub with mirrored section order and canonical links to `getting-started.ja.md`, `getting-started.md`, `configuration.md`, `issue-metadata.md`, and `local-review.md`. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts`; `npm run build` initially failed because `tsc` was missing locally, so restored dev dependencies with `npm install` and reran `npm run build` successfully.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
