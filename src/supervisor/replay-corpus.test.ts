@@ -5,7 +5,12 @@ import path from "node:path";
 import test from "node:test";
 import { GitHubIssue, GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig, WorkspaceStatus } from "../core/types";
 import { buildSupervisorCycleDecisionSnapshot } from "./supervisor-cycle-snapshot";
-import { loadReplayCorpus, formatReplayCorpusOutcomeMismatch, runReplayCorpus } from "./replay-corpus";
+import {
+  loadReplayCorpus,
+  formatReplayCorpusOutcomeMismatch,
+  promoteCapturedReplaySnapshot,
+  runReplayCorpus,
+} from "./replay-corpus";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
@@ -394,6 +399,185 @@ test("loadReplayCorpus loads the checked-in example bundle", async () => {
   assert.equal(corpus.cases[0]?.expected.nextState, "blocked");
   assert.equal(corpus.cases[0]?.expected.blockedReason, "manual_review");
   assert.equal(corpus.cases[0]?.expected.failureSignature, "stalled-bot:thread-1");
+});
+
+test("promoteCapturedReplaySnapshot writes a normalized canonical bundle that replays immediately", async () => {
+  const corpusRoot = await fs.mkdtemp(path.join(os.tmpdir(), "replay-corpus-promotion-"));
+  const existingSnapshot = createSnapshot();
+  const capturedSnapshot = createSnapshot({
+    capturedAt: "2026-03-18T08:59:03.959Z",
+    issue: createIssue({
+      number: 534,
+      title: "Replay corpus: promote captured replay snapshots into canonical corpus cases",
+      url: "https://example.test/issues/534",
+      updatedAt: "2026-03-18T07:27:52Z",
+    }),
+    record: createRecord({
+      issue_number: 534,
+      state: "planning",
+      branch: "codex/issue-534",
+      pr_number: null,
+      workspace: "/home/tommy/Dev/codex-supervisor-self-worktrees/issue-534",
+      journal_path: "/home/tommy/Dev/codex-supervisor-self-worktrees/issue-534/.codex-supervisor/issue-journal.md",
+      attempt_count: 0,
+      implementation_attempt_count: 0,
+      repair_attempt_count: 0,
+      blocked_reason: null,
+      last_error: null,
+      last_failure_signature: null,
+      last_head_sha: "87ca4ee5b6dbbae4e8fb45bc2f47bc7d3ab6f5d7",
+      review_wait_started_at: null,
+      review_wait_head_sha: null,
+      local_review_head_sha: null,
+      local_review_blocker_summary: null,
+      local_review_summary_path: "/tmp/reviews/promoted-summary.md",
+      local_review_run_at: null,
+      local_review_max_severity: null,
+      local_review_findings_count: 0,
+      local_review_root_cause_count: 0,
+      local_review_verified_max_severity: null,
+      local_review_verified_findings_count: 0,
+      local_review_recommendation: null,
+      local_review_degraded: false,
+      last_local_review_signature: null,
+      repeated_local_review_signature_count: 0,
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: [],
+      updated_at: "2026-03-18T08:59:03.090Z",
+    }),
+    workspaceStatus: createWorkspaceStatus({
+      branch: "codex/issue-534",
+      headSha: "87ca4ee5b6dbbae4e8fb45bc2f47bc7d3ab6f5d7",
+      hasUncommittedChanges: true,
+      baseAhead: 0,
+      remoteBranchExists: false,
+    }),
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+  });
+  const capturedSnapshotPath = path.join(corpusRoot, "captured-snapshot.json");
+
+  await writeJson(path.join(corpusRoot, "manifest.json"), {
+    schemaVersion: 1,
+    cases: [{ id: "review-blocked", path: "cases/review-blocked" }],
+  });
+  await writeJson(path.join(corpusRoot, "cases", "review-blocked", "case.json"), {
+    schemaVersion: 1,
+    id: "review-blocked",
+    issueNumber: existingSnapshot.issue.number,
+    title: existingSnapshot.issue.title,
+    capturedAt: existingSnapshot.capturedAt,
+  });
+  await writeJson(path.join(corpusRoot, "cases", "review-blocked", "input", "snapshot.json"), existingSnapshot);
+  await writeJson(path.join(corpusRoot, "cases", "review-blocked", "expected", "replay-result.json"), {
+    nextState: existingSnapshot.decision.nextState,
+    shouldRunCodex: existingSnapshot.decision.shouldRunCodex,
+    blockedReason: existingSnapshot.decision.blockedReason,
+    failureSignature: existingSnapshot.decision.failureContext?.signature ?? null,
+  });
+  await writeJson(capturedSnapshotPath, capturedSnapshot);
+
+  const promoted = await promoteCapturedReplaySnapshot({
+    corpusRoot,
+    snapshotPath: capturedSnapshotPath,
+    caseId: "issue-534-reproducing",
+    config: createConfig(),
+  });
+
+  assert.equal(promoted.id, "issue-534-reproducing");
+  assert.equal(promoted.metadata.issueNumber, 534);
+  assert.equal(promoted.input.snapshot.local.record.workspace, ".");
+  assert.equal(promoted.input.snapshot.local.record.journal_path, ".codex-supervisor/issue-journal.md");
+  assert.equal(promoted.input.snapshot.local.record.local_review_summary_path, null);
+  assert.equal(promoted.input.snapshot.local.workspaceStatus.hasUncommittedChanges, false);
+  assert.deepEqual(promoted.expected, {
+    nextState: "reproducing",
+    shouldRunCodex: true,
+    blockedReason: null,
+    failureSignature: null,
+  });
+
+  const corpus = await loadReplayCorpus(corpusRoot);
+  assert.deepEqual(corpus.cases.map((bundle) => bundle.id), ["review-blocked", "issue-534-reproducing"]);
+
+  const promotedExpected = JSON.parse(
+    await fs.readFile(path.join(corpusRoot, "cases", "issue-534-reproducing", "expected", "replay-result.json"), "utf8"),
+  );
+  assert.deepEqual(Object.keys(promotedExpected), [
+    "nextState",
+    "shouldRunCodex",
+    "blockedReason",
+    "failureSignature",
+  ]);
+  assert.deepEqual(promotedExpected, promoted.expected);
+
+  const runResult = await runReplayCorpus(corpusRoot, createConfig());
+  assert.equal(runResult.mismatchCount, 0);
+});
+
+test("promoteCapturedReplaySnapshot rejects an invalid existing corpus before writing a new case", async () => {
+  const corpusRoot = await fs.mkdtemp(path.join(os.tmpdir(), "replay-corpus-promotion-invalid-"));
+  const existingSnapshot = createSnapshot();
+  const capturedSnapshot = createSnapshot({
+    issue: createIssue({
+      number: 534,
+      title: "Replay corpus: promote captured replay snapshots into canonical corpus cases",
+      url: "https://example.test/issues/534",
+    }),
+    record: createRecord({
+      issue_number: 534,
+      branch: "codex/issue-534",
+      pr_number: null,
+      workspace: "/home/tommy/Dev/codex-supervisor-self-worktrees/issue-534",
+      journal_path: "/home/tommy/Dev/codex-supervisor-self-worktrees/issue-534/.codex-supervisor/issue-journal.md",
+      local_review_summary_path: "/tmp/reviews/promoted-summary.md",
+    }),
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+  });
+  const capturedSnapshotPath = path.join(corpusRoot, "captured-snapshot.json");
+
+  await writeJson(path.join(corpusRoot, "manifest.json"), {
+    schemaVersion: 1,
+    cases: [{ id: "review-blocked", path: "cases/review-blocked" }],
+  });
+  await writeJson(path.join(corpusRoot, "cases", "review-blocked", "case.json"), {
+    schemaVersion: 1,
+    id: "review-blocked",
+    issueNumber: existingSnapshot.issue.number,
+    title: existingSnapshot.issue.title,
+    capturedAt: existingSnapshot.capturedAt,
+  });
+  await writeJson(path.join(corpusRoot, "cases", "review-blocked", "input", "snapshot.json"), existingSnapshot);
+  await writeJson(capturedSnapshotPath, capturedSnapshot);
+
+  const missingReplayResultPath = path.join(
+    corpusRoot,
+    "cases",
+    "review-blocked",
+    "expected",
+    "replay-result.json",
+  );
+  await assert.rejects(
+    () =>
+      promoteCapturedReplaySnapshot({
+        corpusRoot,
+        snapshotPath: capturedSnapshotPath,
+        caseId: "issue-534-reproducing",
+        config: createConfig(),
+      }),
+    (error) => error instanceof Error && error.message.includes(`Missing required replay corpus file: ${missingReplayResultPath}`),
+  );
+
+  await assert.rejects(
+    () => fs.access(path.join(corpusRoot, "cases", "issue-534-reproducing", "case.json")),
+    (error) => (error as NodeJS.ErrnoException).code === "ENOENT",
+  );
+
+  const manifest = JSON.parse(await fs.readFile(path.join(corpusRoot, "manifest.json"), "utf8"));
+  assert.deepEqual(manifest.cases, [{ id: "review-blocked", path: "cases/review-blocked" }]);
 });
 
 test("runReplayCorpus replays multiple cases in manifest order and reports normalized outcomes", async () => {
