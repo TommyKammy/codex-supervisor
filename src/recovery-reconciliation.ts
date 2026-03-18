@@ -40,6 +40,8 @@ function sanitizeRecoveryReason(reason: string): string {
   return reason.replace(/\r?\n/g, "\\n");
 }
 
+const STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE = "stale-stabilizing-no-pr-recovery-loop";
+
 function matchesTrackedBranch(
   record: Pick<IssueRunRecord, "branch">,
   pr: Pick<import("./core/types").GitHubPullRequest, "headRefName">,
@@ -691,6 +693,7 @@ export async function reconcileStaleActiveIssueReservation(args: {
   state: SupervisorStateFile;
   issueLockPath: (issueNumber: number) => string;
   sessionLockPath: (sessionId: string) => string;
+  sameFailureSignatureRepeatLimit?: number;
   resolvePullRequestForBranch?: (branch: string, trackedPrNumber: number | null) => Promise<import("./core/types").GitHubPullRequest | null>;
 }): Promise<RecoveryEvent[]> {
   const recoveryEvents: RecoveryEvent[] = [];
@@ -728,17 +731,64 @@ export async function reconcileStaleActiveIssueReservation(args: {
       ? await args.resolvePullRequestForBranch(record.branch, record.pr_number)
       : null;
   const shouldRequeueStabilizing = record.state === "stabilizing" && matchedPullRequest === null;
+  const staleNoPrRepeatLimit = Math.max(args.sameFailureSignatureRepeatLimit ?? Number.POSITIVE_INFINITY, 1);
+  const staleNoPrRepeatedCount = shouldRequeueStabilizing
+    ? record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE
+      ? record.repeated_failure_signature_count + 1
+      : 1
+    : record.repeated_failure_signature_count;
+  const shouldClearStaleNoPrFailureTracking =
+    record.state === "stabilizing" &&
+    matchedPullRequest !== null &&
+    record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE;
+  const shouldStopRepeatedStaleNoPrLoop =
+    shouldRequeueStabilizing && staleNoPrRepeatedCount >= staleNoPrRepeatLimit;
+
+  const staleNoPrFailureContext = shouldRequeueStabilizing
+    ? {
+        category: "blocked" as const,
+        summary: shouldStopRepeatedStaleNoPrLoop
+          ? `Issue #${record.issue_number} re-entered stale stabilizing recovery without a tracked PR ${staleNoPrRepeatedCount} times; manual intervention is required.`
+          : `Issue #${record.issue_number} re-entered stale stabilizing recovery without a tracked PR; the supervisor will retry while the repeat count remains below ${staleNoPrRepeatLimit}.`,
+        signature: STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
+        command: null,
+        details: [
+          "state=stabilizing",
+          "tracked_pr=none",
+          `repeat_count=${staleNoPrRepeatedCount}/${staleNoPrRepeatLimit}`,
+          "operator_action=confirm whether the implementation already landed elsewhere or retarget the tracked issue manually",
+        ],
+        url: null,
+        updated_at: nowIso(),
+      }
+    : null;
 
   const recoveryEvent = buildRecoveryEvent(
     record.issue_number,
-    shouldRequeueStabilizing
+    shouldStopRepeatedStaleNoPrLoop
+      ? `stale_state_manual_stop: blocked issue #${record.issue_number} after repeated stale stabilizing recovery without a tracked PR`
+      : shouldRequeueStabilizing
       ? `stale_state_cleanup: requeued stabilizing issue #${record.issue_number} after ${missingLockReason}`
       : `stale_state_cleanup: cleared stale active reservation after ${missingLockReason}`,
   );
   args.state.issues[String(record.issue_number)] = args.stateStore.touch(record, {
-    state: shouldRequeueStabilizing ? "queued" : record.state,
+    state: shouldStopRepeatedStaleNoPrLoop ? "blocked" : shouldRequeueStabilizing ? "queued" : record.state,
     pr_number: shouldRequeueStabilizing ? null : record.pr_number,
     codex_session_id: null,
+    last_error: staleNoPrFailureContext?.summary ?? (shouldClearStaleNoPrFailureTracking ? null : record.last_error),
+    last_failure_kind: shouldRequeueStabilizing ? null : record.last_failure_kind,
+    last_failure_context:
+      staleNoPrFailureContext ??
+      (shouldClearStaleNoPrFailureTracking ? null : record.last_failure_context),
+    last_failure_signature:
+      staleNoPrFailureContext?.signature ??
+      (shouldClearStaleNoPrFailureTracking ? null : record.last_failure_signature),
+    repeated_failure_signature_count: shouldRequeueStabilizing
+      ? staleNoPrRepeatedCount
+      : shouldClearStaleNoPrFailureTracking
+        ? 0
+        : record.repeated_failure_signature_count,
+    blocked_reason: shouldStopRepeatedStaleNoPrLoop ? "manual_review" : null,
     ...applyRecoveryEvent({}, recoveryEvent),
   });
   args.state.activeIssueNumber = null;

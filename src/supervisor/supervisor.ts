@@ -679,6 +679,7 @@ export class Supervisor {
         state,
         issueLockPath: (issueNumber) => this.lockPath("issues", `issue-${issueNumber}`),
         sessionLockPath: (sessionId) => this.lockPath("sessions", `session-${sessionId}`),
+        sameFailureSignatureRepeatLimit: this.config.sameFailureSignatureRepeatLimit,
         resolvePullRequestForBranch: (branch, trackedPrNumber) =>
           this.github.resolvePullRequestForBranch(branch, trackedPrNumber),
       }),
