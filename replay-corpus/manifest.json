@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "review-blocked",
+      "path": "cases/review-blocked"
+    }
+  ]
+}

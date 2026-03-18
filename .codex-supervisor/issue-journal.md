@@ -1,35 +1,54 @@
-# Issue #528: Supervisor bug: issue can stay locked in stabilizing with wrong PR context and no active Codex turn
+# Issue #532: Replay corpus: define a canonical case bundle format and corpus manifest
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/528
-- Branch: codex/issue-528
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/532
+- Branch: codex/issue-532
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: cc79a0a7cbd8f182d72f4909f1165af4a89c8031
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=1, repair=2)
+- Last head SHA: 05af724a75810c0088926dd4490e1112522a61de
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-18T06:07:13.358Z
+- Last failure signature: PRRT_kwDORgvdZ851FK7H|PRRT_kwDORgvdZ851FK7U
+- Repeated failure signature count: 1
+- Updated at: 2026-03-18T08:06:29.068Z
 
 ## Latest Codex Summary
-- None yet.
+Addressed the two remaining PR #538 review threads locally. In [src/supervisor/replay-corpus.ts](src/supervisor/replay-corpus.ts), replay corpus input snapshots are now validated as full replay-ready `SupervisorCycleDecisionSnapshot` objects before the bundle loader returns them, so missing `issue` fields or missing `local`/`github`/`decision` objects fail with deterministic corpus validation errors instead of surfacing later as runtime crashes. In [src/supervisor/replay-corpus.test.ts](src/supervisor/replay-corpus.test.ts), there is a regression proving the loader rejects a snapshot that omits `decision`. In [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md), machine-local links were replaced with repo-relative links.
+
+Focused verification passed with `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/supervisor-cycle-replay.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts` and `npm run build`. I pushed the review follow-up to `codex/issue-532` and resolved the two remaining CodeRabbit threads on PR #538. The only remaining local artifact is the pre-existing untracked `.codex-supervisor/replay/` directory.
+
+Summary: Pushed the replay corpus review fixes, sanitized the journal links, and resolved the two remaining PR #538 threads.
+State hint: waiting_ci
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/supervisor-cycle-replay.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts`; `npm run build`
+Failure signature: none
+Next action: wait for refreshed PR #538 CI/review status and handle any new feedback if it appears
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: No unresolved automated review threads remain after the latest push.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/538
+- Details:
+  - `.codex-supervisor/issue-journal.md` now uses repo-relative links in the checked-in summary text.
+  - `src/supervisor/replay-corpus.ts` now validates replay corpus snapshots as full replay-ready objects before exposing them as `SupervisorCycleDecisionSnapshot`.
+  - The updated branch was pushed and the two remaining CodeRabbit review threads were resolved via `gh api graphql`.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the stabilizing recovery bug comes from two invariant breaks: stale-lock cleanup leaves a stranded `stabilizing` record half-active unless it already has `pr_number=null`, and PR rediscovery/reconciliation accepts a tracked PR number even when that PR belongs to a different issue branch.
-- What changed: added focused regressions in `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts`, and `src/github/github.test.ts`; changed stale active reservation cleanup to auth-check first and then requeue `stabilizing` records when no matching branch PR exists; enforced branch matching in `resolvePullRequestForBranch()` and tracked-merged reconciliation; and cleared stale `pr_number` during issue preparation when branch PR resolution returns null.
+- Hypothesis: the replay corpus contract is narrow enough if maintained cases are manifest-driven, each bundle has one metadata file plus one input snapshot and one expected replay result, and load-time validation rejects any cross-file drift immediately.
+- What changed: tightened `src/supervisor/replay-corpus.ts` so corpus input snapshots are validated as replay-ready `SupervisorCycleDecisionSnapshot` objects, not just partially checked JSON; added a focused regression in `src/supervisor/replay-corpus.test.ts` for a snapshot missing `decision`; and sanitized checked-in issue-journal links to repo-relative paths.
 - Current blocker: none
-- Next exact step: commit the recovery fix on `codex/issue-528`, then open or update the draft PR with the focused verification results.
-- Verification gap: `npx tsx --test ...` and `npm run build` passed, but I did not rerun the repo-wide `npm test` script because it expands to the full suite and still includes unrelated pre-existing failures in layout/prompt tests outside this issue.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/github/github.test.ts`, `src/github/github.ts`, `src/recovery-reconciliation.ts`, `src/run-once-cycle-prelude.ts`, `src/run-once-issue-preparation.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor.ts`
-- Rollback concern: reverting the branch-matching guards would allow stale `pr_number` state from another issue branch to mark the current issue done or keep it stuck in `stabilizing` again.
-- Last focused command: `npm run build`
+- Next exact step: wait for refreshed PR #538 CI/review status and handle any new feedback if it appears.
+- Verification gap: I ran the focused replay corpus tests and `npm run build`, but I did not run the full `npm test` suite because the issue only requires corpus loading/validation coverage and the branch already has a narrower proof.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/replay-corpus.ts`, `src/supervisor/replay-corpus.test.ts`
+- Rollback concern: relaxing the manifest/case cross-checks would let inconsistent corpus metadata drift away from the replay input snapshot and make future maintained cases nondeterministic to review.
+- Last focused command: `gh api graphql -f query='mutation { one: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851FK7H"}) { thread { isResolved } } two: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851FK7U"}) { thread { isResolved } } }'`
 ### Scratchpad
+- 2026-03-18 (JST): Committed `Fix replay corpus review validation gaps`, pushed `codex/issue-532`, and resolved the two remaining CodeRabbit review threads on PR #538 after the focused replay tests and `npm run build` passed.
+- 2026-03-18 (JST): Addressed the two remaining PR #538 review threads locally by sanitizing `.codex-supervisor/issue-journal.md` links and validating replay corpus snapshots as full replay-ready objects; `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/supervisor-cycle-replay.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts` and `npm run build` both passed.
+- 2026-03-18 (JST): Implemented `loadReplayCorpus()` in `src/supervisor/replay-corpus.ts` with strict manifest path rules, required bundle files, and consistency checks between `case.json` and `input/snapshot.json`.
+- 2026-03-18 (JST): Checked in `replay-corpus/manifest.json` and `replay-corpus/cases/review-blocked/` as the first example bundle; `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/supervisor-cycle-replay.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts` and `npm run build` passed after installing local npm dependencies and fixing one `expectInteger()` typing error.
 - 2026-03-18 (JST): Added a narrow repro in `src/supervisor/supervisor-recovery-reconciliation.test.ts` showing `reconcileStaleActiveIssueReservation()` left stale `stabilizing` records in place instead of requeueing when the reservation locks were gone and no PR was tracked.
 - 2026-03-18 (JST): Added a supervisor dry-run regression in `src/supervisor/supervisor-execution-orchestration.test.ts` showing a stale `stabilizing` record with `pr_number=527` from another issue branch could be reclaimed with wrong PR context unless recovery cleared it first.
 - 2026-03-18 (JST): Added `src/github/github.test.ts` coverage proving `resolvePullRequestForBranch()` must ignore tracked PRs whose `headRefName` does not match the issue branch.
