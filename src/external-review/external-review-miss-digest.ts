@@ -77,6 +77,8 @@ export function externalReviewMissFollowUpDigestPath(artifactPath: string): stri
 
 export interface ExternalReviewFollowUpDigestSummary {
   headStatus: "current-head" | "stale-head";
+  missAnalysisHeadSha: string;
+  activePrHeadSha: string;
   missedFindings: number;
   actionCounts: Partial<Record<ExternalReviewPreventionTarget, number>>;
 }
@@ -90,9 +92,11 @@ const DIGEST_HEADING_TO_TARGET: Record<string, ExternalReviewPreventionTarget> =
 
 export function parseExternalReviewMissFollowUpDigest(digest: string): ExternalReviewFollowUpDigestSummary | null {
   const headStatusMatch = digest.match(/^- Head status: (current-head|stale-head)\b/mu);
+  const missAnalysisHeadShaMatch = digest.match(/^- Miss analysis head SHA: (\S+)\s*$/mu);
+  const activePrHeadShaMatch = digest.match(/^- Active PR head SHA: (\S+)\s*$/mu);
   const missedFindingsMatch = digest.match(/^- Missed findings: (\d+)\s*$/mu);
 
-  if (!headStatusMatch || !missedFindingsMatch) {
+  if (!headStatusMatch || !missAnalysisHeadShaMatch || !activePrHeadShaMatch || !missedFindingsMatch) {
     return null;
   }
 
@@ -111,6 +115,8 @@ export function parseExternalReviewMissFollowUpDigest(digest: string): ExternalR
 
   return {
     headStatus: headStatusMatch[1] as "current-head" | "stale-head",
+    missAnalysisHeadSha: missAnalysisHeadShaMatch[1] ?? "",
+    activePrHeadSha: activePrHeadShaMatch[1] ?? "",
     missedFindings: Number.parseInt(missedFindingsMatch[1] ?? "0", 10),
     actionCounts,
   };

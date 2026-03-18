@@ -159,6 +159,7 @@ export async function loadActiveIssueStatusSnapshot(args: {
     });
     externalReviewFollowUpSummary = await buildExternalReviewFollowUpStatusLine({
       activeRecord: args.activeRecord,
+      currentHeadSha: pr?.headRefOid ?? args.activeRecord.last_head_sha,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -199,10 +199,16 @@ export async function buildDurableGuardrailStatusLine(args: {
 }
 
 export async function buildExternalReviewFollowUpStatusLine(args: {
-  activeRecord: Pick<IssueRunRecord, "external_review_misses_path">;
+  activeRecord: Pick<IssueRunRecord, "external_review_misses_path" | "external_review_head_sha" | "last_head_sha">;
+  currentHeadSha: string | null;
 }): Promise<string | null> {
   const missesPath = args.activeRecord.external_review_misses_path;
   if (!missesPath) {
+    return null;
+  }
+
+  const currentHeadSha = args.currentHeadSha ?? args.activeRecord.last_head_sha;
+  if (!currentHeadSha || args.activeRecord.external_review_head_sha !== currentHeadSha) {
     return null;
   }
 
@@ -217,7 +223,13 @@ export async function buildExternalReviewFollowUpStatusLine(args: {
   }
 
   const summary = parseExternalReviewMissFollowUpDigest(digest);
-  if (!summary || summary.headStatus !== "current-head" || summary.missedFindings <= 0) {
+  if (
+    !summary ||
+    summary.headStatus !== "current-head" ||
+    summary.missAnalysisHeadSha !== currentHeadSha ||
+    summary.activePrHeadSha !== currentHeadSha ||
+    summary.missedFindings <= 0
+  ) {
     return null;
   }
 

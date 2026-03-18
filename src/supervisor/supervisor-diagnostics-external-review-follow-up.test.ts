@@ -16,6 +16,10 @@ async function writeExternalReviewDigest(args: {
   missedFindings: number;
   sections: string[];
 }): Promise<void> {
+  const missAnalysisHeadSha = "deadbeefcafebabe";
+  const activePrHeadSha =
+    args.headStatus === "current-head" ? missAnalysisHeadSha : "feedfacecafef00d";
+
   await fs.mkdir(path.dirname(args.artifactPath), { recursive: true });
   await fs.writeFile(args.artifactPath, "{}\n", "utf8");
   await fs.writeFile(
@@ -26,8 +30,8 @@ async function writeExternalReviewDigest(args: {
       `- Miss artifact: ${args.artifactPath}`,
       "- Local review summary: none",
       "- Generated at: 2026-03-18T00:00:00.000Z",
-      "- Miss analysis head SHA: deadbeefcafebabe",
-      "- Active PR head SHA: deadbeefcafebabe",
+      `- Miss analysis head SHA: ${missAnalysisHeadSha}`,
+      `- Active PR head SHA: ${activePrHeadSha}`,
       "- Local review artifact head SHA: deadbeefcafebabe",
       `- Head status: ${args.headStatus} (${args.headStatus === "current-head" ? "digest matches the active PR head" : "digest does not match the active PR head"})`,
       `- Missed findings: ${args.missedFindings}`,
@@ -71,6 +75,7 @@ test("status reports compact unresolved external-review follow-up actions for a 
     external_review_head_sha: "deadbeefcafebabe",
     external_review_misses_path: artifactPath,
     external_review_missed_findings_count: 2,
+    last_head_sha: "deadbeefcafebabe",
     last_error: null,
     last_failure_context: null,
     last_failure_signature: null,
@@ -128,6 +133,7 @@ test("status hides unresolved external-review follow-up actions when the digest 
     external_review_head_sha: "oldheadcafebabe",
     external_review_misses_path: artifactPath,
     external_review_missed_findings_count: 2,
+    last_head_sha: "feedfacecafef00d",
     last_error: null,
     last_failure_context: null,
     last_failure_signature: null,
@@ -150,5 +156,5 @@ test("status hides unresolved external-review follow-up actions when the digest 
 
   const status = await supervisor.status();
 
-  assert.doesNotMatch(status, /external_review_follow_up=/);
+  assert.doesNotMatch(status, /\bexternal_review_follow_up\b/);
 });
