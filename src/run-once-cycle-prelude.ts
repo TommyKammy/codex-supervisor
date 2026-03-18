@@ -51,7 +51,6 @@ export async function runOnceCyclePrelude(
 ): Promise<RunOnceCyclePreludeResult | RunOnceCyclePreludeAuthFailure> {
   const state = await args.stateStore.load();
   const recoveryEvents: RecoveryEvent[] = [...args.carryoverRecoveryEvents];
-  recoveryEvents.push(...(await args.reconcileStaleActiveIssueReservation(state)));
 
   const authFailure = await args.handleAuthFailure(state);
   if (authFailure) {
@@ -61,6 +60,8 @@ export async function runOnceCyclePrelude(
       recoveryEvents,
     };
   }
+
+  recoveryEvents.push(...(await args.reconcileStaleActiveIssueReservation(state)));
 
   const issues = await args.listAllIssues();
   recoveryEvents.push(...(await args.reconcileTrackedMergedButOpenIssues(state, issues)));

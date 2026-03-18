@@ -258,6 +258,95 @@ test("runOnce dry-run selects an issue and hydrates workspace and PR context bef
   assert.equal(reviewThreadCalls, 1);
 });
 
+test("runOnce reclaims a stale stabilizing issue without carrying mismatched tracked PR context", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 91;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "stabilizing",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: 527,
+        codex_session_id: "stale-session",
+        implementation_attempt_count: 0,
+        last_codex_summary: "Stale summary mentioning PR #527 from another issue.",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Recover stale stabilizing reservation",
+    body: executionReadyBody("Recover stale stabilizing reservation."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+
+  let resolveCalls = 0;
+  const resolvedPrNumbers: Array<number | null> = [];
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      resolveCalls += 1;
+      resolvedPrNumbers.push(prNumber);
+      assert.equal(branchName, branch);
+      return null;
+    },
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => ({
+      number: 527,
+      title: "Merged PR for another issue",
+      url: "https://example.test/pr/527",
+      state: "MERGED",
+      createdAt: "2026-03-13T00:10:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      headRefName: "codex/issue-524",
+      headRefOid: "wrong-head-527",
+      mergedAt: "2026-03-13T00:20:00Z",
+    }),
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(
+    message,
+    /recovery issue=#91 reason=stale_state_cleanup: requeued stabilizing issue #91 after issue lock and session lock were missing/,
+  );
+  assert.match(message, /Dry run: would invoke Codex for issue #91\./);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(persisted.activeIssueNumber, issueNumber);
+  assert.equal(record.state, "reproducing");
+  assert.equal(record.pr_number, null);
+  assert.equal(record.codex_session_id, null);
+  assert.equal(record.last_codex_summary, "Stale summary mentioning PR #527 from another issue.");
+  assert.equal(resolveCalls, 2);
+  assert.deepEqual(resolvedPrNumbers, [527, null]);
+});
+
 test("runOnce returns no matching issue when no runnable candidate is available", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {

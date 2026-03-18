@@ -1,40 +1,39 @@
-# Issue #525: Local review abstraction: support fake-runner focused tests for reviewer and verifier orchestration
+# Issue #528: Supervisor bug: issue can stay locked in stabilizing with wrong PR context and no active Codex turn
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/525
-- Branch: codex/issue-525
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/528
+- Branch: codex/issue-528
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: c36827e84d1e2e964fce3b588bde0de8e4c3a27c
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: cc79a0a7cbd8f182d72f4909f1165af4a89c8031
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ851Du7Z|PRRT_kwDORgvdZ851Du7f
-- Repeated failure signature count: 1
-- Updated at: 2026-03-18T05:52:34Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-18T06:07:13.358Z
 
 ## Latest Codex Summary
-Summary: Committed `c36827e` (`Fix fake local-review runner review follow-ups`), pushed `codex/issue-525`, and resolved both CodeRabbit threads on PR #529 after sanitizing the journal links, fixing fake-runner empty-string handling, and adding a regression test.
-State hint: pr_open
-Blocked reason: none
-Tests: `npx tsx --test src/local-review/runner.test.ts src/local-review/execution.test.ts`; `npm run build`
-Failure signature: none
-Next action: Monitor PR #529 for refreshed CI and any additional review feedback.
+- None yet.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the missing leverage point was not product code but test support; focused reviewer/verifier orchestration coverage needed a reusable fake runner that still exercised the real local-review runner parsing path instead of stubbing entire role/verifier functions.
-- What changed: validated the two CodeRabbit review comments, updated `.codex-supervisor/issue-journal.md` to use repo-relative links instead of workstation-local paths, changed `createFakeLocalReviewRunner()` in `src/local-review/test-helpers.ts` to treat empty-string outputs as configured values, added a regression test in `src/local-review/runner.test.ts` that exercises `runRoleReview()` with `rawOutput: ""`, committed the repair as `c36827e` (`Fix fake local-review runner review follow-ups`), pushed `codex/issue-525`, and resolved both review threads on PR #529.
+- Hypothesis: the stabilizing recovery bug comes from two invariant breaks: stale-lock cleanup leaves a stranded `stabilizing` record half-active unless it already has `pr_number=null`, and PR rediscovery/reconciliation accepts a tracked PR number even when that PR belongs to a different issue branch.
+- What changed: added focused regressions in `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts`, and `src/github/github.test.ts`; changed stale active reservation cleanup to auth-check first and then requeue `stabilizing` records when no matching branch PR exists; enforced branch matching in `resolvePullRequestForBranch()` and tracked-merged reconciliation; and cleared stale `pr_number` during issue preparation when branch PR resolution returns null.
 - Current blocker: none
-- Next exact step: monitor PR #529 (`https://github.com/TommyKammy/codex-supervisor/pull/529`) for refreshed CI and any further review feedback.
-- Verification gap: none for the requested focused tests and build; broader suite was not rerun after the targeted verification.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/local-review/runner.test.ts`, `src/local-review/test-helpers.ts`
-- Rollback concern: removing the fake-runner helpers would push focused orchestration tests back toward live CLI dependence or coarse stubs, reducing confidence in reviewer/verifier wiring.
-- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId='PRRT_kwDORgvdZ851Du7f'`
+- Next exact step: commit the recovery fix on `codex/issue-528`, then open or update the draft PR with the focused verification results.
+- Verification gap: `npx tsx --test ...` and `npm run build` passed, but I did not rerun the repo-wide `npm test` script because it expands to the full suite and still includes unrelated pre-existing failures in layout/prompt tests outside this issue.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/github/github.test.ts`, `src/github/github.ts`, `src/recovery-reconciliation.ts`, `src/run-once-cycle-prelude.ts`, `src/run-once-issue-preparation.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor.ts`
+- Rollback concern: reverting the branch-matching guards would allow stale `pr_number` state from another issue branch to mark the current issue done or keep it stuck in `stabilizing` again.
+- Last focused command: `npm run build`
 ### Scratchpad
+- 2026-03-18 (JST): Added a narrow repro in `src/supervisor/supervisor-recovery-reconciliation.test.ts` showing `reconcileStaleActiveIssueReservation()` left stale `stabilizing` records in place instead of requeueing when the reservation locks were gone and no PR was tracked.
+- 2026-03-18 (JST): Added a supervisor dry-run regression in `src/supervisor/supervisor-execution-orchestration.test.ts` showing a stale `stabilizing` record with `pr_number=527` from another issue branch could be reclaimed with wrong PR context unless recovery cleared it first.
+- 2026-03-18 (JST): Added `src/github/github.test.ts` coverage proving `resolvePullRequestForBranch()` must ignore tracked PRs whose `headRefName` does not match the issue branch.
+- 2026-03-18 (JST): Implemented branch-matching guards in `src/github/github.ts` and `src/recovery-reconciliation.ts`, moved auth handling ahead of stale-lock cleanup in `src/run-once-cycle-prelude.ts`, and cleared stale `pr_number` state in `src/run-once-issue-preparation.ts`; `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`, `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts`, `npx tsx --test src/github/github.test.ts`, and `npm run build` passed.
 - 2026-03-18 (JST): Added two narrow repro tests in `src/local-review/execution.test.ts`; initial focused failure was `TypeError: (0 , import_test_helpers.createRoleTurnOutput) is not a function`.
 - 2026-03-18 (JST): Implemented `createFakeLocalReviewRunner()`, `createRoleTurnOutput()`, and `createVerifierTurnOutput()` in `src/local-review/test-helpers.ts`; first pass exposed a shape mismatch (`Cannot read properties of undefined (reading 'match')`) because the helper accepted raw strings but did not normalize them into `{ exitCode, rawOutput }`.
 - 2026-03-18 (JST): Normalized string outputs inside the fake runner helper; `npx tsx --test src/local-review/execution.test.ts`, `npx tsx --test src/local-review/runner.test.ts src/local-review/execution.test.ts`, and `npm run build` then passed.

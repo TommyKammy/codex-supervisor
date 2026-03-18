@@ -426,3 +426,73 @@ test("GitHubClient createPullRequest falls back to all-state branch lookup after
   assert.equal(allBranchLookups, 1);
   assert.deepEqual(delays, [200, 400]);
 });
+
+test("GitHubClient resolvePullRequestForBranch ignores a tracked PR from another branch", async () => {
+  const config = createConfig();
+  const branch = "codex/issue-355";
+  const latestBranchPr = createPullRequest({
+    number: 360,
+    headRefName: branch,
+    headRefOid: "head-360",
+  });
+  const mismatchedTrackedPr = createPullRequest({
+    number: 527,
+    headRefName: "codex/issue-524",
+    headRefOid: "head-527",
+    state: "MERGED",
+    mergedAt: "2026-03-16T01:30:00Z",
+  });
+
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "pr" && args[1] === "list" && args.includes("--state") && args.includes("open")) {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify([]),
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "pr" && args[1] === "view" && args[2] === "527") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify(mismatchedTrackedPr),
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "pr" && args[1] === "list" && args.includes("--state") && args.includes("all")) {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify([latestBranchPr]),
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "graphql") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: { nodes: [] },
+                reviews: { nodes: [] },
+                comments: { nodes: [] },
+                reviewThreads: { nodes: [] },
+                timelineItems: { nodes: [] },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const resolved = await client.resolvePullRequestForBranch(branch, 527);
+
+  assert.equal(resolved?.number, 360);
+  assert.equal(resolved?.headRefName, branch);
+});

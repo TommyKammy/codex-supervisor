@@ -238,7 +238,7 @@ export class GitHubClient {
 
     if (trackedPrNumber !== null) {
       const trackedPullRequest = await this.getPullRequestIfExists(trackedPrNumber);
-      if (trackedPullRequest) {
+      if (trackedPullRequest && trackedPullRequest.headRefName === branch) {
         return trackedPullRequest;
       }
     }
