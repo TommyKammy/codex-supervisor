@@ -1,38 +1,36 @@
-# Issue #574: Issue authoring diagnostics: report high-risk blocking ambiguity in issue lint
+# Issue #575: Issue authoring diagnostics: emit copy-pastable repair guidance from issue lint
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/574
-- Branch: codex/issue-574
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/575
+- Branch: codex/issue-575
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: dc6963022cbe2b13e063b245759a80383b66039c
+- Last head SHA: d99ee5434066d3b056cc9d9961765588d8fa3ce9
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-18T19:57:45.582Z
+- Updated at: 2026-03-18T21:40:57.240Z
 
 ## Latest Codex Summary
-- Reproduced issue #574 with a focused `issue-lint` regression: lint output for both runnable risky auth work and explicit high-risk ambiguity cases had no ambiguity-specific diagnostic line, even though runtime selection already used `findHighRiskBlockingAmbiguity(...)` to stop on clarification blockers. Fixed `buildIssueLintSummary(...)` to emit a distinct `high_risk_blocking_ambiguity=` line, added focused coverage for both the normal risky case and the blocking ambiguity case, committed the change as `d8766f5`, and opened draft PR #590.
+- Added deterministic `repair_guidance_<n>=...` lines to `issue-lint` so missing structure, invalid metadata, and blocking ambiguity findings each emit copy-pastable repair instructions.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `issue-lint` currently misses the same high-risk blocking ambiguity that runtime execution already treats as a clarification stop because the lint summary only reports readiness and metadata syntax.
-- What changed: added a focused `issue-lint` reproducer for one concrete risky auth issue and one unresolved-choice auth issue, then wired `buildIssueLintSummary(...)` to reuse `findHighRiskBlockingAmbiguity(...)` and emit `high_risk_blocking_ambiguity=<reason|none>` as a distinct operator-visible line.
+- Hypothesis: `issue-lint` findings are still higher-friction than necessary because authors can see what is wrong but do not get deterministic, copy-pastable repair text for missing sections, bad metadata, or high-risk ambiguity.
+- What changed: added focused `issue-lint` regressions for one missing-section case, one metadata case, and one auth ambiguity case; then extended `buildIssueLintSummary(...)` to append deterministic `repair_guidance_<n>=...` lines derived from the existing readiness, metadata, and ambiguity results.
 - Current blocker: none
-- Next exact step: watch draft PR #590 for CI and review feedback, then respond if any failures or review findings appear.
+- Next exact step: commit the repair-guidance slice, open or update the branch PR, and watch CI/review feedback.
 - Verification gap: none; `src/issue-metadata/issue-metadata.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`, and `npm run build` all passed after restoring local dependencies with `npm install`.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-selection-status.ts`, `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`
-- Rollback concern: reverting this change would put `issue-lint` back out of sync with runtime clarification stops, so operators would miss authored high-risk ambiguity until selection time.
+- Rollback concern: reverting this change would remove the operator-facing repair path from `issue-lint`, forcing authors to reverse-engineer the lint rules again even though detection remains available.
 - Last focused command: `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts`; `npm run build`
 ### Scratchpad
-- 2026-03-19 (JST): Committed the lint ambiguity diagnostic change as `d8766f5` (`Report blocking ambiguity in issue lint`), pushed `codex/issue-574`, and opened draft PR #590 (`https://github.com/TommyKammy/codex-supervisor/pull/590`).
-- 2026-03-19 (JST): Reproduced issue #574 with a focused `issue-lint` regression by asserting a new `high_risk_blocking_ambiguity=` line for both a concrete risky auth issue and an unresolved-choice auth issue. The initial failure was that lint output stopped at `metadata_errors=...` and never surfaced ambiguity. Fixed `buildIssueLintSummary(...)` to reuse `findHighRiskBlockingAmbiguity(...)`, reran `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts`, then restored missing local TypeScript tooling with `npm install` and reran `npm run build`, all passing.
-- 2026-03-19 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851RTo3` as a real gap: the zero/blank scheduling test did not include `Execution order:`, and `validateIssueMetadataSyntax(...)` used `/^\\s*Execution order:\\s*.+$/im`, which skipped blank values. Fixed the gate to match blank execution-order lines, added the missing regression coverage, and reran `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts` plus `npm run build`, all passing.
+- 2026-03-19 (JST): Reproduced issue #575 with a focused `issue-lint` regression: reports for missing required sections, malformed scheduling metadata, and unresolved auth ambiguity emitted only raw findings and no repair instructions. Fixed it by adding deterministic `repair_guidance_<n>=...` lines to `buildIssueLintSummary(...)`, ordering blocking ambiguity guidance ahead of recommended metadata hygiene, and verifying with `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts` plus `npm run build` after restoring local dependencies via `npm install`.
 - 2026-03-19 (JST): Reproduced issue #573 with a focused `issue-lint` regression: an authored issue containing `Part of: #104`, duplicate/self `Depends on`, `Execution order: 3 of 2`, and `Parallelizable: Later` still reported `execution_ready=yes` and no metadata problems. Fixed it by adding local metadata validation and a `metadata_errors=` summary line, then verified with `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts` and `npm run build` after restoring local deps via `npm install`.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
