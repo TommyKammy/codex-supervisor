@@ -43,6 +43,19 @@ test("parseArgs accepts doctor as a command", () => {
   });
 });
 
+test("parseArgs accepts issue-lint with an issue number", () => {
+  assert.deepEqual(parseArgs(["issue-lint", "123"]), {
+    command: "issue-lint",
+    configPath: undefined,
+    dryRun: false,
+    why: false,
+    issueNumber: 123,
+    snapshotPath: undefined,
+    caseId: undefined,
+    corpusPath: undefined,
+  });
+});
+
 test("parseArgs accepts replay with a snapshot path", () => {
   assert.deepEqual(parseArgs(["replay", "/tmp/decision-cycle-snapshot.json"]), {
     command: "replay",

@@ -40,6 +40,7 @@ type ReadinessSummaryGitHub = Pick<GitHubClient, "listCandidateIssues">;
 type SelectionWhyGitHub = Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">;
 type ExplainIssueGitHub = Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
   Partial<ActiveStatusGitHub>;
+type IssueLintGitHub = Pick<GitHubClient, "getIssue">;
 type ActiveStatusGitHub = Pick<
   GitHubClient,
   "resolvePullRequestForBranch" | "getChecks" | "getUnresolvedReviewThreads"
@@ -444,6 +445,30 @@ export async function buildIssueExplainSummary(
   }
 
   return lines;
+}
+
+export async function buildIssueLintSummary(
+  github: IssueLintGitHub,
+  issueNumber: number,
+): Promise<string[]> {
+  const issue = await github.getIssue(issueNumber);
+  const readiness = lintExecutionReadyIssueBody(issue);
+
+  return [
+    `issue=#${issue.number}`,
+    `title=${issue.title}`,
+    `execution_ready=${readiness.isExecutionReady ? "yes" : "no"}`,
+    `missing_required=${
+      readiness.missingRequired.length > 0
+        ? formatExecutionReadyMissingFields(readiness.missingRequired)
+        : "none"
+    }`,
+    `missing_recommended=${
+      readiness.missingRecommended.length > 0
+        ? formatExecutionReadyMissingFields(readiness.missingRecommended)
+        : "none"
+    }`,
+  ];
 }
 
 function formatRunnableReadinessReason(

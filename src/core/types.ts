@@ -301,7 +301,16 @@ export interface CodexTurnResult {
 }
 
 export interface CliOptions {
-  command: "run-once" | "loop" | "status" | "explain" | "doctor" | "replay" | "replay-corpus" | "replay-corpus-promote";
+  command:
+    | "run-once"
+    | "loop"
+    | "status"
+    | "explain"
+    | "issue-lint"
+    | "doctor"
+    | "replay"
+    | "replay-corpus"
+    | "replay-corpus-promote";
   configPath?: string;
   dryRun: boolean;
   why: boolean;
