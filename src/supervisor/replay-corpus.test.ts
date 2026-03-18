@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { GitHubIssue, GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig, WorkspaceStatus } from "../core/types";
 import { buildSupervisorCycleDecisionSnapshot } from "./supervisor-cycle-snapshot";
-import { loadReplayCorpus } from "./replay-corpus";
+import { loadReplayCorpus, formatReplayCorpusOutcomeMismatch, runReplayCorpus } from "./replay-corpus";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
@@ -190,16 +190,26 @@ function createReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread
   };
 }
 
-function createSnapshot() {
+function createSnapshot(args: {
+  config?: SupervisorConfig;
+  capturedAt?: string;
+  issue?: GitHubIssue;
+  record?: IssueRunRecord;
+  workspaceStatus?: WorkspaceStatus;
+  pr?: GitHubPullRequest | null;
+  checks?: { name: string; state: string; bucket: string; workflow?: string; link?: string }[];
+  reviewThreads?: ReviewThread[];
+} = {}) {
+  const config = args.config ?? createConfig();
   return buildSupervisorCycleDecisionSnapshot({
-    config: createConfig(),
-    capturedAt: "2026-03-16T10:07:00Z",
-    issue: createIssue(),
-    record: createRecord(),
-    workspaceStatus: createWorkspaceStatus(),
-    pr: createPr(),
-    checks: [{ name: "build", state: "completed", bucket: "pass" }],
-    reviewThreads: [createReviewThread()],
+    config,
+    capturedAt: args.capturedAt ?? "2026-03-16T10:07:00Z",
+    issue: args.issue ?? createIssue(),
+    record: args.record ?? createRecord(),
+    workspaceStatus: args.workspaceStatus ?? createWorkspaceStatus(),
+    pr: args.pr === undefined ? createPr() : args.pr,
+    checks: args.checks ?? [{ name: "build", state: "completed", bucket: "pass" }],
+    reviewThreads: args.reviewThreads ?? [createReviewThread()],
   });
 }
 
@@ -384,4 +394,142 @@ test("loadReplayCorpus loads the checked-in example bundle", async () => {
   assert.equal(corpus.cases[0]?.expected.nextState, "blocked");
   assert.equal(corpus.cases[0]?.expected.blockedReason, "manual_review");
   assert.equal(corpus.cases[0]?.expected.failureSignature, "stalled-bot:thread-1");
+});
+
+test("runReplayCorpus replays multiple cases in manifest order and reports normalized outcomes", async () => {
+  const corpusRoot = await fs.mkdtemp(path.join(os.tmpdir(), "replay-corpus-runner-"));
+  const firstSnapshot = createSnapshot();
+  const secondSnapshot = createSnapshot({
+    record: createRecord({
+      issue_number: 533,
+      state: "waiting_ci",
+      branch: "codex/issue-533",
+      pr_number: 91,
+      workspace: "/tmp/workspaces/issue-533",
+      journal_path: "/tmp/workspaces/issue-533/.codex-supervisor/issue-journal.md",
+      review_wait_started_at: "2026-03-16T11:00:00Z",
+      review_wait_head_sha: "head-533",
+      local_review_head_sha: "head-533",
+      updated_at: "2026-03-16T11:05:00Z",
+    }),
+    issue: createIssue({
+      number: 533,
+      title: "Replay corpus waiting-ci example",
+      url: "https://example.test/issues/533",
+      updatedAt: "2026-03-16T11:05:00Z",
+    }),
+    pr: createPr({
+      number: 91,
+      title: "Replay corpus waiting-ci example",
+      url: "https://example.test/pull/91",
+      headRefName: "codex/issue-533",
+      headRefOid: "head-533",
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+      configuredBotTopLevelReviewStrength: "blocking",
+      updatedAt: "2026-03-16T11:06:00Z",
+    }),
+    workspaceStatus: createWorkspaceStatus({
+      branch: "codex/issue-533",
+      headSha: "head-533",
+    }),
+    reviewThreads: [],
+  });
+
+  const caseDefinitions = [
+    {
+      id: "review-blocked",
+      snapshot: firstSnapshot,
+      expected: {
+        nextState: firstSnapshot.decision.nextState,
+        shouldRunCodex: firstSnapshot.decision.shouldRunCodex,
+        blockedReason: firstSnapshot.decision.blockedReason,
+        failureSignature: firstSnapshot.decision.failureContext?.signature ?? null,
+      },
+    },
+    {
+      id: "waiting-ci",
+      snapshot: secondSnapshot,
+      expected: {
+        nextState: secondSnapshot.decision.nextState,
+        shouldRunCodex: secondSnapshot.decision.shouldRunCodex,
+        blockedReason: secondSnapshot.decision.blockedReason,
+        failureSignature: secondSnapshot.decision.failureContext?.signature ?? null,
+      },
+    },
+  ];
+
+  await writeJson(path.join(corpusRoot, "manifest.json"), {
+    schemaVersion: 1,
+    cases: caseDefinitions.map(({ id }) => ({ id, path: `cases/${id}` })),
+  });
+
+  for (const { id, snapshot, expected } of caseDefinitions) {
+    await writeJson(path.join(corpusRoot, "cases", id, "case.json"), {
+      schemaVersion: 1,
+      id,
+      issueNumber: snapshot.issue.number,
+      title: snapshot.issue.title,
+      capturedAt: snapshot.capturedAt,
+    });
+    await writeJson(path.join(corpusRoot, "cases", id, "input", "snapshot.json"), snapshot);
+    await writeJson(path.join(corpusRoot, "cases", id, "expected", "replay-result.json"), expected);
+  }
+
+  const result = await runReplayCorpus(corpusRoot, createConfig());
+
+  assert.equal(result.totalCases, 2);
+  assert.equal(result.mismatchCount, 0);
+  assert.deepEqual(result.results.map((entry) => entry.caseId), ["review-blocked", "waiting-ci"]);
+  assert.deepEqual(
+    result.results.map((entry) => entry.actual),
+    caseDefinitions.map(({ expected }) => expected),
+  );
+});
+
+test("formatReplayCorpusOutcomeMismatch renders deterministic expected-versus-actual output", async () => {
+  const corpusRoot = await fs.mkdtemp(path.join(os.tmpdir(), "replay-corpus-mismatch-"));
+  const snapshot = createSnapshot();
+
+  await writeJson(path.join(corpusRoot, "manifest.json"), {
+    schemaVersion: 1,
+    cases: [
+      {
+        id: "review-blocked",
+        path: "cases/review-blocked",
+      },
+    ],
+  });
+  await writeJson(path.join(corpusRoot, "cases", "review-blocked", "case.json"), {
+    schemaVersion: 1,
+    id: "review-blocked",
+    issueNumber: snapshot.issue.number,
+    title: snapshot.issue.title,
+    capturedAt: snapshot.capturedAt,
+  });
+  await writeJson(path.join(corpusRoot, "cases", "review-blocked", "input", "snapshot.json"), snapshot);
+  await writeJson(path.join(corpusRoot, "cases", "review-blocked", "expected", "replay-result.json"), {
+    nextState: "ready_to_merge",
+    shouldRunCodex: true,
+    blockedReason: null,
+    failureSignature: null,
+  });
+
+  const result = await runReplayCorpus(corpusRoot, createConfig());
+
+  assert.equal(result.mismatchCount, 1);
+  assert.equal(
+    formatReplayCorpusOutcomeMismatch(result.results[0]!),
+    [
+      'Replay corpus mismatch for case "review-blocked" (issue #532)',
+      "  expected.nextState=ready_to_merge",
+      "  actual.nextState=blocked",
+      "  expected.shouldRunCodex=true",
+      "  actual.shouldRunCodex=false",
+      "  expected.blockedReason=none",
+      "  actual.blockedReason=manual_review",
+      "  expected.failureSignature=none",
+      "  actual.failureSignature=stalled-bot:thread-1",
+    ].join("\n"),
+  );
 });

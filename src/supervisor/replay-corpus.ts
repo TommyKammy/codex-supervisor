@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parseJson } from "../core/utils";
-import { loadSupervisorCycleDecisionSnapshot } from "./supervisor-cycle-replay";
+import type { SupervisorConfig } from "../core/types";
+import { loadSupervisorCycleDecisionSnapshot, replaySupervisorCycleDecisionSnapshot } from "./supervisor-cycle-replay";
 import type { SupervisorCycleDecisionSnapshot } from "./supervisor-cycle-snapshot";
 
 const REPLAY_CORPUS_MANIFEST = "manifest.json";
@@ -74,6 +75,8 @@ export interface ReplayCorpusExpectedReplayResult {
   failureSignature: string | null;
 }
 
+export interface ReplayCorpusNormalizedOutcome extends ReplayCorpusExpectedReplayResult {}
+
 export interface ReplayCorpusCaseBundle {
   id: string;
   bundlePath: string;
@@ -88,6 +91,23 @@ export interface ReplayCorpus {
   rootPath: string;
   manifestPath: string;
   cases: ReplayCorpusCaseBundle[];
+}
+
+export interface ReplayCorpusCaseResult {
+  caseId: string;
+  issueNumber: number;
+  bundlePath: string;
+  expected: ReplayCorpusNormalizedOutcome;
+  actual: ReplayCorpusNormalizedOutcome;
+  matchesExpected: boolean;
+}
+
+export interface ReplayCorpusRunResult {
+  rootPath: string;
+  manifestPath: string;
+  totalCases: number;
+  mismatchCount: number;
+  results: ReplayCorpusCaseResult[];
 }
 
 function validationError(message: string): Error {
@@ -673,4 +693,70 @@ export async function loadReplayCorpus(rootPath: string): Promise<ReplayCorpus> 
     manifestPath,
     cases,
   };
+}
+
+function normalizeExpectedReplayResult(expected: ReplayCorpusExpectedReplayResult): ReplayCorpusNormalizedOutcome {
+  return {
+    nextState: expected.nextState,
+    shouldRunCodex: expected.shouldRunCodex,
+    blockedReason: expected.blockedReason,
+    failureSignature: expected.failureSignature,
+  };
+}
+
+function normalizeReplayResult(
+  replayResult: ReturnType<typeof replaySupervisorCycleDecisionSnapshot>,
+): ReplayCorpusNormalizedOutcome {
+  return {
+    nextState: replayResult.replayedDecision.nextState,
+    shouldRunCodex: replayResult.replayedDecision.shouldRunCodex,
+    blockedReason: replayResult.replayedDecision.blockedReason,
+    failureSignature: replayResult.replayedDecision.failureContext?.signature ?? null,
+  };
+}
+
+export async function runReplayCorpus(rootPath: string, config: SupervisorConfig): Promise<ReplayCorpusRunResult> {
+  const corpus = await loadReplayCorpus(rootPath);
+  const results = corpus.cases.map((corpusCase) => {
+    const actual = normalizeReplayResult(replaySupervisorCycleDecisionSnapshot(corpusCase.input.snapshot, config));
+    const expected = normalizeExpectedReplayResult(corpusCase.expected);
+    return {
+      caseId: corpusCase.id,
+      issueNumber: corpusCase.metadata.issueNumber,
+      bundlePath: corpusCase.bundlePath,
+      expected,
+      actual,
+      matchesExpected: JSON.stringify(actual) === JSON.stringify(expected),
+    };
+  });
+
+  return {
+    rootPath: corpus.rootPath,
+    manifestPath: corpus.manifestPath,
+    totalCases: results.length,
+    mismatchCount: results.filter((result) => !result.matchesExpected).length,
+    results,
+  };
+}
+
+function formatOutcomeValue(value: string | boolean | null): string {
+  if (value === null) {
+    return "none";
+  }
+
+  return String(value);
+}
+
+export function formatReplayCorpusOutcomeMismatch(result: ReplayCorpusCaseResult): string {
+  return [
+    `Replay corpus mismatch for case "${result.caseId}" (issue #${result.issueNumber})`,
+    `  expected.nextState=${formatOutcomeValue(result.expected.nextState)}`,
+    `  actual.nextState=${formatOutcomeValue(result.actual.nextState)}`,
+    `  expected.shouldRunCodex=${formatOutcomeValue(result.expected.shouldRunCodex)}`,
+    `  actual.shouldRunCodex=${formatOutcomeValue(result.actual.shouldRunCodex)}`,
+    `  expected.blockedReason=${formatOutcomeValue(result.expected.blockedReason)}`,
+    `  actual.blockedReason=${formatOutcomeValue(result.actual.blockedReason)}`,
+    `  expected.failureSignature=${formatOutcomeValue(result.expected.failureSignature)}`,
+    `  actual.failureSignature=${formatOutcomeValue(result.actual.failureSignature)}`,
+  ].join("\n");
 }

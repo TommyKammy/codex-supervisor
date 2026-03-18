@@ -1,50 +1,36 @@
-# Issue #532: Replay corpus: define a canonical case bundle format and corpus manifest
+# Issue #533: Replay corpus: add a corpus runner that asserts normalized replay outcomes
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/532
-- Branch: codex/issue-532
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/533
+- Branch: codex/issue-533
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 3 (implementation=1, repair=2)
-- Last head SHA: 05af724a75810c0088926dd4490e1112522a61de
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 62936f2bc0f6974cc4796df2a36c500327f8a03c
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ851FK7H|PRRT_kwDORgvdZ851FK7U
-- Repeated failure signature count: 1
-- Updated at: 2026-03-18T08:06:29.068Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-18T08:21:19.145Z
 
 ## Latest Codex Summary
-Addressed the two remaining PR #538 review threads locally. In [src/supervisor/replay-corpus.ts](src/supervisor/replay-corpus.ts), replay corpus input snapshots are now validated as full replay-ready `SupervisorCycleDecisionSnapshot` objects before the bundle loader returns them, so missing `issue` fields or missing `local`/`github`/`decision` objects fail with deterministic corpus validation errors instead of surfacing later as runtime crashes. In [src/supervisor/replay-corpus.test.ts](src/supervisor/replay-corpus.test.ts), there is a regression proving the loader rejects a snapshot that omits `decision`. In [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md), machine-local links were replaced with repo-relative links.
-
-Focused verification passed with `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/supervisor-cycle-replay.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts` and `npm run build`. I pushed the review follow-up to `codex/issue-532` and resolved the two remaining CodeRabbit threads on PR #538. The only remaining local artifact is the pre-existing untracked `.codex-supervisor/replay/` directory.
-
-Summary: Pushed the replay corpus review fixes, sanitized the journal links, and resolved the two remaining PR #538 threads.
-State hint: waiting_ci
-Blocked reason: none
-Tests: `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/supervisor-cycle-replay.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts`; `npm run build`
-Failure signature: none
-Next action: wait for refreshed PR #538 CI/review status and handle any new feedback if it appears
+- None yet.
 
 ## Active Failure Context
-- Category: review
-- Summary: No unresolved automated review threads remain after the latest push.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/538
-- Details:
-  - `.codex-supervisor/issue-journal.md` now uses repo-relative links in the checked-in summary text.
-  - `src/supervisor/replay-corpus.ts` now validates replay corpus snapshots as full replay-ready objects before exposing them as `SupervisorCycleDecisionSnapshot`.
-  - The updated branch was pushed and the two remaining CodeRabbit review threads were resolved via `gh api graphql`.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the replay corpus contract is narrow enough if maintained cases are manifest-driven, each bundle has one metadata file plus one input snapshot and one expected replay result, and load-time validation rejects any cross-file drift immediately.
-- What changed: tightened `src/supervisor/replay-corpus.ts` so corpus input snapshots are validated as replay-ready `SupervisorCycleDecisionSnapshot` objects, not just partially checked JSON; added a focused regression in `src/supervisor/replay-corpus.test.ts` for a snapshot missing `decision`; and sanitized checked-in issue-journal links to repo-relative paths.
+- Hypothesis: the missing piece for issue #533 is a runner layered on top of the manifest loader that replays each canonical case in manifest order, normalizes the replayed decision down to the persisted expected-outcome shape, and formats per-case mismatches deterministically.
+- What changed: added `runReplayCorpus()` and `formatReplayCorpusOutcomeMismatch()` to `src/supervisor/replay-corpus.ts`, reusing `replaySupervisorCycleDecisionSnapshot()` to execute every loaded case without live mutation; extended `src/supervisor/replay-corpus.test.ts` with focused coverage for multi-case success and deterministic mismatch reporting; and installed local npm dependencies in this worktree so the focused test/build verification could actually run.
 - Current blocker: none
-- Next exact step: wait for refreshed PR #538 CI/review status and handle any new feedback if it appears.
-- Verification gap: I ran the focused replay corpus tests and `npm run build`, but I did not run the full `npm test` suite because the issue only requires corpus loading/validation coverage and the branch already has a narrower proof.
+- Next exact step: commit the replay corpus runner changes, then decide whether to expose the runner through the CLI or keep this issue scoped to the internal module/test surface before opening/updating the PR.
+- Verification gap: `npx tsx --test src/supervisor/replay-corpus.test.ts` and `npm run build` passed after `npm ci`; I did not run the full `npm test` suite because this issue only requires focused replay corpus coverage and the existing unrelated CLI test path depended on missing workspace-local dependencies before install.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/replay-corpus.ts`, `src/supervisor/replay-corpus.test.ts`
-- Rollback concern: relaxing the manifest/case cross-checks would let inconsistent corpus metadata drift away from the replay input snapshot and make future maintained cases nondeterministic to review.
-- Last focused command: `gh api graphql -f query='mutation { one: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851FK7H"}) { thread { isResolved } } two: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851FK7U"}) { thread { isResolved } } }'`
+- Rollback concern: removing the normalized runner or letting mismatch formatting drift would turn maintained corpus cases back into passive fixtures and make regressions harder to triage consistently.
+- Last focused command: `npm run build`
 ### Scratchpad
+- 2026-03-18 (JST): Added a narrow repro for issue #533 in `src/supervisor/replay-corpus.test.ts`, implemented `runReplayCorpus()` plus deterministic mismatch formatting in `src/supervisor/replay-corpus.ts`, installed local dependencies with `npm ci`, and verified with `npx tsx --test src/supervisor/replay-corpus.test.ts` and `npm run build`.
 - 2026-03-18 (JST): Committed `Fix replay corpus review validation gaps`, pushed `codex/issue-532`, and resolved the two remaining CodeRabbit review threads on PR #538 after the focused replay tests and `npm run build` passed.
 - 2026-03-18 (JST): Addressed the two remaining PR #538 review threads locally by sanitizing `.codex-supervisor/issue-journal.md` links and validating replay corpus snapshots as full replay-ready objects; `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/supervisor-cycle-replay.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts` and `npm run build` both passed.
 - 2026-03-18 (JST): Implemented `loadReplayCorpus()` in `src/supervisor/replay-corpus.ts` with strict manifest path rules, required bundle files, and consistency checks between `case.json` and `input/snapshot.json`.
