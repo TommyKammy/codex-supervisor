@@ -1,6 +1,7 @@
 import {
   buildActiveDetailedStatusLines,
   buildInactiveDetailedStatusLines,
+  formatLatestRecoveryStatusLine,
   sanitizeStatusValue,
 } from "./supervisor-detailed-status-assembly";
 import {
@@ -95,9 +96,10 @@ export function buildDetailedStatusSummaryLines(args: BuildDetailedStatusSummary
   }
 
   if (activeRecord && latestRecoveryRecord?.last_recovery_reason && latestRecoveryRecord.last_recovery_at) {
-    lines.push(
-      `latest_recovery issue=#${latestRecoveryRecord.issue_number} at=${latestRecoveryRecord.last_recovery_at} reason=${sanitizeStatusValue(latestRecoveryRecord.last_recovery_reason)}`,
-    );
+    const latestRecoveryLine = formatLatestRecoveryStatusLine(latestRecoveryRecord);
+    if (latestRecoveryLine) {
+      lines.push(latestRecoveryLine);
+    }
   }
 
   if (activeRecord?.local_review_summary_path) {
