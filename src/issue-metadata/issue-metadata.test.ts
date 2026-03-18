@@ -116,6 +116,21 @@ Parallelizable: Later`,
   ]);
 });
 
+test("validateIssueMetadataSyntax rejects zero and blank scheduling metadata values", () => {
+  const issue = createIssue({
+    number: 55,
+    body: `Part of: #0
+Depends on:
+Parallelizable:`,
+  });
+
+  assert.deepEqual(validateIssueMetadataSyntax(issue), [
+    "part of must reference a single issue as #<number>",
+    "depends on must be none or comma-separated #<number> references",
+    "parallelizable must be Yes or No",
+  ]);
+});
+
 test("lintExecutionReadyIssueBody accepts a complete execution-ready issue body", () => {
   const issue = createIssue({
     body: `## Summary

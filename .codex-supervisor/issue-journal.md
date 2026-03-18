@@ -5,31 +5,44 @@
 - Branch: codex/issue-573
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 7a48c0368bb7ad47c198b16ed5f5305a262b4ed7
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: 735a0926a344c526b5aa032699824a427ca2d952
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-18T19:16:28.605Z
+- Last failure signature: PRRT_kwDORgvdZ851RKwI|PRRT_kwDORgvdZ851RKwR
+- Repeated failure signature count: 1
+- Updated at: 2026-03-18T19:36:37.789Z
 
 ## Latest Codex Summary
-- None yet.
+Pushed `codex/issue-573` and opened draft PR [#589](https://github.com/TommyKammy/codex-supervisor/pull/589) for the existing checkpoint `735a092` (`Validate issue-lint scheduling metadata`). I re-ran the focused metadata tests and `npm run build`; both passed. I also updated the issue journal with today’s verification, push, and PR state. The only local changes left are the journal update itself and the existing untracked `.codex-supervisor/replay/` directory, which I left untouched.
+
+Summary: Re-verified the issue-lint scheduling metadata checkpoint, pushed `codex/issue-573`, opened draft PR #589, and updated the issue journal
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts`; `npm run build`
+Failure signature: none
+Next action: Watch PR #589 CI and address any review or integration feedback if it appears
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 2 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/589#discussion_r2955764033
+- Details:
+  - src/issue-metadata/issue-metadata-validation.ts:24 _⚠️ Potential issue_ | _🟠 Major_ **`Part of` currently accepts invalid `#0` references.** At Line 24, `#(\d+)` allows zero, so `Part of: `#0`` passes even though it is not a valid issue reference. <details> <summary>💡 Proposed fix</summary> ```diff - const validPartOf = /^\s*Part of:?\s+#(\d+)\s*$/i.test(partOfLine); + const validPartOf = /^\s*Part of:?\s+#([1-9]\d*)\s*$/i.test(partOfLine); ``` </details> <!-- suggestion_start --> <details> <summary>📝 Committable suggestion</summary> > ‼️ **IMPORTANT** > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements. ```suggestion const validPartOf = /^\s*Part of:?\s+#([1-9]\d*)\s*$/i.test(partOfLine); ``` </details> <!-- suggestion_end --> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/issue-metadata/issue-metadata-validation.ts` at line 24, The regex used to set validPartOf (const validPartOf = /^\s*Part of:?\s+#(\d+)\s*$/i.test(partOfLine);) currently accepts "0" as a valid issue number; update the pattern to disallow zero (e.g. replace (\d+) with ([1-9]\d*)) so Part of references like "#0" fail validation, leaving the rest of the surrounding code (partOfLine and validPartOf usage) unchanged. ``` </details> <!-- fingerprinting:phantom:poseidon:hawk --> <!-- This is an auto-generated comment by CodeRabbit -->
+  - src/issue-metadata/issue-metadata-validation.ts:33 _⚠️ Potential issue_ | _🟠 Major_ **Empty metadata values can bypass validation for `Depends on` and `Parallelizable`.** `Depends on:` and `Parallelizable:` with no value can currently avoid error reporting, which weakens syntax validation. <details> <summary>💡 Proposed fix</summary> ```diff - const dependsOnLine = issue.body.match(/^\s*Depends on:\s*(.+)\s*$/im)?.[1] ?? null; - if (dependsOnLine) { + const dependsOnMatch = issue.body.match(/^\s*Depends on:\s*(.*)$/im); + if (dependsOnMatch) { + const dependsOnLine = dependsOnMatch[1].trim(); + if (dependsOnLine.length === 0) { + errors.push("depends on must be none or comma-separated #<number> references"); + } else { const dependencyTokens = dependsOnLine .split(",") .map((token) => token.trim()) .filter((token) => token.length > 0); + // ...existing dependency validation... + } } - const parallelizableValue = issue.body.match(/^\s*Parallelizable:\s*(.+)\s*$/im)?.[1] ?? null; - if (parallelizableValue && !/^(?:yes|no)$/i.test(parallelizableValue.trim())) { + const parallelizableMatch = issue.body.match(/^\s*Parallelizable:\s*(.*)$/im); + if (parallelizableMatch && !/^(?:yes|no)$/i.test(parallelizableMatch[1].trim())) { errors.push("parallelizable must be Yes or No"); } ``` </details> Also applies to: 78-80 <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/issue-metadata/issue-metadata-validation.ts` around lines 32 - 33, The current extraction for metadata like dependsOnLine and parallelizableLine allows empty values to pass because it only checks for truthiness; change the checks to trim the captured value and treat empty strings as null/invalid (e.g., compute dependsOn = dependsOnLine?.trim() and guard with if (dependsOn) instead of if (dependsOnLine)), and apply the same fix to the parallelizable extraction/validation logic so blank "Depends on:" and "Parallelizable:" lines fail validation. ``` </details> <!-- fingerprinting:phantom:poseidon:hawk --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: `issue-lint` already enforced required sections for a single authored issue, but it still ignored malformed or self-inconsistent dependency/sequencing metadata, so a focused invalid-metadata regression should fail until the lint summary validates those fields locally.
-- What changed: added `validateIssueMetadataSyntax(...)` for local `Part of`, `Depends on`, `Execution order`, and `Parallelizable` checks; surfaced a deterministic `metadata_errors=` line from `buildIssueLintSummary(...)`; and tightened focused issue-lint plus issue-metadata tests to cover both valid and invalid metadata cases.
+- What changed: addressed CodeRabbit review threads by rejecting `Part of: #0`, treating blank `Depends on:` values as invalid, and validating blank `Parallelizable:` lines instead of letting them bypass syntax checks; also tightened the metadata-line regexes to keep blank-line captures from swallowing the next metadata line.
 - Current blocker: none
-- Next exact step: commit this checkpoint on `codex/issue-573`, then open or update the draft PR so CI can validate the new metadata diagnostics end to end.
+- Next exact step: push the review-fix commit to PR #589, then monitor CI and resolve the addressed review threads if no new feedback appears.
 - Verification gap: none beyond broader CLI coverage if a reviewer asks for it; focused issue-metadata and issue-lint tests plus `npm run build` pass locally.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/issue-metadata/issue-metadata-validation.ts`, `src/issue-metadata/issue-metadata.ts`, `src/issue-metadata/issue-metadata.test.ts`, `src/supervisor/supervisor-selection-status.ts`, `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/issue-metadata/issue-metadata-validation.ts`, `src/issue-metadata/issue-metadata.test.ts`
 - Rollback concern: reverting this change would make `issue-lint` silently accept malformed dependency/sequencing metadata again, leaving authors to discover scheduler metadata errors only at runtime selection.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint.test.ts`; `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts`; `npm install`; `npm run build`
+- Last focused command: `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts`; `npm run build`
 ### Scratchpad
+- 2026-03-19 (JST): Addressed CodeRabbit threads `PRRT_kwDORgvdZ851RKwI` and `PRRT_kwDORgvdZ851RKwR` in `src/issue-metadata/issue-metadata-validation.ts` by disallowing `Part of: #0`, rejecting blank `Depends on:` / `Parallelizable:` values, and tightening the metadata regexes to avoid a newline-capture bug where blank `Depends on:` could consume the next metadata line. Added focused regression coverage in `src/issue-metadata/issue-metadata.test.ts` and re-verified with `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts` plus `npm run build`.
 - 2026-03-19 (JST): Reproduced issue #573 with a focused `issue-lint` regression: an authored issue containing `Part of: #104`, duplicate/self `Depends on`, `Execution order: 3 of 2`, and `Parallelizable: Later` still reported `execution_ready=yes` and no metadata problems. Fixed it by adding local metadata validation and a `metadata_errors=` summary line, then verified with `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts` and `npm run build` after restoring local deps via `npm install`.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
