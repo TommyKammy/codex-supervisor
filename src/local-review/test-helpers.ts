@@ -196,10 +196,10 @@ export function createFakeLocalReviewRunner(outputs: Record<
     requests,
     executeTurn: async (request) => {
       requests.push(request);
-      const output = outputs[request.role];
-      if (!output) {
+      if (!Object.prototype.hasOwnProperty.call(outputs, request.role)) {
         throw new Error(`No fake local-review runner output configured for role ${request.role}`);
       }
+      const output = outputs[request.role];
 
       return normalizeResult(
         typeof output === "function"

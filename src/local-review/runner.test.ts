@@ -4,7 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { runRoleReview, runVerifierReview, type LocalReviewTurnRequest } from "./runner";
-import { createConfig, createIssue, createMissPattern, createPullRequest } from "./test-helpers";
+import {
+  createConfig,
+  createFakeLocalReviewRunner,
+  createIssue,
+  createMissPattern,
+  createPullRequest,
+} from "./test-helpers";
 
 test("runRoleReview routes reviewer turns through the injected execution contract", async () => {
   const requests: LocalReviewTurnRequest[] = [];
@@ -191,4 +197,30 @@ test("runVerifierReview routes verifier turns through the injected execution con
   } finally {
     await fs.rm(workspacePath, { recursive: true, force: true });
   }
+});
+
+test("runRoleReview accepts empty fake-runner output as a configured result", async () => {
+  const fakeRunner = createFakeLocalReviewRunner({
+    reviewer: "",
+  });
+
+  const result = await runRoleReview({
+    config: createConfig(),
+    issue: createIssue({ number: 525, title: "Allow empty fake runner output" }),
+    branch: "codex/issue-525",
+    workspacePath: "/tmp/repo",
+    defaultBranch: "main",
+    pr: createPullRequest({ number: 90, headRefOid: "headsha525" }),
+    role: "reviewer",
+    alwaysReadFiles: [],
+    onDemandFiles: [],
+    priorMissPatterns: [],
+    executeTurn: fakeRunner.executeTurn,
+  });
+
+  assert.deepEqual(fakeRunner.requests.map((request) => request.role), ["reviewer"]);
+  assert.equal(result.rawOutput, "");
+  assert.equal(result.summary, "reviewer review completed without a structured summary.");
+  assert.equal(result.recommendation, "unknown");
+  assert.deepEqual(result.findings, []);
 });
