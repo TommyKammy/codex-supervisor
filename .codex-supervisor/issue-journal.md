@@ -1,46 +1,36 @@
-# Issue #534: Replay corpus: promote captured replay snapshots into canonical corpus cases
+# Issue #535: Replay corpus: seed PR lifecycle and stale-head safety cases
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/534
-- Branch: codex/issue-534
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/535
+- Branch: codex/issue-535
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: baa0c4e6210b01a172acee409dde9c5ca8b1f410
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: bd15c238133c86ecfe38d2924c23377471aefbab
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ851GMaA|PRRT_kwDORgvdZ851GMaZ
-- Repeated failure signature count: 1
-- Updated at: 2026-03-18T09:20:52Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-18T09:36:54.093Z
 
 ## Latest Codex Summary
-Addressed both remaining PR #540 replay-corpus review findings in [src/supervisor/replay-corpus.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-534/src/supervisor/replay-corpus.ts) and [src/supervisor/replay-corpus.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-534/src/supervisor/replay-corpus.test.ts). Promotion now clears `local_review_summary_path` alongside the other machine-specific local paths, and it validates any existing on-disk corpus before writing a new bundle so a broken prior case cannot leave the corpus partially mutated on failure.
-
-The focused promotion regression now starts from a non-null `local_review_summary_path` and asserts the promoted snapshot clears it, and a second regression proves promotion rejects an invalid existing corpus before creating the new case or mutating `manifest.json`. I committed the follow-up as `baa0c4e` (`Fix replay corpus promotion review follow-ups`), pushed `codex/issue-534`, and resolved both CodeRabbit review threads on PR #540 via `gh api graphql`. Local verification passed with `npx tsx --test src/supervisor/replay-corpus.test.ts` and `npm run build`. I left the untracked captured snapshot under `.codex-supervisor/replay/` untouched.
-
-Summary: Fixed and pushed the two replay corpus review follow-ups, then resolved the addressed PR threads
-State hint: draft_pr
-Blocked reason: none
-Tests: `npx tsx --test src/supervisor/replay-corpus.test.ts`; `npm run build`
-Failure signature: none
-Next action: monitor PR #540 for any further review or CI follow-up
+- None yet.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `src/supervisor/replay-corpus.ts` can own a narrow promotion flow that loads a captured supervisor replay snapshot, normalizes machine-specific fields, writes a canonical bundle, updates `replay-corpus/manifest.json`, and immediately proves the promoted case replays cleanly.
-- What changed: kept the existing promotion flow and tightened the review-follow-up edges in `src/supervisor/replay-corpus.ts` by clearing `local.record.local_review_summary_path` during normalization and validating any existing corpus before the first promotion write. Extended `src/supervisor/replay-corpus.test.ts` so the happy-path promotion case starts from a non-null summary path and added a failure-path regression that proves a broken existing case blocks promotion before any on-disk mutation.
+- Hypothesis: the narrowest fix is to seed the checked-in replay corpus itself with two more canonical bundles, one for required-check gating and one for stale-head merge prevention, and prove them through a focused checked-in corpus replay test rather than broad replay-framework changes.
+- What changed: extended `src/supervisor/replay-corpus.test.ts` so the checked-in corpus must contain `review-blocked`, `required-check-pending`, and `stale-head-prevents-merge`, and added a focused assertion that `runReplayCorpus()` replays those bundled cases without mismatches. Seeded `replay-corpus/manifest.json` with the two new cases, checked in narrow snapshot/expected bundles under `replay-corpus/cases/required-check-pending/` and `replay-corpus/cases/stale-head-prevents-merge/`, and refreshed the older `review-blocked` expected failure signature so it matches the current configured-bot replay behavior.
 - Current blocker: none
-- Next exact step: monitor PR #540 for any further review or CI follow-up and avoid broadening the replay corpus surface unless a new concrete regression appears.
-- Verification gap: focused replay corpus promotion coverage and `npm run build` both pass locally after the review fixes; I still have not added a checked-in promoted case under `replay-corpus/cases/` because the issue acceptance is satisfied by the promotion flow plus the focused end-to-end test.
-- Files touched: `src/supervisor/replay-corpus.ts`, `src/supervisor/replay-corpus.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this follow-up would reintroduce host-specific local-review paths into canonical corpus bundles and allow promotion to partially mutate the corpus before surfacing a pre-existing bundle validation failure.
-- Last focused command: `npx tsx --test src/supervisor/replay-corpus.test.ts && npm run build`
+- Next exact step: review the diff for readability, commit the seeded corpus bundles, and open/update the issue PR once the checkpoint is pushed.
+- Verification gap: none for the scoped acceptance checks; focused replay corpus, pull-request-state, supervisor lifecycle coverage, and `npm run build` all passed locally after installing worktree dependencies with `npm ci`.
+- Files touched: `replay-corpus/manifest.json`, `replay-corpus/cases/review-blocked/expected/replay-result.json`, `replay-corpus/cases/required-check-pending/`, `replay-corpus/cases/stale-head-prevents-merge/`, `src/supervisor/replay-corpus.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would drop the only checked-in stale-head and required-check safety cases, so replay-corpus regressions in those PR lifecycle decisions would stop failing deterministically.
+- Last focused command: `npx tsx --test src/supervisor/replay-corpus.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-pr-lifecycle.test.ts src/supervisor/supervisor-lifecycle.test.ts && npm run build`
 ### Scratchpad
-- 2026-03-18 (JST): Committed the replay-corpus review follow-ups as `baa0c4e` (`Fix replay corpus promotion review follow-ups`), pushed `codex/issue-534`, and resolved CodeRabbit threads `PRRT_kwDORgvdZ851GMaA` and `PRRT_kwDORgvdZ851GMaZ` on PR #540 via `gh api graphql`.
-- 2026-03-18 (JST): Addressed the two remaining PR #540 CodeRabbit replay-corpus findings locally by nulling `local_review_summary_path` during promotion, validating the existing corpus before the first write, and adding focused regressions for both cases; `npx tsx --test src/supervisor/replay-corpus.test.ts` and `npm run build` both passed.
+- 2026-03-18 (JST): Added the narrow failing repro first by asserting the checked-in replay corpus must include stale-head and required-check cases plus a clean `runReplayCorpus()` pass; seeded `required-check-pending` and `stale-head-prevents-merge` bundles under `replay-corpus/cases/`, aligned the older `review-blocked` expected signature with current configured-bot replay output, and verified with `npx tsx --test src/supervisor/replay-corpus.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-pr-lifecycle.test.ts src/supervisor/supervisor-lifecycle.test.ts` and `npm run build` after `npm ci`.
 - 2026-03-18 (JST): Addressed the two remaining PR #538 review threads locally by sanitizing `.codex-supervisor/issue-journal.md` links and validating replay corpus snapshots as full replay-ready objects; `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/supervisor-cycle-replay.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts` and `npm run build` both passed.
 - 2026-03-18 (JST): Implemented `loadReplayCorpus()` in `src/supervisor/replay-corpus.ts` with strict manifest path rules, required bundle files, and consistency checks between `case.json` and `input/snapshot.json`.
 - 2026-03-18 (JST): Checked in `replay-corpus/manifest.json` and `replay-corpus/cases/review-blocked/` as the first example bundle; `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/supervisor-cycle-replay.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts` and `npm run build` passed after installing local npm dependencies and fixing one `expectInteger()` typing error.

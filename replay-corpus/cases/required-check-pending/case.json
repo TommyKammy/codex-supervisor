@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "id": "required-check-pending",
+  "issueNumber": 535,
+  "title": "Required checks keep a reviewed PR out of merge-ready state",
+  "capturedAt": "2026-03-18T00:12:00Z"
+}

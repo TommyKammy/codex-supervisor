@@ -391,14 +391,53 @@ test("loadReplayCorpus rejects input snapshots that omit replay-required objects
   );
 });
 
-test("loadReplayCorpus loads the checked-in example bundle", async () => {
+test("loadReplayCorpus loads the checked-in safety case bundles", async () => {
   const corpus = await loadReplayCorpus(path.join(process.cwd(), "replay-corpus"));
 
-  assert.deepEqual(corpus.cases.map((bundle) => bundle.id), ["review-blocked"]);
-  assert.equal(corpus.cases[0]?.metadata.issueNumber, 532);
-  assert.equal(corpus.cases[0]?.expected.nextState, "blocked");
-  assert.equal(corpus.cases[0]?.expected.blockedReason, "manual_review");
-  assert.equal(corpus.cases[0]?.expected.failureSignature, "stalled-bot:thread-1");
+  assert.deepEqual(corpus.cases.map((bundle) => bundle.id), [
+    "review-blocked",
+    "required-check-pending",
+    "stale-head-prevents-merge",
+  ]);
+  assert.deepEqual(
+    corpus.cases.map((bundle) => ({
+      id: bundle.id,
+      nextState: bundle.expected.nextState,
+      blockedReason: bundle.expected.blockedReason,
+      failureSignature: bundle.expected.failureSignature,
+    })),
+    [
+      {
+        id: "review-blocked",
+        nextState: "blocked",
+        blockedReason: "manual_review",
+        failureSignature: "stalled-bot:thread-1",
+      },
+      {
+        id: "required-check-pending",
+        nextState: "waiting_ci",
+        blockedReason: null,
+        failureSignature: null,
+      },
+      {
+        id: "stale-head-prevents-merge",
+        nextState: "stabilizing",
+        blockedReason: null,
+        failureSignature: null,
+      },
+    ],
+  );
+});
+
+test("runReplayCorpus replays the checked-in PR lifecycle safety cases without mismatches", async () => {
+  const result = await runReplayCorpus(path.join(process.cwd(), "replay-corpus"), createConfig());
+
+  assert.equal(result.mismatchCount, 0);
+  assert.deepEqual(result.results.map((entry) => entry.caseId), [
+    "review-blocked",
+    "required-check-pending",
+    "stale-head-prevents-merge",
+  ]);
 });
 
 test("promoteCapturedReplaySnapshot writes a normalized canonical bundle that replays immediately", async () => {
