@@ -35,7 +35,8 @@ import {
 
 type ReadinessSummaryGitHub = Pick<GitHubClient, "listCandidateIssues">;
 type SelectionWhyGitHub = Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">;
-type ExplainIssueGitHub = Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues">;
+type ExplainIssueGitHub = Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
+  Partial<ActiveStatusGitHub>;
 type ActiveStatusGitHub = Pick<
   GitHubClient,
   "resolvePullRequestForBranch" | "getChecks" | "getUnresolvedReviewThreads"
@@ -65,6 +66,29 @@ async function buildExplainChangeRiskSummary(args: {
   }
 
   return lines;
+}
+
+async function buildExplainExternalReviewFollowUpSummary(args: {
+  github: ExplainIssueGitHub;
+  record: IssueRunRecord | undefined;
+}): Promise<string | null> {
+  if (!args.record) {
+    return null;
+  }
+
+  let pr: GitHubPullRequest | null = null;
+  try {
+    pr = args.github.resolvePullRequestForBranch
+      ? await args.github.resolvePullRequestForBranch(args.record.branch, args.record.pr_number)
+      : null;
+  } catch {
+    pr = null;
+  }
+
+  return buildExternalReviewFollowUpStatusLine({
+    activeRecord: args.record,
+    currentHeadSha: pr?.headRefOid ?? args.record.last_head_sha,
+  });
 }
 
 export interface SupervisorStatusRecords {
@@ -357,6 +381,10 @@ export async function buildIssueExplainSummary(
     issue,
     record,
   });
+  const externalReviewFollowUpSummary = await buildExplainExternalReviewFollowUpSummary({
+    github,
+    record,
+  });
 
   if (matchingSkipPrefix) {
     reasons.push(`skip_title_prefix ${matchingSkipPrefix}`);
@@ -392,6 +420,7 @@ export async function buildIssueExplainSummary(
     `blocked_reason=${record?.blocked_reason ?? "none"}`,
     `runnable=${runnable ? "yes" : "no"}`,
     ...changeRiskLines,
+    ...(externalReviewFollowUpSummary ? [externalReviewFollowUpSummary] : []),
   ];
 
   if (runnable) {

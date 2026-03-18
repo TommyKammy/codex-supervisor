@@ -1,54 +1,46 @@
-# Issue #512: External-review misses: surface unresolved follow-up actions in status output
+# Issue #513: External-review misses: reuse follow-up action reasoning in explain diagnostics
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/512
-- Branch: codex/issue-512
-- Workspace: ./ (repo root)
-- Journal: ./.codex-supervisor/issue-journal.md
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/513
+- Branch: codex/issue-513
+- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-513
+- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-513/.codex-supervisor/issue-journal.md
 - Current phase: addressing_review
 - Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 128102838e744838734c5a0f7798fa17709b7dca
+- Last head SHA: fcd29449abc8129dce74a30408432c982096fea4
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ851BSWa|PRRT_kwDORgvdZ851BSWd|PRRT_kwDORgvdZ851BSWh
+- Last failure signature: PRRT_kwDORgvdZ851Bh3U|PRRT_kwDORgvdZ851Bh3e
 - Repeated failure signature count: 1
-- Updated at: 2026-03-18T00:35:08.760Z
+- Updated at: 2026-03-18T10:07:00+09:00
 
 ## Latest Codex Summary
-Draft PR [#519](https://github.com/TommyKammy/codex-supervisor/pull/519) is open on `codex/issue-512`, backed by the implementation commit `dcb4c41` and the journal update commit `1281028`. The issue journal at [.codex-supervisor/issue-journal.md](./.codex-supervisor/issue-journal.md) now reflects the passing verification and PR state.
+Pushed review-fix commit `a90c2db` to [PR #520](https://github.com/TommyKammy/codex-supervisor/pull/520). `explain` now builds `external_review_follow_up` directly from the tracked record plus a best-effort PR head lookup in [src/supervisor/supervisor-selection-status.ts](../src/supervisor/supervisor-selection-status.ts), so missing `getChecks` or unresolved-thread APIs no longer suppress the shared digest-backed summary. The explain regression in [src/supervisor/supervisor-diagnostics-explain.test.ts](../src/supervisor/supervisor-diagnostics-explain.test.ts) now omits those unrelated GitHub stubs to lock the behavior in.
 
-Local verification was green:
-- `npx tsx --test src/external-review/external-review-miss-persistence.test.ts src/supervisor/supervisor-diagnostics-external-review-follow-up.test.ts src/supervisor/supervisor-status-rendering.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts`
-- `npm run build`
+I also rewrote the live journal summary links to repo-relative paths in [.codex-supervisor/issue-journal.md](issue-journal.md), then resolved the two CodeRabbit review threads after the push. Focused verification passed with `npx tsx --test src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-diagnostics-external-review-follow-up.test.ts` and `npm run build`. The only remaining workspace noise is the pre-existing untracked `.codex-supervisor/replay/`.
 
-The only remaining local noise is untracked workspace data in `.codex-supervisor/replay/`, which I left untouched.
-
-Summary: Pushed `codex/issue-512`, opened draft PR #519 for the status follow-up summary change, and updated the issue journal with the verified handoff state.
-State hint: draft_pr
+Summary: Pushed the explain follow-up review fix, tightened the focused regression, fixed the journal links, and resolved both bot review threads on PR #520.
+State hint: pr_open
 Blocked reason: none
-Tests: `npx tsx --test src/external-review/external-review-miss-persistence.test.ts src/supervisor/supervisor-diagnostics-external-review-follow-up.test.ts src/supervisor/supervisor-status-rendering.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts`; `npm run build`
+Tests: `npx tsx --test src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-diagnostics-external-review-follow-up.test.ts`; `npm run build`
 Failure signature: none
-Next action: Monitor draft PR #519 and address any CI or review feedback that arrives.
+Next action: Monitor PR #520 for any fresh review or CI follow-up after the `a90c2db` review-fix push.
 
 ## Active Failure Context
-- Category: review
-- Summary: 3 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/519#discussion_r2950210799
-- Details:
-  - .codex-supervisor/issue-journal.md: top-of-file workspace metadata and the latest journal self-link used machine-local absolute paths; switch them to `./`-style repo-relative paths so the committed journal stays portable for other contributors.
-  - src/supervisor/supervisor-diagnostics-external-review-follow-up.test.ts:39 _⚠️ Potential issue_ | _🟠 Major_ **The stale-head regression test is a false positive.** Line 153 checks `/external_review_follow_up=/`, but the emitted line is `external_review_follow_up unresolved=...`, so this assertion still passes when the stale status leaks through. The fixture on Lines 29-32 also keeps the miss-analysis and active-head SHAs identical, which is not how `buildExternalReviewMissFollowUpDigest` represents a stale digest. <details> <summary>Suggested fix</summary> ```diff - assert.doesNotMatch(status, /external_review_follow_up=/); + assert.doesNotMatch(status, /\bexternal_review_follow_up\b/); ``` Also make the stale fixture write different miss-analysis and active-head SHA values so it mirrors the real digest format. </details> Also applies to: 99-153 <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/supervisor/supervisor-diagnostics-external-review-follow-up.test.ts` around lines 13 - 39, The test is a false positive because it asserts /external_review_follow_up=/ while the emitted line is "external_review_follow_up unresolved=...", and the stale fixture currently sets miss-analysis and active PR head SHAs identical; update the stale fixture in writeExternalReviewDigest (and any use of buildExternalReviewMissFollowUpDigest) so when headStatus === "stale-head" the miss-analysis head SHA and active PR head SHA are different (e.g., "deadbeefcafebabe" vs "feedfacecafef00d"), and change the test assertion to match the actual emitted token by asserting for "external_review_follow_up unresolved=" (or a regex like /external_review_follow_up\s+unresolved=/) instead of /external_review_follow_up=/ so the test fails when stale status leaks through. ``` </details> <!-- fingerprinting:phantom:medusa:grasshopper --> <!-- This is an auto-generated comment by CodeRabbit -->
-  - src/supervisor/supervisor-status-rendering.ts:235 _⚠️ Potential issue_ | _🟠 Major_ **Filter the digest against the live head before treating it as actionable.** Line 220 only trusts the digest's serialized `headStatus`, but that value is frozen when the digest is written. After a new commit, an old digest can still say `current-head` and keep surfacing stale follow-up debt in `status`. `buildDurableGuardrailStatusLine` already does a live-head check on Lines 141-145; this helper needs the same guard. <details> <summary>Suggested direction</summary> ```diff export async function buildExternalReviewFollowUpStatusLine(args: { - activeRecord: Pick<IssueRunRecord, "external_review_misses_path">; + activeRecord: Pick< + IssueRunRecord, + "external_review_misses_path" | "external_review_head_sha" | "last_head_sha" + >; + currentHeadSha: string | null; }): Promise<string | null> { const missesPath = args.activeRecord.external_review_misses_path; if (!missesPath) { return null; } + + const currentHeadSha = args.currentHeadSha ?? args.activeRecord.last_head_sha; + if (!currentHeadSha || args.activeRecord.external_review_head_sha !== currentHeadSha) { + return null; + } ``` Then pass `pr?.headRefOid ?? args.activeRecord.last_head_sha` from `src/supervisor/supervisor-selection-status.ts`. </details> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/supervisor/supervisor-status-rendering.ts` around lines 201 - 235, buildExternalReviewFollowUpStatusLine currently trusts summary.headStatus from the on-disk digest and can surface stale follow-ups; update it to perform the same live-head check as buildDurableGuardrailStatusLine by comparing the digest's recorded head to the repository's current head before treating it as actionable. Modify buildExternalReviewFollowUpStatusLine to accept (or compute) the live head SHA (use the value passed from supervisor-selection-status: pr?.headRefOid ?? args.activeRecord.last_head_sha), and after reading parseExternalReviewMissFollowUpDigest(digest) verify the digest head matches that live head SHA (and only proceed if they match and summary.headStatus === "current-head"). Keep existing ENOENT behavior and the actionCounts logic intact (functions/ids to locate: buildExternalReviewFollowUpStatusLine, parseExternalReviewMissFollowUpDigest, externalReviewMissFollowUpDigestPath, and the caller in supervisor-selection-status). ``` </details> <!-- fingerprinting:phantom:medusa:grasshopper --> <!-- This is an auto-generated comment by CodeRabbit -->
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the compact `external_review_follow_up` status line is only actionable when the record head, live head, and digest head metadata all agree on the current PR head; stale digests and stale record pointers must be suppressed even if the digest still says `current-head`.
-- What changed: parsed miss-analysis and active-PR head SHAs out of the follow-up digest, gated `buildExternalReviewFollowUpStatusLine()` on a live head SHA from `supervisor-selection-status`, tightened the stale-head status reproducer to use mismatched digest SHAs plus a real token-level assertion, and sanitized the tracked journal paths to repo-relative form.
+- Hypothesis: `explain` should not synthesize its own external-review miss narrative; when a tracked issue has a current-head follow-up digest, it should surface the same compact digest-backed summary that `status` already trusts.
+- What changed: `buildExplainExternalReviewFollowUpSummary()` now bypasses `loadActiveIssueStatusSnapshot()` and calls the shared digest renderer directly using the tracked record plus a best-effort PR head SHA, the explain regression no longer stubs `resolvePullRequestForBranch`/`getChecks`/`getUnresolvedReviewThreads`, the live latest-summary journal links are repo-relative, and the two CodeRabbit review threads were resolved after the `a90c2db` push.
 - Current blocker: none
-- Next exact step: commit the review-fix patch, push `codex/issue-512`, and resolve the remaining PR #519 review threads.
-- Verification gap: none locally after rerunning the focused external-review/status tests and `npm run build`.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/external-review/external-review-miss-digest.ts`, `src/supervisor/supervisor-diagnostics-external-review-follow-up.test.ts`, `src/supervisor/supervisor-selection-status.ts`, `src/supervisor/supervisor-status-model-supervisor.test.ts`, `src/supervisor/supervisor-status-model.ts`, `src/supervisor/supervisor-status-rendering.test.ts`, `src/supervisor/supervisor-status-rendering.ts`, `src/supervisor/supervisor.ts`
-- Rollback concern: dropping the digest-backed status summary would put external-review learning debt back behind artifact inspection, defeating the operator-facing status requirement for this issue.
-- Last focused command: `npx tsx --test src/external-review/external-review-miss-persistence.test.ts src/supervisor/supervisor-diagnostics-external-review-follow-up.test.ts src/supervisor/supervisor-status-rendering.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts`
+- Next exact step: monitor PR #520 for any new review or CI follow-up after the resolved-thread push.
+- Verification gap: none locally after rerunning the focused explain/follow-up suites and `npm run build`.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-diagnostics-explain.test.ts`, `src/supervisor/supervisor-selection-status.ts`
+- Rollback concern: if `explain` stops reusing the shared follow-up summary, operators get divergent miss-to-prevention stories between `status` and `explain`, which is the regression this issue closes.
+- Last focused command: `npm run build`
 ### Scratchpad (workspace-local date in Asia/Tokyo unless noted)
+- 2026-03-18 (JST): Pushed review-fix commit `a90c2db` to `origin/codex/issue-513` and resolved CodeRabbit threads `PRRT_kwDORgvdZ851Bh3U` and `PRRT_kwDORgvdZ851Bh3e` with `gh api graphql`.
+- 2026-03-18 (JST): Review repair: `buildExplainExternalReviewFollowUpSummary()` no longer depends on `loadActiveIssueStatusSnapshot()` or `getChecks`/`getUnresolvedReviewThreads`; the explain regression now omits those stubs, and focused explain/follow-up tests plus `npm run build` passed.
 - 2026-03-18 (JST): Focused reproducer first failed in `src/external-review/external-review-miss-artifact.test.ts` because missed findings in the artifact had `preventionTarget: undefined`; failure signature: `missing-prevention-target`.
 - 2026-03-18 (JST): Deterministic target precedence is `issue_comment -> issue_template`, `top_level_review -> review_prompt`, severe anchored `review_thread` misses -> `durable_guardrail`, regression-qualified `review_thread` misses -> `regression_test`, otherwise `review_prompt`.
 - 2026-03-18 (JST): `npm run build` initially failed with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain and the rerun passed.
@@ -64,3 +56,7 @@ Next action: Monitor draft PR #519 and address any CI or review feedback that ar
 - 2026-03-18 (JST): Pushed `codex/issue-512` and opened draft PR #519 (`https://github.com/TommyKammy/codex-supervisor/pull/519`).
 - 2026-03-18 (JST): Review repair: `buildExternalReviewFollowUpStatusLine()` now requires the live head SHA plus digest SHAs to match `external_review_head_sha` before surfacing follow-up debt, the stale-head reproducer now uses mismatched digest/live SHAs and asserts on the emitted token, and the issue journal paths were rewritten to repo-relative form.
 - 2026-03-18 (JST): Verified review repairs with `npx tsx --test src/external-review/external-review-miss-persistence.test.ts src/supervisor/supervisor-diagnostics-external-review-follow-up.test.ts src/supervisor/supervisor-status-rendering.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts` and `npm run build`.
+- 2026-03-18 (JST): Added `src/supervisor/supervisor-diagnostics-explain.test.ts` coverage for a current-head actionable follow-up digest; the first focused run failed because `explain` returned only selection fields and omitted `external_review_follow_up`, yielding failure signature `missing-explain-follow-up-summary`.
+- 2026-03-18 (JST): `buildIssueExplainSummary()` now reuses `loadActiveIssueStatusSnapshot()` to append the same digest-backed `external_review_follow_up unresolved=... actions=...` line that `status` emits when the GitHub client can resolve active review state.
+- 2026-03-18 (JST): `npm run build` first failed with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain, the rerun passed, and the focused explain/follow-up suites stayed green after the typing fix.
+- 2026-03-18 (JST): Pushed `codex/issue-513` to `origin`, opened draft PR #520 (`https://github.com/TommyKammy/codex-supervisor/pull/520`), and confirmed the initial PR state is `UNSTABLE` only because the CI build jobs are still running.
