@@ -110,6 +110,13 @@ export interface ReplayCorpusRunResult {
   results: ReplayCorpusCaseResult[];
 }
 
+export interface PromoteCapturedReplaySnapshotArgs {
+  corpusRoot: string;
+  snapshotPath: string;
+  caseId: string;
+  config: SupervisorConfig;
+}
+
 function validationError(message: string): Error {
   return new Error(`Invalid replay corpus: ${message}`);
 }
@@ -125,6 +132,11 @@ async function readRequiredJson<T>(filePath: string): Promise<T> {
 
     throw error;
   }
+}
+
+async function writeJson(filePath: string, value: unknown): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
 function expectObject(value: unknown, context: string): Record<string, unknown> {
@@ -678,6 +690,79 @@ async function loadReplayCorpusCase(rootPath: string, entry: ReplayCorpusManifes
     input: { snapshot },
     expected,
   };
+}
+
+async function loadReplayCorpusManifestOrDefault(rootPath: string): Promise<ReplayCorpusManifest> {
+  const manifestPath = path.join(rootPath, REPLAY_CORPUS_MANIFEST);
+  try {
+    return validateManifest(await readRequiredJson(manifestPath), manifestPath);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("Missing required replay corpus file")) {
+      return { schemaVersion: 1, cases: [] };
+    }
+
+    throw error;
+  }
+}
+
+function normalizePromotedInputSnapshot(snapshot: ReplayCorpusInputSnapshot): ReplayCorpusInputSnapshot {
+  return {
+    ...snapshot,
+    local: {
+      ...snapshot.local,
+      record: {
+        ...snapshot.local.record,
+        workspace: ".",
+        journal_path: snapshot.local.record.journal_path === null ? null : ".codex-supervisor/issue-journal.md",
+      },
+      workspaceStatus: {
+        ...snapshot.local.workspaceStatus,
+        hasUncommittedChanges: false,
+      },
+    },
+  };
+}
+
+function buildPromotedCaseMetadata(snapshot: ReplayCorpusInputSnapshot, caseId: string): ReplayCorpusCaseMetadata {
+  return {
+    schemaVersion: 1,
+    id: caseId,
+    issueNumber: snapshot.issue.number,
+    title: snapshot.issue.title,
+    capturedAt: snapshot.capturedAt,
+  };
+}
+
+export async function promoteCapturedReplaySnapshot(args: PromoteCapturedReplaySnapshotArgs): Promise<ReplayCorpusCaseBundle> {
+  const manifest = await loadReplayCorpusManifestOrDefault(args.corpusRoot);
+  const caseId = expectCaseId(args.caseId, "Replay corpus promotion caseId");
+  if (manifest.cases.some((entry) => entry.id === caseId)) {
+    throw validationError(`Replay corpus manifest already contains case "${caseId}"`);
+  }
+
+  const normalizedSnapshot = normalizePromotedInputSnapshot(
+    validateInputSnapshot(await loadSupervisorCycleDecisionSnapshot(args.snapshotPath), caseId),
+  );
+  const metadata = buildPromotedCaseMetadata(normalizedSnapshot, caseId);
+  const expected = normalizeReplayResult(replaySupervisorCycleDecisionSnapshot(normalizedSnapshot, args.config));
+  const nextManifest: ReplayCorpusManifest = {
+    schemaVersion: 1,
+    cases: [...manifest.cases, { id: caseId, path: `cases/${caseId}` }],
+  };
+  const bundlePath = path.join(args.corpusRoot, "cases", caseId);
+
+  await writeJson(path.join(bundlePath, CASE_METADATA), metadata);
+  await writeJson(path.join(bundlePath, CASE_INPUT_SNAPSHOT), normalizedSnapshot);
+  await writeJson(path.join(bundlePath, CASE_EXPECTED_REPLAY_RESULT), expected);
+  await writeJson(path.join(args.corpusRoot, REPLAY_CORPUS_MANIFEST), nextManifest);
+
+  const corpus = await loadReplayCorpus(args.corpusRoot);
+  const promotedCase = corpus.cases.find((entry) => entry.id === caseId);
+  if (!promotedCase) {
+    throw validationError(`Replay corpus promotion did not produce case "${caseId}"`);
+  }
+
+  return promotedCase;
 }
 
 export async function loadReplayCorpus(rootPath: string): Promise<ReplayCorpus> {
