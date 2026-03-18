@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-03-18T00:11:00Z",
+  "issue": {
+    "number": 536,
+    "title": "A stale tracked head forces another stabilization pass before merge",
+    "url": "https://example.test/issues/536",
+    "state": "OPEN",
+    "updatedAt": "2026-03-18T00:10:00Z"
+  },
+  "local": {
+    "record": {
+      "issue_number": 536,
+      "state": "pr_open",
+      "branch": "codex/issue-536",
+      "pr_number": 135,
+      "workspace": ".",
+      "journal_path": ".codex-supervisor/issue-journal.md",
+      "attempt_count": 2,
+      "implementation_attempt_count": 2,
+      "repair_attempt_count": 0,
+      "blocked_reason": null,
+      "last_error": null,
+      "last_failure_signature": null,
+      "last_head_sha": "head-old",
+      "review_wait_started_at": null,
+      "review_wait_head_sha": null,
+      "copilot_review_requested_observed_at": null,
+      "copilot_review_requested_head_sha": null,
+      "copilot_review_timed_out_at": null,
+      "copilot_review_timeout_action": null,
+      "copilot_review_timeout_reason": null,
+      "local_review_head_sha": null,
+      "local_review_blocker_summary": null,
+      "local_review_summary_path": null,
+      "local_review_run_at": null,
+      "local_review_max_severity": null,
+      "local_review_findings_count": 0,
+      "local_review_root_cause_count": 0,
+      "local_review_verified_max_severity": null,
+      "local_review_verified_findings_count": 0,
+      "local_review_recommendation": null,
+      "local_review_degraded": false,
+      "last_local_review_signature": null,
+      "repeated_local_review_signature_count": 0,
+      "processed_review_thread_ids": [],
+      "processed_review_thread_fingerprints": [],
+      "updated_at": "2026-03-18T00:11:00Z"
+    },
+    "workspaceStatus": {
+      "branch": "codex/issue-536",
+      "headSha": "head-current",
+      "hasUncommittedChanges": false,
+      "baseAhead": 1,
+      "baseBehind": 0,
+      "remoteBranchExists": true,
+      "remoteAhead": 0,
+      "remoteBehind": 0
+    }
+  },
+  "github": {
+    "pullRequest": {
+      "number": 135,
+      "title": "Prevent stale head merge",
+      "url": "https://example.test/pr/135",
+      "state": "OPEN",
+      "createdAt": "2026-03-11T00:00:00Z",
+      "isDraft": false,
+      "reviewDecision": "APPROVED",
+      "mergeStateStatus": "CLEAN",
+      "mergeable": "MERGEABLE",
+      "headRefName": "codex/issue-536",
+      "headRefOid": "head-current",
+      "copilotReviewState": "arrived",
+      "copilotReviewRequestedAt": "2026-03-18T00:01:00Z",
+      "copilotReviewArrivedAt": "2026-03-18T00:02:00Z",
+      "mergedAt": null
+    },
+    "checks": [
+      {
+        "name": "build",
+        "state": "SUCCESS",
+        "bucket": "pass",
+        "workflow": "CI"
+      }
+    ],
+    "reviewThreads": []
+  },
+  "decision": {
+    "nextState": "stabilizing",
+    "shouldRunCodex": true,
+    "blockedReason": null,
+    "failureContext": null
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "id": "stale-head-prevents-merge",
+  "issueNumber": 536,
+  "title": "A stale tracked head forces another stabilization pass before merge",
+  "capturedAt": "2026-03-18T00:11:00Z"
+}

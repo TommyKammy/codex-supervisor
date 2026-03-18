@@ -4,6 +4,14 @@
     {
       "id": "review-blocked",
       "path": "cases/review-blocked"
+    },
+    {
+      "id": "required-check-pending",
+      "path": "cases/required-check-pending"
+    },
+    {
+      "id": "stale-head-prevents-merge",
+      "path": "cases/stale-head-prevents-merge"
     }
   ]
 }
