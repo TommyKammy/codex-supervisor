@@ -1,0 +1,6 @@
+{
+  "nextState": "blocked",
+  "shouldRunCodex": false,
+  "blockedReason": "manual_review",
+  "failureSignature": "stalled-bot:thread-1"
+}
