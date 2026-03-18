@@ -1,38 +1,46 @@
-# Issue #595: Replay-corpus refactor: extract validation and case-loading helpers
+# Issue #596: Replay-corpus refactor: extract promotion helpers
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/595
-- Branch: codex/issue-595
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/596
+- Branch: codex/issue-596
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: b98b5b8298b6b01cf1d94a707706c352d8b23228
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 687355fa2e9658f02243d1fbfa8a00b997e095b2
 - Blocked reason: none
 - Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-18T23:06:28.962Z
+- Repeated failure signature count: 1
+- Updated at: 2026-03-18T23:45:06.000Z
 
 ## Latest Codex Summary
-- Extracted replay-corpus validation and canonical case-loading helpers into dedicated modules, added focused helper coverage, verified the replay-corpus slice plus `npm run build`, and pushed commit `8cefee2` to draft PR #599.
+Validated CodeRabbit thread `PRRT_kwDORgvdZ851UWEj` against the current branch and confirmed the provider-wait hint could be emitted when `configuredBotCurrentHeadObservedAt` was omitted entirely. Fixed [`replay-corpus-promotion-summary.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-596/src/supervisor/replay-corpus-promotion-summary.ts) to require a non-nullish observation timestamp before it counts as a provider-wait signal, unless `copilotReviewState` is explicitly present, and added a focused regression in [`replay-corpus-promotion.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-596/src/supervisor/replay-corpus-promotion.test.ts) for the missing-field case.
+
+The first new test assertion failed because the shared fixture still carried `timeout_retry_count=1`; I tightened the fixture overrides so the regression isolates only the provider-wait branch. The existing prebuild/build pipeline and the focused promotion suite passed locally. I committed the fix as `687355f`, pushed `codex/issue-596`, and resolved the CodeRabbit thread on PR #606. The only remaining worktree noise is the pre-existing untracked `.codex-supervisor/replay/` directory, which I left untouched.
+
+Summary: Fixed the provider-wait promotion hint false positive, added a focused regression, pushed `687355f`, and resolved the CodeRabbit thread on PR #606
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/replay-corpus-promotion.test.ts` (failed once due to fixture retry defaults, then passed after isolating the provider-wait branch); `npm run build`
+Failure signature: none
+Next action: Watch PR #606 for any follow-up review feedback or CI regressions after commit `687355f`
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the replay-corpus refactor is complete for the validation and canonical loading slice; remaining risk is limited to review feedback because the focused helper tests and existing replay-corpus regression suite stayed green after extraction.
-- What changed: added `src/supervisor/replay-corpus-model.ts`, `src/supervisor/replay-corpus-validation.ts`, and `src/supervisor/replay-corpus-loading.ts`; moved manifest/metadata/expected-result/snapshot validation plus canonical case-bundle loading into those modules; slimmed `src/supervisor/replay-corpus.ts` down to imports; and added focused helper coverage in `src/supervisor/replay-corpus-loading.test.ts`.
+- Hypothesis: the only remaining risk in this PR slice was the provider-wait hint overcounting missing configured-bot observations; the local fix should fully cover that path because the helper now treats `configuredBotCurrentHeadObservedAt` as present only when it is non-nullish, and the focused regression exercises the previously false-positive combination.
+- What changed: updated `src/supervisor/replay-corpus-promotion-summary.ts` so the provider-wait hint only considers `configuredBotCurrentHeadObservedAt` when it is neither `null` nor `undefined`, and added a focused missing-observation regression to `src/supervisor/replay-corpus-promotion.test.ts` while preserving the earlier extracted promotion-helper split.
 - Current blocker: none
-- Next exact step: watch draft PR #599 CI and address any review feedback on commit `8cefee2`.
-- Verification gap: none; `npx tsx --test src/supervisor/replay-corpus-loading.test.ts src/supervisor/replay-corpus.test.ts` and `npm run build` passed after `npm install`.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/replay-corpus-loading.test.ts`, `src/supervisor/replay-corpus-loading.ts`, `src/supervisor/replay-corpus-model.ts`, `src/supervisor/replay-corpus-validation.ts`, `src/supervisor/replay-corpus.ts`
-- Rollback concern: reverting only part of the split would likely restore duplicate validation/loading logic and re-entangle `replay-corpus.ts`, making later replay-corpus refactors riskier.
-- Last focused command: `npx tsx --test src/supervisor/replay-corpus-loading.test.ts src/supervisor/replay-corpus.test.ts`; `npm install`; `npm run build`; `git push origin codex/issue-595`; `gh pr create --draft --base main --head codex/issue-595 --title "Refactor replay corpus validation and loading helpers" ...`
+- Next exact step: watch PR #606 for any new review comments or CI noise after the `687355f` push.
+- Verification gap: none for the review fix; `npm run build` passed, and `npx tsx --test src/supervisor/replay-corpus-promotion.test.ts` passed after one initial regression-authoring failure caused by fixture retry defaults.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/replay-corpus-promotion-summary.ts`, `src/supervisor/replay-corpus-promotion.test.ts`
+- Rollback concern: reverting this narrow fix would reintroduce a false-positive promotion hint path for snapshots that omit `configuredBotCurrentHeadObservedAt`, which would make replay corpus promotions noisier without reflecting real supervisor state.
+- Last focused command: `npx tsx --test src/supervisor/replay-corpus-promotion.test.ts`; `npm run build`; `git push origin codex/issue-596`; `gh api graphql -f query='mutation($threadId:ID!){ resolveReviewThread(input:{threadId:$threadId}) { thread { isResolved } } }' -F threadId=PRRT_kwDORgvdZ851UWEj`
 ### Scratchpad
-- 2026-03-19 (JST): Pushed `codex/issue-595` and opened draft PR #599 (`https://github.com/TommyKammy/codex-supervisor/pull/599`) after the replay-corpus refactor and focused verification passed locally.
-- 2026-03-19 (JST): Reproduced issue #595 with a focused new `src/supervisor/replay-corpus-loading.test.ts` import failure because dedicated replay-corpus loading/validation modules did not exist. Fixed it by extracting shared replay-corpus types/constants into `replay-corpus-model.ts`, moving validation into `replay-corpus-validation.ts`, moving canonical manifest/case loading into `replay-corpus-loading.ts`, and updating `replay-corpus.ts` to consume those helpers. Verification passed with `npx tsx --test src/supervisor/replay-corpus-loading.test.ts src/supervisor/replay-corpus.test.ts` and `npm run build` after `npm install`.
-- 2026-03-19 (JST): Reproduced issue #573 with a focused `issue-lint` regression: an authored issue containing `Part of: #104`, duplicate/self `Depends on`, `Execution order: 3 of 2`, and `Parallelizable: Later` still reported `execution_ready=yes` and no metadata problems. Fixed it by adding local metadata validation and a `metadata_errors=` summary line, then verified with `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts` and `npm run build` after restoring local deps via `npm install`.
+- 2026-03-19 (JST): Pushed review-fix commit `687355f` to `origin/codex/issue-596` and resolved CodeRabbit thread `PRRT_kwDORgvdZ851UWEj` via `gh api graphql` after the focused promotion test file and `npm run build` passed locally.
+- 2026-03-19 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851UWEj` by changing the provider-wait promotion hint guard to use a non-nullish check for `configuredBotCurrentHeadObservedAt` and adding a focused regression for the missing-field case. The first new assertion failed because the shared snapshot fixture still emitted `retry-escalation` via `timeout_retry_count=1`; after zeroing the retry counters in the test setup, `npx tsx --test src/supervisor/replay-corpus-promotion.test.ts` passed and `npm run build` remained green.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
 - 2026-03-19 (JST): Reproduced issue #559 with a focused `replay-corpus-promote` regression that expected advisory hints for `stale-head-prevents-merge` but only saw the existing explicit-case-id guidance and suggestions. Fixed it by adding deterministic `deriveReplayCorpusPromotionWorthinessHints(...)` coverage for stale-head safety, provider waits, and retry escalation, then surfacing those hints in both CLI suggestion mode and successful promotion summaries. Focused verification passed with `npx tsx --test src/index.test.ts --test-name-pattern "replay-corpus-promote"`, `npx tsx --test src/supervisor/replay-corpus.test.ts --test-name-pattern "PromotionWorthinessHints|promoteCapturedReplaySnapshot|checked-in safety case bundles|runReplayCorpus replays the checked-in PR lifecycle safety cases without mismatches"`, and `npm run build` after restoring local dev dependencies via `npm install`.
