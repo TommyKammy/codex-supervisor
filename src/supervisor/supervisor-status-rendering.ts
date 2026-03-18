@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { runCommand } from "../core/command";
 import {
@@ -7,6 +8,10 @@ import {
   VERIFIER_GUARDRAILS_PATH,
 } from "../committed-guardrails";
 import { loadRelevantExternalReviewMissPatterns } from "../external-review/external-review-misses";
+import {
+  externalReviewMissFollowUpDigestPath,
+  parseExternalReviewMissFollowUpDigest,
+} from "../external-review/external-review-miss-digest";
 import { reviewDir } from "../local-review/artifacts";
 import {
   configuredBotReviewThreads,
@@ -193,6 +198,54 @@ export async function buildDurableGuardrailStatusLine(args: {
   return `durable_guardrails verifier=${verifierSummary} external_review=${externalReviewSources.length > 0 ? externalReviewSources.join("|") : "none"}`;
 }
 
+export async function buildExternalReviewFollowUpStatusLine(args: {
+  activeRecord: Pick<IssueRunRecord, "external_review_misses_path" | "external_review_head_sha" | "last_head_sha">;
+  currentHeadSha: string | null;
+}): Promise<string | null> {
+  const missesPath = args.activeRecord.external_review_misses_path;
+  if (!missesPath) {
+    return null;
+  }
+
+  const currentHeadSha = args.currentHeadSha ?? args.activeRecord.last_head_sha;
+  if (!currentHeadSha || args.activeRecord.external_review_head_sha !== currentHeadSha) {
+    return null;
+  }
+
+  let digest: string;
+  try {
+    digest = await fs.readFile(externalReviewMissFollowUpDigestPath(missesPath), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+
+  const summary = parseExternalReviewMissFollowUpDigest(digest);
+  if (
+    !summary ||
+    summary.headStatus !== "current-head" ||
+    summary.missAnalysisHeadSha !== currentHeadSha ||
+    summary.activePrHeadSha !== currentHeadSha ||
+    summary.missedFindings <= 0
+  ) {
+    return null;
+  }
+
+  const actions = [
+    ["durable_guardrail", "durable_guardrail"],
+    ["regression_test", "regression_test"],
+    ["review_prompt", "review_prompt"],
+    ["issue_template", "issue_template"],
+  ].flatMap(([target, label]) => {
+    const count = summary.actionCounts[target as keyof typeof summary.actionCounts];
+    return count && count > 0 ? [`${label}:${count}`] : [];
+  });
+
+  return `external_review_follow_up unresolved=${summary.missedFindings} actions=${actions.length > 0 ? actions.join("|") : "none"}`;
+}
+
 export function formatDetailedStatus(args: {
   config: SupervisorConfig;
   activeRecord: IssueRunRecord | null;
@@ -206,6 +259,7 @@ export function formatDetailedStatus(args: {
   changeClassesSummary?: string | null;
   verificationPolicySummary?: string | null;
   durableGuardrailSummary?: string | null;
+  externalReviewFollowUpSummary?: string | null;
 }): string {
   const lines = buildDetailedStatusModel({
     config: args.config,
@@ -230,6 +284,7 @@ export function formatDetailedStatus(args: {
     changeClassesSummary: args.changeClassesSummary,
     verificationPolicySummary: args.verificationPolicySummary,
     durableGuardrailSummary: args.durableGuardrailSummary,
+    externalReviewFollowUpSummary: args.externalReviewFollowUpSummary,
   });
   return [...lines, ...summaryLines].join("\n");
 }

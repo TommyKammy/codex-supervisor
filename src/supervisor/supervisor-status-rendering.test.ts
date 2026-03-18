@@ -186,6 +186,7 @@ test("formatDetailedStatus renders core lines before appended summaries", () => 
     verificationPolicySummary: "verification_policy intensity=standard driver=changed_files:backend|docs|tests",
     durableGuardrailSummary:
       "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=runtime:owner-repo/issue-58/external-review-misses-head-deadbeef.json#2",
+    externalReviewFollowUpSummary: "external_review_follow_up unresolved=2 actions=durable_guardrail:1|regression_test:1",
   });
 
   assert.equal(
@@ -217,6 +218,7 @@ test("formatDetailedStatus renders core lines before appended summaries", () => 
       "change_classes=backend, docs, tests",
       "verification_policy intensity=standard driver=changed_files:backend|docs|tests",
       "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=runtime:owner-repo/issue-58/external-review-misses-head-deadbeef.json#2",
+      "external_review_follow_up unresolved=2 actions=durable_guardrail:1|regression_test:1",
       "latest_recovery issue=#57 at=2026-03-13T00:20:00Z reason=merged_pr_convergence: tracked PR #157 merged; marked issue #57 done",
       "local_review_summary_path=owner-repo/issue-58/local-review-summary.md",
       "external_review_misses_path=owner-repo/issue-58/external-review-misses-head-deadbeef.json",

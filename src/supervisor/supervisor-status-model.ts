@@ -48,6 +48,7 @@ export interface BuildDetailedStatusSummaryLinesArgs {
   changeClassesSummary?: string | null;
   verificationPolicySummary?: string | null;
   durableGuardrailSummary?: string | null;
+  externalReviewFollowUpSummary?: string | null;
 }
 
 export function buildDetailedStatusModel(args: BuildDetailedStatusModelArgs): string[] {
@@ -69,6 +70,7 @@ export function buildDetailedStatusSummaryLines(args: BuildDetailedStatusSummary
     changeClassesSummary = null,
     verificationPolicySummary = null,
     durableGuardrailSummary = null,
+    externalReviewFollowUpSummary = null,
   } = args;
   const lines: string[] = [];
 
@@ -86,6 +88,10 @@ export function buildDetailedStatusSummaryLines(args: BuildDetailedStatusSummary
 
   if (durableGuardrailSummary) {
     lines.push(truncate(sanitizeStatusValue(durableGuardrailSummary), 300) ?? "");
+  }
+
+  if (externalReviewFollowUpSummary) {
+    lines.push(truncate(sanitizeStatusValue(externalReviewFollowUpSummary), 200) ?? "");
   }
 
   if (activeRecord && latestRecoveryRecord?.last_recovery_reason && latestRecoveryRecord.last_recovery_at) {
