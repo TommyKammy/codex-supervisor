@@ -407,6 +407,18 @@ test("replay-corpus-promote promotes a captured snapshot through the dedicated C
 
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Promoted replay corpus case "issue-534-reproducing" for issue #534\./);
+  assert.match(
+    result.stdout,
+    new RegExp(`Case path: ${escapeRegExp(path.join(corpusPath, "cases", "issue-534-reproducing"))}`),
+  );
+  assert.match(
+    result.stdout,
+    /Expected outcome: nextState=reproducing, shouldRunCodex=true, blockedReason=none, failureSignature=none/,
+  );
+  assert.match(
+    result.stdout,
+    /Normalization: workspace=>\., journal_path=>\.codex-supervisor\/issue-journal\.md, local_review_summary_path=>none, hasUncommittedChanges=>false/,
+  );
 
   const promotedCase = JSON.parse(
     await fs.readFile(path.join(corpusPath, "cases", "issue-534-reproducing", "case.json"), "utf8"),
