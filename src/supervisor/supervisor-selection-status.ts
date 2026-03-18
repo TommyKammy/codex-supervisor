@@ -35,7 +35,8 @@ import {
 
 type ReadinessSummaryGitHub = Pick<GitHubClient, "listCandidateIssues">;
 type SelectionWhyGitHub = Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">;
-type ExplainIssueGitHub = Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues">;
+type ExplainIssueGitHub = Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
+  Partial<ActiveStatusGitHub>;
 type ActiveStatusGitHub = Pick<
   GitHubClient,
   "resolvePullRequestForBranch" | "getChecks" | "getUnresolvedReviewThreads"
@@ -65,6 +66,34 @@ async function buildExplainChangeRiskSummary(args: {
   }
 
   return lines;
+}
+
+async function buildExplainExternalReviewFollowUpSummary(args: {
+  github: ExplainIssueGitHub;
+  config: SupervisorConfig;
+  record: IssueRunRecord | undefined;
+}): Promise<string | null> {
+  if (
+    !args.record ||
+    !args.github.resolvePullRequestForBranch ||
+    !args.github.getChecks ||
+    !args.github.getUnresolvedReviewThreads
+  ) {
+    return null;
+  }
+
+  const activeStatus = await loadActiveIssueStatusSnapshot({
+    github: {
+      getIssue: args.github.getIssue,
+      resolvePullRequestForBranch: args.github.resolvePullRequestForBranch,
+      getChecks: args.github.getChecks,
+      getUnresolvedReviewThreads: args.github.getUnresolvedReviewThreads,
+    },
+    config: args.config,
+    activeRecord: args.record,
+  });
+
+  return activeStatus.externalReviewFollowUpSummary;
 }
 
 export interface SupervisorStatusRecords {
@@ -357,6 +386,11 @@ export async function buildIssueExplainSummary(
     issue,
     record,
   });
+  const externalReviewFollowUpSummary = await buildExplainExternalReviewFollowUpSummary({
+    github,
+    config,
+    record,
+  });
 
   if (matchingSkipPrefix) {
     reasons.push(`skip_title_prefix ${matchingSkipPrefix}`);
@@ -392,6 +426,7 @@ export async function buildIssueExplainSummary(
     `blocked_reason=${record?.blocked_reason ?? "none"}`,
     `runnable=${runnable ? "yes" : "no"}`,
     ...changeRiskLines,
+    ...(externalReviewFollowUpSummary ? [externalReviewFollowUpSummary] : []),
   ];
 
   if (runnable) {
