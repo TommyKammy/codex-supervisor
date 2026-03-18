@@ -7,6 +7,7 @@ import { GitHubIssue, GitHubPullRequest, IssueRunRecord, ReviewThread, Superviso
 import { buildSupervisorCycleDecisionSnapshot } from "./supervisor-cycle-snapshot";
 import {
   createCheckedInReplayCorpusConfig,
+  deriveReplayCorpusPromotionWorthinessHints,
   formatReplayCorpusMismatchDetailsArtifact,
   loadReplayCorpus,
   formatReplayCorpusMismatchSummaryLine,
@@ -474,6 +475,34 @@ test("loadReplayCorpus loads the checked-in safety case bundles", async () => {
         failureSignature: "changes-requested:head-539",
       },
     ],
+  );
+});
+
+test("deriveReplayCorpusPromotionWorthinessHints stays conservative for checked-in replay snapshots", async () => {
+  const corpus = await loadReplayCorpus(path.join(process.cwd(), "replay-corpus"));
+  const cases = new Map(corpus.cases.map((bundle) => [bundle.id, bundle]));
+
+  assert.deepEqual(
+    deriveReplayCorpusPromotionWorthinessHints(cases.get("stale-head-prevents-merge")!.input.snapshot).map(
+      (hint) => hint.id,
+    ),
+    ["stale-head-safety"],
+  );
+  assert.deepEqual(
+    deriveReplayCorpusPromotionWorthinessHints(cases.get("provider-wait-initial-grace")!.input.snapshot).map(
+      (hint) => hint.id,
+    ),
+    ["provider-wait"],
+  );
+  assert.deepEqual(
+    deriveReplayCorpusPromotionWorthinessHints(cases.get("repeated-failure-escalates-to-failed")!.input.snapshot).map(
+      (hint) => hint.id,
+    ),
+    ["retry-escalation"],
+  );
+  assert.deepEqual(
+    deriveReplayCorpusPromotionWorthinessHints(cases.get("required-check-pending")!.input.snapshot),
+    [],
   );
 });
 

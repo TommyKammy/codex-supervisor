@@ -144,6 +144,12 @@ export interface ReplayCorpusPromotionSummary {
   casePath: string;
   expectedOutcome: string;
   normalizationNotes: string[];
+  promotionHints: ReplayCorpusPromotionHint[];
+}
+
+export interface ReplayCorpusPromotionHint {
+  id: "stale-head-safety" | "provider-wait" | "retry-escalation";
+  summary: string;
 }
 
 export interface PromoteCapturedReplaySnapshotArgs {
@@ -978,7 +984,69 @@ export function summarizeReplayCorpusPromotion(
     casePath: promotedCase.bundlePath,
     expectedOutcome: formatReplayCorpusCompactOutcome(promotedCase.expected),
     normalizationNotes,
+    promotionHints: deriveReplayCorpusPromotionWorthinessHints(normalizedSnapshot),
   };
+}
+
+export function deriveReplayCorpusPromotionWorthinessHints(
+  snapshot: ReplayCorpusInputSnapshot,
+): ReplayCorpusPromotionHint[] {
+  const hints: ReplayCorpusPromotionHint[] = [];
+  const pullRequest = snapshot.github.pullRequest;
+  const record = snapshot.local.record;
+  const workspaceStatus = snapshot.local.workspaceStatus;
+
+  if (
+    pullRequest &&
+    snapshot.decision.nextState === "stabilizing" &&
+    snapshot.decision.shouldRunCodex &&
+    typeof record.last_head_sha === "string" &&
+    record.last_head_sha.length > 0 &&
+    pullRequest.headRefOid === workspaceStatus.headSha &&
+    record.last_head_sha !== pullRequest.headRefOid
+  ) {
+    hints.push({
+      id: "stale-head-safety",
+      summary: "tracked head differs from the current PR head",
+    });
+  }
+
+  if (
+    pullRequest &&
+    snapshot.decision.nextState === "waiting_ci" &&
+    snapshot.decision.shouldRunCodex === false &&
+    record.review_wait_started_at === null &&
+    pullRequest.currentHeadCiGreenAt !== undefined &&
+    pullRequest.currentHeadCiGreenAt !== null &&
+    snapshot.github.checks.length > 0 &&
+    snapshot.github.checks.every((check) => check.bucket === "pass") &&
+    (pullRequest.configuredBotCurrentHeadObservedAt !== null ||
+      pullRequest.copilotReviewState !== undefined)
+  ) {
+    hints.push({
+      id: "provider-wait",
+      summary: "checks are green but provider timing still keeps the PR waiting",
+    });
+  }
+
+  const retrySignals: string[] = [];
+  if ((record.timeout_retry_count ?? 0) > 0) {
+    retrySignals.push(`timeout_retry_count=${record.timeout_retry_count}`);
+  }
+  if ((record.blocked_verification_retry_count ?? 0) > 0) {
+    retrySignals.push(`blocked_verification_retry_count=${record.blocked_verification_retry_count}`);
+  }
+  if ((record.repeated_failure_signature_count ?? 0) > 0) {
+    retrySignals.push(`repeated_failure_signature_count=${record.repeated_failure_signature_count}`);
+  }
+  if (retrySignals.length > 0) {
+    hints.push({
+      id: "retry-escalation",
+      summary: `retry pressure is already visible via ${retrySignals.join(", ")}`,
+    });
+  }
+
+  return hints;
 }
 
 function replayCorpusMismatchDetailsArtifactPath(config: SupervisorConfig): string {

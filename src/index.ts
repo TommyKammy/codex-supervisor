@@ -10,6 +10,7 @@ import {
 } from "./supervisor/supervisor-cycle-replay";
 import {
   createCheckedInReplayCorpusConfig,
+  deriveReplayCorpusPromotionWorthinessHints,
   summarizeReplayCorpusPromotion,
   formatReplayCorpusRunSummary,
   promoteCapturedReplaySnapshot,
@@ -206,6 +207,13 @@ async function main(): Promise<void> {
           console.error(`- ${suggestion}`);
         }
       }
+      const promotionHints = deriveReplayCorpusPromotionWorthinessHints(snapshot);
+      if (promotionHints.length > 0) {
+        console.error("Promotion hints:");
+        for (const hint of promotionHints) {
+          console.error(`- ${hint.id}: ${hint.summary}`);
+        }
+      }
       process.exitCode = 1;
       return;
     }
@@ -222,6 +230,12 @@ async function main(): Promise<void> {
     console.log(`Expected outcome: ${summary.expectedOutcome}`);
     if (summary.normalizationNotes.length > 0) {
       console.log(`Normalization: ${summary.normalizationNotes.join(", ")}`);
+    }
+    if (summary.promotionHints.length > 0) {
+      console.log("Promotion hints:");
+      for (const hint of summary.promotionHints) {
+        console.log(`- ${hint.id}: ${hint.summary}`);
+      }
     }
     return;
   }
