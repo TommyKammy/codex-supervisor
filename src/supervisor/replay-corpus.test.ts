@@ -14,6 +14,7 @@ import {
   formatReplayCorpusRunSummary,
   promoteCapturedReplaySnapshot,
   runReplayCorpus,
+  suggestReplayCorpusCaseIds,
   syncReplayCorpusMismatchDetailsArtifact,
 } from "./replay-corpus";
 
@@ -686,6 +687,30 @@ test("promoteCapturedReplaySnapshot writes a normalized canonical bundle that re
 
   const runResult = await runReplayCorpus(corpusRoot, createConfig());
   assert.equal(runResult.mismatchCount, 0);
+});
+
+test("suggestReplayCorpusCaseIds returns deterministic normalized candidates", () => {
+  const snapshot = createSnapshot({
+    issue: createIssue({
+      number: 557,
+      title: "Replay corpus promotion: suggest normalized case ids during promotion",
+    }),
+    record: createRecord({
+      issue_number: 557,
+      state: "planning",
+    }),
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+  });
+  snapshot.decision.nextState = "reproducing";
+
+  const suggestions = suggestReplayCorpusCaseIds(snapshot);
+
+  assert.deepEqual(suggestions, [
+    "issue-557-reproducing",
+    "issue-557-replay-corpus-promotion-suggest-normalized-case",
+  ]);
 });
 
 test("promoteCapturedReplaySnapshot rejects an invalid existing corpus before writing a new case", async () => {
