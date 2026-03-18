@@ -338,6 +338,44 @@ test("loadReplayCorpus rejects input snapshots that omit required fields", async
   );
 });
 
+test("loadReplayCorpus rejects input snapshots that omit replay-required objects", async () => {
+  const corpusRoot = await fs.mkdtemp(path.join(os.tmpdir(), "replay-corpus-invalid-snapshot-"));
+  const snapshot = createSnapshot();
+  const { decision: _decision, ...snapshotWithoutDecision } = snapshot;
+
+  await writeJson(path.join(corpusRoot, "manifest.json"), {
+    schemaVersion: 1,
+    cases: [
+      {
+        id: "review-blocked",
+        path: "cases/review-blocked",
+      },
+    ],
+  });
+  await writeJson(path.join(corpusRoot, "cases", "review-blocked", "case.json"), {
+    schemaVersion: 1,
+    id: "review-blocked",
+    issueNumber: snapshot.issue.number,
+    title: snapshot.issue.title,
+    capturedAt: snapshot.capturedAt,
+  });
+  await writeJson(
+    path.join(corpusRoot, "cases", "review-blocked", "input", "snapshot.json"),
+    snapshotWithoutDecision,
+  );
+  await writeJson(path.join(corpusRoot, "cases", "review-blocked", "expected", "replay-result.json"), {
+    nextState: "blocked",
+    shouldRunCodex: false,
+    blockedReason: "manual_review",
+    failureSignature: "stalled-bot:thread-1",
+  });
+
+  await assert.rejects(
+    () => loadReplayCorpus(corpusRoot),
+    /Replay corpus case "review-blocked" input snapshot decision must be an object/,
+  );
+});
+
 test("loadReplayCorpus loads the checked-in example bundle", async () => {
   const corpus = await loadReplayCorpus(path.join(process.cwd(), "replay-corpus"));
 
