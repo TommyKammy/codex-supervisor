@@ -14,12 +14,22 @@ function safeSlug(input: string): string {
   return input.replace(/[^a-zA-Z0-9._-]+/g, "-");
 }
 
-async function runCodexReviewTurn(args: {
+export interface LocalReviewTurnRequest {
   config: SupervisorConfig;
   workspacePath: string;
+  role: string;
   outputFileName: string;
   prompt: string;
-}): Promise<{ exitCode: number; rawOutput: string }> {
+}
+
+export interface LocalReviewTurnResult {
+  exitCode: number;
+  rawOutput: string;
+}
+
+export type LocalReviewTurnExecutor = (args: LocalReviewTurnRequest) => Promise<LocalReviewTurnResult>;
+
+export async function runCodexReviewTurn(args: LocalReviewTurnRequest): Promise<LocalReviewTurnResult> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-review-"));
   const messageFile = path.join(tempDir, args.outputFileName);
   const overrideArgs = buildCodexConfigOverrideArgs(resolveCodexExecutionPolicy(args.config, "local_review"));
@@ -73,6 +83,7 @@ export async function runRoleReview(args: {
   alwaysReadFiles: string[];
   onDemandFiles: string[];
   priorMissPatterns: ExternalReviewMissPattern[];
+  executeTurn?: LocalReviewTurnExecutor;
 }): Promise<LocalReviewRoleResult> {
   const prompt = buildRolePrompt({
     repoSlug: args.config.repoSlug,
@@ -87,9 +98,11 @@ export async function runRoleReview(args: {
     confidenceThreshold: args.config.localReviewConfidenceThreshold,
     priorMissPatterns: args.priorMissPatterns,
   });
-  const result = await runCodexReviewTurn({
+  const executeTurn = args.executeTurn ?? runCodexReviewTurn;
+  const result = await executeTurn({
     config: args.config,
     workspacePath: args.workspacePath,
+    role: args.role,
     outputFileName: `${safeSlug(args.role)}.txt`,
     prompt,
   });
@@ -145,6 +158,7 @@ export async function runVerifierReview(args: {
   const result = await runCodexReviewTurn({
     config: args.config,
     workspacePath: args.workspacePath,
+    role: "verifier",
     outputFileName: "verifier.txt",
     prompt,
   });

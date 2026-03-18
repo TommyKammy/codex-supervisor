@@ -1,37 +1,36 @@
-# Issue #514: Post-merge reconciliation: recover tracked issues left stuck in merging after PR merge
+# Issue #523: Local review abstraction: route reviewer turns through a runner-backed execution contract
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/514
-- Branch: codex/issue-514
-- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-514
-- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-514/.codex-supervisor/issue-journal.md
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/523
+- Branch: codex/issue-523
+- Workspace: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-523
+- Journal: /home/tommy/Dev/codex-supervisor-self-worktrees/issue-523/.codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 50f581c012a2c2f514bb11c24382020bbdc5993f
+- Last head SHA: e8ccfc973166887dfa74db0339ed4e1cc396b526
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-18T01:15:08.754Z
+- Updated at: 2026-03-18T01:58:26.690Z
 
 ## Latest Codex Summary
-- Reproduced the stuck post-merge `merging` case with a focused reconciliation test, fixed the refresh path so later reconciliation re-fetches open issue snapshots for merged tracked PRs before applying the existing merge-time safety gate, and verified the focused reconciliation/lifecycle suites plus `npm run build`.
+- Reviewer turns now execute through an injected local-review turn contract, with the default Codex CLI implementation preserved behind that seam.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: stale open issue snapshots in the preloaded issue list can strand a tracked `merging` record after its PR already merged because reconciliation never refreshes the issue before checking the merge-time close gate.
-- What changed: `reconcileTrackedMergedButOpenIssues()` now re-fetches the live issue only for open `merging` records whose tracked PR is already merged, then reuses the existing `updatedAt <= mergedAt` safety gate and normal close-to-done convergence path; added a focused regression covering the stale-open-snapshot recovery case.
+- Hypothesis: reviewer orchestration is still tightly coupled to direct Codex CLI invocation inside `runRoleReview()`, so reviewer turns cannot be swapped to a runner-backed contract without changing orchestration code.
+- What changed: added `LocalReviewTurnRequest`/`LocalReviewTurnResult` plus `LocalReviewTurnExecutor` in `src/local-review/runner.ts`, updated `runRoleReview()` to route reviewer execution through the injected executor while keeping the default Codex-backed path and footer parsing unchanged, and added a focused regression in `src/local-review/runner.test.ts`.
 - Current blocker: none
-- Next exact step: commit this focused reconciliation fix and, if no PR exists yet, open a draft PR from `codex/issue-514`.
-- Verification gap: none locally after rerunning the focused reconciliation/lifecycle suites and `npm run build`.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`
-- Rollback concern: if the `merging`-only refresh is removed, later cycles can keep trusting stale open issue snapshots and leave merged tracked issues stranded instead of converging them to `done`.
+- Next exact step: commit the reviewer-contract checkpoint on `codex/issue-523` and open or update a draft PR if one is not already present.
+- Verification gap: none locally after rerunning the focused reviewer tests and `npm run build`.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/local-review/runner.ts`, `src/local-review/runner.test.ts`
+- Rollback concern: if `runRoleReview()` is reverted to direct CLI construction, reviewer turns will bypass the injected execution contract and future runner abstractions will need orchestration changes again.
 - Last focused command: `npm run build`
-
 ### Scratchpad (workspace-local date in Asia/Tokyo unless noted)
-- 2026-03-18 (JST): Added `reconcileTrackedMergedButOpenIssues refreshes open issue snapshots for merging records before applying the merge-time gate`; the first focused run failed because `getIssue` was never called for an open preloaded issue, yielding failure signature `stale-merging-issue-snapshot`.
-- 2026-03-18 (JST): Narrow fix: when a tracked PR is already merged and the local record is still `merging`, reconciliation now refreshes the live issue snapshot before applying the existing merge-time close gate, allowing later cycles to close the GitHub issue and mark the record `done`.
-- 2026-03-18 (JST): Verified with `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`, `npx tsx --test src/supervisor/supervisor-execution-cleanup.test.ts`, and `npm run build`.
+- 2026-03-18 (JST): Added `src/local-review/runner.test.ts` to prove `runRoleReview()` should use an injected reviewer-turn executor; the focused repro failed with `spawn /usr/bin/codex ENOENT`, yielding failure signature `local-review-reviewer-bypasses-runner-contract`.
+- 2026-03-18 (JST): Narrow fix: introduced `LocalReviewTurnRequest`, `LocalReviewTurnResult`, and `LocalReviewTurnExecutor`, then routed `runRoleReview()` through `args.executeTurn ?? runCodexReviewTurn` while preserving the existing prompt and footer parsing behavior.
+- 2026-03-18 (JST): Verified with `npx tsx --test src/local-review/runner.test.ts`, `npx tsx --test src/local-review/execution.test.ts`, `npx tsx --test src/local-review/runner.test.ts src/local-review/execution.test.ts`, and `npm run build`.
 - 2026-03-18 (JST): `npm run build` initially failed in this worktree with `sh: 1: tsc: not found`; `npm ci` restored the local toolchain and the rerun passed.
