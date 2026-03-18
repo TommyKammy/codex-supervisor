@@ -200,6 +200,27 @@ export function prependRecoveryLog(message: string, recoveryLog: string | null):
   return recoveryLog ? `${recoveryLog}; ${message}` : message;
 }
 
+function buildTrackedPrResumeRecoveryEvent(
+  record: Pick<IssueRunRecord, "issue_number" | "state" | "last_head_sha">,
+  pr: Pick<import("./core/types").GitHubPullRequest, "number" | "headRefOid">,
+  nextState: IssueRunRecord["state"],
+): RecoveryEvent {
+  const previousHead = record.last_head_sha ?? "unknown";
+  const nextHead = pr.headRefOid;
+
+  if (record.last_head_sha !== null && record.last_head_sha !== pr.headRefOid) {
+    return buildRecoveryEvent(
+      record.issue_number,
+      `tracked_pr_head_advanced: resumed issue #${record.issue_number} from ${record.state} to ${nextState} after tracked PR #${pr.number} advanced from ${previousHead} to ${nextHead}`,
+    );
+  }
+
+  return buildRecoveryEvent(
+    record.issue_number,
+    `tracked_pr_lifecycle_recovered: resumed issue #${record.issue_number} from ${record.state} to ${nextState} using fresh tracked PR #${pr.number} facts at head ${nextHead}`,
+  );
+}
+
 export async function cleanupExpiredDoneWorkspaces(
   config: SupervisorConfig,
   state: SupervisorStateFile,
@@ -486,6 +507,7 @@ export async function reconcileStaleFailedIssueStates(
       continue;
     }
 
+    const recoveryEvent = buildTrackedPrResumeRecoveryEvent(record, pr, nextState);
     const patch: Partial<IssueRunRecord> = {
       state: nextState,
       last_error: null,
@@ -505,7 +527,7 @@ export async function reconcileStaleFailedIssueStates(
       ...deps.syncCopilotReviewTimeoutState(config, record, pr),
     };
 
-    const updated = stateStore.touch(record, patch);
+    const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
     state.issues[String(record.issue_number)] = updated;
     changed = true;
   }
