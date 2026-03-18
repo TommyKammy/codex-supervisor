@@ -40,7 +40,7 @@ function normalizeDecision(decision: SupervisorCycleDecisionSnapshot["decision"]
 function withReplayClock<T>(capturedAt: string, run: () => T): T {
   const replayedNowMs = Date.parse(capturedAt);
   if (Number.isNaN(replayedNowMs)) {
-    return run();
+    throw new Error(`Invalid supervisor cycle snapshot capturedAt: ${capturedAt}`);
   }
 
   const originalDateNow = Date.now;

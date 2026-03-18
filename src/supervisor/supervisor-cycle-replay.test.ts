@@ -250,6 +250,10 @@ test("replaySupervisorCycleDecisionSnapshot evaluates timing-sensitive waits aga
         state: "waiting_ci",
         branch: "codex/issue-536",
         last_head_sha: "head-536",
+        review_wait_started_at: null,
+        review_wait_head_sha: null,
+        local_review_head_sha: null,
+        local_review_run_at: null,
       }),
       workspaceStatus: createWorkspaceStatus({
         branch: "codex/issue-536",
@@ -281,4 +285,24 @@ test("replaySupervisorCycleDecisionSnapshot evaluates timing-sensitive waits aga
   assert.equal(replayed.matchesCapturedDecision, true);
   assert.equal(replayed.replayedDecision.nextState, "waiting_ci");
   assert.equal(replayed.replayedDecision.shouldRunCodex, false);
+});
+
+test("replaySupervisorCycleDecisionSnapshot rejects invalid capturedAt values", () => {
+  const config = createConfig();
+  const snapshot = buildSupervisorCycleDecisionSnapshot({
+    config,
+    capturedAt: "2026-03-16T10:05:00Z",
+    issue: createIssue(),
+    record: createRecord(),
+    workspaceStatus: createWorkspaceStatus(),
+    pr: createPr(),
+    checks: [],
+    reviewThreads: [],
+  });
+  const invalidSnapshot = { ...snapshot, capturedAt: "not-a-date" };
+
+  assert.throws(
+    () => replaySupervisorCycleDecisionSnapshot(invalidSnapshot, config),
+    /Invalid supervisor cycle snapshot capturedAt: not-a-date/,
+  );
 });
