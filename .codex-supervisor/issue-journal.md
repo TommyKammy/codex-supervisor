@@ -5,32 +5,45 @@
 - Branch: codex/issue-562
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: a32c84f89fbfba423f8b33862f9ad03875c85b6e
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 1103ab83961e8c3d58860eceabf009a6861abe8d
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-18T17:41:15.332Z
+- Last failure signature: PRRT_kwDORgvdZ851PgMd
+- Repeated failure signature count: 1
+- Updated at: 2026-03-18T17:51:42.376Z
 
 ## Latest Codex Summary
-- Added `docs/agent-instructions.ja.md` as a Japanese bootstrap hub for AI agents, backed by a focused alignment regression and local build verification; opened draft PR #584.
+Added the Japanese bootstrap hub at [docs/agent-instructions.ja.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-562/docs/agent-instructions.ja.md) and extended [src/agent-instructions-docs.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-562/src/agent-instructions-docs.test.ts) so the English and Japanese agent bootstrap docs stay aligned in structure and delegation role. The focused reproduction was an `ENOENT` for the missing Japanese doc, and that now passes.
+
+Verified with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`. I committed the work as `1571ad1` and `1103ab8`, pushed `codex/issue-562`, opened draft PR [#584](https://github.com/TommyKammy/codex-supervisor/pull/584), and updated [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-562/.codex-supervisor/issue-journal.md). The only remaining workspace dirt is the pre-existing untracked `.codex-supervisor/replay/` directory.
+
+Summary: Added the Japanese agent bootstrap protocol doc, covered it with a focused alignment regression, verified docs/build locally, pushed the branch, and opened draft PR #584.
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts`; `npm install`; `npm run build`
+Failure signature: none
+Next action: Monitor draft PR #584 for CI and review feedback, then address any doc-link or wording issues if they appear.
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/584#discussion_r2955189685
+- Details:
+  - src/agent-instructions-docs.test.ts:85 _⚠️ Potential issue_ | _🟠 Major_ **Section-parity assertion is too weak to catch structural drift.** At **Lines 83-85**, the test compares matched items from two hardcoded arrays, not the actual heading totals in each document. This can miss extra/missing H2 sections and allow drift. <details> <summary>Proposed test hardening</summary> ```diff - const englishSectionCount = englishHeadings.filter((heading) => englishContent.includes(heading)).length; - const japaneseSectionCount = japaneseHeadings.filter((heading) => japaneseContent.includes(heading)).length; - assert.equal(japaneseSectionCount, englishSectionCount); + const englishH2Count = [...englishContent.matchAll(/^##(?!#)\s+/gm)].length; + const japaneseH2Count = [...japaneseContent.matchAll(/^##(?!#)\s+/gm)].length; + assert.equal( + japaneseH2Count, + englishH2Count, + "expected Japanese and English bootstrap docs to have the same number of H2 sections", + ); ``` </details> <!-- suggestion_start --> <details> <summary>📝 Committable suggestion</summary> > ‼️ **IMPORTANT** > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements. ```suggestion const englishH2Count = [...englishContent.matchAll(/^##(?!#)\s+/gm)].length; const japaneseH2Count = [...japaneseContent.matchAll(/^##(?!#)\s+/gm)].length; assert.equal( japaneseH2Count, englishH2Count, "expected Japanese and English bootstrap docs to have the same number of H2 sections", ); ``` </details> <!-- suggestion_end --> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/agent-instructions-docs.test.ts` around lines 83 - 85, The test currently computes englishSectionCount and japaneseSectionCount by filtering hardcoded heading arrays (englishHeadings, japaneseHeadings) against englishContent/japaneseContent which misses extra or missing H2s; replace that with extracting actual H2 headings from each document (e.g., parse englishContent and japaneseContent for "## " headings), count those parsed headings and assert counts match, and additionally compare the sets (or sorted arrays) of extracted headings for equality to catch extras/missing sections; update assertions around englishSectionCount, japaneseSectionCount, englishHeadings, and japaneseHeadings to use the extracted-heading lists and a symmetric-difference or deep-equal check. ``` </details> <!-- fingerprinting:phantom:poseidon:hawk --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The Japanese bootstrap entry can be added safely by extending the existing docs regression to require a Japanese peer doc with the same section order and delegation role as the English hub, then translating only the bootstrap protocol while linking back to canonical references.
-- What changed: extended `src/agent-instructions-docs.test.ts` with a focused Japanese alignment regression for `docs/agent-instructions.ja.md`; reproduced the issue with an `ENOENT` failure because the Japanese doc did not exist; added `docs/agent-instructions.ja.md` with the same bootstrap structure as the English hub, including prerequisites, read order, first-run sequence, escalation rules, and canonical-reference links to the existing docs.
+- Hypothesis: The remaining CodeRabbit thread is valid because the section-parity assertion only counts hardcoded headings that happen to be present; parsing actual H2 headings in both bootstrap docs should close the drift gap without changing doc behavior.
+- What changed: hardened `src/agent-instructions-docs.test.ts` by adding `extractH2Headings(...)`, asserting the exact extracted H2 sequences for both English and Japanese bootstrap docs, and keeping an explicit equal-H2-count assertion across the two files so extra or missing sections fail deterministically.
 - Current blocker: none
-- Next exact step: monitor draft PR #584, review any doc-link feedback, and wait for CI or review signals before further changes.
-- Verification gap: no broader suite run beyond the focused docs coverage and required build; this issue only changed docs and a doc regression.
-- Files touched: `.codex-supervisor/issue-journal.md`, `docs/agent-instructions.ja.md`, `src/agent-instructions-docs.test.ts`
-- Rollback concern: removing the Japanese bootstrap hub or its regression would reintroduce a missing deterministic first-read path for Japanese AI agents and allow English/Japanese bootstrap structure to drift.
-- Last focused command: `npx tsx --test src/agent-instructions-docs.test.ts`; `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts`; `npm install`; `npm run build`
+- Next exact step: commit the hardened regression, push `codex/issue-562`, and re-check PR #584 for any remaining review threads or CI changes.
+- Verification gap: none beyond the issue-scoped doc regression and required build; no broader suite was needed for this docs/test-only review fix.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/agent-instructions-docs.test.ts`
+- Rollback concern: reverting this test hardening would allow unnoticed extra or missing H2 sections to drift between the English and Japanese bootstrap hubs while still passing the old parity check.
+- Last focused command: `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts`; `npm run build`
 ### Scratchpad
-- 2026-03-19 (JST): Committed the verified docs slice as `1571ad1` (`Add Japanese agent bootstrap doc`), pushed `codex/issue-562`, and opened draft PR #584 (`https://github.com/TommyKammy/codex-supervisor/pull/584`).
+- 2026-03-19 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851PgMd` by replacing the hardcoded heading-presence section count in `src/agent-instructions-docs.test.ts` with parsed H2 extraction, exact expected H2 sequence assertions for both English and Japanese docs, and an explicit equal-H2-count assertion across the two bootstrap docs. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build`.
 - 2026-03-19 (JST): Reproduced issue #562 by extending `src/agent-instructions-docs.test.ts` with a Japanese bootstrap alignment check; it failed with `ENOENT` because `docs/agent-instructions.ja.md` did not exist. Added the Japanese bootstrap hub with mirrored section order and canonical links to `getting-started.ja.md`, `getting-started.md`, `configuration.md`, `issue-metadata.md`, and `local-review.md`. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts`; `npm run build` initially failed because `tsc` was missing locally, so restored dev dependencies with `npm install` and reran `npm run build` successfully.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.

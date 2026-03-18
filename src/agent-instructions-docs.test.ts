@@ -11,6 +11,10 @@ async function readJapaneseAgentInstructions(): Promise<string> {
   return fs.readFile(path.join(process.cwd(), "docs", "agent-instructions.ja.md"), "utf8");
 }
 
+function extractH2Headings(content: string): string[] {
+  return [...content.matchAll(/^##(?!#)\s+.+$/gm)].map(([heading]) => heading.trim());
+}
+
 test("agent bootstrap doc exists as a hub that delegates detailed rules", async () => {
   const content = await readAgentInstructions();
 
@@ -63,7 +67,16 @@ test("japanese agent bootstrap doc mirrors the english hub structure and delegat
     "## 正式な参照先",
   ];
 
-  assert.equal(japaneseHeadings.length, englishHeadings.length);
+  const englishH2Headings = extractH2Headings(englishContent);
+  const japaneseH2Headings = extractH2Headings(japaneseContent);
+
+  assert.deepEqual(englishH2Headings, englishHeadings);
+  assert.deepEqual(japaneseH2Headings, japaneseHeadings);
+  assert.equal(
+    japaneseH2Headings.length,
+    englishH2Headings.length,
+    "expected Japanese and English bootstrap docs to have the same number of H2 sections",
+  );
 
   let lastIndex = -1;
   for (const heading of japaneseHeadings) {
@@ -79,10 +92,6 @@ test("japanese agent bootstrap doc mirrors the english hub structure and delegat
   assert.match(japaneseContent, /\[Issue metadata reference\]\(\.\/issue-metadata\.md\)/);
   assert.match(japaneseContent, /\[Local review reference\]\(\.\/local-review\.md\)/);
   assert.match(japaneseContent, /bootstrap hub/i);
-
-  const englishSectionCount = englishHeadings.filter((heading) => englishContent.includes(heading)).length;
-  const japaneseSectionCount = japaneseHeadings.filter((heading) => japaneseContent.includes(heading)).length;
-  assert.equal(japaneseSectionCount, englishSectionCount);
 
   assert.doesNotMatch(japaneseContent, /^## 完全な設定リファレンス$/m);
   assert.doesNotMatch(japaneseContent, /^## issue metadata の完全仕様$/m);
