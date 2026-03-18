@@ -7,6 +7,10 @@ async function readAgentInstructions(): Promise<string> {
   return fs.readFile(path.join(process.cwd(), "docs", "agent-instructions.md"), "utf8");
 }
 
+async function readJapaneseAgentInstructions(): Promise<string> {
+  return fs.readFile(path.join(process.cwd(), "docs", "agent-instructions.ja.md"), "utf8");
+}
+
 test("agent bootstrap doc exists as a hub that delegates detailed rules", async () => {
   const content = await readAgentInstructions();
 
@@ -36,4 +40,50 @@ test("agent bootstrap doc exists as a hub that delegates detailed rules", async 
 
   assert.doesNotMatch(content, /^## Full configuration reference$/m);
   assert.doesNotMatch(content, /^## Complete issue metadata specification$/m);
+});
+
+test("japanese agent bootstrap doc mirrors the english hub structure and delegation role", async () => {
+  const englishContent = await readAgentInstructions();
+  const japaneseContent = await readJapaneseAgentInstructions();
+
+  const englishHeadings = [
+    "## Purpose",
+    "## Prerequisites",
+    "## Read this first",
+    "## First-run sequence",
+    "## Escalate instead of guessing",
+    "## Canonical references",
+  ];
+  const japaneseHeadings = [
+    "## 目的",
+    "## 前提条件",
+    "## 最初に読む順番",
+    "## 初回実行の順序",
+    "## 推測せずにエスカレーションする条件",
+    "## 正式な参照先",
+  ];
+
+  assert.equal(japaneseHeadings.length, englishHeadings.length);
+
+  let lastIndex = -1;
+  for (const heading of japaneseHeadings) {
+    const index = japaneseContent.indexOf(heading);
+    assert.notEqual(index, -1, `expected ${heading} in docs/agent-instructions.ja.md`);
+    assert.ok(index > lastIndex, `expected ${heading} to appear after the previous section`);
+    lastIndex = index;
+  }
+
+  assert.match(japaneseContent, /\[Getting started\]\(\.\/getting-started\.md\)/);
+  assert.match(japaneseContent, /\[codex-supervisor 入門\]\(\.\/getting-started\.ja\.md\)/);
+  assert.match(japaneseContent, /\[Configuration reference\]\(\.\/configuration\.md\)/);
+  assert.match(japaneseContent, /\[Issue metadata reference\]\(\.\/issue-metadata\.md\)/);
+  assert.match(japaneseContent, /\[Local review reference\]\(\.\/local-review\.md\)/);
+  assert.match(japaneseContent, /bootstrap hub/i);
+
+  const englishSectionCount = englishHeadings.filter((heading) => englishContent.includes(heading)).length;
+  const japaneseSectionCount = japaneseHeadings.filter((heading) => japaneseContent.includes(heading)).length;
+  assert.equal(japaneseSectionCount, englishSectionCount);
+
+  assert.doesNotMatch(japaneseContent, /^## 完全な設定リファレンス$/m);
+  assert.doesNotMatch(japaneseContent, /^## issue metadata の完全仕様$/m);
 });
