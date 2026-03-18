@@ -24,12 +24,13 @@
 - Hypothesis: `explain` already knew when a tracked issue was in a resumed lifecycle state, but it only surfaced generic selection text like `retry_state=resume:reproducing` and never reused the persisted `last_recovery_reason` / `last_recovery_at` story that status already formats.
 - What changed: added a focused explain regression for a recovered tracked PR issue in `reproducing`, then updated `buildIssueExplainSummary(...)` to reuse `formatLatestRecoveryStatusLine(...)` so explain emits the same compact `latest_recovery ... reason=<code> detail=<stored explanation>` line as status.
 - Current blocker: none
-- Next exact step: commit the explain recovery diagnostic change on `codex/issue-554`, then open or update the draft PR for issue #554.
+- Next exact step: monitor draft PR #578 and respond to review or CI feedback.
 - Verification gap: broader full-suite verification has not been run.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-diagnostics-explain.test.ts`, `src/supervisor/supervisor-selection-status.ts`
 - Rollback concern: removing the shared recovery formatter from explain would drop the canonical persisted recovery story and regress resumed tracked-PR explanations back to generic lifecycle text.
 - Last focused command: `npx tsx --test src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm install`; `npm run build`
 ### Scratchpad
+- 2026-03-19 (JST): Pushed `codex/issue-554` and opened draft PR #578 for the explain recovery diagnostic reuse change.
 - 2026-03-19 (JST): Added a focused repro in `src/supervisor/supervisor-diagnostics-explain.test.ts` for a tracked PR issue resumed into `reproducing`; the initial failure was missing `latest_recovery ...` output and only showed `selection_reason=... retry_state=resume:reproducing`. Reused `formatLatestRecoveryStatusLine(...)` in `src/supervisor/supervisor-selection-status.ts`, reran the focused explain + recovery tests, restored local dependencies with `npm install`, and reran `npm run build` successfully.
 - 2026-03-19 (JST): Pushed `codex/issue-553` and opened draft PR #570 for the compact latest-recovery status rendering change.
 - 2026-03-19 (JST): Added a focused repro in `src/supervisor/supervisor-status-rendering.test.ts` for an active recovered record whose `last_recovery_reason` was rendered as a raw `tracked_pr_head_advanced: ...` string; implemented compact `reason=` / `detail=` status rendering via `formatLatestRecoveryStatusLine(...)`; reran focused status + recovery tests and `npm run build` after restoring local dependencies with `npm install`.
