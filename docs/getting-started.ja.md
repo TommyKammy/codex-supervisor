@@ -10,7 +10,7 @@
 - 最初は `run-once` で確認し、その後 `loop` に移る
 - 迷った時にどの reference doc を開くかを判断する
 
-概要は [README](../README.md) と [README.ja](./README.ja.md) を参照してください。この文書は、README より踏み込んだ運用ガイドとして維持します。
+概要は [README](../README.md) と [README.ja](./README.ja.md) を参照してください。この文書は、README より踏み込んだ運用ガイドとして維持します。AI agent に repo を引き継ぐ時は、この文書で bootstrap 手順を重ね書きせず [Agent Bootstrap Protocol](./agent-instructions.ja.md) を入口にしてください。
 
 ## 始める前に
 
@@ -193,6 +193,7 @@ loop が blocked issue に当たり続ける時は?
 
 - [README](../README.md): 英語版の概要、適用範囲、docs map
 - [README.ja](./README.ja.md): 日本語の軽い overview と導線
+- [Agent Bootstrap Protocol](./agent-instructions.ja.md): AI agent 向けの bootstrap 順序、初回確認、エスカレーション条件
 - [Configuration reference](./configuration.md): config 項目、provider setup、durable memory、実行ポリシー
 - [Local review reference](./local-review.md): review role、artifact、threshold、merge policy
 - [Issue metadata reference](./issue-metadata.md): execution-ready issue の構造と scheduling inputs
