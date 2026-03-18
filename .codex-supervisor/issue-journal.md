@@ -1,51 +1,46 @@
-# Issue #546: Replay corpus CI: surface the compact summary in pull request output
+# Issue #547: Replay corpus artifacts: emit full mismatch details only for failing runs
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/546
-- Branch: codex/issue-546
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/547
+- Branch: codex/issue-547
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: repairing_ci
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 1e04150e9cabc51f4716cdd39a855134a3c519f7
+- Current phase: waiting_ci
+- Attempt count: 3 (implementation=1, repair=2)
+- Last head SHA: 31da79d10755fe4ffbd5ba445385d1f3a7f8659c
 - Blocked reason: none
-- Last failure signature: build (ubuntu-latest):fail
-- Repeated failure signature count: 1
-- Updated at: 2026-03-18T13:33:49.050Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-18T23:42:56+09:00
 
 ## Latest Codex Summary
-Wired PR CI to print the compact replay-corpus summary by adding an Ubuntu-only `replay-corpus` step in [ci.yml](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-546/.github/workflows/ci.yml) before the build, and added a narrow workflow regression in [ci-workflow.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-546/src/ci-workflow.test.ts) to keep that path covered.
+Updated [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-547/.codex-supervisor/issue-journal.md#L1) so its verification record now matches the focused replay-corpus, CLI, and workflow coverage actually used for PR #550. The review-only journal fix was committed as `31da79d`, pushed to `codex/issue-547`, and the remaining CodeRabbit thread on PR `#550` was resolved.
 
-Committed as `1e04150` (`Surface replay corpus summary in CI`), pushed `codex/issue-546`, and opened draft PR #549: https://github.com/TommyKammy/codex-supervisor/pull/549
+Verification passed with `npx tsx --test src/supervisor/replay-corpus.test.ts src/index.test.ts src/ci-workflow.test.ts` and `npm run build`. Local status is clean aside from the pre-existing untracked `.codex-supervisor/replay/decision-cycle-snapshot.json`.
 
-Summary: Added workflow coverage for PR-facing replay-corpus output and updated CI to surface the compact summary once per PR run.
+Summary: Aligned the journal’s recorded verification scope with the actual replay-corpus, CLI, and workflow coverage, pushed the journal fix, and resolved the remaining PR review thread.
 State hint: waiting_ci
 Blocked reason: none
-Tests: `npx tsx --test src/ci-workflow.test.ts`; `npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts`; `npm ci`; `npm run build`
+Tests: `npx tsx --test src/supervisor/replay-corpus.test.ts src/index.test.ts src/ci-workflow.test.ts`; `npm run build`
 Failure signature: none
-Next action: Monitor draft PR #549 CI and address any review or workflow follow-up if the new replay-corpus step exposes issues.
+Next action: Monitor PR #550 CI on `31da79d` and address any new review or workflow follow-up if it appears.
 
 ## Active Failure Context
-- Category: checks
-- Summary: PR #549 has failing checks.
-- Command or source: gh pr checks
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/549
-- Details:
-  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23246580619/job/67576525574
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining Ubuntu CI failure is not in the workflow wiring itself; `src/index.ts` still required `supervisor.config.json` before running `replay-corpus`, so the new PR-facing step failed immediately in Actions because this repo does not check in a runtime supervisor config.
-- What changed: added a checked-in replay-corpus config helper in `src/supervisor/replay-corpus.ts`, taught `src/index.ts` to use it for the default `replay-corpus` command when `--config` is omitted, and added `src/index.test.ts` coverage for the config-free CLI path that CI invokes.
+- Hypothesis: the remaining review thread was valid because the journal still advertised only `src/ci-workflow.test.ts`, which understated the focused replay-corpus/CLI/workflow verification already expected for this PR.
+- What changed: updated `.codex-supervisor/issue-journal.md` so the recorded verification explicitly lists `src/supervisor/replay-corpus.test.ts`, `src/index.test.ts`, `src/ci-workflow.test.ts`, and `npm run build`, then pushed `31da79d` and resolved the remaining review thread.
 - Current blocker: none
-- Next exact step: commit and push the replay-corpus config fallback, then monitor draft PR #549 for a green Ubuntu rerun.
-- Verification gap: focused replay-corpus CLI, replay-corpus/workflow tests, and `npm run build` passed locally; broader full-suite verification has not been run.
-- Files touched: `src/index.ts`, `src/index.test.ts`, `src/supervisor/replay-corpus.ts`, `src/supervisor/replay-corpus.test.ts`
-- Rollback concern: dropping the default replay-corpus config fallback would put PR CI back into a hard failure state whenever `supervisor.config.json` is absent, which is the normal state for this repository checkout.
-- Last focused command: `npx tsx src/index.ts replay-corpus && npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts src/ci-workflow.test.ts && npm run build`
+- Next exact step: monitor PR #550 CI on `31da79d` and handle any follow-up review or workflow regressions if they appear.
+- Verification gap: focused replay-corpus (`src/supervisor/replay-corpus.test.ts`), CLI (`src/index.test.ts`), and workflow (`src/ci-workflow.test.ts`) tests plus `npm run build` passed locally; broader full-suite verification has not been run.
+- Files touched: `.codex-supervisor/issue-journal.md`, `.github/workflows/ci.yml`, `src/ci-workflow.test.ts`, `src/index.ts`, `src/supervisor/replay-corpus.ts`, `src/supervisor/replay-corpus.test.ts`
+- Rollback concern: reverting the journal fix would reopen reviewer confusion about what focused coverage was actually run for this PR, even though the underlying replay artifact behavior is already correct.
+- Last focused command: `npx tsx --test src/supervisor/replay-corpus.test.ts src/index.test.ts src/ci-workflow.test.ts`; `npm run build`
 ### Scratchpad
-- 2026-03-18 (JST): Pulled the failing Ubuntu Actions log for job `67576525574`; the new `npx tsx src/index.ts replay-corpus` step failed with `Config file not found: /home/runner/work/codex-supervisor/codex-supervisor/supervisor.config.json`. Added a checked-in replay-corpus config fallback plus a config-free CLI regression, then reran `npx tsx src/index.ts replay-corpus`, `npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts src/ci-workflow.test.ts`, and `npm run build` successfully.
-- 2026-03-18 (JST): Wired `.github/workflows/ci.yml` to run `npx tsx src/index.ts replay-corpus` on the Ubuntu matrix leg, adjusted the workflow regex test to match the YAML step block, and reran `npx tsx --test src/ci-workflow.test.ts`, `npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts`, `npm ci`, and `npm run build` successfully.
+- 2026-03-18 (JST): Verified the remaining PR #550 journal review finding was valid in the current snapshot, updated the recorded Tests line and verification notes to list `src/supervisor/replay-corpus.test.ts`, `src/index.test.ts`, `src/ci-workflow.test.ts`, and `npm run build`, reran that focused command plus build successfully, committed `31da79d` (`Align journal verification scope with replay tests`), pushed `codex/issue-547`, and resolved thread `PRRT_kwDORgvdZ851LV_Q`.
+- 2026-03-18 (JST): Verified the remaining PR #550 CodeRabbit finding against `.github/workflows/ci.yml`; it was valid because the artifact upload used global `failure()`. Added a `replay_corpus` step id, gated upload on `steps.replay_corpus.outcome == 'failure'`, updated `src/ci-workflow.test.ts`, and reran `npx tsx --test src/ci-workflow.test.ts` plus `npm run build` successfully.
 - 2026-03-18 (JST): Added narrow `src/index.test.ts` repro coverage for `replay-corpus` argument parsing plus compact all-pass and mismatch CLI summaries; initial focused failures showed the command was missing and the existing CLI helper wrongly assumed `node_modules/tsx/dist/cli.mjs` existed in the workspace.
 - 2026-03-18 (JST): Implemented `replay-corpus` in `src/index.ts`, added compact replay corpus summary/mismatch formatters in `src/supervisor/replay-corpus.ts`, and added formatter tests in `src/supervisor/replay-corpus.test.ts`; `npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts` passed.
 - 2026-03-18 (JST): `npm run build` initially failed with `sh: 1: tsc: not found`; ran `npm install` to restore local toolchain, fixed a TypeScript narrowing error in `src/index.ts`, then reran `npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts && npm run build` successfully.

@@ -12,6 +12,7 @@ import {
   createCheckedInReplayCorpusConfig,
   formatReplayCorpusRunSummary,
   runReplayCorpus,
+  syncReplayCorpusMismatchDetailsArtifact,
 } from "./supervisor/replay-corpus";
 
 export function parseArgs(argv: string[]): CliOptions {
@@ -143,6 +144,7 @@ async function main(): Promise<void> {
         ? createCheckedInReplayCorpusConfig(process.cwd())
         : loadConfig(options.configPath);
     const result = await runReplayCorpus(options.corpusPath!, config);
+    await syncReplayCorpusMismatchDetailsArtifact(result, config);
     const summary = formatReplayCorpusRunSummary(result);
     if (result.mismatchCount > 0) {
       console.log(summary);
