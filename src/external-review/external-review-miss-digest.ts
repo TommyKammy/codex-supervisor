@@ -75,6 +75,47 @@ export function externalReviewMissFollowUpDigestPath(artifactPath: string): stri
   });
 }
 
+export interface ExternalReviewFollowUpDigestSummary {
+  headStatus: "current-head" | "stale-head";
+  missedFindings: number;
+  actionCounts: Partial<Record<ExternalReviewPreventionTarget, number>>;
+}
+
+const DIGEST_HEADING_TO_TARGET: Record<string, ExternalReviewPreventionTarget> = {
+  "Durable guardrail": "durable_guardrail",
+  "Regression test": "regression_test",
+  "Review prompt": "review_prompt",
+  "Issue template": "issue_template",
+};
+
+export function parseExternalReviewMissFollowUpDigest(digest: string): ExternalReviewFollowUpDigestSummary | null {
+  const headStatusMatch = digest.match(/^- Head status: (current-head|stale-head)\b/mu);
+  const missedFindingsMatch = digest.match(/^- Missed findings: (\d+)\s*$/mu);
+
+  if (!headStatusMatch || !missedFindingsMatch) {
+    return null;
+  }
+
+  const actionCounts: Partial<Record<ExternalReviewPreventionTarget, number>> = {};
+  const headingRegex = /^## (Durable guardrail|Regression test|Review prompt|Issue template) \((\d+) finding(?:s)?\)\s*$/gmu;
+
+  for (const match of digest.matchAll(headingRegex)) {
+    const target = DIGEST_HEADING_TO_TARGET[match[1]];
+    const count = Number.parseInt(match[2] ?? "0", 10);
+    if (!target || !Number.isFinite(count) || count <= 0) {
+      continue;
+    }
+
+    actionCounts[target] = count;
+  }
+
+  return {
+    headStatus: headStatusMatch[1] as "current-head" | "stale-head",
+    missedFindings: Number.parseInt(missedFindingsMatch[1] ?? "0", 10),
+    actionCounts,
+  };
+}
+
 export function buildExternalReviewMissFollowUpDigest(args: {
   artifactPath: string;
   artifact: ExternalReviewMissArtifact;

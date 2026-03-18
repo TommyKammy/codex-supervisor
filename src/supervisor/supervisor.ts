@@ -616,6 +616,7 @@ export class Supervisor {
       changeClassesSummary: activeStatus.changeClassesSummary,
       verificationPolicySummary: activeStatus.verificationPolicySummary,
       durableGuardrailSummary: activeStatus.durableGuardrailSummary,
+      externalReviewFollowUpSummary: activeStatus.externalReviewFollowUpSummary,
     });
 
     return [gsdSummary, activeStatus.warningMessage

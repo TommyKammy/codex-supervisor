@@ -19,6 +19,7 @@ import { shouldAutoRetryTimeout } from "./supervisor-failure-helpers";
 import {
   buildChangeClassesStatusLine,
   buildDurableGuardrailStatusLine,
+  buildExternalReviewFollowUpStatusLine,
   buildVerificationPolicyStatusLine,
   loadStatusChangedFiles,
 } from "./supervisor-status-rendering";
@@ -81,6 +82,7 @@ export interface ActiveIssueStatusSnapshot {
   changeClassesSummary: string | null;
   verificationPolicySummary: string | null;
   durableGuardrailSummary: string | null;
+  externalReviewFollowUpSummary: string | null;
   warningMessage: string | null;
 }
 
@@ -128,6 +130,7 @@ export async function loadActiveIssueStatusSnapshot(args: {
   let changeClassesSummary: string | null = null;
   let verificationPolicySummary: string | null = null;
   let durableGuardrailSummary: string | null = null;
+  let externalReviewFollowUpSummary: string | null = null;
   let warningMessage: string | null = null;
 
   if (args.activeRecord.journal_path) {
@@ -154,6 +157,9 @@ export async function loadActiveIssueStatusSnapshot(args: {
       pr,
       changedFiles,
     });
+    externalReviewFollowUpSummary = await buildExternalReviewFollowUpStatusLine({
+      activeRecord: args.activeRecord,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     warningMessage = warningMessage ? `${warningMessage}; ${message}` : message;
@@ -167,6 +173,7 @@ export async function loadActiveIssueStatusSnapshot(args: {
     changeClassesSummary,
     verificationPolicySummary,
     durableGuardrailSummary,
+    externalReviewFollowUpSummary,
     warningMessage,
   };
 }
