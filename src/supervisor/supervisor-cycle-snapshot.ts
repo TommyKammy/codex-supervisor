@@ -29,8 +29,14 @@ export interface SupervisorCycleDecisionSnapshot {
       | "attempt_count"
       | "implementation_attempt_count"
       | "repair_attempt_count"
+      | "timeout_retry_count"
+      | "blocked_verification_retry_count"
+      | "repeated_blocker_count"
+      | "repeated_failure_signature_count"
       | "blocked_reason"
       | "last_error"
+      | "last_failure_kind"
+      | "last_failure_context"
       | "last_failure_signature"
       | "last_head_sha"
       | "review_wait_started_at"
@@ -108,8 +114,14 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
         attempt_count: record.attempt_count,
         implementation_attempt_count: record.implementation_attempt_count,
         repair_attempt_count: record.repair_attempt_count,
+        timeout_retry_count: record.timeout_retry_count,
+        blocked_verification_retry_count: record.blocked_verification_retry_count,
+        repeated_blocker_count: record.repeated_blocker_count,
+        repeated_failure_signature_count: record.repeated_failure_signature_count,
         blocked_reason: record.blocked_reason,
         last_error: record.last_error,
+        last_failure_kind: record.last_failure_kind,
+        last_failure_context: record.last_failure_context,
         last_failure_signature: record.last_failure_signature,
         last_head_sha: record.last_head_sha,
         review_wait_started_at: record.review_wait_started_at,
@@ -172,8 +184,14 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
         attempt_count: record.attempt_count,
         implementation_attempt_count: record.implementation_attempt_count,
         repair_attempt_count: record.repair_attempt_count,
+        timeout_retry_count: record.timeout_retry_count,
+        blocked_verification_retry_count: record.blocked_verification_retry_count,
+        repeated_blocker_count: record.repeated_blocker_count,
+        repeated_failure_signature_count: record.repeated_failure_signature_count,
         blocked_reason: record.blocked_reason,
         last_error: record.last_error,
+        last_failure_kind: record.last_failure_kind,
+        last_failure_context: record.last_failure_context,
         last_failure_signature: record.last_failure_signature,
         last_head_sha: record.last_head_sha,
         review_wait_started_at: record.review_wait_started_at,

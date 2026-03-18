@@ -1,0 +1,6 @@
+{
+  "nextState": "failed",
+  "shouldRunCodex": false,
+  "blockedReason": null,
+  "failureSignature": "changes-requested:head-539"
+}

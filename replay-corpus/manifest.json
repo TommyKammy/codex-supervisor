@@ -24,6 +24,18 @@
     {
       "id": "stale-head-prevents-merge",
       "path": "cases/stale-head-prevents-merge"
+    },
+    {
+      "id": "timeout-retry-budget-progression",
+      "path": "cases/timeout-retry-budget-progression"
+    },
+    {
+      "id": "verification-blocker-retry-exhausted",
+      "path": "cases/verification-blocker-retry-exhausted"
+    },
+    {
+      "id": "repeated-failure-escalates-to-failed",
+      "path": "cases/repeated-failure-escalates-to-failed"
     }
   ]
 }

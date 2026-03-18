@@ -227,7 +227,7 @@ test("replaySupervisorCycleDecisionSnapshot re-runs the saved decision inputs wi
     replayed.replayedDecision.failureContext?.signature,
     snapshot.decision.failureContext?.signature,
   );
-  assert.equal(replayed.effectiveRecord.state, snapshot.local.record.state);
+  assert.equal(replayed.effectiveRecord.state, snapshot.decision.nextState);
   assert.equal(snapshot.local.record.state, "reproducing");
 });
 
@@ -305,4 +305,162 @@ test("replaySupervisorCycleDecisionSnapshot rejects invalid capturedAt values", 
     () => replaySupervisorCycleDecisionSnapshot(invalidSnapshot, config),
     /Invalid supervisor cycle snapshot capturedAt: not-a-date/,
   );
+});
+
+test("replaySupervisorCycleDecisionSnapshot requeues retriable timeout failures before replaying no-PR execution", () => {
+  const config = createConfig({ timeoutRetryLimit: 2 });
+  const snapshot = buildSupervisorCycleDecisionSnapshot({
+    config,
+    capturedAt: "2026-03-18T01:00:00Z",
+    issue: createIssue({
+      number: 537,
+      title: "Replay corpus timeout retry",
+      url: "https://example.test/issues/537",
+    }),
+    record: createRecord({
+      issue_number: 537,
+      state: "failed",
+      pr_number: null,
+      branch: "codex/issue-537",
+      workspace: "/tmp/workspaces/issue-537",
+      journal_path: "/tmp/workspaces/issue-537/.codex-supervisor/issue-journal.md",
+      last_failure_kind: "timeout",
+      last_error: "Command timed out after 1800000ms: codex exec",
+      timeout_retry_count: 1,
+      implementation_attempt_count: 1,
+      repair_attempt_count: 0,
+      blocked_reason: null,
+      last_failure_signature: "codex-timeout",
+      last_failure_context: {
+        category: "codex",
+        summary: "Codex exited non-zero for issue #537.",
+        signature: "codex-timeout",
+        command: null,
+        details: ["Command timed out after 1800000ms: codex exec"],
+        url: null,
+        updated_at: "2026-03-18T00:59:00Z",
+      },
+    }),
+    workspaceStatus: createWorkspaceStatus({
+      branch: "codex/issue-537",
+      headSha: "head-537",
+      baseAhead: 0,
+      remoteAhead: 0,
+    }),
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  const replayed = replaySupervisorCycleDecisionSnapshot(snapshot, config);
+
+  assert.equal(replayed.matchesCapturedDecision, true);
+  assert.equal(replayed.replayedDecision.nextState, "stabilizing");
+  assert.equal(replayed.replayedDecision.shouldRunCodex, true);
+  assert.equal(replayed.replayedDecision.blockedReason, null);
+  assert.equal(replayed.replayedDecision.failureContext, null);
+});
+
+test("replaySupervisorCycleDecisionSnapshot keeps exhausted verification blockers blocked", () => {
+  const config = createConfig({
+    maxImplementationAttemptsPerIssue: 3,
+    blockedVerificationRetryLimit: 3,
+    sameBlockerRepeatLimit: 2,
+    sameFailureSignatureRepeatLimit: 3,
+  });
+  const snapshot = buildSupervisorCycleDecisionSnapshot({
+    config,
+    capturedAt: "2026-03-18T01:30:00Z",
+    issue: createIssue({
+      number: 538,
+      title: "Replay corpus verification retry budget",
+      url: "https://example.test/issues/538",
+    }),
+    record: createRecord({
+      issue_number: 538,
+      state: "blocked",
+      pr_number: null,
+      branch: "codex/issue-538",
+      workspace: "/tmp/workspaces/issue-538",
+      journal_path: "/tmp/workspaces/issue-538/.codex-supervisor/issue-journal.md",
+      blocked_reason: "verification",
+      implementation_attempt_count: 2,
+      repair_attempt_count: 0,
+      blocked_verification_retry_count: 3,
+      repeated_blocker_count: 1,
+      repeated_failure_signature_count: 1,
+      last_error: "Verification failed: vitest assertion still failing.",
+      last_failure_signature: "verification:vitest",
+      last_failure_context: {
+        category: "blocked",
+        summary: "Verification failed after the latest patch.",
+        signature: "verification:vitest",
+        command: null,
+        details: ["Verification failed: vitest assertion still failing."],
+        url: null,
+        updated_at: "2026-03-18T01:29:00Z",
+      },
+    }),
+    workspaceStatus: createWorkspaceStatus({
+      branch: "codex/issue-538",
+      headSha: "head-538",
+      baseAhead: 0,
+      remoteAhead: 0,
+    }),
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  const replayed = replaySupervisorCycleDecisionSnapshot(snapshot, config);
+
+  assert.equal(replayed.matchesCapturedDecision, true);
+  assert.equal(replayed.replayedDecision.nextState, "blocked");
+  assert.equal(replayed.replayedDecision.shouldRunCodex, false);
+  assert.equal(replayed.replayedDecision.blockedReason, "verification");
+  assert.equal(replayed.replayedDecision.failureContext?.signature, "verification:vitest");
+});
+
+test("replaySupervisorCycleDecisionSnapshot escalates repeated identical PR failures to failed", () => {
+  const config = createConfig({ sameFailureSignatureRepeatLimit: 3 });
+  const snapshot = buildSupervisorCycleDecisionSnapshot({
+    config,
+    capturedAt: "2026-03-18T02:00:00Z",
+    issue: createIssue({
+      number: 539,
+      title: "Replay corpus repeated failure escalation",
+      url: "https://example.test/issues/539",
+    }),
+    record: createRecord({
+      issue_number: 539,
+      state: "addressing_review",
+      pr_number: 95,
+      branch: "codex/issue-539",
+      workspace: "/tmp/workspaces/issue-539",
+      journal_path: "/tmp/workspaces/issue-539/.codex-supervisor/issue-journal.md",
+      repeated_failure_signature_count: 2,
+      last_failure_signature: "changes-requested:head-539",
+      last_error: "Requested changes remain unresolved on PR #95.",
+    }),
+    workspaceStatus: createWorkspaceStatus({
+      branch: "codex/issue-539",
+      headSha: "head-539",
+    }),
+    pr: createPr({
+      number: 95,
+      url: "https://example.test/pull/95",
+      headRefName: "codex/issue-539",
+      headRefOid: "head-539",
+    }),
+    checks: [{ name: "build", state: "completed", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  const replayed = replaySupervisorCycleDecisionSnapshot(snapshot, config);
+
+  assert.equal(replayed.matchesCapturedDecision, true);
+  assert.equal(replayed.replayedDecision.nextState, "failed");
+  assert.equal(replayed.replayedDecision.shouldRunCodex, false);
+  assert.equal(replayed.replayedDecision.blockedReason, null);
+  assert.equal(replayed.replayedDecision.failureContext?.signature, "changes-requested:head-539");
 });

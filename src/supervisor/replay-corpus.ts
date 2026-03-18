@@ -43,6 +43,7 @@ const BLOCKED_REASONS = [
   "unknown",
 ] as const;
 const FAILURE_CONTEXT_CATEGORIES = ["checks", "review", "conflict", "codex", "manual", "blocked"] as const;
+const FAILURE_KINDS = ["timeout", "command_error", "codex_exit", "codex_failed"] as const;
 const COPILOT_REVIEW_TIMEOUT_ACTIONS = ["continue", "block"] as const;
 const LOCAL_REVIEW_SEVERITIES = ["none", "low", "medium", "high"] as const;
 const LOCAL_REVIEW_RECOMMENDATIONS = ["ready", "changes_requested", "unknown"] as const;
@@ -375,8 +376,23 @@ function validateLocalRecord(
       `${context} implementation_attempt_count`,
     ),
     repair_attempt_count: expectInteger(record.repair_attempt_count, `${context} repair_attempt_count`),
+    timeout_retry_count: expectInteger(record.timeout_retry_count ?? 0, `${context} timeout_retry_count`),
+    blocked_verification_retry_count: expectInteger(
+      record.blocked_verification_retry_count ?? 0,
+      `${context} blocked_verification_retry_count`,
+    ),
+    repeated_blocker_count: expectInteger(record.repeated_blocker_count ?? 0, `${context} repeated_blocker_count`),
+    repeated_failure_signature_count: expectInteger(
+      record.repeated_failure_signature_count ?? 0,
+      `${context} repeated_failure_signature_count`,
+    ),
     blocked_reason: expectNullableEnum(record.blocked_reason, `${context} blocked_reason`, BLOCKED_REASONS),
     last_error: expectNullableString(record.last_error, `${context} last_error`),
+    last_failure_kind: expectNullableEnum(record.last_failure_kind ?? null, `${context} last_failure_kind`, FAILURE_KINDS),
+    last_failure_context:
+      record.last_failure_context === undefined || record.last_failure_context === null
+        ? null
+        : validateFailureContext(record.last_failure_context, `${context} last_failure_context`),
     last_failure_signature: expectNullableString(record.last_failure_signature, `${context} last_failure_signature`),
     last_head_sha: expectNullableString(record.last_head_sha, `${context} last_head_sha`),
     review_wait_started_at: expectNullableString(record.review_wait_started_at, `${context} review_wait_started_at`),

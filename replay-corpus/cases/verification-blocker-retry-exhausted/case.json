@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "id": "verification-blocker-retry-exhausted",
+  "issueNumber": 538,
+  "title": "Replay corpus verification retry budget",
+  "capturedAt": "2026-03-18T01:30:00Z"
+}
