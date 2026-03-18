@@ -8,6 +8,7 @@ import {
   loadSupervisorCycleDecisionSnapshot,
   replaySupervisorCycleDecisionSnapshot,
 } from "./supervisor/supervisor-cycle-replay";
+import { formatReplayCorpusRunSummary, runReplayCorpus } from "./supervisor/replay-corpus";
 
 export function parseArgs(argv: string[]): CliOptions {
   const args = [...argv];
@@ -18,6 +19,7 @@ export function parseArgs(argv: string[]): CliOptions {
   let why = false;
   let issueNumber: number | undefined;
   let snapshotPath: string | undefined;
+  let corpusPath: string | undefined;
 
   while (args.length > 0) {
     const token = args.shift();
@@ -31,7 +33,8 @@ export function parseArgs(argv: string[]): CliOptions {
       token === "status" ||
       token === "explain" ||
       token === "doctor" ||
-      token === "replay"
+      token === "replay" ||
+      token === "replay-corpus"
     ) {
       if (commandSeen) {
         throw new Error(`Unexpected second command: ${token}`);
@@ -68,6 +71,11 @@ export function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
+    if (command === "replay-corpus" && corpusPath === undefined) {
+      corpusPath = token;
+      continue;
+    }
+
     throw new Error(`Unknown argument: ${token}`);
   }
 
@@ -83,7 +91,15 @@ export function parseArgs(argv: string[]): CliOptions {
     throw new Error("The replay command requires one snapshot path.");
   }
 
-  return { command, configPath, dryRun, why, issueNumber, snapshotPath };
+  return {
+    command,
+    configPath,
+    dryRun,
+    why,
+    issueNumber,
+    snapshotPath,
+    corpusPath: command === "replay-corpus" ? (corpusPath ?? "replay-corpus") : undefined,
+  };
 }
 
 async function runOnceWithSupervisorLock(
@@ -114,6 +130,20 @@ async function main(): Promise<void> {
       replayResult,
       snapshot,
     }));
+    return;
+  }
+
+  if (options.command === "replay-corpus") {
+    const config = loadConfig(options.configPath);
+    const result = await runReplayCorpus(options.corpusPath!, config);
+    const summary = formatReplayCorpusRunSummary(result);
+    if (result.mismatchCount > 0) {
+      console.log(summary);
+      process.exitCode = 1;
+      return;
+    }
+
+    console.log(summary);
     return;
   }
 
