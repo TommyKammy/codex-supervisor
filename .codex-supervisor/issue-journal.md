@@ -7,23 +7,23 @@
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
 - Attempt count: 4 (implementation=1, repair=3)
-- Last head SHA: 7154647ae38c8eb6048cf127ec2ea5ec060191ad
+- Last head SHA: 4cf9d14c2744464d6ff511d33629402f5f2c0bf3
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ851Hfko
+- Last failure signature: none
 - Repeated failure signature count: 1
-- Updated at: 2026-03-18T10:36:25.000Z
+- Updated at: 2026-03-18T10:38:29.000Z
 
 ## Latest Codex Summary
-Updated [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-536/.codex-supervisor/issue-journal.md#L28) so the stored review snapshot no longer claims unresolved replay findings after commit `1e16ad4` resolved the underlying PR threads. The active failure block now records a resolved state instead of re-listing already-fixed comments as open review work.
+Updated [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-536/.codex-supervisor/issue-journal.md#L28) so the stored review snapshot no longer claims unresolved replay findings after commit `1e16ad4` resolved the underlying PR threads. Pushed the journal-only follow-up as commit `4cf9d14` and resolved CodeRabbit thread `PRRT_kwDORgvdZ851Hfko` on PR `#542`.
 
 Verified the journal-only change with `git diff --check` and a narrowed `markdownlint-cli2` run that disabled the journal's pre-existing file-wide MD013/MD022/MD032/MD034 violations while checking the edited block. The only remaining local dirt is the pre-existing untracked `.codex-supervisor/replay/` directory.
 
-Summary: Updated the issue journal so the active failure context reflects the already-resolved replay review threads.
-State hint: local_review_fix
+Summary: Updated the issue journal review snapshot, pushed commit `4cf9d14`, and resolved the remaining CodeRabbit thread on PR #542.
+State hint: waiting_ci
 Blocked reason: none
 Tests: `git diff --check`; `cfg=$(mktemp --suffix=.markdownlint-cli2.jsonc) && printf '{ "config": { "MD013": false, "MD022": false, "MD032": false, "MD034": false } }\n' > "$cfg" && npx markdownlint-cli2 --config "$cfg" .codex-supervisor/issue-journal.md`
-Failure signature: PRRT_kwDORgvdZ851Hfko
-Next action: Commit the journal fix, push `codex/issue-536`, and resolve the remaining CodeRabbit thread on PR #542.
+Failure signature: none
+Next action: Monitor PR #542 for CI completion and any further review follow-up.
 
 ## Active Failure Context
 - Category: resolved
@@ -35,15 +35,16 @@ Next action: Commit the journal fix, push `codex/issue-536`, and resolve the rem
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining CodeRabbit thread is a journal consistency issue only, and the narrow fix is to mark the active failure snapshot as resolved instead of repeating already-closed replay findings as open work.
-- What changed: rewrote the journal summary and active failure block so they explicitly record that commit `1e16ad4` resolved the replay timing review threads, and updated this turn's handoff metadata to match the journal-only follow-up.
+- Hypothesis: no substantive replay review issues remain; the only valid follow-up was to keep the durable journal snapshot aligned with the already-resolved PR review state.
+- What changed: rewrote the journal summary and active failure block so they explicitly record that commit `1e16ad4` resolved the replay timing review threads, committed the journal-only follow-up as `4cf9d14`, pushed `codex/issue-536`, and resolved thread `PRRT_kwDORgvdZ851Hfko` on PR #542.
 - Current blocker: none
-- Next exact step: commit the journal fix, push the branch, and resolve thread `PRRT_kwDORgvdZ851Hfko` on PR #542 if the diff stays journal-only.
+- Next exact step: monitor PR #542 for CI completion and any additional review comments after the journal-only follow-up.
 - Verification gap: none for the scoped journal change; `git diff --check` and the narrowed `markdownlint-cli2` run cover the edited content without reformatting the whole generated journal.
 - Files touched: `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this update would leave the durable journal claiming an unresolved replay review state that no longer matches PR #542, which can mislead later supervisor turns.
-- Last focused command: `cfg=$(mktemp --suffix=.markdownlint-cli2.jsonc) && printf '{ "config": { "MD013": false, "MD022": false, "MD032": false, "MD034": false } }\n' > "$cfg" && npx markdownlint-cli2 --config "$cfg" .codex-supervisor/issue-journal.md`
+- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ851Hfko`
 ### Scratchpad
+- 2026-03-18 (UTC): Committed the journal-only review-state fix as `4cf9d14` (`Fix replay journal review state`), pushed `codex/issue-536`, and resolved CodeRabbit thread `PRRT_kwDORgvdZ851Hfko` on PR #542 via `gh api graphql`.
 - 2026-03-18 (UTC): Updated the issue journal so the active failure context records the replay review threads as resolved after commit `1e16ad4`; `git diff --check` and a narrowed `markdownlint-cli2` run with MD013/MD022/MD032/MD034 disabled for this generated file passed.
 - 2026-03-18 (UTC): Committed the replay review follow-up as `1e16ad4` (`Fix replay timing review follow-ups`), pushed `codex/issue-536`, and resolved CodeRabbit threads `PRRT_kwDORgvdZ851HPh-` and `PRRT_kwDORgvdZ851HPiG` on PR #542 via `gh api graphql`.
 - 2026-03-18 (UTC): Addressed PR #542 review follow-up by making `withReplayClock()` throw on invalid `capturedAt`, clearing inherited review/local-review wait fields in the provider-grace replay fixture, and adding a malformed-`capturedAt` regression; `npx tsx --test src/supervisor/supervisor-cycle-replay.test.ts src/supervisor/replay-corpus.test.ts` and `npm run build` passed.
