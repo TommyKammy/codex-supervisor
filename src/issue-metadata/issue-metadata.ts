@@ -2,6 +2,7 @@ import { GitHubIssue, SupervisorStateFile } from "../core/types";
 import { parseIssueMetadata } from "./issue-metadata-parser";
 
 export { parseIssueMetadata } from "./issue-metadata-parser";
+export { validateIssueMetadataSyntax } from "./issue-metadata-validation";
 export {
   classifyChangedFile,
   classifyChangedFiles,

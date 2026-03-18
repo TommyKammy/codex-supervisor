@@ -5,6 +5,7 @@ import {
   findParentIssuesReadyToClose,
   lintExecutionReadyIssueBody,
   parseIssueMetadata,
+  validateIssueMetadataSyntax,
 } from "./issue-metadata";
 import { GitHubIssue } from "../core/types";
 
@@ -82,6 +83,54 @@ test("parseIssueMetadata accepts both execution order metadata formats", () => {
       executionOrderTotal: 5,
     },
   );
+});
+
+test("validateIssueMetadataSyntax stays quiet for valid dependency and sequencing metadata", () => {
+  const issue = createIssue({
+    number: 55,
+    body: `Part of: #123
+Depends on: none
+Execution order: 1 of 4
+Parallelizable: No`,
+  });
+
+  assert.deepEqual(validateIssueMetadataSyntax(issue), []);
+});
+
+test("validateIssueMetadataSyntax reports malformed and self-inconsistent scheduling metadata", () => {
+  const issue = createIssue({
+    number: 55,
+    body: `Part of: #55
+Depends on: #55, #77, #77, blocked by #oops
+Execution order: 4 of 2
+Parallelizable: Later`,
+  });
+
+  assert.deepEqual(validateIssueMetadataSyntax(issue), [
+    "part of references the issue itself",
+    "depends on contains malformed references: #oops",
+    "depends on references the issue itself",
+    "depends on repeats #77",
+    "execution order must be N of M with 1 <= N <= M",
+    "parallelizable must be Yes or No",
+  ]);
+});
+
+test("validateIssueMetadataSyntax rejects zero and blank scheduling metadata values", () => {
+  const issue = createIssue({
+    number: 55,
+    body: `Part of: #0
+Depends on:
+Execution order:
+Parallelizable:`,
+  });
+
+  assert.deepEqual(validateIssueMetadataSyntax(issue), [
+    "part of must reference a single issue as #<number>",
+    "depends on must be none or comma-separated #<number> references",
+    "execution order must be N of M with 1 <= N <= M",
+    "parallelizable must be Yes or No",
+  ]);
 });
 
 test("lintExecutionReadyIssueBody accepts a complete execution-ready issue body", () => {

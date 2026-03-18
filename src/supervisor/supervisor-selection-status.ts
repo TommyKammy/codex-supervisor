@@ -4,6 +4,7 @@ import {
   findHighRiskBlockingAmbiguity,
   lintExecutionReadyIssueBody,
   parseIssueMetadata,
+  validateIssueMetadataSyntax,
 } from "../issue-metadata";
 import { readIssueJournal, summarizeIssueJournalHandoff } from "../core/journal";
 import {
@@ -453,6 +454,7 @@ export async function buildIssueLintSummary(
 ): Promise<string[]> {
   const issue = await github.getIssue(issueNumber);
   const readiness = lintExecutionReadyIssueBody(issue);
+  const metadataErrors = validateIssueMetadataSyntax(issue);
 
   return [
     `issue=#${issue.number}`,
@@ -468,6 +470,7 @@ export async function buildIssueLintSummary(
         ? formatExecutionReadyMissingFields(readiness.missingRecommended)
         : "none"
     }`,
+    `metadata_errors=${metadataErrors.length > 0 ? metadataErrors.join("; ") : "none"}`,
   ];
 }
 
