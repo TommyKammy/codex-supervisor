@@ -14,7 +14,16 @@
 - Updated at: 2026-03-18T08:59:03.961Z
 
 ## Latest Codex Summary
-- None yet.
+Implemented replay corpus snapshot promotion in `src/supervisor/replay-corpus.ts`, added focused end-to-end coverage in `src/supervisor/replay-corpus.test.ts`, and pushed the branch as draft PR [#540](https://github.com/TommyKammy/codex-supervisor/pull/540).
+
+Verification passed with `npx tsx --test src/supervisor/replay-corpus.test.ts` and `npm run build` after installing local dependencies with `npm ci`. I did not run the full test suite.
+
+Summary: Added the replay snapshot promotion flow, verified it with focused tests plus build, and opened draft PR #540
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/replay-corpus.test.ts`; `npm run build`
+Failure signature: none
+Next action: monitor draft PR #540 for review or CI feedback and address follow-up if it appears
 
 ## Active Failure Context
 - None recorded.
@@ -22,14 +31,15 @@
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: `src/supervisor/replay-corpus.ts` can own a narrow promotion flow that loads a captured supervisor replay snapshot, normalizes machine-specific fields, writes a canonical bundle, updates `replay-corpus/manifest.json`, and immediately proves the promoted case replays cleanly.
-- What changed: added `promoteCapturedReplaySnapshot()` to `src/supervisor/replay-corpus.ts`, including manifest creation/loading, case-id validation, normalization of `local.record.workspace`, `local.record.journal_path`, and `local.workspaceStatus.hasUncommittedChanges`, expected-outcome generation from the normalized replay result, and post-write corpus validation. Added a focused end-to-end regression in `src/supervisor/replay-corpus.test.ts` covering promotion of a representative no-PR captured snapshot into a valid canonical bundle.
+- What changed: added `promoteCapturedReplaySnapshot()` to `src/supervisor/replay-corpus.ts`, including manifest creation/loading, case-id validation, normalization of `local.record.workspace`, `local.record.journal_path`, and `local.workspaceStatus.hasUncommittedChanges`, expected-outcome generation from the normalized replay result, and post-write corpus validation. Added a focused end-to-end regression in `src/supervisor/replay-corpus.test.ts` covering promotion of a representative no-PR captured snapshot into a valid canonical bundle. Committed the implementation as `6d52974` (`Promote captured replay snapshots into corpus cases`), pushed `codex/issue-534`, and opened draft PR #540.
 - Current blocker: none
-- Next exact step: review the diff, commit the replay corpus promotion implementation, and open or update the draft PR for `codex/issue-534`.
+- Next exact step: watch draft PR #540 for CI or review feedback and address any follow-up without broadening the replay corpus surface unnecessarily.
 - Verification gap: focused replay corpus promotion coverage and `npm run build` both pass locally; I have not added a checked-in promoted case under `replay-corpus/cases/` yet because the issue acceptance is satisfied by the promotion flow plus the focused end-to-end test.
 - Files touched: `src/supervisor/replay-corpus.ts`, `src/supervisor/replay-corpus.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this change would remove the only supported path for turning captured snapshots into canonical replay corpus bundles and would reopen the focused regression around volatile workspace fields.
 - Last focused command: `npx tsx --test src/supervisor/replay-corpus.test.ts && npm run build`
 ### Scratchpad
+- 2026-03-18 (JST): Pushed `codex/issue-534` and opened draft PR #540 after committing `6d52974` (`Promote captured replay snapshots into corpus cases`).
 - 2026-03-18 (JST): Added `promoteCapturedReplaySnapshot()` in `src/supervisor/replay-corpus.ts` and a focused end-to-end promotion regression in `src/supervisor/replay-corpus.test.ts`; after installing local npm dependencies with `npm ci`, `npx tsx --test src/supervisor/replay-corpus.test.ts` and `npm run build` both passed.
 - 2026-03-18 (JST): Addressed the remaining PR #539 CodeRabbit journal-link thread locally by converting `.codex-supervisor/issue-journal.md` to repo-relative replay-corpus links and verifying the file no longer contains absolute workspace-path or file-URI references with `rg`.
 - 2026-03-18 (JST): Committed `Fix replay corpus review validation gaps`, pushed `codex/issue-532`, and resolved the two remaining CodeRabbit review threads on PR #538 after the focused replay tests and `npm run build` passed.
