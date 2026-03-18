@@ -19,7 +19,12 @@ test("issue lint reports a complete execution-ready issue as clean", async () =>
   const issue: GitHubIssue = {
     number: 102,
     title: "Execution-ready issue",
-    body: executionReadyBody("Issue lint should accept an execution-ready issue."),
+    body: `${executionReadyBody("Issue lint should accept an execution-ready issue.")}
+
+Part of: #200
+Depends on: none
+Execution order: 1 of 4
+Parallelizable: No`,
     createdAt: "2026-03-19T00:00:00Z",
     updatedAt: "2026-03-19T00:00:00Z",
     url: "https://example.test/issues/102",
@@ -36,7 +41,8 @@ test("issue lint reports a complete execution-ready issue as clean", async () =>
   assert.match(report, /^issue=#102$/m);
   assert.match(report, /^execution_ready=yes$/m);
   assert.match(report, /^missing_required=none$/m);
-  assert.match(report, /^missing_recommended=depends on, execution order$/m);
+  assert.match(report, /^missing_recommended=none$/m);
+  assert.match(report, /^metadata_errors=none$/m);
 });
 
 test("issue lint reports missing required execution-ready sections deterministically", async () => {
@@ -69,4 +75,48 @@ Issue lint should report missing sections.`,
   assert.match(report, /^execution_ready=no$/m);
   assert.match(report, /^missing_required=scope, acceptance criteria, verification$/m);
   assert.match(report, /^missing_recommended=depends on, execution order$/m);
+});
+
+test("issue lint reports malformed and locally inconsistent scheduling metadata", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: 104,
+    title: "Invalid metadata issue",
+    body: `## Summary
+Issue lint should report malformed scheduling metadata.
+
+## Scope
+- keep the check local to the authored issue
+
+Part of: #104
+Depends on: #104, #105, #105, blocked by #oops
+Execution order: 3 of 2
+Parallelizable: Later
+
+## Acceptance criteria
+- invalid metadata is called out clearly
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint.test.ts`,
+    createdAt: "2026-03-19T00:00:00Z",
+    updatedAt: "2026-03-19T00:00:00Z",
+    url: "https://example.test/issues/104",
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => issue,
+  };
+
+  const report = await supervisor.issueLint(104);
+
+  assert.match(report, /^issue=#104$/m);
+  assert.match(report, /^metadata_errors=part of references the issue itself; depends on contains malformed references: #oops; depends on references the issue itself; depends on repeats #105; execution order must be N of M with 1 <= N <= M; parallelizable must be Yes or No$/m);
 });
