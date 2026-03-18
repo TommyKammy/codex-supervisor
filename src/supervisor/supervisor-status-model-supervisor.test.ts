@@ -386,7 +386,7 @@ test("buildDetailedStatusSummaryLines shapes optional summaries and artifact pat
       "change_classes=backend, docs, tests",
       "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=none",
       "external_review_follow_up unresolved=2 actions=durable_guardrail:1|regression_test:1",
-      "latest_recovery issue=#91 at=2026-03-13T00:20:00Z reason=merged_pr_convergence: tracked PR #191 merged; marked issue #91 done",
+      "latest_recovery issue=#91 at=2026-03-13T00:20:00Z reason=merged_pr_convergence detail=tracked PR #191 merged; marked issue #91 done",
       "local_review_summary_path=owner-repo/issue-58/local-review-summary.md",
       "external_review_misses_path=owner-repo/issue-58/external-review-misses-head-deadbeef.json",
     ],

@@ -700,7 +700,7 @@ test("formatDetailedStatus surfaces the latest recovery reason separately from t
 
   assert.match(
     status,
-    /latest_recovery issue=#91 at=2026-03-13T00:20:00Z reason=merged_pr_convergence: tracked PR #191 merged; marked issue #91 done/,
+    /latest_recovery issue=#91 at=2026-03-13T00:20:00Z reason=merged_pr_convergence detail=tracked PR #191 merged; marked issue #91 done/,
   );
 });
 
@@ -739,7 +739,7 @@ test("formatDetailedStatus reports idle status with the latest record and latest
   assert.match(status, /latest_record=#92 state=done updated_at=2026-03-13T01:20:00Z/);
   assert.match(
     status,
-    /latest_recovery issue=#91 at=2026-03-13T00:20:00Z reason=merged_pr_convergence: tracked PR #191 merged; marked issue #91 done/,
+    /latest_recovery issue=#91 at=2026-03-13T00:20:00Z reason=merged_pr_convergence detail=tracked PR #191 merged; marked issue #91 done/,
   );
 });
 

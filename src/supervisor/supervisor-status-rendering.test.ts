@@ -219,7 +219,7 @@ test("formatDetailedStatus renders core lines before appended summaries", () => 
       "verification_policy intensity=standard driver=changed_files:backend|docs|tests",
       "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=runtime:owner-repo/issue-58/external-review-misses-head-deadbeef.json#2",
       "external_review_follow_up unresolved=2 actions=durable_guardrail:1|regression_test:1",
-      "latest_recovery issue=#57 at=2026-03-13T00:20:00Z reason=merged_pr_convergence: tracked PR #157 merged; marked issue #57 done",
+      "latest_recovery issue=#57 at=2026-03-13T00:20:00Z reason=merged_pr_convergence detail=tracked PR #157 merged; marked issue #57 done",
       "local_review_summary_path=owner-repo/issue-58/local-review-summary.md",
       "external_review_misses_path=owner-repo/issue-58/external-review-misses-head-deadbeef.json",
     ].join("\n"),
@@ -301,7 +301,34 @@ test("formatDetailedStatus keeps idle output compact when there is no active iss
       "No active issue.",
       "tracked_issues=2",
       "latest_record=#92 state=done updated_at=2026-03-13T01:20:00Z",
-      "latest_recovery issue=#91 at=2026-03-13T00:20:00Z reason=merged_pr_convergence: tracked PR #191 merged; marked issue #91 done",
+      "latest_recovery issue=#91 at=2026-03-13T00:20:00Z reason=merged_pr_convergence detail=tracked PR #191 merged; marked issue #91 done",
     ].join("\n"),
+  );
+});
+
+test("formatDetailedStatus renders a compact latest recovery summary for the active recovered issue", () => {
+  const activeRecord = createRecord({
+    issue_number: 91,
+    state: "reproducing",
+    branch: "codex/issue-91",
+    workspace: "/tmp/workspaces/issue-91",
+    last_recovery_reason: "tracked_pr_head_advanced: resumed issue #91 from blocked to reproducing after tracked PR #191 advanced from head-old-191 to head-new-191",
+    last_recovery_at: "2026-03-13T00:20:00Z",
+  });
+
+  const status = formatDetailedStatus({
+    config: createConfig(),
+    activeRecord,
+    latestRecord: activeRecord,
+    latestRecoveryRecord: activeRecord,
+    trackedIssueCount: 1,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(
+    status,
+    /latest_recovery issue=#91 at=2026-03-13T00:20:00Z reason=tracked_pr_head_advanced detail=resumed issue #91 from blocked to reproducing after tracked PR #191 advanced from head-old-191 to head-new-191/,
   );
 });
