@@ -10,6 +10,7 @@ import {
 } from "./supervisor/supervisor-cycle-replay";
 import {
   createCheckedInReplayCorpusConfig,
+  summarizeReplayCorpusPromotion,
   formatReplayCorpusRunSummary,
   promoteCapturedReplaySnapshot,
   runReplayCorpus,
@@ -208,13 +209,20 @@ async function main(): Promise<void> {
       process.exitCode = 1;
       return;
     }
+    const sourceSnapshot = await loadSupervisorCycleDecisionSnapshot(options.snapshotPath!);
     const promoted = await promoteCapturedReplaySnapshot({
       corpusRoot: options.corpusPath!,
       snapshotPath: options.snapshotPath!,
       caseId: options.caseId!,
       config,
     });
+    const summary = summarizeReplayCorpusPromotion(sourceSnapshot, promoted);
     console.log(`Promoted replay corpus case "${promoted.id}" for issue #${promoted.metadata.issueNumber}.`);
+    console.log(`Case path: ${summary.casePath}`);
+    console.log(`Expected outcome: ${summary.expectedOutcome}`);
+    if (summary.normalizationNotes.length > 0) {
+      console.log(`Normalization: ${summary.normalizationNotes.join(", ")}`);
+    }
     return;
   }
 

@@ -140,6 +140,12 @@ export interface ReplayCorpusSummaryLine {
   actual: ReplayCorpusNormalizedOutcome;
 }
 
+export interface ReplayCorpusPromotionSummary {
+  casePath: string;
+  expectedOutcome: string;
+  normalizationNotes: string[];
+}
+
 export interface PromoteCapturedReplaySnapshotArgs {
   corpusRoot: string;
   snapshotPath: string;
@@ -940,6 +946,41 @@ function normalizeReplayResult(
   };
 }
 
+function formatPromotionNoteValue(value: string | boolean | null): string {
+  return value === null ? "none" : String(value);
+}
+
+export function summarizeReplayCorpusPromotion(
+  sourceSnapshot: ReplayCorpusInputSnapshot,
+  promotedCase: ReplayCorpusCaseBundle,
+): ReplayCorpusPromotionSummary {
+  const normalizationNotes: string[] = [];
+  const normalizedSnapshot = promotedCase.input.snapshot;
+
+  if (sourceSnapshot.local.record.workspace !== normalizedSnapshot.local.record.workspace) {
+    normalizationNotes.push(`workspace=>${formatPromotionNoteValue(normalizedSnapshot.local.record.workspace)}`);
+  }
+  if (sourceSnapshot.local.record.journal_path !== normalizedSnapshot.local.record.journal_path) {
+    normalizationNotes.push(`journal_path=>${formatPromotionNoteValue(normalizedSnapshot.local.record.journal_path)}`);
+  }
+  if (sourceSnapshot.local.record.local_review_summary_path !== normalizedSnapshot.local.record.local_review_summary_path) {
+    normalizationNotes.push(
+      `local_review_summary_path=>${formatPromotionNoteValue(normalizedSnapshot.local.record.local_review_summary_path)}`,
+    );
+  }
+  if (sourceSnapshot.local.workspaceStatus.hasUncommittedChanges !== normalizedSnapshot.local.workspaceStatus.hasUncommittedChanges) {
+    normalizationNotes.push(
+      `hasUncommittedChanges=>${formatPromotionNoteValue(normalizedSnapshot.local.workspaceStatus.hasUncommittedChanges)}`,
+    );
+  }
+
+  return {
+    casePath: promotedCase.bundlePath,
+    expectedOutcome: formatReplayCorpusCompactOutcome(promotedCase.expected),
+    normalizationNotes,
+  };
+}
+
 function replayCorpusMismatchDetailsArtifactPath(config: SupervisorConfig): string {
   return path.join(config.repoPath, ".codex-supervisor", "replay", "replay-corpus-mismatch-details.json");
 }
@@ -994,7 +1035,7 @@ export function formatReplayCorpusOutcomeMismatch(result: ReplayCorpusCaseResult
   ].join("\n");
 }
 
-function formatCompactOutcome(outcome: ReplayCorpusNormalizedOutcome): string {
+export function formatReplayCorpusCompactOutcome(outcome: ReplayCorpusNormalizedOutcome): string {
   return [
     `nextState=${formatOutcomeValue(outcome.nextState)}`,
     `shouldRunCodex=${formatOutcomeValue(outcome.shouldRunCodex)}`,
@@ -1004,7 +1045,7 @@ function formatCompactOutcome(outcome: ReplayCorpusNormalizedOutcome): string {
 }
 
 export function formatReplayCorpusMismatchSummaryLine(result: ReplayCorpusCaseResult): string {
-  return `Mismatch: ${result.caseId} (issue #${result.issueNumber}) expected(${formatCompactOutcome(result.expected)}) actual(${formatCompactOutcome(result.actual)})`;
+  return `Mismatch: ${result.caseId} (issue #${result.issueNumber}) expected(${formatReplayCorpusCompactOutcome(result.expected)}) actual(${formatReplayCorpusCompactOutcome(result.actual)})`;
 }
 
 export function formatReplayCorpusMismatchDetailsArtifact(
