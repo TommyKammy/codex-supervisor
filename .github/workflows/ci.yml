@@ -29,4 +29,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - if: matrix.os == 'ubuntu-latest'
+        run: npx tsx src/index.ts replay-corpus
       - run: npm run build

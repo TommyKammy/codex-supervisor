@@ -14,3 +14,12 @@ test("CI workflow cancels stale runs for the same branch or PR", async () => {
     /concurrency:\s*group:\s*\$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.head\.repo\.full_name \|\| github\.repository \}\}-\$\{\{ github\.head_ref \|\| github\.ref_name \}\}\s*cancel-in-progress:\s*true/,
   );
 });
+
+test("CI workflow surfaces the compact replay corpus summary in pull request output", async () => {
+  const workflow = await fs.readFile(workflowPath, "utf8");
+
+  assert.match(
+    workflow,
+    /-\s*if:\s*matrix\.os == 'ubuntu-latest'\s*[\s\S]*?run:\s*npx tsx src\/index\.ts replay-corpus(?:\s|$)/,
+  );
+});
