@@ -5,18 +5,25 @@
 - Branch: codex/issue-525
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 9729b5217558af604a957dabbbf7321798e0318c
+- Current phase: stabilizing
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: 6d6d7fa3dd46d841a1cefd667c43af932e44d058
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-18T05:31:39.489Z
+- Updated at: 2026-03-18T05:41:16.221Z
 
 ## Latest Codex Summary
-Focused local-review orchestration coverage now uses a reusable fake runner instead of depending on a live `codexBinary`. In [src/local-review/test-helpers.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-525/src/local-review/test-helpers.ts), I added `createFakeLocalReviewRunner()`, `createRoleTurnOutput()`, and `createVerifierTurnOutput()` so tests can drive the real runner parsing contract with deterministic role-based outputs. In [src/local-review/execution.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-525/src/local-review/execution.test.ts), I added one reviewer-only orchestration test and one reviewer-plus-verifier orchestration test that go through `runLocalReviewExecution()` using `runRoleReview()` and `runVerifierReview()` backed by the fake runner, proving both paths work without using `codexBinary`.
+Added a fake local-review runner fixture and converted focused orchestration coverage to use it. The new helper lives in [src/local-review/test-helpers.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-525/src/local-review/test-helpers.ts), and the new focused reviewer/verifier-path tests are in [src/local-review/execution.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-525/src/local-review/execution.test.ts). They now drive `runLocalReviewExecution()` through the real `runRoleReview()` / `runVerifierReview()` parsing path without relying on `codexBinary`.
 
-Verification passed with `npx tsx --test src/local-review/runner.test.ts src/local-review/execution.test.ts` and `npm run build`.
+I updated the issue journal in [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-525/.codex-supervisor/issue-journal.md) and committed the checkpoint as `6d6d7fa` with message `Add fake runner local review test helpers`.
+
+Summary: Added reusable fake-runner helpers for local-review tests and converted focused reviewer/verifier orchestration coverage to use them; focused tests and build pass.
+State hint: local_review
+Blocked reason: none
+Tests: `npx tsx --test src/local-review/execution.test.ts`; `npx tsx --test src/local-review/runner.test.ts src/local-review/execution.test.ts`; `npm run build`
+Failure signature: none
+Next action: Open or update the draft PR for `codex/issue-525` and push commit `6d6d7fa`.
 
 ## Active Failure Context
 - None recorded.
@@ -24,9 +31,9 @@ Verification passed with `npx tsx --test src/local-review/runner.test.ts src/loc
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: the missing leverage point was not product code but test support; focused reviewer/verifier orchestration coverage needed a reusable fake runner that still exercised the real local-review runner parsing path instead of stubbing entire role/verifier functions.
-- What changed: added fake local-review runner helpers in `src/local-review/test-helpers.ts` and converted focused orchestration coverage in `src/local-review/execution.test.ts` to drive `runLocalReviewExecution()` through `runRoleReview()` and `runVerifierReview()` with fake runner outputs for both reviewer-only and verifier-triggering paths.
+- What changed: added fake local-review runner helpers in `src/local-review/test-helpers.ts`, converted focused orchestration coverage in `src/local-review/execution.test.ts` to drive `runLocalReviewExecution()` through `runRoleReview()` and `runVerifierReview()` with fake runner outputs for both reviewer-only and verifier-triggering paths, and committed that checkpoint as `6d6d7fa` (`Add fake runner local review test helpers`).
 - Current blocker: none
-- Next exact step: commit this focused test-only change on `codex/issue-525`, then open or update the draft PR if one does not already exist.
+- Next exact step: push `codex/issue-525` and open a draft PR for issue #525 if one does not already exist.
 - Verification gap: none for the requested focused tests and build; broader suite was not rerun after the targeted verification.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/local-review/execution.test.ts`, `src/local-review/test-helpers.ts`
 - Rollback concern: removing the fake-runner helpers would push focused orchestration tests back toward live CLI dependence or coarse stubs, reducing confidence in reviewer/verifier wiring.
@@ -35,3 +42,4 @@ Verification passed with `npx tsx --test src/local-review/runner.test.ts src/loc
 - 2026-03-18 (JST): Added two narrow repro tests in `src/local-review/execution.test.ts`; initial focused failure was `TypeError: (0 , import_test_helpers.createRoleTurnOutput) is not a function`.
 - 2026-03-18 (JST): Implemented `createFakeLocalReviewRunner()`, `createRoleTurnOutput()`, and `createVerifierTurnOutput()` in `src/local-review/test-helpers.ts`; first pass exposed a shape mismatch (`Cannot read properties of undefined (reading 'match')`) because the helper accepted raw strings but did not normalize them into `{ exitCode, rawOutput }`.
 - 2026-03-18 (JST): Normalized string outputs inside the fake runner helper; `npx tsx --test src/local-review/execution.test.ts`, `npx tsx --test src/local-review/runner.test.ts src/local-review/execution.test.ts`, and `npm run build` then passed.
+- 2026-03-18 (JST): Resumed in stabilizing; confirmed HEAD `6d6d7fa`, no PR existed yet for `codex/issue-525`, and prepared the handoff for the push/PR step.
