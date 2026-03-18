@@ -74,7 +74,7 @@ export function deriveReplayCorpusPromotionWorthinessHints(
     pullRequest.currentHeadCiGreenAt !== null &&
     snapshot.github.checks.length > 0 &&
     snapshot.github.checks.every((check) => check.bucket === "pass") &&
-    (pullRequest.configuredBotCurrentHeadObservedAt !== null ||
+    (pullRequest.configuredBotCurrentHeadObservedAt != null ||
       pullRequest.copilotReviewState !== undefined)
   ) {
     hints.push({

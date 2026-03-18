@@ -172,3 +172,17 @@ test("promotion summary helpers surface normalization notes and advisory hints",
     ],
   });
 });
+
+test("promotion summary helpers do not infer provider wait from a missing observation timestamp", () => {
+  const sourceSnapshot = createSnapshot();
+
+  sourceSnapshot.decision.nextState = "waiting_ci";
+  sourceSnapshot.decision.shouldRunCodex = false;
+  sourceSnapshot.local.record.timeout_retry_count = 0;
+  sourceSnapshot.local.record.blocked_verification_retry_count = 0;
+  sourceSnapshot.local.record.repeated_failure_signature_count = 0;
+  sourceSnapshot.github.pullRequest!.currentHeadCiGreenAt = "2026-03-19T00:05:00Z";
+  sourceSnapshot.github.checks = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+  assert.deepEqual(deriveReplayCorpusPromotionWorthinessHints(sourceSnapshot).map((hint) => hint.id), []);
+});
