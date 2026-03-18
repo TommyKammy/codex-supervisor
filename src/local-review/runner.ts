@@ -125,6 +125,7 @@ export async function runVerifierReview(args: {
   defaultBranch: string;
   pr: GitHubPullRequest;
   findings: LocalReviewFinding[];
+  executeTurn?: LocalReviewTurnExecutor;
 }): Promise<LocalReviewVerifierReport> {
   const changedFiles = [...new Set(
     args.findings
@@ -155,7 +156,8 @@ export async function runVerifierReview(args: {
     priorMissPatterns,
     verifierGuardrails,
   });
-  const result = await runCodexReviewTurn({
+  const executeTurn = args.executeTurn ?? runCodexReviewTurn;
+  const result = await executeTurn({
     config: args.config,
     workspacePath: args.workspacePath,
     role: "verifier",
