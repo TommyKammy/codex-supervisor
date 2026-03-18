@@ -82,6 +82,15 @@ function expectString(value: unknown, context: string): string {
   return value;
 }
 
+function expectCaseId(value: unknown, context: string): string {
+  const id = expectString(value, context);
+  if (id === "." || id === ".." || id.includes("/") || id.includes("\\")) {
+    throw validationError(`${context} must be a single path segment`);
+  }
+
+  return id;
+}
+
 function expectInteger(value: unknown, context: string): number {
   if (!Number.isInteger(value)) {
     throw validationError(`${context} must be an integer`);
@@ -125,9 +134,9 @@ function validateManifest(raw: unknown, manifestPath: string): ReplayCorpusManif
   const seenPaths = new Set<string>();
   const cases = manifest.cases.map((entry, index) => {
     const value = expectObject(entry, `Replay corpus manifest case[${index}]`);
-    const id = expectString(value.id, `Replay corpus manifest case[${index}] id`);
+    const id = expectCaseId(value.id, `Replay corpus manifest case[${index}] id`);
     const entryPath = expectString(value.path, `Replay corpus manifest case[${index}] path`);
-    const canonicalPath = path.posix.join("cases", id);
+    const canonicalPath = `cases/${id}`;
     if (entryPath !== canonicalPath) {
       throw validationError(
         `Replay corpus manifest case "${id}" must use canonical path "${canonicalPath}", received "${entryPath}"`,
@@ -180,6 +189,31 @@ function validateExpectedReplayResult(raw: unknown, expectedPath: string): Repla
   };
 }
 
+async function loadReplayCorpusInputSnapshot(
+  entryId: string,
+  inputSnapshotPath: string,
+): Promise<Awaited<ReturnType<typeof loadSupervisorCycleDecisionSnapshot>>> {
+  let snapshot: Awaited<ReturnType<typeof loadSupervisorCycleDecisionSnapshot>>;
+  try {
+    snapshot = await loadSupervisorCycleDecisionSnapshot(inputSnapshotPath);
+  } catch (error) {
+    const maybeErr = error as NodeJS.ErrnoException;
+    if (maybeErr.code === "ENOENT") {
+      throw validationError(`Missing required replay corpus file: ${inputSnapshotPath}`);
+    }
+
+    throw error;
+  }
+
+  const snapshotObject = expectObject(snapshot, `Replay corpus case "${entryId}" input snapshot`);
+  const snapshotIssue = expectObject(snapshotObject.issue, `Replay corpus case "${entryId}" input snapshot issue`);
+  expectInteger(snapshotIssue.number, `Replay corpus case "${entryId}" input snapshot issue.number`);
+  expectString(snapshotIssue.title, `Replay corpus case "${entryId}" input snapshot issue.title`);
+  expectString(snapshotObject.capturedAt, `Replay corpus case "${entryId}" input snapshot capturedAt`);
+
+  return snapshot;
+}
+
 async function loadReplayCorpusCase(rootPath: string, entry: ReplayCorpusManifestEntry): Promise<ReplayCorpusCaseBundle> {
   const bundlePath = path.join(rootPath, entry.path);
   const metadataPath = path.join(bundlePath, CASE_METADATA);
@@ -187,7 +221,7 @@ async function loadReplayCorpusCase(rootPath: string, entry: ReplayCorpusManifes
   const expectedReplayResultPath = path.join(bundlePath, CASE_EXPECTED_REPLAY_RESULT);
 
   const metadata = validateCaseMetadata(await readRequiredJson(metadataPath), metadataPath);
-  const snapshot = await loadSupervisorCycleDecisionSnapshot(inputSnapshotPath);
+  const snapshot = await loadReplayCorpusInputSnapshot(entry.id, inputSnapshotPath);
   const expected = validateExpectedReplayResult(
     await readRequiredJson(expectedReplayResultPath),
     expectedReplayResultPath,

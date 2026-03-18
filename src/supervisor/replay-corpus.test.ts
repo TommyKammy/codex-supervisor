@@ -269,9 +269,72 @@ test("loadReplayCorpus rejects case bundles that omit required files", async () 
   });
   await writeJson(path.join(corpusRoot, "cases", "review-blocked", "input", "snapshot.json"), snapshot);
 
+  const missingReplayResultPath = path.join(
+    corpusRoot,
+    "cases",
+    "review-blocked",
+    "expected",
+    "replay-result.json",
+  );
+  await assert.rejects(() => loadReplayCorpus(corpusRoot), (error) => {
+    return (
+      error instanceof Error &&
+      error.message.includes(`Missing required replay corpus file: ${missingReplayResultPath}`)
+    );
+  });
+});
+
+test("loadReplayCorpus rejects manifest case ids that are not single path segments", async () => {
+  const corpusRoot = await fs.mkdtemp(path.join(os.tmpdir(), "replay-corpus-invalid-id-"));
+
+  await writeJson(path.join(corpusRoot, "manifest.json"), {
+    schemaVersion: 1,
+    cases: [
+      {
+        id: "../outside",
+        path: "cases/../outside",
+      },
+    ],
+  });
+
   await assert.rejects(
     () => loadReplayCorpus(corpusRoot),
-    /Missing required replay corpus file: .*cases\/review-blocked\/expected\/replay-result\.json/,
+    /Replay corpus manifest case\[0\] id must be a single path segment/,
+  );
+});
+
+test("loadReplayCorpus rejects input snapshots that omit required fields", async () => {
+  const corpusRoot = await fs.mkdtemp(path.join(os.tmpdir(), "replay-corpus-invalid-snapshot-"));
+
+  await writeJson(path.join(corpusRoot, "manifest.json"), {
+    schemaVersion: 1,
+    cases: [
+      {
+        id: "review-blocked",
+        path: "cases/review-blocked",
+      },
+    ],
+  });
+  await writeJson(path.join(corpusRoot, "cases", "review-blocked", "case.json"), {
+    schemaVersion: 1,
+    id: "review-blocked",
+    issueNumber: 532,
+    title: "Replay corpus example",
+    capturedAt: "2026-03-16T10:07:00Z",
+  });
+  await writeJson(path.join(corpusRoot, "cases", "review-blocked", "input", "snapshot.json"), {
+    schemaVersion: 1,
+  });
+  await writeJson(path.join(corpusRoot, "cases", "review-blocked", "expected", "replay-result.json"), {
+    nextState: "blocked",
+    shouldRunCodex: false,
+    blockedReason: "manual_review",
+    failureSignature: "stalled-bot:thread-1",
+  });
+
+  await assert.rejects(
+    () => loadReplayCorpus(corpusRoot),
+    /Replay corpus case "review-blocked" input snapshot issue must be an object/,
   );
 });
 
