@@ -78,6 +78,13 @@ test("parseArgs defaults replay-corpus to the checked-in corpus path", () => {
   });
 });
 
+test("replay-corpus replays the checked-in corpus without requiring supervisor.config.json", () => {
+  const result = runCli(["replay-corpus"]);
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /^Replay corpus summary: total=\d+ passed=\d+ failed=0$/m);
+});
+
 test("parseArgs rejects a second command after replay", () => {
   assert.throws(
     () => parseArgs(["replay", "/tmp/decision-cycle-snapshot.json", "run-once"]),
