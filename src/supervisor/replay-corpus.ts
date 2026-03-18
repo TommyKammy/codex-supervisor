@@ -111,6 +111,13 @@ export interface ReplayCorpusRunResult {
   results: ReplayCorpusCaseResult[];
 }
 
+export interface ReplayCorpusSummaryLine {
+  caseId: string;
+  issueNumber: number;
+  expected: ReplayCorpusNormalizedOutcome;
+  actual: ReplayCorpusNormalizedOutcome;
+}
+
 export interface PromoteCapturedReplaySnapshotArgs {
   corpusRoot: string;
   snapshotPath: string;
@@ -864,4 +871,29 @@ export function formatReplayCorpusOutcomeMismatch(result: ReplayCorpusCaseResult
     `  expected.failureSignature=${formatOutcomeValue(result.expected.failureSignature)}`,
     `  actual.failureSignature=${formatOutcomeValue(result.actual.failureSignature)}`,
   ].join("\n");
+}
+
+function formatCompactOutcome(outcome: ReplayCorpusNormalizedOutcome): string {
+  return [
+    `nextState=${formatOutcomeValue(outcome.nextState)}`,
+    `shouldRunCodex=${formatOutcomeValue(outcome.shouldRunCodex)}`,
+    `blockedReason=${formatOutcomeValue(outcome.blockedReason)}`,
+    `failureSignature=${formatOutcomeValue(outcome.failureSignature)}`,
+  ].join(", ");
+}
+
+export function formatReplayCorpusMismatchSummaryLine(result: ReplayCorpusCaseResult): string {
+  return `Mismatch: ${result.caseId} (issue #${result.issueNumber}) expected(${formatCompactOutcome(result.expected)}) actual(${formatCompactOutcome(result.actual)})`;
+}
+
+export function formatReplayCorpusRunSummary(result: ReplayCorpusRunResult): string {
+  const passedCount = result.totalCases - result.mismatchCount;
+  const lines = [`Replay corpus summary: total=${result.totalCases} passed=${passedCount} failed=${result.mismatchCount}`];
+  for (const entry of result.results) {
+    if (!entry.matchesExpected) {
+      lines.push(formatReplayCorpusMismatchSummaryLine(entry));
+    }
+  }
+
+  return lines.join("\n");
 }
