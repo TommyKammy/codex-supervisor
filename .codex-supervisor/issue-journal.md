@@ -5,32 +5,45 @@
 - Branch: codex/issue-591
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: ad17127d4debbfebc804da503cc9d4e13b460a90
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 070fbdd4d65e9b3612237d48c994697e9ebf79a0
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-18T22:43:54.344Z
+- Last failure signature: PRRT_kwDORgvdZ851TzoO
+- Repeated failure signature count: 1
+- Updated at: 2026-03-18T22:55:36.317Z
 
 ## Latest Codex Summary
-- None yet.
+Implemented the narrow stale-recovery fix in [src/recovery-reconciliation.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-591/src/recovery-reconciliation.ts) and wired the repeat limit from [src/supervisor/supervisor.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-591/src/supervisor/supervisor.ts). A stale `stabilizing` record with no resolvable tracked PR now records a stable failure signature on requeue, and once that signature reaches the configured repeat limit it converges to `blocked` with `blocked_reason=manual_review`, a concrete operator-facing `last_error`, and a `stale_state_manual_stop` recovery reason instead of looping forever.
+
+Focused coverage was added in [src/supervisor/supervisor-recovery-reconciliation.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-591/src/supervisor/supervisor-recovery-reconciliation.test.ts). Commit `070fbdd` is pushed on `codex/issue-591`, and draft PR #593 is open: https://github.com/TommyKammy/codex-supervisor/pull/593. `npm run build` initially failed because `tsc` was missing locally; running `npm install` restored local deps and the build passed. I left the unrelated untracked `.codex-supervisor/replay/` directory alone.
+
+Summary: Added repeat-tracked stale no-PR recovery convergence so obsolete `stabilizing` issues stop in `blocked(manual_review)` instead of requeueing forever; pushed commit `070fbdd` and opened draft PR #593.
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts --test-name-pattern "reclaims a stale stabilizing issue without carrying mismatched tracked PR context"`; `npm install`; `npm run build`
+Failure signature: none
+Next action: Watch PR #593 CI and address any review or failing-check feedback.
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/593#discussion_r2956682614
+- Details:
+  - src/recovery-reconciliation.ts:778 _⚠️ Potential issue_ | _🟠 Major_ **Reset the stale no-PR signature once PR context is recovered.** In the non-requeue path, Lines 774-778 keep `last_failure_signature` and `repeated_failure_signature_count` intact. That means a later no-PR regression can continue the old streak and hit `sameFailureSignatureRepeatLimit` even though the failure condition was resolved in between. Other recovery paths in this file clear signature tracking on recovery, so this branch should do the same for `STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE`. <details> <summary>Suggested fix</summary> ```diff + const shouldClearStaleNoPrFailureTracking = + record.state === "stabilizing" && + matchedPullRequest !== null && + record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE; + args.state.issues[String(record.issue_number)] = args.stateStore.touch(record, { state: shouldStopRepeatedStaleNoPrLoop ? "blocked" : shouldRequeueStabilizing ? "queued" : record.state, pr_number: shouldRequeueStabilizing ? null : record.pr_number, codex_session_id: null, - last_error: staleNoPrFailureContext?.summary ?? record.last_error, + last_error: staleNoPrFailureContext?.summary ?? (shouldClearStaleNoPrFailureTracking ? null : record.last_error), last_failure_kind: shouldRequeueStabilizing ? null : record.last_failure_kind, - last_failure_context: staleNoPrFailureContext ?? record.last_failure_context, - last_failure_signature: staleNoPrFailureContext?.signature ?? record.last_failure_signature, - repeated_failure_signature_count: shouldRequeueStabilizing ? staleNoPrRepeatedCount : record.repeated_failure_signature_count, + last_failure_context: + staleNoPrFailureContext ?? (shouldClearStaleNoPrFailureTracking ? null : record.last_failure_context), + last_failure_signature: + staleNoPrFailureContext?.signature ?? (shouldClearStaleNoPrFailureTracking ? null : record.last_failure_signature), + repeated_failure_signature_count: shouldRequeueStabilizing + ? staleNoPrRepeatedCount + : shouldClearStaleNoPrFailureTracking + ? 0 + : record.repeated_failure_signature_count, blocked_reason: shouldStopRepeatedStaleNoPrLoop ? "manual_review" : null, ...applyRecoveryEvent({}, recoveryEvent), }); ``` </details> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/recovery-reconciliation.ts` around lines 770 - 778, The current assignment to args.state.issues preserves last_failure_signature and repeated_failure_signature_count in the non-requeue path, which allows an old STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE streak to continue; update the object so that when shouldRequeueStabilizing is false you clear the signature tracking (set last_failure_signature to null and repeated_failure_signature_count to 0) and when shouldRequeueStabilizing is true you keep the existing logic (use staleNoPrFailureContext?.signature and staleNoPrRepeatedCount); modify the last_failure_signature and repeated_failure_signature_count fields in the args.state.issues assignment accordingly (references: last_failure_signature, repeated_failure_signature_count, shouldRequeueStabilizing, staleNoPrFailureContext, staleNoPrRepeatedCount, STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE). ``` </details> <!-- fingerprinting:phantom:medusa:grasshopper --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: stale `stabilizing` reservations that have no surviving tracked PR can be requeued forever because stale cleanup never records a repeat-tracked signature for that exact no-PR recovery loop.
-- What changed: added a focused recovery reconciliation regression that reproduces the repeated stale `stabilizing` no-PR loop at the repeat limit, then taught `reconcileStaleActiveIssueReservation(...)` to record a stable failure signature for the narrow stale-no-PR case and converge it into `blocked` with `blocked_reason=manual_review` plus an operator-facing stop reason once the configured repeat limit is reached.
+- Hypothesis: the remaining PR review thread is valid because recovered `stabilizing` PR context still preserves the stale no-PR failure signature and repeat count, so a later regression can inherit an old streak and stop too early.
+- What changed: taught `reconcileStaleActiveIssueReservation(...)` to clear the stale no-PR `last_error`, `last_failure_context`, `last_failure_signature`, and `repeated_failure_signature_count` once `resolvePullRequestForBranch(...)` recovers tracked PR context for a `stabilizing` record, and added focused regression coverage for that recovery path alongside the existing requeue/manual-stop tests.
 - Current blocker: none
-- Next exact step: commit the stale-loop convergence slice, open a draft PR for `codex/issue-591`, and watch CI/review feedback.
-- Verification gap: none; `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts --test-name-pattern "reclaims a stale stabilizing issue without carrying mismatched tracked PR context"`, and `npm run build` all passed after restoring local dependencies with `npm install`.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor.ts`
-- Rollback concern: reverting this change would restore the infinite stale cleanup loop for obsolete tracked issues that already lost their PR context, hiding the manual operator action behind repeated automatic retries again.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts --test-name-pattern "reclaims a stale stabilizing issue without carrying mismatched tracked PR context"`; `npm run build`
+- Next exact step: commit and push the review-fix follow-up on `codex/issue-591`, then resolve PR thread `PRRT_kwDORgvdZ851TzoO` if GitHub access allows it.
+- Verification gap: none; `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts` and `npm run build` passed after the review-fix patch.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`
+- Rollback concern: reverting this follow-up would let resolved stale no-PR recovery state leak into later regressions, causing unrelated future no-PR recurrences to inherit an old repeat streak and potentially hit the manual-stop limit prematurely.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm run build`
 ### Scratchpad
-- 2026-03-19 (JST): Reproduced issue #591 with a focused reconciliation regression: a `stabilizing` record whose locks were stale, `pr_number` was null, and the same stale no-PR recovery signature was already at `sameFailureSignatureRepeatLimit - 1` still requeued to `queued` instead of stopping. Fixed it by adding repeat-tracked stale-no-PR failure context in `reconcileStaleActiveIssueReservation(...)` and converting that narrow loop into `blocked(manual_review)` with a `stale_state_manual_stop` recovery reason at the repeat limit. Verification passed with `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`, `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts --test-name-pattern "reclaims a stale stabilizing issue without carrying mismatched tracked PR context"`, and `npm run build` after restoring local deps via `npm install`.
+- 2026-03-19 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851TzoO` by reproducing the recovered-PR path in `reconcileStaleActiveIssueReservation(...)`; the non-requeue branch was still preserving the stale no-PR failure signature/count after PR context returned. Fixed it by clearing the stale no-PR failure fields on recovered PR context and added a focused regression in `src/supervisor/supervisor-recovery-reconciliation.test.ts`. Verification passed with `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts` and `npm run build`.
 - 2026-03-19 (JST): Reproduced issue #573 with a focused `issue-lint` regression: an authored issue containing `Part of: #104`, duplicate/self `Depends on`, `Execution order: 3 of 2`, and `Parallelizable: Later` still reported `execution_ready=yes` and no metadata problems. Fixed it by adding local metadata validation and a `metadata_errors=` summary line, then verified with `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts` and `npm run build` after restoring local deps via `npm install`.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.

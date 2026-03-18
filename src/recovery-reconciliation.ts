@@ -737,6 +737,10 @@ export async function reconcileStaleActiveIssueReservation(args: {
       ? record.repeated_failure_signature_count + 1
       : 1
     : record.repeated_failure_signature_count;
+  const shouldClearStaleNoPrFailureTracking =
+    record.state === "stabilizing" &&
+    matchedPullRequest !== null &&
+    record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE;
   const shouldStopRepeatedStaleNoPrLoop =
     shouldRequeueStabilizing && staleNoPrRepeatedCount >= staleNoPrRepeatLimit;
 
@@ -771,11 +775,19 @@ export async function reconcileStaleActiveIssueReservation(args: {
     state: shouldStopRepeatedStaleNoPrLoop ? "blocked" : shouldRequeueStabilizing ? "queued" : record.state,
     pr_number: shouldRequeueStabilizing ? null : record.pr_number,
     codex_session_id: null,
-    last_error: staleNoPrFailureContext?.summary ?? record.last_error,
+    last_error: staleNoPrFailureContext?.summary ?? (shouldClearStaleNoPrFailureTracking ? null : record.last_error),
     last_failure_kind: shouldRequeueStabilizing ? null : record.last_failure_kind,
-    last_failure_context: staleNoPrFailureContext ?? record.last_failure_context,
-    last_failure_signature: staleNoPrFailureContext?.signature ?? record.last_failure_signature,
-    repeated_failure_signature_count: shouldRequeueStabilizing ? staleNoPrRepeatedCount : record.repeated_failure_signature_count,
+    last_failure_context:
+      staleNoPrFailureContext ??
+      (shouldClearStaleNoPrFailureTracking ? null : record.last_failure_context),
+    last_failure_signature:
+      staleNoPrFailureContext?.signature ??
+      (shouldClearStaleNoPrFailureTracking ? null : record.last_failure_signature),
+    repeated_failure_signature_count: shouldRequeueStabilizing
+      ? staleNoPrRepeatedCount
+      : shouldClearStaleNoPrFailureTracking
+        ? 0
+        : record.repeated_failure_signature_count,
     blocked_reason: shouldStopRepeatedStaleNoPrLoop ? "manual_review" : null,
     ...applyRecoveryEvent({}, recoveryEvent),
   });
