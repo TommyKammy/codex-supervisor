@@ -40,6 +40,13 @@ function sanitizeRecoveryReason(reason: string): string {
   return reason.replace(/\r?\n/g, "\\n");
 }
 
+function matchesTrackedBranch(
+  record: Pick<IssueRunRecord, "branch">,
+  pr: Pick<import("./core/types").GitHubPullRequest, "headRefName">,
+): boolean {
+  return pr.headRefName === record.branch;
+}
+
 function doneResetPatch(
   patch: Partial<IssueRunRecord> = {},
 ): Partial<IssueRunRecord> {
@@ -329,6 +336,25 @@ export async function reconcileTrackedMergedButOpenIssues(
     }
 
     const trackedPullRequest = await github.getPullRequestIfExists(record.pr_number);
+    if (trackedPullRequest && !matchesTrackedBranch(record, trackedPullRequest)) {
+      if (state.activeIssueNumber === record.issue_number) {
+        continue;
+      }
+
+      const recoveryEvent = buildRecoveryEvent(
+        record.issue_number,
+        `stale_pr_context_cleanup: cleared tracked PR #${trackedPullRequest.number} because it belongs to branch ${trackedPullRequest.headRefName}`,
+      );
+      const updated = stateStore.touch(record, applyRecoveryEvent({
+        pr_number: null,
+        state: record.state === "stabilizing" ? "queued" : record.state,
+      }, recoveryEvent));
+      state.issues[String(record.issue_number)] = updated;
+      changed = true;
+      recoveryEvents.push(recoveryEvent);
+      continue;
+    }
+
     if (!trackedPullRequest || (!trackedPullRequest.mergedAt && trackedPullRequest.state !== "MERGED")) {
       continue;
     }
@@ -643,6 +669,7 @@ export async function reconcileStaleActiveIssueReservation(args: {
   state: SupervisorStateFile;
   issueLockPath: (issueNumber: number) => string;
   sessionLockPath: (sessionId: string) => string;
+  resolvePullRequestForBranch?: (branch: string, trackedPrNumber: number | null) => Promise<import("./core/types").GitHubPullRequest | null>;
 }): Promise<RecoveryEvent[]> {
   const recoveryEvents: RecoveryEvent[] = [];
   if (args.state.activeIssueNumber === null) {
@@ -674,11 +701,21 @@ export async function reconcileStaleActiveIssueReservation(args: {
     missingLockReason = "issue lock and session lock were missing";
   }
 
+  const matchedPullRequest =
+    record.state === "stabilizing" && args.resolvePullRequestForBranch
+      ? await args.resolvePullRequestForBranch(record.branch, record.pr_number)
+      : null;
+  const shouldRequeueStabilizing = record.state === "stabilizing" && matchedPullRequest === null;
+
   const recoveryEvent = buildRecoveryEvent(
     record.issue_number,
-    `stale_state_cleanup: cleared stale active reservation after ${missingLockReason}`,
+    shouldRequeueStabilizing
+      ? `stale_state_cleanup: requeued stabilizing issue #${record.issue_number} after ${missingLockReason}`
+      : `stale_state_cleanup: cleared stale active reservation after ${missingLockReason}`,
   );
   args.state.issues[String(record.issue_number)] = args.stateStore.touch(record, {
+    state: shouldRequeueStabilizing ? "queued" : record.state,
+    pr_number: shouldRequeueStabilizing ? null : record.pr_number,
     codex_session_id: null,
     ...applyRecoveryEvent({}, recoveryEvent),
   });

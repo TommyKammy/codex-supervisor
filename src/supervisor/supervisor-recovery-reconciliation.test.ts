@@ -224,6 +224,54 @@ test("reconcileStaleActiveIssueReservation clears a stale reservation and emits 
   );
 });
 
+test("reconcileStaleActiveIssueReservation requeues a stale stabilizing issue without a tracked PR", async () => {
+  const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 366,
+    issues: {
+      "366": createRecord({
+        issue_number: 366,
+        state: "stabilizing",
+        pr_number: null,
+        codex_session_id: "session-366",
+        implementation_attempt_count: 0,
+      }),
+    },
+  };
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...record,
+        ...patch,
+        updated_at: "2026-03-11T06:33:08.821Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileStaleActiveIssueReservation({
+    stateStore,
+    state,
+    issueLockPath: (issueNumber) => path.join(lockRoot, "locks", "issues", String(issueNumber)),
+    sessionLockPath: (sessionId) => path.join(lockRoot, "locks", "sessions", String(sessionId)),
+  });
+
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(state.issues["366"]?.state, "queued");
+  assert.equal(state.issues["366"]?.pr_number, null);
+  assert.equal(state.issues["366"]?.codex_session_id, null);
+  assert.equal(saveCalls, 1);
+  assert.equal(recoveryEvents.length, 1);
+  assert.match(
+    formatRecoveryLog(recoveryEvents) ?? "",
+    /recovery issue=#366 reason=stale_state_cleanup: requeued stabilizing issue #366 after issue lock and session lock were missing/,
+  );
+});
+
 test("reconcileMergedIssueClosures clears a stale active issue pointer even when the record already matches the done patch", async () => {
   const original = createRecord({
     issue_number: 366,

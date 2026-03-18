@@ -219,6 +219,15 @@ async function hydratePullRequestContext(
   let pr = isOpenPullRequest(resolvedPr) ? resolvedPr : null;
   let checks = pr ? await args.github.getChecks(pr.number) : [];
   let reviewThreads = pr ? await args.github.getUnresolvedReviewThreads(pr.number) : [];
+  let record = args.record;
+
+  if (!resolvedPr && record.pr_number !== null) {
+    record = args.stateStore.touch(record, {
+      pr_number: null,
+    });
+    args.state.issues[String(record.issue_number)] = record;
+    await args.stateStore.save(args.state);
+  }
 
   if (!pr) {
     if (!resolvedPr) {
@@ -228,7 +237,7 @@ async function hydratePullRequestContext(
         config: args.config,
         capturedAt: now(),
         issue: args.issue,
-        record: args.record,
+        record,
         workspacePath: args.workspacePath,
         workspaceStatus: nextWorkspaceStatus,
         pr: resolvedPr,
@@ -236,11 +245,11 @@ async function hydratePullRequestContext(
         reviewThreads: [],
       });
       const recoveryEvent = buildRecoveryEvent(
-        args.record.issue_number,
-        `merged_pr_convergence: tracked PR #${resolvedPr.number} merged; marked issue #${args.record.issue_number} done`,
+        record.issue_number,
+        `merged_pr_convergence: tracked PR #${resolvedPr.number} merged; marked issue #${record.issue_number} done`,
         now,
       );
-      const doneRecord = args.stateStore.touch(args.record, {
+      const doneRecord = args.stateStore.touch(record, {
         pr_number: resolvedPr.number,
         state: "done",
         last_head_sha: resolvedPr.headRefOid,
@@ -255,7 +264,7 @@ async function hydratePullRequestContext(
         config: args.config,
         capturedAt: now(),
         issue: args.issue,
-        record: args.record,
+        record,
         workspacePath: args.workspacePath,
         workspaceStatus: nextWorkspaceStatus,
         pr: resolvedPr,
@@ -267,15 +276,15 @@ async function hydratePullRequestContext(
         `PR #${resolvedPr.number} was closed without merge.`,
         ["Manual intervention is required before the supervisor can continue this issue."],
       );
-      const blockedRecord = args.stateStore.touch(args.record, {
+      const blockedRecord = args.stateStore.touch(record, {
         pr_number: resolvedPr.number,
         state: "blocked",
         last_error:
           `PR #${resolvedPr.number} was closed without merge. ` +
-          `Manual intervention is required before issue #${args.record.issue_number} can continue.`,
+          `Manual intervention is required before issue #${record.issue_number} can continue.`,
         last_failure_kind: null,
         last_failure_context: failureContext,
-        ...applyFailureSignature(args.record, failureContext),
+        ...applyFailureSignature(record, failureContext),
         blocked_reason: "manual_pr_closed",
       });
       args.state.issues[String(blockedRecord.issue_number)] = blockedRecord;
@@ -293,7 +302,7 @@ async function hydratePullRequestContext(
     args.record.implementation_attempt_count >= args.config.draftPrAfterAttempt
   ) {
     await pushBranch(args.workspacePath, args.record.branch, nextWorkspaceStatus.remoteBranchExists);
-    pr = await args.github.createPullRequest(args.issue, args.record, { draft: true });
+    pr = await args.github.createPullRequest(args.issue, record, { draft: true });
     checks = await args.github.getChecks(pr.number);
     reviewThreads = await args.github.getUnresolvedReviewThreads(pr.number);
   }
@@ -302,7 +311,7 @@ async function hydratePullRequestContext(
     config: args.config,
     capturedAt: now(),
     issue: args.issue,
-    record: args.record,
+    record,
     workspacePath: args.workspacePath,
     workspaceStatus: nextWorkspaceStatus,
     pr,
@@ -311,7 +320,7 @@ async function hydratePullRequestContext(
   });
 
   return {
-    record: args.record,
+    record,
     pr,
     checks,
     reviewThreads,
