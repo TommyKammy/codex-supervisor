@@ -16,6 +16,7 @@
 ## Latest Codex Summary
 - Added failure-only replay-corpus mismatch artifact persistence in `src/supervisor/replay-corpus.ts`, wired `src/index.ts` to write or clear `.codex-supervisor/replay/replay-corpus-mismatch-details.json` around each replay-corpus run, and updated `.github/workflows/ci.yml` to upload that artifact only when the Ubuntu replay step fails.
 - Added focused regressions in `src/supervisor/replay-corpus.test.ts` for deterministic failure-only artifact emission and cleanup on success, plus `src/ci-workflow.test.ts` coverage for failure-only artifact upload. Focused replay-corpus/CLI/workflow tests and `npm run build` passed locally after restoring dependencies with `npm ci`.
+- Committed as `989aaa3` (`Persist replay corpus mismatch details on failures`), pushed `codex/issue-547`, and opened draft PR #550: `https://github.com/TommyKammy/codex-supervisor/pull/550`.
 
 ## Active Failure Context
 - None recorded.
@@ -25,12 +26,13 @@
 - Hypothesis: the missing scope for #547 was a persistence/upload path, not replay evaluation itself; replay-corpus already had compact mismatch summaries, but it never wrote deterministic full details to disk or exposed a CI upload step gated on failure.
 - What changed: added deterministic failure-only replay mismatch artifact formatting/persistence in `src/supervisor/replay-corpus.ts`, called it from the `replay-corpus` CLI path in `src/index.ts`, and added an Ubuntu-only `actions/upload-artifact@v4` step in `.github/workflows/ci.yml` gated by `failure()`.
 - Current blocker: none
-- Next exact step: commit the failure-only artifact changes, push `codex/issue-547`, and open or update the draft PR so CI can verify the new upload path on an actual mismatch.
+- Next exact step: monitor draft PR #550 CI and address any workflow or review follow-up if the new failure-only artifact path surfaces issues.
 - Verification gap: focused replay-corpus/CLI/workflow tests and `npm run build` passed locally; broader full-suite verification has not been run.
 - Files touched: `.github/workflows/ci.yml`, `src/ci-workflow.test.ts`, `src/index.ts`, `src/supervisor/replay-corpus.ts`, `src/supervisor/replay-corpus.test.ts`
 - Rollback concern: removing the artifact sync would leave CI with only the compact summary and no deterministic mismatch details for failing replay-corpus runs, making review/debugging on failures materially worse again.
 - Last focused command: `npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts src/ci-workflow.test.ts && npm run build`
 ### Scratchpad
+- 2026-03-18 (JST): Committed the failure-only replay artifact changes as `989aaa3` (`Persist replay corpus mismatch details on failures`), pushed `codex/issue-547`, and opened draft PR #550: `https://github.com/TommyKammy/codex-supervisor/pull/550`.
 - 2026-03-18 (JST): Added narrow failing regressions for failure-only replay mismatch artifacts in `src/supervisor/replay-corpus.test.ts` and failure-gated CI upload in `src/ci-workflow.test.ts`; initial failures were `TypeError: syncReplayCorpusMismatchDetailsArtifact is not a function` and a missing upload-artifact step in `.github/workflows/ci.yml`.
 - 2026-03-18 (JST): Implemented deterministic `replay-corpus-mismatch-details.json` formatting/persistence under `.codex-supervisor/replay`, removed stale artifacts on all-pass runs, wired the CLI path to sync that artifact, updated the CI workflow to upload it only on failed Ubuntu replay runs, ran `npm ci` to restore the local TypeScript toolchain, and verified with `npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts src/ci-workflow.test.ts` plus `npm run build`.
 - 2026-03-18 (JST): Added narrow `src/index.test.ts` repro coverage for `replay-corpus` argument parsing plus compact all-pass and mismatch CLI summaries; initial focused failures showed the command was missing and the existing CLI helper wrongly assumed `node_modules/tsx/dist/cli.mjs` existed in the workspace.
