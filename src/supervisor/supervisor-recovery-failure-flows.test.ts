@@ -65,7 +65,7 @@ test("runOnce recovers when post-codex refresh throws after leaving a dirty work
     getIssue: async () => issue,
     resolvePullRequestForBranch: async () => {
       resolveCalls += 1;
-      if (resolveCalls === 1) {
+      if (resolveCalls <= 2) {
         return null;
       }
       throw new Error("post-turn refresh blew up");

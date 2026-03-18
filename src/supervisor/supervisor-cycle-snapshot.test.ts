@@ -212,6 +212,12 @@ test("buildSupervisorCycleDecisionSnapshot keeps the decision inputs narrow and 
   assert.equal(snapshot.github.pullRequest?.headRefOid, "head-407");
   assert.equal(snapshot.github.checks.length, 1);
   assert.equal(snapshot.github.reviewThreads[0]?.comments.nodes[0]?.body, "Please address this blocking issue.");
+  assert.equal(snapshot.local.record.timeout_retry_count, 0);
+  assert.equal(snapshot.local.record.blocked_verification_retry_count, 0);
+  assert.equal(snapshot.local.record.repeated_blocker_count, 0);
+  assert.equal(snapshot.local.record.repeated_failure_signature_count, 0);
+  assert.equal(snapshot.local.record.last_failure_kind, null);
+  assert.equal(snapshot.local.record.last_failure_context, null);
   assert.equal(snapshot.decision.nextState, "addressing_review");
   assert.equal(snapshot.decision.shouldRunCodex, true);
   assert.equal(snapshot.decision.blockedReason, "manual_review");
@@ -237,6 +243,8 @@ test("writeSupervisorCycleDecisionSnapshot serializes one cycle into the workspa
   const persisted = JSON.parse(await fs.readFile(snapshotPath, "utf8")) as ReturnType<typeof buildSupervisorCycleDecisionSnapshot>;
   assert.equal(persisted.capturedAt, "2026-03-16T10:07:00Z");
   assert.equal(persisted.local.record.issue_number, 407);
+  assert.equal(persisted.local.record.timeout_retry_count, 0);
+  assert.equal(persisted.local.record.last_failure_context, null);
   assert.equal(persisted.github.pullRequest?.number, 88);
   assert.equal(persisted.decision.nextState, "addressing_review");
 });

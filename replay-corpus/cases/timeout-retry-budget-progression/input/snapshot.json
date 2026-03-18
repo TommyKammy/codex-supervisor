@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-03-18T01:00:00Z",
+  "issue": {
+    "number": 537,
+    "title": "Replay corpus timeout retry",
+    "url": "https://example.test/issues/537",
+    "state": "OPEN",
+    "updatedAt": "2026-03-18T00:59:00Z"
+  },
+  "local": {
+    "record": {
+      "issue_number": 537,
+      "state": "failed",
+      "branch": "codex/issue-537",
+      "pr_number": null,
+      "workspace": "/tmp/workspaces/issue-537",
+      "journal_path": "/tmp/workspaces/issue-537/.codex-supervisor/issue-journal.md",
+      "attempt_count": 1,
+      "implementation_attempt_count": 1,
+      "repair_attempt_count": 0,
+      "timeout_retry_count": 1,
+      "blocked_verification_retry_count": 0,
+      "repeated_blocker_count": 0,
+      "repeated_failure_signature_count": 0,
+      "blocked_reason": null,
+      "last_error": "Command timed out after 1800000ms: codex exec",
+      "last_failure_kind": "timeout",
+      "last_failure_context": {
+        "category": "codex",
+        "summary": "Codex exited non-zero for issue #537.",
+        "signature": "codex-timeout",
+        "command": null,
+        "details": [
+          "Command timed out after 1800000ms: codex exec"
+        ],
+        "url": null,
+        "updated_at": "2026-03-18T00:59:00Z"
+      },
+      "last_failure_signature": "codex-timeout",
+      "last_head_sha": "head-537",
+      "review_wait_started_at": null,
+      "review_wait_head_sha": null,
+      "copilot_review_requested_observed_at": null,
+      "copilot_review_requested_head_sha": null,
+      "copilot_review_timed_out_at": null,
+      "copilot_review_timeout_action": null,
+      "copilot_review_timeout_reason": null,
+      "local_review_head_sha": null,
+      "local_review_blocker_summary": null,
+      "local_review_summary_path": null,
+      "local_review_run_at": null,
+      "local_review_max_severity": null,
+      "local_review_findings_count": 0,
+      "local_review_root_cause_count": 0,
+      "local_review_verified_max_severity": null,
+      "local_review_verified_findings_count": 0,
+      "local_review_recommendation": null,
+      "local_review_degraded": false,
+      "last_local_review_signature": null,
+      "repeated_local_review_signature_count": 0,
+      "processed_review_thread_ids": [],
+      "processed_review_thread_fingerprints": [],
+      "updated_at": "2026-03-18T01:00:00Z"
+    },
+    "workspaceStatus": {
+      "branch": "codex/issue-537",
+      "headSha": "head-537",
+      "hasUncommittedChanges": false,
+      "baseAhead": 0,
+      "baseBehind": 0,
+      "remoteBranchExists": true,
+      "remoteAhead": 0,
+      "remoteBehind": 0
+    }
+  },
+  "github": {
+    "pullRequest": null,
+    "checks": [],
+    "reviewThreads": []
+  },
+  "decision": {
+    "nextState": "stabilizing",
+    "shouldRunCodex": true,
+    "blockedReason": null,
+    "failureContext": null
+  }
+}

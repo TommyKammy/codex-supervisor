@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "id": "repeated-failure-escalates-to-failed",
+  "issueNumber": 539,
+  "title": "Replay corpus repeated failure escalation",
+  "capturedAt": "2026-03-18T02:00:00Z"
+}

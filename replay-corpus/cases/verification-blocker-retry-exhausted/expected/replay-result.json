@@ -1,0 +1,6 @@
+{
+  "nextState": "blocked",
+  "shouldRunCodex": false,
+  "blockedReason": "verification",
+  "failureSignature": "verification:vitest"
+}

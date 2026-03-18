@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-03-18T02:00:00Z",
+  "issue": {
+    "number": 539,
+    "title": "Replay corpus repeated failure escalation",
+    "url": "https://example.test/issues/539",
+    "state": "OPEN",
+    "updatedAt": "2026-03-18T00:59:00Z"
+  },
+  "local": {
+    "record": {
+      "issue_number": 539,
+      "state": "addressing_review",
+      "branch": "codex/issue-539",
+      "pr_number": 95,
+      "workspace": "/tmp/workspaces/issue-539",
+      "journal_path": "/tmp/workspaces/issue-539/.codex-supervisor/issue-journal.md",
+      "attempt_count": 1,
+      "implementation_attempt_count": 1,
+      "repair_attempt_count": 1,
+      "timeout_retry_count": 0,
+      "blocked_verification_retry_count": 0,
+      "repeated_blocker_count": 0,
+      "repeated_failure_signature_count": 2,
+      "blocked_reason": null,
+      "last_error": "Requested changes remain unresolved on PR #95.",
+      "last_failure_kind": null,
+      "last_failure_context": null,
+      "last_failure_signature": "changes-requested:head-539",
+      "last_head_sha": "head-539",
+      "review_wait_started_at": null,
+      "review_wait_head_sha": null,
+      "copilot_review_requested_observed_at": null,
+      "copilot_review_requested_head_sha": null,
+      "copilot_review_timed_out_at": null,
+      "copilot_review_timeout_action": null,
+      "copilot_review_timeout_reason": null,
+      "local_review_head_sha": "head-539",
+      "local_review_blocker_summary": null,
+      "local_review_summary_path": null,
+      "local_review_run_at": "2026-03-18T01:45:00Z",
+      "local_review_max_severity": null,
+      "local_review_findings_count": 0,
+      "local_review_root_cause_count": 0,
+      "local_review_verified_max_severity": null,
+      "local_review_verified_findings_count": 0,
+      "local_review_recommendation": null,
+      "local_review_degraded": false,
+      "last_local_review_signature": null,
+      "repeated_local_review_signature_count": 0,
+      "processed_review_thread_ids": [],
+      "processed_review_thread_fingerprints": [],
+      "updated_at": "2026-03-18T01:00:00Z"
+    },
+    "workspaceStatus": {
+      "branch": "codex/issue-539",
+      "headSha": "head-539",
+      "hasUncommittedChanges": false,
+      "baseAhead": 1,
+      "baseBehind": 0,
+      "remoteBranchExists": true,
+      "remoteAhead": 0,
+      "remoteBehind": 0
+    }
+  },
+  "github": {
+    "pullRequest": {
+      "number": 95,
+      "title": "Replay corpus repeated failure escalation",
+      "url": "https://example.test/pull/95",
+      "state": "OPEN",
+      "createdAt": "2026-03-18T00:30:00Z",
+      "updatedAt": "2026-03-18T01:59:00Z",
+      "isDraft": false,
+      "reviewDecision": "CHANGES_REQUESTED",
+      "mergeStateStatus": "CLEAN",
+      "mergeable": "MERGEABLE",
+      "headRefName": "codex/issue-539",
+      "headRefOid": "head-539",
+      "mergedAt": null,
+      "configuredBotTopLevelReviewStrength": "blocking"
+    },
+    "checks": [
+      {
+        "name": "build",
+        "state": "completed",
+        "bucket": "pass"
+      }
+    ],
+    "reviewThreads": []
+  },
+  "decision": {
+    "nextState": "failed",
+    "shouldRunCodex": false,
+    "blockedReason": null,
+    "failureContext": {
+      "category": "manual",
+      "summary": "PR #95 has requested changes and requires manual review resolution before merge.",
+      "signature": "changes-requested:head-539",
+      "command": null,
+      "details": [
+        "reviewDecision=CHANGES_REQUESTED"
+      ],
+      "url": "https://example.test/pull/95",
+      "updated_at": "2026-03-18T10:53:52.853Z"
+    }
+  }
+}

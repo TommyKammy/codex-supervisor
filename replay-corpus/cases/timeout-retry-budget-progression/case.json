@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "id": "timeout-retry-budget-progression",
+  "issueNumber": 537,
+  "title": "Replay corpus timeout retry",
+  "capturedAt": "2026-03-18T01:00:00Z"
+}

@@ -408,6 +408,9 @@ test("loadReplayCorpus loads the checked-in safety case bundles", async () => {
     "review-timing-ready-for-review-after-draft-skip",
     "required-check-pending",
     "stale-head-prevents-merge",
+    "timeout-retry-budget-progression",
+    "verification-blocker-retry-exhausted",
+    "repeated-failure-escalates-to-failed",
   ]);
   assert.deepEqual(
     corpus.cases.map((bundle) => ({
@@ -453,6 +456,24 @@ test("loadReplayCorpus loads the checked-in safety case bundles", async () => {
         blockedReason: null,
         failureSignature: null,
       },
+      {
+        id: "timeout-retry-budget-progression",
+        nextState: "stabilizing",
+        blockedReason: null,
+        failureSignature: null,
+      },
+      {
+        id: "verification-blocker-retry-exhausted",
+        nextState: "blocked",
+        blockedReason: "verification",
+        failureSignature: "verification:vitest",
+      },
+      {
+        id: "repeated-failure-escalates-to-failed",
+        nextState: "failed",
+        blockedReason: null,
+        failureSignature: "changes-requested:head-539",
+      },
     ],
   );
 });
@@ -468,6 +489,9 @@ test("runReplayCorpus replays the checked-in PR lifecycle safety cases without m
     "review-timing-ready-for-review-after-draft-skip",
     "required-check-pending",
     "stale-head-prevents-merge",
+    "timeout-retry-budget-progression",
+    "verification-blocker-retry-exhausted",
+    "repeated-failure-escalates-to-failed",
   ]);
 });
 
