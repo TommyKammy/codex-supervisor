@@ -14,34 +14,36 @@
 - Updated at: 2026-03-19T05:59:59.762Z
 
 ## Latest Codex Summary
-Reworked [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) so the latest summary uses repository-relative links and the saved CodeRabbit failure context is captured as structured thread summaries instead of a single-line markdown-heavy dump. No CLI code paths changed.
+Pushed `1f2cac4` (`docs: fix issue 618 journal review follow-up`) after reworking [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) so the latest summary uses repository-relative links and the saved CodeRabbit failure context is captured as structured thread summaries instead of a single-line markdown-heavy dump. Then resolved threads `PRRT_kwDORgvdZ851Xel-` and `PRRT_kwDORgvdZ851XemD` on PR #622. No CLI code paths changed.
 
-Summary: Applied the remaining PR #622 journal-only review fixes locally
-State hint: local_review_fix
+Summary: Pushed the journal-only PR #622 review follow-up and resolved the remaining CodeRabbit threads
+State hint: waiting_ci
 Blocked reason: none
 Tests: `rg -n "index-focused tests" .codex-supervisor/issue-journal.md`; `! rg -n "\\]\\(/home/" .codex-supervisor/issue-journal.md`; `npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg "MD038"` (no output; full-file markdownlint still reports unrelated baseline warnings)
-Failure signature: PRRT_kwDORgvdZ851Xel-|PRRT_kwDORgvdZ851XemD
-Next action: commit/push the journal-only fix to `codex/issue-618`, then resolve or monitor the remaining PR #622 review threads
+Failure signature: none
+Next action: monitor PR #622 until the refreshed CodeRabbit status context completes and the merge state settles
 
 ## Active Failure Context
 - Category: review
-- Summary: 2 automated review thread(s) were reproduced locally and addressed in the journal; the remote threads remain open until the fix is pushed and reviewed.
+- Summary: no unresolved review threads remain after pushing `1f2cac4`; PR #622 is only waiting on refreshed status reporting.
 - Reference: https://github.com/TommyKammy/codex-supervisor/pull/622#discussion_r2958029013
 - Details:
-  - Thread `PRRT_kwDORgvdZ851Xel-` on `.codex-supervisor/issue-journal.md:17`: replace the committed absolute workstation link in the latest summary with a repository-relative link so the journal does not expose local filesystem paths.
-  - Thread `PRRT_kwDORgvdZ851XemD` on `.codex-supervisor/issue-journal.md:33`: keep `index-focused tests` hyphenated and replace the single-line embedded review dump with stable multiline bullets so inline code remains readable and `MD038` noise is avoided.
+  - Thread `PRRT_kwDORgvdZ851Xel-` was resolved after the pushed journal update replaced the absolute latest-summary link with a repository-relative link.
+  - Thread `PRRT_kwDORgvdZ851XemD` was resolved after the pushed journal update preserved `index-focused tests` and replaced the markdownlint-prone single-line review dump with structured multiline bullets.
+  - PR status at 2026-03-19T06:03:18Z: `build (ubuntu-latest)` and `build (macos-latest)` succeeded; `CodeRabbit` is still pending, so GitHub reports merge state `UNSTABLE`.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining review feedback is still journal-only, so no CLI or test changes are needed beyond removing the absolute journal link and normalizing the saved review context formatting.
-- What changed: rewrote the latest-summary journal link as repository-relative and replaced the raw pasted CodeRabbit review bodies with thread-id summaries that preserve the actionable failure details without carrying markdownlint-hostile inline dumps.
+- Hypothesis: the review concerns for PR #622 are addressed; only the refreshed GitHub status context remains, so no further local code or journal edits are needed unless CodeRabbit reopens feedback.
+- What changed: pushed `1f2cac4` with the repository-relative latest-summary link and structured review-context formatting, then resolved both remaining CodeRabbit review threads on PR #622.
 - Current blocker: none
-- Next exact step: commit/push the journal-only review fix, then resolve or monitor PR #622 review threads after the updated journal lands on the branch.
+- Next exact step: monitor PR #622 until the pending CodeRabbit status context finishes and react only if it reopens review feedback.
 - Verification gap: none for the review-targeted signals; full-file markdownlint still has unrelated baseline warnings outside this journal-only fix.
 - Files touched: `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this checkpoint would reintroduce the absolute-path leak and the markdownlint-prone saved review formatting in the journal.
-- Last focused command: `! rg -n "\\]\\(/home/" .codex-supervisor/issue-journal.md`; `npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg "MD038"`
+- Last focused command: `gh pr view 622 --json isDraft,mergeStateStatus,reviewDecision,statusCheckRollup`; `git push origin codex/issue-618`
 ### Scratchpad
+- 2026-03-19 (JST): Pushed `1f2cac4` to `origin/codex/issue-618`, resolved CodeRabbit threads `PRRT_kwDORgvdZ851Xel-` and `PRRT_kwDORgvdZ851XemD`, and confirmed PR #622 is only waiting on the refreshed `CodeRabbit` status context while both build jobs are already green.
 - 2026-03-19 (JST): Focused journal verification confirmed the absolute workstation path is gone and `MD038` no longer appears in markdownlint output for `.codex-supervisor/issue-journal.md`; full-file markdownlint still reports unrelated legacy style warnings across the journal.
 - 2026-03-19 (JST): Reframed the remaining CodeRabbit failure context as structured thread summaries, rewrote the latest summary journal link to be repository-relative, and prepared focused markdown/journal verification for the journal-only review repair.
 - 2026-03-19 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851XZoF` locally by hyphenating `index-focused tests` in the working-notes verification sentence after confirming the other match was only the saved external review quote.
