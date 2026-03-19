@@ -2,7 +2,14 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { IssueRunRecord, ReviewThread, SupervisorConfig } from "../core/types";
+import {
+  GitHubIssue,
+  IssueRunRecord,
+  ReviewThread,
+  SupervisorConfig,
+  SupervisorStateFile,
+} from "../core/types";
+import { Supervisor } from "./supervisor";
 
 export function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
@@ -248,6 +255,42 @@ export async function createSupervisorFixture(options: {
       codexBinary,
       issueJournalMaxChars: 12000,
     }),
+  };
+}
+
+export async function createIssueLintFixture(): Promise<{
+  fixture: {
+    config: SupervisorConfig;
+    repoPath: string;
+    stateFile: string;
+    workspaceRoot: string;
+  };
+  loadIssueLintReport: (issue: GitHubIssue) => Promise<string>;
+}> {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  let stubbedIssue: GitHubIssue | null = null;
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => {
+      if (stubbedIssue === null) {
+        throw new Error("Stubbed issue was not set before issue lint load.");
+      }
+      return stubbedIssue;
+    },
+  };
+
+  return {
+    fixture,
+    loadIssueLintReport: async (issue: GitHubIssue) => {
+      stubbedIssue = issue;
+      return supervisor.issueLint(issue.number);
+    },
   };
 }
 
