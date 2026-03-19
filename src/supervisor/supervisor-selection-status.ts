@@ -6,90 +6,27 @@ import {
   parseIssueMetadata,
 } from "../issue-metadata";
 import {
-  attemptBudgetForLane,
-  hasAttemptBudgetRemaining,
   formatExecutionReadyMissingFields,
   isEligibleForSelection,
-  shouldAutoRetryBlockedVerification,
-  shouldAutoRetryHandoffMissing,
   shouldEnforceExecutionReady,
 } from "./supervisor-execution-policy";
-import { shouldAutoRetryTimeout } from "./supervisor-failure-helpers";
-import {
-  buildChangeClassesStatusLine,
-  buildExternalReviewFollowUpStatusLine,
-  buildVerificationPolicyStatusLine,
-  loadStatusChangedFiles,
-} from "./supervisor-status-rendering";
-import {
-  formatLatestRecoveryStatusLine,
-} from "./supervisor-detailed-status-assembly";
-import {
-  GitHubIssue,
-  GitHubPullRequest,
-  IssueRunRecord,
-  SupervisorConfig,
-  SupervisorStateFile,
-} from "../core/types";
-import type { ActiveStatusGitHub } from "./supervisor-selection-active-status";
+import { GitHubIssue, SupervisorConfig, SupervisorStateFile } from "../core/types";
 export type { ActiveIssueStatusSnapshot } from "./supervisor-selection-active-status";
 export { loadActiveIssueStatusSnapshot } from "./supervisor-selection-active-status";
+export type { ExplainIssueGitHub } from "./supervisor-selection-issue-explain";
+export {
+  buildIssueExplainSummary,
+  buildNonRunnableLocalStateReasons,
+  formatSelectionReason,
+} from "./supervisor-selection-issue-explain";
 export type { IssueLintGitHub } from "./supervisor-selection-issue-lint";
 export { buildIssueLintSummary } from "./supervisor-selection-issue-lint";
 export type { SupervisorStatusRecords } from "./supervisor-selection-status-records";
 export { summarizeSupervisorStatusRecords } from "./supervisor-selection-status-records";
+import { formatSelectionReason } from "./supervisor-selection-issue-explain";
 
 type ReadinessSummaryGitHub = Pick<GitHubClient, "listCandidateIssues">;
 type SelectionWhyGitHub = Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">;
-type ExplainIssueGitHub = Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
-  Partial<ActiveStatusGitHub>;
-async function buildExplainChangeRiskSummary(args: {
-  config: SupervisorConfig;
-  issue: GitHubIssue;
-  record: IssueRunRecord | undefined;
-}): Promise<string[]> {
-  const changedFiles = args.record?.workspace
-    ? await loadStatusChangedFiles(args.config, args.record.workspace)
-    : [];
-  const lines: string[] = [];
-  const changeClassesSummary = buildChangeClassesStatusLine(changedFiles);
-  const verificationPolicySummary = buildVerificationPolicyStatusLine({
-    issue: args.issue,
-    changedFiles,
-  });
-
-  if (changeClassesSummary) {
-    lines.push(changeClassesSummary);
-  }
-  if (verificationPolicySummary) {
-    lines.push(verificationPolicySummary);
-  }
-
-  return lines;
-}
-
-async function buildExplainExternalReviewFollowUpSummary(args: {
-  github: ExplainIssueGitHub;
-  record: IssueRunRecord | undefined;
-}): Promise<string | null> {
-  if (!args.record) {
-    return null;
-  }
-
-  let pr: GitHubPullRequest | null = null;
-  try {
-    pr = args.github.resolvePullRequestForBranch
-      ? await args.github.resolvePullRequestForBranch(args.record.branch, args.record.pr_number)
-      : null;
-  } catch {
-    pr = null;
-  }
-
-  return buildExternalReviewFollowUpStatusLine({
-    activeRecord: args.record,
-    currentHeadSha: pr?.headRefOid ?? args.record.last_head_sha,
-  });
-}
 
 export async function buildReadinessSummary(
   github: ReadinessSummaryGitHub,
@@ -182,155 +119,6 @@ export async function buildSelectionWhySummary(
   return ["selected_issue=none", "selection_reason=no_runnable_issue"];
 }
 
-function buildNonRunnableLocalStateReasons(record: IssueRunRecord, config: SupervisorConfig): string[] {
-  const reasons: string[] = [];
-
-  if (record.state === "blocked") {
-    if (record.blocked_reason === "manual_review" || record.blocked_reason === "manual_pr_closed") {
-      reasons.push(`manual_block ${record.blocked_reason}`);
-    } else if (record.blocked_reason === "verification" && !shouldAutoRetryBlockedVerification(record, config)) {
-      if (!hasAttemptBudgetRemaining(record, config, "implementation")) {
-        reasons.push(
-          `retry_budget implementation_attempt_count=${record.implementation_attempt_count}/${attemptBudgetForLane(config, "implementation")}`,
-        );
-      }
-      if (record.blocked_verification_retry_count >= config.blockedVerificationRetryLimit) {
-        reasons.push(
-          `retry_budget blocked_verification_retry_count=${record.blocked_verification_retry_count}/${config.blockedVerificationRetryLimit}`,
-        );
-      }
-      if (record.repeated_blocker_count >= config.sameBlockerRepeatLimit) {
-        reasons.push(`retry_budget repeated_blocker_count=${record.repeated_blocker_count}/${config.sameBlockerRepeatLimit}`);
-      }
-      if (record.repeated_failure_signature_count >= config.sameFailureSignatureRepeatLimit) {
-        reasons.push(
-          `retry_budget repeated_failure_signature_count=${record.repeated_failure_signature_count}/${config.sameFailureSignatureRepeatLimit}`,
-        );
-      }
-    } else if (record.blocked_reason === "handoff_missing" && !shouldAutoRetryHandoffMissing(record, config)) {
-      if (!hasAttemptBudgetRemaining(record, config, "implementation")) {
-        reasons.push(
-          `retry_budget implementation_attempt_count=${record.implementation_attempt_count}/${attemptBudgetForLane(config, "implementation")}`,
-        );
-      }
-      if (record.repeated_failure_signature_count >= config.sameFailureSignatureRepeatLimit) {
-        reasons.push(
-          `retry_budget repeated_failure_signature_count=${record.repeated_failure_signature_count}/${config.sameFailureSignatureRepeatLimit}`,
-        );
-      }
-    } else if (
-      record.blocked_reason === "requirements" ||
-      record.blocked_reason === "clarification" ||
-      record.blocked_reason === "permissions" ||
-      record.blocked_reason === "secrets" ||
-      record.blocked_reason === "review_bot_timeout" ||
-      record.blocked_reason === "copilot_timeout" ||
-      record.blocked_reason === "unknown"
-    ) {
-      reasons.push(`blocked_reason ${record.blocked_reason}`);
-    }
-  } else if (record.state === "failed" && !shouldAutoRetryTimeout(record, config)) {
-    if (record.last_failure_kind === "timeout" && record.timeout_retry_count >= config.timeoutRetryLimit) {
-      reasons.push(`retry_budget timeout_retry_count=${record.timeout_retry_count}/${config.timeoutRetryLimit}`);
-    } else {
-      reasons.push(`blocked_failure ${record.last_failure_kind ?? "unknown"}`);
-    }
-  } else if (record.state === "done") {
-    reasons.push("completed done");
-  } else {
-    reasons.push(`local_state ${record.state}`);
-    return reasons;
-  }
-
-  reasons.push(`local_state ${record.state}`);
-  return reasons;
-}
-
-export async function buildIssueExplainSummary(
-  github: ExplainIssueGitHub,
-  config: SupervisorConfig,
-  state: SupervisorStateFile,
-  issueNumber: number,
-): Promise<string[]> {
-  const [issue, issues, candidateIssues] = await Promise.all([
-    github.getIssue(issueNumber),
-    github.listAllIssues(),
-    github.listCandidateIssues(),
-  ]);
-  const record = state.issues[String(issue.number)];
-  const readiness = lintExecutionReadyIssueBody(issue);
-  const clarificationBlock = findHighRiskBlockingAmbiguity(issue);
-  const blockingIssue = findBlockingIssue(issue, issues, state);
-  const matchingSkipPrefix = config.skipTitlePrefixes.find((prefix) => issue.title.startsWith(prefix)) ?? null;
-  const candidateIssueNumbers = new Set(candidateIssues.map((candidate) => candidate.number));
-  const reasons: string[] = [];
-  const changeRiskLines = await buildExplainChangeRiskSummary({
-    config,
-    issue,
-    record,
-  });
-  const externalReviewFollowUpSummary = await buildExplainExternalReviewFollowUpSummary({
-    github,
-    record,
-  });
-  const latestRecoverySummary = record ? formatLatestRecoveryStatusLine(record) : null;
-
-  if (matchingSkipPrefix) {
-    reasons.push(`skip_title_prefix ${matchingSkipPrefix}`);
-  }
-
-  if (!candidateIssueNumbers.has(issue.number)) {
-    reasons.push("candidate filtered_by_candidate_list");
-  }
-
-  if (shouldEnforceExecutionReady(record) && !readiness.isExecutionReady) {
-    reasons.push(`requirements missing=${formatExecutionReadyMissingFields(readiness.missingRequired)}`);
-  }
-
-  if (clarificationBlock) {
-    reasons.push(
-      `clarification ambiguity=${clarificationBlock.ambiguityClasses.join("|")} risky_change=${clarificationBlock.riskyChangeClasses.join("|")}`,
-    );
-  }
-
-  if (blockingIssue) {
-    reasons.push(`dependency ${blockingIssue.reason}`);
-  }
-
-  if (record && !isEligibleForSelection(record, config)) {
-    reasons.push(...buildNonRunnableLocalStateReasons(record, config));
-  }
-
-  const runnable = reasons.length === 0;
-  const lines = [
-    `issue=#${issue.number}`,
-    `title=${issue.title}`,
-    `state=${record?.state ?? "untracked"}`,
-    `blocked_reason=${record?.blocked_reason ?? "none"}`,
-    `runnable=${runnable ? "yes" : "no"}`,
-    ...changeRiskLines,
-    ...(externalReviewFollowUpSummary ? [externalReviewFollowUpSummary] : []),
-    ...(latestRecoverySummary ? [latestRecoverySummary] : []),
-  ];
-
-  if (runnable) {
-    lines.push(`selection_reason=${formatSelectionReason(issue, issues, state, record, readiness.isExecutionReady, config)}`);
-  } else {
-    reasons.forEach((reason, index) => {
-      lines.push(`reason_${index + 1}=${reason}`);
-    });
-  }
-
-  if (record?.last_error) {
-    lines.push(`last_error=${record.last_error}`);
-  }
-  if (record?.last_failure_context?.summary) {
-    lines.push(`failure_summary=${record.last_failure_context.summary}`);
-  }
-
-  return lines;
-}
-
 function formatRunnableReadinessReason(
   issue: GitHubIssue,
   issues: GitHubIssue[],
@@ -381,80 +169,4 @@ function formatRunnableReadinessReason(
   }
 
   return reasons.join("+");
-}
-
-function formatSelectionReason(
-  issue: GitHubIssue,
-  issues: GitHubIssue[],
-  state: SupervisorStateFile,
-  existing: IssueRunRecord | undefined,
-  isExecutionReady: boolean,
-  config: SupervisorConfig,
-): string {
-  const metadata = parseIssueMetadata(issue);
-  const dependencyStatus =
-    metadata.dependsOn.length === 0
-      ? "none"
-      : `${metadata.dependsOn.join("|")}:${metadata.dependsOn.every((dependencyNumber) => state.issues[String(dependencyNumber)]?.state === "done") ? "done" : "pending"}`;
-
-  let executionOrderStatus = "none";
-  let predecessorStatus = "none";
-  if (metadata.parentIssueNumber !== null && metadata.executionOrderIndex !== null) {
-    executionOrderStatus = `${metadata.parentIssueNumber}/${metadata.executionOrderIndex}`;
-    const predecessors = issues
-      .filter((candidate) => candidate.number !== issue.number)
-      .map((candidate) => ({
-        issue: candidate,
-        metadata: parseIssueMetadata(candidate),
-      }))
-      .filter(
-        ({ metadata: candidateMetadata }) =>
-          candidateMetadata.parentIssueNumber === metadata.parentIssueNumber &&
-          candidateMetadata.executionOrderIndex !== null &&
-          candidateMetadata.executionOrderIndex < metadata.executionOrderIndex!,
-      )
-      .sort(
-        (left, right) =>
-          (left.metadata.executionOrderIndex ?? Number.MAX_SAFE_INTEGER) -
-          (right.metadata.executionOrderIndex ?? Number.MAX_SAFE_INTEGER),
-      )
-      .map(({ issue: predecessorIssue }) => predecessorIssue.number);
-
-    if (predecessors.length > 0) {
-      predecessorStatus = `${predecessors.join("|")}:${
-        predecessors.every((predecessorNumber) => state.issues[String(predecessorNumber)]?.state === "done")
-          ? "done"
-          : "pending"
-      }`;
-    }
-  }
-
-  return [
-    "ready",
-    `execution_ready=${isExecutionReady ? "yes" : "skipped"}`,
-    `depends_on=${dependencyStatus}`,
-    `execution_order=${executionOrderStatus}`,
-    `predecessors=${predecessorStatus}`,
-    `retry_state=${formatRetryState(existing, config)}`,
-  ].join(" ");
-}
-
-function formatRetryState(record: IssueRunRecord | undefined, config: SupervisorConfig): string {
-  if (!record || record.attempt_count === 0) {
-    return "fresh";
-  }
-
-  if (shouldAutoRetryTimeout(record, config)) {
-    return `timeout_retry:${record.timeout_retry_count}/${config.timeoutRetryLimit}`;
-  }
-
-  if (shouldAutoRetryBlockedVerification(record, config)) {
-    return `blocked_verification_retry:${record.blocked_verification_retry_count}/${config.blockedVerificationRetryLimit}`;
-  }
-
-  if (shouldAutoRetryHandoffMissing(record, config)) {
-    return "handoff_missing_retry";
-  }
-
-  return `resume:${record.state}`;
 }
