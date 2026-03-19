@@ -2,6 +2,8 @@ import { type LocalReviewRoleSelection } from "../review-role-detector";
 import { type ActionableSeverity, type LocalReviewFinding, type LocalReviewReviewerThresholdConfig, type LocalReviewReviewerType } from "./types";
 import { type SupervisorConfig } from "../core/types";
 
+const GENERIC_LOCAL_REVIEW_ROLES = new Set(["reviewer", "explorer", "docs_researcher"]);
+
 const SEVERITY_WEIGHT: Record<ActionableSeverity, number> = {
   low: 1,
   medium: 2,
@@ -17,7 +19,7 @@ export function reviewerTypeForRole(args: {
     return "generic";
   }
 
-  return args.role === "reviewer" || args.role === "explorer" ? "generic" : "specialist";
+  return GENERIC_LOCAL_REVIEW_ROLES.has(args.role) ? "generic" : "specialist";
 }
 
 export function thresholdsForReviewerType(
