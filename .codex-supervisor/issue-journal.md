@@ -14,7 +14,7 @@
 - Updated at: 2026-03-19T15:30:31.539Z
 
 ## Latest Codex Summary
-- Reproduced issue #644 with focused lock and recovery tests, added explicit `stale` versus `ambiguous_owner` lock inspection states, kept clearly local dead-process cleanup working while blocking ambiguous-owner cleanup, and verified with focused tests plus `npm run build` after restoring local `tsc` via `npm install`.
+- Reproduced issue #644 with focused lock and recovery tests, added explicit `stale` versus `ambiguous_owner` lock inspection states, kept clearly local dead-process cleanup working while blocking ambiguous-owner cleanup, verified with focused tests plus `npm run build`, committed `6128dbb`, pushed `codex/issue-644`, and opened draft PR #663.
 
 ## Active Failure Context
 - None recorded.
@@ -24,7 +24,7 @@
 - Hypothesis: a dead lock should only auto-clean when its metadata proves it belongs to this exact host and owner; every other dead-owner case should stay explicit and block cleanup as `ambiguous_owner`.
 - What changed: re-ran `git status --short --branch`, `rg --files -g '*lock*'`, `sed -n '1,260p' src/core/lock.ts`, `sed -n '1,320p' src/lock.test.ts`, and the recovery reconciliation tests. Added focused reproducers in `src/lock.test.ts` for a clearly stale local dead lock, an ambiguous remote-owner dead lock, and acquisition refusal for ambiguous-owner locks; the new assertions failed because `inspectFileLock(...)` returned `missing` and stale-reservation cleanup still cleared state for the ambiguous case. Updated `src/core/lock.ts` to return explicit `stale` and `ambiguous_owner` states, only remove clearly local stale locks, and refuse acquisition when a dead lock has ambiguous owner metadata. Updated `src/recovery-reconciliation.ts` so stale active-reservation cleanup only proceeds for `missing`/`stale` locks and leaves `ambiguous_owner` locks untouched, then added matching coverage in `src/supervisor/supervisor-recovery-reconciliation.test.ts`. `npm run build` first failed with `sh: 1: tsc: not found`, so I restored dev dependencies via `npm install`; a follow-up build failed on a nullable payload access in `src/core/lock.ts`, which I fixed before the final green rerun.
 - Current blocker: none
-- Next exact step: review the final diff, commit the issue-644 checkpoint, and open or update the draft PR for `codex/issue-644`.
+- Next exact step: watch draft PR #663 for CI and review feedback, then respond with follow-up fixes if anything regresses.
 - Verification gap: none for the issue scope; I ran the focused lock and stale-recovery tests plus `npm run build`, but not the full repository test suite because the issue asks for focused verification plus build.
 - Files touched: `src/core/lock.ts`, `src/lock.test.ts`, `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this checkpoint would collapse dead ambiguous-owner locks back into ordinary stale cleanup, allowing both acquisition and stale active-reservation recovery to silently remove locks that no longer prove local ownership.
