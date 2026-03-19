@@ -5,6 +5,19 @@ import os from "node:os";
 import path from "node:path";
 import { acquireFileLock, inspectFileLock } from "./core/lock";
 
+function currentTestOwner(): string {
+  try {
+    const { username } = os.userInfo();
+    if (username) {
+      return username;
+    }
+  } catch {
+    // Fall through to environment-based owner detection.
+  }
+
+  return process.env.USER ?? process.env.USERNAME ?? "unknown";
+}
+
 test("acquireFileLock self-heals malformed lock payloads", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-lock-"));
   const lockPath = path.join(root, "issues", "issue-91.lock");
@@ -80,4 +93,63 @@ test("inspectFileLock keeps legacy lock payloads readable", async () => {
     label: "issue-legacy",
     acquired_at: "2026-03-20T00:00:00.000Z",
   });
+});
+
+test("inspectFileLock distinguishes stale local locks from ambiguous owner locks", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-lock-"));
+  const staleLockPath = path.join(root, "issues", "issue-stale.lock");
+  const ambiguousLockPath = path.join(root, "issues", "issue-ambiguous.lock");
+  await fs.mkdir(path.dirname(staleLockPath), { recursive: true });
+
+  await fs.writeFile(
+    staleLockPath,
+    `${JSON.stringify({
+      pid: 999_999,
+      label: "issue-stale",
+      acquired_at: "2026-03-20T00:00:00.000Z",
+      host: os.hostname(),
+      owner: currentTestOwner(),
+    }, null, 2)}\n`,
+    "utf8",
+  );
+  await fs.writeFile(
+    ambiguousLockPath,
+    `${JSON.stringify({
+      pid: 999_999,
+      label: "issue-ambiguous",
+      acquired_at: "2026-03-20T00:00:00.000Z",
+      host: "other-host",
+      owner: "other-user",
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const stale = await inspectFileLock(staleLockPath);
+  const ambiguous = await inspectFileLock(ambiguousLockPath);
+
+  assert.equal(stale.status, "stale");
+  assert.equal(ambiguous.status, "ambiguous_owner");
+});
+
+test("acquireFileLock refuses to clean up ambiguous owner locks", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-lock-"));
+  const lockPath = path.join(root, "issues", "issue-ambiguous-acquire.lock");
+  await fs.mkdir(path.dirname(lockPath), { recursive: true });
+  await fs.writeFile(
+    lockPath,
+    `${JSON.stringify({
+      pid: 999_999,
+      label: "issue-ambiguous-acquire",
+      acquired_at: "2026-03-20T00:00:00.000Z",
+      host: "other-host",
+      owner: "other-user",
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const lock = await acquireFileLock(lockPath, "issue-ambiguous-acquire");
+
+  assert.equal(lock.acquired, false);
+  assert.match(lock.reason ?? "", /ambiguous owner/i);
+  await fs.access(lockPath);
 });

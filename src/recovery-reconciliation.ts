@@ -717,17 +717,24 @@ export async function reconcileStaleActiveIssueReservation(args: {
   }
 
   const issueLock = await inspectFileLock(args.issueLockPath(record.issue_number));
-  if (issueLock.status === "live") {
+  if (issueLock.status === "live" || issueLock.status === "ambiguous_owner") {
     return recoveryEvents;
   }
 
-  let missingLockReason = "issue lock was missing";
+  let missingLockReason = issueLock.status === "stale" ? "issue lock was stale" : "issue lock was missing";
   if (record.codex_session_id) {
     const sessionLock = await inspectFileLock(args.sessionLockPath(record.codex_session_id));
-    if (sessionLock.status === "live") {
+    if (sessionLock.status === "live" || sessionLock.status === "ambiguous_owner") {
       return recoveryEvents;
     }
-    missingLockReason = "issue lock and session lock were missing";
+    missingLockReason =
+      issueLock.status === "stale" && sessionLock.status === "stale"
+        ? "issue lock and session lock were stale"
+        : issueLock.status === "stale" && sessionLock.status === "missing"
+          ? "issue lock was stale and session lock was missing"
+          : issueLock.status === "missing" && sessionLock.status === "stale"
+            ? "issue lock was missing and session lock was stale"
+            : "issue lock and session lock were missing";
   }
 
   const matchedPullRequest =

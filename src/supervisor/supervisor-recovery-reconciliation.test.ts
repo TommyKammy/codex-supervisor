@@ -275,6 +275,62 @@ test("reconcileStaleActiveIssueReservation requeues a stale stabilizing issue wi
   );
 });
 
+test("reconcileStaleActiveIssueReservation does not clear reservations for ambiguous owner locks", async () => {
+  const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 366,
+    issues: {
+      "366": createRecord({
+        issue_number: 366,
+        state: "implementing",
+        codex_session_id: "session-366",
+      }),
+    },
+  };
+
+  const issueLockPath = path.join(lockRoot, "locks", "issues", "366");
+  const sessionLockPath = path.join(lockRoot, "locks", "sessions", "session-366");
+  await fs.mkdir(path.dirname(issueLockPath), { recursive: true });
+  await fs.mkdir(path.dirname(sessionLockPath), { recursive: true });
+  await fs.writeFile(
+    issueLockPath,
+    `${JSON.stringify({
+      pid: 999_999,
+      label: "issue-366",
+      acquired_at: "2026-03-20T00:00:00.000Z",
+      host: "other-host",
+      owner: "other-user",
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...record,
+        ...patch,
+        updated_at: "2026-03-11T06:33:08.821Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileStaleActiveIssueReservation({
+    stateStore,
+    state,
+    issueLockPath: () => issueLockPath,
+    sessionLockPath: () => sessionLockPath,
+  });
+
+  assert.equal(state.activeIssueNumber, 366);
+  assert.equal(state.issues["366"]?.codex_session_id, "session-366");
+  assert.equal(saveCalls, 0);
+  assert.deepEqual(recoveryEvents, []);
+});
+
 test("reconcileStaleActiveIssueReservation clears stale no-PR failure tracking after PR context is recovered", async () => {
   const config = createConfig();
   const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));

@@ -12,7 +12,7 @@ interface LockPayload {
 }
 
 export interface ExistingLockState {
-  status: "missing" | "live";
+  status: "missing" | "live" | "stale" | "ambiguous_owner";
   payload: LockPayload | null;
 }
 
@@ -48,25 +48,22 @@ function isPidAlive(pid: number): boolean {
   }
 }
 
-async function removeIfStale(lockPath: string): Promise<LockPayload | null> {
+function isClearlyStaleLocalLock(payload: LockPayload): boolean {
+  return payload.host === os.hostname() && payload.owner === currentLockOwner();
+}
+
+async function inspectLockPayload(lockPath: string): Promise<ExistingLockState> {
   let payload: LockPayload | null = null;
   try {
     payload = await readJsonIfExists<LockPayload>(lockPath);
   } catch {
     await fs.rm(lockPath, { force: true });
-    return null;
+    return {
+      status: "missing",
+      payload: null,
+    };
   }
 
-  if (!payload || isPidAlive(payload.pid)) {
-    return payload;
-  }
-
-  await fs.rm(lockPath, { force: true });
-  return null;
-}
-
-export async function inspectFileLock(lockPath: string): Promise<ExistingLockState> {
-  const payload = await removeIfStale(lockPath);
   if (!payload) {
     return {
       status: "missing",
@@ -74,10 +71,29 @@ export async function inspectFileLock(lockPath: string): Promise<ExistingLockSta
     };
   }
 
+  if (isPidAlive(payload.pid)) {
+    return {
+      status: "live",
+      payload,
+    };
+  }
+
+  if (isClearlyStaleLocalLock(payload)) {
+    await fs.rm(lockPath, { force: true });
+    return {
+      status: "stale",
+      payload,
+    };
+  }
+
   return {
-    status: "live",
+    status: "ambiguous_owner",
     payload,
   };
+}
+
+export async function inspectFileLock(lockPath: string): Promise<ExistingLockState> {
+  return inspectLockPayload(lockPath);
 }
 
 export async function acquireFileLock(lockPath: string, label: string): Promise<LockHandle> {
@@ -112,7 +128,19 @@ export async function acquireFileLock(lockPath: string, label: string): Promise<
       }
 
       const existing = await inspectFileLock(lockPath);
-      if (existing.status !== "live" || !existing.payload) {
+      if (existing.status === "missing" || existing.status === "stale") {
+        continue;
+      }
+
+      if (existing.status === "ambiguous_owner" && existing.payload) {
+        return {
+          acquired: false,
+          reason: `lock held by non-live pid ${existing.payload.pid} for ${existing.payload.label} has ambiguous owner metadata`,
+          release: async () => {},
+        };
+      }
+
+      if (!existing.payload) {
         continue;
       }
 
