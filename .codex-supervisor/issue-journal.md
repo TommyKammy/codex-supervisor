@@ -1,34 +1,34 @@
-# Issue #615: Index refactor: extract CLI argument parsing
+# Issue #616: Index refactor: extract replay and replay-corpus handlers
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/615
-- Branch: codex/issue-615
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/616
+- Branch: codex/issue-616
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: e89677a07e1a4e7b9a707bcf11f5df4b18b9fee0
+- Last head SHA: fbaed4e84a9817b8e97f187672eeceeeef83a2f3
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-19T13:10:25+09:00
+- Updated at: 2026-03-19T04:27:48.092Z
 
 ## Latest Codex Summary
-- Extracted CLI argument parsing from `src/index.ts` into `src/cli/parse-args.ts`, moved the focused parser assertions into `src/cli/parse-args.test.ts`, and kept `src/index.ts` as the execution/orchestration entrypoint with a compatibility re-export for `parseArgs`.
+- None yet.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: issue #615 is satisfied by keeping parser semantics unchanged while moving `parseArgs(...)` into a dedicated CLI module and leaving `src/index.ts` focused on command execution branches.
-- What changed: added `src/cli/parse-args.test.ts` as the focused reproducer, confirmed it initially failed with `MODULE_NOT_FOUND` for `./parse-args`, created `src/cli/parse-args.ts` with the extracted parser logic, removed the parser unit cases from `src/index.test.ts`, and updated `src/index.ts` to import plus re-export `parseArgs` from the new module.
+- Hypothesis: issue #616 is satisfied by moving replay-specific command execution behind dedicated CLI handler modules while preserving the existing stdout/stderr and exit-code behavior that `src/index.ts` exposes today.
+- What changed: added `src/cli/replay-handlers.test.ts` as the focused reproducer, confirmed it initially failed with `MODULE_NOT_FOUND` for `./replay-command`, created `src/cli/replay-command.ts` plus `src/cli/replay-corpus-command.ts`, and reduced `src/index.ts` to delegate `replay`, `replay-corpus`, and `replay-corpus-promote` branches to those handlers.
 - Current blocker: none
-- Next exact step: monitor draft PR #619 CI and review feedback, then address any failures or comments that land on `codex/issue-615`.
-- Verification gap: none for the local slice; `npx tsx --test src/cli/parse-args.test.ts src/index.test.ts` passed, and `npm run build` passed after restoring local dev dependencies with `npm install`.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/cli/parse-args.ts`, `src/cli/parse-args.test.ts`, `src/index.ts`, `src/index.test.ts`
-- Rollback concern: reverting this checkpoint would move argument parsing back into `src/index.ts` and drop the dedicated parser-focused test boundary that now guards the extraction.
-- Last focused command: `npx tsx --test src/cli/parse-args.test.ts`; `npx tsx --test src/cli/parse-args.test.ts src/index.test.ts`; `npm install`; `npm run build`; `git commit -m "Extract CLI argument parsing module"`; `git push -u origin codex/issue-615`; `gh pr create --draft --base main --head codex/issue-615 ...`
+- Next exact step: commit the replay-handler extraction on `codex/issue-616`, then open or update the draft PR for issue #616.
+- Verification gap: none for the local slice; `npx tsx --test src/cli/replay-handlers.test.ts src/index.test.ts` passed, and `npm run build` passed after restoring local dev dependencies with `npm install`.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/cli/replay-command.ts`, `src/cli/replay-corpus-command.ts`, `src/cli/replay-handlers.test.ts`, `src/index.ts`
+- Rollback concern: reverting this checkpoint would push replay and replay-corpus execution back into `src/index.ts` and remove the focused handler-level test boundary that now guards the extraction.
+- Last focused command: `npx tsx --test src/cli/replay-handlers.test.ts`; `npx tsx --test src/cli/replay-handlers.test.ts src/index.test.ts`; `npm install`; `npm run build`
 ### Scratchpad
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
