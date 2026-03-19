@@ -265,6 +265,8 @@ function formatStateLoadFinding(finding: StateLoadFinding): string {
   return `state_load_finding backend=${finding.backend} scope=${finding.scope} issue_number=${issueNumber} location=${finding.location} message=${finding.message}`;
 }
 
+const MAX_RENDERED_LOAD_FINDINGS = 5;
+
 function doctorCheckForLoadFindings(
   config: SupervisorConfig,
   findings: StateLoadFinding[],
@@ -272,12 +274,19 @@ function doctorCheckForLoadFindings(
   const hasStateFileFinding = findings.some((finding) => finding.scope === "state_file");
   const backendLabel = config.stateBackend === "json" ? "JSON" : "SQLite";
   const status: DoctorCheckStatus = hasStateFileFinding ? "fail" : "warn";
+  const details = findings
+    .slice(0, MAX_RENDERED_LOAD_FINDINGS)
+    .map((finding) => formatStateLoadFinding(finding));
+
+  if (findings.length > MAX_RENDERED_LOAD_FINDINGS) {
+    details.push(`state_load_finding_omitted count=${findings.length - MAX_RENDERED_LOAD_FINDINGS}`);
+  }
 
   return {
     name: "state_file",
     status,
     summary: `${backendLabel} state load captured ${findings.length} corruption finding(s): ${config.stateFile}`,
-    details: findings.map((finding) => formatStateLoadFinding(finding)),
+    details,
   };
 }
 

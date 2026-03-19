@@ -156,6 +156,72 @@ test("diagnoseSupervisorHost surfaces captured sqlite corruption findings in doc
   );
 });
 
+test("diagnoseSupervisorHost caps rendered sqlite corruption details and summarizes omissions", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const stateFile = path.join(root, "state.sqlite");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+
+  const db = new DatabaseSync(stateFile);
+  t.after(() => db.close());
+  db.exec(`
+    CREATE TABLE metadata (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+    CREATE TABLE issues (
+      issue_number INTEGER PRIMARY KEY,
+      record_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  db.prepare("INSERT INTO metadata(key, value) VALUES (?, ?)").run("schemaVersion", "1");
+  db.prepare("INSERT INTO metadata(key, value) VALUES (?, ?)").run("activeIssueNumber", "");
+
+  for (const issueNumber of [101, 102, 103, 104, 105, 106]) {
+    db.prepare("INSERT INTO issues(issue_number, record_json, updated_at) VALUES (?, ?, ?)").run(
+      issueNumber,
+      "{not-json}",
+      "2026-03-20T00:00:00Z",
+    );
+  }
+
+  const diagnostics = await diagnoseSupervisorHost({
+    config: createConfig({
+      repoPath,
+      workspaceRoot,
+      stateBackend: "sqlite",
+      stateFile,
+      codexBinary: process.execPath,
+    }),
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  const stateFileCheck = diagnostics.checks.find((check) => check.name === "state_file");
+  assert.equal(stateFileCheck?.status, "warn");
+  assert.equal(stateFileCheck?.details.length, 6);
+  assert.match(stateFileCheck?.summary ?? "", /captured 6 corruption finding/i);
+  assert.match(
+    stateFileCheck?.details[0] ?? "",
+    /state_load_finding backend=sqlite scope=issue_row issue_number=101 location=sqlite issues row 101 message=/,
+  );
+  assert.match(
+    stateFileCheck?.details[4] ?? "",
+    /state_load_finding backend=sqlite scope=issue_row issue_number=105 location=sqlite issues row 105 message=/,
+  );
+  assert.equal(stateFileCheck?.details[5], "state_load_finding_omitted count=1");
+  assert.ok(
+    !(stateFileCheck?.details.some((detail) => detail.includes("issue_number=106")) ?? false),
+  );
+});
+
 test("loadStateReadonlyForDoctor does not bootstrap a missing sqlite state file", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
   t.after(async () => {
