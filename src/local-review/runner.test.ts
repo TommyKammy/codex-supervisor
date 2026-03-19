@@ -106,6 +106,86 @@ test("runRoleReview routes reviewer turns through the injected execution contrac
   });
 });
 
+test("runRoleReview routes docs researcher turns through the generic local-review execution target", async () => {
+  const requests: LocalReviewTurnRequest[] = [];
+
+  await runRoleReview({
+    config: createConfig(),
+    issue: createIssue({ number: 526, title: "Route docs researcher turns through generic local review" }),
+    branch: "codex/issue-526",
+    workspacePath: "/tmp/repo",
+    defaultBranch: "main",
+    pr: createPullRequest({ number: 91, headRefOid: "headsha526" }),
+    role: "docs_researcher",
+    detectedRoles: [
+      {
+        role: "docs_researcher",
+        reasons: [{ kind: "repo_signal", signal: "docs", paths: ["README.md"] }],
+      },
+    ],
+    alwaysReadFiles: [],
+    onDemandFiles: ["/tmp/repo/README.md"],
+    priorMissPatterns: [],
+    executeTurn: async (request) => {
+      requests.push(request);
+      return {
+        exitCode: 0,
+        rawOutput: [
+          "Review summary: Docs researcher ran",
+          "Recommendation: ready",
+          "REVIEW_FINDINGS_JSON_START",
+          JSON.stringify({ findings: [] }),
+          "REVIEW_FINDINGS_JSON_END",
+        ].join("\n"),
+      };
+    },
+  });
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.role, "docs_researcher");
+  assert.equal(requests[0]?.executionTarget, "local_review_generic");
+});
+
+test("runRoleReview keeps specialist local-review turns on the specialist execution target", async () => {
+  const requests: LocalReviewTurnRequest[] = [];
+
+  await runRoleReview({
+    config: createConfig(),
+    issue: createIssue({ number: 527, title: "Keep specialist turns on the specialist target" }),
+    branch: "codex/issue-527",
+    workspacePath: "/tmp/repo",
+    defaultBranch: "main",
+    pr: createPullRequest({ number: 92, headRefOid: "headsha527" }),
+    role: "prisma_postgres_reviewer",
+    detectedRoles: [
+      {
+        role: "prisma_postgres_reviewer",
+        reasons: [{ kind: "repo_signal", signal: "prisma", paths: ["prisma/schema.prisma"] }],
+      },
+    ],
+    alwaysReadFiles: [],
+    onDemandFiles: [],
+    priorMissPatterns: [],
+    executeTurn: async (request) => {
+      requests.push(request);
+      return {
+        exitCode: 0,
+        rawOutput: [
+          "Review summary: Specialist reviewer ran",
+          "Recommendation: ready",
+          "REVIEW_FINDINGS_JSON_START",
+          JSON.stringify({ findings: [] }),
+          "REVIEW_FINDINGS_JSON_END",
+        ].join("\n"),
+      };
+    },
+  });
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.role, "prisma_postgres_reviewer");
+  assert.equal(requests[0]?.executionTarget, "local_review_specialist");
+});
+
 test("runVerifierReview routes verifier turns through the injected execution contract", async () => {
   const requests: LocalReviewTurnRequest[] = [];
   const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-verifier-runner-test-"));

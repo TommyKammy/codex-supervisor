@@ -1,38 +1,36 @@
-# Issue #669: Model routing: add explicit local-review model routing config
+# Issue #670: Model routing: route generic local-review roles through GPT-5.4 mini when configured
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/669
-- Branch: codex/issue-669
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/670
+- Branch: codex/issue-670
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 3a05f5aee3bb9365aafab70d66736e9727ed4b5f
+- Last head SHA: 5f9c241d919fbb2d43bcef4465b97deeb8fa7189
 - Blocked reason: none
-- Last failure signature: none
+- Last failure signature: docs-researcher-routed-as-specialist
 - Repeated failure signature count: 0
-- Updated at: 2026-03-19T22:10:13.225Z
+- Updated at: 2026-03-19T22:38:06Z
 
 ## Latest Codex Summary
-- Added optional local-review model routing config for generic reviewer turns, pushed commit `29830ff` to `codex/issue-669`, and opened draft PR #674 (`https://github.com/TommyKammy/codex-supervisor/pull/674`).
+- Reproduced the missing generic-role routing with a focused `docs_researcher` runner regression, fixed the classifier so `reviewer`, `explorer`, and `docs_researcher` all use the generic local-review target, and reran focused routing tests plus `npm run build`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: issue #669 only needs config and policy wiring right now. The narrow missing behavior is that generic local-review turns cannot opt into a different model from the main supervisor execution model, because all local-review turns currently inherit the single global `codexModelStrategy` / `codexModel`.
-- What changed: added optional `localReviewModelStrategy` / `localReviewModel` config fields, taught `resolveCodexExecutionPolicy(...)` about explicit generic-local-review routing targets, and wired reviewer turns through that target while leaving specialist and verifier local-review turns on the main execution model. Added focused coverage in `src/core/config-local-review-model-routing.test.ts` and `src/codex/codex-policy.test.ts`, plus updated the shipped example config.
+- Hypothesis: the remaining issue-670 gap after #669 was role classification, not config/policy plumbing. `docs_researcher` was still classified as a specialist reviewer, so it bypassed the generic local-review mini route even when `localReviewModelStrategy` / `localReviewModel` were configured.
+- What changed: added a focused `runRoleReview(...)` regression proving `docs_researcher` was sent to `local_review_specialist`, added a preserved-path check for `prisma_postgres_reviewer`, and fixed `reviewerTypeForRole(...)` so the generic role set is explicitly `reviewer`, `explorer`, and `docs_researcher`.
 - Current blocker: none
-- Next exact step: watch draft PR #674 for CI or review feedback and respond if any failures or comments arrive.
-- Verification gap: none for the scoped issue work. Focused config and routing tests passed, and `npm run build` passed after restoring local dev dependencies with `npm install`. A broad `src/config.test.ts` run still reports an unrelated pre-existing README assertion about a missing `## Provider Profiles` heading.
-- Files touched: `src/core/config.ts`, `src/core/types.ts`, `src/core/config-local-review-model-routing.test.ts`, `src/codex/codex-policy.ts`, `src/codex/codex-policy.test.ts`, `src/local-review/runner.ts`, `src/local-review/execution.ts`, `supervisor.config.example.json`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would remove the explicit generic local-review model-routing surface and force reviewer turns back onto the main execution model, blocking the staged rollout planned in #668.
-- Last focused command: `git push -u origin codex/issue-669`; `gh pr create --draft --base main --head codex/issue-669 --title "Add explicit local-review model routing config" ...`
+- Next exact step: commit the issue-670 routing fix on `codex/issue-670`, then open or update the draft PR and watch CI.
+- Verification gap: none for the scoped issue work. Focused runner/config/policy tests passed, and `npm run build` passed after restoring local dev dependencies with `npm install`.
+- Files touched: `src/local-review/thresholds.ts`, `src/local-review/runner.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would route `docs_researcher` back through the specialist/main-model path, leaving generic local-review mini routing incomplete for the staged rollout in #668.
+- Last focused command: `npx tsx --test src/local-review/runner.test.ts src/codex/codex-policy.test.ts`; `npx tsx --test src/core/config-local-review-model-routing.test.ts`; `npm run build`
 ### Scratchpad
-- 2026-03-20 (JST): Pushed `codex/issue-669` and opened draft PR #674 after landing checkpoint commit `29830ff` (`Add explicit generic local-review model routing config`).
-- 2026-03-20 (JST): Reproduced #669 as a missing config/policy seam: generic local-review reviewer turns could not route independently from the main execution model. Added optional `localReviewModelStrategy` / `localReviewModel`, limited the override to generic reviewer turns, added focused config and policy tests, restored local deps with `npm install`, and passed `npx tsx --test src/core/config-local-review-model-routing.test.ts`, `npx tsx --test src/codex/codex-policy.test.ts`, and `npm run build`. A broader `src/config.test.ts` run still fails on an unrelated README heading assertion.
-- 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851k4pw` as a real boundedness bug in `doctorCheckForLoadFindings(...)`; capped rendered finding details to five entries with a deterministic omission summary, added a focused oversized-SQLite regression in `src/doctor.test.ts`, and passed `npx tsx --test src/doctor.test.ts` plus `npm run build`.
+- 2026-03-20 (JST): Reproduced issue #670 with a focused `runRoleReview` regression: `docs_researcher` was classified as `local_review_specialist` instead of `local_review_generic`, while a specialist preservation check already passed. Fixed `reviewerTypeForRole(...)` by making the generic role set explicit (`reviewer`, `explorer`, `docs_researcher`), restored local dev dependencies with `npm install`, and passed `npx tsx --test src/local-review/runner.test.ts src/codex/codex-policy.test.ts`, `npx tsx --test src/core/config-local-review-model-routing.test.ts`, and `npm run build`.
 - 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
 - 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851kRrS` as a real bug: malformed SQLite rows could yield only `load_findings`, after which `loadFromSqlite()` returned fallback empty/bootstrap state without those findings. Fixed the fallback path, added a dedicated regression for the empty-state case, and reran `npx tsx --test src/core/state-store.test.ts` plus `npm run build` successfully.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
