@@ -129,6 +129,15 @@ export interface FailureContext {
   updated_at: string;
 }
 
+export interface StateLoadFinding {
+  backend: "json" | "sqlite";
+  kind: "parse_error";
+  scope: "state_file" | "issue_row";
+  location: string;
+  issue_number: number | null;
+  message: string;
+}
+
 export interface IssueRunRecord {
   issue_number: number;
   state: RunState;
@@ -187,6 +196,7 @@ export interface IssueRunRecord {
 export interface SupervisorStateFile {
   activeIssueNumber: number | null;
   issues: Record<string, IssueRunRecord>;
+  load_findings?: StateLoadFinding[];
 }
 
 export interface GitHubLabel {

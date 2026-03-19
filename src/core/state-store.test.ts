@@ -121,3 +121,100 @@ test("StateStore sqlite roundtrip preserves the active reservation and retry cou
     assert.equal(loaded.issues["403"]?.blocked_reason, "verification");
   });
 });
+
+test("StateStore json load captures structured corruption findings for invalid JSON", async () => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.json");
+    await fs.writeFile(statePath, "{not-json}\n", "utf8");
+
+    const store = new StateStore(statePath, { backend: "json" });
+    const loaded = await store.load();
+
+    assert.equal(loaded.activeIssueNumber, null);
+    assert.deepEqual(loaded.issues, {});
+    assert.equal(loaded.load_findings?.length, 1);
+    assert.deepEqual(loaded.load_findings?.[0], {
+      backend: "json",
+      kind: "parse_error",
+      scope: "state_file",
+      location: statePath,
+      issue_number: null,
+      message: loaded.load_findings?.[0]?.message ?? "",
+    });
+    assert.match(loaded.load_findings?.[0]?.message ?? "", /failed to parse json/i);
+  });
+});
+
+test("StateStore sqlite load captures structured corruption findings for malformed issue rows", async () => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.sqlite");
+    const store = new StateStore(statePath, { backend: "sqlite" });
+
+    await store.save({
+      activeIssueNumber: 403,
+      issues: {
+        "403": createRecord(403),
+      },
+    });
+
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(statePath);
+    try {
+      db.prepare("UPDATE issues SET record_json = ? WHERE issue_number = ?").run("{not-json}", 403);
+    } finally {
+      db.close();
+    }
+
+    const loaded = await store.load();
+
+    assert.equal(loaded.activeIssueNumber, 403);
+    assert.deepEqual(loaded.issues, {});
+    assert.equal(loaded.load_findings?.length, 1);
+    assert.deepEqual(loaded.load_findings?.[0], {
+      backend: "sqlite",
+      kind: "parse_error",
+      scope: "issue_row",
+      location: "sqlite issues row 403",
+      issue_number: 403,
+      message: loaded.load_findings?.[0]?.message ?? "",
+    });
+    assert.match(loaded.load_findings?.[0]?.message ?? "", /failed to parse json/i);
+  });
+});
+
+test("StateStore sqlite fallback preserves structured corruption findings for malformed issue rows", async () => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.sqlite");
+    const store = new StateStore(statePath, { backend: "sqlite" });
+
+    await store.save({
+      activeIssueNumber: null,
+      issues: {
+        "404": createRecord(404),
+      },
+    });
+
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(statePath);
+    try {
+      db.prepare("UPDATE issues SET record_json = ? WHERE issue_number = ?").run("{not-json}", 404);
+    } finally {
+      db.close();
+    }
+
+    const loaded = await store.load();
+
+    assert.equal(loaded.activeIssueNumber, null);
+    assert.deepEqual(loaded.issues, {});
+    assert.equal(loaded.load_findings?.length, 1);
+    assert.deepEqual(loaded.load_findings?.[0], {
+      backend: "sqlite",
+      kind: "parse_error",
+      scope: "issue_row",
+      location: "sqlite issues row 404",
+      issue_number: 404,
+      message: loaded.load_findings?.[0]?.message ?? "",
+    });
+    assert.match(loaded.load_findings?.[0]?.message ?? "", /failed to parse json/i);
+  });
+});
