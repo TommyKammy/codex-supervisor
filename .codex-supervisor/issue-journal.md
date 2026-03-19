@@ -5,16 +5,16 @@
 - Branch: codex/issue-602
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: fd9e85e10bcdc0dc8e3818d44426accc659070fa
+- Current phase: draft_pr
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: 7e8cc32b0a6c8eaea74979ef79fd5cfd5d731aa5
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-19T01:12:00.000Z
+- Updated at: 2026-03-19T01:21:01.000Z
 
 ## Latest Codex Summary
-- Extracted issue-lint diagnostics and repair guidance into `src/supervisor/supervisor-selection-issue-lint.ts`, added focused helper-level coverage, preserved compatibility re-exports from `supervisor-selection-status.ts`, and verified with focused issue-lint tests plus `npm run build` after restoring local dependencies via `npm install`.
+- Pushed `codex/issue-602` to `origin` and opened draft PR #610 (`https://github.com/TommyKammy/codex-supervisor/pull/610`) for commit `7e8cc32` after the focused issue-lint verification stayed green.
 
 ## Active Failure Context
 - None recorded.
@@ -22,14 +22,15 @@
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: issue-lint already had a stable cohesive boundary, so moving `buildIssueLintSummary(...)` and its repair-guidance rules into a dedicated module should shrink `supervisor-selection-status.ts` without changing diagnostics output.
-- What changed: added `src/supervisor/supervisor-selection-issue-lint.ts`, moved the issue-lint summary builder and repair-guidance helpers there, kept compatibility re-exports in `src/supervisor/supervisor-selection-status.ts`, and added focused helper coverage in `src/supervisor/supervisor-selection-issue-lint.test.ts` alongside the existing end-to-end supervisor diagnostics test.
+- What changed: added `src/supervisor/supervisor-selection-issue-lint.ts`, moved the issue-lint summary builder and repair-guidance helpers there, kept compatibility re-exports in `src/supervisor/supervisor-selection-status.ts`, added focused helper coverage in `src/supervisor/supervisor-selection-issue-lint.test.ts`, pushed `codex/issue-602`, and opened draft PR #610.
 - Current blocker: none
-- Next exact step: commit the issue-lint extraction on `codex/issue-602`, then open or update a draft PR if one is not already present.
+- Next exact step: monitor draft PR #610 for CI and review feedback, then address any failures or comments in this worktree.
 - Verification gap: none for the local refactor slice; focused issue-lint tests and `npm run build` passed after resolving the temporary missing-`tsc` environment via `npm install`.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-selection-issue-lint.ts`, `src/supervisor/supervisor-selection-issue-lint.test.ts`, `src/supervisor/supervisor-selection-status.ts`
 - Rollback concern: reverting this split would move issue-lint diagnostics and repair guidance back into `supervisor-selection-status.ts`, recreating the broader mixed-responsibility file without changing lint semantics.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-selection-issue-lint.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts`; `npm install`; `npm run build`
+- Last focused command: `git push -u origin codex/issue-602`; `gh pr create --draft --base main --head codex/issue-602 --title "Refactor issue lint diagnostics out of supervisor-selection-status" ...`
 ### Scratchpad
+- 2026-03-19 (JST): Pushed `codex/issue-602` to `origin` and opened draft PR #610 (`https://github.com/TommyKammy/codex-supervisor/pull/610`) after confirming there was no existing PR for the branch.
 - 2026-03-19 (JST): Reproduced issue #602 by adding focused helper-level coverage for `buildIssueLintSummary(...)`, then extracted the issue-lint summary builder and repair guidance into `src/supervisor/supervisor-selection-issue-lint.ts` with compatibility re-exports from `src/supervisor/supervisor-selection-status.ts`. `npm run build` initially failed with `sh: 1: tsc: not found`, so restored local dependencies with `npm install` and reran focused verification successfully with `npx tsx --test src/supervisor/supervisor-selection-issue-lint.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts` and `npm run build`.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
