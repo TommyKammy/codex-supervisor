@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import type { CommandOptions } from "../core/command";
 import { GitHubTransport, isTransientGitHubCommandFailure } from "./github-transport";
 
 test("isTransientGitHubCommandFailure matches connection reset GraphQL failures", () => {
@@ -128,4 +129,39 @@ test("GitHubTransport does not retry non-transient gh failures", async () => {
       return true;
     },
   );
+});
+
+test("GitHubTransport applies a default timeout when callers omit one", async () => {
+  const seenOptions: CommandOptions[] = [];
+  const transport = new GitHubTransport(async (_command, _args, options) => {
+    seenOptions.push({ ...options });
+    return {
+      exitCode: 0,
+      stdout: "ok",
+      stderr: "",
+    };
+  });
+
+  await transport.run(["pr", "list", "--repo", "owner/repo"]);
+
+  assert.equal(seenOptions.length, 1);
+  assert.equal(seenOptions[0]?.timeoutMs, 60_000);
+});
+
+test("GitHubTransport preserves explicit caller timeout overrides", async () => {
+  const seenOptions: CommandOptions[] = [];
+  const transport = new GitHubTransport(async (_command, _args, options) => {
+    seenOptions.push({ ...options });
+    return {
+      exitCode: 0,
+      stdout: "ok",
+      stderr: "",
+    };
+  });
+
+  await transport.run(["pr", "list", "--repo", "owner/repo"], { timeoutMs: 5_000, allowExitCodes: [0, 1] });
+
+  assert.equal(seenOptions.length, 1);
+  assert.equal(seenOptions[0]?.timeoutMs, 5_000);
+  assert.deepEqual(seenOptions[0]?.allowExitCodes, [0, 1]);
 });

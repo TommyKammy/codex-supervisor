@@ -3,6 +3,7 @@ import { truncate } from "../core/utils";
 
 const TRANSIENT_GITHUB_RETRY_LIMIT = 2;
 const TRANSIENT_GITHUB_RETRY_BASE_DELAY_MS = 200;
+const DEFAULT_GITHUB_TRANSPORT_TIMEOUT_MS = 60_000;
 
 export type GitHubCommandRunner = (
   command: string,
@@ -79,10 +80,14 @@ export class GitHubTransport {
   async run(args: string[], options: CommandOptions = {}): Promise<CommandResult> {
     let lastTransientMessage: string | null = null;
     const commandSummary = renderCommandSummary("gh", args);
+    const commandOptions =
+      typeof options.timeoutMs === "number"
+        ? options
+        : { ...options, timeoutMs: DEFAULT_GITHUB_TRANSPORT_TIMEOUT_MS };
 
     for (let attempt = 0; attempt <= TRANSIENT_GITHUB_RETRY_LIMIT; attempt += 1) {
       try {
-        const result = await this.commandRunner("gh", args, options);
+        const result = await this.commandRunner("gh", args, commandOptions);
         if (result.exitCode === 0 || !isTransientGitHubCommandFailure(`${result.stderr}\n${result.stdout}`)) {
           return result;
         }
