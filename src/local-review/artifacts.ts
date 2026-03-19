@@ -71,6 +71,21 @@ function summarizeGuardrailProvenance(provenance: FinalizedLocalReview["artifact
   return lines.length > 0 ? lines : ["- No active durable guardrails matched this review."];
 }
 
+function summarizeModelRouting(finalized: FinalizedLocalReview): string[] {
+  const lines = finalized.artifact.roleReports.map(
+    (report) =>
+      `- ${report.role}: target=${report.routing.target} model=${report.routing.model ?? "inherit"} reasoning=${report.routing.reasoningEffort}`,
+  );
+
+  if (finalized.artifact.verifierReport) {
+    lines.push(
+      `- verifier: target=${finalized.artifact.verifierReport.routing.target} model=${finalized.artifact.verifierReport.routing.model ?? "inherit"} reasoning=${finalized.artifact.verifierReport.routing.reasoningEffort}`,
+    );
+  }
+
+  return lines;
+}
+
 export function renderLines(finding: Pick<LocalReviewFinding, "start" | "end">): string {
   if (finding.start == null) {
     return "?";
@@ -132,6 +147,9 @@ export async function writeLocalReviewArtifacts(args: {
       ...args.finalized.artifact.roleReports.map((report) =>
         `- ${report.role}: type=${report.reviewerType} confidence>=${report.confidenceThreshold.toFixed(2)} severity>=${report.minimumSeverity} actionable=${report.actionableFindingsCount}`,
       ),
+      "",
+      "## Model routing",
+      ...summarizeModelRouting(args.finalized),
       "",
       "## Durable guardrails",
       ...summarizeGuardrailProvenance(args.finalized.artifact.guardrailProvenance),

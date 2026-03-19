@@ -1,4 +1,5 @@
 import { type LocalReviewRoleSelection } from "../review-role-detector";
+import { type CodexExecutionTarget, type ReasoningEffort } from "../core/types";
 import { type VerifierGuardrailRule } from "../verifier-guardrails";
 
 export type LocalReviewSeverity = "none" | "low" | "medium" | "high";
@@ -91,6 +92,12 @@ export interface LocalReviewGuardrailProvenance {
   };
 }
 
+export interface LocalReviewExecutionRouting {
+  target: CodexExecutionTarget;
+  model: string | null;
+  reasoningEffort: ReasoningEffort;
+}
+
 export interface LocalReviewArtifact {
   issueNumber: number;
   prNumber: number;
@@ -123,6 +130,7 @@ export interface LocalReviewArtifact {
   guardrailProvenance: LocalReviewGuardrailProvenance;
   roleReports: Array<{
     role: string;
+    routing: LocalReviewExecutionRouting;
     reviewerType: LocalReviewReviewerType;
     confidenceThreshold: number;
     minimumSeverity: ActionableSeverity;
@@ -135,6 +143,7 @@ export interface LocalReviewArtifact {
   }>;
   verifierReport: {
     role: "verifier";
+    routing: LocalReviewExecutionRouting;
     exitCode: number;
     degraded: boolean;
     summary: string;
