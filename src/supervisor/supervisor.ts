@@ -84,10 +84,10 @@ import {
   shouldAutoRetryHandoffMissing,
 } from "./supervisor-execution-policy";
 import {
-  buildIssueLintSummary,
   buildReadinessSummary,
   buildSelectionWhySummary,
-} from "./supervisor-selection-status";
+} from "./supervisor-selection-readiness-summary";
+import { buildIssueLintSummary } from "./supervisor-selection-status";
 import { buildIssueExplainSummary } from "./supervisor-selection-issue-explain";
 import { loadActiveIssueStatusSnapshot } from "./supervisor-selection-active-status";
 import { summarizeSupervisorStatusRecords } from "./supervisor-selection-status-records";
