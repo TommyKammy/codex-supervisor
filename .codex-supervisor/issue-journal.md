@@ -1,38 +1,35 @@
-# Issue #603: Supervisor-selection-status refactor: extract issue-explain diagnostics
+# Issue #604: Supervisor-selection-status refactor: extract readiness and selection-why summaries
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/603
-- Branch: codex/issue-603
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/604
+- Branch: codex/issue-604
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: draft_pr
+- Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 9292acbee79604a4a408fc0b31a7f50fd3b6c2e2
+- Last head SHA: 0f3e463e9abf5eb47ccbd3753dee7c339497d175
 - Blocked reason: none
-- Last failure signature: missing-issue-explain-module
+- Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-19T01:48:49Z
+- Updated at: 2026-03-19T02:06:03.016Z
 
 ## Latest Codex Summary
-- Added a focused issue-explain helper test, reproduced the missing extraction boundary as `MODULE_NOT_FOUND`, extracted explain diagnostics into `src/supervisor/supervisor-selection-issue-explain.ts`, verified the refactor with focused explain tests plus `npm run build`, pushed `codex/issue-603`, and opened draft PR #611 (`https://github.com/TommyKammy/codex-supervisor/pull/611`).
+- Added focused direct coverage for readiness and selection-why summaries, extracted both summary builders into `src/supervisor/supervisor-selection-readiness-summary.ts`, kept compatibility re-exports in `src/supervisor/supervisor-selection-status.ts`, and reran focused tests plus `npm run build` after restoring local dev dependencies with `npm install`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: issue-explain already has a cohesive helper cluster, so moving `buildIssueExplainSummary(...)`, non-runnable local-state diagnostics, and explain-only status helpers into a dedicated module should shrink `supervisor-selection-status.ts` without changing explain semantics.
-- What changed: added `src/supervisor/supervisor-selection-issue-explain.ts`, moved `buildIssueExplainSummary(...)`, `buildNonRunnableLocalStateReasons(...)`, explain-only change-risk/external-review helpers, and shared selection-reason formatting there, kept compatibility re-exports in `src/supervisor/supervisor-selection-status.ts`, pointed `src/supervisor/supervisor.ts` at the new module, and added focused helper coverage in `src/supervisor/supervisor-selection-issue-explain.test.ts`.
+- Hypothesis: readiness and selection-why summary assembly can move into a dedicated scheduler-facing module without changing runnable/blocked formatting or selected-issue reasoning, as long as the same candidate/all-issue inputs and selection-reason formatter are preserved.
+- What changed: added focused direct coverage in `src/supervisor/supervisor-selection-readiness-summary.test.ts`; extracted `buildReadinessSummary(...)`, `buildSelectionWhySummary(...)`, and the runnable-readiness formatter into new `src/supervisor/supervisor-selection-readiness-summary.ts`; kept compatibility re-exports in `src/supervisor/supervisor-selection-status.ts`; and pointed `src/supervisor/supervisor.ts` at the new module for scheduler-facing summary assembly.
 - Current blocker: none
-- Next exact step: monitor draft PR #611 for CI and review feedback, then address any failures or comments in this worktree.
-- Verification gap: none for the local refactor slice; focused issue-explain tests and `npm run build` passed after resolving the temporary missing-`tsc` environment via `npm install`.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/supervisor/supervisor-selection-issue-explain.test.ts`, `src/supervisor/supervisor-selection-status.ts`, `src/supervisor/supervisor.ts`
-- Rollback concern: reverting this split would move explain diagnostics and non-runnable local-state reasoning back into `supervisor-selection-status.ts`, recreating the mixed-responsibility file without changing explain semantics.
-- Last focused command: `git push -u origin codex/issue-603`; `gh pr create --draft --base main --head codex/issue-603 --title "Refactor issue explain diagnostics out of supervisor-selection-status" ...`
+- Next exact step: commit the readiness-summary extraction checkpoint on `codex/issue-604`, then open or update the draft PR for issue #604 if one does not already exist.
+- Verification gap: none for the local refactor slice; focused readiness/selection-status tests, focused issue-explain tests, and `npm run build` all passed after resolving the temporary missing-`tsc` environment via `npm install`.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-selection-readiness-summary.ts`, `src/supervisor/supervisor-selection-readiness-summary.test.ts`, `src/supervisor/supervisor-selection-status.ts`, `src/supervisor/supervisor.ts`
+- Rollback concern: reverting this split would move scheduler-facing readiness and selection-why summary logic back into `supervisor-selection-status.ts`, re-mixing it with issue-diagnostics responsibilities without changing behavior.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-selection-readiness-summary.test.ts`; `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npx tsx --test src/supervisor/supervisor-selection-issue-explain.test.ts`; `npm run build`
 ### Scratchpad
-- 2026-03-19 (JST): Pushed `codex/issue-603` and opened draft PR #611 (`https://github.com/TommyKammy/codex-supervisor/pull/611`) for commit `9292acb` after the focused issue-explain verification stayed green.
-- 2026-03-19 (JST): Reproduced issue #603 by adding focused helper-level coverage for `buildIssueExplainSummary(...)` and `buildNonRunnableLocalStateReasons(...)`; the initial focused failure was `Error: Cannot find module './supervisor-selection-issue-explain'` from `npx tsx --test src/supervisor/supervisor-selection-issue-explain.test.ts`. Extracted explain diagnostics into `src/supervisor/supervisor-selection-issue-explain.ts`, kept compatibility re-exports in `src/supervisor/supervisor-selection-status.ts`, rerouted `src/supervisor/supervisor.ts` to the new module, restored local dev dependencies with `npm install` after `npm run build` failed with `sh: 1: tsc: not found`, and reran focused verification successfully with `npx tsx --test src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts` and `npm run build`.
-- 2026-03-19 (JST): Reproduced issue #602 by adding focused helper-level coverage for `buildIssueLintSummary(...)`, then extracted the issue-lint summary builder and repair guidance into `src/supervisor/supervisor-selection-issue-lint.ts` with compatibility re-exports from `src/supervisor/supervisor-selection-status.ts`. `npm run build` initially failed with `sh: 1: tsc: not found`, so restored local dependencies with `npm install` and reran focused verification successfully with `npx tsx --test src/supervisor/supervisor-selection-issue-lint.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts` and `npm run build`.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
 - 2026-03-19 (JST): Reproduced issue #559 with a focused `replay-corpus-promote` regression that expected advisory hints for `stale-head-prevents-merge` but only saw the existing explicit-case-id guidance and suggestions. Fixed it by adding deterministic `deriveReplayCorpusPromotionWorthinessHints(...)` coverage for stale-head safety, provider waits, and retry escalation, then surfacing those hints in both CLI suggestion mode and successful promotion summaries. Focused verification passed with `npx tsx --test src/index.test.ts --test-name-pattern "replay-corpus-promote"`, `npx tsx --test src/supervisor/replay-corpus.test.ts --test-name-pattern "PromotionWorthinessHints|promoteCapturedReplaySnapshot|checked-in safety case bundles|runReplayCorpus replays the checked-in PR lifecycle safety cases without mismatches"`, and `npm run build` after restoring local dev dependencies via `npm install`.
