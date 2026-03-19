@@ -14,7 +14,7 @@
 - Updated at: 2026-03-19T22:10:13.225Z
 
 ## Latest Codex Summary
-- Added optional local-review model routing config for generic reviewer turns while keeping the default model behavior unchanged when the override is absent.
+- Added optional local-review model routing config for generic reviewer turns, pushed commit `29830ff` to `codex/issue-669`, and opened draft PR #674 (`https://github.com/TommyKammy/codex-supervisor/pull/674`).
 
 ## Active Failure Context
 - None recorded.
@@ -24,12 +24,13 @@
 - Hypothesis: issue #669 only needs config and policy wiring right now. The narrow missing behavior is that generic local-review turns cannot opt into a different model from the main supervisor execution model, because all local-review turns currently inherit the single global `codexModelStrategy` / `codexModel`.
 - What changed: added optional `localReviewModelStrategy` / `localReviewModel` config fields, taught `resolveCodexExecutionPolicy(...)` about explicit generic-local-review routing targets, and wired reviewer turns through that target while leaving specialist and verifier local-review turns on the main execution model. Added focused coverage in `src/core/config-local-review-model-routing.test.ts` and `src/codex/codex-policy.test.ts`, plus updated the shipped example config.
 - Current blocker: none
-- Next exact step: review the diff for any unnecessary churn, then commit the #669 routing/config slice and open or update the draft PR if needed.
+- Next exact step: watch draft PR #674 for CI or review feedback and respond if any failures or comments arrive.
 - Verification gap: none for the scoped issue work. Focused config and routing tests passed, and `npm run build` passed after restoring local dev dependencies with `npm install`. A broad `src/config.test.ts` run still reports an unrelated pre-existing README assertion about a missing `## Provider Profiles` heading.
 - Files touched: `src/core/config.ts`, `src/core/types.ts`, `src/core/config-local-review-model-routing.test.ts`, `src/codex/codex-policy.ts`, `src/codex/codex-policy.test.ts`, `src/local-review/runner.ts`, `src/local-review/execution.ts`, `supervisor.config.example.json`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this checkpoint would remove the explicit generic local-review model-routing surface and force reviewer turns back onto the main execution model, blocking the staged rollout planned in #668.
-- Last focused command: `npx tsx --test src/core/config-local-review-model-routing.test.ts`; `npx tsx --test src/codex/codex-policy.test.ts`; `npm run build`
+- Last focused command: `git push -u origin codex/issue-669`; `gh pr create --draft --base main --head codex/issue-669 --title "Add explicit local-review model routing config" ...`
 ### Scratchpad
+- 2026-03-20 (JST): Pushed `codex/issue-669` and opened draft PR #674 after landing checkpoint commit `29830ff` (`Add explicit generic local-review model routing config`).
 - 2026-03-20 (JST): Reproduced #669 as a missing config/policy seam: generic local-review reviewer turns could not route independently from the main execution model. Added optional `localReviewModelStrategy` / `localReviewModel`, limited the override to generic reviewer turns, added focused config and policy tests, restored local deps with `npm install`, and passed `npx tsx --test src/core/config-local-review-model-routing.test.ts`, `npx tsx --test src/codex/codex-policy.test.ts`, and `npm run build`. A broader `src/config.test.ts` run still fails on an unrelated README heading assertion.
 - 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851k4pw` as a real boundedness bug in `doctorCheckForLoadFindings(...)`; capped rendered finding details to five entries with a deterministic omission summary, added a focused oversized-SQLite regression in `src/doctor.test.ts`, and passed `npx tsx --test src/doctor.test.ts` plus `npm run build`.
 - 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
