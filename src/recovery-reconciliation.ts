@@ -41,6 +41,7 @@ function sanitizeRecoveryReason(reason: string): string {
 }
 
 const STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE = "stale-stabilizing-no-pr-recovery-loop";
+type StaleStabilizingNoPrBranchState = "recoverable" | "already_satisfied_on_main";
 
 function matchesTrackedBranch(
   record: Pick<IssueRunRecord, "branch">,
@@ -695,6 +696,9 @@ export async function reconcileStaleActiveIssueReservation(args: {
   sessionLockPath: (sessionId: string) => string;
   sameFailureSignatureRepeatLimit?: number;
   resolvePullRequestForBranch?: (branch: string, trackedPrNumber: number | null) => Promise<import("./core/types").GitHubPullRequest | null>;
+  classifyStaleStabilizingNoPrBranchState?: (
+    record: IssueRunRecord,
+  ) => Promise<StaleStabilizingNoPrBranchState>;
 }): Promise<RecoveryEvent[]> {
   const recoveryEvents: RecoveryEvent[] = [];
   if (args.state.activeIssueNumber === null) {
@@ -730,31 +734,46 @@ export async function reconcileStaleActiveIssueReservation(args: {
     record.state === "stabilizing" && args.resolvePullRequestForBranch
       ? await args.resolvePullRequestForBranch(record.branch, record.pr_number)
       : null;
+  const staleNoPrBranchState =
+    record.state === "stabilizing" && matchedPullRequest === null && args.classifyStaleStabilizingNoPrBranchState
+      ? await args.classifyStaleStabilizingNoPrBranchState(record)
+      : "recoverable";
   const shouldRequeueStabilizing = record.state === "stabilizing" && matchedPullRequest === null;
   const staleNoPrRepeatLimit = Math.max(args.sameFailureSignatureRepeatLimit ?? Number.POSITIVE_INFINITY, 1);
+  const shouldForceStaleNoPrManualStop = shouldRequeueStabilizing && staleNoPrBranchState === "already_satisfied_on_main";
   const staleNoPrRepeatedCount = shouldRequeueStabilizing
-    ? record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE
-      ? record.repeated_failure_signature_count + 1
-      : 1
+    ? shouldForceStaleNoPrManualStop
+      ? Math.max(
+          record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE
+            ? record.repeated_failure_signature_count + 1
+            : 1,
+          staleNoPrRepeatLimit,
+        )
+      : record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE
+        ? record.repeated_failure_signature_count + 1
+        : 1
     : record.repeated_failure_signature_count;
   const shouldClearStaleNoPrFailureTracking =
     record.state === "stabilizing" &&
     matchedPullRequest !== null &&
     record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE;
   const shouldStopRepeatedStaleNoPrLoop =
-    shouldRequeueStabilizing && staleNoPrRepeatedCount >= staleNoPrRepeatLimit;
+    shouldRequeueStabilizing && (shouldForceStaleNoPrManualStop || staleNoPrRepeatedCount >= staleNoPrRepeatLimit);
 
   const staleNoPrFailureContext = shouldRequeueStabilizing
     ? {
         category: "blocked" as const,
         summary: shouldStopRepeatedStaleNoPrLoop
-          ? `Issue #${record.issue_number} re-entered stale stabilizing recovery without a tracked PR ${staleNoPrRepeatedCount} times; manual intervention is required.`
+          ? staleNoPrBranchState === "already_satisfied_on_main"
+            ? `Issue #${record.issue_number} re-entered stale stabilizing recovery without a tracked PR on a branch already satisfied on origin/main; manual intervention is required.`
+            : `Issue #${record.issue_number} re-entered stale stabilizing recovery without a tracked PR ${staleNoPrRepeatedCount} times; manual intervention is required.`
           : `Issue #${record.issue_number} re-entered stale stabilizing recovery without a tracked PR; the supervisor will retry while the repeat count remains below ${staleNoPrRepeatLimit}.`,
         signature: STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
         command: null,
         details: [
           "state=stabilizing",
           "tracked_pr=none",
+          `branch_state=${staleNoPrBranchState}`,
           `repeat_count=${staleNoPrRepeatedCount}/${staleNoPrRepeatLimit}`,
           "operator_action=confirm whether the implementation already landed elsewhere or retarget the tracked issue manually",
         ],

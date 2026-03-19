@@ -1,36 +1,35 @@
-# Issue #628: Issue-lint test refactor: split ambiguity and repair-guidance coverage
+# Issue #633: Supervisor regression: stale stabilizing already-satisfied-on-main issue does not converge to the expected manual stop
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/628
-- Branch: codex/issue-628
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/633
+- Branch: codex/issue-633
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 3e07cde4c19d84e2ff92581d9b24ac1a99549ad2
+- Last head SHA: d298bd01c42b25b5a7482592e704d513aa16081b
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-19T10:34:07.855Z
+- Updated at: 2026-03-19T11:57:24.166Z
 
 ## Latest Codex Summary
-- Split the remaining issue-lint ambiguity and repair-guidance coverage into dedicated scenario-focused test modules, verified the focused tests, restored missing local dev dependencies with `npm install`, and reran `npm run build` successfully.
+- None yet.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining issue-lint scenario family is now fully split so readiness, metadata, ambiguity, and repair-guidance failures each land in their own focused modules without changing diagnostics behavior.
-- What changed: reproduced the focused baseline with `npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint*.test.ts`, moved both ambiguity scenarios into `src/supervisor/supervisor-diagnostics-issue-lint-ambiguity.test.ts`, moved repair-guidance assertions into `src/supervisor/supervisor-diagnostics-issue-lint-repair-guidance.test.ts`, narrowed `src/supervisor/supervisor-diagnostics-issue-lint-readiness.test.ts` to clean-readiness coverage, narrowed `src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts` to missing-sections/metadata-error assertions, and deleted `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`.
+- Hypothesis: the stale `stabilizing` no-PR loop only converges for recoverable tracked work today; already-satisfied-on-`origin/main` branches need an explicit branch-convergence classification so the existing `#591` manual-stop path triggers instead of requeueing again.
+- What changed: added a focused reconciliation regression in `src/supervisor/supervisor-recovery-reconciliation.test.ts` for the already-satisfied-on-main stale `stabilizing` no-PR path, extended `reconcileStaleActiveIssueReservation(...)` with an injected branch-state classifier, and wired `Supervisor` to classify a stale no-PR worktree as `already_satisfied_on_main` only when `git diff origin/<default>...HEAD` and `git status --short` show no meaningful changes beyond the local issue journal. That path now preserves the existing `stale-stabilizing-no-pr-recovery-loop` signature and converges directly to the same explicit manual stop.
 - Current blocker: none
-- Next exact step: commit the focused test-module split, then open or update the draft PR so review can continue on the narrower ambiguity and repair-guidance coverage.
-- Verification gap: `npm run build` initially failed locally with `sh: 1: tsc: not found`; restored dev dependencies via `npm install` and reran `npm run build` successfully.
-- Files touched: `src/supervisor/supervisor-diagnostics-issue-lint-ambiguity.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint-repair-guidance.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint-readiness.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would re-bundle ambiguity and repair-guidance failures into broader issue-lint modules, undoing the scenario-localized coverage this issue requires.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint-ambiguity.test.ts src/supervisor/supervisor-diagnostics-issue-lint-repair-guidance.test.ts src/supervisor/supervisor-diagnostics-issue-lint-readiness.test.ts src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`; `npm install`; `npm run build`
+- Next exact step: commit this focused stale-recovery fix, then open or update the draft PR with the reconciliation regression and the already-satisfied-on-main manual-stop path.
+- Verification gap: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts` passed and `npm run build` passed after restoring missing dev dependencies with `npm install`. The requested `npm test -- src/supervisor/supervisor-recovery-reconciliation.test.ts` still runs the repository’s full suite and fails on unrelated baseline tests in docs/family-layout/run-once orchestration coverage.
+- Files touched: `src/recovery-reconciliation.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would restore the stale already-satisfied-on-main loop, causing no-PR `stabilizing` records to requeue instead of stopping explicitly.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm install`; `npm test -- src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm run build`
 ### Scratchpad
-- 2026-03-19 (JST): Addressed CodeRabbit threads `PRRT_kwDORgvdZ851W7DO` and `PRRT_kwDORgvdZ851W7DQ` by resolving the default replay-corpus path inside the extracted handler layer and by skipping config loading on the missing-`caseId` advisory branch. Focused verification passed with `npx tsx --test src/cli/replay-handlers.test.ts src/index.test.ts` and `npm run build`.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
 - 2026-03-19 (JST): Reproduced issue #559 with a focused `replay-corpus-promote` regression that expected advisory hints for `stale-head-prevents-merge` but only saw the existing explicit-case-id guidance and suggestions. Fixed it by adding deterministic `deriveReplayCorpusPromotionWorthinessHints(...)` coverage for stale-head safety, provider waits, and retry escalation, then surfacing those hints in both CLI suggestion mode and successful promotion summaries. Focused verification passed with `npx tsx --test src/index.test.ts --test-name-pattern "replay-corpus-promote"`, `npx tsx --test src/supervisor/replay-corpus.test.ts --test-name-pattern "PromotionWorthinessHints|promoteCapturedReplaySnapshot|checked-in safety case bundles|runReplayCorpus replays the checked-in PR lifecycle safety cases without mismatches"`, and `npm run build` after restoring local dev dependencies via `npm install`.
