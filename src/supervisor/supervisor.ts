@@ -236,14 +236,21 @@ export class Supervisor {
   private async classifyStaleStabilizingNoPrBranchState(
     record: Pick<IssueRunRecord, "workspace" | "journal_path">,
   ): Promise<"recoverable" | "already_satisfied_on_main"> {
-    const journalRelativePath =
-      record.journal_path === null ? null : path.relative(record.workspace, record.journal_path).replace(/\\/g, "/");
+    const journalPath = record.journal_path ?? issueJournalPath(record.workspace, this.config.issueJournalRelativePath);
+    const journalRelativePath = path.relative(record.workspace, journalPath).replace(/\\/g, "/");
+    const gitProbeTimeoutMs = this.config.codexExecTimeoutMinutes * 60_000;
 
     try {
-      await runCommand("git", ["-C", this.config.repoPath, "fetch", "origin", this.config.defaultBranch]);
+      await runCommand("git", ["-C", this.config.repoPath, "fetch", "origin", this.config.defaultBranch], {
+        timeoutMs: gitProbeTimeoutMs,
+      });
       const [baseDiffResult, workspaceStatusResult] = await Promise.all([
-        runCommand("git", ["-C", record.workspace, "diff", "--name-only", `origin/${this.config.defaultBranch}...HEAD`]),
-        runCommand("git", ["-C", record.workspace, "status", "--short", "--untracked-files=all"]),
+        runCommand("git", ["-C", record.workspace, "diff", "--name-only", `origin/${this.config.defaultBranch}...HEAD`], {
+          timeoutMs: gitProbeTimeoutMs,
+        }),
+        runCommand("git", ["-C", record.workspace, "status", "--short", "--untracked-files=all"], {
+          timeoutMs: gitProbeTimeoutMs,
+        }),
       ]);
       const meaningfulBaseDiff = baseDiffResult.stdout
         .split("\n")
