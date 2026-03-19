@@ -1,35 +1,45 @@
-# Issue #637: Command error hygiene: bound stderr included in failure and timeout errors
+# Issue #638: Command error hygiene: add focused tests for redacted and bounded command errors
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/637
-- Branch: codex/issue-637
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/638
+- Branch: codex/issue-638
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: c1584f4769eb12fd00a16bed741fd5f196cd4d17
+- Current phase: stabilizing
+- Attempt count: 7 (implementation=7, repair=0)
+- Last head SHA: ce5f08d8cff38867946db2bdb8d59cdf9be25124
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-19T13:05:34.651Z
+- Last failure signature: stale-stabilizing-no-pr-recovery-loop
+- Repeated failure signature count: 1
+- Updated at: 2026-03-19T23:44:54+09:00
 
 ## Latest Codex Summary
-- None yet.
+The branch was not actually stable: rerunning `npx tsx --test src/core/command.test.ts` exposed a failure in the timeout bounded-`stderr` case because the test assumed pre-timeout `stderr` would always flush before the supervisor sent `SIGTERM`. I kept the scope narrow and updated [src/core/command.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-638/src/core/command.test.ts) so the timeout case emits the large `stderr` payload from a `SIGTERM` handler instead, which still exercises the redacted/bounded timeout error shape without relying on a race.
+
+Focused verification now passes again with `npx tsx --test src/core/command.test.ts` and `npm run build`. The pre-existing untracked `.codex-supervisor/replay/` directory was left untouched.
+
+Summary: Stabilized the timeout bounded-`stderr` regression test by making the child emit noisy `stderr` from a `SIGTERM` handler, then reran the focused command-runner test file and build successfully.
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/core/command.test.ts`; `npm run build`
+Failure signature: none
+Next action: commit this focused test-only stabilization, push `codex/issue-638`, and open or update the draft PR for review
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the narrowest safe fix is to bound only the `stderr` payload injected into thrown `runCommand(...)` timeout and non-zero-exit errors, leaving captured `stderr` unchanged on the success path.
-- What changed: added focused `src/core/command.test.ts` coverage that reproduces noisy `stderr` for both non-zero exit and timeout failures, then updated `src/core/command.ts` to splice oversized `stderr` with a deterministic middle `...` marker before building the thrown error message.
+- Hypothesis: the command-runner behavior from `#639` and `#640` is still correct; the instability was in the timeout bounded-`stderr` test, which relied on a race between initial `stderr` writes and timeout-driven `SIGTERM`.
+- What changed: re-ran `git status --short --branch`, `git rev-list --left-right --count origin/main...HEAD`, `gh pr status`, `sed -n '1,260p' src/core/command.test.ts`, `npx tsx --test src/core/command.test.ts`, and `npm run build`; the focused test initially failed on `runCommand timeout errors bound noisy stderr while keeping timeout context` because the error lacked `timeout-prefix`. Updated `src/core/command.test.ts` so the timeout case writes `NOISY_STDERR` from a `SIGTERM` handler and reran the focused test file plus build successfully.
 - Current blocker: none
-- Next exact step: commit this stderr-bounding slice on `codex/issue-637`, then decide whether to push and open a draft PR if none exists yet.
-- Verification gap: `npx tsx --test src/core/command.test.ts` and `npm run build` passed locally after `npm install`; I did not run the repository-wide test suite because the issue asks for focused command-runner coverage plus build verification.
-- Files touched: `src/core/command.ts`, `src/core/command.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would restore unbounded raw `stderr` blocks inside thrown timeout and non-zero-exit command errors.
-- Last focused command: `npm install`; `npx tsx --test src/core/command.test.ts`; `npm run build`
+- Next exact step: commit the stabilized timeout test, push `codex/issue-638`, and open a draft PR so review can focus on the test-only fix.
+- Verification gap: none for the scoped acceptance criteria; I ran the focused command-runner test file and `npm run build`, but not the full repository test suite because the issue specifically asks for focused verification plus build.
+- Files touched: `src/core/command.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would restore the timeout-test race and make the focused command-runner coverage flaky again.
+- Last focused command: `git status --short --branch`; `git rev-list --left-right --count origin/main...HEAD`; `gh pr status`; `sed -n '1,260p' src/core/command.test.ts`; `npx tsx --test src/core/command.test.ts`; `npm run build`
 ### Scratchpad
+- 2026-03-19 (JST): Rerunning the focused command-runner tests on `ce5f08d` exposed that the timeout bounded-`stderr` case was flaky; it assumed noisy `stderr` written before the timeout would always be captured before `SIGTERM`. Stabilized the test by emitting `NOISY_STDERR` from a `SIGTERM` handler instead, then reran `npx tsx --test src/core/command.test.ts` and `npm run build` successfully.
 - 2026-03-19 (JST): Reproduced issue #637 with focused `runCommand` failures that emitted 1.2k-character `stderr` payloads; initial tests failed because thrown non-zero and timeout errors included the full `stderr` body. Fixed `src/core/command.ts` so error messages splice oversized `stderr` with a deterministic middle ellipsis while preserving both the prefix and suffix, including the timeout marker appended at the end. Focused verification passed with `npx tsx --test src/core/command.test.ts` and `npm run build` after `npm install`.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
