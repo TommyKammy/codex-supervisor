@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { acquireFileLock } from "./core/lock";
+import { acquireFileLock, inspectFileLock } from "./core/lock";
 
 test("acquireFileLock self-heals malformed lock payloads", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-lock-"));
@@ -31,4 +31,53 @@ test("acquireFileLock reports the owning pid and label when a live session lock 
 
   await first.release();
   await assert.rejects(fs.access(lockPath));
+});
+
+test("acquireFileLock writes host and owner metadata into new lock payloads", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-lock-"));
+  const lockPath = path.join(root, "issues", "issue-643.lock");
+
+  const lock = await acquireFileLock(lockPath, "issue-643");
+  assert.equal(lock.acquired, true);
+
+  const payload = JSON.parse(await fs.readFile(lockPath, "utf8")) as {
+    pid: number;
+    label: string;
+    acquired_at: string;
+    host?: string;
+    owner?: string;
+  };
+
+  assert.equal(payload.pid, process.pid);
+  assert.equal(payload.label, "issue-643");
+  assert.match(payload.acquired_at, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(payload.host, os.hostname());
+  assert.equal(typeof payload.owner, "string");
+  assert.notEqual(payload.owner, "");
+
+  await lock.release();
+});
+
+test("inspectFileLock keeps legacy lock payloads readable", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-lock-"));
+  const lockPath = path.join(root, "issues", "issue-legacy.lock");
+  await fs.mkdir(path.dirname(lockPath), { recursive: true });
+  await fs.writeFile(
+    lockPath,
+    `${JSON.stringify({
+      pid: process.pid,
+      label: "issue-legacy",
+      acquired_at: "2026-03-20T00:00:00.000Z",
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const existing = await inspectFileLock(lockPath);
+
+  assert.equal(existing.status, "live");
+  assert.deepEqual(existing.payload, {
+    pid: process.pid,
+    label: "issue-legacy",
+    acquired_at: "2026-03-20T00:00:00.000Z",
+  });
 });

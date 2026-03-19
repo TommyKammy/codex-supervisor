@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { ensureDir, nowIso, readJsonIfExists } from "./utils";
 
@@ -6,6 +7,8 @@ interface LockPayload {
   pid: number;
   label: string;
   acquired_at: string;
+  host?: string;
+  owner?: string;
 }
 
 export interface ExistingLockState {
@@ -17,6 +20,19 @@ export interface LockHandle {
   acquired: boolean;
   reason?: string;
   release: () => Promise<void>;
+}
+
+function currentLockOwner(): string {
+  try {
+    const { username } = os.userInfo();
+    if (username) {
+      return username;
+    }
+  } catch {
+    // Fall through to environment-based owner detection.
+  }
+
+  return process.env.USER ?? process.env.USERNAME ?? "unknown";
 }
 
 function isPidAlive(pid: number): boolean {
@@ -74,6 +90,8 @@ export async function acquireFileLock(lockPath: string, label: string): Promise<
         pid: process.pid,
         label,
         acquired_at: nowIso(),
+        host: os.hostname(),
+        owner: currentLockOwner(),
       };
       await handle.writeFile(`${JSON.stringify(payload, null, 2)}\n`, "utf8");
       await handle.close();
