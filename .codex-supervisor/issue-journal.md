@@ -1,34 +1,34 @@
-# Issue #656: GitHub timeout robustness: classify timeout-shaped failures consistently in transport retry handling
+# Issue #659: State-store visibility: capture structured corruption findings during load
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/656
-- Branch: codex/issue-656
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/659
+- Branch: codex/issue-659
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 78b403ef90f3ad4236fa49b01a6a38b9a8f3af88
+- Last head SHA: da75c36d11b8727307590021748c9349c204e514
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-19T16:36:19.334Z
+- Updated at: 2026-03-19T20:12:23.514Z
 
 ## Latest Codex Summary
-- None yet.
+- Added focused state-store regressions for representative JSON and SQLite parse corruption during load, then updated the loader to return structured `load_findings` while preserving the existing empty-state / row-drop fallback behavior.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the narrowest safe fix is still the GitHub transport classifier; timeout-shaped `gh` failures should enter the same transient retry/terminal path as other network-shaped transport failures.
-- What changed: inspected `src/github/github-transport.ts`, `src/github/github-transport.test.ts`, and `src/core/command.ts` to compare the transport classifier against the timeout message shape emitted by `runCommand(...)`. Added focused regressions in `src/github/github-transport.test.ts` for one retried timeout-shaped failure and one terminal timeout-shaped failure. The new tests failed first because `GitHubTransport` surfaced raw `Command timed out: gh ...` errors instead of retrying, and the terminal assertion saw the unwrapped timeout message rather than `Transient GitHub CLI failure after 3 attempts: ...`. Updated `src/github/github-transport.ts` so transient classification now recognizes timeout-shaped `gh` failures consistently via `command timed out`, `timed out after`, `request canceled`, and `context deadline exceeded`, while preserving the existing GitHub-related guard and non-transient behavior. Restored local dev dependencies with `npm install` because `npm run build` initially failed with `sh: 1: tsc: not found`, then reran the focused transport test and build successfully.
+- Hypothesis: the narrowest safe fix is to attach an optional structured corruption-finding array to the loaded state object, omitting it when empty so unaffected load behavior and existing consumers stay stable.
+- What changed: inspected `src/core/state-store.ts`, `src/core/state-store.test.ts`, `src/core/types.ts`, and `src/doctor.ts` to confirm that JSON syntax errors only warned and returned empty state while malformed SQLite rows only warned and were dropped. Added focused regressions in `src/core/state-store.test.ts` for one invalid JSON state file and one malformed SQLite issue row. The new tests failed first because `StateStore.load()` returned the prior fallback state without any structured corruption payload. Updated `src/core/types.ts` with optional `StateLoadFinding`/`load_findings` typing and updated `src/core/state-store.ts` so JSON load syntax failures return empty state plus one `load_findings` entry, while SQLite row parse failures still skip the bad row but now capture a per-row finding alongside the loaded state. Preserved the current `console.warn(...)` behavior and fallback semantics. Restored local dev dependencies with `npm install` because `npm run build` initially failed with `sh: 1: tsc: not found`, then reran the focused state-store tests and build successfully.
 - Current blocker: none
-- Next exact step: monitor draft PR #665 CI for the focused transport timeout slice and respond to any review or build feedback.
-- Verification gap: none for the stated issue scope; I ran the focused GitHub transport tests plus `npm run build`, but not the full repository test suite because the issue calls for focused transport verification and build only.
-- Files touched: `src/github/github-transport.ts`, `src/github/github-transport.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would send transport-generated timeout failures back through the generic command-error path, making retry behavior and terminal messaging inconsistent for equivalent GitHub timeouts.
-- Last focused command: `git status --short --branch`; `rg -n "timeout|transient|retry|classif|GitHub transport|gh .*timeout|ETIMEDOUT|timed out|SIGTERM|deadline" src`; `sed -n '1,240p' src/github/github-transport.ts`; `sed -n '1,260p' src/github/github-transport.test.ts`; `sed -n '1,260p' src/core/command.ts`; `npx tsx --test src/github/github-transport.test.ts`; `npm install`; `npm run build`; `git commit -m "Classify GitHub transport timeouts consistently"`; `git push -u origin codex/issue-656`; `gh pr create --draft --base main --head codex/issue-656 --title "Classify GitHub transport timeouts consistently" ...`; `gh pr view 665 --json number,state,isDraft,url,mergeStateStatus`
+- Next exact step: commit the focused state-store corruption-finding slice on `codex/issue-659`, then open a draft PR if one does not exist yet.
+- Verification gap: none for the stated issue scope; I ran the focused `src/core/state-store.test.ts` slice plus `npm run build`, but not the full repository test suite because the issue calls for focused state-store verification and build only.
+- Files touched: `src/core/types.ts`, `src/core/state-store.ts`, `src/core/state-store.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would drop structured visibility for JSON load corruption and malformed SQLite rows, returning those cases to warn-only behavior.
+- Last focused command: `git status --short --branch`; `rg -n "corruption|finding|state-store|sqlite|JSON|parse" src .`; `sed -n '1,320p' src/core/state-store.ts`; `sed -n '1,360p' src/core/state-store.test.ts`; `sed -n '1,280p' src/core/types.ts`; `npx tsx --test src/core/state-store.test.ts`; `npm install`; `npm run build`
 ### Scratchpad
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
 - 2026-03-19 (JST): Reproduced issue #559 with a focused `replay-corpus-promote` regression that expected advisory hints for `stale-head-prevents-merge` but only saw the existing explicit-case-id guidance and suggestions. Fixed it by adding deterministic `deriveReplayCorpusPromotionWorthinessHints(...)` coverage for stale-head safety, provider waits, and retry escalation, then surfacing those hints in both CLI suggestion mode and successful promotion summaries. Focused verification passed with `npx tsx --test src/index.test.ts --test-name-pattern "replay-corpus-promote"`, `npx tsx --test src/supervisor/replay-corpus.test.ts --test-name-pattern "PromotionWorthinessHints|promoteCapturedReplaySnapshot|checked-in safety case bundles|runReplayCorpus replays the checked-in PR lifecycle safety cases without mismatches"`, and `npm run build` after restoring local dev dependencies via `npm install`.

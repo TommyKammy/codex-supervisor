@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { IssueRunRecord, SupervisorStateFile } from "./types";
+import { IssueRunRecord, StateLoadFinding, SupervisorStateFile } from "./types";
 import { ensureDir, nowIso, parseJson, readJsonIfExists, writeJsonAtomic } from "./utils";
 
 interface StateStoreOptions {
@@ -77,6 +77,17 @@ function normalizeState(raw: SupervisorStateFile | null | undefined): Supervisor
   };
 }
 
+function withLoadFindings(state: SupervisorStateFile, findings: StateLoadFinding[]): SupervisorStateFile {
+  if (findings.length === 0) {
+    return state;
+  }
+
+  return {
+    ...state,
+    load_findings: findings,
+  };
+}
+
 function initSqlite(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS metadata (
@@ -120,24 +131,35 @@ function readSqliteState(db: DatabaseSync): SupervisorStateFile {
   const rows = db
     .prepare("SELECT issue_number, record_json FROM issues ORDER BY issue_number ASC")
     .all() as Array<{ issue_number: number; record_json: string }>;
+  const findings: StateLoadFinding[] = [];
 
   const issues = Object.fromEntries(
     rows.flatMap((row) => {
+      const location = `sqlite issues row ${row.issue_number}`;
       try {
-        const parsed = parseJson<IssueRunRecord>(row.record_json, `sqlite issues row ${row.issue_number}`);
+        const parsed = parseJson<IssueRunRecord>(row.record_json, location);
         return [[String(row.issue_number), normalizeIssueRecord(parsed)]];
       } catch (error) {
-        console.warn(error instanceof Error ? error.message : String(error));
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(message);
+        findings.push({
+          backend: "sqlite",
+          kind: "parse_error",
+          scope: "issue_row",
+          location,
+          issue_number: row.issue_number,
+          message,
+        });
         return [];
       }
     }),
   );
 
-  return {
+  return withLoadFindings({
     activeIssueNumber:
       activeRow?.value && activeRow.value.trim() !== "" ? Number.parseInt(activeRow.value, 10) : null,
     issues,
-  };
+  }, findings);
 }
 
 async function readJsonStateFromFile(filePath: string): Promise<SupervisorStateFile | null> {
@@ -298,8 +320,18 @@ export class StateStore {
       }
 
       if (error instanceof Error && error.cause instanceof SyntaxError) {
-        console.warn(`${error.message}. Starting with empty state.`);
-        return this.emptyState();
+        const message = `${error.message}. Starting with empty state.`;
+        console.warn(message);
+        return withLoadFindings(this.emptyState(), [
+          {
+            backend: "json",
+            kind: "parse_error",
+            scope: "state_file",
+            location: filePath,
+            issue_number: null,
+            message,
+          },
+        ]);
       }
 
       throw error;
