@@ -1,46 +1,45 @@
-# Issue #659: State-store visibility: capture structured corruption findings during load
+# Issue #660: State-store visibility: surface captured corruption findings in diagnostics
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/659
-- Branch: codex/issue-659
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/660
+- Branch: codex/issue-660
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: fa9267a024605614870f5707ce0496d08e363553
+- Current phase: waiting_ci
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: 918c34df1b5e91f07e6d1199fb8ed4f975dbd83d
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ851kRrS
-- Repeated failure signature count: 1
-- Updated at: 2026-03-20T05:25:14+09:00
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-20T06:08:55+09:00
 
 ## Latest Codex Summary
-Implemented the focused state-store slice for issue #659, then addressed the follow-up CodeRabbit review on SQLite fallback visibility. [`src/core/state-store.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-659/src/core/state-store.ts) now preserves `load_findings` when malformed SQLite rows collapse the loaded state to bootstrap or empty fallback, and [`src/core/state-store.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-659/src/core/state-store.test.ts) includes a regression that specifically covers that empty-state fallback path. The journal was updated in [`.codex-supervisor/issue-journal.md`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-659/.codex-supervisor/issue-journal.md).
+Draft PR #667 is open at https://github.com/TommyKammy/codex-supervisor/pull/667 on `codex/issue-660`, and review fix commit `918c34d` (`Bound doctor corruption detail output`) is now pushed to the branch. I also resolved CodeRabbit thread `PRRT_kwDORgvdZ851k4pw` after the remote branch updated cleanly. The worktree is clean aside from the pre-existing untracked `.codex-supervisor/replay/` directory, which I left untouched.
 
-Summary: Preserved SQLite `load_findings` across empty/bootstrap fallback and added focused regression coverage for the review-reported corruption path.
-State hint: addressing_review
+Summary: Fixed and pushed the bounded `doctor` detail rendering review issue, added a focused oversized-SQLite regression, reran the scoped verification, and resolved the matching PR thread.
+State hint: waiting_ci
 Blocked reason: none
-Tests: `npx tsx --test src/core/state-store.test.ts`; `npm run build`
-Failure signature: PRRT_kwDORgvdZ851kRrS
-Next action: Commit the verified review fix on `codex/issue-659`, push the branch, and resolve the PR thread.
+Tests: Passed `npx tsx --test src/doctor.test.ts` and `npm run build`
+Failure signature: none
+Next action: Watch PR #667 for CI on commit `918c34d` and handle any new review or check failures.
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/666#discussion_r2962486122
-- Details:
-  - src/core/state-store.ts:163 _⚠️ Potential issue_ | _🟠 Major_ **Preserve SQLite `load_findings` when the loader falls back to bootstrap/empty state.** At Line 349–364, fallback returns can drop findings produced by `readSqliteState(...)` when malformed rows result in an otherwise “empty” loaded state. That hides corruption in a real parse-failure path. <details> <summary>💡 Suggested patch</summary> ```diff private async loadFromSqlite(): Promise<SupervisorStateFile> { @@ validateSqliteSchemaVersion(db); const currentState = readSqliteState(db); + const findings = currentState.load_findings ?? []; if (Object.keys(currentState.issues).length > 0 || currentState.activeIssueNumber !== null) { return currentState; } if (!this.options.bootstrapFilePath) { - return this.emptyState(); + return withLoadFindings(this.emptyState(), findings); } const bootstrapState = await readJsonStateFromFile(this.options.bootstrapFilePath); if (!bootstrapState) { - return this.emptyState(); + return withLoadFindings(this.emptyState(), findings); } await this.saveToSqlite(bootstrapState); - return bootstrapState; + return withLoadFindings(bootstrapState, findings); } finally { db.close(); } } ``` </details> Also applies to: 341-364 <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/core/state-store.ts` around lines 158 - 163, The fallback path in the loader can return an empty state and drop findings created by readSqliteState, losing parse-failure diagnostics; update the code around withLoadFindings (the return that builds { activeIssueNumber, issues }) so that when readSqliteState produced any findings (e.g., a non-empty findings array or load_findings metadata), those findings are preserved and merged into the returned result instead of being discarded—detect findings returned by readSqliteState, combine them with any existing findings, and pass the merged findings into withLoadFindings so load_findings is not lost when the loader falls back to bootstrap/empty state. ``` </details> <!-- fingerprinting:phantom:poseidon:hawk --> <!-- This is an auto-generated comment by CodeRabbit -->
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the review thread is valid because `readSqliteState(...)` can return only `load_findings` after malformed rows are skipped, and `loadFromSqlite()` was dropping those findings whenever it fell back to bootstrap or empty state.
-- What changed: verified the current SQLite regression only covered the non-fallback path (`activeIssueNumber` stayed non-null), so it did not catch the review case. Updated [`src/core/state-store.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-659/src/core/state-store.ts) so `withLoadFindings(...)` merges existing findings and `loadFromSqlite()` reattaches `currentState.load_findings` when returning bootstrap or empty fallback. Added a focused regression in [`src/core/state-store.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-659/src/core/state-store.test.ts) that corrupts the only SQLite issue row while `activeIssueNumber` is `null`, proving the fallback state still surfaces the structured parse finding. Focused verification passed with the existing state-store test file and `npm run build`.
+- Hypothesis: the remaining operator-facing gap is boundedness, not capture. `doctorCheckForLoadFindings(...)` currently renders every captured `load_finding`, so a heavily corrupted SQLite state file can flood the report and violate the concise/representative diagnostic goal called out in review thread `PRRT_kwDORgvdZ851k4pw`.
+- What changed: validated that CodeRabbit report against the current implementation, then updated [`src/doctor.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-660/src/doctor.ts) to cap rendered load-finding details at five entries and append a deterministic omission summary for the remainder. Added a focused regression in [`src/doctor.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-660/src/doctor.test.ts) that seeds six malformed SQLite rows and asserts the report keeps the first five findings, emits `state_load_finding_omitted count=1`, and excludes the sixth row detail.
 - Current blocker: none
-- Next exact step: commit the review fix, push `codex/issue-659`, and resolve the CodeRabbit thread on PR #666.
-- Verification gap: none for the stated review scope; I reran focused `src/core/state-store.test.ts` coverage plus `npm run build`, but not the full repository test suite because the issue guidance still calls for focused state-store verification and build only.
-- Files touched: `src/core/state-store.ts`, `src/core/state-store.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would reintroduce the visibility gap where malformed SQLite rows disappear from `load_findings` whenever the loader falls back to bootstrap or empty state.
-- Last focused command: `git status --short --branch`; `sed -n '1,280p' src/core/state-store.ts`; `sed -n '1,360p' src/core/state-store.test.ts`; `rg -n "loadFromSqlite|emptyState|withLoadFindings|bootstrapFilePath" src/core/state-store.ts`; `sed -n '320,430p' src/core/state-store.ts`; `npx tsx --test src/core/state-store.test.ts`; `npm run build`
+- Next exact step: watch PR #667 for CI on `918c34d` and respond if any new review comments or check failures appear.
+- Verification gap: none for the scoped review fix; I reran focused `src/doctor.test.ts` plus `npm run build`. I did not rerun `src/core/state-store.test.ts` because this review change only touches `doctor` detail rendering and its focused regression.
+- Files touched: `src/doctor.ts`, `src/doctor.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would restore unbounded `doctor_detail` output for large corruption sets, making operator diagnostics noisy and potentially hiding the actionable first findings.
+- Last focused command: `git push origin codex/issue-660`; `gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: {threadId: $threadId}) { thread { isResolved } } }' -F threadId=PRRT_kwDORgvdZ851k4pw`
 ### Scratchpad
+- 2026-03-20 (JST): Pushed review fix commit `918c34d` (`Bound doctor corruption detail output`) to `codex/issue-660` and resolved CodeRabbit thread `PRRT_kwDORgvdZ851k4pw` via `gh api graphql` after the branch update landed.
+- 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851k4pw` as a real boundedness bug in `doctorCheckForLoadFindings(...)`; capped rendered finding details to five entries with a deterministic omission summary, added a focused oversized-SQLite regression in `src/doctor.test.ts`, and passed `npx tsx --test src/doctor.test.ts` plus `npm run build`.
+- 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
 - 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851kRrS` as a real bug: malformed SQLite rows could yield only `load_findings`, after which `loadFromSqlite()` returned fallback empty/bootstrap state without those findings. Fixed the fallback path, added a dedicated regression for the empty-state case, and reran `npx tsx --test src/core/state-store.test.ts` plus `npm run build` successfully.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
 - 2026-03-19 (JST): Reproduced issue #559 with a focused `replay-corpus-promote` regression that expected advisory hints for `stale-head-prevents-merge` but only saw the existing explicit-case-id guidance and suggestions. Fixed it by adding deterministic `deriveReplayCorpusPromotionWorthinessHints(...)` coverage for stale-head safety, provider waits, and retry escalation, then surfacing those hints in both CLI suggestion mode and successful promotion summaries. Focused verification passed with `npx tsx --test src/index.test.ts --test-name-pattern "replay-corpus-promote"`, `npx tsx --test src/supervisor/replay-corpus.test.ts --test-name-pattern "PromotionWorthinessHints|promoteCapturedReplaySnapshot|checked-in safety case bundles|runReplayCorpus replays the checked-in PR lifecycle safety cases without mismatches"`, and `npm run build` after restoring local dev dependencies via `npm install`.

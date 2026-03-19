@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { GitHubClient } from "./github";
 import { runCommand } from "./core/command";
 import { parseJson } from "./core/utils";
-import { type IssueRunRecord, type SupervisorConfig, type SupervisorStateFile } from "./core/types";
+import { type IssueRunRecord, type StateLoadFinding, type SupervisorConfig, type SupervisorStateFile } from "./core/types";
 
 export type DoctorCheckStatus = "pass" | "warn" | "fail";
 
@@ -30,6 +30,17 @@ function emptyDoctorState(): SupervisorStateFile {
   return {
     activeIssueNumber: null,
     issues: {},
+  };
+}
+
+function withDoctorLoadFindings(state: SupervisorStateFile, findings: StateLoadFinding[]): SupervisorStateFile {
+  if (findings.length === 0) {
+    return state;
+  }
+
+  return {
+    ...state,
+    load_findings: findings,
   };
 }
 
@@ -119,8 +130,12 @@ async function diagnoseCodexCli(config: SupervisorConfig): Promise<DoctorCheck> 
 async function diagnoseStateFile(config: SupervisorConfig): Promise<DoctorCheck> {
   if (config.stateBackend === "json") {
     try {
-      const raw = await fs.readFile(config.stateFile, "utf8");
-      parseJson<SupervisorStateFile>(raw, config.stateFile);
+      const state = await loadStateReadonlyForDoctor(config);
+      const findings = state.load_findings ?? [];
+      if (findings.length > 0) {
+        return doctorCheckForLoadFindings(config, findings);
+      }
+
       return {
         name: "state_file",
         status: "pass",
@@ -173,7 +188,12 @@ async function diagnoseStateFile(config: SupervisorConfig): Promise<DoctorCheck>
   let db: DatabaseSync | null = null;
   try {
     db = new DatabaseSync(config.stateFile, { readOnly: true });
-    db.prepare("SELECT name FROM sqlite_master LIMIT 1").get();
+    const state = parseReadonlySqliteState(db);
+    const findings = state.load_findings ?? [];
+    if (findings.length > 0) {
+      return doctorCheckForLoadFindings(config, findings);
+    }
+
     return {
       name: "state_file",
       status: "pass",
@@ -200,19 +220,33 @@ function parseReadonlySqliteState(db: DatabaseSync): SupervisorStateFile {
   const rows = db
     .prepare("SELECT issue_number, record_json FROM issues ORDER BY issue_number ASC")
     .all() as Array<{ issue_number: number; record_json: string }>;
+  const findings: StateLoadFinding[] = [];
   const issues = Object.fromEntries(
-    rows.map((row) => [
-      String(row.issue_number),
-      parseJson<IssueRunRecord>(row.record_json, `sqlite issues row ${row.issue_number}`),
-    ]),
+    rows.flatMap((row) => {
+      const location = `sqlite issues row ${row.issue_number}`;
+      try {
+        return [[String(row.issue_number), parseJson<IssueRunRecord>(row.record_json, location)]];
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        findings.push({
+          backend: "sqlite",
+          kind: "parse_error",
+          scope: "issue_row",
+          location,
+          issue_number: row.issue_number,
+          message,
+        });
+        return [];
+      }
+    }),
   );
   const rawActiveIssueNumber = activeRow?.value?.trim();
 
   if (!rawActiveIssueNumber) {
-    return {
+    return withDoctorLoadFindings({
       activeIssueNumber: null,
       issues,
-    };
+    }, findings);
   }
 
   const activeIssueNumber = Number.parseInt(rawActiveIssueNumber, 10);
@@ -220,9 +254,39 @@ function parseReadonlySqliteState(db: DatabaseSync): SupervisorStateFile {
     throw new Error(`Invalid activeIssueNumber value in sqlite metadata: ${rawActiveIssueNumber}`);
   }
 
-  return {
+  return withDoctorLoadFindings({
     activeIssueNumber,
     issues,
+  }, findings);
+}
+
+function formatStateLoadFinding(finding: StateLoadFinding): string {
+  const issueNumber = finding.issue_number === null ? "none" : String(finding.issue_number);
+  return `state_load_finding backend=${finding.backend} scope=${finding.scope} issue_number=${issueNumber} location=${finding.location} message=${finding.message}`;
+}
+
+const MAX_RENDERED_LOAD_FINDINGS = 5;
+
+function doctorCheckForLoadFindings(
+  config: SupervisorConfig,
+  findings: StateLoadFinding[],
+): DoctorCheck {
+  const hasStateFileFinding = findings.some((finding) => finding.scope === "state_file");
+  const backendLabel = config.stateBackend === "json" ? "JSON" : "SQLite";
+  const status: DoctorCheckStatus = hasStateFileFinding ? "fail" : "warn";
+  const details = findings
+    .slice(0, MAX_RENDERED_LOAD_FINDINGS)
+    .map((finding) => formatStateLoadFinding(finding));
+
+  if (findings.length > MAX_RENDERED_LOAD_FINDINGS) {
+    details.push(`state_load_finding_omitted count=${findings.length - MAX_RENDERED_LOAD_FINDINGS}`);
+  }
+
+  return {
+    name: "state_file",
+    status,
+    summary: `${backendLabel} state load captured ${findings.length} corruption finding(s): ${config.stateFile}`,
+    details,
   };
 }
 
@@ -235,6 +299,20 @@ export async function loadStateReadonlyForDoctor(config: SupervisorConfig): Prom
       const maybeErr = error as NodeJS.ErrnoException;
       if (maybeErr.code === "ENOENT") {
         return emptyDoctorState();
+      }
+
+      if (error instanceof Error && error.cause instanceof SyntaxError) {
+        const message = `${error.message}. Starting with empty state.`;
+        return withDoctorLoadFindings(emptyDoctorState(), [
+          {
+            backend: "json",
+            kind: "parse_error",
+            scope: "state_file",
+            location: config.stateFile,
+            issue_number: null,
+            message,
+          },
+        ]);
       }
 
       throw error;
