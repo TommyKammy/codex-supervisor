@@ -28,6 +28,16 @@ export interface CodexExecutionPolicy {
   reasoningEffort: ReasoningEffort;
 }
 
+type CodexExecutionPolicyConfig = Pick<
+  SupervisorConfig,
+  | "codexModelStrategy"
+  | "codexModel"
+  | "localReviewModelStrategy"
+  | "localReviewModel"
+  | "codexReasoningEffortByState"
+  | "codexReasoningEscalateOnRepeatedFailure"
+>;
+
 function bumpReasoningEffort(effort: ReasoningEffort, steps = 1): ReasoningEffort {
   const index = REASONING_ORDER.indexOf(effort);
   const nextIndex = Math.min(REASONING_ORDER.length - 1, Math.max(0, index) + steps);
@@ -57,7 +67,7 @@ function clampReasoningEffortForModel(model: string | null, effort: ReasoningEff
 }
 
 function resolveRequestedReasoningEffort(
-  config: SupervisorConfig,
+  config: Pick<SupervisorConfig, "codexReasoningEffortByState" | "codexReasoningEscalateOnRepeatedFailure">,
   state: RunState,
   record?: Pick<IssueRunRecord, "repeated_failure_signature_count" | "blocked_verification_retry_count" | "timeout_retry_count"> | null,
 ): ReasoningEffort {
@@ -77,7 +87,7 @@ function resolveRequestedReasoningEffort(
   return effort;
 }
 
-function resolveConfiguredModel(config: SupervisorConfig, target: CodexExecutionTarget): string | null {
+function resolveConfiguredModel(config: Pick<SupervisorConfig, "codexModelStrategy" | "codexModel" | "localReviewModelStrategy" | "localReviewModel">, target: CodexExecutionTarget): string | null {
   if (target === "local_review_generic" && config.localReviewModelStrategy) {
     if (config.localReviewModelStrategy === "inherit") {
       return null;
@@ -94,7 +104,7 @@ function resolveConfiguredModel(config: SupervisorConfig, target: CodexExecution
 }
 
 export function resolveCodexExecutionPolicy(
-  config: SupervisorConfig,
+  config: CodexExecutionPolicyConfig,
   state: RunState,
   record?: Pick<IssueRunRecord, "repeated_failure_signature_count" | "blocked_verification_retry_count" | "timeout_retry_count"> | null,
   target: CodexExecutionTarget = "supervisor",
