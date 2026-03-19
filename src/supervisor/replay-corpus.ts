@@ -1,6 +1,4 @@
-import fs from "node:fs/promises";
 import path from "node:path";
-import { writeJsonAtomic } from "../core/utils";
 import { mapConfiguredReviewProviders } from "../core/review-providers";
 import type { SupervisorConfig } from "../core/types";
 import { replaySupervisorCycleDecisionSnapshot } from "./supervisor-cycle-replay";
@@ -11,12 +9,9 @@ import type {
   ReplayCorpus,
   ReplayCorpusCaseBundle,
   ReplayCorpusCaseMetadata,
-  ReplayCorpusCaseResult,
   ReplayCorpusExpectedReplayResult,
   ReplayCorpusInputSnapshot,
   ReplayCorpusManifest,
-  ReplayCorpusMismatchDetailsArtifact,
-  ReplayCorpusMismatchDetailsArtifactContext,
   ReplayCorpusNormalizedOutcome,
   ReplayCorpusPromotionHint,
   ReplayCorpusPromotionSummary,
@@ -24,7 +19,16 @@ import type {
 } from "./replay-corpus-model";
 import { loadReplayCorpusCaseBundle, loadReplayCorpusManifest, loadReplayCorpusManifestOrDefault } from "./replay-corpus-loading";
 import { validationError } from "./replay-corpus-validation";
-import { formatReplayCorpusCompactOutcome, normalizeExpectedReplayResult, normalizeReplayResult } from "./replay-corpus-outcome";
+import { normalizeExpectedReplayResult, normalizeReplayResult } from "./replay-corpus-outcome";
+import {
+  formatReplayCorpusMismatchDetailsArtifact,
+  syncReplayCorpusMismatchDetailsArtifact,
+} from "./replay-corpus-mismatch-artifact";
+import {
+  formatReplayCorpusMismatchSummaryLine,
+  formatReplayCorpusOutcomeMismatch,
+  formatReplayCorpusRunSummary,
+} from "./replay-corpus-mismatch-formatting";
 import { suggestReplayCorpusCaseIds } from "./replay-corpus-promotion-case-id";
 import {
   promoteCapturedReplaySnapshot,
@@ -36,6 +40,15 @@ import {
 } from "./replay-corpus-promotion-summary";
 
 export { formatReplayCorpusCompactOutcome } from "./replay-corpus-outcome";
+export {
+  formatReplayCorpusMismatchDetailsArtifact,
+  syncReplayCorpusMismatchDetailsArtifact,
+} from "./replay-corpus-mismatch-artifact";
+export {
+  formatReplayCorpusMismatchSummaryLine,
+  formatReplayCorpusOutcomeMismatch,
+  formatReplayCorpusRunSummary,
+} from "./replay-corpus-mismatch-formatting";
 export { suggestReplayCorpusCaseIds } from "./replay-corpus-promotion-case-id";
 export { promoteCapturedReplaySnapshot } from "./replay-corpus-promotion";
 export type { PromoteCapturedReplaySnapshotArgs } from "./replay-corpus-promotion";
@@ -131,14 +144,6 @@ export async function loadReplayCorpus(rootPath: string): Promise<ReplayCorpus> 
   };
 }
 
-function replayCorpusMismatchDetailsArtifactPath(config: SupervisorConfig): string {
-  return path.join(config.repoPath, ".codex-supervisor", "replay", "replay-corpus-mismatch-details.json");
-}
-
-function relativeReplayPath(config: SupervisorConfig, targetPath: string): string {
-  return path.relative(config.repoPath, targetPath) || ".";
-}
-
 export async function runReplayCorpus(rootPath: string, config: SupervisorConfig): Promise<ReplayCorpusRunResult> {
   const corpus = await loadReplayCorpus(rootPath);
   const results = corpus.cases.map((corpusCase) => {
@@ -161,74 +166,4 @@ export async function runReplayCorpus(rootPath: string, config: SupervisorConfig
     mismatchCount: results.filter((result) => !result.matchesExpected).length,
     results,
   };
-}
-
-export function formatReplayCorpusOutcomeMismatch(result: ReplayCorpusCaseResult): string {
-  return [
-    `Replay corpus mismatch for case "${result.caseId}" (issue #${result.issueNumber})`,
-    `  expected.nextState=${result.expected.nextState ?? "none"}`,
-    `  actual.nextState=${result.actual.nextState ?? "none"}`,
-    `  expected.shouldRunCodex=${String(result.expected.shouldRunCodex)}`,
-    `  actual.shouldRunCodex=${String(result.actual.shouldRunCodex)}`,
-    `  expected.blockedReason=${result.expected.blockedReason ?? "none"}`,
-    `  actual.blockedReason=${result.actual.blockedReason ?? "none"}`,
-    `  expected.failureSignature=${result.expected.failureSignature ?? "none"}`,
-    `  actual.failureSignature=${result.actual.failureSignature ?? "none"}`,
-  ].join("\n");
-}
-
-export function formatReplayCorpusMismatchSummaryLine(result: ReplayCorpusCaseResult): string {
-  return `Mismatch: ${result.caseId} (issue #${result.issueNumber}) expected(${formatReplayCorpusCompactOutcome(result.expected)}) actual(${formatReplayCorpusCompactOutcome(result.actual)})`;
-}
-
-export function formatReplayCorpusMismatchDetailsArtifact(
-  result: ReplayCorpusRunResult,
-  config: SupervisorConfig,
-): ReplayCorpusMismatchDetailsArtifact {
-  const mismatches = result.results
-    .filter((entry) => !entry.matchesExpected)
-    .map((entry) => ({
-      caseId: entry.caseId,
-      issueNumber: entry.issueNumber,
-      casePath: relativeReplayPath(config, entry.bundlePath),
-      expected: entry.expected,
-      actual: entry.actual,
-      compactSummary: formatReplayCorpusMismatchSummaryLine(entry),
-      detail: formatReplayCorpusOutcomeMismatch(entry),
-    }));
-
-  return {
-    schemaVersion: 1,
-    corpusPath: relativeReplayPath(config, result.rootPath),
-    manifestPath: relativeReplayPath(config, result.manifestPath),
-    totalCases: result.totalCases,
-    mismatchCount: result.mismatchCount,
-    mismatches,
-  };
-}
-
-export async function syncReplayCorpusMismatchDetailsArtifact(
-  result: ReplayCorpusRunResult,
-  config: SupervisorConfig,
-): Promise<ReplayCorpusMismatchDetailsArtifactContext | null> {
-  const artifactPath = replayCorpusMismatchDetailsArtifactPath(config);
-  if (result.mismatchCount === 0) {
-    await fs.rm(artifactPath, { force: true });
-    return null;
-  }
-
-  await writeJsonAtomic(artifactPath, formatReplayCorpusMismatchDetailsArtifact(result, config));
-  return { artifactPath };
-}
-
-export function formatReplayCorpusRunSummary(result: ReplayCorpusRunResult): string {
-  const passedCount = result.totalCases - result.mismatchCount;
-  const lines = [`Replay corpus summary: total=${result.totalCases} passed=${passedCount} failed=${result.mismatchCount}`];
-  for (const entry of result.results) {
-    if (!entry.matchesExpected) {
-      lines.push(formatReplayCorpusMismatchSummaryLine(entry));
-    }
-  }
-
-  return lines.join("\n");
 }

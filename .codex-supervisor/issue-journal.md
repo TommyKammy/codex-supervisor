@@ -1,45 +1,36 @@
-# Issue #596: Replay-corpus refactor: extract promotion helpers
+# Issue #597: Replay-corpus refactor: extract reporting and mismatch-formatting helpers
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/596
-- Branch: codex/issue-596
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/597
+- Branch: codex/issue-597
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 687355fa2e9658f02243d1fbfa8a00b997e095b2
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 2f8a2a265c96a414657af2a0d8c09472eb4ce7e6
 - Blocked reason: none
 - Last failure signature: none
-- Repeated failure signature count: 1
-- Updated at: 2026-03-18T23:45:06.000Z
+- Repeated failure signature count: 0
+- Updated at: 2026-03-19T00:01:22.869Z
 
 ## Latest Codex Summary
-Validated CodeRabbit thread `PRRT_kwDORgvdZ851UWEj` against the current branch and confirmed the provider-wait hint could be emitted when `configuredBotCurrentHeadObservedAt` was omitted entirely. Fixed [`replay-corpus-promotion-summary.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-596/src/supervisor/replay-corpus-promotion-summary.ts) to require a non-nullish observation timestamp before it counts as a provider-wait signal, unless `copilotReviewState` is explicitly present, and added a focused regression in [`replay-corpus-promotion.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-596/src/supervisor/replay-corpus-promotion.test.ts) for the missing-field case.
-
-The first new test assertion failed because the shared fixture still carried `timeout_retry_count=1`; I tightened the fixture overrides so the regression isolates only the provider-wait branch. The existing prebuild/build pipeline and the focused promotion suite passed locally. I committed the fix as `687355f`, pushed `codex/issue-596`, and resolved the CodeRabbit thread on PR #606. The only remaining worktree noise is the pre-existing untracked `.codex-supervisor/replay/` directory, which I left untouched.
-
-Summary: Fixed the provider-wait promotion hint false positive, added a focused regression, pushed `687355f`, and resolved the CodeRabbit thread on PR #606
-State hint: draft_pr
-Blocked reason: none
-Tests: `npx tsx --test src/supervisor/replay-corpus-promotion.test.ts` (failed once due to fixture retry defaults, then passed after isolating the provider-wait branch); `npm run build`
-Failure signature: none
-Next action: Watch PR #606 for any follow-up review feedback or CI regressions after commit `687355f`
+- Reproduced the helper-extraction gap with focused module-level replay-corpus tests that failed on missing `replay-corpus-mismatch-formatting` and `replay-corpus-mismatch-artifact` modules, then extracted the mismatch/reporting and artifact helpers out of `src/supervisor/replay-corpus.ts` while preserving output and artifact semantics. Focused replay-corpus verification and `npm run build` now pass.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the only remaining risk in this PR slice was the provider-wait hint overcounting missing configured-bot observations; the local fix should fully cover that path because the helper now treats `configuredBotCurrentHeadObservedAt` as present only when it is non-nullish, and the focused regression exercises the previously false-positive combination.
-- What changed: updated `src/supervisor/replay-corpus-promotion-summary.ts` so the provider-wait hint only considers `configuredBotCurrentHeadObservedAt` when it is neither `null` nor `undefined`, and added a focused missing-observation regression to `src/supervisor/replay-corpus-promotion.test.ts` while preserving the earlier extracted promotion-helper split.
+- Hypothesis: the replay-corpus reporting refactor is complete for this slice because mismatch formatting, run-summary formatting, and mismatch artifact shaping now live in dedicated modules with direct tests that pin the existing CI-facing strings and artifact payloads.
+- What changed: added `src/supervisor/replay-corpus-mismatch-formatting.ts` and `src/supervisor/replay-corpus-mismatch-artifact.ts`, added focused tests for each new module, and trimmed `src/supervisor/replay-corpus.ts` down to orchestration plus re-exports.
 - Current blocker: none
-- Next exact step: watch PR #606 for any new review comments or CI noise after the `687355f` push.
-- Verification gap: none for the review fix; `npm run build` passed, and `npx tsx --test src/supervisor/replay-corpus-promotion.test.ts` passed after one initial regression-authoring failure caused by fixture retry defaults.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/replay-corpus-promotion-summary.ts`, `src/supervisor/replay-corpus-promotion.test.ts`
-- Rollback concern: reverting this narrow fix would reintroduce a false-positive promotion hint path for snapshots that omit `configuredBotCurrentHeadObservedAt`, which would make replay corpus promotions noisier without reflecting real supervisor state.
-- Last focused command: `npx tsx --test src/supervisor/replay-corpus-promotion.test.ts`; `npm run build`; `git push origin codex/issue-596`; `gh api graphql -f query='mutation($threadId:ID!){ resolveReviewThread(input:{threadId:$threadId}) { thread { isResolved } } }' -F threadId=PRRT_kwDORgvdZ851UWEj`
+- Next exact step: commit the replay-corpus reporting/artifact split on `codex/issue-597`, then open or update the draft PR if one is not already present.
+- Verification gap: none for the local refactor slice; focused replay-corpus tests and `npm run build` both passed after restoring local dev dependencies with `npm install`.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/replay-corpus.ts`, `src/supervisor/replay-corpus-mismatch-formatting.ts`, `src/supervisor/replay-corpus-mismatch-formatting.test.ts`, `src/supervisor/replay-corpus-mismatch-artifact.ts`, `src/supervisor/replay-corpus-mismatch-artifact.test.ts`
+- Rollback concern: reverting this split would push CI-facing replay mismatch formatting and artifact shaping back into `replay-corpus.ts`, increasing coupling again without changing semantics.
+- Last focused command: `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/replay-corpus-mismatch-formatting.test.ts src/supervisor/replay-corpus-mismatch-artifact.test.ts`; `npm install`; `npm run build`
 ### Scratchpad
-- 2026-03-19 (JST): Pushed review-fix commit `687355f` to `origin/codex/issue-596` and resolved CodeRabbit thread `PRRT_kwDORgvdZ851UWEj` via `gh api graphql` after the focused promotion test file and `npm run build` passed locally.
+- 2026-03-19 (JST): Reproduced issue #597 by adding focused module-level tests for `replay-corpus-mismatch-formatting` and `replay-corpus-mismatch-artifact`; the first run failed with `MODULE_NOT_FOUND` for both new modules. Implemented the split by moving mismatch detail/summary/run-summary formatting into `src/supervisor/replay-corpus-mismatch-formatting.ts` and mismatch artifact shaping/sync into `src/supervisor/replay-corpus-mismatch-artifact.ts`, then re-exported them from `src/supervisor/replay-corpus.ts`. Verification passed with `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/replay-corpus-mismatch-formatting.test.ts src/supervisor/replay-corpus-mismatch-artifact.test.ts` and `npm run build` after a local `npm install` because `tsc` was initially unavailable.
 - 2026-03-19 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851UWEj` by changing the provider-wait promotion hint guard to use a non-nullish check for `configuredBotCurrentHeadObservedAt` and adding a focused regression for the missing-field case. The first new assertion failed because the shared snapshot fixture still emitted `retry-escalation` via `timeout_retry_count=1`; after zeroing the retry counters in the test setup, `npx tsx --test src/supervisor/replay-corpus-promotion.test.ts` passed and `npm run build` remained green.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
