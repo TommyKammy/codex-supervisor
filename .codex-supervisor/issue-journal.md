@@ -1,35 +1,50 @@
-# Issue #615: Index refactor: extract CLI argument parsing
+# Issue #616: Index refactor: extract replay and replay-corpus handlers
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/615
-- Branch: codex/issue-615
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/616
+- Branch: codex/issue-616
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: e89677a07e1a4e7b9a707bcf11f5df4b18b9fee0
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: 6a293302457e9e1b03c6eb83b04a59b76164ac18
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-19T13:10:25+09:00
+- Last failure signature: PRRT_kwDORgvdZ851W7DO|PRRT_kwDORgvdZ851W7DQ
+- Repeated failure signature count: 1
+- Updated at: 2026-03-19T04:48:05.185Z
 
 ## Latest Codex Summary
-- Extracted CLI argument parsing from `src/index.ts` into `src/cli/parse-args.ts`, moved the focused parser assertions into `src/cli/parse-args.test.ts`, and kept `src/index.ts` as the execution/orchestration entrypoint with a compatibility re-export for `parseArgs`.
+Pushed `codex/issue-616` and opened draft PR [#620](https://github.com/TommyKammy/codex-supervisor/pull/620) from `codex/issue-616` to `main`. I also updated the handoff in [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-616/.codex-supervisor/issue-journal.md) so the next turn starts from CI/review monitoring instead of local implementation.
+
+The worktree still has the journal edit uncommitted and the pre-existing untracked `.codex-supervisor/replay/` directory.
+
+Summary: Pushed `codex/issue-616`, opened draft PR #620, and updated the journal handoff to monitor CI/review next.
+State hint: draft_pr
+Blocked reason: none
+Tests: Not rerun this turn; relied on the existing green checkpoint: `npx tsx --test src/cli/replay-handlers.test.ts src/index.test.ts` and `npm run build`
+Failure signature: none
+Next action: monitor PR #620 CI and review feedback, then address any failures or comments on `codex/issue-616`
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 2 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/620#discussion_r2957832547
+- Details:
+  - src/cli/replay-corpus-command.ts:59 _⚠️ Potential issue_ | _🟡 Minor_ **Normalize the default corpus path inside the handler layer.** `loadReplayCorpusConfig()` only preserves the checked-in corpus behavior when callers prefill `corpusPath` with the literal `"replay-corpus"`. Any direct handler call that omits it will fall through to `loadConfig()` and later hit the `options.corpusPath!` dereference. Normalizing the default once here would make the extracted boundary match the old CLI behavior more reliably. <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/cli/replay-corpus-command.ts` around lines 55 - 59, The function loadReplayCorpusConfig currently only triggers createCheckedInReplayCorpusConfig when callers explicitly pass corpusPath === "replay-corpus", so callers that omit corpusPath fall through to loadConfig and later hit a non-null assertion on options.corpusPath; to fix, normalize the default inside loadReplayCorpusConfig by treating options.corpusPath as options.corpusPath ?? "replay-corpus" (e.g. const corpusPath = options.corpusPath ?? "replay-corpus") and use that normalized corpusPath when deciding whether to call createCheckedInReplayCorpusConfig or loadConfig, keeping references to createCheckedInReplayCorpusConfig and loadConfig unchanged. ``` </details> <!-- fingerprinting:phantom:medusa:grasshopper --> <!-- This is an auto-generated comment by CodeRabbit -->
+  - src/cli/replay-corpus-command.ts:103 _⚠️ Potential issue_ | _🟡 Minor_ **Don’t gate the missing-`caseId` guidance path on config loading.** Lines 79-102 only inspect the snapshot to print suggestions and promotion hints, but Line 78 can fail on config resolution first. That skips the operator guidance path entirely when config is broken or simply unnecessary for this branch. <details> <summary>🐛 Minimal fix</summary> ```diff export async function handleReplayCorpusPromoteCommand( options: Pick<CliOptions, "configPath" | "corpusPath" | "snapshotPath" | "caseId">, io: CliIo, ): Promise<void> { - const config = loadReplayCorpusConfig(options); if (options.caseId === undefined) { const snapshot = await loadSupervisorCycleDecisionSnapshot(options.snapshotPath!); let suggestions: string[] = []; try { suggestions = suggestReplayCorpusCaseIds(snapshot); @@ io.setExitCode(1); return; } + const config = loadReplayCorpusConfig(options); const sourceSnapshot = await loadSupervisorCycleDecisionSnapshot(options.snapshotPath!); const promoted = await promoteCapturedReplaySnapshot({ corpusRoot: options.corpusPath!, ``` </details> <!-- suggestion_start --> <details> <summary>📝 Committable suggestion</summary> > ‼️ **IMPORTANT** > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements. ```suggestion if (options.caseId === undefined) { const snapshot = await loadSupervisorCycleDecisionSnapshot(options.snapshotPath!); let suggestions: string[] = []; try { suggestions = suggestReplayCorpusCaseIds(snapshot); } catch { io.writeStderr("Unable to derive case-id suggestions from the snapshot. Provide an explicit case id."); } io.writeStderr("The replay-corpus-promote command requires an explicit case id to write a new case."); if (suggestions.length > 0) { io.writeStderr("Suggested case ids:"); for (const suggestion of suggestions) { io.writeStderr(`- ${suggestion}`); } } const promotionHints = deriveReplayCorpusPromotionWorthinessHints(snapshot); if (promotionHints.length > 0) { io.writeStderr("Promotion hints:"); for (const hint of promotionHints) { io.writeStderr(`- ${hint.id}: ${hint.summary}`); } } io.setExitCode(1); return; } const config = loadReplayCorpusConfig(options); ``` </details> <!-- suggestion_end --> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/cli/replay-corpus-command.ts` around lines 78 - 103, Move the loadReplayCorpusConfig(options) call so it does not run before the missing-caseId branch: first check options.caseId and, if undefined, call loadSupervisorCycleDecisionSnapshot(options.snapshotPath!), call suggestReplayCorpusCaseIds(snapshot) and deriveReplayCorpusPromotionWorthinessHints(snapshot) to print suggestions and hints via io.writeStderr, set io.setExitCode(1) and return; only after handling the missing-caseId branch call loadReplayCorpusConfig(options). This ensures the guidance path (functions suggestReplayCorpusCaseIds and deriveReplayCorpusPromotionWorthinessHints and snapshot handling) runs even if config resolution would fail. ``` </details> <!-- fingerprinting:phantom:medusa:grasshopper --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: issue #615 is satisfied by keeping parser semantics unchanged while moving `parseArgs(...)` into a dedicated CLI module and leaving `src/index.ts` focused on command execution branches.
-- What changed: added `src/cli/parse-args.test.ts` as the focused reproducer, confirmed it initially failed with `MODULE_NOT_FOUND` for `./parse-args`, created `src/cli/parse-args.ts` with the extracted parser logic, removed the parser unit cases from `src/index.test.ts`, and updated `src/index.ts` to import plus re-export `parseArgs` from the new module.
+- Hypothesis: issue #616 is satisfied by moving replay-specific command execution behind dedicated CLI handler modules while preserving the existing stdout/stderr and exit-code behavior that `src/index.ts` exposes today.
+- What changed: addressed the two open CodeRabbit review threads in `src/cli/replay-corpus-command.ts` by normalizing the handler-level default `replay-corpus` path and deferring config loading until after the missing-`caseId` guidance branch, then added focused handler regressions for both behaviors.
 - Current blocker: none
-- Next exact step: monitor draft PR #619 CI and review feedback, then address any failures or comments that land on `codex/issue-615`.
-- Verification gap: none for the local slice; `npx tsx --test src/cli/parse-args.test.ts src/index.test.ts` passed, and `npm run build` passed after restoring local dev dependencies with `npm install`.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/cli/parse-args.ts`, `src/cli/parse-args.test.ts`, `src/index.ts`, `src/index.test.ts`
-- Rollback concern: reverting this checkpoint would move argument parsing back into `src/index.ts` and drop the dedicated parser-focused test boundary that now guards the extraction.
-- Last focused command: `npx tsx --test src/cli/parse-args.test.ts`; `npx tsx --test src/cli/parse-args.test.ts src/index.test.ts`; `npm install`; `npm run build`; `git commit -m "Extract CLI argument parsing module"`; `git push -u origin codex/issue-615`; `gh pr create --draft --base main --head codex/issue-615 ...`
+- Next exact step: push the review-fix checkpoint to PR #620, then monitor CI/review and resolve the two automated threads if no follow-up regression appears.
+- Verification gap: none for this review-fix slice after focused handler/index coverage and a clean `npm run build`.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/cli/replay-corpus-command.ts`, `src/cli/replay-handlers.test.ts`
+- Rollback concern: reverting this checkpoint would reintroduce the direct-handler `replay-corpus` default gap and make the missing-`caseId` guidance path depend on config loading again.
+- Last focused command: `git status --short`; `sed -n '1,240p' src/cli/replay-corpus-command.ts`; `sed -n '1,240p' src/cli/replay-handlers.test.ts`; `npx tsx --test src/cli/replay-handlers.test.ts src/index.test.ts`; `npm run build`
 ### Scratchpad
+- 2026-03-19 (JST): Addressed CodeRabbit threads `PRRT_kwDORgvdZ851W7DO` and `PRRT_kwDORgvdZ851W7DQ` by resolving the default replay-corpus path inside the extracted handler layer and by skipping config loading on the missing-`caseId` advisory branch. Focused verification passed with `npx tsx --test src/cli/replay-handlers.test.ts src/index.test.ts` and `npm run build`.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
 - 2026-03-19 (JST): Reproduced issue #559 with a focused `replay-corpus-promote` regression that expected advisory hints for `stale-head-prevents-merge` but only saw the existing explicit-case-id guidance and suggestions. Fixed it by adding deterministic `deriveReplayCorpusPromotionWorthinessHints(...)` coverage for stale-head safety, provider waits, and retry escalation, then surfacing those hints in both CLI suggestion mode and successful promotion summaries. Focused verification passed with `npx tsx --test src/index.test.ts --test-name-pattern "replay-corpus-promote"`, `npx tsx --test src/supervisor/replay-corpus.test.ts --test-name-pattern "PromotionWorthinessHints|promoteCapturedReplaySnapshot|checked-in safety case bundles|runReplayCorpus replays the checked-in PR lifecycle safety cases without mismatches"`, and `npm run build` after restoring local dev dependencies via `npm install`.

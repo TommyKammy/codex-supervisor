@@ -4,21 +4,12 @@ import { Supervisor } from "./supervisor";
 import { CliOptions } from "./core/types";
 import { sleep } from "./core/utils";
 import { parseArgs } from "./cli/parse-args";
+import { handleReplayCommand } from "./cli/replay-command";
 import {
-  formatSupervisorCycleReplay,
-  loadSupervisorCycleDecisionSnapshot,
-  replaySupervisorCycleDecisionSnapshot,
-} from "./supervisor/supervisor-cycle-replay";
-import {
-  createCheckedInReplayCorpusConfig,
-  deriveReplayCorpusPromotionWorthinessHints,
-  summarizeReplayCorpusPromotion,
-  formatReplayCorpusRunSummary,
-  promoteCapturedReplaySnapshot,
-  runReplayCorpus,
-  suggestReplayCorpusCaseIds,
-  syncReplayCorpusMismatchDetailsArtifact,
-} from "./supervisor/replay-corpus";
+  createProcessCliIo,
+  handleReplayCorpusCommand,
+  handleReplayCorpusPromoteCommand,
+} from "./cli/replay-corpus-command";
 export { parseArgs } from "./cli/parse-args";
 
 async function runOnceWithSupervisorLock(
@@ -41,85 +32,18 @@ async function runOnceWithSupervisorLock(
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   if (options.command === "replay") {
-    const config = loadConfig(options.configPath);
-    const snapshot = await loadSupervisorCycleDecisionSnapshot(options.snapshotPath!);
-    const replayResult = replaySupervisorCycleDecisionSnapshot(snapshot, config);
-    console.log(formatSupervisorCycleReplay({
-      snapshotPath: options.snapshotPath!,
-      replayResult,
-      snapshot,
-    }));
+    console.log(await handleReplayCommand(options));
     return;
   }
 
+  const cliIo = createProcessCliIo();
   if (options.command === "replay-corpus") {
-    const config =
-      options.configPath === undefined && options.corpusPath === "replay-corpus"
-        ? createCheckedInReplayCorpusConfig(process.cwd())
-        : loadConfig(options.configPath);
-    const result = await runReplayCorpus(options.corpusPath!, config);
-    await syncReplayCorpusMismatchDetailsArtifact(result, config);
-    const summary = formatReplayCorpusRunSummary(result);
-    if (result.mismatchCount > 0) {
-      console.log(summary);
-      process.exitCode = 1;
-      return;
-    }
-
-    console.log(summary);
+    await handleReplayCorpusCommand(options, cliIo);
     return;
   }
 
   if (options.command === "replay-corpus-promote") {
-    const config =
-      options.configPath === undefined && options.corpusPath === "replay-corpus"
-        ? createCheckedInReplayCorpusConfig(process.cwd())
-        : loadConfig(options.configPath);
-    if (options.caseId === undefined) {
-      const snapshot = await loadSupervisorCycleDecisionSnapshot(options.snapshotPath!);
-      let suggestions: string[] = [];
-      try {
-        suggestions = suggestReplayCorpusCaseIds(snapshot);
-      } catch {
-        console.error("Unable to derive case-id suggestions from the snapshot. Provide an explicit case id.");
-      }
-      console.error("The replay-corpus-promote command requires an explicit case id to write a new case.");
-      if (suggestions.length > 0) {
-        console.error("Suggested case ids:");
-        for (const suggestion of suggestions) {
-          console.error(`- ${suggestion}`);
-        }
-      }
-      const promotionHints = deriveReplayCorpusPromotionWorthinessHints(snapshot);
-      if (promotionHints.length > 0) {
-        console.error("Promotion hints:");
-        for (const hint of promotionHints) {
-          console.error(`- ${hint.id}: ${hint.summary}`);
-        }
-      }
-      process.exitCode = 1;
-      return;
-    }
-    const sourceSnapshot = await loadSupervisorCycleDecisionSnapshot(options.snapshotPath!);
-    const promoted = await promoteCapturedReplaySnapshot({
-      corpusRoot: options.corpusPath!,
-      snapshotPath: options.snapshotPath!,
-      caseId: options.caseId!,
-      config,
-    });
-    const summary = summarizeReplayCorpusPromotion(sourceSnapshot, promoted);
-    console.log(`Promoted replay corpus case "${promoted.id}" for issue #${promoted.metadata.issueNumber}.`);
-    console.log(`Case path: ${summary.casePath}`);
-    console.log(`Expected outcome: ${summary.expectedOutcome}`);
-    if (summary.normalizationNotes.length > 0) {
-      console.log(`Normalization: ${summary.normalizationNotes.join(", ")}`);
-    }
-    if (summary.promotionHints.length > 0) {
-      console.log("Promotion hints:");
-      for (const hint of summary.promotionHints) {
-        console.log(`- ${hint.id}: ${hint.summary}`);
-      }
-    }
+    await handleReplayCorpusPromoteCommand(options, cliIo);
     return;
   }
 
