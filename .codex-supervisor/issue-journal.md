@@ -6,43 +6,44 @@
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: eab8dcc11ab2e7fe5099b5b8916aca1959986c3e
+- Attempt count: 3 (implementation=1, repair=2)
+- Last head SHA: 5b5f5ffae750cfef7ab630dbb87b5b7aa61abe93
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ851XZoF
+- Last failure signature: PRRT_kwDORgvdZ851Xel-|PRRT_kwDORgvdZ851XemD
 - Repeated failure signature count: 1
-- Updated at: 2026-03-19T05:50:42Z
+- Updated at: 2026-03-19T05:59:59.762Z
 
 ## Latest Codex Summary
-Applied the pending CodeRabbit review nit in [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-618/.codex-supervisor/issue-journal.md) by hyphenating `index-focused tests` in the working notes while leaving the saved external review quote verbatim. The CLI facade refactor itself remains unchanged: [src/cli/entrypoint.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-618/src/cli/entrypoint.ts) still owns CLI dispatch/error handling, and [src/index.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-618/src/index.ts) remains the thin direct-execution facade.
+Reworked [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) so the latest summary uses repository-relative links and the saved CodeRabbit failure context is captured as structured thread summaries instead of a single-line markdown-heavy dump. No CLI code paths changed.
 
-This review follow-up is wording-only, so I verified it with a focused search of the journal rather than rerunning code tests. Draft PR #622 remains open at https://github.com/TommyKammy/codex-supervisor/pull/622, and the only remaining unrelated worktree change is the pre-existing untracked `.codex-supervisor/replay/` directory.
-
-Summary: Applied the journal-only review wording fix for PR #622 by hyphenating `index-focused tests` in the working notes
-State hint: addressing_review
+Summary: Applied the remaining PR #622 journal-only review fixes locally
+State hint: local_review_fix
 Blocked reason: none
-Tests: `rg -n "index focused tests|index-focused tests" .codex-supervisor/issue-journal.md`
-Failure signature: PRRT_kwDORgvdZ851XZoF
-Next action: commit/push the journal wording fix to `codex/issue-618` and monitor PR #622 for thread resolution or further review feedback
+Tests: `rg -n "index-focused tests" .codex-supervisor/issue-journal.md`; `! rg -n "\\]\\(/home/" .codex-supervisor/issue-journal.md`; `npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg "MD038"` (no output; full-file markdownlint still reports unrelated baseline warnings)
+Failure signature: PRRT_kwDORgvdZ851Xel-|PRRT_kwDORgvdZ851XemD
+Next action: commit/push the journal-only fix to `codex/issue-618`, then resolve or monitor the remaining PR #622 review threads
 
 ## Active Failure Context
 - Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/622#discussion_r2958001648
+- Summary: 2 automated review thread(s) were reproduced locally and addressed in the journal; the remote threads remain open until the fix is pushed and reviewed.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/622#discussion_r2958029013
 - Details:
-  - .codex-supervisor/issue-journal.md:37 _⚠️ Potential issue_ | _🟡 Minor_ **Minor grammar: use hyphen in compound adjective.** "index focused tests" → "index-focused tests" <details> <summary>🧰 Tools</summary> <details> <summary>🪛 LanguageTool</summary> [grammar] ~37-~37: Use a hyphen to join words. Context: ...rypoint.test.ts`, the existing CLI/index focused tests, and `npm run build` all p... (QB_NEW_EN_HYPHEN) </details> </details> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In @.codex-supervisor/issue-journal.md at line 37, Replace the compound adjective "index focused tests" with the hyphenated form "index-focused tests" in the issue journal entry so it reads "the existing CLI/index-focused tests"; update the exact phrase "index focused tests" wherever it appears (e.g., in the line containing "Verification gap: none after `src/cli/entrypoint.test.ts`, the existing CLI/index focused tests, and `npm run build` all passed locally.") to use the hyphenated version. ``` </details> <!-- fingerprinting:phantom:medusa:ocelot --> <!-- This is an auto-generated comment by CodeRabbit -->
+  - Thread `PRRT_kwDORgvdZ851Xel-` on `.codex-supervisor/issue-journal.md:17`: replace the committed absolute workstation link in the latest summary with a repository-relative link so the journal does not expose local filesystem paths.
+  - Thread `PRRT_kwDORgvdZ851XemD` on `.codex-supervisor/issue-journal.md:33`: keep `index-focused tests` hyphenated and replace the single-line embedded review dump with stable multiline bullets so inline code remains readable and `MD038` noise is avoided.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the only remaining unresolved review note is the journal wording nit, so no CLI or test changes are needed beyond correcting the hyphenated compound adjective in the handoff text.
-- What changed: updated the working-notes sentence to say `CLI/index-focused tests`; kept the saved external review quote unchanged because it records the original reviewer text verbatim.
+- Hypothesis: the remaining review feedback is still journal-only, so no CLI or test changes are needed beyond removing the absolute journal link and normalizing the saved review context formatting.
+- What changed: rewrote the latest-summary journal link as repository-relative and replaced the raw pasted CodeRabbit review bodies with thread-id summaries that preserve the actionable failure details without carrying markdownlint-hostile inline dumps.
 - Current blocker: none
-- Next exact step: commit/push the journal-only review fix, then monitor PR #622 until the CodeRabbit thread clears or new review feedback appears.
-- Verification gap: none; the wording-only change was checked by searching the journal for remaining unhyphenated non-quoted occurrences.
+- Next exact step: commit/push the journal-only review fix, then resolve or monitor PR #622 review threads after the updated journal lands on the branch.
+- Verification gap: none for the review-targeted signals; full-file markdownlint still has unrelated baseline warnings outside this journal-only fix.
 - Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would only reintroduce the journal wording nit and reopen the review thread.
-- Last focused command: `rg -n "index focused tests|index-focused tests" .codex-supervisor/issue-journal.md`; `git diff -- .codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would reintroduce the absolute-path leak and the markdownlint-prone saved review formatting in the journal.
+- Last focused command: `! rg -n "\\]\\(/home/" .codex-supervisor/issue-journal.md`; `npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg "MD038"`
 ### Scratchpad
+- 2026-03-19 (JST): Focused journal verification confirmed the absolute workstation path is gone and `MD038` no longer appears in markdownlint output for `.codex-supervisor/issue-journal.md`; full-file markdownlint still reports unrelated legacy style warnings across the journal.
+- 2026-03-19 (JST): Reframed the remaining CodeRabbit failure context as structured thread summaries, rewrote the latest summary journal link to be repository-relative, and prepared focused markdown/journal verification for the journal-only review repair.
 - 2026-03-19 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851XZoF` locally by hyphenating `index-focused tests` in the working-notes verification sentence after confirming the other match was only the saved external review quote.
 - 2026-03-19 (JST): Reran focused verification for the supervisor runtime extraction with `npx tsx --test src/cli/supervisor-runtime.test.ts src/index.test.ts` and `npm run build`, pushed `codex/issue-617` to `origin`, and opened draft PR #621 (`https://github.com/TommyKammy/codex-supervisor/pull/621`).
 - 2026-03-19 (JST): Addressed CodeRabbit threads `PRRT_kwDORgvdZ851W7DO` and `PRRT_kwDORgvdZ851W7DQ` by resolving the default replay-corpus path inside the extracted handler layer and by skipping config loading on the missing-`caseId` advisory branch. Focused verification passed with `npx tsx --test src/cli/replay-handlers.test.ts src/index.test.ts` and `npm run build`.
