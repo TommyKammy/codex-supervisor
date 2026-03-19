@@ -89,6 +89,8 @@ test("runCommand timeout errors bound noisy stderr while keeping timeout context
   const noisyPrefix = "timeout-prefix";
   const noisySuffix = "timeout-suffix";
   const noisyMiddle = "y".repeat(1_200);
+  const timeoutSignalScript =
+    'process.on("SIGTERM",()=>{process.stderr.write(process.env.NOISY_STDERR??"");process.exit(0)});setInterval(()=>{},1000)';
 
   await assert.rejects(
     () =>
@@ -96,7 +98,7 @@ test("runCommand timeout errors bound noisy stderr while keeping timeout context
         process.execPath,
         [
           "-e",
-          "process.stderr.write(process.env.NOISY_STDERR ?? ''); setTimeout(() => process.exit(0), 1000);",
+          timeoutSignalScript,
         ],
         {
           env: {
