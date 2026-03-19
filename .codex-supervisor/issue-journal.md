@@ -16,14 +16,14 @@
 ## Latest Codex Summary
 The branch was not actually stable: rerunning `npx tsx --test src/core/command.test.ts` exposed a failure in the timeout bounded-`stderr` case because the test assumed pre-timeout `stderr` would always flush before the supervisor sent `SIGTERM`. I kept the scope narrow and updated [src/core/command.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-638/src/core/command.test.ts) so the timeout case emits the large `stderr` payload from a `SIGTERM` handler instead, which still exercises the redacted/bounded timeout error shape without relying on a race.
 
-Focused verification now passes again with `npx tsx --test src/core/command.test.ts` and `npm run build`. The pre-existing untracked `.codex-supervisor/replay/` directory was left untouched.
+Focused verification passed again with `npx tsx --test src/core/command.test.ts` and `npm run build`. I committed the checkpoint as `5c68025` (`test: stabilize timeout command stderr coverage`), pushed `codex/issue-638`, and opened draft PR [#641](https://github.com/TommyKammy/codex-supervisor/pull/641). The pre-existing untracked `.codex-supervisor/replay/` directory was left untouched.
 
-Summary: Stabilized the timeout bounded-`stderr` regression test by making the child emit noisy `stderr` from a `SIGTERM` handler, then reran the focused command-runner test file and build successfully.
-State hint: draft_pr
+Summary: Stabilized the timeout bounded-`stderr` regression test, verified the focused command-runner coverage plus build, and opened draft PR #641.
+State hint: pr_open
 Blocked reason: none
 Tests: `npx tsx --test src/core/command.test.ts`; `npm run build`
 Failure signature: none
-Next action: commit this focused test-only stabilization, push `codex/issue-638`, and open or update the draft PR for review
+Next action: monitor draft PR #641 and address any review or CI feedback
 
 ## Active Failure Context
 - None recorded.
@@ -31,13 +31,13 @@ Next action: commit this focused test-only stabilization, push `codex/issue-638`
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: the command-runner behavior from `#639` and `#640` is still correct; the instability was in the timeout bounded-`stderr` test, which relied on a race between initial `stderr` writes and timeout-driven `SIGTERM`.
-- What changed: re-ran `git status --short --branch`, `git rev-list --left-right --count origin/main...HEAD`, `gh pr status`, `sed -n '1,260p' src/core/command.test.ts`, `npx tsx --test src/core/command.test.ts`, and `npm run build`; the focused test initially failed on `runCommand timeout errors bound noisy stderr while keeping timeout context` because the error lacked `timeout-prefix`. Updated `src/core/command.test.ts` so the timeout case writes `NOISY_STDERR` from a `SIGTERM` handler and reran the focused test file plus build successfully.
+- What changed: re-ran `git status --short --branch`, `git rev-list --left-right --count origin/main...HEAD`, `gh pr status`, `sed -n '1,260p' src/core/command.test.ts`, `npx tsx --test src/core/command.test.ts`, and `npm run build`; the focused test initially failed on `runCommand timeout errors bound noisy stderr while keeping timeout context` because the error lacked `timeout-prefix`. Updated `src/core/command.test.ts` so the timeout case writes `NOISY_STDERR` from a `SIGTERM` handler, reran the focused test file plus build successfully, committed `5c68025`, pushed `codex/issue-638`, and opened draft PR #641.
 - Current blocker: none
-- Next exact step: commit the stabilized timeout test, push `codex/issue-638`, and open a draft PR so review can focus on the test-only fix.
+- Next exact step: watch draft PR #641 for CI and review feedback, then respond if anything new appears.
 - Verification gap: none for the scoped acceptance criteria; I ran the focused command-runner test file and `npm run build`, but not the full repository test suite because the issue specifically asks for focused verification plus build.
 - Files touched: `src/core/command.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this checkpoint would restore the timeout-test race and make the focused command-runner coverage flaky again.
-- Last focused command: `git status --short --branch`; `git rev-list --left-right --count origin/main...HEAD`; `gh pr status`; `sed -n '1,260p' src/core/command.test.ts`; `npx tsx --test src/core/command.test.ts`; `npm run build`
+- Last focused command: `git status --short --branch`; `git rev-list --left-right --count origin/main...HEAD`; `gh pr status`; `sed -n '1,260p' src/core/command.test.ts`; `npx tsx --test src/core/command.test.ts`; `npm run build`; `git push -u origin codex/issue-638`; `gh pr create --draft --base main --head codex/issue-638 --title "test: stabilize timeout command stderr coverage" ...`
 ### Scratchpad
 - 2026-03-19 (JST): Rerunning the focused command-runner tests on `ce5f08d` exposed that the timeout bounded-`stderr` case was flaky; it assumed noisy `stderr` written before the timeout would always be captured before `SIGTERM`. Stabilized the test by emitting `NOISY_STDERR` from a `SIGTERM` handler instead, then reran `npx tsx --test src/core/command.test.ts` and `npm run build` successfully.
 - 2026-03-19 (JST): Reproduced issue #637 with focused `runCommand` failures that emitted 1.2k-character `stderr` payloads; initial tests failed because thrown non-zero and timeout errors included the full `stderr` body. Fixed `src/core/command.ts` so error messages splice oversized `stderr` with a deterministic middle ellipsis while preserving both the prefix and suffix, including the timeout marker appended at the end. Focused verification passed with `npx tsx --test src/core/command.test.ts` and `npm run build` after `npm install`.
