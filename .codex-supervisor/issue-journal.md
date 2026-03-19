@@ -1,36 +1,35 @@
-# Issue #643: Lock stale detection: add host and owner metadata to lock payloads
+# Issue #644: Lock stale detection: distinguish ambiguous owner states during stale-lock inspection
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/643
-- Branch: codex/issue-643
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/644
+- Branch: codex/issue-644
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 06b3900e6879ab25981138bbab7b8aa0d4da91b1
+- Last head SHA: 6053bf454c7e0dd256bc41b39d871e674f5efa74
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-19T15:08:57.595Z
+- Updated at: 2026-03-19T15:30:31.539Z
 
 ## Latest Codex Summary
-- Reproduced the missing lock metadata with a focused lock test, updated lock payloads to include compact `host` and `owner` fields while keeping legacy payload reading intact, verified with `npx tsx --test src/lock.test.ts` plus `npm run build`, committed `1968b8e`, pushed `codex/issue-643`, and opened draft PR #662.
+- Reproduced issue #644 with focused lock and recovery tests, added explicit `stale` versus `ambiguous_owner` lock inspection states, kept clearly local dead-process cleanup working while blocking ambiguous-owner cleanup, verified with focused tests plus `npm run build`, committed `6128dbb`, pushed `codex/issue-644`, and opened draft PR #663.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: stale-lock interpretation should start by enriching the lock payload itself; adding deterministic `host` and `owner` strings is enough for this issue without changing acquisition or cleanup semantics.
-- What changed: re-ran `git status --short --branch`, `rg --files -g '*lock*'`, `sed -n '1,200p' src/core/lock.ts`, and `sed -n '1,280p' src/lock.test.ts`; added focused coverage in `src/lock.test.ts` for newly written payload metadata and legacy payload compatibility. The new test initially failed because `payload.host` was `undefined`. Updated `src/core/lock.ts` to write `host: os.hostname()` and `owner` from `os.userInfo().username` with `USER`/`USERNAME` fallback, then reran `npx tsx --test src/lock.test.ts`. `npm run build` first failed with `sh: 1: tsc: not found`, so I restored dev dependencies via `npm install` and reran `npm run build` successfully. Committed the checkpoint as `1968b8e` (`feat: add lock host and owner metadata`), pushed `codex/issue-643`, and opened draft PR #662.
+- Hypothesis: a dead lock should only auto-clean when its metadata proves it belongs to this exact host and owner; every other dead-owner case should stay explicit and block cleanup as `ambiguous_owner`.
+- What changed: re-ran `git status --short --branch`, `rg --files -g '*lock*'`, `sed -n '1,260p' src/core/lock.ts`, `sed -n '1,320p' src/lock.test.ts`, and the recovery reconciliation tests. Added focused reproducers in `src/lock.test.ts` for a clearly stale local dead lock, an ambiguous remote-owner dead lock, and acquisition refusal for ambiguous-owner locks; the new assertions failed because `inspectFileLock(...)` returned `missing` and stale-reservation cleanup still cleared state for the ambiguous case. Updated `src/core/lock.ts` to return explicit `stale` and `ambiguous_owner` states, only remove clearly local stale locks, and refuse acquisition when a dead lock has ambiguous owner metadata. Updated `src/recovery-reconciliation.ts` so stale active-reservation cleanup only proceeds for `missing`/`stale` locks and leaves `ambiguous_owner` locks untouched, then added matching coverage in `src/supervisor/supervisor-recovery-reconciliation.test.ts`. `npm run build` first failed with `sh: 1: tsc: not found`, so I restored dev dependencies via `npm install`; a follow-up build failed on a nullable payload access in `src/core/lock.ts`, which I fixed before the final green rerun.
 - Current blocker: none
-- Next exact step: watch draft PR #662 for CI and review feedback, then respond if anything new appears.
-- Verification gap: none for the scoped acceptance criteria; I ran the focused lock test file and `npm run build`, but not the full repository test suite because this issue asks for focused verification plus build.
-- Files touched: `src/core/lock.ts`, `src/lock.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would drop the new lock metadata fields and the compatibility regression coverage for legacy payloads.
-- Last focused command: `git status --short --branch`; `rg --files -g '*lock*'`; `sed -n '1,200p' src/core/lock.ts`; `sed -n '1,280p' src/lock.test.ts`; `npx tsx --test src/lock.test.ts`; `npm install`; `npm run build`; `git push -u origin codex/issue-643`; `gh pr create --draft --base main --head codex/issue-643 --title "feat: add lock host and owner metadata" ...`
+- Next exact step: watch draft PR #663 for CI and review feedback, then respond with follow-up fixes if anything regresses.
+- Verification gap: none for the issue scope; I ran the focused lock and stale-recovery tests plus `npm run build`, but not the full repository test suite because the issue asks for focused verification plus build.
+- Files touched: `src/core/lock.ts`, `src/lock.test.ts`, `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would collapse dead ambiguous-owner locks back into ordinary stale cleanup, allowing both acquisition and stale active-reservation recovery to silently remove locks that no longer prove local ownership.
+- Last focused command: `git status --short --branch`; `rg --files -g '*lock*'`; `sed -n '1,260p' src/core/lock.ts`; `sed -n '1,320p' src/lock.test.ts`; `sed -n '160,520p' src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/lock.test.ts`; `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm install`; `npx tsx --test src/lock.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm run build`
 ### Scratchpad
-- 2026-03-19 (JST): Reproduced issue #637 with focused `runCommand` failures that emitted 1.2k-character `stderr` payloads; initial tests failed because thrown non-zero and timeout errors included the full `stderr` body. Fixed `src/core/command.ts` so error messages splice oversized `stderr` with a deterministic middle ellipsis while preserving both the prefix and suffix, including the timeout marker appended at the end. Focused verification passed with `npx tsx --test src/core/command.test.ts` and `npm run build` after `npm install`.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
 - 2026-03-19 (JST): Reproduced issue #559 with a focused `replay-corpus-promote` regression that expected advisory hints for `stale-head-prevents-merge` but only saw the existing explicit-case-id guidance and suggestions. Fixed it by adding deterministic `deriveReplayCorpusPromotionWorthinessHints(...)` coverage for stale-head safety, provider waits, and retry escalation, then surfacing those hints in both CLI suggestion mode and successful promotion summaries. Focused verification passed with `npx tsx --test src/index.test.ts --test-name-pattern "replay-corpus-promote"`, `npx tsx --test src/supervisor/replay-corpus.test.ts --test-name-pattern "PromotionWorthinessHints|promoteCapturedReplaySnapshot|checked-in safety case bundles|runReplayCorpus replays the checked-in PR lifecycle safety cases without mismatches"`, and `npm run build` after restoring local dev dependencies via `npm install`.
