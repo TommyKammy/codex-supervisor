@@ -14,7 +14,7 @@
 - Updated at: 2026-03-19T12:44:17.592Z
 
 ## Latest Codex Summary
-- Reproduced the raw-argument leak in `runCommand(...)` with focused core tests, then switched timeout and non-zero errors to a deterministic summarized command renderer that keeps the command plus the first two args and replaces the remainder with `+N arg(s)`. Reused the same renderer in GitHub transport sanitization, and verified with `npx tsx --test src/core/command.test.ts src/github/github-transport.test.ts` plus `npm run build` after restoring local dev dependencies via `npm install`.
+- Reproduced the raw-argument leak in `runCommand(...)` with focused core tests, then switched timeout and non-zero errors to a deterministic summarized command renderer that keeps the command plus the first two args and replaces the remainder with `+N arg(s)`. Reused the same renderer in GitHub transport sanitization, verified with `npx tsx --test src/core/command.test.ts src/github/github-transport.test.ts` plus `npm run build` after restoring local dev dependencies via `npm install`, committed the change as `5bb08a4`, pushed `codex/issue-636`, and opened draft PR #639.
 
 ## Active Failure Context
 - None recorded.
@@ -24,11 +24,11 @@
 - Hypothesis: the narrowest safe fix is to change only how `runCommand(...)` renders commands in thrown timeout and non-zero errors, so callers keep the same execution semantics while failure messages stop echoing full raw argument lists by default.
 - What changed: added `src/core/command.test.ts` to reproduce both the non-zero-exit and timeout leaks with sentinel secret arguments, then updated `src/core/command.ts` to use a shared `renderCommandSummary(...)` helper for timeout and failure errors as well as the timeout line appended to `stderr`. Reused the same helper in `src/github/github-transport.ts` so transient GitHub sanitization stays aligned with the core summary shape.
 - Current blocker: none
-- Next exact step: commit the command-summary change, push `codex/issue-636`, and open a draft PR if one does not already exist for this branch.
+- Next exact step: monitor draft PR #639 and address any CI or review feedback if it appears.
 - Verification gap: focused coverage for the core command runner and GitHub transport passed locally, and `npm run build` passed after `npm install`; I did not run the repository-wide `npm test` because the issue asked for focused command-runner coverage plus build verification.
 - Files touched: `src/core/command.ts`, `src/core/command.test.ts`, `src/github/github-transport.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this checkpoint would restore raw argument echoing in thrown timeout and non-zero-exit errors, including the timeout marker appended to `stderr`.
-- Last focused command: `npx tsx --test src/core/command.test.ts src/github/github-transport.test.ts`; `npm install`; `npm run build`
+- Last focused command: `npx tsx --test src/core/command.test.ts src/github/github-transport.test.ts`; `npm install`; `npm run build`; `git commit -m "Redact command summaries in runner errors"`; `git push -u origin codex/issue-636`; `gh pr create --draft --base main --head codex/issue-636 ...`
 ### Scratchpad
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
