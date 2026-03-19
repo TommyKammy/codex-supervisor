@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
 
+const COMMAND_ERROR_STDERR_LIMIT = 500;
+const STDERR_TRUNCATION_MARKER = "\n...\n";
+
 export interface CommandOptions {
   cwd?: string;
   allowExitCodes?: number[];
@@ -11,6 +14,22 @@ export interface CommandResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+}
+
+function formatCommandErrorStderr(stderr: string): string | null {
+  const trimmed = stderr.trim();
+  if (trimmed === "") {
+    return null;
+  }
+
+  if (trimmed.length <= COMMAND_ERROR_STDERR_LIMIT) {
+    return trimmed;
+  }
+
+  const availableLength = COMMAND_ERROR_STDERR_LIMIT - STDERR_TRUNCATION_MARKER.length;
+  const prefixLength = Math.ceil(availableLength / 2);
+  const suffixLength = Math.floor(availableLength / 2);
+  return `${trimmed.slice(0, prefixLength)}${STDERR_TRUNCATION_MARKER}${trimmed.slice(trimmed.length - suffixLength)}`;
 }
 
 export function renderCommandSummary(command: string, args: string[], visibleArgCount = 2): string {
@@ -131,7 +150,7 @@ export async function runCommand(
             [
               `Command timed out: ${commandSummary}`,
               `exitCode=${exitCode}`,
-              stderr.trim(),
+              formatCommandErrorStderr(stderr),
             ]
               .filter(Boolean)
               .join("\n"),
@@ -146,7 +165,7 @@ export async function runCommand(
             [
               `Command failed: ${commandSummary}`,
               `exitCode=${exitCode}`,
-              stderr.trim(),
+              formatCommandErrorStderr(stderr),
             ]
               .filter(Boolean)
               .join("\n"),
