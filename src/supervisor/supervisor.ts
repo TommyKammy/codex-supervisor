@@ -88,9 +88,9 @@ import {
   buildIssueLintSummary,
   buildReadinessSummary,
   buildSelectionWhySummary,
-  loadActiveIssueStatusSnapshot,
-  summarizeSupervisorStatusRecords,
 } from "./supervisor-selection-status";
+import { loadActiveIssueStatusSnapshot } from "./supervisor-selection-active-status";
+import { summarizeSupervisorStatusRecords } from "./supervisor-selection-status-records";
 import { inferFailureContext } from "./supervisor-failure-context";
 import { StateStore } from "../core/state-store";
 import { diagnoseSupervisorHost, loadStateReadonlyForDoctor, renderDoctorReport } from "../doctor";
