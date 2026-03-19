@@ -15,6 +15,8 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
   "codexBinary": "/Applications/Codex.app/Contents/Resources/codex",
   "codexModelStrategy": "inherit",
   "codexModel": "",
+  "boundedRepairModelStrategy": "",
+  "boundedRepairModel": "",
   "codexReasoningEffortByState": {
     "planning": "low",
     "reproducing": "medium",
@@ -71,6 +73,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
 - `atlaspm` uses `Part of #...`, `Depends on: ...`, and `## Execution order`, so the built-in sequencing logic is enough.
 - If you use GSD for upstream planning, enable `gsdEnabled` and point `gsdPlanningFiles` at `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, and `STATE.md`.
 - Copilot review is expected to start automatically after the PR is marked ready.
+- Leave `boundedRepairModelStrategy` unset unless you explicitly want `repairing_ci` and `addressing_review` turns to use a smaller bounded-repair model such as `gpt-5.4-mini`.
 - A local review swarm should usually run with `localReviewPolicy: "block_merge"` so it acts as a practical merge gate, with Markdown (`head-<sha>.md`) and JSON (`head-<sha>.json`) artifacts written under the supervisor's `.local/reviews` directory.
 - Leaving `localReviewRoles` empty while `localReviewAutoDetect` is `true` lets the supervisor add repo-specific specialists such as `prisma_postgres_reviewer`, `migration_invariant_reviewer`, `contract_consistency_reviewer`, and workflow-oriented roles like `github_actions_semantics_reviewer`, `workflow_test_reviewer`, and `portability_reviewer` when the repo shape suggests them.
 - `localReviewPolicy: "block_merge"` is the recommended starting point because it allows normal ready-for-review flow while still blocking merge until actionable findings are resolved.

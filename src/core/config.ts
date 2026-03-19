@@ -177,6 +177,16 @@ export function loadConfig(configPath?: string): SupervisorConfig {
       typeof raw.codexModel === "string" && raw.codexModel.trim() !== ""
         ? raw.codexModel.trim()
         : undefined,
+    boundedRepairModelStrategy:
+      raw.boundedRepairModelStrategy === "fixed" ||
+      raw.boundedRepairModelStrategy === "alias" ||
+      raw.boundedRepairModelStrategy === "inherit"
+        ? raw.boundedRepairModelStrategy
+        : undefined,
+    boundedRepairModel:
+      typeof raw.boundedRepairModel === "string" && raw.boundedRepairModel.trim() !== ""
+        ? raw.boundedRepairModel.trim()
+        : undefined,
     localReviewModelStrategy:
       raw.localReviewModelStrategy === "fixed" || raw.localReviewModelStrategy === "alias" || raw.localReviewModelStrategy === "inherit"
         ? raw.localReviewModelStrategy
@@ -362,6 +372,15 @@ export function loadConfig(configPath?: string): SupervisorConfig {
 
   if ((config.codexModelStrategy === "fixed" || config.codexModelStrategy === "alias") && !config.codexModel) {
     throw new Error(`Missing or invalid config field: codexModel (required when codexModelStrategy=${config.codexModelStrategy})`);
+  }
+  if (
+    config.boundedRepairModelStrategy &&
+    (config.boundedRepairModelStrategy === "fixed" || config.boundedRepairModelStrategy === "alias") &&
+    !config.boundedRepairModel
+  ) {
+    throw new Error(
+      `Missing or invalid config field: boundedRepairModel (required when boundedRepairModelStrategy=${config.boundedRepairModelStrategy})`,
+    );
   }
   if (
     config.localReviewModelStrategy &&

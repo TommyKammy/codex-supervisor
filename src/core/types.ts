@@ -50,6 +50,8 @@ export interface SupervisorConfig {
   codexBinary: string;
   codexModelStrategy: CodexModelStrategy;
   codexModel?: string;
+  boundedRepairModelStrategy?: CodexModelStrategy;
+  boundedRepairModel?: string;
   localReviewModelStrategy?: CodexModelStrategy;
   localReviewModel?: string;
   codexReasoningEffortByState: Partial<Record<RunState, ReasoningEffort>>;

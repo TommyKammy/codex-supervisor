@@ -1,37 +1,36 @@
-# Issue #671: Model routing: surface local-review model routing in operator-visible output
+# Issue #672: Model routing: add guarded support for mini on bounded repair states
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/671
-- Branch: codex/issue-671
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/672
+- Branch: codex/issue-672
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: f08ea336211cc3edd8e6915532056eb661d32369
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 5f82b6a80f35467c0ce34ac7a7ae1fc385f7c754
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-19T23:19:31.505Z
+- Updated at: 2026-03-19T23:38:39.503Z
 
 ## Latest Codex Summary
-Artifact visibility is in place. Local-review summaries now include a concise `Model routing` section, and the JSON artifact stores deterministic routing metadata per role and verifier: `target`, `model`, and `reasoningEffort`. The routing is derived from the existing execution policy in [`src/local-review/finalize.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-671/src/local-review/finalize.ts), rendered in [`src/local-review/artifacts.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-671/src/local-review/artifacts.ts), and covered by the new focused regression in [`src/local-review/artifacts.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-671/src/local-review/artifacts.test.ts). I also narrowed the config typing in [`src/codex/codex-policy.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-671/src/codex/codex-policy.ts) so artifact routing can be derived without full-config casts.
-
-Checkpoint commit `f08ea33` is now pushed on `origin/codex/issue-671`, and draft PR #676 is open at `https://github.com/TommyKammy/codex-supervisor/pull/676`. Focused tests passed, and `npm run build` passed after restoring local dev dependencies with `npm install`. The only remaining workspace noise is the pre-existing untracked `.codex-supervisor/replay/` directory.
+- Added explicit bounded-repair model routing so `repairing_ci` and `addressing_review` can opt into a smaller model without changing default supervisor routing for broader implementation states.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining issue-671 gap after #670 is visibility, not routing itself. Operators can now route generic local-review roles differently, but the saved local-review artifact never recorded which execution target/model path each role actually used.
-- What changed: added deterministic routing derivation in `finalizeLocalReview(...)`, stored `routing={target,model,reasoningEffort}` on each artifact role report plus the verifier report, and added a `## Model routing` section to the Markdown artifact. Also narrowed `resolveCodexExecutionPolicy(...)` to the config fields it actually consumes so artifact routing can be derived without fake full-config casts.
+- Hypothesis: bounded repair-state mini support should be an explicit config opt-in that applies only to supervisor turns in `repairing_ci` and `addressing_review`, leaving broader implementation states on the default GPT-5.4 path.
+- What changed: reproduced the gap with a focused `resolveCodexExecutionPolicy(...)` regression, then added optional `boundedRepairModelStrategy` / `boundedRepairModel` config parsing and validation plus repair-state-only routing in `src/codex/codex-policy.ts`. Updated shipped example configs and configuration docs to surface the new opt-in.
 - Current blocker: none
-- Next exact step: watch CI and respond to any review feedback on draft PR #676.
-- Verification gap: none for the scoped issue work. Focused local-review artifact/finalize/result/status/policy tests passed, and `npm run build` passed after restoring local dev dependencies with `npm install`.
-- Files touched: `src/codex/codex-policy.ts`, `src/local-review/types.ts`, `src/local-review/finalize.ts`, `src/local-review/artifacts.ts`, `src/local-review/artifacts.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would remove the only deterministic artifact record of which model path each local-review role and verifier actually used, forcing operators back to inference/guesswork after routing changes from #670.
-- Last focused command: `git push -u origin codex/issue-671`; `gh pr create --draft --base main --head codex/issue-671 --title "Surface local-review model routing in artifacts" ...`
+- Next exact step: commit this bounded-repair routing checkpoint, then push `codex/issue-672` and open a draft PR if one does not already exist.
+- Verification gap: none in the scoped worktree. Focused policy/config/repair-state prompt tests passed, and `npm run build` passed after restoring local dev dependencies with `npm install`.
+- Files touched: `src/core/types.ts`, `src/core/config.ts`, `src/codex/codex-policy.ts`, `src/codex/codex-policy.test.ts`, `src/core/config-local-review-model-routing.test.ts`, `docs/configuration.md`, `docs/examples/atlaspm.md`, `docs/examples/atlaspm.supervisor.config.example.json`, `supervisor.config.example.json`, `supervisor.config.codex.json`, `supervisor.config.copilot.json`, `supervisor.config.coderabbit.json`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would remove the only explicit way to route bounded repair turns to a smaller model while keeping broader implementation states on the default model policy.
+- Last focused command: `npx tsx --test src/codex/codex-policy.test.ts`; `npx tsx --test src/core/config-local-review-model-routing.test.ts`; `npx tsx --test src/codex/codex-prompt.test.ts --test-name-pattern "repairing_ci|addressing_review"`; `npm install`; `npm run build`
 ### Scratchpad
+- 2026-03-20 (JST): Reproduced issue #672 with a focused `src/codex/codex-policy.test.ts` regression where `boundedRepairModelStrategy: "alias"` plus `boundedRepairModel: "gpt-5.4-mini"` still left `repairing_ci` on `gpt-5-codex`. Fixed it by adding optional bounded repair config parsing/validation and repair-state-only routing, then reran focused policy/config/repair-state prompt tests and `npm run build` successfully after `npm install`.
 - 2026-03-20 (JST): Pushed `codex/issue-671` to `origin/codex/issue-671` and opened draft PR #676 (`https://github.com/TommyKammy/codex-supervisor/pull/676`) after the focused artifact/finalize/result/status/policy tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
 - 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851kRrS` as a real bug: malformed SQLite rows could yield only `load_findings`, after which `loadFromSqlite()` returned fallback empty/bootstrap state without those findings. Fixed the fallback path, added a dedicated regression for the empty-state case, and reran `npx tsx --test src/core/state-store.test.ts` plus `npm run build` successfully.

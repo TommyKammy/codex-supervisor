@@ -9,6 +9,8 @@
   "codexBinary": "/absolute/path/to/codex",
   "codexModelStrategy": "inherit",
   "codexModel": "",
+  "boundedRepairModelStrategy": "",
+  "boundedRepairModel": "",
   "codexReasoningEffortByState": {
     "planning": "low",
     "reproducing": "medium",

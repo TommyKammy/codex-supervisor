@@ -32,6 +32,8 @@ type CodexExecutionPolicyConfig = Pick<
   SupervisorConfig,
   | "codexModelStrategy"
   | "codexModel"
+  | "boundedRepairModelStrategy"
+  | "boundedRepairModel"
   | "localReviewModelStrategy"
   | "localReviewModel"
   | "codexReasoningEffortByState"
@@ -87,13 +89,37 @@ function resolveRequestedReasoningEffort(
   return effort;
 }
 
-function resolveConfiguredModel(config: Pick<SupervisorConfig, "codexModelStrategy" | "codexModel" | "localReviewModelStrategy" | "localReviewModel">, target: CodexExecutionTarget): string | null {
+function usesBoundedRepairRouting(state: RunState, target: CodexExecutionTarget): boolean {
+  return target === "supervisor" && (state === "repairing_ci" || state === "addressing_review");
+}
+
+function resolveConfiguredModel(
+  config: Pick<
+    SupervisorConfig,
+    | "codexModelStrategy"
+    | "codexModel"
+    | "boundedRepairModelStrategy"
+    | "boundedRepairModel"
+    | "localReviewModelStrategy"
+    | "localReviewModel"
+  >,
+  state: RunState,
+  target: CodexExecutionTarget,
+): string | null {
   if (target === "local_review_generic" && config.localReviewModelStrategy) {
     if (config.localReviewModelStrategy === "inherit") {
       return null;
     }
 
     return config.localReviewModel ?? null;
+  }
+
+  if (usesBoundedRepairRouting(state, target) && config.boundedRepairModelStrategy) {
+    if (config.boundedRepairModelStrategy === "inherit") {
+      return null;
+    }
+
+    return config.boundedRepairModel ?? null;
   }
 
   if (config.codexModelStrategy === "inherit") {
@@ -109,7 +135,7 @@ export function resolveCodexExecutionPolicy(
   record?: Pick<IssueRunRecord, "repeated_failure_signature_count" | "blocked_verification_retry_count" | "timeout_retry_count"> | null,
   target: CodexExecutionTarget = "supervisor",
 ): CodexExecutionPolicy {
-  const model = resolveConfiguredModel(config, target);
+  const model = resolveConfiguredModel(config, state, target);
   const requestedEffort = resolveRequestedReasoningEffort(config, state, record);
   const reasoningEffort = clampReasoningEffortForModel(model, requestedEffort);
   return {

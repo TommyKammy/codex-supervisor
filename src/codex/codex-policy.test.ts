@@ -14,6 +14,8 @@ function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConf
     codexBinary: "/usr/bin/codex",
     codexModelStrategy: "fixed",
     codexModel: "gpt-5-codex",
+    boundedRepairModelStrategy: undefined,
+    boundedRepairModel: undefined,
     localReviewModelStrategy: undefined,
     localReviewModel: undefined,
     codexReasoningEffortByState: {},
@@ -91,5 +93,25 @@ test("resolveCodexExecutionPolicy applies explicit local-review routing only to 
   assert.deepEqual(resolveCodexExecutionPolicy(config, "local_review", null, "local_review_verifier"), {
     model: "gpt-5-codex",
     reasoningEffort: "low",
+  });
+});
+
+test("resolveCodexExecutionPolicy routes bounded repair states to the explicit mini model without changing broader implementation defaults", () => {
+  const config = createConfig({
+    boundedRepairModelStrategy: "alias",
+    boundedRepairModel: "gpt-5.4-mini",
+  });
+
+  assert.deepEqual(resolveCodexExecutionPolicy(config, "repairing_ci"), {
+    model: "gpt-5.4-mini",
+    reasoningEffort: "medium",
+  });
+  assert.deepEqual(resolveCodexExecutionPolicy(config, "addressing_review"), {
+    model: "gpt-5.4-mini",
+    reasoningEffort: "medium",
+  });
+  assert.deepEqual(resolveCodexExecutionPolicy(config, "implementing"), {
+    model: "gpt-5-codex",
+    reasoningEffort: "high",
   });
 });
