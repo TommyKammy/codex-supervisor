@@ -290,6 +290,54 @@ test("resolveRunnableIssueContext does not persist a new active reservation when
   assert.equal(savedStates.length, 0);
 });
 
+test("resolveRunnableIssueContext skips Epic issues and selects a runnable child issue", async () => {
+  const config = createConfig({
+    skipTitlePrefixes: ["Epic:"],
+  });
+  const epicIssue: GitHubIssue = {
+    number: 93,
+    title: "Epic: Scheduler policy rollout",
+    body: executionReadyBody("Track the scheduler workstream."),
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/93",
+    state: "OPEN",
+  };
+  const childIssue: GitHubIssue = {
+    number: 94,
+    title: "Implement Epic child issue",
+    body: `${executionReadyBody("Ship the runnable child implementation.")}
+
+Part of: #93`,
+    createdAt: "2026-03-15T00:05:00Z",
+    updatedAt: "2026-03-15T00:05:00Z",
+    url: "https://example.test/issues/94",
+    state: "OPEN",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  const savedStates: SupervisorStateFile[] = [];
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [epicIssue, childIssue],
+      getIssue: async (issueNumber) => (issueNumber === epicIssue.number ? epicIssue : childIssue),
+    },
+    config,
+    stateStore: createTouchStateStore(savedStates),
+    state,
+    currentRecord: null,
+  });
+
+  assert.ok(typeof result !== "string");
+  assert.equal(result.kind, "ready");
+  assert.equal(result.issue.number, 94);
+  assert.equal(state.activeIssueNumber, 94);
+  assert.equal(savedStates.length, 1);
+});
+
 test("resolveRunnableIssueContext reuses the current reserved issue instead of claiming another candidate in the same cycle", async () => {
   const config = createConfig();
   const currentIssue: GitHubIssue = {

@@ -265,7 +265,7 @@ export function loadConfig(configPath?: string): SupervisorConfig {
     issueSearch: typeof raw.issueSearch === "string" ? raw.issueSearch : undefined,
     skipTitlePrefixes: Array.isArray(raw.skipTitlePrefixes)
       ? raw.skipTitlePrefixes.filter((value): value is string => typeof value === "string")
-      : [],
+      : ["Epic:"],
     branchPrefix: assertBranchPrefix(assertString(raw.branchPrefix, "branchPrefix"), "branchPrefix"),
     pollIntervalSeconds:
       typeof raw.pollIntervalSeconds === "number" && raw.pollIntervalSeconds > 0
