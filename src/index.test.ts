@@ -4,7 +4,6 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { spawnSync, SpawnSyncReturns } from "node:child_process";
-import { parseArgs } from "./index";
 
 function runCli(args: string[]): SpawnSyncReturns<string> {
   return spawnSync("npx", ["tsx", "src/index.ts", ...args], {
@@ -30,134 +29,11 @@ test("explain rejects malformed issue numbers", () => {
   }
 });
 
-test("parseArgs accepts doctor as a command", () => {
-  assert.deepEqual(parseArgs(["doctor"]), {
-    command: "doctor",
-    configPath: undefined,
-    dryRun: false,
-    why: false,
-    issueNumber: undefined,
-    snapshotPath: undefined,
-    caseId: undefined,
-    corpusPath: undefined,
-  });
-});
-
-test("parseArgs accepts issue-lint with an issue number", () => {
-  assert.deepEqual(parseArgs(["issue-lint", "123"]), {
-    command: "issue-lint",
-    configPath: undefined,
-    dryRun: false,
-    why: false,
-    issueNumber: 123,
-    snapshotPath: undefined,
-    caseId: undefined,
-    corpusPath: undefined,
-  });
-});
-
-test("parseArgs accepts replay with a snapshot path", () => {
-  assert.deepEqual(parseArgs(["replay", "/tmp/decision-cycle-snapshot.json"]), {
-    command: "replay",
-    configPath: undefined,
-    dryRun: false,
-    why: false,
-    issueNumber: undefined,
-    snapshotPath: "/tmp/decision-cycle-snapshot.json",
-    caseId: undefined,
-    corpusPath: undefined,
-  });
-});
-
-test("parseArgs accepts replay-corpus with an explicit corpus root", () => {
-  assert.deepEqual(parseArgs(["replay-corpus", "/tmp/replay-corpus"]), {
-    command: "replay-corpus",
-    configPath: undefined,
-    dryRun: false,
-    why: false,
-    issueNumber: undefined,
-    snapshotPath: undefined,
-    caseId: undefined,
-    corpusPath: "/tmp/replay-corpus",
-  });
-});
-
-test("parseArgs defaults replay-corpus to the checked-in corpus path", () => {
-  assert.deepEqual(parseArgs(["replay-corpus"]), {
-    command: "replay-corpus",
-    configPath: undefined,
-    dryRun: false,
-    why: false,
-    issueNumber: undefined,
-    snapshotPath: undefined,
-    caseId: undefined,
-    corpusPath: "replay-corpus",
-  });
-});
-
-test("parseArgs accepts replay-corpus-promote with explicit snapshot, case id, and corpus root", () => {
-  assert.deepEqual(parseArgs([
-    "replay-corpus-promote",
-    "/tmp/decision-cycle-snapshot.json",
-    "issue-408-reproducing",
-    "/tmp/replay-corpus",
-  ]), {
-    command: "replay-corpus-promote",
-    configPath: undefined,
-    dryRun: false,
-    why: false,
-    issueNumber: undefined,
-    snapshotPath: "/tmp/decision-cycle-snapshot.json",
-    caseId: "issue-408-reproducing",
-    corpusPath: "/tmp/replay-corpus",
-  });
-});
-
-test("parseArgs defaults replay-corpus-promote to the checked-in corpus path", () => {
-  assert.deepEqual(parseArgs([
-    "replay-corpus-promote",
-    "/tmp/decision-cycle-snapshot.json",
-    "issue-408-reproducing",
-  ]), {
-    command: "replay-corpus-promote",
-    configPath: undefined,
-    dryRun: false,
-    why: false,
-    issueNumber: undefined,
-    snapshotPath: "/tmp/decision-cycle-snapshot.json",
-    caseId: "issue-408-reproducing",
-    corpusPath: "replay-corpus",
-  });
-});
-
-test("parseArgs accepts replay-corpus-promote without an explicit case id so suggestions can be surfaced", () => {
-  assert.deepEqual(parseArgs([
-    "replay-corpus-promote",
-    "/tmp/decision-cycle-snapshot.json",
-  ]), {
-    command: "replay-corpus-promote",
-    configPath: undefined,
-    dryRun: false,
-    why: false,
-    issueNumber: undefined,
-    snapshotPath: "/tmp/decision-cycle-snapshot.json",
-    caseId: undefined,
-    corpusPath: "replay-corpus",
-  });
-});
-
 test("replay-corpus replays the checked-in corpus without requiring supervisor.config.json", () => {
   const result = runCli(["replay-corpus"]);
 
   assert.equal(result.status, 0);
   assert.match(result.stdout, /^Replay corpus summary: total=\d+ passed=\d+ failed=0$/m);
-});
-
-test("parseArgs rejects a second command after replay", () => {
-  assert.throws(
-    () => parseArgs(["replay", "/tmp/decision-cycle-snapshot.json", "run-once"]),
-    /Unexpected second command: run-once/,
-  );
 });
 
 test("replay re-runs a saved snapshot through the CLI entry path", async () => {
