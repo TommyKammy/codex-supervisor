@@ -1,20 +1,13 @@
 import assert from "node:assert/strict";
-import fs from "node:fs/promises";
 import test from "node:test";
-import { GitHubIssue, SupervisorStateFile } from "../core/types";
-import { Supervisor } from "./supervisor";
 import {
-  createSupervisorFixture,
+  createIssueLintFixture,
   executionReadyBody,
 } from "./supervisor-test-helpers";
+import { GitHubIssue } from "../core/types";
 
 test("issue lint reports a complete execution-ready issue as clean", async () => {
-  const fixture = await createSupervisorFixture();
-  const state: SupervisorStateFile = {
-    activeIssueNumber: null,
-    issues: {},
-  };
-  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  const { loadIssueLintReport } = await createIssueLintFixture();
 
   const issue: GitHubIssue = {
     number: 102,
@@ -31,12 +24,7 @@ Parallelizable: No`,
     state: "OPEN",
   };
 
-  const supervisor = new Supervisor(fixture.config);
-  (supervisor as unknown as { github: Record<string, unknown> }).github = {
-    getIssue: async () => issue,
-  };
-
-  const report = await supervisor.issueLint(102);
+  const report = await loadIssueLintReport(issue);
 
   assert.match(report, /^issue=#102$/m);
   assert.match(report, /^execution_ready=yes$/m);
@@ -47,12 +35,7 @@ Parallelizable: No`,
 });
 
 test("issue lint does not flag concrete risky work as blocking ambiguity", async () => {
-  const fixture = await createSupervisorFixture();
-  const state: SupervisorStateFile = {
-    activeIssueNumber: null,
-    issues: {},
-  };
-  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  const { loadIssueLintReport } = await createIssueLintFixture();
 
   const issue: GitHubIssue = {
     number: 106,
@@ -75,12 +58,7 @@ Rotate the production auth token flow for service-to-service requests.
     state: "OPEN",
   };
 
-  const supervisor = new Supervisor(fixture.config);
-  (supervisor as unknown as { github: Record<string, unknown> }).github = {
-    getIssue: async () => issue,
-  };
-
-  const report = await supervisor.issueLint(106);
+  const report = await loadIssueLintReport(issue);
 
   assert.match(report, /^issue=#106$/m);
   assert.match(report, /^execution_ready=yes$/m);
@@ -88,12 +66,7 @@ Rotate the production auth token flow for service-to-service requests.
 });
 
 test("issue lint reports missing required execution-ready sections deterministically", async () => {
-  const fixture = await createSupervisorFixture();
-  const state: SupervisorStateFile = {
-    activeIssueNumber: null,
-    issues: {},
-  };
-  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  const { loadIssueLintReport } = await createIssueLintFixture();
 
   const issue: GitHubIssue = {
     number: 103,
@@ -106,12 +79,7 @@ Issue lint should report missing sections.`,
     state: "OPEN",
   };
 
-  const supervisor = new Supervisor(fixture.config);
-  (supervisor as unknown as { github: Record<string, unknown> }).github = {
-    getIssue: async () => issue,
-  };
-
-  const report = await supervisor.issueLint(103);
+  const report = await loadIssueLintReport(issue);
 
   assert.match(report, /^issue=#103$/m);
   assert.match(report, /^execution_ready=no$/m);
@@ -129,12 +97,7 @@ Issue lint should report missing sections.`,
 });
 
 test("issue lint reports malformed and locally inconsistent scheduling metadata", async () => {
-  const fixture = await createSupervisorFixture();
-  const state: SupervisorStateFile = {
-    activeIssueNumber: null,
-    issues: {},
-  };
-  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  const { loadIssueLintReport } = await createIssueLintFixture();
 
   const issue: GitHubIssue = {
     number: 104,
@@ -161,12 +124,7 @@ Parallelizable: Later
     state: "OPEN",
   };
 
-  const supervisor = new Supervisor(fixture.config);
-  (supervisor as unknown as { github: Record<string, unknown> }).github = {
-    getIssue: async () => issue,
-  };
-
-  const report = await supervisor.issueLint(104);
+  const report = await loadIssueLintReport(issue);
 
   assert.match(report, /^issue=#104$/m);
   assert.match(report, /^metadata_errors=part of references the issue itself; depends on contains malformed references: #oops; depends on references the issue itself; depends on repeats #105; execution order must be N of M with 1 <= N <= M; parallelizable must be Yes or No$/m);
@@ -178,12 +136,7 @@ Parallelizable: Later
 });
 
 test("issue lint reports high-risk blocking ambiguity distinctly", async () => {
-  const fixture = await createSupervisorFixture();
-  const state: SupervisorStateFile = {
-    activeIssueNumber: null,
-    issues: {},
-  };
-  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  const { loadIssueLintReport } = await createIssueLintFixture();
 
   const issue: GitHubIssue = {
     number: 107,
@@ -206,12 +159,7 @@ Decide whether to keep the current production auth token flow or replace it befo
     state: "OPEN",
   };
 
-  const supervisor = new Supervisor(fixture.config);
-  (supervisor as unknown as { github: Record<string, unknown> }).github = {
-    getIssue: async () => issue,
-  };
-
-  const report = await supervisor.issueLint(107);
+  const report = await loadIssueLintReport(issue);
 
   assert.match(report, /^issue=#107$/m);
   assert.match(report, /^execution_ready=yes$/m);
