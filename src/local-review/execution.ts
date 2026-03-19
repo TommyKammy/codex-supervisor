@@ -67,6 +67,7 @@ export async function runLocalReviewExecution(args: {
         alwaysReadFiles: args.alwaysReadFiles,
         onDemandFiles: args.onDemandFiles,
         priorMissPatterns: args.priorMissPatterns,
+        detectedRoles: args.detectedRoles,
       });
     }
   }

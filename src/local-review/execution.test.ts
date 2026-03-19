@@ -23,6 +23,8 @@ function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConf
     codexModelStrategy: "inherit",
     codexReasoningEffortByState: {},
     codexReasoningEscalateOnRepeatedFailure: true,
+    localReviewModelStrategy: undefined,
+    localReviewModel: undefined,
     sharedMemoryFiles: [],
     gsdEnabled: false,
     gsdAutoInstall: false,

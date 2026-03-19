@@ -1,4 +1,4 @@
-import { IssueRunRecord, ReasoningEffort, RunState, SupervisorConfig } from "../core/types";
+import { CodexExecutionTarget, IssueRunRecord, ReasoningEffort, RunState, SupervisorConfig } from "../core/types";
 
 const REASONING_ORDER: ReasoningEffort[] = ["none", "low", "medium", "high", "xhigh"];
 
@@ -77,7 +77,15 @@ function resolveRequestedReasoningEffort(
   return effort;
 }
 
-function resolveConfiguredModel(config: SupervisorConfig): string | null {
+function resolveConfiguredModel(config: SupervisorConfig, target: CodexExecutionTarget): string | null {
+  if (target === "local_review_generic" && config.localReviewModelStrategy) {
+    if (config.localReviewModelStrategy === "inherit") {
+      return null;
+    }
+
+    return config.localReviewModel ?? null;
+  }
+
   if (config.codexModelStrategy === "inherit") {
     return null;
   }
@@ -89,8 +97,9 @@ export function resolveCodexExecutionPolicy(
   config: SupervisorConfig,
   state: RunState,
   record?: Pick<IssueRunRecord, "repeated_failure_signature_count" | "blocked_verification_retry_count" | "timeout_retry_count"> | null,
+  target: CodexExecutionTarget = "supervisor",
 ): CodexExecutionPolicy {
-  const model = resolveConfiguredModel(config);
+  const model = resolveConfiguredModel(config, target);
   const requestedEffort = resolveRequestedReasoningEffort(config, state, record);
   const reasoningEffort = clampReasoningEffortForModel(model, requestedEffort);
   return {
