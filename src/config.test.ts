@@ -114,6 +114,32 @@ test("loadConfig defaults copilotReviewTimeoutAction to continue", async (t) => 
   assert.equal(config.copilotReviewTimeoutAction, "continue");
 });
 
+test("loadConfig skips Epic titles by default during runnable selection", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+
+  assert.deepEqual(config.skipTitlePrefixes, ["Epic:"]);
+});
+
 test("loadConfig maps reviewBotLogins into the internal configuredReviewProviders model", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
   t.after(async () => {

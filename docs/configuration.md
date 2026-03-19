@@ -76,6 +76,8 @@ Issue selection and retry policy:
 - `timeoutRetryLimit`, `blockedVerificationRetryLimit`
 - `sameBlockerRepeatLimit`, `sameFailureSignatureRepeatLimit`
 
+By default, `skipTitlePrefixes` contains `Epic:` so umbrella issues are not treated as runnable implementation work. Set it explicitly if you want a different policy.
+
 Review and merge policy:
 
 - `reviewBotLogins`

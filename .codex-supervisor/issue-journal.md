@@ -1,50 +1,36 @@
-# Issue #618: Index refactor: slim src/index.ts into a thin facade
+# Issue #623: Scheduler policy: skip Epic issues by default during runnable selection
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/618
-- Branch: codex/issue-618
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/623
+- Branch: codex/issue-623
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 3 (implementation=1, repair=2)
-- Last head SHA: 5b5f5ffae750cfef7ab630dbb87b5b7aa61abe93
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: bdc876f6fdfb5c5ca49f4a999b02e42f11ae961d
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ851Xel-|PRRT_kwDORgvdZ851XemD
-- Repeated failure signature count: 1
-- Updated at: 2026-03-19T05:59:59.762Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-19T07:55:46.595Z
 
 ## Latest Codex Summary
-Pushed `1f2cac4` (`docs: fix issue 618 journal review follow-up`) after reworking [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) so the latest summary uses repository-relative links and the saved CodeRabbit failure context is captured as structured thread summaries instead of a single-line markdown-heavy dump. Then resolved threads `PRRT_kwDORgvdZ851Xel-` and `PRRT_kwDORgvdZ851XemD` on PR #622. No CLI code paths changed.
-
-Summary: Pushed the journal-only PR #622 review follow-up and resolved the remaining CodeRabbit threads
-State hint: waiting_ci
-Blocked reason: none
-Tests: `rg -n "index-focused tests" .codex-supervisor/issue-journal.md`; `! rg -n "\\]\\(/home/" .codex-supervisor/issue-journal.md`; `npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg "MD038"` (no output; full-file markdownlint still reports unrelated baseline warnings)
-Failure signature: none
-Next action: monitor PR #622 until the refreshed CodeRabbit status context completes and the merge state settles
+- Default runnable selection now skips `Epic:` umbrella issues by default, preserves explicit `skipTitlePrefixes` overrides, and keeps child issue selection unchanged. Added focused coverage for the config default and run-once issue selection; `npm run build` passes after restoring local dev dependencies with `npm install`.
 
 ## Active Failure Context
-- Category: review
-- Summary: no unresolved review threads remain after pushing `1f2cac4`; PR #622 is only waiting on refreshed status reporting.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/622#discussion_r2958029013
-- Details:
-  - Thread `PRRT_kwDORgvdZ851Xel-` was resolved after the pushed journal update replaced the absolute latest-summary link with a repository-relative link.
-  - Thread `PRRT_kwDORgvdZ851XemD` was resolved after the pushed journal update preserved `index-focused tests` and replaced the markdownlint-prone single-line review dump with structured multiline bullets.
-  - PR status at 2026-03-19T06:03:18Z: `build (ubuntu-latest)` and `build (macos-latest)` succeeded; `CodeRabbit` is still pending, so GitHub reports merge state `UNSTABLE`.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the review concerns for PR #622 are addressed; only the refreshed GitHub status context remains, so no further local code or journal edits are needed unless CodeRabbit reopens feedback.
-- What changed: pushed `1f2cac4` with the repository-relative latest-summary link and structured review-context formatting, then resolved both remaining CodeRabbit review threads on PR #622.
+- Hypothesis: the scheduler already had deterministic title-prefix skipping; the missing behavior for #623 was that the default config did not skip `Epic:` issues, so runnable selection could still claim umbrella issues unless an operator preconfigured that prefix.
+- What changed: reproduced the gap with a focused `loadConfig` default test, added a focused run-once selection test proving an `Epic:` parent is skipped while its runnable child is still selected, defaulted `skipTitlePrefixes` to `["Epic:"]` when omitted, and aligned the shipped config templates plus configuration docs with that default.
 - Current blocker: none
-- Next exact step: monitor PR #622 until the pending CodeRabbit status context finishes and react only if it reopens review feedback.
-- Verification gap: none for the review-targeted signals; full-file markdownlint still has unrelated baseline warnings outside this journal-only fix.
-- Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would reintroduce the absolute-path leak and the markdownlint-prone saved review formatting in the journal.
-- Last focused command: `gh pr view 622 --json isDraft,mergeStateStatus,reviewDecision,statusCheckRollup`; `git push origin codex/issue-618`
+- Next exact step: commit the Epic-skipping checkpoint on `codex/issue-623`, then open or update a draft PR for issue #623 from this branch.
+- Verification gap: the focused default/selection tests and `npm run build` passed; the broader `src/config.test.ts` file still contains an unrelated pre-existing README assertion failure expecting a removed `## Provider Profiles` heading in `README.md`.
+- Files touched: `src/core/config.ts`, `src/config.test.ts`, `src/run-once-issue-selection.test.ts`, `docs/configuration.md`, `supervisor.config.example.json`, `supervisor.config.copilot.json`, `supervisor.config.codex.json`, `supervisor.config.coderabbit.json`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would restore the unsafe default that lets `Epic:` umbrella issues compete with runnable child issues during normal selection.
+- Last focused command: `npx tsx --test src/config.test.ts --test-name-pattern "loadConfig skips Epic titles by default during runnable selection"`; `npx tsx --test src/run-once-issue-selection.test.ts --test-name-pattern "resolveRunnableIssueContext skips Epic issues and selects a runnable child issue"`; `npm install`; `npm run build`
 ### Scratchpad
-- 2026-03-19 (JST): Pushed `1f2cac4` to `origin/codex/issue-618`, resolved CodeRabbit threads `PRRT_kwDORgvdZ851Xel-` and `PRRT_kwDORgvdZ851XemD`, and confirmed PR #622 is only waiting on the refreshed `CodeRabbit` status context while both build jobs are already green.
-- 2026-03-19 (JST): Focused journal verification confirmed the absolute workstation path is gone and `MD038` no longer appears in markdownlint output for `.codex-supervisor/issue-journal.md`; full-file markdownlint still reports unrelated legacy style warnings across the journal.
+- 2026-03-19 (JST): Reproduced issue #623 with a focused config default test that expected `skipTitlePrefixes` to default to `["Epic:"]` but got `[]`. Confirmed selection logic already honored configured skip prefixes by adding a focused `resolveRunnableIssueContext` regression that skipped an `Epic:` issue and selected its runnable child. Fixed the gap by defaulting omitted `skipTitlePrefixes` to `["Epic:"]`, updated shipped config templates/docs, reran the focused tests, restored missing local TypeScript tooling with `npm install`, and passed `npm run build`.
 - 2026-03-19 (JST): Reframed the remaining CodeRabbit failure context as structured thread summaries, rewrote the latest summary journal link to be repository-relative, and prepared focused markdown/journal verification for the journal-only review repair.
 - 2026-03-19 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851XZoF` locally by hyphenating `index-focused tests` in the working-notes verification sentence after confirming the other match was only the saved external review quote.
 - 2026-03-19 (JST): Reran focused verification for the supervisor runtime extraction with `npx tsx --test src/cli/supervisor-runtime.test.ts src/index.test.ts` and `npm run build`, pushed `codex/issue-617` to `origin`, and opened draft PR #621 (`https://github.com/TommyKammy/codex-supervisor/pull/621`).
