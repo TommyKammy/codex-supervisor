@@ -78,13 +78,14 @@ function normalizeState(raw: SupervisorStateFile | null | undefined): Supervisor
 }
 
 function withLoadFindings(state: SupervisorStateFile, findings: StateLoadFinding[]): SupervisorStateFile {
-  if (findings.length === 0) {
+  const mergedFindings = [...(state.load_findings ?? []), ...findings];
+  if (mergedFindings.length === 0) {
     return state;
   }
 
   return {
     ...state,
-    load_findings: findings,
+    load_findings: mergedFindings,
   };
 }
 
@@ -346,21 +347,22 @@ export class StateStore {
       initSqlite(db);
       validateSqliteSchemaVersion(db);
       const currentState = readSqliteState(db);
+      const findings = currentState.load_findings ?? [];
       if (Object.keys(currentState.issues).length > 0 || currentState.activeIssueNumber !== null) {
         return currentState;
       }
 
       if (!this.options.bootstrapFilePath) {
-        return this.emptyState();
+        return withLoadFindings(this.emptyState(), findings);
       }
 
       const bootstrapState = await readJsonStateFromFile(this.options.bootstrapFilePath);
       if (!bootstrapState) {
-        return this.emptyState();
+        return withLoadFindings(this.emptyState(), findings);
       }
 
       await this.saveToSqlite(bootstrapState);
-      return bootstrapState;
+      return withLoadFindings(bootstrapState, findings);
     } finally {
       db.close();
     }

@@ -181,3 +181,40 @@ test("StateStore sqlite load captures structured corruption findings for malform
     assert.match(loaded.load_findings?.[0]?.message ?? "", /failed to parse json/i);
   });
 });
+
+test("StateStore sqlite fallback preserves structured corruption findings for malformed issue rows", async () => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.sqlite");
+    const store = new StateStore(statePath, { backend: "sqlite" });
+
+    await store.save({
+      activeIssueNumber: null,
+      issues: {
+        "404": createRecord(404),
+      },
+    });
+
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(statePath);
+    try {
+      db.prepare("UPDATE issues SET record_json = ? WHERE issue_number = ?").run("{not-json}", 404);
+    } finally {
+      db.close();
+    }
+
+    const loaded = await store.load();
+
+    assert.equal(loaded.activeIssueNumber, null);
+    assert.deepEqual(loaded.issues, {});
+    assert.equal(loaded.load_findings?.length, 1);
+    assert.deepEqual(loaded.load_findings?.[0], {
+      backend: "sqlite",
+      kind: "parse_error",
+      scope: "issue_row",
+      location: "sqlite issues row 404",
+      issue_number: 404,
+      message: loaded.load_findings?.[0]?.message ?? "",
+    });
+    assert.match(loaded.load_findings?.[0]?.message ?? "", /failed to parse json/i);
+  });
+});
