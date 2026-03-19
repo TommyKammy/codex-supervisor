@@ -1,4 +1,5 @@
 import path from "node:path";
+import { runCommand } from "../core/command";
 import { loadConfig } from "../core/config";
 import { GitHubClient } from "../github";
 import { describeGsdIntegration } from "../gsd";
@@ -230,6 +231,44 @@ export class Supervisor {
   private lockPath(kind: "issues" | "sessions" | "supervisor", key: string): string {
     const safeKey = key.replace(/[^a-zA-Z0-9._-]/g, "_");
     return path.resolve(path.dirname(this.config.stateFile), "locks", kind, `${safeKey}.lock`);
+  }
+
+  private async classifyStaleStabilizingNoPrBranchState(
+    record: Pick<IssueRunRecord, "workspace" | "journal_path">,
+  ): Promise<"recoverable" | "already_satisfied_on_main"> {
+    const journalPath = record.journal_path ?? issueJournalPath(record.workspace, this.config.issueJournalRelativePath);
+    const journalRelativePath = path.relative(record.workspace, journalPath).replace(/\\/g, "/");
+    const gitProbeTimeoutMs = this.config.codexExecTimeoutMinutes * 60_000;
+
+    try {
+      await runCommand("git", ["-C", this.config.repoPath, "fetch", "origin", this.config.defaultBranch], {
+        timeoutMs: gitProbeTimeoutMs,
+      });
+      const [baseDiffResult, workspaceStatusResult] = await Promise.all([
+        runCommand("git", ["-C", record.workspace, "diff", "--name-only", `origin/${this.config.defaultBranch}...HEAD`], {
+          timeoutMs: gitProbeTimeoutMs,
+        }),
+        runCommand("git", ["-C", record.workspace, "status", "--short", "--untracked-files=all"], {
+          timeoutMs: gitProbeTimeoutMs,
+        }),
+      ]);
+      const meaningfulBaseDiff = baseDiffResult.stdout
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0 && line !== journalRelativePath);
+      const meaningfulWorkspaceChanges = workspaceStatusResult.stdout
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) => line.replace(/^[ MADRCU?!]{2}\s+/, ""))
+        .filter((line) => line.length > 0 && line !== journalRelativePath);
+
+      return meaningfulBaseDiff.length === 0 && meaningfulWorkspaceChanges.length === 0
+        ? "already_satisfied_on_main"
+        : "recoverable";
+    } catch {
+      return "recoverable";
+    }
   }
 
   private async resolveRunnableIssueContext(
@@ -682,6 +721,8 @@ export class Supervisor {
         sameFailureSignatureRepeatLimit: this.config.sameFailureSignatureRepeatLimit,
         resolvePullRequestForBranch: (branch, trackedPrNumber) =>
           this.github.resolvePullRequestForBranch(branch, trackedPrNumber),
+        classifyStaleStabilizingNoPrBranchState: (record) =>
+          this.classifyStaleStabilizingNoPrBranchState(record),
       }),
       handleAuthFailure: (state) => handleAuthFailure(this.github, this.stateStore, state),
       listAllIssues: () => this.github.listAllIssues(),

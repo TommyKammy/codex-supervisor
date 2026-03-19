@@ -1,36 +1,53 @@
-# Issue #628: Issue-lint test refactor: split ambiguity and repair-guidance coverage
+# Issue #633: Supervisor regression: stale stabilizing already-satisfied-on-main issue does not converge to the expected manual stop
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/628
-- Branch: codex/issue-628
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/633
+- Branch: codex/issue-633
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 3e07cde4c19d84e2ff92581d9b24ac1a99549ad2
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: d3c63ba11b42a1c61c4a499eadedb17bf1c825a1
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-19T10:34:07.855Z
+- Last failure signature: PRRT_kwDORgvdZ851cQKn|PRRT_kwDORgvdZ851cQKx
+- Repeated failure signature count: 1
+- Updated at: 2026-03-19T12:21:11.210Z
 
 ## Latest Codex Summary
-- Split the remaining issue-lint ambiguity and repair-guidance coverage into dedicated scenario-focused test modules, verified the focused tests, restored missing local dev dependencies with `npm install`, and reran `npm run build` successfully.
+The checkpoint is published as draft PR #634: https://github.com/TommyKammy/codex-supervisor/pull/634
+
+The stale no-PR convergence fix remains in [src/recovery-reconciliation.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-633/src/recovery-reconciliation.ts#L737), with the already-satisfied-on-main branch classification in [src/supervisor/supervisor.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-633/src/supervisor/supervisor.ts#L236) and the new regression in [src/supervisor/supervisor-recovery-reconciliation.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-633/src/supervisor/supervisor-recovery-reconciliation.test.ts#L438). I also refreshed [issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-633/.codex-supervisor/issue-journal.md) with the PR URL, rerun verification, and next step.
+
+Local status is clean for the branch itself; the only remaining worktree changes are the journal update and the pre-existing untracked `.codex-supervisor/replay/` directory.
+
+Summary: Pushed `codex/issue-633`, opened draft PR #634, and updated the issue journal after re-running focused verification for the stale stabilizing no-PR convergence fix
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm run build`
+Failure signature: none
+Next action: monitor PR #634 for CI and review feedback, keeping the unrelated baseline `npm test -- src/supervisor/supervisor-recovery-reconciliation.test.ts` full-suite failure note in mind
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 2 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/634#discussion_r2959675752
+- Details:
+  - src/supervisor/supervisor.ts:241 _⚠️ Potential issue_ | _🟠 Major_ **Backfill the journal path before filtering changes.** Line 240 turns a missing `journal_path` into `null`, but this helper runs before `ensureRecordJournalContext(...)` can repair that field. For any record with `journal_path = null`, a journal-only branch will still look "dirty" and keep re-entering stale recovery instead of converging to the new manual-stop path. <details> <summary>Suggested fix</summary> ```diff private async classifyStaleStabilizingNoPrBranchState( record: Pick<IssueRunRecord, "workspace" | "journal_path">, ): Promise<"recoverable" | "already_satisfied_on_main"> { - const journalRelativePath = - record.journal_path === null ? null : path.relative(record.workspace, record.journal_path).replace(/\\/g, "/"); + const journalPath = + record.journal_path ?? issueJournalPath(record.workspace, this.config.issueJournalRelativePath); + const journalRelativePath = path.relative(record.workspace, journalPath).replace(/\\/g, "/"); ``` </details> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/supervisor/supervisor.ts` around lines 236 - 241, In classifyStaleStabilizingNoPrBranchState, if record.journal_path is null the function should first attempt to backfill the journal path (by calling or delegating to ensureRecordJournalContext or the same logic it uses) before computing journalRelativePath and filtering changes; update the function to call ensureRecordJournalContext(record) or otherwise resolve record.journal_path when null so journal-only branches aren't treated as "dirty" and the method can correctly return "already_satisfied_on_main" when appropriate. ``` </details> <!-- fingerprinting:phantom:medusa:grasshopper --> <!-- This is an auto-generated comment by CodeRabbit -->
+  - src/supervisor/supervisor.ts:247 _⚠️ Potential issue_ | _🟠 Major_ **Add timeouts to these git probes.** Lines 243-247 put a `git fetch` and two repo scans on the supervisor prelude path with no `timeoutMs`. If any of them hangs on network or repository contention, the whole loop stalls instead of falling back to `"recoverable"`. <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/supervisor/supervisor.ts` around lines 243 - 247, The three git probe calls (runCommand("git", ["-C", this.config.repoPath, "fetch", ...]) and the two runCommand calls that compute baseDiffResult and workspaceStatusResult) currently have no timeout and can hang the supervisor loop; update these invocations to include a sensible timeoutMs argument (use an existing config value like this.config.gitTimeoutMs or add one if missing) so the git fetch and the two repo scans fail fast and allow the supervisor to mark the run "recoverable" on timeout. Ensure you pass the timeoutMs into the same runCommand calls for fetch, diff (--name-only), and status (--short) and handle timeout errors consistently where those results are awaited. ``` </details> <!-- fingerprinting:phantom:medusa:grasshopper --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining issue-lint scenario family is now fully split so readiness, metadata, ambiguity, and repair-guidance failures each land in their own focused modules without changing diagnostics behavior.
-- What changed: reproduced the focused baseline with `npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint*.test.ts`, moved both ambiguity scenarios into `src/supervisor/supervisor-diagnostics-issue-lint-ambiguity.test.ts`, moved repair-guidance assertions into `src/supervisor/supervisor-diagnostics-issue-lint-repair-guidance.test.ts`, narrowed `src/supervisor/supervisor-diagnostics-issue-lint-readiness.test.ts` to clean-readiness coverage, narrowed `src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts` to missing-sections/metadata-error assertions, and deleted `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`.
+- Hypothesis: both unresolved CodeRabbit threads are valid follow-ups to the stale no-PR convergence fix; the classifier must backfill a missing journal path from the workspace and bound its git probes so stale recovery still degrades to `recoverable` instead of hanging.
+- What changed: updated `src/supervisor/supervisor.ts` so `classifyStaleStabilizingNoPrBranchState(...)` treats a null `journal_path` as the default issue-journal location under the workspace before filtering, and applied the existing `codexExecTimeoutMinutes` budget to the `git fetch`, `git diff`, and `git status` probes. Added focused supervisor coverage in `src/supervisor/supervisor-stale-no-pr-branch-state.test.ts` for the null-journal journal-only branch case plus fetch/diff/status timeout fallback, while keeping the existing reconciliation regression in `src/supervisor/supervisor-recovery-reconciliation.test.ts`. Committed the review fix as `fa6c4aa` and resolved the two addressed CodeRabbit threads on PR #634.
 - Current blocker: none
-- Next exact step: commit the focused test-module split, then open or update the draft PR so review can continue on the narrower ambiguity and repair-guidance coverage.
-- Verification gap: `npm run build` initially failed locally with `sh: 1: tsc: not found`; restored dev dependencies via `npm install` and reran `npm run build` successfully.
-- Files touched: `src/supervisor/supervisor-diagnostics-issue-lint-ambiguity.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint-repair-guidance.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint-readiness.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would re-bundle ambiguity and repair-guidance failures into broader issue-lint modules, undoing the scenario-localized coverage this issue requires.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint-ambiguity.test.ts src/supervisor/supervisor-diagnostics-issue-lint-repair-guidance.test.ts src/supervisor/supervisor-diagnostics-issue-lint-readiness.test.ts src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`; `npm install`; `npm run build`
+- Next exact step: monitor PR #634 for fresh CI on `fa6c4aa`, then only revisit the branch if the new checks or human review surface another regression.
+- Verification gap: `npx tsx --test src/supervisor/supervisor-stale-no-pr-branch-state.test.ts`, `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`, and `npm run build` all passed locally. I did not rerun `npm test -- src/supervisor/supervisor-recovery-reconciliation.test.ts` because it still expands to the repository’s unrelated full-suite baseline failures noted in the prior handoff.
+- Files touched: `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-stale-no-pr-branch-state.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would restore the stale already-satisfied-on-main loop, causing no-PR `stabilizing` records to requeue instead of stopping explicitly.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-stale-no-pr-branch-state.test.ts`; `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm run build`; `git commit -m "Address stale no-PR review follow-ups"`; `git push origin codex/issue-633`; `gh api graphql ... resolveReviewThread(...)`
 ### Scratchpad
-- 2026-03-19 (JST): Addressed CodeRabbit threads `PRRT_kwDORgvdZ851W7DO` and `PRRT_kwDORgvdZ851W7DQ` by resolving the default replay-corpus path inside the extracted handler layer and by skipping config loading on the missing-`caseId` advisory branch. Focused verification passed with `npx tsx --test src/cli/replay-handlers.test.ts src/index.test.ts` and `npm run build`.
+- 2026-03-19 (JST): Pushed review-fix commit `fa6c4aa` to `codex/issue-633` and resolved CodeRabbit threads `PRRT_kwDORgvdZ851cQKn` and `PRRT_kwDORgvdZ851cQKx`. PR #634 is no longer draft, and GitHub currently reports merge state `UNSTABLE` while the refreshed checks for the new head run.
+- 2026-03-19 (JST): Addressed PR #634 CodeRabbit threads by backfilling the default issue-journal path when `journal_path` is null and bounding the stale no-PR `git fetch`/`git diff`/`git status` probes with `codexExecTimeoutMinutes`. Added focused coverage in `src/supervisor/supervisor-stale-no-pr-branch-state.test.ts`; both focused test files and `npm run build` passed locally.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
 - 2026-03-19 (JST): Reproduced issue #559 with a focused `replay-corpus-promote` regression that expected advisory hints for `stale-head-prevents-merge` but only saw the existing explicit-case-id guidance and suggestions. Fixed it by adding deterministic `deriveReplayCorpusPromotionWorthinessHints(...)` coverage for stale-head safety, provider waits, and retry escalation, then surfacing those hints in both CLI suggestion mode and successful promotion summaries. Focused verification passed with `npx tsx --test src/index.test.ts --test-name-pattern "replay-corpus-promote"`, `npx tsx --test src/supervisor/replay-corpus.test.ts --test-name-pattern "PromotionWorthinessHints|promoteCapturedReplaySnapshot|checked-in safety case bundles|runReplayCorpus replays the checked-in PR lifecycle safety cases without mismatches"`, and `npm run build` after restoring local dev dependencies via `npm install`.
