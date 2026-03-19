@@ -1,44 +1,45 @@
-# Issue #617: Index refactor: extract supervisor bootstrap and loop orchestration
+# Issue #618: Index refactor: slim src/index.ts into a thin facade
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/617
-- Branch: codex/issue-617
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/618
+- Branch: codex/issue-618
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: draft_pr
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 662c046de346b5ecd24503191c727f1b4dac0177
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: e1ba461188ea30f1f3e87ba5819364a5596f18ad
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-19T05:20:06Z
+- Updated at: 2026-03-19T05:40:22Z
 
 ## Latest Codex Summary
-Opened draft PR #621 (`https://github.com/TommyKammy/codex-supervisor/pull/621`) for the extracted supervisor runtime checkpoint on `codex/issue-617` after pushing the branch upstream. The implementation remains the same: [`src/index.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-617/src/index.ts) now only parses and dispatches commands, while [`src/cli/supervisor-runtime.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-617/src/cli/supervisor-runtime.ts) owns lock-protected run-once execution, GSD preflight, signal handling, and loop orchestration.
+Extracted CLI dispatch and top-level error handling into [`src/cli/entrypoint.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-618/src/cli/entrypoint.ts), leaving [`src/index.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-618/src/index.ts) as a six-line direct-execution facade that only re-exports `parseArgs` and invokes `runCliMain(...)`.
 
-Reran focused verification with `npx tsx --test src/cli/supervisor-runtime.test.ts src/index.test.ts` and `npm run build`; both passed cleanly. The only remaining worktree changes are this journal update and the pre-existing untracked `.codex-supervisor/replay/` directory.
+Reproduced the new boundary with a narrow failing test (`Cannot find module './entrypoint'` in `src/cli/entrypoint.test.ts`), then fixed the only follow-on regression where direct execution silently stopped because `isDirectExecution()` compared against the extracted module path instead of `src/index.ts`. Focused verification passed with `npx tsx --test src/cli/entrypoint.test.ts src/index.test.ts src/cli/*.test.ts` and `npm run build` after restoring local dev dependencies with `npm install`.
 
-Summary: Pushed the supervisor runtime extraction checkpoint, reran focused verification, and opened draft PR #621 for issue #617.
+Summary: Extracted a dedicated CLI entrypoint module, reduced `src/index.ts` to a thin facade, and added focused entrypoint boundary tests.
 State hint: draft_pr
 Blocked reason: none
-Tests: `npx tsx --test src/cli/supervisor-runtime.test.ts src/index.test.ts`; `npm run build`
+Tests: `npx tsx --test src/cli/entrypoint.test.ts src/index.test.ts src/cli/*.test.ts`; `npm run build`
 Failure signature: none
-Next action: monitor draft PR #621 for review or CI feedback and address follow-up if any appears
+Next action: commit the facade extraction checkpoint, push `codex/issue-618`, and open a draft PR for review
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: issue #617 is satisfied by moving supervisor-only bootstrap, run-once locking, signal handling, and loop orchestration into a dedicated CLI runtime module while preserving the existing command behavior that `src/index.ts` exposes.
-- What changed: added `src/cli/supervisor-runtime.ts` for `runOnceWithSupervisorLock(...)`, signal registration, GSD preflight, and loop dispatch; reduced `src/index.ts` to parse-and-dispatch wiring; added focused runtime tests for lock release and signal-aborted loop sleep; and opened draft PR #621 for the checkpoint.
+- Hypothesis: the remaining `src/index.ts` weight is command routing and top-level error handling, so extracting a dedicated CLI entrypoint module should make `index.ts` a real facade without changing the public CLI behavior.
+- What changed: added `src/cli/entrypoint.ts` for argument parsing, command dispatch, supervisor runtime handoff, top-level error handling, and direct-execution helpers; reduced `src/index.ts` to the re-export plus `runCliMain(...)` invocation; added focused `src/cli/entrypoint.test.ts` coverage for replay routing, replay-corpus IO, supervisor-runtime dispatch, and stderr/exit failure handling.
 - Current blocker: none
-- Next exact step: wait for CI/review on draft PR #621 and handle any follow-up without broadening the extraction scope.
-- Verification gap: none for this extraction slice after `src/cli/supervisor-runtime.test.ts`, `src/index.test.ts`, and `npm run build` all passed.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/cli/supervisor-runtime.ts`, `src/cli/supervisor-runtime.test.ts`, `src/index.ts`
-- Rollback concern: reverting this checkpoint would move supervisor loop/bootstrap logic back into `src/index.ts` and drop the focused runtime regression coverage for signal-driven shutdown.
-- Last focused command: `git status --short`; `git branch -vv`; `gh pr status`; `npx tsx --test src/cli/supervisor-runtime.test.ts src/index.test.ts`; `npm run build`; `git push -u origin codex/issue-617`; `gh pr create --draft --base main --head codex/issue-617 --title "Extract supervisor CLI runtime orchestration" ...`
+- Next exact step: commit the extracted entrypoint checkpoint, push `codex/issue-618`, and open or update a draft PR without broadening the refactor beyond the CLI facade boundary.
+- Verification gap: none after `src/cli/entrypoint.test.ts`, the existing CLI/index focused tests, and `npm run build` all passed locally.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/cli/entrypoint.ts`, `src/cli/entrypoint.test.ts`, `src/index.ts`
+- Rollback concern: reverting this checkpoint would move CLI dispatch and top-level error handling back into `src/index.ts` and lose the focused entrypoint boundary tests that now protect direct execution and routing.
+- Last focused command: `npx tsx --test src/cli/entrypoint.test.ts`; `npx tsx --test src/cli/entrypoint.test.ts src/index.test.ts src/cli/*.test.ts`; `npm install`; `npm run build`; `gh pr status`
 ### Scratchpad
+- 2026-03-19 (JST): Reproduced the entrypoint extraction need with a new `src/cli/entrypoint.test.ts` failure (`Cannot find module './entrypoint'`), extracted `runCli(...)` and `runCliMain(...)` into `src/cli/entrypoint.ts`, fixed the temporary direct-execution regression by passing `src/index.ts`'s `__filename` into `isDirectExecution(...)`, and reran focused verification with `npx tsx --test src/cli/entrypoint.test.ts src/index.test.ts src/cli/*.test.ts` plus `npm run build` after `npm install`.
 - 2026-03-19 (JST): Reran focused verification for the supervisor runtime extraction with `npx tsx --test src/cli/supervisor-runtime.test.ts src/index.test.ts` and `npm run build`, pushed `codex/issue-617` to `origin`, and opened draft PR #621 (`https://github.com/TommyKammy/codex-supervisor/pull/621`).
 - 2026-03-19 (JST): Addressed CodeRabbit threads `PRRT_kwDORgvdZ851W7DO` and `PRRT_kwDORgvdZ851W7DQ` by resolving the default replay-corpus path inside the extracted handler layer and by skipping config loading on the missing-`caseId` advisory branch. Focused verification passed with `npx tsx --test src/cli/replay-handlers.test.ts src/index.test.ts` and `npm run build`.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
