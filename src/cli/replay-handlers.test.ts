@@ -128,7 +128,6 @@ test("handleReplayCorpusCommand keeps the checked-in corpus default and success 
 
   await handleReplayCorpusCommand({
     configPath: undefined,
-    corpusPath: "replay-corpus",
   }, io);
 
   assert.equal(io.exitCode, undefined);
@@ -170,4 +169,39 @@ test("handleReplayCorpusPromoteCommand preserves missing-case-id stderr guidance
   assert.match(io.stderr.join("\n"), /The replay-corpus-promote command requires an explicit case id to write a new case\./);
   assert.match(io.stderr.join("\n"), /Suggested case ids:/);
   assert.match(io.stderr.join("\n"), /- issue-557-replay-corpus-promotion-suggest-normalized-case/);
+});
+
+test("handleReplayCorpusPromoteCommand prints missing-case-id guidance before any config loading", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "replay-promote-handler-configless-"));
+  const snapshotPath = path.join(tempDir, "captured-snapshot.json");
+  const io = createCliIoBuffer();
+  const snapshot = {
+    ...createReplaySnapshot(tempDir),
+    issue: {
+      number: 616,
+      title: "Replay corpus promote guidance bypasses config loading",
+      url: "https://example.test/issues/616",
+      state: "OPEN",
+      updatedAt: "2026-03-19T04:46:50Z",
+    },
+  };
+  await fs.writeFile(snapshotPath, JSON.stringify(snapshot));
+
+  const options: CliOptions = {
+    command: "replay-corpus-promote",
+    configPath: path.join(tempDir, "missing-supervisor.config.json"),
+    snapshotPath,
+    issueNumber: undefined,
+    dryRun: false,
+    why: false,
+    corpusPath: undefined,
+    caseId: undefined,
+  };
+
+  await handleReplayCorpusPromoteCommand(options, io);
+
+  assert.equal(io.exitCode, 1);
+  assert.match(io.stderr.join("\n"), /The replay-corpus-promote command requires an explicit case id to write a new case\./);
+  assert.match(io.stderr.join("\n"), /Suggested case ids:/);
+  assert.match(io.stderr.join("\n"), /- issue-616-replay-corpus-promote-guidance-bypasses-config/);
 });

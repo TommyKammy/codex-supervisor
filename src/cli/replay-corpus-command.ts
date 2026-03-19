@@ -52,8 +52,13 @@ export function createProcessCliIo(): CliIo {
   };
 }
 
+function resolveReplayCorpusPath(options: Pick<CliOptions, "corpusPath">): string {
+  return options.corpusPath ?? "replay-corpus";
+}
+
 function loadReplayCorpusConfig(options: Pick<CliOptions, "configPath" | "corpusPath">) {
-  return options.configPath === undefined && options.corpusPath === "replay-corpus"
+  const corpusPath = resolveReplayCorpusPath(options);
+  return options.configPath === undefined && corpusPath === "replay-corpus"
     ? createCheckedInReplayCorpusConfig(process.cwd())
     : loadConfig(options.configPath);
 }
@@ -62,8 +67,9 @@ export async function handleReplayCorpusCommand(
   options: Pick<CliOptions, "configPath" | "corpusPath">,
   io: CliIo,
 ): Promise<void> {
+  const corpusPath = resolveReplayCorpusPath(options);
   const config = loadReplayCorpusConfig(options);
-  const result = await runReplayCorpus(options.corpusPath!, config);
+  const result = await runReplayCorpus(corpusPath, config);
   await syncReplayCorpusMismatchDetailsArtifact(result, config);
   io.writeStdout(formatReplayCorpusRunSummary(result));
   if (result.mismatchCount > 0) {
@@ -75,7 +81,6 @@ export async function handleReplayCorpusPromoteCommand(
   options: Pick<CliOptions, "configPath" | "corpusPath" | "snapshotPath" | "caseId">,
   io: CliIo,
 ): Promise<void> {
-  const config = loadReplayCorpusConfig(options);
   if (options.caseId === undefined) {
     const snapshot = await loadSupervisorCycleDecisionSnapshot(options.snapshotPath!);
     let suggestions: string[] = [];
@@ -102,9 +107,11 @@ export async function handleReplayCorpusPromoteCommand(
     return;
   }
 
+  const corpusPath = resolveReplayCorpusPath(options);
+  const config = loadReplayCorpusConfig(options);
   const sourceSnapshot = await loadSupervisorCycleDecisionSnapshot(options.snapshotPath!);
   const promoted = await promoteCapturedReplaySnapshot({
-    corpusRoot: options.corpusPath!,
+    corpusRoot: corpusPath,
     snapshotPath: options.snapshotPath!,
     caseId: options.caseId,
     config,
