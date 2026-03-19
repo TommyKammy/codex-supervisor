@@ -1,49 +1,36 @@
-# Issue #616: Index refactor: extract replay and replay-corpus handlers
+# Issue #617: Index refactor: extract supervisor bootstrap and loop orchestration
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/616
-- Branch: codex/issue-616
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/617
+- Branch: codex/issue-617
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 6a293302457e9e1b03c6eb83b04a59b76164ac18
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 0fe84e4dd946b08cc771f5b40b81bdebb0d5b1c5
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ851W7DO|PRRT_kwDORgvdZ851W7DQ
-- Repeated failure signature count: 1
-- Updated at: 2026-03-19T04:48:05.185Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-19T05:07:02.546Z
 
 ## Latest Codex Summary
-Pushed `codex/issue-616` and opened draft PR [#620](https://github.com/TommyKammy/codex-supervisor/pull/620) from `codex/issue-616` to `main`. I also updated the handoff in [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-616/.codex-supervisor/issue-journal.md) so the next turn starts from CI/review monitoring instead of local implementation.
-
-The worktree still has the journal edit uncommitted and the pre-existing untracked `.codex-supervisor/replay/` directory.
-
-Summary: Pushed `codex/issue-616`, opened draft PR #620, and updated the journal handoff to monitor CI/review next.
-State hint: draft_pr
-Blocked reason: none
-Tests: Not rerun this turn; relied on the existing green checkpoint: `npx tsx --test src/cli/replay-handlers.test.ts src/index.test.ts` and `npm run build`
-Failure signature: none
-Next action: monitor PR #620 CI and review feedback, then address any failures or comments on `codex/issue-616`
+- Extracted supervisor bootstrap and loop orchestration out of `src/index.ts` into `src/cli/supervisor-runtime.ts`, added focused runtime coverage for lock release and signal-driven loop shutdown, and verified with focused CLI tests plus `npm run build`.
 
 ## Active Failure Context
-- Category: review
-- Summary: 2 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/620#discussion_r2957832547
-- Details:
-  - src/cli/replay-corpus-command.ts:59 _⚠️ Potential issue_ | _🟡 Minor_ **Normalize the default corpus path inside the handler layer.** `loadReplayCorpusConfig()` only preserves the checked-in corpus behavior when callers prefill `corpusPath` with the literal `"replay-corpus"`. Any direct handler call that omits it will fall through to `loadConfig()` and later hit the `options.corpusPath!` dereference. Normalizing the default once here would make the extracted boundary match the old CLI behavior more reliably. <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/cli/replay-corpus-command.ts` around lines 55 - 59, The function loadReplayCorpusConfig currently only triggers createCheckedInReplayCorpusConfig when callers explicitly pass corpusPath === "replay-corpus", so callers that omit corpusPath fall through to loadConfig and later hit a non-null assertion on options.corpusPath; to fix, normalize the default inside loadReplayCorpusConfig by treating options.corpusPath as options.corpusPath ?? "replay-corpus" (e.g. const corpusPath = options.corpusPath ?? "replay-corpus") and use that normalized corpusPath when deciding whether to call createCheckedInReplayCorpusConfig or loadConfig, keeping references to createCheckedInReplayCorpusConfig and loadConfig unchanged. ``` </details> <!-- fingerprinting:phantom:medusa:grasshopper --> <!-- This is an auto-generated comment by CodeRabbit -->
-  - src/cli/replay-corpus-command.ts:103 _⚠️ Potential issue_ | _🟡 Minor_ **Don’t gate the missing-`caseId` guidance path on config loading.** Lines 79-102 only inspect the snapshot to print suggestions and promotion hints, but Line 78 can fail on config resolution first. That skips the operator guidance path entirely when config is broken or simply unnecessary for this branch. <details> <summary>🐛 Minimal fix</summary> ```diff export async function handleReplayCorpusPromoteCommand( options: Pick<CliOptions, "configPath" | "corpusPath" | "snapshotPath" | "caseId">, io: CliIo, ): Promise<void> { - const config = loadReplayCorpusConfig(options); if (options.caseId === undefined) { const snapshot = await loadSupervisorCycleDecisionSnapshot(options.snapshotPath!); let suggestions: string[] = []; try { suggestions = suggestReplayCorpusCaseIds(snapshot); @@ io.setExitCode(1); return; } + const config = loadReplayCorpusConfig(options); const sourceSnapshot = await loadSupervisorCycleDecisionSnapshot(options.snapshotPath!); const promoted = await promoteCapturedReplaySnapshot({ corpusRoot: options.corpusPath!, ``` </details> <!-- suggestion_start --> <details> <summary>📝 Committable suggestion</summary> > ‼️ **IMPORTANT** > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements. ```suggestion if (options.caseId === undefined) { const snapshot = await loadSupervisorCycleDecisionSnapshot(options.snapshotPath!); let suggestions: string[] = []; try { suggestions = suggestReplayCorpusCaseIds(snapshot); } catch { io.writeStderr("Unable to derive case-id suggestions from the snapshot. Provide an explicit case id."); } io.writeStderr("The replay-corpus-promote command requires an explicit case id to write a new case."); if (suggestions.length > 0) { io.writeStderr("Suggested case ids:"); for (const suggestion of suggestions) { io.writeStderr(`- ${suggestion}`); } } const promotionHints = deriveReplayCorpusPromotionWorthinessHints(snapshot); if (promotionHints.length > 0) { io.writeStderr("Promotion hints:"); for (const hint of promotionHints) { io.writeStderr(`- ${hint.id}: ${hint.summary}`); } } io.setExitCode(1); return; } const config = loadReplayCorpusConfig(options); ``` </details> <!-- suggestion_end --> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/cli/replay-corpus-command.ts` around lines 78 - 103, Move the loadReplayCorpusConfig(options) call so it does not run before the missing-caseId branch: first check options.caseId and, if undefined, call loadSupervisorCycleDecisionSnapshot(options.snapshotPath!), call suggestReplayCorpusCaseIds(snapshot) and deriveReplayCorpusPromotionWorthinessHints(snapshot) to print suggestions and hints via io.writeStderr, set io.setExitCode(1) and return; only after handling the missing-caseId branch call loadReplayCorpusConfig(options). This ensures the guidance path (functions suggestReplayCorpusCaseIds and deriveReplayCorpusPromotionWorthinessHints and snapshot handling) runs even if config resolution would fail. ``` </details> <!-- fingerprinting:phantom:medusa:grasshopper --> <!-- This is an auto-generated comment by CodeRabbit -->
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: issue #616 is satisfied by moving replay-specific command execution behind dedicated CLI handler modules while preserving the existing stdout/stderr and exit-code behavior that `src/index.ts` exposes today.
-- What changed: addressed the two open CodeRabbit review threads in `src/cli/replay-corpus-command.ts` by normalizing the handler-level default `replay-corpus` path and deferring config loading until after the missing-`caseId` guidance branch, then added focused handler regressions for both behaviors.
+- Hypothesis: issue #617 is satisfied by moving supervisor-only bootstrap, run-once locking, signal handling, and loop orchestration into a dedicated CLI runtime module while preserving the existing command behavior that `src/index.ts` exposes.
+- What changed: added `src/cli/supervisor-runtime.ts` for `runOnceWithSupervisorLock(...)`, signal registration, GSD preflight, and loop dispatch; reduced `src/index.ts` to parse-and-dispatch wiring; and added focused runtime tests for lock release and signal-aborted loop sleep.
 - Current blocker: none
-- Next exact step: push the review-fix checkpoint to PR #620, then monitor CI/review and resolve the two automated threads if no follow-up regression appears.
-- Verification gap: none for this review-fix slice after focused handler/index coverage and a clean `npm run build`.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/cli/replay-corpus-command.ts`, `src/cli/replay-handlers.test.ts`
-- Rollback concern: reverting this checkpoint would reintroduce the direct-handler `replay-corpus` default gap and make the missing-`caseId` guidance path depend on config loading again.
-- Last focused command: `git status --short`; `sed -n '1,240p' src/cli/replay-corpus-command.ts`; `sed -n '1,240p' src/cli/replay-handlers.test.ts`; `npx tsx --test src/cli/replay-handlers.test.ts src/index.test.ts`; `npm run build`
+- Next exact step: commit this extraction checkpoint on `codex/issue-617`, then open or update the draft PR with the focused verification notes.
+- Verification gap: none for this extraction slice after `src/cli/supervisor-runtime.test.ts`, `src/index.test.ts`, and `npm run build` all passed.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/cli/supervisor-runtime.ts`, `src/cli/supervisor-runtime.test.ts`, `src/index.ts`
+- Rollback concern: reverting this checkpoint would move supervisor loop/bootstrap logic back into `src/index.ts` and drop the focused runtime regression coverage for signal-driven shutdown.
+- Last focused command: `git status --short`; `sed -n '1,280p' src/index.ts`; `sed -n '1,320p' src/index.test.ts`; `npx tsx --test src/cli/supervisor-runtime.test.ts`; `npx tsx --test src/cli/supervisor-runtime.test.ts src/index.test.ts`; `npm install`; `npm run build`
 ### Scratchpad
+- 2026-03-19 (JST): Reproduced issue #617 with a focused missing-module failure in `src/cli/supervisor-runtime.test.ts` (`Cannot find module './supervisor-runtime'`). Fixed it by extracting supervisor bootstrap/run-once/loop control into `src/cli/supervisor-runtime.ts`, shrinking `src/index.ts` to dispatch wiring, and adding a narrow runtime regression for signal-aborted loop sleep and lock release. Focused verification passed with `npx tsx --test src/cli/supervisor-runtime.test.ts src/index.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Addressed CodeRabbit threads `PRRT_kwDORgvdZ851W7DO` and `PRRT_kwDORgvdZ851W7DQ` by resolving the default replay-corpus path inside the extracted handler layer and by skipping config loading on the missing-`caseId` advisory branch. Focused verification passed with `npx tsx --test src/cli/replay-handlers.test.ts src/index.test.ts` and `npm run build`.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
