@@ -14,7 +14,7 @@
 - Updated at: 2026-03-19T09:54:40.019Z
 
 ## Latest Codex Summary
-- None yet.
+- Extracted shared issue-lint fixture/report helpers, verified the focused diagnostics test plus `npm run build`, pushed `codex/issue-626`, and opened draft PR #630.
 
 ## Active Failure Context
 - None recorded.
@@ -24,12 +24,13 @@
 - Hypothesis: `src/supervisor/supervisor-diagnostics-issue-lint.test.ts` is ready to split into scenario-focused suites once its repeated state-file bootstrapping and stubbed `issueLint(...)` loading are extracted into shared helpers.
 - What changed: reproduced the current baseline with `npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint.test.ts`, extracted `createIssueLintFixture()` into `src/supervisor/supervisor-test-helpers.ts`, and rewired the issue-lint diagnostics tests to reuse `loadIssueLintReport(issue)` while preserving the existing assertions and coverage.
 - Current blocker: none
-- Next exact step: commit the issue-lint helper extraction checkpoint on `codex/issue-626`, then open or update a draft PR for this branch if one does not already exist.
+- Next exact step: monitor draft PR #630 (`https://github.com/TommyKammy/codex-supervisor/pull/630`) and continue with follow-up review or any remaining issue-lint suite split work if the parent issue stack advances.
 - Verification gap: `npm run build` initially failed with `sh: 1: tsc: not found` until local dependencies were restored via `npm install`; after that, the focused issue-lint test and `npm run build` both passed.
 - Files touched: `src/supervisor/supervisor-test-helpers.ts`, `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this checkpoint would put the duplicated issue-lint fixture and stubbed report-loading flow back into every scenario test, making the planned suite split riskier.
 - Last focused command: `npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint.test.ts`; `npm install`; `npm run build`
 ### Scratchpad
+- 2026-03-19 (JST): Pushed `codex/issue-626` and opened draft PR #630 (`https://github.com/TommyKammy/codex-supervisor/pull/630`) after the shared issue-lint helper extraction passed local verification.
 - 2026-03-19 (JST): Reproduced the issue-lint diagnostics baseline with `npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint.test.ts`, then extracted shared `createIssueLintFixture()` and `loadIssueLintReport(...)` helpers into `src/supervisor/supervisor-test-helpers.ts` so later scenario-focused suites can reuse state bootstrapping and stubbed issue loading. Focused verification passed again with `npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint.test.ts`; `npm run build` first failed with `sh: 1: tsc: not found`, so restored local dependencies with `npm install` and reran `npm run build` successfully.
 - 2026-03-19 (JST): Addressed CodeRabbit threads `PRRT_kwDORgvdZ851W7DO` and `PRRT_kwDORgvdZ851W7DQ` by resolving the default replay-corpus path inside the extracted handler layer and by skipping config loading on the missing-`caseId` advisory branch. Focused verification passed with `npx tsx --test src/cli/replay-handlers.test.ts src/index.test.ts` and `npm run build`.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
