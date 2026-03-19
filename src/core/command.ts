@@ -13,12 +13,20 @@ export interface CommandResult {
   stderr: string;
 }
 
+export function renderCommandSummary(command: string, args: string[], visibleArgCount = 2): string {
+  const visibleArgs = args.slice(0, visibleArgCount);
+  const omittedCount = Math.max(args.length - visibleArgs.length, 0);
+  const summary = [command, ...visibleArgs].join(" ");
+  return omittedCount > 0 ? `${summary} +${omittedCount} arg${omittedCount === 1 ? "" : "s"}` : summary;
+}
+
 export async function runCommand(
   command: string,
   args: string[],
   options: CommandOptions = {},
 ): Promise<CommandResult> {
   const allowExitCodes = options.allowExitCodes ?? [0];
+  const commandSummary = renderCommandSummary(command, args);
 
   return new Promise<CommandResult>((resolve, reject) => {
     const child = spawn(command, args, {
@@ -84,7 +92,7 @@ export async function runCommand(
 
         timedOut = true;
         const pid = child.pid;
-        const timeoutMessage = `Command timed out after ${options.timeoutMs}ms: ${command} ${args.join(" ")}`;
+        const timeoutMessage = `Command timed out after ${options.timeoutMs}ms: ${commandSummary}`;
         stderr += `${stderr.endsWith("\n") || stderr.length === 0 ? "" : "\n"}${timeoutMessage}\n`;
 
         if (pid) {
@@ -121,7 +129,7 @@ export async function runCommand(
         settleReject(
           new Error(
             [
-              `Command timed out: ${command} ${args.join(" ")}`,
+              `Command timed out: ${commandSummary}`,
               `exitCode=${exitCode}`,
               stderr.trim(),
             ]
@@ -136,7 +144,7 @@ export async function runCommand(
         settleReject(
           new Error(
             [
-              `Command failed: ${command} ${args.join(" ")}`,
+              `Command failed: ${commandSummary}`,
               `exitCode=${exitCode}`,
               stderr.trim(),
             ]

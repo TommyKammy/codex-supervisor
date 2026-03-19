@@ -1,4 +1,4 @@
-import { CommandOptions, CommandResult, runCommand } from "../core/command";
+import { CommandOptions, CommandResult, renderCommandSummary, runCommand } from "../core/command";
 import { truncate } from "../core/utils";
 
 const TRANSIENT_GITHUB_RETRY_LIMIT = 2;
@@ -47,15 +47,8 @@ export function isTransientGitHubCommandFailure(message: string | null | undefin
   return githubRelated && transientSignal;
 }
 
-function summarizeGhArgs(args: string[]): string {
-  const visibleArgs = args.slice(0, 2);
-  const omittedCount = Math.max(args.length - visibleArgs.length, 0);
-  const summary = ["gh", ...visibleArgs].join(" ");
-  return omittedCount > 0 ? `${summary} +${omittedCount} arg${omittedCount === 1 ? "" : "s"}` : summary;
-}
-
 function sanitizeGhCommandMessage(message: string, args: string[]): string {
-  const commandSummary = summarizeGhArgs(args);
+  const commandSummary = renderCommandSummary("gh", args);
   return message
     .split("\n")
     .map((line) => {
@@ -85,7 +78,7 @@ export class GitHubTransport {
 
   async run(args: string[], options: CommandOptions = {}): Promise<CommandResult> {
     let lastTransientMessage: string | null = null;
-    const commandSummary = summarizeGhArgs(args);
+    const commandSummary = renderCommandSummary("gh", args);
 
     for (let attempt = 0; attempt <= TRANSIENT_GITHUB_RETRY_LIMIT; attempt += 1) {
       try {
