@@ -87,7 +87,7 @@ import {
   buildReadinessSummary,
   buildSelectionWhySummary,
 } from "./supervisor-selection-readiness-summary";
-import { buildIssueLintSummary } from "./supervisor-selection-status";
+import { buildIssueLintSummary } from "./supervisor-selection-issue-lint";
 import { buildIssueExplainSummary } from "./supervisor-selection-issue-explain";
 import { loadActiveIssueStatusSnapshot } from "./supervisor-selection-active-status";
 import { summarizeSupervisorStatusRecords } from "./supervisor-selection-status-records";
