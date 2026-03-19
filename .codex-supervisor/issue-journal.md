@@ -1,34 +1,34 @@
-# Issue #655: GitHub timeout robustness: add a conservative default timeout for transport calls
+# Issue #656: GitHub timeout robustness: classify timeout-shaped failures consistently in transport retry handling
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/655
-- Branch: codex/issue-655
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/656
+- Branch: codex/issue-656
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: dcb3ac27de0a06949d466d42c7f5a5561d6b149c
+- Last head SHA: 78b403ef90f3ad4236fa49b01a6a38b9a8f3af88
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-19T16:15:13.026Z
+- Updated at: 2026-03-19T16:36:19.334Z
 
 ## Latest Codex Summary
-- Reproduced the missing GitHub transport timeout with a focused `src/github/github-transport.test.ts` assertion, then fixed `GitHubTransport.run(...)` to apply a default `60_000ms` timeout only when callers omit `timeoutMs`; explicit caller overrides still win. Focused transport tests and `npm run build` now pass after restoring local dev dependencies with `npm install`.
+- None yet.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the narrowest safe fix is the GitHub transport itself; it should inject a deterministic default timeout for every `gh` call unless a caller already provided `timeoutMs`.
-- What changed: inspected `src/github/github-transport.ts`, `src/github/github-transport.test.ts`, `src/github/github.ts`, and `src/core/command.ts` to confirm that transport calls currently forward `options` unchanged. Added focused regression coverage in `src/github/github-transport.test.ts` for the default-timeout path and the explicit override path. The new default-timeout test failed first with `AssertionError [ERR_ASSERTION]: actual undefined !== expected 60000`, proving omitted calls reached the command runner without `timeoutMs`. Updated `src/github/github-transport.ts` to apply `60_000ms` only when `options.timeoutMs` is absent, preserving other caller options and all explicit timeout overrides. Restored local dev dependencies with `npm install` because `npm run build` initially failed with `sh: 1: tsc: not found`, then reran the focused test and build successfully.
+- Hypothesis: the narrowest safe fix is still the GitHub transport classifier; timeout-shaped `gh` failures should enter the same transient retry/terminal path as other network-shaped transport failures.
+- What changed: inspected `src/github/github-transport.ts`, `src/github/github-transport.test.ts`, and `src/core/command.ts` to compare the transport classifier against the timeout message shape emitted by `runCommand(...)`. Added focused regressions in `src/github/github-transport.test.ts` for one retried timeout-shaped failure and one terminal timeout-shaped failure. The new tests failed first because `GitHubTransport` surfaced raw `Command timed out: gh ...` errors instead of retrying, and the terminal assertion saw the unwrapped timeout message rather than `Transient GitHub CLI failure after 3 attempts: ...`. Updated `src/github/github-transport.ts` so transient classification now recognizes timeout-shaped `gh` failures consistently via `command timed out`, `timed out after`, `request canceled`, and `context deadline exceeded`, while preserving the existing GitHub-related guard and non-transient behavior. Restored local dev dependencies with `npm install` because `npm run build` initially failed with `sh: 1: tsc: not found`, then reran the focused transport test and build successfully.
 - Current blocker: none
-- Next exact step: watch draft PR #664 for CI and review feedback, then respond with any follow-up fixes if a transport timeout regression or build failure appears.
+- Next exact step: commit the focused timeout-classification checkpoint, push `codex/issue-656`, and open a draft PR so CI can validate the transport retry slice.
 - Verification gap: none for the stated issue scope; I ran the focused GitHub transport tests plus `npm run build`, but not the full repository test suite because the issue calls for focused transport verification and build only.
 - Files touched: `src/github/github-transport.ts`, `src/github/github-transport.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would return GitHub transport calls to caller-by-caller timeout coverage, leaving any omitted `timeoutMs` transport path unbounded again.
-- Last focused command: `git status --short --branch`; `rg -n "timeout|gh\\s|GitHub transport|transport" src .`; `rg --files | rg "github|gh|transport|octokit"`; `sed -n '1,260p' src/github/github-transport.ts`; `sed -n '1,260p' src/github/github-transport.test.ts`; `sed -n '1,220p' src/github/github.ts`; `sed -n '1,260p' src/core/command.ts`; `npx tsx --test src/github/github-transport.test.ts`; `npm install`; `npm run build`; `git push -u origin codex/issue-655`; `gh pr create --draft --base main --head codex/issue-655 --title "Add conservative default GitHub transport timeout" ...`
+- Rollback concern: reverting this checkpoint would send transport-generated timeout failures back through the generic command-error path, making retry behavior and terminal messaging inconsistent for equivalent GitHub timeouts.
+- Last focused command: `git status --short --branch`; `rg -n "timeout|transient|retry|classif|GitHub transport|gh .*timeout|ETIMEDOUT|timed out|SIGTERM|deadline" src`; `sed -n '1,240p' src/github/github-transport.ts`; `sed -n '1,260p' src/github/github-transport.test.ts`; `sed -n '1,260p' src/core/command.ts`; `npx tsx --test src/github/github-transport.test.ts`; `npm install`; `npm run build`; `gh pr view --json number,state,isDraft,headRefName,baseRefName,url`
 ### Scratchpad
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
 - 2026-03-19 (JST): Reproduced issue #559 with a focused `replay-corpus-promote` regression that expected advisory hints for `stale-head-prevents-merge` but only saw the existing explicit-case-id guidance and suggestions. Fixed it by adding deterministic `deriveReplayCorpusPromotionWorthinessHints(...)` coverage for stale-head safety, provider waits, and retry escalation, then surfacing those hints in both CLI suggestion mode and successful promotion summaries. Focused verification passed with `npx tsx --test src/index.test.ts --test-name-pattern "replay-corpus-promote"`, `npx tsx --test src/supervisor/replay-corpus.test.ts --test-name-pattern "PromotionWorthinessHints|promoteCapturedReplaySnapshot|checked-in safety case bundles|runReplayCorpus replays the checked-in PR lifecycle safety cases without mismatches"`, and `npm run build` after restoring local dev dependencies via `npm install`.

@@ -30,8 +30,12 @@ export function isTransientGitHubCommandFailure(message: string | null | undefin
     lower.includes("connection reset by peer") ||
     lower.includes("unexpected eof") ||
     lower.includes("eof") ||
+    lower.includes("command timed out:") ||
+    lower.includes("timed out after") ||
     lower.includes("tls handshake timeout") ||
     lower.includes("i/o timeout") ||
+    lower.includes("request canceled") ||
+    lower.includes("context deadline exceeded") ||
     lower.includes("timeout awaiting response headers") ||
     lower.includes("temporary failure in name resolution") ||
     lower.includes("no such host") ||
