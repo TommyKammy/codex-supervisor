@@ -6,7 +6,9 @@ import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "../co
 import { loadRelevantExternalReviewMissPatterns, type ExternalReviewMissPattern } from "../external-review/external-review-misses";
 import { reviewDir } from "./artifacts";
 import { buildRolePrompt, buildVerifierPrompt, parseRoleFooter, parseVerifierFooter } from "./prompt";
+import { reviewerTypeForRole } from "./thresholds";
 import { type LocalReviewFinding, type LocalReviewRoleResult, type LocalReviewVerifierReport } from "./types";
+import { type LocalReviewRoleSelection } from "../review-role-detector";
 import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "../core/types";
 import { loadRelevantVerifierGuardrails } from "../verifier-guardrails";
 
@@ -20,6 +22,7 @@ export interface LocalReviewTurnRequest {
   role: string;
   outputFileName: string;
   prompt: string;
+  executionTarget: "local_review_generic" | "local_review_specialist" | "local_review_verifier";
 }
 
 export interface LocalReviewTurnResult {
@@ -32,7 +35,9 @@ export type LocalReviewTurnExecutor = (args: LocalReviewTurnRequest) => Promise<
 export async function runCodexReviewTurn(args: LocalReviewTurnRequest): Promise<LocalReviewTurnResult> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-review-"));
   const messageFile = path.join(tempDir, args.outputFileName);
-  const overrideArgs = buildCodexConfigOverrideArgs(resolveCodexExecutionPolicy(args.config, "local_review"));
+  const overrideArgs = buildCodexConfigOverrideArgs(
+    resolveCodexExecutionPolicy(args.config, "local_review", undefined, args.executionTarget),
+  );
   const result = await runCommand(
     args.config.codexBinary,
     [
@@ -83,6 +88,7 @@ export async function runRoleReview(args: {
   alwaysReadFiles: string[];
   onDemandFiles: string[];
   priorMissPatterns: ExternalReviewMissPattern[];
+  detectedRoles?: LocalReviewRoleSelection[];
   executeTurn?: LocalReviewTurnExecutor;
 }): Promise<LocalReviewRoleResult> {
   const prompt = buildRolePrompt({
@@ -99,12 +105,14 @@ export async function runRoleReview(args: {
     priorMissPatterns: args.priorMissPatterns,
   });
   const executeTurn = args.executeTurn ?? runCodexReviewTurn;
+  const reviewerType = reviewerTypeForRole({ role: args.role, detectedRoles: args.detectedRoles });
   const result = await executeTurn({
     config: args.config,
     workspacePath: args.workspacePath,
     role: args.role,
     outputFileName: `${safeSlug(args.role)}.txt`,
     prompt,
+    executionTarget: reviewerType === "generic" ? "local_review_generic" : "local_review_specialist",
   });
   const parsed = parseRoleFooter(args.role, result.rawOutput);
 
@@ -163,6 +171,7 @@ export async function runVerifierReview(args: {
     role: "verifier",
     outputFileName: "verifier.txt",
     prompt,
+    executionTarget: "local_review_verifier",
   });
   const parsed = parseVerifierFooter(result.rawOutput);
 

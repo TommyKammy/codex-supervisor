@@ -23,6 +23,7 @@ export type RunState =
   | "failed";
 
 export type CodexModelStrategy = "inherit" | "fixed" | "alias";
+export type CodexExecutionTarget = "supervisor" | "local_review_generic" | "local_review_specialist" | "local_review_verifier";
 
 export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
 export type LocalReviewPolicy = "advisory" | "block_ready" | "block_merge";
@@ -49,6 +50,8 @@ export interface SupervisorConfig {
   codexBinary: string;
   codexModelStrategy: CodexModelStrategy;
   codexModel?: string;
+  localReviewModelStrategy?: CodexModelStrategy;
+  localReviewModel?: string;
   codexReasoningEffortByState: Partial<Record<RunState, ReasoningEffort>>;
   codexReasoningEscalateOnRepeatedFailure: boolean;
   sharedMemoryFiles: string[];

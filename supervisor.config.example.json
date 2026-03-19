@@ -9,6 +9,8 @@
   "codexBinary": "/absolute/path/to/codex",
   "codexModelStrategy": "inherit",
   "codexModel": "",
+  "localReviewModelStrategy": "",
+  "localReviewModel": "",
   "codexReasoningEffortByState": {
     "planning": "low",
     "reproducing": "medium",

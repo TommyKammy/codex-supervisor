@@ -20,6 +20,8 @@ export function createConfig(overrides: Partial<SupervisorConfig> = {}): Supervi
     codexModelStrategy: "inherit",
     codexReasoningEffortByState: {},
     codexReasoningEscalateOnRepeatedFailure: true,
+    localReviewModelStrategy: undefined,
+    localReviewModel: undefined,
     sharedMemoryFiles: [],
     gsdEnabled: false,
     gsdAutoInstall: false,

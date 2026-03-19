@@ -177,6 +177,14 @@ export function loadConfig(configPath?: string): SupervisorConfig {
       typeof raw.codexModel === "string" && raw.codexModel.trim() !== ""
         ? raw.codexModel.trim()
         : undefined,
+    localReviewModelStrategy:
+      raw.localReviewModelStrategy === "fixed" || raw.localReviewModelStrategy === "alias" || raw.localReviewModelStrategy === "inherit"
+        ? raw.localReviewModelStrategy
+        : undefined,
+    localReviewModel:
+      typeof raw.localReviewModel === "string" && raw.localReviewModel.trim() !== ""
+        ? raw.localReviewModel.trim()
+        : undefined,
     codexReasoningEffortByState: parseReasoningPolicy(raw.codexReasoningEffortByState),
     codexReasoningEscalateOnRepeatedFailure:
       typeof raw.codexReasoningEscalateOnRepeatedFailure === "boolean"
@@ -354,6 +362,15 @@ export function loadConfig(configPath?: string): SupervisorConfig {
 
   if ((config.codexModelStrategy === "fixed" || config.codexModelStrategy === "alias") && !config.codexModel) {
     throw new Error(`Missing or invalid config field: codexModel (required when codexModelStrategy=${config.codexModelStrategy})`);
+  }
+  if (
+    config.localReviewModelStrategy &&
+    (config.localReviewModelStrategy === "fixed" || config.localReviewModelStrategy === "alias") &&
+    !config.localReviewModel
+  ) {
+    throw new Error(
+      `Missing or invalid config field: localReviewModel (required when localReviewModelStrategy=${config.localReviewModelStrategy})`,
+    );
   }
 
   return config;
