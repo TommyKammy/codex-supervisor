@@ -1,36 +1,36 @@
-# Issue #597: Replay-corpus refactor: extract reporting and mismatch-formatting helpers
+# Issue #598: Replay-corpus refactor: slim replay-corpus.ts into a thin facade
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/597
-- Branch: codex/issue-597
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/598
+- Branch: codex/issue-598
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 2f8a2a265c96a414657af2a0d8c09472eb4ce7e6
+- Last head SHA: 6e37aa7f08c9c82b0d987bde286625b0f30f0a65
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-19T00:01:22.869Z
+- Updated at: 2026-03-19T00:20:46.257Z
 
 ## Latest Codex Summary
-- Reproduced the helper-extraction gap with focused module-level replay-corpus tests that failed on missing `replay-corpus-mismatch-formatting` and `replay-corpus-mismatch-artifact` modules, then extracted the mismatch/reporting and artifact helpers out of `src/supervisor/replay-corpus.ts` while preserving output and artifact semantics. Focused replay-corpus verification and `npm run build` now pass.
+- None yet.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the replay-corpus reporting refactor is complete for this slice because mismatch formatting, run-summary formatting, and mismatch artifact shaping now live in dedicated modules with direct tests that pin the existing CI-facing strings and artifact payloads.
-- What changed: added `src/supervisor/replay-corpus-mismatch-formatting.ts` and `src/supervisor/replay-corpus-mismatch-artifact.ts`, added focused tests for each new module, and trimmed `src/supervisor/replay-corpus.ts` down to orchestration plus re-exports.
+- Hypothesis: issue #598 is satisfied because `src/supervisor/replay-corpus.ts` is now a thin export-only facade while checked-in replay config and corpus execution moved into dedicated modules with focused tests pinned to those boundaries.
+- What changed: added `src/supervisor/replay-corpus-config.ts` and `src/supervisor/replay-corpus-runner.ts` with dedicated tests, rewrote `src/supervisor/replay-corpus.test.ts` into a facade re-export smoke test, pointed mismatch-artifact coverage at `replay-corpus-config.ts`, and reused `loadReplayCorpus(...)` from `src/supervisor/replay-corpus-runner.ts` inside `src/supervisor/replay-corpus-promotion.ts`.
 - Current blocker: none
-- Next exact step: commit the replay-corpus reporting/artifact split on `codex/issue-597`, then open or update the draft PR if one is not already present.
+- Next exact step: commit the replay-corpus facade slimming on `codex/issue-598`, then open or update the draft PR if one is not already present.
 - Verification gap: none for the local refactor slice; focused replay-corpus tests and `npm run build` both passed after restoring local dev dependencies with `npm install`.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/replay-corpus.ts`, `src/supervisor/replay-corpus-mismatch-formatting.ts`, `src/supervisor/replay-corpus-mismatch-formatting.test.ts`, `src/supervisor/replay-corpus-mismatch-artifact.ts`, `src/supervisor/replay-corpus-mismatch-artifact.test.ts`
-- Rollback concern: reverting this split would push CI-facing replay mismatch formatting and artifact shaping back into `replay-corpus.ts`, increasing coupling again without changing semantics.
-- Last focused command: `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/replay-corpus-mismatch-formatting.test.ts src/supervisor/replay-corpus-mismatch-artifact.test.ts`; `npm install`; `npm run build`
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/replay-corpus.ts`, `src/supervisor/replay-corpus.test.ts`, `src/supervisor/replay-corpus-config.ts`, `src/supervisor/replay-corpus-config.test.ts`, `src/supervisor/replay-corpus-runner.ts`, `src/supervisor/replay-corpus-runner.test.ts`, `src/supervisor/replay-corpus-mismatch-artifact.test.ts`, `src/supervisor/replay-corpus-promotion.ts`
+- Rollback concern: reverting this split would pull checked-in replay config and corpus execution back into `replay-corpus.ts`, restoring the broad facade/catch-all shape without changing replay behavior.
+- Last focused command: `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/replay-corpus-config.test.ts src/supervisor/replay-corpus-runner.test.ts src/supervisor/replay-corpus-loading.test.ts src/supervisor/replay-corpus-promotion.test.ts src/supervisor/replay-corpus-mismatch-formatting.test.ts src/supervisor/replay-corpus-mismatch-artifact.test.ts`; `npm install`; `npm run build`
 ### Scratchpad
-- 2026-03-19 (JST): Reproduced issue #597 by adding focused module-level tests for `replay-corpus-mismatch-formatting` and `replay-corpus-mismatch-artifact`; the first run failed with `MODULE_NOT_FOUND` for both new modules. Implemented the split by moving mismatch detail/summary/run-summary formatting into `src/supervisor/replay-corpus-mismatch-formatting.ts` and mismatch artifact shaping/sync into `src/supervisor/replay-corpus-mismatch-artifact.ts`, then re-exported them from `src/supervisor/replay-corpus.ts`. Verification passed with `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/replay-corpus-mismatch-formatting.test.ts src/supervisor/replay-corpus-mismatch-artifact.test.ts` and `npm run build` after a local `npm install` because `tsc` was initially unavailable.
+- 2026-03-19 (JST): Reproduced issue #598 by adding dedicated `replay-corpus-config` and `replay-corpus-runner` tests; the first run failed with `MODULE_NOT_FOUND` for `./replay-corpus-config` and `./replay-corpus-runner`, confirming the facade still owned those responsibilities. Fixed it by extracting `createCheckedInReplayCorpusConfig(...)` and `loadReplayCorpus(...)`/`runReplayCorpus(...)` into new modules, slimming `replay-corpus.ts` to re-exports, and shrinking `replay-corpus.test.ts` into a facade smoke test. Focused verification passed with `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/replay-corpus-config.test.ts src/supervisor/replay-corpus-runner.test.ts src/supervisor/replay-corpus-loading.test.ts src/supervisor/replay-corpus-promotion.test.ts src/supervisor/replay-corpus-mismatch-formatting.test.ts src/supervisor/replay-corpus-mismatch-artifact.test.ts`; `npm run build` first failed with `sh: 1: tsc: not found`, so ran `npm install` and reran `npm run build` successfully.
 - 2026-03-19 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851UWEj` by changing the provider-wait promotion hint guard to use a non-nullish check for `configuredBotCurrentHeadObservedAt` and adding a focused regression for the missing-field case. The first new assertion failed because the shared snapshot fixture still emitted `retry-escalation` via `timeout_retry_count=1`; after zeroing the retry counters in the test setup, `npx tsx --test src/supervisor/replay-corpus-promotion.test.ts` passed and `npm run build` remained green.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.

@@ -9,18 +9,14 @@ import {
   REPLAY_CORPUS_MANIFEST,
 } from "./replay-corpus-model";
 import type {
-  ReplayCorpus,
   ReplayCorpusCaseBundle,
   ReplayCorpusCaseMetadata,
   ReplayCorpusInputSnapshot,
   ReplayCorpusManifest,
 } from "./replay-corpus-model";
-import {
-  loadReplayCorpusCaseBundle,
-  loadReplayCorpusManifest,
-  loadReplayCorpusManifestOrDefault,
-} from "./replay-corpus-loading";
+import { loadReplayCorpusManifestOrDefault } from "./replay-corpus-loading";
 import { normalizeReplayResult } from "./replay-corpus-outcome";
+import { loadReplayCorpus } from "./replay-corpus-runner";
 import { expectCaseId, validateReplayCorpusInputSnapshot, validationError } from "./replay-corpus-validation";
 
 export interface PromoteCapturedReplaySnapshotArgs {
@@ -33,20 +29,6 @@ export interface PromoteCapturedReplaySnapshotArgs {
 async function writeJson(filePath: string, value: unknown): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
-
-async function loadReplayCorpus(rootPath: string): Promise<ReplayCorpus> {
-  const manifest = await loadReplayCorpusManifest(rootPath);
-  const cases: ReplayCorpusCaseBundle[] = [];
-  for (const entry of manifest.cases) {
-    cases.push(await loadReplayCorpusCaseBundle(rootPath, entry));
-  }
-
-  return {
-    rootPath,
-    manifestPath: path.join(rootPath, REPLAY_CORPUS_MANIFEST),
-    cases,
-  };
 }
 
 export function normalizePromotedInputSnapshot(snapshot: ReplayCorpusInputSnapshot): ReplayCorpusInputSnapshot {
