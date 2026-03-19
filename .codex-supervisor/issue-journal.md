@@ -1,36 +1,35 @@
-# Issue #644: Lock stale detection: distinguish ambiguous owner states during stale-lock inspection
+# Issue #655: GitHub timeout robustness: add a conservative default timeout for transport calls
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/644
-- Branch: codex/issue-644
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/655
+- Branch: codex/issue-655
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 6053bf454c7e0dd256bc41b39d871e674f5efa74
+- Last head SHA: dcb3ac27de0a06949d466d42c7f5a5561d6b149c
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-19T15:30:31.539Z
+- Updated at: 2026-03-19T16:15:13.026Z
 
 ## Latest Codex Summary
-- Reproduced issue #644 with focused lock and recovery tests, added explicit `stale` versus `ambiguous_owner` lock inspection states, kept clearly local dead-process cleanup working while blocking ambiguous-owner cleanup, verified with focused tests plus `npm run build`, committed `6128dbb`, pushed `codex/issue-644`, and opened draft PR #663.
+- Reproduced the missing GitHub transport timeout with a focused `src/github/github-transport.test.ts` assertion, then fixed `GitHubTransport.run(...)` to apply a default `60_000ms` timeout only when callers omit `timeoutMs`; explicit caller overrides still win. Focused transport tests and `npm run build` now pass after restoring local dev dependencies with `npm install`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: a dead lock should only auto-clean when its metadata proves it belongs to this exact host and owner; every other dead-owner case should stay explicit and block cleanup as `ambiguous_owner`.
-- What changed: re-ran `git status --short --branch`, `rg --files -g '*lock*'`, `sed -n '1,260p' src/core/lock.ts`, `sed -n '1,320p' src/lock.test.ts`, and the recovery reconciliation tests. Added focused reproducers in `src/lock.test.ts` for a clearly stale local dead lock, an ambiguous remote-owner dead lock, and acquisition refusal for ambiguous-owner locks; the new assertions failed because `inspectFileLock(...)` returned `missing` and stale-reservation cleanup still cleared state for the ambiguous case. Updated `src/core/lock.ts` to return explicit `stale` and `ambiguous_owner` states, only remove clearly local stale locks, and refuse acquisition when a dead lock has ambiguous owner metadata. Updated `src/recovery-reconciliation.ts` so stale active-reservation cleanup only proceeds for `missing`/`stale` locks and leaves `ambiguous_owner` locks untouched, then added matching coverage in `src/supervisor/supervisor-recovery-reconciliation.test.ts`. `npm run build` first failed with `sh: 1: tsc: not found`, so I restored dev dependencies via `npm install`; a follow-up build failed on a nullable payload access in `src/core/lock.ts`, which I fixed before the final green rerun.
+- Hypothesis: the narrowest safe fix is the GitHub transport itself; it should inject a deterministic default timeout for every `gh` call unless a caller already provided `timeoutMs`.
+- What changed: inspected `src/github/github-transport.ts`, `src/github/github-transport.test.ts`, `src/github/github.ts`, and `src/core/command.ts` to confirm that transport calls currently forward `options` unchanged. Added focused regression coverage in `src/github/github-transport.test.ts` for the default-timeout path and the explicit override path. The new default-timeout test failed first with `AssertionError [ERR_ASSERTION]: actual undefined !== expected 60000`, proving omitted calls reached the command runner without `timeoutMs`. Updated `src/github/github-transport.ts` to apply `60_000ms` only when `options.timeoutMs` is absent, preserving other caller options and all explicit timeout overrides. Restored local dev dependencies with `npm install` because `npm run build` initially failed with `sh: 1: tsc: not found`, then reran the focused test and build successfully.
 - Current blocker: none
-- Next exact step: watch draft PR #663 for CI and review feedback, then respond with follow-up fixes if anything regresses.
-- Verification gap: none for the issue scope; I ran the focused lock and stale-recovery tests plus `npm run build`, but not the full repository test suite because the issue asks for focused verification plus build.
-- Files touched: `src/core/lock.ts`, `src/lock.test.ts`, `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would collapse dead ambiguous-owner locks back into ordinary stale cleanup, allowing both acquisition and stale active-reservation recovery to silently remove locks that no longer prove local ownership.
-- Last focused command: `git status --short --branch`; `rg --files -g '*lock*'`; `sed -n '1,260p' src/core/lock.ts`; `sed -n '1,320p' src/lock.test.ts`; `sed -n '160,520p' src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/lock.test.ts`; `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm install`; `npx tsx --test src/lock.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm run build`
+- Next exact step: commit this timeout transport checkpoint on `codex/issue-655`, then open or update the draft PR for issue #655 if one does not already exist.
+- Verification gap: none for the stated issue scope; I ran the focused GitHub transport tests plus `npm run build`, but not the full repository test suite because the issue calls for focused transport verification and build only.
+- Files touched: `src/github/github-transport.ts`, `src/github/github-transport.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would return GitHub transport calls to caller-by-caller timeout coverage, leaving any omitted `timeoutMs` transport path unbounded again.
+- Last focused command: `git status --short --branch`; `rg -n "timeout|gh\\s|GitHub transport|transport" src .`; `rg --files | rg "github|gh|transport|octokit"`; `sed -n '1,260p' src/github/github-transport.ts`; `sed -n '1,260p' src/github/github-transport.test.ts`; `sed -n '1,220p' src/github/github.ts`; `sed -n '1,260p' src/core/command.ts`; `npx tsx --test src/github/github-transport.test.ts`; `npm install`; `npm run build`
 ### Scratchpad
-- 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
 - 2026-03-19 (JST): Reproduced issue #559 with a focused `replay-corpus-promote` regression that expected advisory hints for `stale-head-prevents-merge` but only saw the existing explicit-case-id guidance and suggestions. Fixed it by adding deterministic `deriveReplayCorpusPromotionWorthinessHints(...)` coverage for stale-head safety, provider waits, and retry escalation, then surfacing those hints in both CLI suggestion mode and successful promotion summaries. Focused verification passed with `npx tsx --test src/index.test.ts --test-name-pattern "replay-corpus-promote"`, `npx tsx --test src/supervisor/replay-corpus.test.ts --test-name-pattern "PromotionWorthinessHints|promoteCapturedReplaySnapshot|checked-in safety case bundles|runReplayCorpus replays the checked-in PR lifecycle safety cases without mismatches"`, and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Reproduced issue #558 with a tightened CLI promotion regression that failed because stdout only contained `Promoted replay corpus case ...`; fixed it by printing case path, compact expected outcome, and conditional volatile-field normalization notes after promotion. Focused verification passed with `npx tsx --test src/index.test.ts`, `npx tsx --test src/supervisor/replay-corpus.test.ts`, and `npm run build` after restoring local dev dependencies via `npm install`.
