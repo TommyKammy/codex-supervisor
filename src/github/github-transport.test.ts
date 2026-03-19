@@ -46,6 +46,34 @@ test("GitHubTransport retries transient gh failures and succeeds on a later atte
   assert.equal(delayCalls, 2);
 });
 
+test("GitHubTransport retries timeout-shaped gh failures and succeeds on a later attempt", async () => {
+  let calls = 0;
+  let delayCalls = 0;
+  const transport = new GitHubTransport(
+    async () => {
+      calls += 1;
+      if (calls === 1) {
+        throw new Error("Command timed out: gh pr +2 args\nexitCode=1\nCommand timed out after 60000ms: gh pr +2 args");
+      }
+
+      return {
+        exitCode: 0,
+        stdout: "ok",
+        stderr: "",
+      };
+    },
+    async () => {
+      delayCalls += 1;
+    },
+  );
+
+  const result = await transport.run(["pr", "list", "--repo", "owner/repo"]);
+
+  assert.equal(result.stdout, "ok");
+  assert.equal(calls, 2);
+  assert.equal(delayCalls, 1);
+});
+
 test("GitHubTransport retry warnings redact raw gh arguments", async () => {
   const warnings: string[] = [];
   const originalWarn = console.warn;
@@ -101,6 +129,29 @@ test("GitHubTransport terminal transient failure redacts raw gh arguments", asyn
       assert.ok(error instanceof Error);
       assert.match(error.message, /Transient GitHub CLI failure after 3 attempts: gh api graphql/);
       assert.match(error.message, /\+\d+ arg/);
+      assert.doesNotMatch(error.message, /secretField/);
+      assert.doesNotMatch(error.message, /query=query/);
+      return true;
+    },
+  );
+});
+
+test("GitHubTransport terminal timeout-shaped failure stays concise and deterministic", async () => {
+  const transport = new GitHubTransport(
+    async () => {
+      throw new Error(
+        "Command timed out: gh api graphql +2 args\nexitCode=1\nCommand timed out after 60000ms: gh api graphql +2 args",
+      );
+    },
+    async () => undefined,
+  );
+
+  await assert.rejects(
+    () => transport.run(["api", "graphql", "-f", "query=query { viewer { login secretField } }"]),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /Transient GitHub CLI failure after 3 attempts: gh api graphql/);
+      assert.match(error.message, /Command timed out: gh api graphql \+\d+ arg/);
       assert.doesNotMatch(error.message, /secretField/);
       assert.doesNotMatch(error.message, /query=query/);
       return true;
