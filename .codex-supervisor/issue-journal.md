@@ -1,17 +1,17 @@
-# Issue #598: Replay-corpus refactor: slim replay-corpus.ts into a thin facade
+# Issue #601: Supervisor-selection-status refactor: extract active-status snapshot helpers
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/598
-- Branch: codex/issue-598
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/601
+- Branch: codex/issue-601
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 6e37aa7f08c9c82b0d987bde286625b0f30f0a65
+- Last head SHA: 8cade09bf4b2663f967a39640577b3a68abb70bf
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-19T00:20:46.257Z
+- Updated at: 2026-03-19T00:48:53.079Z
 
 ## Latest Codex Summary
 - None yet.
@@ -21,17 +21,16 @@
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: issue #598 is satisfied because `src/supervisor/replay-corpus.ts` is now a thin export-only facade while checked-in replay config and corpus execution moved into dedicated modules with focused tests pinned to those boundaries.
-- What changed: added `src/supervisor/replay-corpus-config.ts` and `src/supervisor/replay-corpus-runner.ts` with dedicated tests, rewrote `src/supervisor/replay-corpus.test.ts` into a facade re-export smoke test, pointed mismatch-artifact coverage at `replay-corpus-config.ts`, and reused `loadReplayCorpus(...)` from `src/supervisor/replay-corpus-runner.ts` inside `src/supervisor/replay-corpus-promotion.ts`.
+- Hypothesis: issue #601 is satisfied because active-status snapshot loading and status-record summarization now live in dedicated modules, leaving `supervisor-selection-status.ts` focused on readiness, explain, and lint assembly.
+- What changed: added `src/supervisor/supervisor-selection-active-status.ts` and `src/supervisor/supervisor-selection-status-records.ts`, moved `loadActiveIssueStatusSnapshot(...)` and `summarizeSupervisorStatusRecords(...)` into those modules, rewired `src/supervisor/supervisor.ts` and the focused helper tests to the new boundaries, and kept `src/supervisor/supervisor-selection-status.ts` as the explain/readiness/lint owner with compatibility re-exports.
 - Current blocker: none
-- Next exact step: commit the replay-corpus facade slimming on `codex/issue-598`, then open or update the draft PR if one is not already present.
-- Verification gap: none for the local refactor slice; focused replay-corpus tests and `npm run build` both passed after restoring local dev dependencies with `npm install`.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/replay-corpus.ts`, `src/supervisor/replay-corpus.test.ts`, `src/supervisor/replay-corpus-config.ts`, `src/supervisor/replay-corpus-config.test.ts`, `src/supervisor/replay-corpus-runner.ts`, `src/supervisor/replay-corpus-runner.test.ts`, `src/supervisor/replay-corpus-mismatch-artifact.test.ts`, `src/supervisor/replay-corpus-promotion.ts`
-- Rollback concern: reverting this split would pull checked-in replay config and corpus execution back into `replay-corpus.ts`, restoring the broad facade/catch-all shape without changing replay behavior.
-- Last focused command: `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/replay-corpus-config.test.ts src/supervisor/replay-corpus-runner.test.ts src/supervisor/replay-corpus-loading.test.ts src/supervisor/replay-corpus-promotion.test.ts src/supervisor/replay-corpus-mismatch-formatting.test.ts src/supervisor/replay-corpus-mismatch-artifact.test.ts`; `npm install`; `npm run build`
+- Next exact step: commit the active-status helper extraction on `codex/issue-601`, then open or update the draft PR if one is not already present.
+- Verification gap: none for the local refactor slice; focused supervisor status tests and `npm run build` passed after restoring local dev dependencies with `npm install`.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-selection-active-status.ts`, `src/supervisor/supervisor-selection-status-records.ts`, `src/supervisor/supervisor-selection-status.ts`, `src/supervisor/supervisor-selection-status-active-status.test.ts`, `src/supervisor/supervisor.ts`
+- Rollback concern: reverting this split would move active-status snapshot loading and record summarization back into `supervisor-selection-status.ts`, restoring the broader catch-all file shape without changing status behavior.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-selection-status-active-status.test.ts src/supervisor/supervisor-status-model.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts`; `npm install`; `npm run build`
 ### Scratchpad
-- 2026-03-19 (JST): Reproduced issue #598 by adding dedicated `replay-corpus-config` and `replay-corpus-runner` tests; the first run failed with `MODULE_NOT_FOUND` for `./replay-corpus-config` and `./replay-corpus-runner`, confirming the facade still owned those responsibilities. Fixed it by extracting `createCheckedInReplayCorpusConfig(...)` and `loadReplayCorpus(...)`/`runReplayCorpus(...)` into new modules, slimming `replay-corpus.ts` to re-exports, and shrinking `replay-corpus.test.ts` into a facade smoke test. Focused verification passed with `npx tsx --test src/supervisor/replay-corpus.test.ts src/supervisor/replay-corpus-config.test.ts src/supervisor/replay-corpus-runner.test.ts src/supervisor/replay-corpus-loading.test.ts src/supervisor/replay-corpus-promotion.test.ts src/supervisor/replay-corpus-mismatch-formatting.test.ts src/supervisor/replay-corpus-mismatch-artifact.test.ts`; `npm run build` first failed with `sh: 1: tsc: not found`, so ran `npm install` and reran `npm run build` successfully.
-- 2026-03-19 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851UWEj` by changing the provider-wait promotion hint guard to use a non-nullish check for `configuredBotCurrentHeadObservedAt` and adding a focused regression for the missing-field case. The first new assertion failed because the shared snapshot fixture still emitted `retry-escalation` via `timeout_retry_count=1`; after zeroing the retry counters in the test setup, `npx tsx --test src/supervisor/replay-corpus-promotion.test.ts` passed and `npm run build` remained green.
+- 2026-03-19 (JST): Reproduced issue #601 by adding focused helper coverage for `summarizeSupervisorStatusRecords(...)` and `loadActiveIssueStatusSnapshot(...)`; the first active-status assertion failed because the test workspace was not a git repo with an `origin/main...HEAD` diff, so I tightened the fixture into a real temporary git workspace and corrected the verification-intensity expectation to `focused`. Extracted the helpers into `supervisor-selection-active-status.ts` and `supervisor-selection-status-records.ts`, kept compatibility re-exports in `supervisor-selection-status.ts`, rerouted `supervisor.ts` to the narrower modules, and verified with `npx tsx --test src/supervisor/supervisor-selection-status-active-status.test.ts src/supervisor/supervisor-status-model.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts` plus `npm run build` after `npm install`.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
 - 2026-03-19 (JST): Reproduced issue #559 with a focused `replay-corpus-promote` regression that expected advisory hints for `stale-head-prevents-merge` but only saw the existing explicit-case-id guidance and suggestions. Fixed it by adding deterministic `deriveReplayCorpusPromotionWorthinessHints(...)` coverage for stale-head safety, provider waits, and retry escalation, then surfacing those hints in both CLI suggestion mode and successful promotion summaries. Focused verification passed with `npx tsx --test src/index.test.ts --test-name-pattern "replay-corpus-promote"`, `npx tsx --test src/supervisor/replay-corpus.test.ts --test-name-pattern "PromotionWorthinessHints|promoteCapturedReplaySnapshot|checked-in safety case bundles|runReplayCorpus replays the checked-in PR lifecycle safety cases without mismatches"`, and `npm run build` after restoring local dev dependencies via `npm install`.
