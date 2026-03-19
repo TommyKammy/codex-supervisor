@@ -5,42 +5,45 @@
 - Branch: codex/issue-618
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: draft_pr
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 54baf4ed6bc490e6b0f94781b1df6b0f60adc345
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: eab8dcc11ab2e7fe5099b5b8916aca1959986c3e
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-19T05:41:12Z
+- Last failure signature: PRRT_kwDORgvdZ851XZoF
+- Repeated failure signature count: 1
+- Updated at: 2026-03-19T05:50:42Z
 
 ## Latest Codex Summary
-Opened draft PR #622 (`https://github.com/TommyKammy/codex-supervisor/pull/622`) for the CLI facade extraction after pushing commit `54baf4e` on `codex/issue-618`. [`src/cli/entrypoint.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-618/src/cli/entrypoint.ts) now owns CLI dispatch and top-level error handling, while [`src/index.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-618/src/index.ts) is a six-line direct-execution facade that only re-exports `parseArgs` and invokes `runCliMain(...)`.
+Applied the pending CodeRabbit review nit in [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-618/.codex-supervisor/issue-journal.md) by hyphenating `index-focused tests` in the working notes while leaving the saved external review quote verbatim. The CLI facade refactor itself remains unchanged: [src/cli/entrypoint.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-618/src/cli/entrypoint.ts) still owns CLI dispatch/error handling, and [src/index.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-618/src/index.ts) remains the thin direct-execution facade.
 
-Reproduced the new boundary with a narrow failing test (`Cannot find module './entrypoint'` in `src/cli/entrypoint.test.ts`), then fixed the only follow-on regression where direct execution silently stopped because `isDirectExecution()` compared against the extracted module path instead of `src/index.ts`. Focused verification passed with `npx tsx --test src/cli/entrypoint.test.ts src/index.test.ts src/cli/*.test.ts` and `npm run build` after restoring local dev dependencies with `npm install`.
+This review follow-up is wording-only, so I verified it with a focused search of the journal rather than rerunning code tests. Draft PR #622 remains open at https://github.com/TommyKammy/codex-supervisor/pull/622, and the only remaining unrelated worktree change is the pre-existing untracked `.codex-supervisor/replay/` directory.
 
-Summary: Extracted a dedicated CLI entrypoint module, reduced `src/index.ts` to a thin facade, added focused entrypoint boundary tests, and opened draft PR #622.
-State hint: draft_pr
+Summary: Applied the journal-only review wording fix for PR #622 by hyphenating `index-focused tests` in the working notes
+State hint: addressing_review
 Blocked reason: none
-Tests: `npx tsx --test src/cli/entrypoint.test.ts src/index.test.ts src/cli/*.test.ts`; `npm run build`
-Failure signature: none
-Next action: monitor draft PR #622 for CI or review feedback and address any follow-up without broadening the facade scope
+Tests: `rg -n "index focused tests|index-focused tests" .codex-supervisor/issue-journal.md`
+Failure signature: PRRT_kwDORgvdZ851XZoF
+Next action: commit/push the journal wording fix to `codex/issue-618` and monitor PR #622 for thread resolution or further review feedback
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/622#discussion_r2958001648
+- Details:
+  - .codex-supervisor/issue-journal.md:37 _⚠️ Potential issue_ | _🟡 Minor_ **Minor grammar: use hyphen in compound adjective.** "index focused tests" → "index-focused tests" <details> <summary>🧰 Tools</summary> <details> <summary>🪛 LanguageTool</summary> [grammar] ~37-~37: Use a hyphen to join words. Context: ...rypoint.test.ts`, the existing CLI/index focused tests, and `npm run build` all p... (QB_NEW_EN_HYPHEN) </details> </details> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In @.codex-supervisor/issue-journal.md at line 37, Replace the compound adjective "index focused tests" with the hyphenated form "index-focused tests" in the issue journal entry so it reads "the existing CLI/index-focused tests"; update the exact phrase "index focused tests" wherever it appears (e.g., in the line containing "Verification gap: none after `src/cli/entrypoint.test.ts`, the existing CLI/index focused tests, and `npm run build` all passed locally.") to use the hyphenated version. ``` </details> <!-- fingerprinting:phantom:medusa:ocelot --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining `src/index.ts` weight is command routing and top-level error handling, so extracting a dedicated CLI entrypoint module should make `index.ts` a real facade without changing the public CLI behavior.
-- What changed: added `src/cli/entrypoint.ts` for argument parsing, command dispatch, supervisor runtime handoff, top-level error handling, and direct-execution helpers; reduced `src/index.ts` to the re-export plus `runCliMain(...)` invocation; added focused `src/cli/entrypoint.test.ts` coverage for replay routing, replay-corpus IO, supervisor-runtime dispatch, and stderr/exit failure handling.
+- Hypothesis: the only remaining unresolved review note is the journal wording nit, so no CLI or test changes are needed beyond correcting the hyphenated compound adjective in the handoff text.
+- What changed: updated the working-notes sentence to say `CLI/index-focused tests`; kept the saved external review quote unchanged because it records the original reviewer text verbatim.
 - Current blocker: none
-- Next exact step: monitor draft PR #622 for CI or review feedback and handle follow-up without broadening the refactor beyond the CLI facade boundary.
-- Verification gap: none after `src/cli/entrypoint.test.ts`, the existing CLI/index focused tests, and `npm run build` all passed locally.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/cli/entrypoint.ts`, `src/cli/entrypoint.test.ts`, `src/index.ts`
-- Rollback concern: reverting this checkpoint would move CLI dispatch and top-level error handling back into `src/index.ts` and lose the focused entrypoint boundary tests that now protect direct execution and routing.
-- Last focused command: `npx tsx --test src/cli/entrypoint.test.ts`; `npx tsx --test src/cli/entrypoint.test.ts src/index.test.ts src/cli/*.test.ts`; `npm install`; `npm run build`; `git push -u origin codex/issue-618`; `gh pr create --draft --base main --head codex/issue-618 ...`
+- Next exact step: commit/push the journal-only review fix, then monitor PR #622 until the CodeRabbit thread clears or new review feedback appears.
+- Verification gap: none; the wording-only change was checked by searching the journal for remaining unhyphenated non-quoted occurrences.
+- Files touched: `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would only reintroduce the journal wording nit and reopen the review thread.
+- Last focused command: `rg -n "index focused tests|index-focused tests" .codex-supervisor/issue-journal.md`; `git diff -- .codex-supervisor/issue-journal.md`
 ### Scratchpad
-- 2026-03-19 (JST): Pushed `codex/issue-618` to `origin` and opened draft PR #622 (`https://github.com/TommyKammy/codex-supervisor/pull/622`) after the CLI facade extraction checkpoint passed focused verification and `npm run build`.
-- 2026-03-19 (JST): Reproduced the entrypoint extraction need with a new `src/cli/entrypoint.test.ts` failure (`Cannot find module './entrypoint'`), extracted `runCli(...)` and `runCliMain(...)` into `src/cli/entrypoint.ts`, fixed the temporary direct-execution regression by passing `src/index.ts`'s `__filename` into `isDirectExecution(...)`, and reran focused verification with `npx tsx --test src/cli/entrypoint.test.ts src/index.test.ts src/cli/*.test.ts` plus `npm run build` after `npm install`.
+- 2026-03-19 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851XZoF` locally by hyphenating `index-focused tests` in the working-notes verification sentence after confirming the other match was only the saved external review quote.
 - 2026-03-19 (JST): Reran focused verification for the supervisor runtime extraction with `npx tsx --test src/cli/supervisor-runtime.test.ts src/index.test.ts` and `npm run build`, pushed `codex/issue-617` to `origin`, and opened draft PR #621 (`https://github.com/TommyKammy/codex-supervisor/pull/621`).
 - 2026-03-19 (JST): Addressed CodeRabbit threads `PRRT_kwDORgvdZ851W7DO` and `PRRT_kwDORgvdZ851W7DQ` by resolving the default replay-corpus path inside the extracted handler layer and by skipping config loading on the missing-`caseId` advisory branch. Focused verification passed with `npx tsx --test src/cli/replay-handlers.test.ts src/index.test.ts` and `npm run build`.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
