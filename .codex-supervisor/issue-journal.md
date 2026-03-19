@@ -5,25 +5,25 @@
 - Branch: codex/issue-618
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
+- Current phase: draft_pr
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: e1ba461188ea30f1f3e87ba5819364a5596f18ad
+- Last head SHA: 54baf4ed6bc490e6b0f94781b1df6b0f60adc345
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-19T05:40:22Z
+- Updated at: 2026-03-19T05:41:12Z
 
 ## Latest Codex Summary
-Extracted CLI dispatch and top-level error handling into [`src/cli/entrypoint.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-618/src/cli/entrypoint.ts), leaving [`src/index.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-618/src/index.ts) as a six-line direct-execution facade that only re-exports `parseArgs` and invokes `runCliMain(...)`.
+Opened draft PR #622 (`https://github.com/TommyKammy/codex-supervisor/pull/622`) for the CLI facade extraction after pushing commit `54baf4e` on `codex/issue-618`. [`src/cli/entrypoint.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-618/src/cli/entrypoint.ts) now owns CLI dispatch and top-level error handling, while [`src/index.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-618/src/index.ts) is a six-line direct-execution facade that only re-exports `parseArgs` and invokes `runCliMain(...)`.
 
 Reproduced the new boundary with a narrow failing test (`Cannot find module './entrypoint'` in `src/cli/entrypoint.test.ts`), then fixed the only follow-on regression where direct execution silently stopped because `isDirectExecution()` compared against the extracted module path instead of `src/index.ts`. Focused verification passed with `npx tsx --test src/cli/entrypoint.test.ts src/index.test.ts src/cli/*.test.ts` and `npm run build` after restoring local dev dependencies with `npm install`.
 
-Summary: Extracted a dedicated CLI entrypoint module, reduced `src/index.ts` to a thin facade, and added focused entrypoint boundary tests.
+Summary: Extracted a dedicated CLI entrypoint module, reduced `src/index.ts` to a thin facade, added focused entrypoint boundary tests, and opened draft PR #622.
 State hint: draft_pr
 Blocked reason: none
 Tests: `npx tsx --test src/cli/entrypoint.test.ts src/index.test.ts src/cli/*.test.ts`; `npm run build`
 Failure signature: none
-Next action: commit the facade extraction checkpoint, push `codex/issue-618`, and open a draft PR for review
+Next action: monitor draft PR #622 for CI or review feedback and address any follow-up without broadening the facade scope
 
 ## Active Failure Context
 - None recorded.
@@ -33,12 +33,13 @@ Next action: commit the facade extraction checkpoint, push `codex/issue-618`, an
 - Hypothesis: the remaining `src/index.ts` weight is command routing and top-level error handling, so extracting a dedicated CLI entrypoint module should make `index.ts` a real facade without changing the public CLI behavior.
 - What changed: added `src/cli/entrypoint.ts` for argument parsing, command dispatch, supervisor runtime handoff, top-level error handling, and direct-execution helpers; reduced `src/index.ts` to the re-export plus `runCliMain(...)` invocation; added focused `src/cli/entrypoint.test.ts` coverage for replay routing, replay-corpus IO, supervisor-runtime dispatch, and stderr/exit failure handling.
 - Current blocker: none
-- Next exact step: commit the extracted entrypoint checkpoint, push `codex/issue-618`, and open or update a draft PR without broadening the refactor beyond the CLI facade boundary.
+- Next exact step: monitor draft PR #622 for CI or review feedback and handle follow-up without broadening the refactor beyond the CLI facade boundary.
 - Verification gap: none after `src/cli/entrypoint.test.ts`, the existing CLI/index focused tests, and `npm run build` all passed locally.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/cli/entrypoint.ts`, `src/cli/entrypoint.test.ts`, `src/index.ts`
 - Rollback concern: reverting this checkpoint would move CLI dispatch and top-level error handling back into `src/index.ts` and lose the focused entrypoint boundary tests that now protect direct execution and routing.
-- Last focused command: `npx tsx --test src/cli/entrypoint.test.ts`; `npx tsx --test src/cli/entrypoint.test.ts src/index.test.ts src/cli/*.test.ts`; `npm install`; `npm run build`; `gh pr status`
+- Last focused command: `npx tsx --test src/cli/entrypoint.test.ts`; `npx tsx --test src/cli/entrypoint.test.ts src/index.test.ts src/cli/*.test.ts`; `npm install`; `npm run build`; `git push -u origin codex/issue-618`; `gh pr create --draft --base main --head codex/issue-618 ...`
 ### Scratchpad
+- 2026-03-19 (JST): Pushed `codex/issue-618` to `origin` and opened draft PR #622 (`https://github.com/TommyKammy/codex-supervisor/pull/622`) after the CLI facade extraction checkpoint passed focused verification and `npm run build`.
 - 2026-03-19 (JST): Reproduced the entrypoint extraction need with a new `src/cli/entrypoint.test.ts` failure (`Cannot find module './entrypoint'`), extracted `runCli(...)` and `runCliMain(...)` into `src/cli/entrypoint.ts`, fixed the temporary direct-execution regression by passing `src/index.ts`'s `__filename` into `isDirectExecution(...)`, and reran focused verification with `npx tsx --test src/cli/entrypoint.test.ts src/index.test.ts src/cli/*.test.ts` plus `npm run build` after `npm install`.
 - 2026-03-19 (JST): Reran focused verification for the supervisor runtime extraction with `npx tsx --test src/cli/supervisor-runtime.test.ts src/index.test.ts` and `npm run build`, pushed `codex/issue-617` to `origin`, and opened draft PR #621 (`https://github.com/TommyKammy/codex-supervisor/pull/621`).
 - 2026-03-19 (JST): Addressed CodeRabbit threads `PRRT_kwDORgvdZ851W7DO` and `PRRT_kwDORgvdZ851W7DQ` by resolving the default replay-corpus path inside the extracted handler layer and by skipping config loading on the missing-`caseId` advisory branch. Focused verification passed with `npx tsx --test src/cli/replay-handlers.test.ts src/index.test.ts` and `npm run build`.
