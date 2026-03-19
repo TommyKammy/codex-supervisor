@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createCheckedInReplayCorpusConfig } from "./replay-corpus";
+import { createCheckedInReplayCorpusConfig } from "./replay-corpus-config";
 import type { ReplayCorpusRunResult } from "./replay-corpus-model";
 import {
   formatReplayCorpusMismatchDetailsArtifact,
