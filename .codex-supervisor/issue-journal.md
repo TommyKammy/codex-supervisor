@@ -1,37 +1,35 @@
-# Issue #627: Issue-lint test refactor: split readiness and metadata coverage
+# Issue #628: Issue-lint test refactor: split ambiguity and repair-guidance coverage
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/627
-- Branch: codex/issue-627
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/628
+- Branch: codex/issue-628
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 573ae77b33085fdd92a9f84f05ed21a4e25a6659
+- Last head SHA: 3e07cde4c19d84e2ff92581d9b24ac1a99549ad2
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-19T10:15:54Z
+- Updated at: 2026-03-19T10:34:07.855Z
 
 ## Latest Codex Summary
-- Split readiness and metadata issue-lint coverage into focused test modules, preserved the existing assertions, and reverified the targeted suites plus `npm run build`.
+- Split the remaining issue-lint ambiguity and repair-guidance coverage into dedicated scenario-focused test modules, verified the focused tests, restored missing local dev dependencies with `npm install`, and reran `npm run build` successfully.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the issue-lint split is complete for the readiness and metadata scenario family, with ambiguity coverage intentionally left in the original module until the later scenario-splitting issues land.
-- What changed: reproduced the focused baseline with `npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint.test.ts`, moved clean readiness coverage into `src/supervisor/supervisor-diagnostics-issue-lint-readiness.test.ts`, moved missing-sections and metadata-validation coverage into `src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`, and left the high-risk ambiguity assertion in `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`.
+- Hypothesis: the remaining issue-lint scenario family is now fully split so readiness, metadata, ambiguity, and repair-guidance failures each land in their own focused modules without changing diagnostics behavior.
+- What changed: reproduced the focused baseline with `npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint*.test.ts`, moved both ambiguity scenarios into `src/supervisor/supervisor-diagnostics-issue-lint-ambiguity.test.ts`, moved repair-guidance assertions into `src/supervisor/supervisor-diagnostics-issue-lint-repair-guidance.test.ts`, narrowed `src/supervisor/supervisor-diagnostics-issue-lint-readiness.test.ts` to clean-readiness coverage, narrowed `src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts` to missing-sections/metadata-error assertions, and deleted `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`.
 - Current blocker: none
-- Next exact step: monitor draft PR #631 (`https://github.com/TommyKammy/codex-supervisor/pull/631`) for review feedback and address any follow-up test-organization comments.
-- Verification gap: `npm run build` first failed locally with `sh: 1: tsc: not found`; restored dev dependencies via `npm install` and reran successfully.
-- Files touched: `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint-readiness.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would collapse the readiness and metadata scenarios back into a single broad issue-lint module, undoing the narrowed coverage this issue requires.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint-readiness.test.ts src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts`; `npm install`; `npm run build`
+- Next exact step: commit the focused test-module split, then open or update the draft PR so review can continue on the narrower ambiguity and repair-guidance coverage.
+- Verification gap: `npm run build` initially failed locally with `sh: 1: tsc: not found`; restored dev dependencies via `npm install` and reran `npm run build` successfully.
+- Files touched: `src/supervisor/supervisor-diagnostics-issue-lint-ambiguity.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint-repair-guidance.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint-readiness.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would re-bundle ambiguity and repair-guidance failures into broader issue-lint modules, undoing the scenario-localized coverage this issue requires.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint-ambiguity.test.ts src/supervisor/supervisor-diagnostics-issue-lint-repair-guidance.test.ts src/supervisor/supervisor-diagnostics-issue-lint-readiness.test.ts src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`; `npm install`; `npm run build`
 ### Scratchpad
-- 2026-03-19 (JST): Pushed `codex/issue-627` and opened draft PR #631 (`https://github.com/TommyKammy/codex-supervisor/pull/631`) after the readiness/metadata issue-lint split passed local verification.
-- 2026-03-19 (JST): Split issue-lint readiness coverage into `src/supervisor/supervisor-diagnostics-issue-lint-readiness.test.ts` and missing-sections/metadata coverage into `src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`, leaving only the high-risk ambiguity case in `src/supervisor/supervisor-diagnostics-issue-lint.test.ts`. Focused verification passed with `npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint-readiness.test.ts src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint.test.ts` and `npm run build` after restoring local dependencies with `npm install`.
 - 2026-03-19 (JST): Addressed CodeRabbit threads `PRRT_kwDORgvdZ851W7DO` and `PRRT_kwDORgvdZ851W7DQ` by resolving the default replay-corpus path inside the extracted handler layer and by skipping config loading on the missing-`caseId` advisory branch. Focused verification passed with `npx tsx --test src/cli/replay-handlers.test.ts src/index.test.ts` and `npm run build`.
 - 2026-03-19 (JST): Reproduced issue #561 with a focused docs regression in `src/agent-instructions-docs.test.ts`; it failed with `ENOENT` because `docs/agent-instructions.md` did not exist. Added the new bootstrap hub doc with prerequisites, read order, first-run sequence, escalation rules, and canonical links. Focused verification passed with `npx tsx --test src/agent-instructions-docs.test.ts src/getting-started-docs.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.

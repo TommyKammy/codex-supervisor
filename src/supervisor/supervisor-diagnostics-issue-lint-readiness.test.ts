@@ -33,34 +33,3 @@ Parallelizable: No`,
   assert.match(report, /^metadata_errors=none$/m);
   assert.match(report, /^high_risk_blocking_ambiguity=none$/m);
 });
-
-test("issue lint does not flag concrete risky work as blocking ambiguity", async () => {
-  const { loadIssueLintReport } = await createIssueLintFixture();
-
-  const issue: GitHubIssue = {
-    number: 106,
-    title: "Rotate production auth tokens",
-    body: `## Summary
-Rotate the production auth token flow for service-to-service requests.
-
-## Scope
-- update auth token issuance for production services
-- keep rollout audit-friendly
-
-## Acceptance criteria
-- production authentication changes are fully implemented
-
-## Verification
-- npm test -- src/supervisor/supervisor-diagnostics-issue-lint-readiness.test.ts`,
-    createdAt: "2026-03-19T00:00:00Z",
-    updatedAt: "2026-03-19T00:00:00Z",
-    url: "https://example.test/issues/106",
-    state: "OPEN",
-  };
-
-  const report = await loadIssueLintReport(issue);
-
-  assert.match(report, /^issue=#106$/m);
-  assert.match(report, /^execution_ready=yes$/m);
-  assert.match(report, /^high_risk_blocking_ambiguity=none$/m);
-});
