@@ -5,40 +5,46 @@
 - Branch: codex/issue-673
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: c7c36fc812c80d0f8ab94669de606109370f2164
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: 51df7847d59b0582b7dac8aa5e3c30abe4ebe89b
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-20T00:22:24.973Z
+- Last failure signature: PRRT_kwDORgvdZ851m5DV
+- Repeated failure signature count: 1
+- Updated at: 2026-03-20T00:33:05.902Z
 
 ## Latest Codex Summary
-Implemented the narrow run-lock recovery fix in [src/core/lock.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-673/src/core/lock.ts) and [src/supervisor/supervisor.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-673/src/supervisor/supervisor.ts). `acquireFileLock` now accepts an explicit `allowAmbiguousOwnerCleanup` override, and only the supervisor run lock uses it, so dead ambiguous run locks are reclaimed while ordinary issue/session locks keep the safer refusal path.
+Validated the remaining CodeRabbit thread as a real documentation issue in tracked journal content: the active failure context copied the review body verbatim, which kept machine-local absolute links in the repository even though the authored summary had already moved on.
 
-I added the focused reproducer in [src/lock.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-673/src/lock.test.ts) and updated the journal in [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-673/.codex-supervisor/issue-journal.md). Commit: `c7c36fc` (`Fix stale ambiguous supervisor run locks`).
+I replaced that verbatim dump with a compact repository-relative summary in `.codex-supervisor/issue-journal.md` and refreshed the handoff so the journal no longer republishes broken local-path links.
 
-Summary: Narrow supervisor-only recovery for dead ambiguous run locks implemented and committed.
-State hint: local_review
+Summary: Rewrote the journal's stored review context to avoid machine-local links and refreshed the handoff for the active review fix.
+State hint: local_review_fix
 Blocked reason: none
-Tests: `npx tsx --test src/lock.test.ts`; `npx tsx --test src/cli/supervisor-runtime.test.ts`; `npm install`; `npx tsx --test src/lock.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/doctor.test.ts`; `npm run build` (also observed unrelated pre-existing failures when `npm test -- ...` expanded to the full suite)
-Failure signature: none
-Next action: open or update a draft PR for issue #673 and let CI validate the scoped run-lock fix
+Tests: focused `rg` scan confirming no machine-local absolute path prefix remains in `.codex-supervisor/issue-journal.md`
+Failure signature: PRRT_kwDORgvdZ851m5DV
+Next action: commit the journal-only review fix, push `codex/issue-673`, and resolve the remaining PR thread
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/679#discussion_r2963412325
+- Details:
+  - CodeRabbit flagged machine-local links that had been introduced in the journal's earlier summary text and recommended repository-relative references such as `src/core/lock.ts`, `src/supervisor/supervisor.ts`, `src/lock.test.ts`, and `.codex-supervisor/issue-journal.md`.
+  - The authored summary no longer contains those absolute links, but the journal was still preserving them by embedding the review body verbatim. This turn narrows the stored context to a summary so tracked content no longer republishes broken local-path links.
 
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: the supervisor run lock should be allowed to reclaim a dead-pid lock even when host/owner metadata is ambiguous, while generic issue/session locks should keep refusing ambiguous-owner cleanup.
 - What changed: reproduced the stale run-lock gap with a focused `acquireFileLock(..., { allowAmbiguousOwnerCleanup: true })` regression in `src/lock.test.ts`, then added an explicit `AcquireFileLockOptions` override in `src/core/lock.ts` and used it only from `Supervisor.acquireSupervisorLock(...)` in `src/supervisor/supervisor.ts`.
 - Current blocker: none
-- Next exact step: watch CI on draft PR #679 and respond to any review feedback or failing checks.
+- Next exact step: commit the journal-only review fix, push the updated branch, and resolve the remaining CodeRabbit thread on PR #679.
 - Verification gap: none for the scoped issue verification. `npx tsx --test src/lock.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/doctor.test.ts` and `npm run build` passed after restoring local dev dependencies with `npm install`. No additional verification was needed after pushing/opening the draft PR. Note: repo-wide `npm test -- ...` still executes the full suite and fails on unrelated pre-existing assertions in `README`/runtime-layout/turn-orchestration tests.
 - Files touched: `src/core/lock.ts`, `src/lock.test.ts`, `src/supervisor/supervisor.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this checkpoint would restore the indefinite skip loop for a dead ambiguous supervisor run lock, while generic ambiguous-owner protections for issue/session locks would remain unchanged.
-- Last focused command: `git push -u origin codex/issue-673`; `gh pr create --draft --base main --head codex/issue-673 --title "Fix stale ambiguous supervisor run locks" --body ...`
+- Last focused command: focused `rg` scan confirming no machine-local absolute path prefix remains in `.codex-supervisor/issue-journal.md`
 ### Scratchpad
+- 2026-03-20 (JST): Validated review thread `PRRT_kwDORgvdZ851m5DV` as a real journal-content issue, then replaced the verbatim comment dump in `.codex-supervisor/issue-journal.md` with a compact summary so the tracked file no longer republishes machine-local links.
 - 2026-03-20 (JST): Pushed `codex/issue-673` to `origin/codex/issue-673` and opened draft PR #679 (`https://github.com/TommyKammy/codex-supervisor/pull/679`) after the scoped lock/recovery/doctor tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-671` to `origin/codex/issue-671` and opened draft PR #676 (`https://github.com/TommyKammy/codex-supervisor/pull/676`) after the focused artifact/finalize/result/status/policy tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
