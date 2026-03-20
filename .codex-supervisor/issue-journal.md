@@ -1,37 +1,47 @@
-# Issue #672: Model routing: add guarded support for mini on bounded repair states
+# Issue #673: Supervisor bug: stale run lock with ambiguous owner metadata can stall the loop indefinitely
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/672
-- Branch: codex/issue-672
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/673
+- Branch: codex/issue-673
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 5f82b6a80f35467c0ce34ac7a7ae1fc385f7c754
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: ffcfccbfd95db6c53ea98d1f21a882a0dfa5dc7b
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-19T23:38:39.503Z
+- Updated at: 2026-03-20T00:35:18.068Z
 
 ## Latest Codex Summary
-- Added explicit bounded-repair model routing so `repairing_ci` and `addressing_review` can opt into a smaller model without changing default supervisor routing for broader implementation states.
+Pushed `ffcfccb` (`Clean journal review context links`) to `origin/codex/issue-673` after validating the remaining CodeRabbit thread as a real journal-content issue. The fix replaces the verbatim review-body dump in the journal with a compact summary so the tracked file no longer republishes machine-local absolute links.
+
+I also verified the review thread state via `gh api graphql` and resolved `PRRT_kwDORgvdZ851m5DV` once GitHub marked it outdated on the new head.
+
+Summary: Pushed the journal-only review fix and resolved the remaining CodeRabbit thread on PR #679.
+State hint: pr_open
+Blocked reason: none
+Tests: focused `rg` scan confirming no machine-local absolute path prefix remains in `.codex-supervisor/issue-journal.md`; `gh api graphql` thread-state query; `gh api graphql` `resolveReviewThread`
+Failure signature: none
+Next action: monitor PR #679 for any new review feedback or merge readiness changes
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: bounded repair-state mini support should be an explicit config opt-in that applies only to supervisor turns in `repairing_ci` and `addressing_review`, leaving broader implementation states on the default GPT-5.4 path.
-- What changed: reproduced the gap with a focused `resolveCodexExecutionPolicy(...)` regression, then added optional `boundedRepairModelStrategy` / `boundedRepairModel` config parsing and validation plus repair-state-only routing in `src/codex/codex-policy.ts`. Updated shipped example configs and configuration docs to surface the new opt-in.
+- Hypothesis: the supervisor run lock should be allowed to reclaim a dead-pid lock even when host/owner metadata is ambiguous, while generic issue/session locks should keep refusing ambiguous-owner cleanup.
+- What changed: reproduced the stale run-lock gap with a focused `acquireFileLock(..., { allowAmbiguousOwnerCleanup: true })` regression in `src/lock.test.ts`, then added an explicit `AcquireFileLockOptions` override in `src/core/lock.ts` and used it only from `Supervisor.acquireSupervisorLock(...)` in `src/supervisor/supervisor.ts`.
 - Current blocker: none
-- Next exact step: watch CI and respond to any review feedback on draft PR #677.
-- Verification gap: none in the scoped worktree. Focused policy/config/repair-state prompt tests passed, and `npm run build` passed after restoring local dev dependencies with `npm install`.
-- Files touched: `src/core/types.ts`, `src/core/config.ts`, `src/codex/codex-policy.ts`, `src/codex/codex-policy.test.ts`, `src/core/config-local-review-model-routing.test.ts`, `docs/configuration.md`, `docs/examples/atlaspm.md`, `docs/examples/atlaspm.supervisor.config.example.json`, `supervisor.config.example.json`, `supervisor.config.codex.json`, `supervisor.config.copilot.json`, `supervisor.config.coderabbit.json`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would remove the only explicit way to route bounded repair turns to a smaller model while keeping broader implementation states on the default model policy.
-- Last focused command: `npx tsx --test src/codex/codex-policy.test.ts`; `npx tsx --test src/core/config-local-review-model-routing.test.ts`; `npx tsx --test src/codex/codex-prompt.test.ts --test-name-pattern "repairing_ci|addressing_review"`; `npm install`; `npm run build`
+- Next exact step: monitor PR #679 for any new review feedback or merge-readiness changes.
+- Verification gap: none for the scoped issue verification. `npx tsx --test src/lock.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/doctor.test.ts` and `npm run build` passed after restoring local dev dependencies with `npm install`. No additional verification was needed after pushing/opening the draft PR. Note: repo-wide `npm test -- ...` still executes the full suite and fails on unrelated pre-existing assertions in `README`/runtime-layout/turn-orchestration tests.
+- Files touched: `src/core/lock.ts`, `src/lock.test.ts`, `src/supervisor/supervisor.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would restore the indefinite skip loop for a dead ambiguous supervisor run lock, while generic ambiguous-owner protections for issue/session locks would remain unchanged.
+- Last focused command: `gh api graphql` `resolveReviewThread` for `PRRT_kwDORgvdZ851m5DV`
 ### Scratchpad
-- 2026-03-20 (JST): Pushed `codex/issue-672` to `origin/codex/issue-672` and opened draft PR #677 (`https://github.com/TommyKammy/codex-supervisor/pull/677`) after the focused policy/config/repair-state prompt tests and `npm run build` were green locally.
-- 2026-03-20 (JST): Reproduced issue #672 with a focused `src/codex/codex-policy.test.ts` regression where `boundedRepairModelStrategy: "alias"` plus `boundedRepairModel: "gpt-5.4-mini"` still left `repairing_ci` on `gpt-5-codex`. Fixed it by adding optional bounded repair config parsing/validation and repair-state-only routing, then reran focused policy/config/repair-state prompt tests and `npm run build` successfully after `npm install`.
+- 2026-03-20 (JST): Pushed `ffcfccb` (`Clean journal review context links`) to `origin/codex/issue-673`, confirmed the CodeRabbit thread was outdated on the new head, and resolved `PRRT_kwDORgvdZ851m5DV` via `gh api graphql`.
+- 2026-03-20 (JST): Validated review thread `PRRT_kwDORgvdZ851m5DV` as a real journal-content issue, then replaced the verbatim comment dump in `.codex-supervisor/issue-journal.md` with a compact summary so the tracked file no longer republishes machine-local links.
+- 2026-03-20 (JST): Pushed `codex/issue-673` to `origin/codex/issue-673` and opened draft PR #679 (`https://github.com/TommyKammy/codex-supervisor/pull/679`) after the scoped lock/recovery/doctor tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-671` to `origin/codex/issue-671` and opened draft PR #676 (`https://github.com/TommyKammy/codex-supervisor/pull/676`) after the focused artifact/finalize/result/status/policy tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
 - 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851kRrS` as a real bug: malformed SQLite rows could yield only `load_findings`, after which `loadFromSqlite()` returned fallback empty/bootstrap state without those findings. Fixed the fallback path, added a dedicated regression for the empty-state case, and reran `npx tsx --test src/core/state-store.test.ts` plus `npm run build` successfully.

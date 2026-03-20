@@ -22,6 +22,10 @@ export interface LockHandle {
   release: () => Promise<void>;
 }
 
+export interface AcquireFileLockOptions {
+  allowAmbiguousOwnerCleanup?: boolean;
+}
+
 function currentLockOwner(): string {
   try {
     const { username } = os.userInfo();
@@ -96,7 +100,11 @@ export async function inspectFileLock(lockPath: string): Promise<ExistingLockSta
   return inspectLockPayload(lockPath);
 }
 
-export async function acquireFileLock(lockPath: string, label: string): Promise<LockHandle> {
+export async function acquireFileLock(
+  lockPath: string,
+  label: string,
+  options: AcquireFileLockOptions = {},
+): Promise<LockHandle> {
   await ensureDir(path.dirname(lockPath));
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -133,6 +141,11 @@ export async function acquireFileLock(lockPath: string, label: string): Promise<
       }
 
       if (existing.status === "ambiguous_owner" && existing.payload) {
+        if (options.allowAmbiguousOwnerCleanup) {
+          await fs.rm(lockPath, { force: true });
+          continue;
+        }
+
         return {
           acquired: false,
           reason: `lock held by non-live pid ${existing.payload.pid} for ${existing.payload.label} has ambiguous owner metadata`,

@@ -605,7 +605,9 @@ export class Supervisor {
   }
 
   async acquireSupervisorLock(label: "loop" | "run-once"): Promise<LockHandle> {
-    return acquireFileLock(this.lockPath("supervisor", "run"), `supervisor-${label}`);
+    return acquireFileLock(this.lockPath("supervisor", "run"), `supervisor-${label}`, {
+      allowAmbiguousOwnerCleanup: true,
+    });
   }
 
   async status(options: Pick<CliOptions, "why"> = { why: false }): Promise<string> {
