@@ -14,7 +14,7 @@
 - Updated at: 2026-03-20T05:55:44.523Z
 
 ## Latest Codex Summary
-- Reproduced the missing epic-dependency diagnostic with focused `issue-metadata` and `issue-lint` tests, then taught `validateIssueMetadataSyntax(...)` to flag `Part of: #X` plus `Depends on: #X` as a concise local metadata warning without affecting valid sibling dependencies. Focused verification passed and `npm run build` passed after restoring local dev dependencies with `npm install`.
+- Reproduced the missing epic-dependency diagnostic with focused `issue-metadata` and `issue-lint` tests, then taught `validateIssueMetadataSyntax(...)` to flag `Part of: #X` plus `Depends on: #X` as a concise local metadata warning without affecting valid sibling dependencies. Focused verification passed, `npm run build` passed after restoring local dev dependencies with `npm install`, and the result is committed on `codex/issue-690` and published as draft PR #694.
 
 ## Active Failure Context
 - None recorded.
@@ -24,13 +24,14 @@
 - Hypothesis: the narrowest safe fix for #690 is to keep the change inside `validateIssueMetadataSyntax(...)`, because `issue-lint` already exposes metadata diagnostics directly and this issue only needs a deterministic local warning for `Part of` plus the same `Depends on` epic.
 - What changed: added focused regression coverage in `src/issue-metadata/issue-metadata.test.ts` for both the warning case (`Part of: #123` with `Depends on: #123, #77`) and a valid sibling-dependency case (`Depends on: #77, #88`). Added `src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts` coverage asserting `issue-lint` reports the new warning. Updated `src/issue-metadata/issue-metadata-validation.ts` so `depends on` emits `depends on duplicates parent epic #<number>; remove it and keep only real blocking issues` when a child issue depends directly on a different parent epic.
 - Current blocker: none
-- Next exact step: review the staged diff for concision, commit the issue-lint diagnostic checkpoint on `codex/issue-690`, and open/update the draft PR if needed.
+- Next exact step: monitor draft PR #694 (`https://github.com/TommyKammy/codex-supervisor/pull/694`) for CI and review feedback, then address any follow-up if it appears.
 - Verification gap: none for the requested acceptance criteria. Focused validator and issue-lint tests passed, and `npm run build` passed after restoring local dev dependencies with `npm install`.
 - Files touched: `src/issue-metadata/issue-metadata-validation.ts`, `src/issue-metadata/issue-metadata.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this checkpoint would remove the only local deterministic warning that catches child issues being blocked behind their parent epic, reopening the issue-authoring failure that #690 is meant to prevent.
 - Last focused command: `npm run build`
 - Last focused commands: `npx tsx --test src/issue-metadata/issue-metadata.test.ts`; `npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`; `npm install`; `npm run build`
 ### Scratchpad
+- 2026-03-20 (JST): Committed `Warn when child issues depend on their epic` as `1ad2193`, pushed `codex/issue-690`, opened draft PR #694 (`https://github.com/TommyKammy/codex-supervisor/pull/694`), then corrected the PR body via `gh api` after `gh pr edit` hit the deprecated classic-project GraphQL path.
 - 2026-03-20 (JST): Pushed `codex/issue-671` to `origin/codex/issue-671` and opened draft PR #676 (`https://github.com/TommyKammy/codex-supervisor/pull/676`) after the focused artifact/finalize/result/status/policy tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
 - 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851kRrS` as a real bug: malformed SQLite rows could yield only `load_findings`, after which `loadFromSqlite()` returned fallback empty/bootstrap state without those findings. Fixed the fallback path, added a dedicated regression for the empty-state case, and reran `npx tsx --test src/core/state-store.test.ts` plus `npm run build` successfully.
