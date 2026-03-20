@@ -21,6 +21,26 @@ test("runOnceWithSupervisorLock releases the supervisor lock after a successful 
   assert.equal(released, true);
 });
 
+test("runOnceWithSupervisorLock surfaces reconciliation-held lock skips verbatim", async () => {
+  const supervisor = {
+    acquireSupervisorLock: async () => ({
+      acquired: false,
+      reason: "lock held by pid 123 for supervisor-run-once for reconciliation work (tracked_merged_but_open_issues)",
+      release: async () => {},
+    }),
+    runOnce: async () => {
+      throw new Error("runOnce should not execute when the supervisor lock is unavailable");
+    },
+  };
+
+  const result = await runOnceWithSupervisorLock(supervisor, "run-once", { dryRun: false });
+
+  assert.equal(
+    result,
+    "Skipped supervisor cycle: lock held by pid 123 for supervisor-run-once for reconciliation work (tracked_merged_but_open_issues).",
+  );
+});
+
 test("runSupervisorCommand stops the loop after a registered signal and aborts pending sleep", async () => {
   const stdout: string[] = [];
   const stderr: string[] = [];

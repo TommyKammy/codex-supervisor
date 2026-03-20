@@ -610,9 +610,32 @@ export class Supervisor {
   }
 
   async acquireSupervisorLock(label: "loop" | "run-once"): Promise<LockHandle> {
-    return acquireFileLock(this.lockPath("supervisor", "run"), `supervisor-${label}`, {
+    const lock = await acquireFileLock(this.lockPath("supervisor", "run"), `supervisor-${label}`, {
       allowAmbiguousOwnerCleanup: true,
     });
+    if (lock.acquired) {
+      return lock;
+    }
+
+    if (!lock.reason) {
+      return lock;
+    }
+
+    let reconciliationPhase: string | null = null;
+    try {
+      reconciliationPhase = await readCurrentReconciliationPhase(this.config);
+    } catch {
+      return lock;
+    }
+
+    if (reconciliationPhase === null) {
+      return lock;
+    }
+
+    return {
+      ...lock,
+      reason: `${lock.reason} for reconciliation work (${reconciliationPhase})`,
+    };
   }
 
   async status(options: Pick<CliOptions, "why"> = { why: false }): Promise<string> {

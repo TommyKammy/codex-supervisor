@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
-import test from "node:test";
+import test, { mock } from "node:test";
 import { StateStore } from "../core/state-store";
 import { GitHubIssue, SupervisorStateFile } from "../core/types";
 import { Supervisor } from "./supervisor";
@@ -262,6 +262,67 @@ test("status surfaces the current reconciliation phase only while reconciliation
   await clearCurrentReconciliationPhase(fixture.config);
   const afterReconciliation = await supervisor.status();
   assert.doesNotMatch(afterReconciliation, /reconciliation_phase=/);
+});
+
+test("acquireSupervisorLock reports reconciliation work when the run lock is already held", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  await writeCurrentReconciliationPhase(fixture.config, "tracked_merged_but_open_issues");
+
+  const heldLock = await supervisor.acquireSupervisorLock("run-once");
+  assert.equal(heldLock.acquired, true);
+
+  try {
+    const blockedLock = await supervisor.acquireSupervisorLock("run-once");
+    assert.equal(blockedLock.acquired, false);
+    assert.match(
+      blockedLock.reason ?? "",
+      /lock held by pid \d+ for supervisor-run-once for reconciliation work \(tracked_merged_but_open_issues\)/,
+    );
+  } finally {
+    await heldLock.release();
+    await clearCurrentReconciliationPhase(fixture.config);
+  }
+});
+
+test("acquireSupervisorLock preserves the original denial when reconciliation phase reads fail", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  const originalReadFile = fs.readFile.bind(fs);
+  const readFileMock = mock.method(
+    fs,
+    "readFile",
+    async (...args: Parameters<typeof fs.readFile>) => {
+      const [target] = args;
+      if (String(target).endsWith("current-reconciliation-phase.json")) {
+        const error = new Error("permission denied") as NodeJS.ErrnoException;
+        error.code = "EACCES";
+        throw error;
+      }
+      return originalReadFile(...args);
+    },
+  );
+
+  const heldLock = await supervisor.acquireSupervisorLock("run-once");
+  assert.equal(heldLock.acquired, true);
+
+  try {
+    const blockedLock = await supervisor.acquireSupervisorLock("run-once");
+    assert.equal(blockedLock.acquired, false);
+    assert.match(blockedLock.reason ?? "", /lock held by pid \d+ for supervisor-run-once/);
+    assert.doesNotMatch(blockedLock.reason ?? "", /for reconciliation work/);
+  } finally {
+    readFileMock.mock.restore();
+    await heldLock.release();
+  }
 });
 
 test("status --why explains why the current runnable issue was selected", async () => {

@@ -1,37 +1,43 @@
-# Issue #683: Reconciliation visibility: surface the current reconciliation phase in operator output
+# Issue #684: Reconciliation visibility: surface when the run lock is held for reconciliation work
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/683
-- Branch: codex/issue-683
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/684
+- Branch: codex/issue-684
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 0460816064eb5f8333bcbd29b0ea01269c0813cb
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 8b68c9ff0e33da7451a6ca91df208d9902dd32a5
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-20T02:09:42.775Z
+- Updated at: 2026-03-20T05:03:52.000Z
 
 ## Latest Codex Summary
-- Added transient reconciliation-phase tracking so operator-facing `status` output can show `reconciliation_phase=...` while the run-once reconciliation prelude is active, then omit that line once reconciliation completes.
-- Tightened the focused prelude and status diagnostics coverage for the new phase visibility, and corrected the stale doctor fixture expectation in the same diagnostics slice so the required verification gate is reliable again.
-- Local verification passed with `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
-- Committed the checkpoint as `b8377b8` (`Surface reconciliation phase in status output`), pushed `codex/issue-683`, and opened draft PR #687 (`https://github.com/TommyKammy/codex-supervisor/pull/687`).
+Validated and fixed CodeRabbit thread `PRRT_kwDORgvdZ851oXRU` in [src/supervisor/supervisor.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-684/src/supervisor/supervisor.ts): denied run-lock checks now preserve the original denial when reading the reconciliation phase marker hits a non-benign filesystem error. I added focused regression coverage in [src/supervisor/supervisor-diagnostics-status-selection.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-684/src/supervisor/supervisor-diagnostics-status-selection.test.ts), committed the fix as `8b68c9f` (`Preserve lock denial on reconciliation read failure`), pushed `codex/issue-684`, and resolved the corresponding PR thread on #691.
+
+The updated verification passed locally with `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build`. The worktree still has a pre-existing untracked `.codex-supervisor/replay/` directory.
+
+Summary: fixed the remaining PR review thread by making reconciliation-phase read failures fall back to the original lock denial, then pushed and resolved the thread
+State hint: waiting_ci
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`
+Failure signature: none
+Next action: monitor PR #691 for any follow-up review or CI feedback
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the narrowest safe implementation is to persist a single concise reconciliation phase label during `runOnceCyclePrelude(...)`, read that label from `status()`, and clear it in a `finally` block so the operator sees reconciliation progress only while it is actually in flight.
-- What changed: added `src/supervisor/supervisor-reconciliation-phase.ts` to read/write a transient `.codex-supervisor/current-reconciliation-phase.json` marker, wired `runOnceCyclePrelude(...)` to publish deterministic phase labels for each reconciliation step and clear them on completion/error, surfaced `reconciliation_phase=<label>` in `Supervisor.status()` when the marker exists, added focused regressions in `src/run-once-cycle-prelude.test.ts` and `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, and updated the stale doctor expectation in the diagnostics slice from `worktrees status=fail` to `worktrees status=pass`.
+- Hypothesis: the narrowest safe review fix is to keep the reconciliation-held run-lock message behavior, but ensure reconciliation-phase marker reads never turn a normal lock denial into an exception path.
+- What changed: `Supervisor.acquireSupervisorLock(...)` now returns the original denied lock immediately when no reason is available and catches thrown reconciliation-phase read failures so the denial reason stays intact; added focused status-selection coverage for a mocked `EACCES` read failure while the lock is already held.
 - Current blocker: none
-- Next exact step: monitor draft PR #687’s CI, then address any review or CI feedback if it appears.
-- Verification gap: none for the scoped issue work. `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build` passed locally after `npm install` restored missing `tsc`.
-- Files touched: `src/run-once-cycle-prelude.ts`, `src/run-once-cycle-prelude.test.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-reconciliation-phase.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint removes the only transient signal that tells operators which reconciliation step is currently running, returning the pre-selection phase to opaque `No active issue.` output during long GitHub reconciliation work.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-683 --title "Surface current reconciliation phase in operator output" --body ...`
+- Next exact step: monitor PR #691 for any follow-up review or CI feedback now that commit `8b68c9f` is pushed and the CodeRabbit thread is resolved.
+- Verification gap: none for this review-fix slice. `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build` passed locally.
+- Files touched: `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would reintroduce the risk that a transient reconciliation marker read failure converts a routine skipped cycle into an exception path.
+- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ851oXRU`
 ### Scratchpad
 - 2026-03-20 (JST): Pushed `codex/issue-671` to `origin/codex/issue-671` and opened draft PR #676 (`https://github.com/TommyKammy/codex-supervisor/pull/676`) after the focused artifact/finalize/result/status/policy tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
