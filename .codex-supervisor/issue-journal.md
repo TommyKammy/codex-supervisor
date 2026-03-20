@@ -5,43 +5,53 @@
 - Branch: codex/issue-731
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 3d7a257a37b0819279d0b3fddd2c03fd9ca20909
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 73eda3197818efbf924eb3c461a3c8ccd29abb67
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-20T22:49:41Z
+- Last failure signature: PRRT_kwDORgvdZ8510_c8
+- Repeated failure signature count: 1
+- Updated at: 2026-03-20T23:02:42Z
 
 ## Latest Codex Summary
-- Added a focused docs regression test for the pull-request hydration freshness contract, updated `README.md`, `docs/architecture.md`, and `docs/configuration.md`, pushed branch `codex/issue-731`, and opened draft PR #754.
+Addressed the remaining CodeRabbit review on [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) by removing machine-specific absolute local paths from committed journal content. The journal now records repo-relative file links and portable `.local/memory/...` command paths instead of host-specific home-directory paths.
+
+Focused verification confirmed `.codex-supervisor/issue-journal.md` no longer contains host-specific home-directory absolute paths. The prior docs and test changes for the hydration freshness contract remain unchanged on this branch and were already verified with `npx tsx --test src/hydration-freshness-docs.test.ts` and `npm run build`.
+
+Summary: Normalized committed issue-journal paths to portable relative forms so the remaining review thread can be resolved without changing runtime behavior
+State hint: addressing_review
+Blocked reason: none
+Tests: `node -e "const fs=require('fs'); const s=fs.readFileSync('.codex-supervisor/issue-journal.md','utf8'); process.exit(s.includes('/'+'home/') ? 1 : 0)"`
+Failure signature: PRRT_kwDORgvdZ8510_c8
+Next action: commit this review fix, push `codex/issue-731`, and resolve PR thread #PRRT_kwDORgvdZ8510_c8 if the review system does not auto-dismiss it
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/754#discussion_r2968285486
+- Details:
+  - Review thread `PRRT_kwDORgvdZ8510_c8` is valid: the committed journal included machine-specific absolute paths in the logged `sed` commands used to read shared memory files.
+  - Local fix: replaced those command paths with portable `.local/memory/TommyKammy-codex-supervisor/issue-731/...` references and normalized the journal's own file links away from absolute worktree paths.
+  - Verification target: `.codex-supervisor/issue-journal.md` should contain no host-specific home-directory absolute paths after this repair.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the missing contract is documentation-level, not behavior-level; the repo needs one explicit fresh-vs-cached rule that distinguishes PR action paths from informational hydration consumers.
-- What changed: added `src/hydration-freshness-docs.test.ts` as a focused reproducer for the missing wording; updated `README.md`, `docs/architecture.md`, and `docs/configuration.md` to state that marking ready, unblocking review-driven state, and merging require fresh GitHub review facts, while retained cached hydration is informational and non-authoritative.
+- Hypothesis: the remaining PR blocker is limited to committed journal portability, not the hydration freshness docs themselves; fixing the logged path forms should clear the last review thread without affecting runtime behavior.
+- What changed: normalized `.codex-supervisor/issue-journal.md` so committed command history and file links no longer embed machine-specific home-directory absolute paths.
 - Current blocker: none
-- Next exact step: monitor draft PR #754 and address any review or CI follow-up if it appears.
-- Verification gap: the focused docs regression test and `npm run build` passed after hydrating dependencies with `npm ci`; the full `npm test` suite was not rerun.
-- Files touched: `README.md`, `docs/architecture.md`, `docs/configuration.md`, `src/hydration-freshness-docs.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting these changes would restore the ambiguous docs posture where cached hydration could still be read as authoritative for PR action paths.
-- Last focused command: `npx tsx --test src/hydration-freshness-docs.test.ts`
-- Last focused failure: `none`
+- Next exact step: commit and push the journal portability fix so PR #754 can clear the outstanding review thread.
+- Verification gap: this turn only needs a focused journal portability check; the earlier docs regression test and `npm run build` already passed for the underlying feature work.
+- Files touched: `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this change would reintroduce machine-specific paths into a committed journal artifact and likely keep the review thread open.
+- Last focused command: `node -e "const fs=require('fs'); const s=fs.readFileSync('.codex-supervisor/issue-journal.md','utf8'); process.exit(s.includes('/'+'home/') ? 1 : 0)"`
+- Last focused failure: `PRRT_kwDORgvdZ8510_c8`
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-731/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-731/context-index.md
-sed -n '1,320p' .codex-supervisor/issue-journal.md
+sed -n '1,220p' .local/memory/TommyKammy-codex-supervisor/issue-731/AGENTS.generated.md
+sed -n '1,220p' .local/memory/TommyKammy-codex-supervisor/issue-731/context-index.md
+sed -n '1,260p' .codex-supervisor/issue-journal.md
 git status --short --branch
-npx tsx --test src/hydration-freshness-docs.test.ts
-npm run build
-npm ci
-npx tsx --test src/hydration-freshness-docs.test.ts
-npm run build
-date -u +"%Y-%m-%dT%H:%M:%SZ"
+node -e "const fs=require('fs'); const s=fs.readFileSync('.codex-supervisor/issue-journal.md','utf8'); process.exit(s.includes('/'+'home/') ? 1 : 0)"
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
