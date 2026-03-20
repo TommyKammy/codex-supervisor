@@ -7,43 +7,58 @@
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
 - Attempt count: 4 (implementation=1, repair=3)
-- Last head SHA: 1707486e0135bf87b37c6d364ddb0112b197cafe
+- Last head SHA: c0afcd46c5d866166286585e94730191c7c6d7f6
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-20T16:43:06Z
+- Last failure signature: PRRT_kwDORgvdZ851w4ly
+- Repeated failure signature count: 1
+- Updated at: 2026-03-21T00:00:00Z
 
 ## Latest Codex Summary
-Addressed the three remaining CodeRabbit follow-ups in [.codex-supervisor/issue-journal.md](./issue-journal.md) without changing any restore behavior. The journal now uses repo-relative links in the latest summary, keeps the review-status narrative consistent with the current branch state, and no longer contains inline-code spacing that could trigger the reported MD038 warning.
+Revalidated the remaining CodeRabbit journal-only thread against the current worktree and confirmed the finding was still valid. The journal still had semicolon-delimited inline command spans in `Tests:` and `Last focused commands:`, so this turn converts those logs to fenced `bash` blocks without changing any workspace-restore behavior.
 
-The journal-only fix is pushed to `origin/codex/issue-721` at `1707486`, and review threads `PRRT_kwDORgvdZ851wrHP`, `PRRT_kwDORgvdZ851wrHV`, and `PRRT_kwDORgvdZ851wrHX` were resolved after the push. The untracked `.codex-supervisor/replay/` directory was left untouched.
-
-Summary: Fixed the journal-only review fallout, pushed `1707486`, and resolved the remaining CodeRabbit threads on PR #746.
-State hint: waiting_ci
+Summary: Converting the remaining journal command logs to fenced `bash` blocks to address the unresolved MD038-style review finding on PR #746.
+State hint: local_review_fix
 Blocked reason: none
-Tests: `rg -n '\\]\\(/home/tommy' .codex-supervisor/issue-journal.md`; `perl -ne 'while(/(?<!`)`([^`]+)`(?!`)/g){ print qq($.::<$1>\\n) if $1 =~ /^\\s|\\s$/ }' .codex-supervisor/issue-journal.md`; `git diff --check -- .codex-supervisor/issue-journal.md`
-Failure signature: none
-Next action: Watch PR #746 CI on `1707486` and address any new check or review fallout if it appears.
+Tests:
+```bash
+rg -n "^(Tests|[-] Last focused commands): `" .codex-supervisor/issue-journal.md
+perl -ne 'while(/(?<!`)`([^`]+)`(?!`)/g){ print qq($.::<$1>\n) if $1 =~ /^\s|\s$/ }' .codex-supervisor/issue-journal.md
+git diff --check -- .codex-supervisor/issue-journal.md
+```
+Failure signature: PRRT_kwDORgvdZ851w4ly
+Next action: Run the focused Markdown checks, commit the journal-only fix, push `codex/issue-721`, and resolve thread `PRRT_kwDORgvdZ851w4ly` if the branch diff matches the review ask.
 
 ## Active Failure Context
-- Category: none
-- Summary: none
-- Reference: none
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/746#discussion_r2966841924
 - Details:
-  - none
+  - `.codex-supervisor/issue-journal.md` still used inline semicolon-delimited code spans for command logs in `Tests:` and `Last focused commands:`. That pattern matches the unresolved CodeRabbit request and is the only journal content being changed in this turn.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The review fallout was documentation-only and is now fully addressed on the branch; the next risk is only whether CI or new review feedback appears after the latest push.
-- What changed: replaced machine-local links with repo-relative links in the latest summary, updated the journal summary/status text to match the branch's review-follow-up state, pushed commit `1707486`, and resolved CodeRabbit threads `PRRT_kwDORgvdZ851wrHP`, `PRRT_kwDORgvdZ851wrHV`, and `PRRT_kwDORgvdZ851wrHX`.
+- Hypothesis: The only remaining review fallout is the journal's inline command-log formatting, and converting those logs to fenced `bash` blocks should satisfy the unresolved thread without affecting restore behavior.
+- What changed: updated the journal summary and failure context to reflect the still-open thread accurately, replaced the inline command-log list under `Tests:` with a fenced `bash` block, and replaced the long `Last focused commands:` inline span with a fenced `bash` block.
 - Current blocker: none
-- Next exact step: monitor PR #746 CI and watch for any fresh review fallout after commit `1707486`.
-- Verification gap: no code-path behavior changed in this turn, so verification was limited to the journal-only Markdown checks.
+- Next exact step: run the focused journal checks, then commit and push this markdown-only review fix before resolving the remaining CodeRabbit thread.
+- Verification gap: no code-path behavior changed in this turn, so verification is limited to focused checks for the journal formatting change.
 - Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this patch would restore non-portable journal links and a misleading review-status summary, which would make the operator-visible state inconsistent again.
-- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -f threadId='PRRT_kwDORgvdZ851wrHX'`
-- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-721/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-721/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short`; `git diff -- .codex-supervisor/issue-journal.md`; `nl -ba .codex-supervisor/issue-journal.md | sed -n '1,140p'`; `npx markdownlint-cli2 .codex-supervisor/issue-journal.md`; `rg -n '\\]\\(/home/tommy' .codex-supervisor/issue-journal.md`; `perl -ne 'while(/(?<!`)`([^`]+)`(?!`)/g){ print qq($.::<$1>\\n) if $1 =~ /^\\s|\\s$/ }' .codex-supervisor/issue-journal.md`; `git diff --check -- .codex-supervisor/issue-journal.md`; `git add .codex-supervisor/issue-journal.md && git commit -m "Fix issue journal review follow-ups"`; `git push origin codex/issue-721`; `git rev-parse HEAD`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -f threadId='PRRT_kwDORgvdZ851wrHP'`; `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -f threadId='PRRT_kwDORgvdZ851wrHV'`; `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -f threadId='PRRT_kwDORgvdZ851wrHX'`; `git status --short`
+- Rollback concern: reverting this patch would restore the inline command-log formatting that triggered the unresolved review thread, leaving the operator-visible journal state noisy and the PR stuck in review.
+- Last focused command: `npx markdownlint-cli2 .codex-supervisor/issue-journal.md`
+- Last focused commands:
+```bash
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-721/AGENTS.generated.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-721/context-index.md
+sed -n '1,260p' .codex-supervisor/issue-journal.md
+git status --short
+git diff -- .codex-supervisor/issue-journal.md
+nl -ba .codex-supervisor/issue-journal.md | sed -n '1,180p'
+npx markdownlint-cli2 .codex-supervisor/issue-journal.md
+git rev-parse HEAD
+git show HEAD:.codex-supervisor/issue-journal.md | sed -n '1,140p'
+```
 ### Scratchpad
+- 2026-03-21 (JST): Reproduced the remaining PR #746 review finding locally, confirmed the journal still had inline command-log spans in `Tests:` and `Last focused commands:`, and converted those logs to fenced `bash` blocks while keeping the failure context and handoff notes concise.
 - 2026-03-21 (JST): Fixed the journal-only review fallout in `.codex-supervisor/issue-journal.md`, verified the summary no longer uses machine-local Markdown links and that inline code spans have no leading/trailing spaces, pushed `1707486` to `origin/codex/issue-721`, and resolved CodeRabbit threads `PRRT_kwDORgvdZ851wrHP`, `PRRT_kwDORgvdZ851wrHV`, and `PRRT_kwDORgvdZ851wrHX`.
 - 2026-03-21 (JST): Reverified the fail-closed checkpoint with the issue test set and `npm run build`, pushed `codex/issue-718`, and opened draft PR #744 so the branch now has a tracked review artifact; the unrelated untracked `.codex-supervisor/replay/` directory remains untouched.
 - 2026-03-21 (JST): Added focused fail-closed regressions for quarantined JSON state, reproduced that `runOnce()` still reached issue selection, `requeue` still mutated against the forced-empty fallback, and `loop` kept sleeping after a fail-closed result, then implemented a narrow supervisor/runtime gate that blocks execution-changing commands until `reset-corrupt-json-state` and reran the issue verification plus `npm run build` successfully after `npm install`.
