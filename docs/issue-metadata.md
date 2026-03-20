@@ -4,6 +4,8 @@ Use this document as the canonical reference for execution-ready issue metadata.
 
 It explains which fields `codex-supervisor` reads, how scheduling uses them, and what a good issue body should look like. Keep `README.md` and getting-started docs lightweight; put detailed field rules and examples here.
 
+Trust boundary note: GitHub-authored issue bodies, PR review comments, review summaries, and related GitHub text are execution inputs. They tell the supervisor and Codex what to do next, so they are part of the execution-safety trust boundary rather than neutral metadata.
+
 ## Canonical fields
 
 These fields are the core metadata format for execution-ready work:
@@ -133,6 +135,7 @@ Use the issue body to remove ambiguity before execution starts.
 - Keep verification concrete.
 
 If an issue touches risky areas, spell out the guardrails in scope or acceptance criteria rather than relying on implicit repo knowledge.
+If the issue or review text comes from an untrusted source, do not rely on metadata quality alone to make autonomous execution safe.
 
 ## Issue body template
 

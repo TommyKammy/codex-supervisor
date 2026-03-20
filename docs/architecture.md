@@ -30,6 +30,10 @@ These are the recovery points after crashes, process restarts, or thread loss.
 - branch protection: keeps merge safety on GitHub
 - head-SHA match on merge: avoids racing an outdated PR head
 
+GitHub-authored issue bodies, review comments, review summaries, and similar GitHub text are also an explicit trust boundary. They are execution inputs that shape what Codex does next, so treat them as untrusted unless the operator explicitly trusts the repository and the GitHub authors who can write that text.
+
+Today the supervisor invokes Codex with `--dangerously-bypass-approvals-and-sandbox`. That means the trust decision happens before the turn starts: autonomous execution is only acceptable when the repo, issue content, and review content all come from a trusted lane. If that trust is missing, the safe posture is to stay out of autonomous execution and use a manually supervised workflow instead.
+
 ## Main reconciliations
 
 - merged PR -> close issue
