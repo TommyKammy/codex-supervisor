@@ -59,6 +59,7 @@ Codex execution policy:
 
 - `codexBinary`
 - `codexModelStrategy`, `codexModel`
+- `boundedRepairModelStrategy`, `boundedRepairModel`
 - `codexReasoningEffortByState`
 - `codexReasoningEscalateOnRepeatedFailure`
 - `codexExecTimeoutMinutes`
@@ -107,6 +108,7 @@ Practical guidance:
 - `inherit` keeps the supervisor aligned with your Codex default
 - `fixed` pins one model explicitly
 - `alias` uses a moving alias when your Codex environment exposes one
+- leave `boundedRepairModelStrategy` unset unless you explicitly want `repairing_ci` and `addressing_review` turns to route to a smaller model such as `GPT-5.4 mini`
 - keep `xhigh` reserved for escalation paths rather than the default policy
 
 ## Related Docs

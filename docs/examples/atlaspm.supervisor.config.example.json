@@ -8,6 +8,8 @@
   "codexBinary": "/Applications/Codex.app/Contents/Resources/codex",
   "codexModelStrategy": "inherit",
   "codexModel": "",
+  "boundedRepairModelStrategy": "",
+  "boundedRepairModel": "",
   "codexReasoningEffortByState": {
     "planning": "low",
     "reproducing": "medium",
