@@ -20,6 +20,7 @@ export interface RunOnceCyclePreludeAuthFailure {
 interface RunOnceCyclePreludeArgs {
   stateStore: Pick<{ load(): Promise<SupervisorStateFile> }, "load">;
   carryoverRecoveryEvents: RecoveryEvent[];
+  setReconciliationPhase?: (phase: string | null) => Promise<void>;
   reconcileStaleActiveIssueReservation: (state: SupervisorStateFile) => Promise<RecoveryEvent[]>;
   handleAuthFailure: (state: SupervisorStateFile) => Promise<string | null>;
   listAllIssues: () => Promise<GitHubIssue[]>;
@@ -51,6 +52,7 @@ export async function runOnceCyclePrelude(
 ): Promise<RunOnceCyclePreludeResult | RunOnceCyclePreludeAuthFailure> {
   const state = await args.stateStore.load();
   const recoveryEvents: RecoveryEvent[] = [...args.carryoverRecoveryEvents];
+  const setReconciliationPhase = args.setReconciliationPhase ?? (async () => {});
 
   const authFailure = await args.handleAuthFailure(state);
   if (authFailure) {
@@ -61,18 +63,35 @@ export async function runOnceCyclePrelude(
     };
   }
 
-  recoveryEvents.push(...(await args.reconcileStaleActiveIssueReservation(state)));
+  try {
+    await setReconciliationPhase("stale_active_issue_reservation");
+    recoveryEvents.push(...(await args.reconcileStaleActiveIssueReservation(state)));
 
-  const issues = await args.listAllIssues();
-  recoveryEvents.push(...(await args.reconcileTrackedMergedButOpenIssues(state, issues)));
-  recoveryEvents.push(...(await args.reconcileMergedIssueClosures(state, issues)));
-  await args.reconcileStaleFailedIssueStates(state, issues);
-  recoveryEvents.push(...(await args.reconcileRecoverableBlockedIssueStates(state, issues)));
-  await args.reconcileParentEpicClosures(state, issues);
-  recoveryEvents.push(...(await args.cleanupExpiredDoneWorkspaces(state)));
+    const issues = await args.listAllIssues();
 
-  return {
-    state,
-    recoveryEvents,
-  };
+    await setReconciliationPhase("tracked_merged_but_open_issues");
+    recoveryEvents.push(...(await args.reconcileTrackedMergedButOpenIssues(state, issues)));
+
+    await setReconciliationPhase("merged_issue_closures");
+    recoveryEvents.push(...(await args.reconcileMergedIssueClosures(state, issues)));
+
+    await setReconciliationPhase("stale_failed_issue_states");
+    await args.reconcileStaleFailedIssueStates(state, issues);
+
+    await setReconciliationPhase("recoverable_blocked_issue_states");
+    recoveryEvents.push(...(await args.reconcileRecoverableBlockedIssueStates(state, issues)));
+
+    await setReconciliationPhase("parent_epic_closures");
+    await args.reconcileParentEpicClosures(state, issues);
+
+    await setReconciliationPhase("cleanup_expired_done_workspaces");
+    recoveryEvents.push(...(await args.cleanupExpiredDoneWorkspaces(state)));
+
+    return {
+      state,
+      recoveryEvents,
+    };
+  } finally {
+    await setReconciliationPhase(null);
+  }
 }

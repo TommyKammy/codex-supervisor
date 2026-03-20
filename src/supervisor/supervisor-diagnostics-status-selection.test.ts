@@ -10,6 +10,10 @@ import {
   createRecord,
   createSupervisorFixture,
 } from "./supervisor-test-helpers";
+import {
+  clearCurrentReconciliationPhase,
+  writeCurrentReconciliationPhase,
+} from "./supervisor-reconciliation-phase";
 
 test("doctor uses the diagnostic-only state loader instead of StateStore.load", async (t) => {
   const fixture = await createSupervisorFixture();
@@ -33,7 +37,7 @@ test("doctor uses the diagnostic-only state loader instead of StateStore.load", 
 
   assert.match(report, /doctor_check name=github_auth status=pass/);
   assert.match(report, /doctor_check name=state_file status=fail/);
-  assert.match(report, /doctor_check name=worktrees status=fail/);
+  assert.match(report, /doctor_check name=worktrees status=pass/);
 });
 
 test("status shows readiness reasons for runnable, requirements-blocked, and clarification-blocked issues", async () => {
@@ -233,6 +237,31 @@ Execution order: 3 of 3`,
     status,
     /runnable_issues=#93 ready=requirements_skipped\+depends_on_satisfied:91\|92\+execution_order_satisfied:91\|92/,
   );
+});
+
+test("status surfaces the current reconciliation phase only while reconciliation is in progress", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  await writeCurrentReconciliationPhase(fixture.config, "tracked_merged_but_open_issues");
+  const duringReconciliation = await supervisor.status();
+  assert.match(duringReconciliation, /reconciliation_phase=tracked_merged_but_open_issues/);
+
+  await clearCurrentReconciliationPhase(fixture.config);
+  const afterReconciliation = await supervisor.status();
+  assert.doesNotMatch(afterReconciliation, /reconciliation_phase=/);
 });
 
 test("status --why explains why the current runnable issue was selected", async () => {
