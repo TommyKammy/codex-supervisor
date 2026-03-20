@@ -74,6 +74,8 @@ State-file contract: missing JSON state is an empty bootstrap case, but corrupte
 
 Workspace restore contract: `ensureWorkspace()` should prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap a fresh issue branch from `origin/<defaultBranch>`. Bootstrapping from the default branch is the fallback path when no existing issue branch can be restored.
 
+Workspace cleanup contract: tracked done workspaces and orphaned workspaces are different cases. Tracked done workspace cleanup is the bounded delayed cleanup controlled by the done-workspace settings. An orphaned workspace is an untracked `issue-*` worktree under `workspaceRoot` that no longer has a live state entry; preserve locked, recent, or manually kept orphan workspaces, and only prune abandoned orphan workspaces through an explicit operator action rather than an implicit background cleanup.
+
 ## Provider Profiles
 
 Choose the review provider profile that matches how PR feedback arrives in your repo, then keep any provider-side setup aligned with that choice.

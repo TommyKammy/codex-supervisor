@@ -1,60 +1,52 @@
-# Issue #723: Remote branch restore: recover missing local issue branches from origin before bootstrapping from default
+# Issue #725: Orphan cleanup docs: define preservation rules and explicit prune expectations
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/723
-- Branch: codex/issue-723
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/725
+- Branch: codex/issue-725
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 7 (implementation=5, repair=2)
-- Last head SHA: 0ef9686ad9684330a37c476a8efcb2a9f29fb0c0
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 1687069f7b72b7988663a43bbc89257c7ecd57fd
 - Blocked reason: none
-- Last failure signature: none
+- Last failure signature: docs-orphan-cleanup-contract-missing
 - Repeated failure signature count: 0
-- Updated at: 2026-03-20T19:36:39Z
+- Updated at: 2026-03-20T19:59:57Z
 
 ## Latest Codex Summary
-`codex/issue-723` still differs from `origin/main` only by journal handoff updates for already-shipped behavior. I committed the PR `#748` review fix as `0ef9686` (`docs: address issue 723 review notes`), pushed it to `origin/codex/issue-723`, and resolved both previously open CodeRabbit threads after confirming the change stayed journal-only.
-
-Summary: Applied, pushed, and resolved the two journal-only PR review fixes for #723 without changing the shipped remote-restore behavior.
-State hint: draft_pr
-Blocked reason: none
-Tests: not run (docs-only journal update)
-Failure signature: none
-Next action: Decide whether to merge or close draft PR `#748`, since the branch still carries only journal handoff updates for behavior already shipped in PR `#747`
+- Added a narrow docs regression test for orphan-cleanup guidance, reproduced the gap when `src/execution-safety-docs.test.ts` failed because the docs did not define orphaned workspaces, updated `README.md`, `docs/architecture.md`, `docs/getting-started.md`, and `docs/configuration.md` to distinguish tracked done cleanup from explicit orphan pruning with preservation rules for locked, recent, and manually kept workspaces, and verified with `npx tsx --test src/execution-safety-docs.test.ts` plus `npm run build`.
 
 ## Active Failure Context
-- None active. The 2 previously open PR `#748` review threads (`PRRT_kwDORgvdZ851y9tc`, `PRRT_kwDORgvdZ851y9tg`) are resolved after commit `0ef9686`.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/748#discussion_r2967580502
-- Details:
-  - `.codex-supervisor/issue-journal.md`: removed the filesystem-specific `/home/tommy/...` paths that were copied into the journal's review context so the handoff remains repository-portable.
-  - `.codex-supervisor/issue-journal.md`: removed the duplicate `Last focused command` label and kept a single `Last focused commands` section for the command log.
-  - GitHub verification: `gh api graphql` now reports both targeted review threads as `isResolved: true`.
+- Reproduced before the doc edits with `npx tsx --test src/execution-safety-docs.test.ts --test-name-pattern="workspace cleanup docs distinguish tracked done cleanup from explicit orphan pruning"` failing on `expected README.md to mention orphan workspaces`.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: No product-code change is required for #723 because the requested local -> remote -> bootstrap restore behavior is already shipped on `origin/main`; the only remaining work on this branch is clearing journal-only PR review feedback.
-- What changed: re-read the required memory files and journal, verified the first CodeRabbit comment was stale against the live summary text but still valid because the copied review context embedded absolute filesystem paths, rewrote that context into a repository-portable summary, consolidated the duplicate `Last focused command(s)` heading into a single commands block, committed the result as `0ef9686`, pushed `codex/issue-723`, and resolved both CodeRabbit review threads with `gh api graphql`.
+- Hypothesis: The issue is documentation drift, not runtime behavior: the repo needs one explicit orphan-cleanup contract across the top-level docs, plus a regression test that prevents architecture from implying orphan cleanup is the same as delayed cleanup for tracked `done` workspaces.
+- What changed: re-read the required memory files and journal, inspected the current orphan-cleanup wording across the requested docs, added a focused assertion to `src/execution-safety-docs.test.ts`, reproduced the gap once dependencies were installed, then updated the four docs to define orphaned workspaces, preservation rules, and explicit prune expectations.
 - Current blocker: none
-- Next exact step: decide whether to merge or close draft PR `#748`, because the branch still carries only journal handoff updates for behavior already shipped in PR `#747`.
-- Verification gap: no code verification rerun this turn because the change is limited to `.codex-supervisor/issue-journal.md`.
-- Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this journal update would only reopen the journal-only PR review comments; product behavior would stay unchanged because it is already on `origin/main`.
+- Next exact step: review the final diff, commit the docs and test updates, and open or update the draft PR for issue #725 if needed.
+- Verification gap: full repo test suite was not rerun; verification this turn is the focused docs test file and `npm run build`.
+- Files touched: `src/execution-safety-docs.test.ts`, `README.md`, `docs/architecture.md`, `docs/getting-started.md`, `docs/configuration.md`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting the doc updates would restore the previous ambiguity where orphan cleanup could be misread as implicit delayed cleanup for tracked `done` workspaces.
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-723/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-723/context-index.md
-sed -n '1,220p' .codex-supervisor/issue-journal.md
-nl -ba .codex-supervisor/issue-journal.md | sed -n '1,140p'
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-725/AGENTS.generated.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-725/context-index.md
+sed -n '1,260p' .codex-supervisor/issue-journal.md
+rg -n "orphan|cleanup|prune|worktree" README.md docs/architecture.md docs/getting-started.md docs/configuration.md
+sed -n '1,260p' README.md
+sed -n '1,260p' docs/getting-started.md
+sed -n '1,260p' docs/architecture.md
+sed -n '1,260p' docs/configuration.md
+sed -n '1,220p' src/getting-started-docs.test.ts
+sed -n '1,260p' src/execution-safety-docs.test.ts
+sed -n '1,260p' src/readme-docs.test.ts
+npm install
+npx tsx --test src/execution-safety-docs.test.ts --test-name-pattern="workspace cleanup docs distinguish tracked done cleanup from explicit orphan pruning"
+npx tsx --test src/execution-safety-docs.test.ts
+npm run build
 git status --short --branch
-git diff -- .codex-supervisor/issue-journal.md
-git add .codex-supervisor/issue-journal.md
-git commit -m "docs: address issue 723 review notes"
-git rev-parse HEAD
-git push origin codex/issue-723
-gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ851y9tc
-gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ851y9tg
-gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:20){nodes{id isResolved}}}}}' -F owner=TommyKammy -F repo=codex-supervisor -F number=748
+git diff -- README.md docs/architecture.md docs/getting-started.md docs/configuration.md src/execution-safety-docs.test.ts
 date -u +"%Y-%m-%dT%H:%M:%SZ"
 ```
 ### Scratchpad

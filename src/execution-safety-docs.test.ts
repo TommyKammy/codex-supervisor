@@ -109,3 +109,36 @@ test("workspace restore docs define local-branch, remote-branch, and bootstrap p
     );
   }
 });
+
+test("workspace cleanup docs distinguish tracked done cleanup from explicit orphan pruning", async () => {
+  const [readme, architecture, gettingStarted, configuration] = await Promise.all([
+    readDoc("README.md"),
+    readDoc(path.join("docs", "architecture.md")),
+    readDoc(path.join("docs", "getting-started.md")),
+    readDoc(path.join("docs", "configuration.md")),
+  ]);
+
+  for (const [label, content] of [
+    ["README.md", readme],
+    ["docs/architecture.md", architecture],
+    ["docs/getting-started.md", gettingStarted],
+    ["docs/configuration.md", configuration],
+  ] as const) {
+    assert.match(content, /orphan(?:ed)? work(?:tree|space)/i, `expected ${label} to mention orphan workspaces`);
+    assert.match(content, /preserv/i, `expected ${label} to describe preservation rules`);
+    assert.match(content, /lock(?:ed)?|recent|manual(?:ly)? kept/i, `expected ${label} to mention preserve cases`);
+    assert.match(content, /explicit/i, `expected ${label} to require explicit orphan pruning`);
+    assert.match(content, /prune/i, `expected ${label} to mention prune expectations`);
+    assert.match(
+      content,
+      /done work(?:tree|space)|tracked done work(?:tree|space)/i,
+      `expected ${label} to distinguish tracked done cleanup from orphan cleanup`,
+    );
+  }
+
+  assert.doesNotMatch(
+    architecture,
+    /stale worktree cleanup -> delayed cleanup for `done` issues/i,
+    "docs/architecture.md should not equate orphan cleanup with tracked done cleanup",
+  );
+});
