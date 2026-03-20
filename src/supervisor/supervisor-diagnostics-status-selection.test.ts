@@ -264,6 +264,46 @@ test("status surfaces the current reconciliation phase only while reconciliation
   assert.doesNotMatch(afterReconciliation, /reconciliation_phase=/);
 });
 
+test("status emits a warning only after reconciliation exceeds the long-running threshold", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const originalDateNow = Date.now;
+  try {
+    Date.now = () => Date.parse("2026-03-20T00:10:00.000Z");
+
+    await writeCurrentReconciliationPhase(fixture.config, "tracked_merged_but_open_issues");
+    let status = await supervisor.status();
+    assert.doesNotMatch(status, /reconciliation_warning=/);
+
+    Date.now = () => Date.parse("2026-03-20T00:15:00.000Z");
+    status = await supervisor.status();
+    assert.doesNotMatch(status, /reconciliation_warning=/);
+
+    Date.now = () => Date.parse("2026-03-20T00:15:01.000Z");
+    status = await supervisor.status();
+    assert.match(
+      status,
+      /reconciliation_warning=long_running phase=tracked_merged_but_open_issues elapsed_seconds=301 threshold_seconds=\d+ started_at=2026-03-20T00:10:00\.000Z/,
+    );
+  } finally {
+    Date.now = originalDateNow;
+    await clearCurrentReconciliationPhase(fixture.config);
+  }
+});
+
 test("acquireSupervisorLock reports reconciliation work when the run lock is already held", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {

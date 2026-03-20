@@ -5,6 +5,12 @@ import type { SupervisorConfig } from "../core/types";
 
 interface ReconciliationPhaseSnapshot {
   phase: string;
+  startedAt: string;
+}
+
+export interface CurrentReconciliationPhaseSnapshot {
+  phase: string;
+  startedAt: string | null;
 }
 
 export function reconciliationPhasePath(config: Pick<SupervisorConfig, "repoPath">): string {
@@ -17,7 +23,8 @@ export async function writeCurrentReconciliationPhase(
 ): Promise<void> {
   const snapshotPath = reconciliationPhasePath(config);
   await ensureDir(path.dirname(snapshotPath));
-  await fs.writeFile(snapshotPath, `${JSON.stringify({ phase } satisfies ReconciliationPhaseSnapshot)}\n`, "utf8");
+  const startedAt = (await readCurrentReconciliationPhaseSnapshot(config))?.startedAt ?? new Date(Date.now()).toISOString();
+  await fs.writeFile(snapshotPath, `${JSON.stringify({ phase, startedAt } satisfies ReconciliationPhaseSnapshot)}\n`, "utf8");
 }
 
 export async function clearCurrentReconciliationPhase(
@@ -35,10 +42,23 @@ export async function clearCurrentReconciliationPhase(
 export async function readCurrentReconciliationPhase(
   config: Pick<SupervisorConfig, "repoPath">,
 ): Promise<string | null> {
+  const snapshot = await readCurrentReconciliationPhaseSnapshot(config);
+  return snapshot?.phase ?? null;
+}
+
+export async function readCurrentReconciliationPhaseSnapshot(
+  config: Pick<SupervisorConfig, "repoPath">,
+): Promise<CurrentReconciliationPhaseSnapshot | null> {
   try {
     const raw = await fs.readFile(reconciliationPhasePath(config), "utf8");
     const parsed = JSON.parse(raw) as Partial<ReconciliationPhaseSnapshot>;
-    return typeof parsed.phase === "string" && parsed.phase.length > 0 ? parsed.phase : null;
+    if (typeof parsed.phase !== "string" || parsed.phase.length === 0) {
+      return null;
+    }
+    return {
+      phase: parsed.phase,
+      startedAt: typeof parsed.startedAt === "string" && parsed.startedAt.length > 0 ? parsed.startedAt : null,
+    };
   } catch (error) {
     if (
       error instanceof SyntaxError ||

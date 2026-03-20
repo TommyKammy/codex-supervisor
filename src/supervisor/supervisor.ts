@@ -112,6 +112,7 @@ import {
 import {
   clearCurrentReconciliationPhase,
   readCurrentReconciliationPhase,
+  readCurrentReconciliationPhaseSnapshot,
   writeCurrentReconciliationPhase,
 } from "./supervisor-reconciliation-phase";
 import {
@@ -149,6 +150,35 @@ interface ReadyIssueContext {
   record: IssueRunRecord;
   issue: GitHubIssue;
   issueLock: LockHandle;
+}
+
+const LONG_RECONCILIATION_WARNING_THRESHOLD_MS = 5 * 60 * 1000;
+
+function buildLongReconciliationWarning(snapshot: {
+  phase: string;
+  startedAt: string | null;
+} | null): string | null {
+  if (snapshot === null || snapshot.startedAt === null) {
+    return null;
+  }
+
+  const startedAtMs = Date.parse(snapshot.startedAt);
+  if (Number.isNaN(startedAtMs)) {
+    return null;
+  }
+
+  const elapsedMs = Date.now() - startedAtMs;
+  if (elapsedMs <= LONG_RECONCILIATION_WARNING_THRESHOLD_MS) {
+    return null;
+  }
+
+  return [
+    "reconciliation_warning=long_running",
+    `phase=${snapshot.phase}`,
+    `elapsed_seconds=${Math.floor(elapsedMs / 1000)}`,
+    `threshold_seconds=${Math.floor(LONG_RECONCILIATION_WARNING_THRESHOLD_MS / 1000)}`,
+    `started_at=${snapshot.startedAt}`,
+  ].join(" ");
 }
 
 async function ensureRecordJournalContext(
@@ -642,7 +672,9 @@ export class Supervisor {
     const state = await this.stateStore.load();
     const gsdSummary = await describeGsdIntegration(this.config);
     const statusRecords = summarizeSupervisorStatusRecords(state);
-    const reconciliationPhase = await readCurrentReconciliationPhase(this.config);
+    const reconciliationSnapshot = await readCurrentReconciliationPhaseSnapshot(this.config);
+    const reconciliationPhase = reconciliationSnapshot?.phase ?? null;
+    const reconciliationWarning = buildLongReconciliationWarning(reconciliationSnapshot);
 
     if (!statusRecords.activeRecord) {
       const baseStatus = formatDetailedStatus({
@@ -656,21 +688,25 @@ export class Supervisor {
         reviewThreads: [],
       });
       try {
-        const reconciliationLine =
-          reconciliationPhase === null ? [] : [`reconciliation_phase=${reconciliationPhase}`];
+        const reconciliationLines = [
+          ...(reconciliationPhase === null ? [] : [`reconciliation_phase=${reconciliationPhase}`]),
+          ...(reconciliationWarning === null ? [] : [reconciliationWarning]),
+        ];
         const readinessLines = await buildReadinessSummary(this.github, this.config, state);
         const whyLines = options.why ? await buildSelectionWhySummary(this.github, this.config, state) : [];
         return [
           gsdSummary,
-          `${baseStatus}\n${[...reconciliationLine, ...readinessLines, ...whyLines].join("\n")}`,
+          `${baseStatus}\n${[...reconciliationLines, ...readinessLines, ...whyLines].join("\n")}`,
         ]
           .filter(Boolean)
           .join("\n");
       } catch (error) {
         const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
-        const reconciliationLine =
-          reconciliationPhase === null ? [] : [`reconciliation_phase=${reconciliationPhase}`];
-        return [gsdSummary, `${baseStatus}\n${[...reconciliationLine, `readiness_warning=${truncate(message, 200)}`].join("\n")}`]
+        const reconciliationLines = [
+          ...(reconciliationPhase === null ? [] : [`reconciliation_phase=${reconciliationPhase}`]),
+          ...(reconciliationWarning === null ? [] : [reconciliationWarning]),
+        ];
+        return [gsdSummary, `${baseStatus}\n${[...reconciliationLines, `readiness_warning=${truncate(message, 200)}`].join("\n")}`]
           .filter(Boolean)
           .join("\n");
       }
@@ -697,12 +733,14 @@ export class Supervisor {
       durableGuardrailSummary: activeStatus.durableGuardrailSummary,
       externalReviewFollowUpSummary: activeStatus.externalReviewFollowUpSummary,
     });
-    const reconciliationLine =
-      reconciliationPhase === null ? null : `reconciliation_phase=${reconciliationPhase}`;
+    const reconciliationLines = [
+      ...(reconciliationPhase === null ? [] : [`reconciliation_phase=${reconciliationPhase}`]),
+      ...(reconciliationWarning === null ? [] : [reconciliationWarning]),
+    ];
 
     return [gsdSummary, activeStatus.warningMessage
-      ? `${[detailedStatus, reconciliationLine, `status_warning=${truncate(sanitizeStatusValue(activeStatus.warningMessage), 200)}`].filter(Boolean).join("\n")}`
-      : [detailedStatus, reconciliationLine].filter(Boolean).join("\n")]
+      ? `${[detailedStatus, ...reconciliationLines, `status_warning=${truncate(sanitizeStatusValue(activeStatus.warningMessage), 200)}`].filter(Boolean).join("\n")}`
+      : [detailedStatus, ...reconciliationLines].filter(Boolean).join("\n")]
       .filter(Boolean)
       .join("\n");
   }
