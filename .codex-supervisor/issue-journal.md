@@ -6,42 +6,42 @@
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 3 (implementation=1, repair=2)
-- Last head SHA: 71d37a09f95b80118bac8599474037f9e37865a8
+- Attempt count: 4 (implementation=1, repair=3)
+- Last head SHA: a983e76bc94b3ad17304c7fbb71dc5c1a863488a
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ851xv4Z
+- Last failure signature: none
 - Repeated failure signature count: 1
-- Updated at: 2026-03-20T17:55:33.861Z
+- Updated at: 2026-03-20T17:59:06Z
 
 ## Latest Codex Summary
-Pinned the issue-branch probe in [workspace.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-722/src/core/workspace.ts) to `LC_ALL=C` so the existing missing-remote `stderr` check stays deterministic on non-English Git installs. I updated the issue journal in [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-722/.codex-supervisor/issue-journal.md), committed the fix as `a74d400`, followed with the journal sync commit `71d37a0`, pushed `codex/issue-722`, and resolved the remaining CodeRabbit thread.
+Simplified the stored review context in [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-722/.codex-supervisor/issue-journal.md) so the journal now records the remaining CodeRabbit concern as a short summary plus direct discussion link instead of embedding the full bot transcript. I committed that cleanup as `a983e76`, pushed `codex/issue-722`, and resolved review thread `PRRT_kwDORgvdZ851xv4Z`.
 
-Verification passed with `npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/core/workspace.test.ts` and `npm run build`. PR #747 is now on head `71d37a0`; GitHub reports `mergeStateStatus: UNSTABLE`, which is consistent with checks rerunning after the push. The only remaining local dirt is the pre-existing untracked `.codex-supervisor/replay/` directory, which I left untouched.
+Focused verification confirmed the reported markdownlint failures are gone for this review context: `npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg "MD038|MD052"` returned no matches. Full `markdownlint-cli2` still reports longstanding journal-wide style warnings unrelated to this thread. PR #747 now shows `mergeStateStatus: UNSTABLE` because CI and CodeRabbit restarted after the push. The only remaining local dirt is the pre-existing untracked `.codex-supervisor/replay/` directory, which I left untouched.
 
-Summary: Forced the remote issue-branch fetch probe to run under `LC_ALL=C`, pushed the fix on `codex/issue-722`, and resolved the outstanding CodeRabbit review thread.
-State hint: waiting_ci
+Summary: Simplified the journal’s stored review context, pushed the review-only cleanup on `codex/issue-722`, and resolved the last configured CodeRabbit thread on PR #747.
+State hint: addressing_review
 Blocked reason: none
-Tests: `npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/core/workspace.test.ts`; `npm run build`
+Tests: `npx markdownlint-cli2 .codex-supervisor/issue-journal.md`; `npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg "MD038|MD052"`
 Failure signature: none
-Next action: Watch PR #747 checks on head `71d37a0` and address any new CI or review fallout if it appears.
+Next action: Push this journal sync commit, then watch PR #747 checks and any new review fallout on `codex/issue-722`.
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/747#discussion_r2967148689
+- Category: none
+- Summary: No active local failure remains; both configured PR review threads are resolved.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/747
 - Details:
-  - `.codex-supervisor/issue-journal.md:33`: the journal copied the full CodeRabbit locale review into this section, which made the file hard to scan and introduced markdownlint noise (`MD038`, `MD052` for the missing `[3]` definition). Keep only a concise summary here and link back to the original review at `discussion_r2967063046`: https://github.com/TommyKammy/codex-supervisor/pull/747#discussion_r2967063046
+  - Resolved `PRRT_kwDORgvdZ851xv4Z` by replacing the inlined CodeRabbit transcript with a concise note that links back to `discussion_r2967063046`.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The remaining PR feedback is purely about journal readability, so replacing the embedded bot transcript with a short summary and direct discussion link should satisfy thread `PRRT_kwDORgvdZ851xv4Z` without changing runtime behavior.
-- What changed: trimmed `Active Failure Context` in `.codex-supervisor/issue-journal.md` down to a short description of the journal-specific review issue and linked the original locale discussion at `discussion_r2967063046` instead of copying its full body into this file.
+- Hypothesis: The branch is back to a clean review state; only CI reruns from the journal-only push need watching now.
+- What changed: trimmed the oversized `Active Failure Context` entry in `.codex-supervisor/issue-journal.md`, committed the cleanup as `a983e76`, pushed `codex/issue-722`, and resolved thread `PRRT_kwDORgvdZ851xv4Z`.
 - Current blocker: none
-- Next exact step: run focused markdown verification on `.codex-supervisor/issue-journal.md`, commit the journal cleanup, push `codex/issue-722`, and resolve thread `PRRT_kwDORgvdZ851xv4Z` if the rendered diff is clean.
-- Verification gap: none beyond confirming the journal no longer trips the reported markdownlint warnings.
+- Next exact step: push this journal sync commit and then watch PR #747 for CI completion or any new review comments.
+- Verification gap: none; the review-specific markdownlint findings are gone and no product code changed in this turn.
 - Files touched: `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this patch would reintroduce the unreadable inline transcript and the missing-reference markdown noise in the journal, but would not affect product behavior.
-- Last focused command: `gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id,isResolved,path,comments(first:10){nodes{databaseId,url,body}}}}}}}' -F owner=TommyKammy -F repo=codex-supervisor -F number=747`
+- Last focused command: `gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id,isResolved,path}}}}}' -F owner=TommyKammy -F repo=codex-supervisor -F number=747`
 - Last focused commands:
 ```bash
 sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-722/AGENTS.generated.md
@@ -92,8 +92,20 @@ gh pr view 747 --json number,url,headRefName,isDraft,mergeStateStatus,reviewDeci
 gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id,isResolved,path,comments(first:10){nodes{databaseId,url,body}}}}}}}' -F owner=TommyKammy -F repo=codex-supervisor -F number=747
 nl -ba .codex-supervisor/issue-journal.md | sed -n '1,140p'
 git rev-parse --short HEAD
+npx markdownlint-cli2 .codex-supervisor/issue-journal.md
+bash -lc 'npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg "MD038|MD052"'
+rg -n '\[3\]' .codex-supervisor/issue-journal.md
+git status --short
+git add .codex-supervisor/issue-journal.md && git commit -m "Simplify issue journal review context"
+git push origin codex/issue-722
+gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ851xv4Z
+gh pr view 747 --json number,url,headRefName,isDraft,mergeStateStatus,reviewDecision,statusCheckRollup
+gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id,isResolved,path}}}}}' -F owner=TommyKammy -F repo=codex-supervisor -F number=747
+date -u +"%Y-%m-%dT%H:%M:%SZ"
+git status --short --branch
 ```
 ### Scratchpad
+- 2026-03-21 (JST): Committed the journal readability cleanup as `a983e76`, pushed `codex/issue-722`, and resolved CodeRabbit thread `PRRT_kwDORgvdZ851xv4Z`; PR #747 is back to waiting on rerun checks rather than review action.
 - 2026-03-21 (JST): Verified PR #747 is otherwise clean and that the only unresolved review thread is `PRRT_kwDORgvdZ851xv4Z` on `.codex-supervisor/issue-journal.md`; simplifying the stored failure context is sufficient because the underlying locale fix in `src/core/workspace.ts` is already merged into this branch head.
 - 2026-03-19 (JST): Implemented `replay-corpus-promote` in `src/index.ts` and extended `CliOptions` in `src/core/types.ts` with explicit `caseId` support; the new CLI path uses the existing `promoteCapturedReplaySnapshot(...)` implementation and defaults `corpusPath` to checked-in `replay-corpus`.
 - 2026-03-19 (JST): Focused verification passed with `npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts`; `npm run build` first failed because `tsc` was missing locally, so ran `npm install` and reran `npm run build` successfully.
