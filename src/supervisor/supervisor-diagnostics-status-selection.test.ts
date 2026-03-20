@@ -44,8 +44,11 @@ test("doctor uses the diagnostic-only state loader instead of StateStore.load", 
   assert.match(report, /doctor_check name=worktrees status=pass/);
 });
 
-test("status surfaces corrupted JSON state as an explicit hard diagnostic", async () => {
+test("status surfaces corrupted JSON state as an explicit hard diagnostic", async (t) => {
   const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
   await fs.writeFile(fixture.stateFile, "{not-json}\n", "utf8");
 
   const supervisor = new Supervisor(fixture.config);
