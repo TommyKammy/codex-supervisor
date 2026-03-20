@@ -16,6 +16,8 @@ Use `codex-supervisor` when you want Codex to work through execution-ready GitHu
 - run each turn in a dedicated worktree with a persistent issue journal
 - keep moving through draft PR, CI repair, review fixes, and merge
 
+GitHub-authored issue bodies, PR review comments, and related GitHub text are execution inputs, not trusted instructions by default. Treat that GitHub-authored text as part of the supervisor trust boundary and use the autonomous loop only in repos where the operator trusts both the repository and the GitHub authors who can supply that text.
+
 If you want the setup flow, first-run commands, and operator decisions, start with [Getting started](./docs/getting-started.md).
 If you are an AI agent entering the repo, start with the [AI agent handoff](./docs/agent-instructions.md) before reading the detailed references.
 
@@ -66,7 +68,7 @@ Not a fit:
    node dist/index.js loop --config /path/to/supervisor.config.json
    ```
 
-Requirements: `gh auth status` must succeed, `codex` CLI must be installed, and the managed repository should already have branch protection and CI in place.
+Requirements: `gh auth status` must succeed, `codex` CLI must be installed, the managed repository should already have branch protection and CI in place, and the operator should only enable autonomous execution in a trusted repo with trusted GitHub authors. The current Codex runs use `--dangerously-bypass-approvals-and-sandbox`; see [Getting started](./docs/getting-started.md), [Configuration reference](./docs/configuration.md), and [Architecture](./docs/architecture.md) for the execution-safety boundary.
 
 ## Provider Profiles
 

@@ -18,6 +18,10 @@ Requirements:
 - `codex` CLI is installed
 - the managed repository is already cloned locally
 - branch protection and CI are already configured on the managed repository
+- the repo is a trusted repo for autonomous execution
+- the GitHub authors who can supply issue bodies, review comments, and related execution text are trusted authors for that repo
+
+Current execution posture: supervisor-managed Codex turns use `--dangerously-bypass-approvals-and-sandbox`. Approvals and sandboxing are therefore not the active safety boundary during an autonomous turn. The practical safety boundary is the operator's trust decision about the repo and the GitHub-authored text that becomes execution input.
 
 ## Provider Profiles
 

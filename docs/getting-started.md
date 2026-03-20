@@ -21,6 +21,8 @@ Confirm these prerequisites before you run the supervisor:
 - the managed repository is already cloned locally
 - branch protection and CI are already configured on the managed repository
 - you have a repo path where the supervisor can create per-issue worktrees
+- the repo is a trusted repo for autonomous execution
+- the GitHub authors who can edit issue bodies, review comments, and related execution text are trusted for that repo
 
 Build the CLI once in the supervisor repo:
 
@@ -28,6 +30,8 @@ Build the CLI once in the supervisor repo:
 npm install
 npm run build
 ```
+
+Current execution-safety rule: GitHub-authored issue bodies, review comments, and similar GitHub text are part of the supervisor trust boundary because they become execution inputs for Codex. The current runtime uses `--dangerously-bypass-approvals-and-sandbox`, so autonomous execution is safe enough to enable only in a trusted repo with trusted authors. If that trust is not present, autonomous execution is not safe for the current posture.
 
 ## Choose the operating mode
 
@@ -118,6 +122,8 @@ Parallelizable: No
 ```
 
 Use the [Issue metadata reference](./issue-metadata.md) for the canonical field rules and more examples.
+
+Issue readiness is not the same as trust. A perfectly structured issue is still not safe for autonomous execution when the GitHub-authored text comes from an untrusted repo or untrusted author set.
 
 ## Run the first pass
 
