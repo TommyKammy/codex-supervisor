@@ -200,6 +200,8 @@ export interface IssueRunRecord {
   repeated_blocker_count: number;
   repeated_failure_signature_count: number;
   last_head_sha: string | null;
+  workspace_restore_source?: WorkspaceRestoreSource | null;
+  workspace_restore_ref?: string | null;
   last_codex_summary: string | null;
   last_recovery_reason: string | null;
   last_recovery_at: string | null;
@@ -322,6 +324,24 @@ export interface WorkspaceStatus {
   remoteBranchExists: boolean;
   remoteAhead: number;
   remoteBehind: number;
+  restoreSource?: WorkspaceRestoreSource | null;
+  restoreRef?: string | null;
+}
+
+export type WorkspaceRestoreSource =
+  | "existing_workspace"
+  | "local_branch"
+  | "remote_branch"
+  | "bootstrap_default_branch";
+
+export interface WorkspaceRestoreMetadata {
+  source: WorkspaceRestoreSource;
+  ref: string;
+}
+
+export interface EnsuredWorkspace {
+  workspacePath: string;
+  restore: WorkspaceRestoreMetadata;
 }
 
 export interface CodexTurnResult {

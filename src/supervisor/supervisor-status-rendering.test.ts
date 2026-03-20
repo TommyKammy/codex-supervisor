@@ -160,6 +160,8 @@ test("formatDetailedStatus renders core lines before appended summaries", () => 
     branch: "codex/issue-58",
     pr_number: 58,
     workspace: "/tmp/workspaces/issue-58",
+    workspace_restore_source: "local_branch",
+    workspace_restore_ref: "codex/issue-58",
     local_review_summary_path: "/tmp/reviews/owner-repo/issue-58/local-review-summary.md",
     external_review_misses_path: "/tmp/reviews/owner-repo/issue-58/external-review-misses-head-deadbeef.json",
   });
@@ -218,6 +220,7 @@ test("formatDetailedStatus renders core lines before appended summaries", () => 
       "repair_attempts=0",
       "updated_at=2026-03-11T01:50:41.997Z",
       "workspace=/tmp/workspaces/issue-58",
+      "workspace_restore source=local_branch ref=codex/issue-58",
       "blocked_reason=none",
       "last_failure_kind=none",
       "last_failure_signature=none",

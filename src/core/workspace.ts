@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { runCommand } from "./command";
-import { SupervisorConfig, WorkspaceStatus } from "./types";
+import { EnsuredWorkspace, SupervisorConfig, WorkspaceRestoreMetadata, WorkspaceStatus } from "./types";
 import { ensureDir, isValidGitRefName } from "./utils";
 
 function assertIssueNumber(issueNumber: number): void {
@@ -43,18 +43,35 @@ async function remoteTrackingRefExists(gitPath: string, branch: string): Promise
   return result.exitCode === 0;
 }
 
+function buildEnsuredWorkspace(
+  workspacePath: string,
+  restore: WorkspaceRestoreMetadata,
+): EnsuredWorkspace {
+  return {
+    workspacePath,
+    restore,
+  };
+}
+
+export function formatWorkspaceRestoreStatusLine(restore: WorkspaceRestoreMetadata): string {
+  return `workspace_restore source=${restore.source} ref=${restore.ref}`;
+}
+
 export async function ensureWorkspace(
   config: SupervisorConfig,
   issueNumber: number,
   branch: string,
-): Promise<string> {
+): Promise<EnsuredWorkspace> {
   assertIssueNumber(issueNumber);
   const workspacePath = workspacePathForIssue(config, issueNumber);
   await ensureDir(config.workspaceRoot);
   await runCommand("git", ["-C", config.repoPath, "fetch", "origin", config.defaultBranch]);
 
   if (fs.existsSync(path.join(workspacePath, ".git"))) {
-    return workspacePath;
+    return buildEnsuredWorkspace(workspacePath, {
+      source: "existing_workspace",
+      ref: branch,
+    });
   }
 
   if (fs.existsSync(workspacePath) && !fs.existsSync(path.join(workspacePath, ".git"))) {
@@ -63,7 +80,10 @@ export async function ensureWorkspace(
 
   if (await branchExists(config.repoPath, branch)) {
     await runCommand("git", ["-C", config.repoPath, "worktree", "add", workspacePath, branch]);
-    return workspacePath;
+    return buildEnsuredWorkspace(workspacePath, {
+      source: "local_branch",
+      ref: branch,
+    });
   }
 
   await runCommand("git", [
@@ -77,7 +97,10 @@ export async function ensureWorkspace(
     `origin/${config.defaultBranch}`,
   ]);
 
-  return workspacePath;
+  return buildEnsuredWorkspace(workspacePath, {
+    source: "bootstrap_default_branch",
+    ref: `origin/${config.defaultBranch}`,
+  });
 }
 
 export async function getWorkspaceStatus(
