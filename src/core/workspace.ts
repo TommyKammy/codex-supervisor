@@ -48,7 +48,13 @@ async function fetchIssueRemoteTrackingRef(repoPath: string, branch: string): Pr
   const result = await runCommand(
     "git",
     ["-C", repoPath, "fetch", "origin", `+refs/heads/${branch}:${remoteRef}`],
-    { allowExitCodes: [0, 128] },
+    {
+      allowExitCodes: [0, 128],
+      env: {
+        ...process.env,
+        LC_ALL: "C",
+      },
+    },
   );
 
   if (result.exitCode === 0) {
