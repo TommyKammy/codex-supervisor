@@ -5,16 +5,25 @@
 - Branch: codex/issue-673
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: ede56f4ff369f2b7b8f19e1464fcb0a373a2d556
+- Current phase: stabilizing
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: c7c36fc812c80d0f8ab94669de606109370f2164
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-20T00:10:17.120Z
+- Updated at: 2026-03-20T00:22:24.973Z
 
 ## Latest Codex Summary
-- None yet.
+Implemented the narrow run-lock recovery fix in [src/core/lock.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-673/src/core/lock.ts) and [src/supervisor/supervisor.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-673/src/supervisor/supervisor.ts). `acquireFileLock` now accepts an explicit `allowAmbiguousOwnerCleanup` override, and only the supervisor run lock uses it, so dead ambiguous run locks are reclaimed while ordinary issue/session locks keep the safer refusal path.
+
+I added the focused reproducer in [src/lock.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-673/src/lock.test.ts) and updated the journal in [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-673/.codex-supervisor/issue-journal.md). Commit: `c7c36fc` (`Fix stale ambiguous supervisor run locks`).
+
+Summary: Narrow supervisor-only recovery for dead ambiguous run locks implemented and committed.
+State hint: local_review
+Blocked reason: none
+Tests: `npx tsx --test src/lock.test.ts`; `npx tsx --test src/cli/supervisor-runtime.test.ts`; `npm install`; `npx tsx --test src/lock.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/doctor.test.ts`; `npm run build` (also observed unrelated pre-existing failures when `npm test -- ...` expanded to the full suite)
+Failure signature: none
+Next action: open or update a draft PR for issue #673 and let CI validate the scoped run-lock fix
 
 ## Active Failure Context
 - None recorded.
@@ -24,13 +33,13 @@
 - Hypothesis: the supervisor run lock should be allowed to reclaim a dead-pid lock even when host/owner metadata is ambiguous, while generic issue/session locks should keep refusing ambiguous-owner cleanup.
 - What changed: reproduced the stale run-lock gap with a focused `acquireFileLock(..., { allowAmbiguousOwnerCleanup: true })` regression in `src/lock.test.ts`, then added an explicit `AcquireFileLockOptions` override in `src/core/lock.ts` and used it only from `Supervisor.acquireSupervisorLock(...)` in `src/supervisor/supervisor.ts`.
 - Current blocker: none
-- Next exact step: commit the scoped run-lock recovery fix, then open or update a draft PR for issue #673.
-- Verification gap: none for the scoped issue verification. `npx tsx --test src/lock.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/doctor.test.ts` and `npm run build` passed after restoring local dev dependencies with `npm install`. Note: repo-wide `npm test -- ...` still executes the full suite and fails on unrelated pre-existing assertions in `README`/runtime-layout/turn-orchestration tests.
+- Next exact step: watch CI on draft PR #679 and respond to any review feedback or failing checks.
+- Verification gap: none for the scoped issue verification. `npx tsx --test src/lock.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/doctor.test.ts` and `npm run build` passed after restoring local dev dependencies with `npm install`. No additional verification was needed after pushing/opening the draft PR. Note: repo-wide `npm test -- ...` still executes the full suite and fails on unrelated pre-existing assertions in `README`/runtime-layout/turn-orchestration tests.
 - Files touched: `src/core/lock.ts`, `src/lock.test.ts`, `src/supervisor/supervisor.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this checkpoint would restore the indefinite skip loop for a dead ambiguous supervisor run lock, while generic ambiguous-owner protections for issue/session locks would remain unchanged.
-- Last focused command: `npx tsx --test src/lock.test.ts`; `npx tsx --test src/cli/supervisor-runtime.test.ts`; `npm install`; `npx tsx --test src/lock.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/doctor.test.ts`; `npm run build`
+- Last focused command: `git push -u origin codex/issue-673`; `gh pr create --draft --base main --head codex/issue-673 --title "Fix stale ambiguous supervisor run locks" --body ...`
 ### Scratchpad
-- 2026-03-20 (JST): Reproduced issue #673 with a new `src/lock.test.ts` regression for reclaiming an ambiguous dead-pid supervisor run lock only when explicitly allowed. Implemented the narrow override in `src/core/lock.ts`, routed only `Supervisor.acquireSupervisorLock(...)` through it, and verified with `npx tsx --test src/lock.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/doctor.test.ts` plus `npm run build` after `npm install`. The package-level `npm test -- ...` command still ran the full suite and failed on unrelated pre-existing assertions outside this issue slice.
+- 2026-03-20 (JST): Pushed `codex/issue-673` to `origin/codex/issue-673` and opened draft PR #679 (`https://github.com/TommyKammy/codex-supervisor/pull/679`) after the scoped lock/recovery/doctor tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-671` to `origin/codex/issue-671` and opened draft PR #676 (`https://github.com/TommyKammy/codex-supervisor/pull/676`) after the focused artifact/finalize/result/status/policy tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
 - 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851kRrS` as a real bug: malformed SQLite rows could yield only `load_findings`, after which `loadFromSqlite()` returned fallback empty/bootstrap state without those findings. Fixed the fallback path, added a dedicated regression for the empty-state case, and reran `npx tsx --test src/core/state-store.test.ts` plus `npm run build` successfully.
