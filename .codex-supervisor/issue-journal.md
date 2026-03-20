@@ -5,31 +5,45 @@
 - Branch: codex/issue-685
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: f17fe52b1717d6522ef1ad7369d7ee5432827c34
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 302a318e6ad9ac639c7288e45d7080ab19b76be1
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-20T05:00:48.774Z
+- Last failure signature: PRRT_kwDORgvdZ851okoy
+- Repeated failure signature count: 1
+- Updated at: 2026-03-20T05:13:36.400Z
 
 ## Latest Codex Summary
-- Reproduced the missing long-reconciliation visibility with a focused `status` regression, then fixed it by persisting reconciliation cycle start time in the phase snapshot and emitting a non-blocking `reconciliation_warning=long_running ...` line once the cycle exceeds a five-minute threshold. Focused diagnostics coverage and `npm run build` now pass locally after restoring missing dev dependencies with `npm install`.
+Implemented the reconciliation visibility slice and pushed it on `codex/issue-685` in commit `302a318`. The change persists reconciliation cycle start time in the phase snapshot, and [`src/supervisor/supervisor.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-685/src/supervisor/supervisor.ts) now emits a non-blocking `reconciliation_warning=long_running ...` line once a cycle has been active for more than five minutes. The snapshot handling lives in [`src/supervisor/supervisor-reconciliation-phase.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-685/src/supervisor/supervisor-reconciliation-phase.ts), and the focused regression coverage is in [`src/supervisor/supervisor-diagnostics-status-selection.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-685/src/supervisor/supervisor-diagnostics-status-selection.test.ts).
+
+Focused verification passed with `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build`. I had to run `npm install` first because `typescript` was missing from this worktree, and I opened draft PR #692: https://github.com/TommyKammy/codex-supervisor/pull/692
+
+Summary: Added a deterministic long-running reconciliation status warning, covered fresh vs long cycles with a focused test, built successfully, and opened draft PR #692.
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`
+Failure signature: none
+Next action: wait for CI and review feedback on PR #692, then address any follow-up if it appears
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/692#discussion_r2963988178
+- Details:
+  - src/supervisor/supervisor.ts:173 _⚠️ Potential issue_ | _🟡 Minor_ **Use a strict “exceeds threshold” boundary.** Line 171 warns at exactly 5 minutes; the requirement says warning should appear once reconciliation **exceeds** five minutes. Keep equality non-warning. <details> <summary>Boundary fix</summary> ```diff - if (elapsedMs < LONG_RECONCILIATION_WARNING_THRESHOLD_MS) { + if (elapsedMs <= LONG_RECONCILIATION_WARNING_THRESHOLD_MS) { return null; } ``` </details> <!-- suggestion_start --> <details> <summary>📝 Committable suggestion</summary> > ‼️ **IMPORTANT** > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements. ```suggestion if (elapsedMs <= LONG_RECONCILIATION_WARNING_THRESHOLD_MS) { return null; } ``` </details> <!-- suggestion_end --> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/supervisor/supervisor.ts` around lines 171 - 173, The current check uses "if (elapsedMs < LONG_RECONCILIATION_WARNING_THRESHOLD_MS) return null;" which triggers a warning at exactly the threshold; change the boundary to be strict by guarding with "<=" so the code reads that if elapsedMs <= LONG_RECONCILIATION_WARNING_THRESHOLD_MS return null, ensuring warnings occur only when elapsedMs > LONG_RECONCILIATION_WARNING_THRESHOLD_MS (refer to elapsedMs and LONG_RECONCILIATION_WARNING_THRESHOLD_MS in supervisor.ts). ``` </details> <!-- fingerprinting:phantom:poseidon:hawk --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the narrowest safe fix for #685 is to keep reconciliation visibility on the existing `status` path by preserving each reconciliation cycle's start time in the phase snapshot and warning only when that cycle exceeds a conservative threshold.
-- What changed: `writeCurrentReconciliationPhase(...)` now preserves a `startedAt` timestamp across phase updates, `Supervisor.status()` emits a non-blocking `reconciliation_warning=long_running ...` line once the active cycle exceeds five minutes, and `src/supervisor/supervisor-diagnostics-status-selection.test.ts` now covers both the fresh-cycle no-warning case and the long-cycle warning case.
+- Hypothesis: the narrowest safe review fix for #685 is to preserve the existing visibility-only warning path while changing the threshold boundary so reconciliation warns only after elapsed time strictly exceeds five minutes.
+- What changed: validated CodeRabbit thread `PRRT_kwDORgvdZ851okoy` as a real boundary bug, changed `buildLongReconciliationWarning(...)` in `src/supervisor/supervisor.ts` to return `null` when `elapsedMs <= LONG_RECONCILIATION_WARNING_THRESHOLD_MS`, and tightened `src/supervisor/supervisor-diagnostics-status-selection.test.ts` to assert no warning at exactly five minutes and a warning at five minutes plus one second.
 - Current blocker: none
-- Next exact step: commit the reconciliation warning slice, push `codex/issue-685`, and open a draft PR because this branch now has a coherent checkpoint.
-- Verification gap: none for this slice. `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build` passed locally after `npm install` restored the missing `typescript` dependency in this worktree.
-- Files touched: `src/supervisor/supervisor-reconciliation-phase.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would remove the only operator-visible signal for reconciliation cycles that stay active far longer than normal while still holding the run loop open.
-- Last focused command: `npm run build`
+- Next exact step: commit this review fix, push `codex/issue-685`, and resolve the remaining PR #692 review thread with the verified strict-boundary change.
+- Verification gap: none for this review fix. `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build` passed locally after the boundary update.
+- Files touched: `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would reintroduce a mismatch between the operator-visible warning and the acceptance text that says reconciliation must exceed the five-minute threshold before warning.
+- Last focused commands: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`
 ### Scratchpad
+- 2026-03-20 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851okoy` by making the long-reconciliation warning boundary strict (`>` only) and extending the diagnostics test to keep the exact five-minute case non-warning; focused verification passed with `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build`.
 - 2026-03-20 (JST): Pushed `codex/issue-671` to `origin/codex/issue-671` and opened draft PR #676 (`https://github.com/TommyKammy/codex-supervisor/pull/676`) after the focused artifact/finalize/result/status/policy tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
 - 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851kRrS` as a real bug: malformed SQLite rows could yield only `load_findings`, after which `loadFromSqlite()` returned fallback empty/bootstrap state without those findings. Fixed the fallback path, added a dedicated regression for the empty-state case, and reran `npx tsx --test src/core/state-store.test.ts` plus `npm run build` successfully.

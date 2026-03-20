@@ -264,7 +264,7 @@ test("status surfaces the current reconciliation phase only while reconciliation
   assert.doesNotMatch(afterReconciliation, /reconciliation_phase=/);
 });
 
-test("status emits a warning for unusually long reconciliation cycles but not fresh ones", async () => {
+test("status emits a warning only after reconciliation exceeds the long-running threshold", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {
     activeIssueNumber: null,
@@ -288,11 +288,15 @@ test("status emits a warning for unusually long reconciliation cycles but not fr
     let status = await supervisor.status();
     assert.doesNotMatch(status, /reconciliation_warning=/);
 
-    Date.now = () => Date.parse("2026-03-20T00:16:00.000Z");
+    Date.now = () => Date.parse("2026-03-20T00:15:00.000Z");
+    status = await supervisor.status();
+    assert.doesNotMatch(status, /reconciliation_warning=/);
+
+    Date.now = () => Date.parse("2026-03-20T00:15:01.000Z");
     status = await supervisor.status();
     assert.match(
       status,
-      /reconciliation_warning=long_running phase=tracked_merged_but_open_issues elapsed_seconds=360 threshold_seconds=\d+ started_at=2026-03-20T00:10:00\.000Z/,
+      /reconciliation_warning=long_running phase=tracked_merged_but_open_issues elapsed_seconds=301 threshold_seconds=\d+ started_at=2026-03-20T00:10:00\.000Z/,
     );
   } finally {
     Date.now = originalDateNow;

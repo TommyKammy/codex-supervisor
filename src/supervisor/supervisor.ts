@@ -168,7 +168,7 @@ function buildLongReconciliationWarning(snapshot: {
   }
 
   const elapsedMs = Date.now() - startedAtMs;
-  if (elapsedMs < LONG_RECONCILIATION_WARNING_THRESHOLD_MS) {
+  if (elapsedMs <= LONG_RECONCILIATION_WARNING_THRESHOLD_MS) {
     return null;
   }
 
