@@ -43,6 +43,31 @@ async function remoteTrackingRefExists(gitPath: string, branch: string): Promise
   return result.exitCode === 0;
 }
 
+async function fetchIssueRemoteTrackingRef(repoPath: string, branch: string): Promise<boolean> {
+  const remoteRef = `refs/remotes/origin/${branch}`;
+  const result = await runCommand(
+    "git",
+    ["-C", repoPath, "fetch", "origin", `+refs/heads/${branch}:${remoteRef}`],
+    { allowExitCodes: [0, 128] },
+  );
+
+  if (result.exitCode === 0) {
+    return true;
+  }
+
+  const missingRemoteRefMessage = `couldn't find remote ref refs/heads/${branch}`;
+  if (!result.stderr.includes(missingRemoteRefMessage)) {
+    throw new Error(result.stderr.trim() || `git fetch origin ${branch} failed`);
+  }
+
+  await runCommand(
+    "git",
+    ["-C", repoPath, "update-ref", "-d", remoteRef],
+    { allowExitCodes: [0, 1] },
+  );
+  return false;
+}
+
 function buildEnsuredWorkspace(
   workspacePath: string,
   restore: WorkspaceRestoreMetadata,
@@ -66,6 +91,7 @@ export async function ensureWorkspace(
   const workspacePath = workspacePathForIssue(config, issueNumber);
   await ensureDir(config.workspaceRoot);
   await runCommand("git", ["-C", config.repoPath, "fetch", "origin", config.defaultBranch]);
+  const remoteBranchExists = await fetchIssueRemoteTrackingRef(config.repoPath, branch);
 
   if (fs.existsSync(path.join(workspacePath, ".git"))) {
     return buildEnsuredWorkspace(workspacePath, {
@@ -83,6 +109,14 @@ export async function ensureWorkspace(
     return buildEnsuredWorkspace(workspacePath, {
       source: "local_branch",
       ref: branch,
+    });
+  }
+
+  if (remoteBranchExists) {
+    await runCommand("git", ["-C", config.repoPath, "worktree", "add", "-b", branch, workspacePath, `origin/${branch}`]);
+    return buildEnsuredWorkspace(workspacePath, {
+      source: "remote_branch",
+      ref: `origin/${branch}`,
     });
   }
 

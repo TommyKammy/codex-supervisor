@@ -109,3 +109,25 @@ test("ensureWorkspace reports when a recreated workspace bootstraps from the def
   assert.equal(ensured.restore.source, "bootstrap_default_branch");
   assert.equal(ensured.restore.ref, `origin/${config.defaultBranch}`);
 });
+
+test("ensureWorkspace reports when a recreated workspace discovers an existing remote branch", async () => {
+  const config = await createRepositoryFixture();
+  const issueNumber = 723;
+  const branch = `${config.branchPrefix}${issueNumber}`;
+  const collaboratorPath = path.join(path.dirname(config.repoPath), "collaborator");
+
+  await execFileAsync("git", ["clone", path.join(path.dirname(config.repoPath), "origin.git"), collaboratorPath]);
+  await git(collaboratorPath, "config", "user.name", "Codex Collaborator");
+  await git(collaboratorPath, "config", "user.email", "collaborator@example.test");
+  await git(collaboratorPath, "checkout", "-b", branch, `origin/${config.defaultBranch}`);
+  await fs.writeFile(path.join(collaboratorPath, "remote-branch.txt"), "remote branch fixture\n", "utf8");
+  await git(collaboratorPath, "add", "remote-branch.txt");
+  await git(collaboratorPath, "commit", "-m", "Add remote issue branch");
+  await git(collaboratorPath, "push", "-u", "origin", branch);
+
+  const ensured = await ensureWorkspace(config, issueNumber, branch);
+
+  assert.equal(ensured.workspacePath, path.join(config.workspaceRoot, `issue-${issueNumber}`));
+  assert.equal(ensured.restore.source, "remote_branch");
+  assert.equal(ensured.restore.ref, `origin/${branch}`);
+});

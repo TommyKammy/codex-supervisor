@@ -1,68 +1,61 @@
-# Issue #721: Workspace restore visibility: surface whether recovery used local, remote, or bootstrap source
+# Issue #722: Remote branch discovery: detect origin issue branches before default-branch bootstrap
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/721
-- Branch: codex/issue-721
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/722
+- Branch: codex/issue-722
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 4 (implementation=1, repair=3)
-- Last head SHA: 5fe2de71639d12e965ac8c2dd5a4a80b4b9d8f68
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 59d67c474c47da7675ece0a28a339c062d3572c5
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-20T16:59:28Z
+- Updated at: 2026-03-20T17:25:35Z
 
 ## Latest Codex Summary
-Resolved the remaining PR #746 CodeRabbit thread by converting the journal's semicolon-delimited inline command logs to fenced `bash` blocks in [.codex-supervisor/issue-journal.md](./issue-journal.md). The markdown-only fix was pushed as `5fe2de7`, thread `PRRT_kwDORgvdZ851w4ly` was resolved, and the pre-existing untracked `.codex-supervisor/replay/` directory was left untouched.
-
-Summary: Fixed the last journal-only review thread, pushed `5fe2de7`, and resolved `PRRT_kwDORgvdZ851w4ly` on PR #746.
-State hint: waiting_ci
-Blocked reason: none
-Tests:
-```bash
-perl -ne 'print if /^(Tests|[-] Last focused commands): `/' .codex-supervisor/issue-journal.md
-perl -ne 'while(/(?<!`)`([^`]+)`(?!`)/g){ print qq($.::<$1>\n) if $1 =~ /^\s|\s$/ }' .codex-supervisor/issue-journal.md
-git diff --check -- .codex-supervisor/issue-journal.md
-```
-Failure signature: none
-Next action: Watch PR #746 on `5fe2de7`; both CI build jobs passed on 2026-03-20 and only the refreshed CodeRabbit status remains pending.
+- Reproduced that `ensureWorkspace()` bootstrapped from `origin/main` even when `origin/codex/issue-723` existed remotely, added a focused remote-only regression in `src/core/workspace.test.ts`, and narrowed `src/core/workspace.ts` so it fetches the target issue ref into `refs/remotes/origin/<branch>` before branch creation. The restore path now reports `remote_branch` and restores from `origin/<issue-branch>` when that ref exists; the requested issue test set and `npm run build` passed after installing the missing local dev dependencies in this worktree.
 
 ## Active Failure Context
-- Category: none
-- Summary: none
-- Reference: none
-- Details:
-  - none
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The remaining review fallout is cleared on the branch, so the only near-term risk is whether refreshed CodeRabbit status surfaces any new journal-only complaint on head `5fe2de7`.
-- What changed: converted the journal's inline command-log lists to fenced `bash` blocks, committed the markdown-only fix as `5fe2de7`, pushed `codex/issue-721`, and resolved CodeRabbit thread `PRRT_kwDORgvdZ851w4ly`.
+- Hypothesis: The narrow fetch-to-`refs/remotes/origin/<issue-branch>` check resolves the remote-only restore gap without changing the no-remote bootstrap behavior; the main remaining work is committing the verified patch and opening/updating branch review artifacts if needed.
+- What changed: added a focused remote-only fixture regression in `src/core/workspace.test.ts`; introduced `fetchIssueRemoteTrackingRef(...)` in `src/core/workspace.ts` to fetch only the target issue ref, treat a missing remote ref as a discovery result, delete stale tracking refs on that path, and restore from `origin/<issue-branch>` when present.
 - Current blocker: none
-- Next exact step: watch PR #746 status on `5fe2de7` until the refreshed CodeRabbit result posts.
-- Verification gap: no code-path behavior changed in this turn, so verification remained limited to focused checks for the journal formatting change plus PR status confirmation after push.
-- Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this patch would restore the inline command-log formatting that triggered the review thread and would likely reopen the journal-only PR feedback on the next CodeRabbit pass.
-- Last focused command: `gh pr view 746 --json headRefOid,mergeStateStatus,statusCheckRollup`
+- Next exact step: commit the workspace discovery fix on `codex/issue-722`, then check whether a draft PR already exists for this branch and open one if it does not.
+- Verification gap: `npm run build` initially failed because `node_modules` was absent and `tsc` was unavailable in the worktree; reran after `npm install` and it passed, so there is no remaining known local verification gap.
+- Files touched: `src/core/workspace.ts`, `src/core/workspace.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this patch would reintroduce the bug where a remote-only issue branch is ignored and `ensureWorkspace()` deterministically bootstraps from `origin/<defaultBranch>` instead of restoring the discovered remote branch.
+- Last focused command: `npm run build`
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-721/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-721/context-index.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-722/AGENTS.generated.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-722/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
 git status --short
-git diff -- .codex-supervisor/issue-journal.md
-nl -ba .codex-supervisor/issue-journal.md | sed -n '1,180p'
-npx markdownlint-cli2 .codex-supervisor/issue-journal.md
-git rev-parse HEAD
-git show HEAD:.codex-supervisor/issue-journal.md | sed -n '1,140p'
-git add .codex-supervisor/issue-journal.md && git commit -m "Fence journal command logs"
+rg -n "ensureWorkspace|defaultBranch|origin/" src
+rg -n "ensureWorkspace|workspace restore|origin/" src/*.test.ts src/core/*.test.ts src/**/*.test.ts
+sed -n '1,220p' src/core/workspace.ts
+sed -n '1,220p' src/core/workspace.test.ts
+sed -n '70,140p' src/execution-safety-docs.test.ts
+rg -n "WorkspaceRestoreMetadata|restore.source|bootstrap_default_branch|local_branch|remote_branch" src/core src | head -n 200
+sed -n '1,220p' src/core/types.ts
+sed -n '320,360p' src/core/types.ts
+npx tsx --test src/core/workspace.test.ts
+sed -n '1,220p' src/core/command.ts
+git --version
+tmpdir=$(mktemp -d) && origin="$tmpdir/origin.git" && repo="$tmpdir/repo" && git init --bare "$origin" >/dev/null && git clone "$origin" "$repo" >/dev/null && git -C "$repo" config user.name test && git -C "$repo" config user.email test@example.com && git -C "$repo" checkout -b main >/dev/null && printf 'x\n' > "$repo/README.md" && git -C "$repo" add README.md && git -C "$repo" commit -m init >/dev/null && git -C "$repo" push -u origin main >/dev/null && git -C "$repo" fetch origin +refs/heads/missing:refs/remotes/origin/missing; status=$?; printf 'exit=%s\n' "$status"
+npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/core/workspace.test.ts
+npm run build
+test -d node_modules && echo present || echo missing
+cat package.json
+npm install
 date -u +"%Y-%m-%dT%H:%M:%SZ"
-git push origin codex/issue-721
-gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -f threadId='PRRT_kwDORgvdZ851w4ly'
-gh pr view 746 --json headRefOid,mergeStateStatus,statusCheckRollup
 ```
 ### Scratchpad
+- 2026-03-21 (JST): Reproduced the remote-only restore bug with a focused `src/core/workspace.test.ts` fixture where `origin/codex/issue-723` existed but the local branch did not, implemented a narrow target-branch fetch in `ensureWorkspace()`, verified the remote/local/bootstrap restore paths with the requested issue test set, and reran `npm run build` successfully after `npm install` restored the missing local `tsc` dependency in this worktree.
 - 2026-03-21 (JST): Pushed `5fe2de7` with the journal-only fenced-command-log fix, resolved CodeRabbit thread `PRRT_kwDORgvdZ851w4ly`, and confirmed via `gh pr view` that both CI build jobs were green while the refreshed CodeRabbit status was still pending on the new head.
 - 2026-03-21 (JST): Reproduced the remaining PR #746 review finding locally, confirmed the journal still had inline command-log spans in `Tests:` and `Last focused commands:`, and converted those logs to fenced `bash` blocks while keeping the failure context and handoff notes concise.
 - 2026-03-21 (JST): Fixed the journal-only review fallout in `.codex-supervisor/issue-journal.md`, verified the summary no longer uses machine-local Markdown links and that inline code spans have no leading/trailing spaces, pushed `1707486` to `origin/codex/issue-721`, and resolved CodeRabbit threads `PRRT_kwDORgvdZ851wrHP`, `PRRT_kwDORgvdZ851wrHV`, and `PRRT_kwDORgvdZ851wrHX`.
