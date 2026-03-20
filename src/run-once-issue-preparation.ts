@@ -159,6 +159,17 @@ function normalizeEnsuredWorkspace(
   return ensuredWorkspace;
 }
 
+function withWorkspaceRestoreMetadata(
+  workspaceStatus: WorkspaceStatus,
+  restore: Pick<WorkspaceStatus, "restoreSource" | "restoreRef">,
+): WorkspaceStatus {
+  return {
+    ...workspaceStatus,
+    restoreSource: restore.restoreSource,
+    restoreRef: restore.restoreRef,
+  };
+}
+
 async function prepareWorkspaceContext(
   args: PrepareIssueExecutionContextArgs,
 ): Promise<PreparedWorkspaceContext> {
@@ -205,11 +216,13 @@ async function prepareWorkspaceContext(
     journalPath,
   });
 
-  const workspaceStatus = {
-    ...(await getWorkspaceStatus(workspacePath, preparedRecord.branch, args.config.defaultBranch)),
-    restoreSource: ensuredWorkspace.restore.source,
-    restoreRef: ensuredWorkspace.restore.ref,
-  };
+  const workspaceStatus = withWorkspaceRestoreMetadata(
+    await getWorkspaceStatus(workspacePath, preparedRecord.branch, args.config.defaultBranch),
+    {
+      restoreSource: ensuredWorkspace.restore.source,
+      restoreRef: ensuredWorkspace.restore.ref,
+    },
+  );
   const hydratedRecord = args.stateStore.touch(preparedRecord, { last_head_sha: workspaceStatus.headSha });
   args.state.issues[String(hydratedRecord.issue_number)] = hydratedRecord;
   await args.stateStore.save(args.state);
@@ -244,7 +257,10 @@ async function hydratePullRequestContext(
   let nextWorkspaceStatus = args.workspaceStatus;
   if (nextWorkspaceStatus.remoteBranchExists && nextWorkspaceStatus.remoteAhead > 0) {
     await pushBranch(args.workspacePath, args.record.branch, true);
-    nextWorkspaceStatus = await getWorkspaceStatus(args.workspacePath, args.record.branch, args.config.defaultBranch);
+    nextWorkspaceStatus = withWorkspaceRestoreMetadata(
+      await getWorkspaceStatus(args.workspacePath, args.record.branch, args.config.defaultBranch),
+      nextWorkspaceStatus,
+    );
   }
 
   const resolvedPr = await args.github.resolvePullRequestForBranch(args.record.branch, args.record.pr_number);

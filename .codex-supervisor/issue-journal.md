@@ -5,34 +5,51 @@
 - Branch: codex/issue-721
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 53d010d64c4b7af18876994308cf35734470de4a
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 86e5a2e1222722ee3e2220609a7363b816cf93e1
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-20T16:09:16.338Z
+- Last failure signature: PRRT_kwDORgvdZ851wejt
+- Repeated failure signature count: 1
+- Updated at: 2026-03-20T16:26:15.156Z
 
 ## Latest Codex Summary
-- Added a narrow workspace-restore visibility slice: `ensureWorkspace()` now returns deterministic restore metadata, issue preparation persists the restore source/ref for active records, and status output surfaces `workspace_restore ...` so operators can see whether a recreated workspace came from a local branch or default-branch bootstrap. Focused restore/preparation/status tests passed, the requested issue test set passed, `npm run build` passed after installing local dependencies in this worktree, and draft PR #746 is now open for the checkpoint.
+Implemented the restore-visibility slice and kept restore semantics unchanged. `ensureWorkspace()` now returns deterministic restore metadata, issue preparation persists it on the active record, and detailed status shows `workspace_restore source=... ref=...` so operators can tell whether a recreated workspace came from a local branch or bootstrap. I added a Git-backed regression for the workspace layer plus focused preparation/status coverage.
+
+Key files: [src/core/workspace.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-721/src/core/workspace.ts), [src/core/workspace.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-721/src/core/workspace.test.ts), [src/run-once-issue-preparation.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-721/src/run-once-issue-preparation.ts), [src/supervisor/supervisor-detailed-status-assembly.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-721/src/supervisor/supervisor-detailed-status-assembly.ts), [src/supervisor/supervisor-status-rendering.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-721/src/supervisor/supervisor-status-rendering.test.ts). I updated the journal, committed the work, pushed `codex/issue-721`, and opened draft PR #746: https://github.com/TommyKammy/codex-supervisor/pull/746
+
+Verification passed with:
+`npx tsx --test src/core/workspace.test.ts src/run-once-issue-preparation.test.ts src/supervisor/supervisor-status-rendering.test.ts`
+`npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor.test.ts`
+`npm run build`
+
+Summary: Added deterministic workspace restore source metadata, surfaced it in status, committed/pushed the change, and opened draft PR #746.
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/core/workspace.test.ts src/run-once-issue-preparation.test.ts src/supervisor/supervisor-status-rendering.test.ts`; `npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor.test.ts`; `npm run build`
+Failure signature: none
+Next action: Watch CI on draft PR #746 and address any fallout from the new optional restore metadata surfaces.
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/746#discussion_r2966699304
+- Details:
+  - src/run-once-issue-preparation.ts:212 _⚠️ Potential issue_ | _🟠 Major_ **Restore metadata may be lost when workspace status is re-fetched downstream.** The `workspaceStatus` is augmented with `restoreSource` and `restoreRef` here, but in `hydratePullRequestContext` (line 247), when `remoteBranchExists && remoteAhead > 0`, the status is re-fetched via `getWorkspaceStatus()` which does not include these fields: ```typescript nextWorkspaceStatus = await getWorkspaceStatus(args.workspacePath, args.record.branch, args.config.defaultBranch); ``` This causes the restore metadata to be lost from `nextWorkspaceStatus`, leading to inconsistent status output in that code path. <details> <summary>Proposed fix: preserve restore metadata when re-fetching status</summary> ```diff if (nextWorkspaceStatus.remoteBranchExists && nextWorkspaceStatus.remoteAhead > 0) { await pushBranch(args.workspacePath, args.record.branch, true); - nextWorkspaceStatus = await getWorkspaceStatus(args.workspacePath, args.record.branch, args.config.defaultBranch); + nextWorkspaceStatus = { + ...(await getWorkspaceStatus(args.workspacePath, args.record.branch, args.config.defaultBranch)), + restoreSource: nextWorkspaceStatus.restoreSource, + restoreRef: nextWorkspaceStatus.restoreRef, + }; } ``` </details> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/run-once-issue-preparation.ts` around lines 208 - 212, When re-fetching status in hydratePullRequestContext (the nextWorkspaceStatus assigned from getWorkspaceStatus), preserve the restore metadata by copying restoreSource and restoreRef into nextWorkspaceStatus (sourced from ensuredWorkspace.restore or the original workspaceStatus) so those fields are not lost; update the code path that does nextWorkspaceStatus = await getWorkspaceStatus(...) to augment the returned object with restoreSource and restoreRef (matching the original augmentation done when creating workspaceStatus). ``` </details> <!-- fingerprinting:phantom:poseidon:ocelot --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the narrowest viable fix is to keep restore semantics unchanged, but make `ensureWorkspace()` return typed restore metadata that can be persisted on the issue record and surfaced in operator status output.
-- What changed: added a focused Git-backed regression in `src/core/workspace.test.ts` to reproduce the missing restore-source signal, updated `src/core/workspace.ts` so `ensureWorkspace()` reports deterministic restore metadata for existing-workspace/local-branch/bootstrap paths, threaded that metadata through `prepareIssueExecutionContext(...)`, and rendered a `workspace_restore source=... ref=...` line in active detailed status output.
+- Hypothesis: CodeRabbit's remaining review thread is valid because `hydratePullRequestContext(...)` refreshes `WorkspaceStatus` after a push and drops the previously attached `restoreSource`/`restoreRef` metadata from the prepared workspace context.
+- What changed: added `withWorkspaceRestoreMetadata(...)` in `src/run-once-issue-preparation.ts`, used it both when first hydrating workspace status and when re-fetching status after `pushBranch(...)`, and added a focused regression in `src/run-once-issue-preparation.test.ts` that exercises the remote-ahead refresh path and asserts the restore metadata survives into the returned status and replay snapshot.
 - Current blocker: none
-- Next exact step: watch CI on draft PR #746 and address any fallout, especially if wider type consumers need the new optional restore metadata handled explicitly.
-- Verification gap: remote-branch restore metadata is typed but still not exercised because this issue deliberately does not change restore semantics yet.
-- Files touched: `src/core/types.ts`; `src/core/workspace.ts`; `src/core/workspace.test.ts`; `src/run-once-issue-preparation.ts`; `src/run-once-issue-preparation.test.ts`; `src/run-once-issue-selection.ts`; `src/supervisor/supervisor.ts`; `src/supervisor/supervisor-detailed-status-assembly.ts`; `src/supervisor/supervisor-status-rendering.test.ts`; `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this patch would remove the only deterministic, persisted restore-source signal for recreated workspaces and make it harder for operators/tests to tell whether the supervisor reused a local issue branch or bootstrapped from `origin/<defaultBranch>`.
+- Next exact step: commit this review fix, push `codex/issue-721`, and clear the remaining PR #746 review thread.
+- Verification gap: `remote_branch` restore metadata is still only typed, not behaviorally exercised, because this issue does not change restore semantics or add a remote-restore fixture.
+- Files touched: `src/run-once-issue-preparation.ts`; `src/run-once-issue-preparation.test.ts`; `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this patch would reintroduce inconsistent restore-source visibility specifically on the `remoteAhead > 0` refresh path, which is exactly the operator-visible status regression called out in PR review.
 - Last focused command: `npm run build`
-- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-721/AGENTS.generated.md`; `sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-721/context-index.md`; `sed -n '1,360p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg -n "ensureWorkspace\\(|restore|bootstrap|remote branch|local branch|worktree add|origin/<defaultBranch>|restoreSource|recovery" src`; `sed -n '1,260p' src/core/workspace.ts`; `sed -n '1,320p' src/run-once-issue-preparation.test.ts`; `sed -n '1,260p' src/run-once-issue-preparation.ts`; `sed -n '1,260p' src/core/types.ts`; `sed -n '1,260p' src/supervisor/supervisor-cycle-snapshot.ts`; `sed -n '1,280p' src/supervisor/supervisor-status-rendering.test.ts`; `sed -n '1,240p' src/supervisor/supervisor-detailed-status-assembly.ts`; `npx tsx --test src/core/workspace.test.ts`; `npx tsx --test src/core/workspace.test.ts src/run-once-issue-preparation.test.ts src/supervisor/supervisor-status-rendering.test.ts`; `npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor.test.ts`; `npm install`; `npm run build`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`
+- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-721/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-721/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `sed -n '1,340p' src/run-once-issue-preparation.ts`; `rg -n "restoreSource|restoreRef|getWorkspaceStatus\\(|hydratePullRequestContext|remoteAhead > 0|nextWorkspaceStatus" src/run-once-issue-preparation.ts src/run-once-issue-preparation.test.ts src/core/types.ts`; `sed -n '1,420p' src/run-once-issue-preparation.test.ts`; `sed -n '300,360p' src/core/types.ts`; `sed -n '340,460p' src/run-once-issue-preparation.ts`; `git diff -- src/run-once-issue-preparation.ts src/run-once-issue-preparation.test.ts`; `npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor.test.ts`; `npm run build`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`
 ### Scratchpad
-- 2026-03-21 (JST): Committed `Surface workspace restore source`, pushed `codex/issue-721`, and opened draft PR #746 (`https://github.com/TommyKammy/codex-supervisor/pull/746`); the unrelated untracked `.codex-supervisor/replay/` directory remains untouched.
-- 2026-03-21 (JST): Added a focused Git-backed regression for workspace restore visibility, reproduced that `ensureWorkspace()` dropped restore provenance entirely, then implemented deterministic restore metadata (`existing_workspace`/`local_branch`/typed bootstrap placeholder) that is persisted on prepared issue records and surfaced as `workspace_restore source=... ref=...` in detailed status; `npx tsx --test src/core/workspace.test.ts src/run-once-issue-preparation.test.ts src/supervisor/supervisor-status-rendering.test.ts`, `npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor.test.ts`, and `npm run build` passed after `npm install`.
+- 2026-03-21 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851wejt` by preserving `restoreSource`/`restoreRef` when `hydratePullRequestContext(...)` re-fetches workspace status after pushing a remote-ahead branch; added a focused regression for that refresh path and reran `npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor.test.ts` plus `npm run build`, all passing.
 - 2026-03-21 (JST): Reverified the fail-closed checkpoint with the issue test set and `npm run build`, pushed `codex/issue-718`, and opened draft PR #744 so the branch now has a tracked review artifact; the unrelated untracked `.codex-supervisor/replay/` directory remains untouched.
 - 2026-03-21 (JST): Added focused fail-closed regressions for quarantined JSON state, reproduced that `runOnce()` still reached issue selection, `requeue` still mutated against the forced-empty fallback, and `loop` kept sleeping after a fail-closed result, then implemented a narrow supervisor/runtime gate that blocks execution-changing commands until `reset-corrupt-json-state` and reran the issue verification plus `npm run build` successfully after `npm install`.
 - 2026-03-20 (JST): Added a focused status regression for invalid JSON state, reproduced the omission where status only printed normal empty-state lines, then appended explicit `state_diagnostic` and `state_load_finding` lines for JSON `load_findings` so corruption is visible in status without changing loader semantics.

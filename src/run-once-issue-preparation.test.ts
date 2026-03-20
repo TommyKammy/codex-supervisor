@@ -317,6 +317,87 @@ test("prepareIssueExecutionContext records the workspace restore source for late
   assert.equal(result.workspaceStatus.restoreRef, "codex/reopen-issue-240");
 });
 
+test("prepareIssueExecutionContext preserves restore metadata after refreshing workspace status", async () => {
+  const record = createRecord();
+  const state = createState(record);
+  const statusReads = [
+    createWorkspaceStatus({
+      headSha: "workspace-head-before-push",
+      remoteBranchExists: true,
+      remoteAhead: 2,
+    }),
+    createWorkspaceStatus({
+      headSha: "workspace-head-after-push",
+      remoteBranchExists: true,
+      remoteAhead: 0,
+    }),
+  ];
+  const pushCalls: Array<{ workspacePath: string; branch: string; remoteBranchExists: boolean }> = [];
+  const replaySnapshots: WorkspaceStatus[] = [];
+
+  const result = await prepareIssueExecutionContext({
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+    },
+    config: createConfig(),
+    stateStore: {
+      touch(currentRecord, patch) {
+        return { ...currentRecord, ...patch };
+      },
+      async save() {},
+    },
+    state,
+    record,
+    issue: createIssue(),
+    options: { dryRun: true },
+    ensureWorkspace: async () => ({
+      workspacePath: "/tmp/workspaces/issue-240",
+      restore: {
+        source: "local_branch",
+        ref: "codex/reopen-issue-240",
+      },
+    }),
+    syncIssueJournal: async () => {},
+    syncMemoryArtifacts: async () => ({
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+      alwaysReadFiles: [],
+      onDemandFiles: [],
+    }),
+    getWorkspaceStatus: async () => {
+      const nextStatus = statusReads.shift();
+      assert.ok(nextStatus, "expected workspace status fixture");
+      return nextStatus;
+    },
+    pushBranch: async (workspacePath, branch, remoteBranchExists) => {
+      pushCalls.push({ workspacePath, branch, remoteBranchExists });
+    },
+    writeSupervisorCycleDecisionSnapshot: async ({ workspaceStatus }) => {
+      replaySnapshots.push(workspaceStatus);
+      return "/tmp/workspaces/issue-240/.codex-supervisor/replay/decision-cycle-snapshot.json";
+    },
+  });
+
+  assert.ok(result && !isRestartRunOnce(result) && typeof result !== "string");
+  assert.deepEqual(pushCalls, [
+    {
+      workspacePath: "/tmp/workspaces/issue-240",
+      branch: "codex/reopen-issue-240",
+      remoteBranchExists: true,
+    },
+  ]);
+  assert.equal(result.workspaceStatus.headSha, "workspace-head-after-push");
+  assert.equal(result.workspaceStatus.restoreSource, "local_branch");
+  assert.equal(result.workspaceStatus.restoreRef, "codex/reopen-issue-240");
+  assert.equal(replaySnapshots[0]?.restoreSource, "local_branch");
+  assert.equal(replaySnapshots[0]?.restoreRef, "codex/reopen-issue-240");
+});
+
 test("prepareIssueExecutionContext restarts when a tracked PR already merged", async () => {
   const record = createRecord({
     implementation_attempt_count: 2,
