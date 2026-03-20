@@ -7,11 +7,11 @@
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: repairing_ci
 - Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 2cb021240847dc2f6939995820d65a4e9e0c7ed4
+- Last head SHA: 8195bf27bb01a2d88459393e955b9169db9b282e
 - Blocked reason: none
 - Last failure signature: build (ubuntu-latest):fail
 - Repeated failure signature count: 1
-- Updated at: 2026-03-20T01:39:55.479Z
+- Updated at: 2026-03-20T01:41:52Z
 
 ## Latest Codex Summary
 Repaired the failing Ubuntu CI gate for PR #686 after the latest-head CodeRabbit waiting change altered the checked-in replay corpus outcome for `stale-head-prevents-merge`. The replay case now consistently expects `waiting_ci`/`shouldRunCodex=false`, matching the new latest-head provider re-arm behavior already implemented in [src/pull-request-state.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-680/src/pull-request-state.ts).
@@ -23,7 +23,7 @@ State hint: repairing_ci
 Blocked reason: none
 Tests: `npx tsx src/index.ts replay-corpus`; `npx tsx --test src/pull-request-state-coderabbit-settled-waits.test.ts`; `npx tsx --test src/supervisor/supervisor-lifecycle.test.ts --test-name-pattern "CodeRabbit"`; `npx tsx --test src/github/github-review-signals.test.ts --test-name-pattern "CodeRabbit|current-head|stale-head"`; `npx tsx --test src/supervisor/replay-corpus-runner.test.ts --test-name-pattern "checked-in PR lifecycle safety cases"`; `npm run build`
 Failure signature: build (ubuntu-latest):fail
-Next action: Commit the replay-corpus fixture repair, push `codex/issue-680`, and watch PR #686 for a green Ubuntu rerun.
+Next action: Monitor PR #686 checks after push `8195bf2` and confirm the rerun clears the Ubuntu replay-corpus gate.
 
 ## Active Failure Context
 - Category: checks
@@ -38,13 +38,13 @@ Next action: Commit the replay-corpus fixture repair, push `codex/issue-680`, an
 - Hypothesis: latest-head merge gating should keep waiting when `review_wait_started_at` has been re-armed for a newer head but every actionable CodeRabbit signal still predates that re-arm point, because those older signals belong to earlier review activity.
 - What changed: reproduced the failing Ubuntu CI command (`npx tsx src/index.ts replay-corpus`), confirmed the only mismatch was checked-in case `stale-head-prevents-merge`, and updated that replay corpus fixture so its embedded snapshot decision and expected replay result now match the intended `waiting_ci` outcome from the latest-head CodeRabbit re-arm logic.
 - Current blocker: none
-- Next exact step: commit the replay-corpus fixture update, push the branch, and verify that PR #686's Ubuntu build reruns cleanly.
+- Next exact step: monitor PR #686 checks for pushed head `8195bf2` and confirm Actions run `23325498452` clears the Ubuntu replay-corpus gate.
 - Verification gap: none for the scoped CI repair. `npx tsx src/index.ts replay-corpus`, `npx tsx --test src/pull-request-state-coderabbit-settled-waits.test.ts`, `npx tsx --test src/supervisor/supervisor-lifecycle.test.ts --test-name-pattern "CodeRabbit"`, `npx tsx --test src/github/github-review-signals.test.ts --test-name-pattern "CodeRabbit|current-head|stale-head"`, `npx tsx --test src/supervisor/replay-corpus-runner.test.ts --test-name-pattern "checked-in PR lifecycle safety cases"`, and `npm run build` all passed locally.
 - Files touched: `replay-corpus/cases/stale-head-prevents-merge/expected/replay-result.json`, `replay-corpus/cases/stale-head-prevents-merge/input/snapshot.json`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this checkpoint would let older CodeRabbit review activity satisfy merge gating for a newer PR head once the head advances past an earlier review.
 - Last focused command: `npx tsx src/index.ts replay-corpus`
 ### Scratchpad
-- 2026-03-20 (JST): Investigated failing PR #686 Ubuntu build run `23324989013` / job `67844213270`; the failure was a replay-corpus mismatch in checked-in case `stale-head-prevents-merge`, which still expected `stabilizing` even though the latest-head CodeRabbit re-arm change now intentionally yields `waiting_ci`. Updated the case fixture, reran the replay gate plus focused CodeRabbit/replay tests, and `npm run build` passed.
+- 2026-03-20 (JST): Investigated failing PR #686 Ubuntu build run `23324989013` / job `67844213270`; the failure was a replay-corpus mismatch in checked-in case `stale-head-prevents-merge`, which still expected `stabilizing` even though the latest-head CodeRabbit re-arm change now intentionally yields `waiting_ci`. Updated the case fixture, reran the replay gate plus focused CodeRabbit/replay tests, committed `8195bf2` (`Fix stale-head replay corpus expectation`), pushed `codex/issue-680`, and observed fresh PR #686 checks start on Actions run `23325498452`.
 - 2026-03-20 (JST): Pushed `codex/issue-671` to `origin/codex/issue-671` and opened draft PR #676 (`https://github.com/TommyKammy/codex-supervisor/pull/676`) after the focused artifact/finalize/result/status/policy tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
 - 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851kRrS` as a real bug: malformed SQLite rows could yield only `load_findings`, after which `loadFromSqlite()` returned fallback empty/bootstrap state without those findings. Fixed the fallback path, added a dedicated regression for the empty-state case, and reran `npx tsx --test src/core/state-store.test.ts` plus `npm run build` successfully.
