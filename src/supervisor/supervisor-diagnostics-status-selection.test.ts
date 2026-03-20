@@ -264,6 +264,31 @@ test("status surfaces the current reconciliation phase only while reconciliation
   assert.doesNotMatch(afterReconciliation, /reconciliation_phase=/);
 });
 
+test("acquireSupervisorLock reports reconciliation work when the run lock is already held", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  await writeCurrentReconciliationPhase(fixture.config, "tracked_merged_but_open_issues");
+
+  const heldLock = await supervisor.acquireSupervisorLock("run-once");
+  assert.equal(heldLock.acquired, true);
+
+  try {
+    const blockedLock = await supervisor.acquireSupervisorLock("run-once");
+    assert.equal(blockedLock.acquired, false);
+    assert.match(
+      blockedLock.reason ?? "",
+      /lock held by pid \d+ for supervisor-run-once for reconciliation work \(tracked_merged_but_open_issues\)/,
+    );
+  } finally {
+    await heldLock.release();
+    await clearCurrentReconciliationPhase(fixture.config);
+  }
+});
+
 test("status --why explains why the current runnable issue was selected", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {
