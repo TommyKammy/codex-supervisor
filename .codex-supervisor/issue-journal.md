@@ -1,113 +1,62 @@
-# Issue #722: Remote branch discovery: detect origin issue branches before default-branch bootstrap
+# Issue #723: Remote branch restore: recover missing local issue branches from origin before bootstrapping from default
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/722
-- Branch: codex/issue-722
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/723
+- Branch: codex/issue-723
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 4 (implementation=1, repair=3)
-- Last head SHA: a983e76bc94b3ad17304c7fbb71dc5c1a863488a
+- Current phase: stabilizing
+- Attempt count: 4 (implementation=4, repair=0)
+- Last head SHA: 33b904323fbf9baf8e365b13b8160f3c25b05ae0
 - Blocked reason: none
-- Last failure signature: none
+- Last failure signature: stale-stabilizing-no-pr-recovery-loop
 - Repeated failure signature count: 1
-- Updated at: 2026-03-20T17:59:06Z
+- Updated at: 2026-03-20T19:07:52Z
 
 ## Latest Codex Summary
-Simplified the stored review context in [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-722/.codex-supervisor/issue-journal.md) so the journal now records the remaining CodeRabbit concern as a short summary plus direct discussion link instead of embedding the full bot transcript. I committed that cleanup as `a983e76`, pushed `codex/issue-722`, and resolved review thread `PRRT_kwDORgvdZ851xv4Z`.
+No product-code change was needed in this worktree. `ensureWorkspace()` still implements the requested precedence in [src/core/workspace.ts:91](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-723/src/core/workspace.ts#L91): existing local branch first, remote issue branch second at [src/core/workspace.ts:111](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-723/src/core/workspace.ts#L111), and default-branch bootstrap last at [src/core/workspace.ts:119](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-723/src/core/workspace.ts#L119). The focused coverage for both the bootstrap fallback and remote-restore cases is still present in [src/core/workspace.test.ts:95](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-723/src/core/workspace.test.ts#L95) and [src/core/workspace.test.ts:107](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-723/src/core/workspace.test.ts#L107), and the issue's requested verification passes on this turn.
 
-Focused verification confirmed the reported markdownlint failures are gone for this review context: `npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg "MD038|MD052"` returned no matches. Full `markdownlint-cli2` still reports longstanding journal-wide style warnings unrelated to this thread. PR #747 now shows `mergeStateStatus: UNSTABLE` because CI and CodeRabbit restarted after the push. The only remaining local dirt is the pre-existing untracked `.codex-supervisor/replay/` directory, which I left untouched.
+I refreshed the handoff in [issue-journal.md:16](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-723/.codex-supervisor/issue-journal.md#L16). The branch still matches `origin/main` at `33b9043` (`Remote branch discovery before bootstrap (#747)`), there is still no `origin/codex/issue-723`, and `gh pr status` still shows no PR for this branch because it tracks `origin/main`, so there is no reviewable product diff to commit or open as a PR from this worktree.
 
-Summary: Simplified the journal’s stored review context, pushed the review-only cleanup on `codex/issue-722`, and resolved the last configured CodeRabbit thread on PR #747.
-State hint: addressing_review
+Summary: Re-verified issue #723 as already shipped on `origin/main`; refreshed the journal with current branch state and passing verification.
+State hint: stabilizing
 Blocked reason: none
-Tests: `npx markdownlint-cli2 .codex-supervisor/issue-journal.md`; `npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg "MD038|MD052"`
+Tests: `npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/core/workspace.test.ts`; `npm run build`
 Failure signature: none
-Next action: Push this journal sync commit, then watch PR #747 checks and any new review fallout on `codex/issue-722`.
+Next action: Decide whether to close or supersede issue #723 as already satisfied by PR `#747`, since `codex/issue-723` still has no product diff and no issue-specific remote branch or PR.
 
 ## Active Failure Context
-- Category: none
-- Summary: No active local failure remains; both configured PR review threads are resolved.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/747
-- Details:
-  - Resolved `PRRT_kwDORgvdZ851xv4Z` by replacing the inlined CodeRabbit transcript with a concise note that links back to `discussion_r2967063046`.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The branch is back to a clean review state; only CI reruns from the journal-only push need watching now.
-- What changed: trimmed the oversized `Active Failure Context` entry in `.codex-supervisor/issue-journal.md`, committed the cleanup as `a983e76`, pushed `codex/issue-722`, and resolved thread `PRRT_kwDORgvdZ851xv4Z`.
+- Hypothesis: No product-code change is required for #723 in this worktree because the requested local -> remote -> bootstrap restore behavior is already implemented on `origin/main`, and this branch still has no remaining commit diff from that shipped commit.
+- What changed: re-read the required memory files and journal, rechecked `src/core/workspace.ts` and `src/core/workspace.test.ts`, confirmed `codex/issue-723` still matches `origin/main` at `33b9043`, confirmed there is still no `origin/codex/issue-723` remote branch and no PR for this branch, reran the issue's focused test/build verification, and noted the only local changes remain this journal plus an untracked `.codex-supervisor/replay/decision-cycle-snapshot.json` artifact.
 - Current blocker: none
-- Next exact step: push this journal sync commit and then watch PR #747 for CI completion or any new review comments.
-- Verification gap: none; the review-specific markdownlint findings are gone and no product code changed in this turn.
+- Next exact step: decide whether to close or supersede issue #723 as already shipped in PR `#747`, because there is no product diff to commit or PR to open from `codex/issue-723`.
+- Verification gap: none in the requested scope; `npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/core/workspace.test.ts` and `npm run build` pass locally this turn.
 - Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this patch would reintroduce the unreadable inline transcript and the missing-reference markdown noise in the journal, but would not affect product behavior.
-- Last focused command: `gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id,isResolved,path}}}}}' -F owner=TommyKammy -F repo=codex-supervisor -F number=747`
+- Rollback concern: reverting this journal update would only lose the refreshed verification and branch-state handoff for this turn; product behavior would stay unchanged.
+- Last focused command: `git status --short`
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-722/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-722/context-index.md
-sed -n '1,260p' .codex-supervisor/issue-journal.md
-git status --short
-rg -n "ensureWorkspace|defaultBranch|origin/" src
-rg -n "ensureWorkspace|workspace restore|origin/" src/*.test.ts src/core/*.test.ts src/**/*.test.ts
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-723/AGENTS.generated.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-723/context-index.md
+sed -n '1,320p' .codex-supervisor/issue-journal.md
+git status --short --branch
+git diff --stat origin/main...HEAD
+git rev-parse --short HEAD && git rev-parse --short origin/main
+git branch -vv
+git branch -r | rg 'origin/codex/issue-723|origin/main'
+gh pr status
 sed -n '1,220p' src/core/workspace.ts
 sed -n '1,220p' src/core/workspace.test.ts
-sed -n '70,140p' src/execution-safety-docs.test.ts
-rg -n "WorkspaceRestoreMetadata|restore.source|bootstrap_default_branch|local_branch|remote_branch" src/core src | head -n 200
-sed -n '1,220p' src/core/types.ts
-sed -n '320,360p' src/core/types.ts
-npx tsx --test src/core/workspace.test.ts
-sed -n '1,220p' src/core/command.ts
-git --version
-tmpdir=$(mktemp -d) && origin="$tmpdir/origin.git" && repo="$tmpdir/repo" && git init --bare "$origin" >/dev/null && git clone "$origin" "$repo" >/dev/null && git -C "$repo" config user.name test && git -C "$repo" config user.email test@example.com && git -C "$repo" checkout -b main >/dev/null && printf 'x\n' > "$repo/README.md" && git -C "$repo" add README.md && git -C "$repo" commit -m init >/dev/null && git -C "$repo" push -u origin main >/dev/null && git -C "$repo" fetch origin +refs/heads/missing:refs/remotes/origin/missing; status=$?; printf 'exit=%s\n' "$status"
+git show --stat --oneline --decorate --no-patch 33b9043
+find .codex-supervisor/replay -maxdepth 2 -type f | sort
 npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/core/workspace.test.ts
 npm run build
-test -d node_modules && echo present || echo missing
-cat package.json
-npm install
 date -u +"%Y-%m-%dT%H:%M:%SZ"
-git add src/core/workspace.ts src/core/workspace.test.ts .codex-supervisor/issue-journal.md && git commit -m "Discover remote issue branches before bootstrap"
 git status --short
-gh pr view --json number,isDraft,headRefName,url
-git branch --show-current
-git rev-parse --short HEAD
-git remote -v
-git push -u origin codex/issue-722
-gh pr create --draft --base main --head codex/issue-722 --title "Remote branch discovery before bootstrap" --body "## Summary ..."
-date -u +"%Y-%m-%dT%H:%M:%SZ"
-npx tsx --test src/core/workspace.test.ts
-npx tsx -e "import * as m from './src/core/command.ts'; console.log(Object.keys(m)); console.log(typeof (m as any).runCommand); console.log(typeof (m as any).default?.runCommand);"
-npx tsx -e "(async()=>{ const m = await import('./src/core/command'); console.log('keys', Object.keys(m)); console.log('default type', typeof (m).default); console.log('module.exports type', typeof (m)['module.exports']); console.log('default keys', (m).default ? Object.keys((m).default) : 'none'); console.log('module.exports keys', (m)['module.exports'] ? Object.keys((m)['module.exports']) : 'none'); })();"
-npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/core/workspace.test.ts
-npm run build
-git status --short
-date -u +"%Y-%m-%dT%H:%M:%SZ"
-git rev-parse --short HEAD
-git add src/core/workspace.ts .codex-supervisor/issue-journal.md && git commit -m "Force C locale for issue branch probe"
-git push origin codex/issue-722
-gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ851xgdP
-git status --short --branch
-git diff -- .codex-supervisor/issue-journal.md
-gh pr view 747 --json number,url,headRefName,isDraft,mergeStateStatus,reviewDecision,statusCheckRollup
-gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id,isResolved,path,comments(first:10){nodes{databaseId,url,body}}}}}}}' -F owner=TommyKammy -F repo=codex-supervisor -F number=747
-nl -ba .codex-supervisor/issue-journal.md | sed -n '1,140p'
-git rev-parse --short HEAD
-npx markdownlint-cli2 .codex-supervisor/issue-journal.md
-bash -lc 'npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg "MD038|MD052"'
-rg -n '\[3\]' .codex-supervisor/issue-journal.md
-git status --short
-git add .codex-supervisor/issue-journal.md && git commit -m "Simplify issue journal review context"
-git push origin codex/issue-722
-gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ851xv4Z
-gh pr view 747 --json number,url,headRefName,isDraft,mergeStateStatus,reviewDecision,statusCheckRollup
-gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id,isResolved,path}}}}}' -F owner=TommyKammy -F repo=codex-supervisor -F number=747
-date -u +"%Y-%m-%dT%H:%M:%SZ"
-git status --short --branch
 ```
 ### Scratchpad
-- 2026-03-21 (JST): Committed the journal readability cleanup as `a983e76`, pushed `codex/issue-722`, and resolved CodeRabbit thread `PRRT_kwDORgvdZ851xv4Z`; PR #747 is back to waiting on rerun checks rather than review action.
-- 2026-03-21 (JST): Verified PR #747 is otherwise clean and that the only unresolved review thread is `PRRT_kwDORgvdZ851xv4Z` on `.codex-supervisor/issue-journal.md`; simplifying the stored failure context is sufficient because the underlying locale fix in `src/core/workspace.ts` is already merged into this branch head.
-- 2026-03-19 (JST): Implemented `replay-corpus-promote` in `src/index.ts` and extended `CliOptions` in `src/core/types.ts` with explicit `caseId` support; the new CLI path uses the existing `promoteCapturedReplaySnapshot(...)` implementation and defaults `corpusPath` to checked-in `replay-corpus`.
-- 2026-03-19 (JST): Focused verification passed with `npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts`; `npm run build` first failed because `tsc` was missing locally, so ran `npm install` and reran `npm run build` successfully.
-- 2026-03-19 (JST): Added `suggestReplayCorpusCaseIds(...)` with deterministic issue/state and normalized-title candidates, plus focused helper coverage in `src/supervisor/replay-corpus.test.ts`.
-- 2026-03-19 (JST): Relaxed `parseArgs(...)` so `replay-corpus-promote <snapshotPath>` reaches `main()`, where the CLI now loads the snapshot and prints suggested case ids instead of failing before operators can see naming guidance.
+- Keep this section short. The supervisor may compact older notes automatically.
