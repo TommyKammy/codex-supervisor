@@ -7,30 +7,42 @@
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: stabilizing
 - Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 5fbd12630f8e60ed3feef1b3b56e6b3d3e4a9eed
+- Last head SHA: e6a1280895c22c229c7352d4264cde18fe8ac626
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-20T15:09:39.000Z
+- Updated at: 2026-03-20T15:22:47Z
 
 ## Latest Codex Summary
-- Added a narrow fail-closed gate for quarantined JSON state: `runOnce()` now returns a deterministic operator-facing block reason before auth/reconciliation, `runRecoveryAction("requeue")` rejects while the JSON quarantine marker is present, and the supervisor runtime stops `loop` immediately when that fail-closed message is returned. Focused corruption regressions passed, then the issue verification set and `npm run build` passed after restoring local dev dependencies with `npm install`.
+Verified the fail-closed checkpoint from `e6a1280` locally, pushed `codex/issue-718`, and opened draft PR #744 (`Fail closed on quarantined JSON state`).
+
+This turn reran the focused verification suite and `npm run build` successfully, then pushed the branch to `origin/codex/issue-718` and opened https://github.com/TommyKammy/codex-supervisor/pull/744 as a draft against `main`. The implementation remains the same narrow JSON-quarantine fail-closed gate: execution-changing commands stop until explicit recovery, while diagnostics and `reset-corrupt-json-state` stay available.
+
+One workspace note: the tree still has an unrelated untracked `.codex-supervisor/replay/` directory, which I left untouched.
+
+Summary: Reverified the fail-closed checkpoint, pushed `codex/issue-718`, and opened draft PR #744 for review.
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/core/state-store.test.ts src/cli/supervisor-runtime.test.ts src/supervisor/supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`
+Failure signature: none
+Next action: monitor PR #744, inspect CI, and address any review feedback
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining fail-open gap lives above the JSON loader, so the narrow safe fix is to treat the loader’s quarantine marker plus JSON `load_findings` as an execution-changing command block while leaving status/doctor/reset available.
-- What changed: added focused regressions proving `runOnce()` continued into issue-selection, `requeue` still mutated against the forced-empty fallback, and `loop` would keep sleeping after a fail-closed message. Implemented a narrow supervisor-level JSON corruption gate that only activates for the JSON backend when the state contains the exact quarantine marker/finding combination; `runOnce()` now returns a deterministic fail-closed reason before auth/reconciliation, `runRecoveryAction("requeue")` returns a rejected DTO with that same reason, and `runSupervisorCommand(...loop...)` stops immediately instead of spinning.
+- Hypothesis: issue #718 is implemented and locally verified; the only remaining work is normal PR/CI follow-through unless review finds a regression.
+- What changed: reran the issue verification set and `npm run build`, pushed `codex/issue-718` to origin, and opened draft PR #744. The underlying implementation is still the narrow supervisor/runtime gate that fail-closes execution-changing commands when the JSON loader has quarantined corrupt state, while keeping status/doctor/reset available.
 - Current blocker: none
-- Next exact step: stage the fail-closed supervisor/runtime/test/journal changes, commit the checkpoint, and then decide whether to open/update a draft PR for issue #718.
+- Next exact step: watch PR #744 / CI and respond to any review or mergeability issues.
 - Verification gap: none locally after `npx tsx --test src/core/state-store.test.ts src/cli/supervisor-runtime.test.ts src/supervisor/supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build`.
-- Files touched: `src/cli/supervisor-runtime.ts`, `src/cli/supervisor-runtime.test.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `.codex-supervisor/issue-journal.md`
+- Files touched: `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this patch reopens the fail-open path where quarantined JSON state is treated as usable supervisor state, allowing `run-once`, `loop`, and operator requeue mutations to act on the forced-empty fallback before the operator intentionally recovers.
-- Last focused command: `npm run build`
-- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-718/AGENTS.generated.md`; `sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-718/context-index.md`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short`; `rg -n "reset-corrupt-json-state|json_state_quarantine|load_findings|run-once|loop|status|doctor|corrupt" src`; `sed -n '1,260p' src/cli/supervisor-runtime.test.ts`; `sed -n '1,260p' src/cli/supervisor-runtime.ts`; `sed -n '1,260p' src/supervisor/supervisor.ts`; `sed -n '1,260p' src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `sed -n '1,260p' src/run-once-cycle-prelude.ts`; `sed -n '1,380p' src/core/state-store.ts`; `sed -n '1,260p' src/supervisor/supervisor-test-helpers.ts`; `npx tsx --test src/cli/supervisor-runtime.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npx tsx --test src/core/state-store.test.ts src/cli/supervisor-runtime.test.ts src/supervisor/supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`; `npm install`; `npm run build`; `git diff -- src/cli/supervisor-runtime.ts src/cli/supervisor-runtime.test.ts src/supervisor/supervisor.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts .codex-supervisor/issue-journal.md`; `date -u +"%Y-%m-%dT%H:%M:%S.000Z"`; `git rev-parse HEAD`
+- Last focused command: `gh pr view 744 --json number,title,state,isDraft,headRefName,baseRefName,url`
+- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-718/AGENTS.generated.md`; `sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-718/context-index.md`; `sed -n '1,360p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `git log --oneline --decorate -5`; `git diff --stat origin/main...HEAD`; `git diff -- .codex-supervisor/issue-journal.md`; `gh pr view --json number,title,state,isDraft,headRefName,baseRefName,url`; `gh pr status`; `npx tsx --test src/core/state-store.test.ts src/cli/supervisor-runtime.test.ts src/supervisor/supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`; `git branch --show-current`; `git remote -v`; `git push -u origin codex/issue-718`; `gh pr create --draft --base main --head codex/issue-718 --title "Fail closed on quarantined JSON state" --body ...`; `gh pr view 744 --json number,title,state,isDraft,headRefName,baseRefName,url`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`
 ### Scratchpad
+- 2026-03-21 (JST): Reverified the fail-closed checkpoint with the issue test set and `npm run build`, pushed `codex/issue-718`, and opened draft PR #744 so the branch now has a tracked review artifact; the unrelated untracked `.codex-supervisor/replay/` directory remains untouched.
 - 2026-03-21 (JST): Added focused fail-closed regressions for quarantined JSON state, reproduced that `runOnce()` still reached issue selection, `requeue` still mutated against the forced-empty fallback, and `loop` kept sleeping after a fail-closed result, then implemented a narrow supervisor/runtime gate that blocks execution-changing commands until `reset-corrupt-json-state` and reran the issue verification plus `npm run build` successfully after `npm install`.
 - 2026-03-20 (JST): Added a focused status regression for invalid JSON state, reproduced the omission where status only printed normal empty-state lines, then appended explicit `state_diagnostic` and `state_load_finding` lines for JSON `load_findings` so corruption is visible in status without changing loader semantics.
 - 2026-03-20 (JST): Added a focused docs regression for the missing JSON corruption contract, confirmed the new assertion failed first, then updated the English operator docs so they consistently say corrupted JSON state is a recovery event requiring explicit acknowledgement/reset and `status`/`doctor` triage before reuse.
