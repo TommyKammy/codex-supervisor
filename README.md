@@ -4,6 +4,8 @@ Deterministic GitHub issue, PR, CI, and review supervision for `codex exec` and 
 
 `codex-supervisor` keeps the execution loop outside the chat thread: it stores local state, works in per-issue worktrees, and keeps re-reading GitHub before every next action.
 
+Pull-request hydration contract: action-taking supervisor paths must rely on fresh GitHub review facts. Any retained cached hydration data is informational and non-authoritative; it can help diagnostics and operator visibility, but it must not be the authority for review readiness, merge readiness, or similar PR decisions.
+
 Japanese overview: [docs/README.ja.md](./docs/README.ja.md)  
 Japanese getting started: [docs/getting-started.ja.md](./docs/getting-started.ja.md)
 

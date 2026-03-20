@@ -15,6 +15,12 @@
 5. refresh GitHub facts again
 6. persist state and journal handoff
 
+Pull-request hydration freshness contract:
+
+- marking a PR ready, advancing or unblocking review-driven state, and merging must use fresh GitHub review facts
+- cached pull-request hydration may remain available for diagnostics, status rendering, and operator context, but it is informational and non-authoritative
+- do not assume every hydration consumer has the same contract: action-taking paths are fresh-only, while retained cache is safe only for non-decision support
+
 ## Durable state
 
 - `.local/state.json`

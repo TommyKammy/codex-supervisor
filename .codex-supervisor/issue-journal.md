@@ -1,44 +1,45 @@
-# Issue #729: Orphan prune command: add an explicit operator path for eligible orphaned workspace cleanup
+# Issue #731: Hydration freshness docs: define fresh-vs-cached contract for supervisor action paths
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/729
-- Branch: codex/issue-729
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/731
+- Branch: codex/issue-731
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 80f5b3ecbff3dd665dc647a0b37e1e6f13610d21
+- Last head SHA: 3d7a257a37b0819279d0b3fddd2c03fd9ca20909
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-20T22:07:48.725Z
+- Updated at: 2026-03-20T22:47:56Z
 
 ## Latest Codex Summary
-- Added an explicit `prune-orphaned-workspaces` operator command that reuses orphan-prune safety checks and returns deterministic JSON describing pruned and skipped workspaces.
+- Added a focused docs regression test for the pull-request hydration freshness contract and updated `README.md`, `docs/architecture.md`, and `docs/configuration.md` so action-taking PR paths require fresh GitHub review facts while cached hydration remains informational and non-authoritative.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the missing operator path should be a dedicated top-level CLI command, not a broad admin surface, and it should reuse `inspectOrphanedWorkspacePruneCandidates()` so the same lock/age/safe-target gates apply to explicit pruning.
-- What changed: added `prune-orphaned-workspaces` to CLI parsing and supervisor runtime dispatch; added a structured prune result DTO and supervisor service method; implemented `pruneOrphanedWorkspacesForOperator()` in `src/recovery-reconciliation.ts`; added focused coverage in `src/cli/entrypoint.test.ts`, `src/cli/supervisor-runtime.test.ts`, `src/supervisor/supervisor-execution-cleanup.test.ts`, and `src/supervisor/supervisor-diagnostics-status-selection.test.ts` for one eligible prune and one skipped recent orphan.
+- Hypothesis: the missing contract is documentation-level, not behavior-level; the repo needs one explicit fresh-vs-cached rule that distinguishes PR action paths from informational hydration consumers.
+- What changed: added `src/hydration-freshness-docs.test.ts` as a focused reproducer for the missing wording; updated `README.md`, `docs/architecture.md`, and `docs/configuration.md` to state that marking ready, unblocking review-driven state, and merging require fresh GitHub review facts, while retained cached hydration is informational and non-authoritative.
 - Current blocker: none
-- Next exact step: commit the explicit orphan-prune command checkpoint and, if needed, open or update a draft PR for issue #729.
-- Verification gap: requested targeted tests and `npm run build` passed after hydrating dependencies with `npm ci`; the full repo test suite was not rerun.
-- Files touched: `src/cli/entrypoint.test.ts`, `src/cli/parse-args.test.ts`, `src/cli/parse-args.ts`, `src/cli/supervisor-runtime.test.ts`, `src/cli/supervisor-runtime.ts`, `src/core/types.ts`, `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-execution-cleanup.test.ts`, `src/supervisor/supervisor-mutation-report.ts`, `src/supervisor/supervisor-service.ts`, `src/supervisor/supervisor.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting these changes would remove the supported operator cleanup path and force orphan cleanup back onto manual state editing or indirect automatic behavior.
-- Last focused command: `npx tsx --test src/cli/entrypoint.test.ts src/cli/supervisor-runtime.test.ts src/supervisor/supervisor-execution-cleanup.test.ts`
+- Next exact step: commit the docs-only hydration freshness checkpoint for issue #731, then open or update a draft PR if the branch does not already have one.
+- Verification gap: the focused docs regression test and `npm run build` passed after hydrating dependencies with `npm ci`; the full `npm test` suite was not rerun.
+- Files touched: `README.md`, `docs/architecture.md`, `docs/configuration.md`, `src/hydration-freshness-docs.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting these changes would restore the ambiguous docs posture where cached hydration could still be read as authoritative for PR action paths.
+- Last focused command: `npx tsx --test src/hydration-freshness-docs.test.ts`
 - Last focused failure: `none`
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-729/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-729/context-index.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-731/AGENTS.generated.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-731/context-index.md
 sed -n '1,320p' .codex-supervisor/issue-journal.md
 git status --short --branch
-npx tsx --test src/cli/entrypoint.test.ts src/cli/supervisor-runtime.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts
-npx tsx --test src/cli/entrypoint.test.ts src/cli/supervisor-runtime.test.ts src/supervisor/supervisor-execution-cleanup.test.ts
+npx tsx --test src/hydration-freshness-docs.test.ts
+npm run build
 npm ci
+npx tsx --test src/hydration-freshness-docs.test.ts
 npm run build
 date -u +"%Y-%m-%dT%H:%M:%SZ"
 ```
