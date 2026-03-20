@@ -48,3 +48,34 @@ test("execution-safety docs define the GitHub trust boundary and operator prereq
   assert.match(configuration, /trusted repo/i);
   assert.match(configuration, /trusted author/i);
 });
+
+test("docs define corrupted JSON state as an explicit recovery event, not empty bootstrap", async () => {
+  const [readme, architecture, gettingStarted, configuration] = await Promise.all([
+    readDoc("README.md"),
+    readDoc(path.join("docs", "architecture.md")),
+    readDoc(path.join("docs", "getting-started.md")),
+    readDoc(path.join("docs", "configuration.md")),
+  ]);
+
+  assert.match(readme, /missing JSON state/i);
+  assert.match(readme, /corrupted JSON state/i);
+  assert.match(readme, /not a durable recovery point/i);
+  assert.match(readme, /explicit acknowledgement or reset/i);
+
+  assert.match(architecture, /missing JSON state/i);
+  assert.match(architecture, /corrupted JSON state/i);
+  assert.match(architecture, /recovery event/i);
+  assert.match(architecture, /not safe to treat as durable state/i);
+
+  assert.match(gettingStarted, /doctor/i);
+  assert.match(gettingStarted, /status/i);
+  assert.match(gettingStarted, /missing JSON state/i);
+  assert.match(gettingStarted, /corrupted JSON state/i);
+  assert.match(gettingStarted, /explicit acknowledgement or reset/i);
+
+  assert.match(configuration, /doctor/i);
+  assert.match(configuration, /status/i);
+  assert.match(configuration, /corrupted JSON state/i);
+  assert.match(configuration, /not a normal empty-state bootstrap case/i);
+  assert.match(configuration, /inspect, acknowledge, or reset/i);
+});

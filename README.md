@@ -70,6 +70,8 @@ Not a fit:
 
 Requirements: `gh auth status` must succeed, `codex` CLI must be installed, the managed repository should already have branch protection and CI in place, and the operator should only enable autonomous execution in a trusted repo with trusted GitHub authors. The current Codex runs use `--dangerously-bypass-approvals-and-sandbox`; see [Getting started](./docs/getting-started.md), [Configuration reference](./docs/configuration.md), and [Architecture](./docs/architecture.md) for the execution-safety boundary.
 
+State-file contract: missing JSON state is an empty bootstrap case, but corrupted JSON state is not. Treat corrupted JSON state as a recovery event, not a durable recovery point, until an operator has inspected it and performed an explicit acknowledgement or reset.
+
 ## Provider Profiles
 
 Choose the review provider profile that matches how PR feedback arrives in your repo, then keep any provider-side setup aligned with that choice.

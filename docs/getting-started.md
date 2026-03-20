@@ -33,6 +33,8 @@ npm run build
 
 Current execution-safety rule: GitHub-authored issue bodies, review comments, and similar GitHub text are part of the supervisor trust boundary because they become execution inputs for Codex. The current runtime uses `--dangerously-bypass-approvals-and-sandbox`, so autonomous execution is safe enough to enable only in a trusted repo with trusted authors. If that trust is not present, autonomous execution is not safe for the current posture.
 
+Current state-recovery rule: missing JSON state means there is no durable state yet, so the supervisor can bootstrap from empty state. Corrupted JSON state is not the same thing. Treat corrupted JSON state as a recovery event and not a durable recovery point until an operator has inspected the problem and completed an explicit acknowledgement or reset.
+
 ## Choose the operating mode
 
 Use `codex-supervisor` only when the next issue is already execution-ready.
@@ -142,6 +144,7 @@ What to check after `run-once`:
 - any opened PR or status transition matches the actual repo state
 
 If the first pass picks the wrong issue, fix the issue metadata before running again. Do not treat issue creation time as the source of truth.
+If `status` or `doctor` reports corrupted JSON state, stop treating that file as a safe checkpoint. Inspect the file and recent operator actions first, then explicitly acknowledge the corruption or reset the state before trusting future runs.
 
 ## Move from run-once to loop
 
@@ -160,6 +163,7 @@ In normal operation, the supervisor will:
 5. wait for CI and reviews, then repair or merge as needed
 
 Use `status` whenever you want the current issue, PR, check, review, and mergeability summary without advancing the loop.
+Use `doctor` when you need host and state-file diagnostics, especially to distinguish a missing JSON state file from corrupted JSON state that requires operator recovery.
 
 If you use the CodeRabbit profile, `status` can first show `configured_bot_initial_grace_wait status=active provider=coderabbit pause_reason=awaiting_initial_provider_activity ... configured_wait_seconds=90 wait_until=...` right after required checks turn green. That indicates an intentional startup grace window for CodeRabbit and makes longer tuned waits obvious.
 
