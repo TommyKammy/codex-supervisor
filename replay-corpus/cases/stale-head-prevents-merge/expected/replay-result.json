@@ -1,6 +1,6 @@
 {
-  "nextState": "stabilizing",
-  "shouldRunCodex": true,
+  "nextState": "waiting_ci",
+  "shouldRunCodex": false,
   "blockedReason": null,
   "failureSignature": null
 }

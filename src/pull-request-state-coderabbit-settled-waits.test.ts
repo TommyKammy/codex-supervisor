@@ -138,6 +138,105 @@ test("inferStateFromPullRequest re-arms CodeRabbit waiting after ready-for-revie
   });
 });
 
+test("inferStateFromPullRequest re-arms CodeRabbit latest-head waiting when the PR advances after an earlier review arrived", () => {
+  withStubbedDateNow("2026-03-13T02:32:29Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      configuredBotInitialGraceWaitSeconds: 90,
+    });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-03-13T02:31:00Z",
+      review_wait_head_sha: "head456",
+      last_head_sha: "head123",
+    });
+
+    assert.equal(
+      inferStateFromPullRequest(
+        config,
+        record,
+        createPullRequest({
+          headRefOid: "head456",
+          copilotReviewState: "arrived",
+          copilotReviewArrivedAt: "2026-03-13T02:30:00Z",
+          configuredBotTopLevelReviewSubmittedAt: "2026-03-13T02:30:00Z",
+          currentHeadCiGreenAt: "2026-03-13T02:31:00Z",
+          configuredBotCurrentHeadObservedAt: null,
+        }),
+        passingChecks(),
+        [],
+      ),
+      "waiting_ci",
+    );
+  });
+});
+
+test("inferStateFromPullRequest lets latest-head CodeRabbit re-arm waiting expire after the initial grace window", () => {
+  withStubbedDateNow("2026-03-13T02:32:31Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      configuredBotInitialGraceWaitSeconds: 90,
+    });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-03-13T02:31:00Z",
+      review_wait_head_sha: "head456",
+      last_head_sha: "head456",
+    });
+
+    assert.equal(
+      inferStateFromPullRequest(
+        config,
+        record,
+        createPullRequest({
+          headRefOid: "head456",
+          copilotReviewState: "arrived",
+          copilotReviewArrivedAt: "2026-03-13T02:30:00Z",
+          configuredBotTopLevelReviewSubmittedAt: "2026-03-13T02:30:00Z",
+          currentHeadCiGreenAt: "2026-03-13T02:31:00Z",
+          configuredBotCurrentHeadObservedAt: null,
+        }),
+        passingChecks(),
+        [],
+      ),
+      "ready_to_merge",
+    );
+  });
+});
+
+test("inferStateFromPullRequest keeps unchanged-head CodeRabbit reviews ready to merge after the initial grace window expires", () => {
+  withStubbedDateNow("2026-03-13T02:32:31Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      configuredBotInitialGraceWaitSeconds: 90,
+    });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-03-13T02:30:00Z",
+      review_wait_head_sha: "head123",
+      last_head_sha: "head123",
+    });
+
+    assert.equal(
+      inferStateFromPullRequest(
+        config,
+        record,
+        createPullRequest({
+          headRefOid: "head123",
+          copilotReviewState: "arrived",
+          copilotReviewArrivedAt: "2026-03-13T02:30:00Z",
+          configuredBotTopLevelReviewSubmittedAt: "2026-03-13T02:30:00Z",
+          currentHeadCiGreenAt: "2026-03-13T02:31:00Z",
+          configuredBotCurrentHeadObservedAt: null,
+        }),
+        passingChecks(),
+        [],
+      ),
+      "ready_to_merge",
+    );
+  });
+});
+
 test("inferStateFromPullRequest ignores malformed earlier CodeRabbit timestamps when a fresh actionable signal clears the re-armed wait", () => {
   withStubbedDateNow("2026-03-13T02:30:10Z", () => {
     const config = createConfig({

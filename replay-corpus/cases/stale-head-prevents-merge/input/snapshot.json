@@ -87,8 +87,8 @@
     "reviewThreads": []
   },
   "decision": {
-    "nextState": "stabilizing",
-    "shouldRunCodex": true,
+    "nextState": "waiting_ci",
+    "shouldRunCodex": false,
     "blockedReason": null,
     "failureContext": null
   }
