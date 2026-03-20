@@ -278,6 +278,7 @@ test("loadActiveIssueStatusSnapshot keeps journal handoff, summarizes status, an
     assert.equal(snapshot.pr?.state, "CLOSED");
     assert.deepEqual(snapshot.checks, []);
     assert.deepEqual(snapshot.reviewThreads, []);
+    assert.equal(snapshot.localReviewRoutingSummary, null);
     assert.equal(snapshot.changeClassesSummary, "change_classes=tests");
     assert.equal(snapshot.verificationPolicySummary, "verification_policy intensity=focused driver=changed_files:tests");
     assert.equal(snapshot.durableGuardrailSummary, null);

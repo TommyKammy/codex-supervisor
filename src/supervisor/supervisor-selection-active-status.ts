@@ -12,6 +12,7 @@ import {
   buildChangeClassesStatusLine,
   buildDurableGuardrailStatusLine,
   buildExternalReviewFollowUpStatusLine,
+  buildLocalReviewRoutingStatusLine,
   buildVerificationPolicyStatusLine,
   loadStatusChangedFiles,
 } from "./supervisor-status-rendering";
@@ -31,6 +32,7 @@ export interface ActiveIssueStatusSnapshot {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
   handoffSummary: string | null;
+  localReviewRoutingSummary: string | null;
   changeClassesSummary: string | null;
   verificationPolicySummary: string | null;
   durableGuardrailSummary: string | null;
@@ -52,6 +54,7 @@ export async function loadActiveIssueStatusSnapshot(args: {
   let checks: PullRequestCheck[] = [];
   let reviewThreads: ReviewThread[] = [];
   let changeClassesSummary: string | null = null;
+  let localReviewRoutingSummary: string | null = null;
   let verificationPolicySummary: string | null = null;
   let durableGuardrailSummary: string | null = null;
   let externalReviewFollowUpSummary: string | null = null;
@@ -73,6 +76,10 @@ export async function loadActiveIssueStatusSnapshot(args: {
     pr = await args.github.resolvePullRequestForBranch(args.activeRecord.branch, args.activeRecord.pr_number);
     checks = isOpenPullRequest(pr) ? await args.github.getChecks(pr.number) : [];
     reviewThreads = isOpenPullRequest(pr) ? await args.github.getUnresolvedReviewThreads(pr.number) : [];
+    localReviewRoutingSummary = await buildLocalReviewRoutingStatusLine({
+      config: args.config,
+      activeRecord: args.activeRecord,
+    });
     changeClassesSummary = buildChangeClassesStatusLine(changedFiles);
     verificationPolicySummary = buildVerificationPolicyStatusLine({ issue, changedFiles });
     durableGuardrailSummary = await buildDurableGuardrailStatusLine({
@@ -95,6 +102,7 @@ export async function loadActiveIssueStatusSnapshot(args: {
     checks,
     reviewThreads,
     handoffSummary,
+    localReviewRoutingSummary,
     changeClassesSummary,
     verificationPolicySummary,
     durableGuardrailSummary,

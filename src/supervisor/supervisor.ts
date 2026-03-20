@@ -655,6 +655,7 @@ export class Supervisor {
       checks: activeStatus.checks,
       reviewThreads: activeStatus.reviewThreads,
       handoffSummary: activeStatus.handoffSummary,
+      localReviewRoutingSummary: activeStatus.localReviewRoutingSummary,
       changeClassesSummary: activeStatus.changeClassesSummary,
       verificationPolicySummary: activeStatus.verificationPolicySummary,
       durableGuardrailSummary: activeStatus.durableGuardrailSummary,

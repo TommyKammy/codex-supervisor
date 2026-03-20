@@ -1,6 +1,10 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildLocalReviewRoutingStatusLine,
   buildChangeClassesStatusLine,
   buildVerificationPolicyStatusLine,
   formatDetailedStatus,
@@ -137,6 +141,17 @@ function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   };
 }
 
+async function writeLocalReviewArtifact(args: {
+  rootDir: string;
+  artifact: Record<string, unknown>;
+}): Promise<string> {
+  const summaryPath = path.join(args.rootDir, "owner-repo", "issue-58", "head-deadbeef.md");
+  await fs.mkdir(path.dirname(summaryPath), { recursive: true });
+  await fs.writeFile(summaryPath, "# local review\n", "utf8");
+  await fs.writeFile(`${summaryPath.slice(0, -3)}.json`, `${JSON.stringify(args.artifact, null, 2)}\n`, "utf8");
+  return summaryPath;
+}
+
 test("formatDetailedStatus renders core lines before appended summaries", () => {
   const config = createConfig({ localReviewArtifactDir: "/tmp/reviews" });
   const record = createRecord({
@@ -182,6 +197,8 @@ test("formatDetailedStatus renders core lines before appended summaries", () => 
     checks: [],
     reviewThreads: [],
     handoffSummary: "blocked\nneeds reproduction",
+    localReviewRoutingSummary:
+      "local_review_routing generic=inherit->gpt-5-codex(1) specialists=gpt-5-codex(1) verifier=gpt-5-codex",
     changeClassesSummary: "change_classes=backend, docs, tests",
     verificationPolicySummary: "verification_policy intensity=standard driver=changed_files:backend|docs|tests",
     durableGuardrailSummary:
@@ -215,6 +232,7 @@ test("formatDetailedStatus renders core lines before appended summaries", () => 
       "checks=none",
       "review_threads bot_pending=0 bot_unresolved=0 manual=0",
       "handoff_summary=blocked\\nneeds reproduction",
+      "local_review_routing generic=inherit->gpt-5-codex(1) specialists=gpt-5-codex(1) verifier=gpt-5-codex",
       "change_classes=backend, docs, tests",
       "verification_policy intensity=standard driver=changed_files:backend|docs|tests",
       "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=runtime:owner-repo/issue-58/external-review-misses-head-deadbeef.json#2",
@@ -267,6 +285,114 @@ Document the auth rollout plan.
       changedFiles: ["docs/getting-started.md"],
     }),
     "verification_policy intensity=strong driver=issue_metadata:auth",
+  );
+});
+
+test("buildLocalReviewRoutingStatusLine summarizes explicit mini routing for generic local-review roles", async (t) => {
+  const artifactDir = await fs.mkdtemp(path.join(os.tmpdir(), "status-local-review-routing-"));
+  t.after(async () => {
+    await fs.rm(artifactDir, { recursive: true, force: true });
+  });
+
+  const summaryPath = await writeLocalReviewArtifact({
+    rootDir: artifactDir,
+    artifact: {
+      roleReports: [
+        {
+          role: "reviewer",
+          routing: {
+            target: "local_review_generic",
+            model: "gpt-5.4-mini",
+            reasoningEffort: "low",
+          },
+        },
+        {
+          role: "prisma_postgres_reviewer",
+          routing: {
+            target: "local_review_specialist",
+            model: "gpt-5-codex",
+            reasoningEffort: "low",
+          },
+        },
+      ],
+      verifierReport: {
+        role: "verifier",
+        routing: {
+          target: "local_review_verifier",
+          model: "gpt-5-codex",
+          reasoningEffort: "low",
+        },
+      },
+    },
+  });
+
+  assert.equal(
+    await buildLocalReviewRoutingStatusLine({
+      config: createConfig({
+        codexModelStrategy: "fixed",
+        codexModel: "gpt-5-codex",
+        localReviewArtifactDir: artifactDir,
+        localReviewModelStrategy: "alias",
+        localReviewModel: "gpt-5.4-mini",
+      }),
+      activeRecord: createRecord({
+        local_review_summary_path: summaryPath,
+      }),
+    }),
+    "local_review_routing generic=gpt-5.4-mini(1) specialists=gpt-5-codex(1) verifier=gpt-5-codex",
+  );
+});
+
+test("buildLocalReviewRoutingStatusLine labels inherited generic local-review routing compactly", async (t) => {
+  const artifactDir = await fs.mkdtemp(path.join(os.tmpdir(), "status-local-review-routing-"));
+  t.after(async () => {
+    await fs.rm(artifactDir, { recursive: true, force: true });
+  });
+
+  const summaryPath = await writeLocalReviewArtifact({
+    rootDir: artifactDir,
+    artifact: {
+      roleReports: [
+        {
+          role: "reviewer",
+          routing: {
+            target: "local_review_generic",
+            model: "gpt-5-codex",
+            reasoningEffort: "low",
+          },
+        },
+        {
+          role: "security_reviewer",
+          routing: {
+            target: "local_review_specialist",
+            model: "gpt-5-codex",
+            reasoningEffort: "low",
+          },
+        },
+      ],
+      verifierReport: {
+        role: "verifier",
+        routing: {
+          target: "local_review_verifier",
+          model: "gpt-5-codex",
+          reasoningEffort: "low",
+        },
+      },
+    },
+  });
+
+  assert.equal(
+    await buildLocalReviewRoutingStatusLine({
+      config: createConfig({
+        codexModelStrategy: "fixed",
+        codexModel: "gpt-5-codex",
+        localReviewArtifactDir: artifactDir,
+      }),
+      activeRecord: createRecord({
+        local_review_summary_path: summaryPath,
+      }),
+    }),
+    "local_review_routing generic=inherit->gpt-5-codex(1) specialists=gpt-5-codex(1) verifier=gpt-5-codex",
   );
 });
 

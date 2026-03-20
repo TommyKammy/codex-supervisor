@@ -377,12 +377,15 @@ test("buildDetailedStatusSummaryLines shapes optional summaries and artifact pat
       activeRecord,
       latestRecoveryRecord,
       handoffSummary: "blocked\nneeds reproduction",
+      localReviewRoutingSummary:
+        "local_review_routing generic=inherit->gpt-5-codex(1) specialists=gpt-5-codex(1) verifier=gpt-5-codex",
       changeClassesSummary: "change_classes=backend, docs, tests",
       durableGuardrailSummary: "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=none",
       externalReviewFollowUpSummary: "external_review_follow_up unresolved=2 actions=durable_guardrail:1|regression_test:1",
     }),
     [
       "handoff_summary=blocked\\nneeds reproduction",
+      "local_review_routing generic=inherit->gpt-5-codex(1) specialists=gpt-5-codex(1) verifier=gpt-5-codex",
       "change_classes=backend, docs, tests",
       "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=none",
       "external_review_follow_up unresolved=2 actions=durable_guardrail:1|regression_test:1",
