@@ -72,6 +72,8 @@ Requirements: `gh auth status` must succeed, `codex` CLI must be installed, the 
 
 State-file contract: missing JSON state is an empty bootstrap case, but corrupted JSON state is not. Treat corrupted JSON state as a recovery event, not a durable recovery point, until an operator has inspected it and performed an explicit acknowledgement or reset.
 
+Workspace restore contract: `ensureWorkspace()` should prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap a fresh issue branch from `origin/<defaultBranch>`. Bootstrapping from the default branch is the fallback path when no existing issue branch can be restored.
+
 ## Provider Profiles
 
 Choose the review provider profile that matches how PR feedback arrives in your repo, then keep any provider-side setup aligned with that choice.

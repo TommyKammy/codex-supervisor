@@ -1,47 +1,37 @@
-# Issue #718: JSON corruption fail-closed: block execution-changing commands until explicit recovery
+# Issue #720: Workspace restore docs: define local-branch, remote-branch, and bootstrap precedence
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/718
-- Branch: codex/issue-718
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/720
+- Branch: codex/issue-720
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: e6a1280895c22c229c7352d4264cde18fe8ac626
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 57e01ce44c2aa0277088bd70c01b898d0a381e69
 - Blocked reason: none
-- Last failure signature: none
+- Last failure signature: docs_workspace_restore_precedence_missing
 - Repeated failure signature count: 0
-- Updated at: 2026-03-20T15:22:47Z
+- Updated at: 2026-03-20T15:46:45Z
 
 ## Latest Codex Summary
-Verified the fail-closed checkpoint from `e6a1280` locally, pushed `codex/issue-718`, and opened draft PR #744 (`Fail closed on quarantined JSON state`).
-
-This turn reran the focused verification suite and `npm run build` successfully, then pushed the branch to `origin/codex/issue-718` and opened https://github.com/TommyKammy/codex-supervisor/pull/744 as a draft against `main`. The implementation remains the same narrow JSON-quarantine fail-closed gate: execution-changing commands stop until explicit recovery, while diagnostics and `reset-corrupt-json-state` stay available.
-
-One workspace note: the tree still has an unrelated untracked `.codex-supervisor/replay/` directory, which I left untouched.
-
-Summary: Reverified the fail-closed checkpoint, pushed `codex/issue-718`, and opened draft PR #744 for review.
-State hint: draft_pr
-Blocked reason: none
-Tests: `npx tsx --test src/core/state-store.test.ts src/cli/supervisor-runtime.test.ts src/supervisor/supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`
-Failure signature: none
-Next action: monitor PR #744, inspect CI, and address any review feedback
+- Added a focused docs regression for workspace-restore precedence, reproduced the missing contract in the English docs, then updated `README.md`, `docs/architecture.md`, `docs/getting-started.md`, and `docs/configuration.md` so they consistently say `ensureWorkspace()` should prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap from `origin/<defaultBranch>` as the fallback. Focused docs verification passed, and `npm run build` passed after installing local dependencies in this worktree.
 
 ## Active Failure Context
-- None recorded.
+- Resolved in this turn: the docs implied bootstrap from `origin/<defaultBranch>` without defining the intended local-branch then remote-branch restore precedence.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: issue #718 is implemented and locally verified; the only remaining work is normal PR/CI follow-through unless review finds a regression.
-- What changed: reran the issue verification set and `npm run build`, pushed `codex/issue-718` to origin, and opened draft PR #744. The underlying implementation is still the narrow supervisor/runtime gate that fail-closes execution-changing commands when the JSON loader has quarantined corrupt state, while keeping status/doctor/reset available.
+- Hypothesis: issue #720 is a docs-only checkpoint and is now locally verified; the next supervisor step is to commit this docs/test slice and open or update a draft PR if one does not already exist.
+- What changed: added a focused docs regression in `src/execution-safety-docs.test.ts`, reproduced the missing workspace restore contract, then updated the English operator docs so they consistently document the intended precedence of local issue branch restore, remote issue branch restore, and fallback bootstrap from `origin/<defaultBranch>`.
 - Current blocker: none
-- Next exact step: watch PR #744 / CI and respond to any review or mergeability issues.
-- Verification gap: none locally after `npx tsx --test src/core/state-store.test.ts src/cli/supervisor-runtime.test.ts src/supervisor/supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build`.
-- Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this patch reopens the fail-open path where quarantined JSON state is treated as usable supervisor state, allowing `run-once`, `loop`, and operator requeue mutations to act on the forced-empty fallback before the operator intentionally recovers.
-- Last focused command: `gh pr view 744 --json number,title,state,isDraft,headRefName,baseRefName,url`
-- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-718/AGENTS.generated.md`; `sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-718/context-index.md`; `sed -n '1,360p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `git log --oneline --decorate -5`; `git diff --stat origin/main...HEAD`; `git diff -- .codex-supervisor/issue-journal.md`; `gh pr view --json number,title,state,isDraft,headRefName,baseRefName,url`; `gh pr status`; `npx tsx --test src/core/state-store.test.ts src/cli/supervisor-runtime.test.ts src/supervisor/supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`; `git branch --show-current`; `git remote -v`; `git push -u origin codex/issue-718`; `gh pr create --draft --base main --head codex/issue-718 --title "Fail closed on quarantined JSON state" --body ...`; `gh pr view 744 --json number,title,state,isDraft,headRefName,baseRefName,url`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`
+- Next exact step: commit the docs/test checkpoint on `codex/issue-720`, then open or update the draft PR and watch CI.
+- Verification gap: none locally after `npx tsx --test src/execution-safety-docs.test.ts` and `npm run build`.
+- Files touched: `README.md`; `docs/architecture.md`; `docs/configuration.md`; `docs/getting-started.md`; `src/execution-safety-docs.test.ts`; `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this patch would remove the operator-facing restore contract and reintroduce documentation that can be read as “missing local branch means bootstrap from `origin/<defaultBranch>`,” which is the ambiguity this issue is meant to eliminate before runtime changes land.
+- Last focused command: `npm run build`
+- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-720/AGENTS.generated.md`; `sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-720/context-index.md`; `sed -n '1,360p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg -n "workspace|restore|bootstrap|default branch|local branch|remote branch|worktree" README.md docs src test package.json`; `rg --files | rg "test|spec|docs"`; `cat package.json`; `sed -n '1,220p' src/readme-docs.test.ts`; `sed -n '1,220p' src/getting-started-docs.test.ts`; `sed -n '1,220p' README.md`; `sed -n '1,260p' docs/getting-started.md`; `sed -n '1,220p' docs/architecture.md`; `sed -n '1,220p' docs/configuration.md`; `sed -n '1,240p' src/core/workspace.ts`; `rg -n "ensureWorkspace\\(|worktree add|origin/main|origin/<defaultBranch>|branchPrefix|issue branch" src`; `sed -n '1,220p' src/execution-safety-docs.test.ts`; `sed -n '1,220p' src/agent-instructions-docs.test.ts`; `npx tsx --test src/execution-safety-docs.test.ts`; `git diff -- README.md docs/getting-started.md docs/architecture.md docs/configuration.md src/execution-safety-docs.test.ts`; `npm install`; `npm run build`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`
 ### Scratchpad
+- 2026-03-21 (JST): Added a focused docs regression for workspace restore precedence, reproduced that the English docs did not mention local-branch restore or remote-branch restore before bootstrap, then updated `README.md`, `docs/architecture.md`, `docs/getting-started.md`, and `docs/configuration.md` so they consistently define local issue branch -> remote issue branch -> fallback bootstrap from `origin/<defaultBranch>`; `npx tsx --test src/execution-safety-docs.test.ts` and `npm run build` passed after `npm install`.
 - 2026-03-21 (JST): Reverified the fail-closed checkpoint with the issue test set and `npm run build`, pushed `codex/issue-718`, and opened draft PR #744 so the branch now has a tracked review artifact; the unrelated untracked `.codex-supervisor/replay/` directory remains untouched.
 - 2026-03-21 (JST): Added focused fail-closed regressions for quarantined JSON state, reproduced that `runOnce()` still reached issue selection, `requeue` still mutated against the forced-empty fallback, and `loop` kept sleeping after a fail-closed result, then implemented a narrow supervisor/runtime gate that blocks execution-changing commands until `reset-corrupt-json-state` and reran the issue verification plus `npm run build` successfully after `npm install`.
 - 2026-03-20 (JST): Added a focused status regression for invalid JSON state, reproduced the omission where status only printed normal empty-state lines, then appended explicit `state_diagnostic` and `state_load_finding` lines for JSON `load_findings` so corruption is visible in status without changing loader semantics.
