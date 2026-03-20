@@ -199,8 +199,8 @@ async function defaultEnsureRecordJournalContext(
 
   const workspace = await ensureWorkspace(config, record.issue_number, record.branch);
   return {
-    workspace,
-    journal_path: issueJournalPath(workspace, config.issueJournalRelativePath),
+    workspace: workspace.workspacePath,
+    journal_path: issueJournalPath(workspace.workspacePath, config.issueJournalRelativePath),
   };
 }
 

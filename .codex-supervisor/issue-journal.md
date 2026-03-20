@@ -1,37 +1,37 @@
-# Issue #720: Workspace restore docs: define local-branch, remote-branch, and bootstrap precedence
+# Issue #721: Workspace restore visibility: surface whether recovery used local, remote, or bootstrap source
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/720
-- Branch: codex/issue-720
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/721
+- Branch: codex/issue-721
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 57e01ce44c2aa0277088bd70c01b898d0a381e69
+- Last head SHA: 53d010d64c4b7af18876994308cf35734470de4a
 - Blocked reason: none
-- Last failure signature: docs_workspace_restore_precedence_missing
+- Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-20T15:46:45Z
+- Updated at: 2026-03-20T16:09:16.338Z
 
 ## Latest Codex Summary
-- Added a focused docs regression for workspace-restore precedence, reproduced the missing contract in the English docs, then updated `README.md`, `docs/architecture.md`, `docs/getting-started.md`, and `docs/configuration.md` so they consistently say `ensureWorkspace()` should prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap from `origin/<defaultBranch>` as the fallback. Focused docs verification passed, and `npm run build` passed after installing local dependencies in this worktree.
+- Added a narrow workspace-restore visibility slice: `ensureWorkspace()` now returns deterministic restore metadata, issue preparation persists the restore source/ref for active records, and status output surfaces `workspace_restore ...` so operators can see whether a recreated workspace came from a local branch or default-branch bootstrap. Focused restore/preparation/status tests passed, the requested issue test set passed, and `npm run build` passed after installing local dependencies in this worktree.
 
 ## Active Failure Context
-- Resolved in this turn: the docs implied bootstrap from `origin/<defaultBranch>` without defining the intended local-branch then remote-branch restore precedence.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: issue #720 is a docs-only checkpoint and is now locally verified; the next supervisor step is to commit this docs/test slice and open or update a draft PR if one does not already exist.
-- What changed: added a focused docs regression in `src/execution-safety-docs.test.ts`, reproduced the missing workspace restore contract, then updated the English operator docs so they consistently document the intended precedence of local issue branch restore, remote issue branch restore, and fallback bootstrap from `origin/<defaultBranch>`.
+- Hypothesis: the narrowest viable fix is to keep restore semantics unchanged, but make `ensureWorkspace()` return typed restore metadata that can be persisted on the issue record and surfaced in operator status output.
+- What changed: added a focused Git-backed regression in `src/core/workspace.test.ts` to reproduce the missing restore-source signal, updated `src/core/workspace.ts` so `ensureWorkspace()` reports deterministic restore metadata for existing-workspace/local-branch/bootstrap paths, threaded that metadata through `prepareIssueExecutionContext(...)`, and rendered a `workspace_restore source=... ref=...` line in active detailed status output.
 - Current blocker: none
-- Next exact step: commit the docs/test checkpoint on `codex/issue-720`, then open or update the draft PR and watch CI.
-- Verification gap: none locally after `npx tsx --test src/execution-safety-docs.test.ts` and `npm run build`.
-- Files touched: `README.md`; `docs/architecture.md`; `docs/configuration.md`; `docs/getting-started.md`; `src/execution-safety-docs.test.ts`; `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this patch would remove the operator-facing restore contract and reintroduce documentation that can be read as “missing local branch means bootstrap from `origin/<defaultBranch>`,” which is the ambiguity this issue is meant to eliminate before runtime changes land.
+- Next exact step: commit the workspace-restore visibility checkpoint on `codex/issue-721`, then open or update a draft PR and watch CI for any wider type-surface fallout.
+- Verification gap: remote-branch restore metadata is typed but still not exercised because this issue deliberately does not change restore semantics yet.
+- Files touched: `src/core/types.ts`; `src/core/workspace.ts`; `src/core/workspace.test.ts`; `src/run-once-issue-preparation.ts`; `src/run-once-issue-preparation.test.ts`; `src/run-once-issue-selection.ts`; `src/supervisor/supervisor.ts`; `src/supervisor/supervisor-detailed-status-assembly.ts`; `src/supervisor/supervisor-status-rendering.test.ts`; `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this patch would remove the only deterministic, persisted restore-source signal for recreated workspaces and make it harder for operators/tests to tell whether the supervisor reused a local issue branch or bootstrapped from `origin/<defaultBranch>`.
 - Last focused command: `npm run build`
-- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-720/AGENTS.generated.md`; `sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-720/context-index.md`; `sed -n '1,360p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg -n "workspace|restore|bootstrap|default branch|local branch|remote branch|worktree" README.md docs src test package.json`; `rg --files | rg "test|spec|docs"`; `cat package.json`; `sed -n '1,220p' src/readme-docs.test.ts`; `sed -n '1,220p' src/getting-started-docs.test.ts`; `sed -n '1,220p' README.md`; `sed -n '1,260p' docs/getting-started.md`; `sed -n '1,220p' docs/architecture.md`; `sed -n '1,220p' docs/configuration.md`; `sed -n '1,240p' src/core/workspace.ts`; `rg -n "ensureWorkspace\\(|worktree add|origin/main|origin/<defaultBranch>|branchPrefix|issue branch" src`; `sed -n '1,220p' src/execution-safety-docs.test.ts`; `sed -n '1,220p' src/agent-instructions-docs.test.ts`; `npx tsx --test src/execution-safety-docs.test.ts`; `git diff -- README.md docs/getting-started.md docs/architecture.md docs/configuration.md src/execution-safety-docs.test.ts`; `npm install`; `npm run build`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`
+- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-721/AGENTS.generated.md`; `sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-721/context-index.md`; `sed -n '1,360p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg -n "ensureWorkspace\\(|restore|bootstrap|remote branch|local branch|worktree add|origin/<defaultBranch>|restoreSource|recovery" src`; `sed -n '1,260p' src/core/workspace.ts`; `sed -n '1,320p' src/run-once-issue-preparation.test.ts`; `sed -n '1,260p' src/run-once-issue-preparation.ts`; `sed -n '1,260p' src/core/types.ts`; `sed -n '1,260p' src/supervisor/supervisor-cycle-snapshot.ts`; `sed -n '1,280p' src/supervisor/supervisor-status-rendering.test.ts`; `sed -n '1,240p' src/supervisor/supervisor-detailed-status-assembly.ts`; `npx tsx --test src/core/workspace.test.ts`; `npx tsx --test src/core/workspace.test.ts src/run-once-issue-preparation.test.ts src/supervisor/supervisor-status-rendering.test.ts`; `npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor.test.ts`; `npm install`; `npm run build`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`
 ### Scratchpad
-- 2026-03-21 (JST): Added a focused docs regression for workspace restore precedence, reproduced that the English docs did not mention local-branch restore or remote-branch restore before bootstrap, then updated `README.md`, `docs/architecture.md`, `docs/getting-started.md`, and `docs/configuration.md` so they consistently define local issue branch -> remote issue branch -> fallback bootstrap from `origin/<defaultBranch>`; `npx tsx --test src/execution-safety-docs.test.ts` and `npm run build` passed after `npm install`.
+- 2026-03-21 (JST): Added a focused Git-backed regression for workspace restore visibility, reproduced that `ensureWorkspace()` dropped restore provenance entirely, then implemented deterministic restore metadata (`existing_workspace`/`local_branch`/typed bootstrap placeholder) that is persisted on prepared issue records and surfaced as `workspace_restore source=... ref=...` in detailed status; `npx tsx --test src/core/workspace.test.ts src/run-once-issue-preparation.test.ts src/supervisor/supervisor-status-rendering.test.ts`, `npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor.test.ts`, and `npm run build` passed after `npm install`.
 - 2026-03-21 (JST): Reverified the fail-closed checkpoint with the issue test set and `npm run build`, pushed `codex/issue-718`, and opened draft PR #744 so the branch now has a tracked review artifact; the unrelated untracked `.codex-supervisor/replay/` directory remains untouched.
 - 2026-03-21 (JST): Added focused fail-closed regressions for quarantined JSON state, reproduced that `runOnce()` still reached issue selection, `requeue` still mutated against the forced-empty fallback, and `loop` kept sleeping after a fail-closed result, then implemented a narrow supervisor/runtime gate that blocks execution-changing commands until `reset-corrupt-json-state` and reran the issue verification plus `npm run build` successfully after `npm install`.
 - 2026-03-20 (JST): Added a focused status regression for invalid JSON state, reproduced the omission where status only printed normal empty-state lines, then appended explicit `state_diagnostic` and `state_load_finding` lines for JSON `load_findings` so corruption is visible in status without changing loader semantics.

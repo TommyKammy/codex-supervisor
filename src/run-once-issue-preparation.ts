@@ -9,6 +9,7 @@ import {
 import { StateStore } from "./core/state-store";
 import {
   CliOptions,
+  EnsuredWorkspace,
   GitHubIssue,
   GitHubPullRequest,
   IssueRunRecord,
@@ -84,7 +85,11 @@ interface PrepareIssueExecutionContextArgs {
   record: IssueRunRecord;
   issue: GitHubIssue;
   options: Pick<CliOptions, "dryRun">;
-  ensureWorkspace?: (config: SupervisorConfig, issueNumber: number, branch: string) => Promise<string>;
+  ensureWorkspace?: (
+    config: SupervisorConfig,
+    issueNumber: number,
+    branch: string,
+  ) => Promise<string | EnsuredWorkspace>;
   syncIssueJournal?: (args: SyncIssueJournalArgs) => Promise<void>;
   syncMemoryArtifacts?: (args: SyncMemoryArtifactsArgs) => Promise<MemoryArtifacts>;
   getWorkspaceStatus?: (workspacePath: string, branch: string, defaultBranch: string) => Promise<WorkspaceStatus>;
@@ -137,6 +142,23 @@ function applyRecoveryEvent(
   };
 }
 
+function normalizeEnsuredWorkspace(
+  ensuredWorkspace: string | EnsuredWorkspace,
+  branch: string,
+): EnsuredWorkspace {
+  if (typeof ensuredWorkspace === "string") {
+    return {
+      workspacePath: ensuredWorkspace,
+      restore: {
+        source: "existing_workspace",
+        ref: branch,
+      },
+    };
+  }
+
+  return ensuredWorkspace;
+}
+
 async function prepareWorkspaceContext(
   args: PrepareIssueExecutionContextArgs,
 ): Promise<PreparedWorkspaceContext> {
@@ -147,7 +169,11 @@ async function prepareWorkspaceContext(
 
   const previousCodexSummary = args.record.last_codex_summary;
   const previousError = args.record.last_error;
-  const workspacePath = await ensureWorkspace(args.config, args.record.issue_number, args.record.branch);
+  const ensuredWorkspace = normalizeEnsuredWorkspace(
+    await ensureWorkspace(args.config, args.record.issue_number, args.record.branch),
+    args.record.branch,
+  );
+  const workspacePath = ensuredWorkspace.workspacePath;
   const journalPath = issueJournalPath(workspacePath, args.config.issueJournalRelativePath);
   const syncJournal: IssueJournalSync = async (currentRecord: IssueRunRecord): Promise<void> => {
     await syncIssueJournal({
@@ -162,6 +188,8 @@ async function prepareWorkspaceContext(
     workspace: workspacePath,
     journal_path: journalPath,
     state: args.record.implementation_attempt_count === 0 ? "planning" : args.record.state,
+    workspace_restore_source: ensuredWorkspace.restore.source,
+    workspace_restore_ref: ensuredWorkspace.restore.ref,
     last_error: null,
     last_failure_kind: null,
     blocked_reason: null,
@@ -177,7 +205,11 @@ async function prepareWorkspaceContext(
     journalPath,
   });
 
-  const workspaceStatus = await getWorkspaceStatus(workspacePath, preparedRecord.branch, args.config.defaultBranch);
+  const workspaceStatus = {
+    ...(await getWorkspaceStatus(workspacePath, preparedRecord.branch, args.config.defaultBranch)),
+    restoreSource: ensuredWorkspace.restore.source,
+    restoreRef: ensuredWorkspace.restore.ref,
+  };
   const hydratedRecord = args.stateStore.touch(preparedRecord, { last_head_sha: workspaceStatus.headSha });
   args.state.issues[String(hydratedRecord.issue_number)] = hydratedRecord;
   await args.stateStore.save(args.state);

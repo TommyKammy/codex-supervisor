@@ -1,6 +1,7 @@
 import {
   localReviewRetryLoopStalled,
 } from "../review-handling";
+import { formatWorkspaceRestoreStatusLine } from "../core/workspace";
 import {
   formatRecentRecord,
   listChecksByBucket,
@@ -127,6 +128,12 @@ export function buildActiveDetailedStatusLines(
     `repair_attempts=${activeRecord.repair_attempt_count}`,
     `updated_at=${activeRecord.updated_at}`,
     `workspace=${activeRecord.workspace}`,
+    ...(activeRecord.workspace_restore_source && activeRecord.workspace_restore_ref
+      ? [formatWorkspaceRestoreStatusLine({
+        source: activeRecord.workspace_restore_source,
+        ref: activeRecord.workspace_restore_ref,
+      })]
+      : []),
     `blocked_reason=${activeRecord.blocked_reason ?? "none"}`,
     `last_failure_kind=${activeRecord.last_failure_kind ?? "none"}`,
     `last_failure_signature=${activeRecord.last_failure_signature ?? "none"}`,

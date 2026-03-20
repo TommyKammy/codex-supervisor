@@ -267,6 +267,56 @@ test("prepareIssueExecutionContext prepares workspace, journal, memory, and head
   ]);
 });
 
+test("prepareIssueExecutionContext records the workspace restore source for later diagnostics", async () => {
+  const record = createRecord();
+  const state = createState(record);
+  const workspaceStatus = createWorkspaceStatus({ headSha: "workspace-head-240" });
+
+  const result = await prepareIssueExecutionContext({
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+    },
+    config: createConfig(),
+    stateStore: {
+      touch(currentRecord, patch) {
+        return { ...currentRecord, ...patch };
+      },
+      async save() {},
+    },
+    state,
+    record,
+    issue: createIssue(),
+    options: { dryRun: true },
+    ensureWorkspace: async () => ({
+      workspacePath: "/tmp/workspaces/issue-240",
+      restore: {
+        source: "local_branch",
+        ref: "codex/reopen-issue-240",
+      },
+    }),
+    syncIssueJournal: async () => {},
+    syncMemoryArtifacts: async () => ({
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+      alwaysReadFiles: [],
+      onDemandFiles: [],
+    }),
+    getWorkspaceStatus: async () => workspaceStatus,
+    writeSupervisorCycleDecisionSnapshot: async () => "/tmp/workspaces/issue-240/.codex-supervisor/replay/decision-cycle-snapshot.json",
+  });
+
+  assert.ok(result && !isRestartRunOnce(result) && typeof result !== "string");
+  assert.equal(result.record.workspace_restore_source, "local_branch");
+  assert.equal(result.record.workspace_restore_ref, "codex/reopen-issue-240");
+  assert.equal(result.workspaceStatus.restoreSource, "local_branch");
+  assert.equal(result.workspaceStatus.restoreRef, "codex/reopen-issue-240");
+});
+
 test("prepareIssueExecutionContext restarts when a tracked PR already merged", async () => {
   const record = createRecord({
     implementation_attempt_count: 2,
