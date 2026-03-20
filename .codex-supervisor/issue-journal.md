@@ -5,18 +5,19 @@
 - Branch: codex/issue-684
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
+- Current phase: draft_pr
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 251c591973b43c9a2ae96467fba2caee1d9bc548
+- Last head SHA: aa8e0998a5efc6f14e966518fe31974a1032d575
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-20T13:28:43+09:00
+- Updated at: 2026-03-20T13:29:43+09:00
 
 ## Latest Codex Summary
 - Annotated denied supervisor run-lock acquisitions with reconciliation context so skipped `run-once` cycles now distinguish reconciliation ownership from generic active lock ownership.
 - Added focused regressions for the reconciliation-held run-lock message in `src/supervisor/supervisor-diagnostics-status-selection.test.ts` and the runtime skip output in `src/cli/supervisor-runtime.test.ts`.
 - Restored missing local dev dependencies with `npm install`, then reran the focused tests and `npm run build` successfully.
+- Committed the checkpoint as `aa8e099` (`Surface reconciliation-held supervisor locks`), pushed `codex/issue-684`, and opened draft PR #691 (`https://github.com/TommyKammy/codex-supervisor/pull/691`).
 
 ## Active Failure Context
 - None recorded.
@@ -26,11 +27,11 @@
 - Hypothesis: the narrowest safe fix is to keep the existing transient reconciliation marker and only augment the denied supervisor run-lock reason when that marker is present, leaving the lock lifecycle and scheduler behavior unchanged.
 - What changed: updated `Supervisor.acquireSupervisorLock(...)` to append `for reconciliation work (<phase>)` when the run lock is already held and `.codex-supervisor/current-reconciliation-phase.json` exists, then added a focused supervisor regression for that case plus a runtime skip-output regression that preserves the operator-facing message shape.
 - Current blocker: none
-- Next exact step: commit the issue-684 checkpoint, then open or update the draft PR for this branch.
+- Next exact step: monitor draft PR #691’s CI and address any review or CI feedback if it appears.
 - Verification gap: none for the scoped issue work. `npx tsx --test src/cli/supervisor-runtime.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build` passed locally after `npm install`.
 - Files touched: `src/cli/supervisor-runtime.test.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `.codex-supervisor/issue-journal.md`, `package-lock.json`
 - Rollback concern: reverting this checkpoint makes skipped cycles fall back to a generic run-lock message again, obscuring that the lock holder is the supervisor’s reconciliation pass rather than active Codex work.
-- Last focused command: `npm run build`
+- Last focused command: `gh pr create --draft --base main --head codex/issue-684 --title "Surface reconciliation-held supervisor locks" --body ...`
 ### Scratchpad
 - 2026-03-20 (JST): Pushed `codex/issue-671` to `origin/codex/issue-671` and opened draft PR #676 (`https://github.com/TommyKammy/codex-supervisor/pull/676`) after the focused artifact/finalize/result/status/policy tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
