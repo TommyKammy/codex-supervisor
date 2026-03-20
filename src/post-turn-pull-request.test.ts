@@ -100,3 +100,104 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking
   assert.equal(snapshotLoads, 2);
   assert.equal(syncJournalCalls, 0);
 });
+
+test("handlePostTurnPullRequestTransitionsPhase emits typed review-wait change events", async () => {
+  const config = createConfig();
+  const issue = createIssue({ title: "Emit review wait changes" });
+  const pr = createPullRequest({ title: "Emit review wait changes", headRefOid: "head-116" });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        review_wait_started_at: null,
+        review_wait_head_sha: null,
+      }),
+    },
+  };
+  const emitted: unknown[] = [];
+
+  await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      markPullRequestReady: async () => undefined,
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr,
+      options: { dryRun: false },
+    },
+    emitEvent: (event) => {
+      emitted.push(event);
+    },
+    derivePullRequestLifecycleSnapshot: (record, currentPr) => ({
+      recordForState: record,
+      nextState: "pr_open",
+      failureContext: null,
+      reviewWaitPatch: {
+        review_wait_started_at: "2026-03-13T06:26:22Z",
+        review_wait_head_sha: currentPr.headRefOid,
+      },
+      copilotRequestObservationPatch: {},
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    loadOpenPullRequestSnapshot: async () => ({
+      pr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.deepEqual(emitted, [
+    {
+      type: "supervisor.review_wait.changed",
+      family: "review_wait",
+      issueNumber: 102,
+      prNumber: 116,
+      previousStartedAt: null,
+      nextStartedAt: "2026-03-13T06:26:22Z",
+      previousHeadSha: null,
+      nextHeadSha: "head-116",
+      reason: "started",
+      at: "2026-03-13T06:26:22Z",
+    },
+  ]);
+});

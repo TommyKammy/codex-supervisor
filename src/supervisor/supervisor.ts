@@ -121,6 +121,12 @@ import {
   writeCurrentReconciliationPhase,
 } from "./supervisor-reconciliation-phase";
 import {
+  buildRunLockBlockedEvent,
+  emitSupervisorEvent,
+  maybeBuildReviewWaitChangedEvent,
+  type SupervisorEventSink,
+} from "./supervisor-events";
+import {
   buildManualReviewFailureContext,
   buildRequestedChangesFailureContext,
   buildReviewFailureContext,
@@ -250,18 +256,26 @@ export class Supervisor {
   private readonly github: GitHubClient;
   private readonly stateStore: StateStore;
   private readonly agentRunner: AgentRunner;
+  private readonly onEvent?: SupervisorEventSink;
 
-  constructor(public readonly config: SupervisorConfig, options: { agentRunner?: AgentRunner } = {}) {
+  constructor(
+    public readonly config: SupervisorConfig,
+    options: { agentRunner?: AgentRunner; onEvent?: SupervisorEventSink } = {},
+  ) {
     this.github = new GitHubClient(config);
     this.stateStore = new StateStore(config.stateFile, {
       backend: config.stateBackend,
       bootstrapFilePath: config.stateBootstrapFile,
     });
     this.agentRunner = options.agentRunner ?? createCodexAgentRunner({ config });
+    this.onEvent = options.onEvent;
   }
 
-  static fromConfig(configPath?: string): Supervisor {
-    return new Supervisor(loadConfig(configPath));
+  static fromConfig(
+    configPath?: string,
+    options: { agentRunner?: AgentRunner; onEvent?: SupervisorEventSink } = {},
+  ): Supervisor {
+    return new Supervisor(loadConfig(configPath), options);
   }
 
   pollIntervalMs(): number {
@@ -321,6 +335,7 @@ export class Supervisor {
       stateStore: this.stateStore,
       state,
       currentRecord,
+      emitEvent: this.onEvent,
       acquireIssueLock: (record) =>
         acquireFileLock(
           this.lockPath("issues", `issue-${record.issue_number}`),
@@ -508,6 +523,7 @@ export class Supervisor {
             ? blockedReasonForLifecycleState(this.config, lifecycle.recordForState, pr, checks, reviewThreads)
             : null,
       });
+      emitSupervisorEvent(this.onEvent, maybeBuildReviewWaitChangedEvent(context.record, record, pr.number));
 
       if (effectiveFailureContext && shouldStopForRepeatedFailureSignature(record, this.config)) {
         record = this.stateStore.touch(record, {
@@ -618,6 +634,7 @@ export class Supervisor {
       manualReviewThreads,
       mergeConflictDetected,
       loadOpenPullRequestSnapshot: (prNumber) => this.loadOpenPullRequestSnapshot(prNumber),
+      emitEvent: this.onEvent,
     });
   }
 
@@ -664,13 +681,24 @@ export class Supervisor {
     }
 
     if (reconciliationPhase === null) {
+      emitSupervisorEvent(this.onEvent, buildRunLockBlockedEvent({
+        command: label,
+        reason: lock.reason,
+        reconciliationPhase: null,
+      }));
       return lock;
     }
 
-    return {
+    const blockedLock = {
       ...lock,
       reason: `${lock.reason} for reconciliation work (${reconciliationPhase})`,
     };
+    emitSupervisorEvent(this.onEvent, buildRunLockBlockedEvent({
+      command: label,
+      reason: blockedLock.reason ?? lock.reason,
+      reconciliationPhase,
+    }));
+    return blockedLock;
   }
 
   async status(options: Pick<CliOptions, "why"> = { why: false }): Promise<string> {
@@ -831,6 +859,7 @@ export class Supervisor {
     const prelude = await runOnceCyclePrelude({
       stateStore: this.stateStore,
       carryoverRecoveryEvents,
+      emitEvent: this.onEvent,
       setReconciliationPhase: (phase) =>
         phase === null
           ? clearCurrentReconciliationPhase(this.config)

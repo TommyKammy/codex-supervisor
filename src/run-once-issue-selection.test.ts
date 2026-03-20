@@ -290,6 +290,88 @@ test("resolveRunnableIssueContext does not persist a new active reservation when
   assert.equal(savedStates.length, 0);
 });
 
+test("resolveRunnableIssueContext emits typed active-issue and loop-skip events", async () => {
+  const config = createConfig();
+  const issue: GitHubIssue = {
+    number: 93,
+    title: "Ready issue",
+    body: executionReadyBody("Ship the ready issue."),
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/93",
+    state: "OPEN",
+  };
+  const emitted: unknown[] = [];
+
+  const readyState: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [issue],
+      getIssue: async () => issue,
+    },
+    config,
+    stateStore: createTouchStateStore([]),
+    state: readyState,
+    currentRecord: null,
+    emitEvent: (event) => {
+      emitted.push(event);
+    },
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {},
+    }),
+  });
+
+  const skippedState: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [issue],
+      getIssue: async () => issue,
+    },
+    config,
+    stateStore: createTouchStateStore([]),
+    state: skippedState,
+    currentRecord: null,
+    emitEvent: (event) => {
+      emitted.push(event);
+    },
+    acquireIssueLock: async () => ({
+      acquired: false,
+      reason: "lock held by pid 123 for issue-93",
+      release: async () => {},
+    }),
+  });
+
+  assert.deepEqual(
+    emitted.map((event) => ({ ...(event as Record<string, unknown>), at: "normalized" })),
+    [
+    {
+      type: "supervisor.active_issue.changed",
+      family: "active_issue",
+      issueNumber: 93,
+      previousIssueNumber: null,
+      nextIssueNumber: 93,
+      reason: "reserved_for_cycle",
+      at: "normalized",
+    },
+    {
+      type: "supervisor.loop.skipped",
+      family: "loop_skip",
+      issueNumber: 93,
+      reason: "issue_lock_unavailable",
+      detail: "lock held by pid 123 for issue-93",
+      at: "normalized",
+    },
+    ],
+  );
+});
+
 test("resolveRunnableIssueContext skips Epic issues and selects a runnable child issue", async () => {
   const config = createConfig({
     skipTitlePrefixes: ["Epic:"],
@@ -329,6 +411,10 @@ Part of: #93`,
     stateStore: createTouchStateStore(savedStates),
     state,
     currentRecord: null,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {},
+    }),
   });
 
   assert.ok(typeof result !== "string");
