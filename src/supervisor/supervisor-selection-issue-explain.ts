@@ -23,9 +23,11 @@ import {
 } from "./supervisor-status-rendering";
 import { formatLatestRecoveryStatusLine } from "./supervisor-detailed-status-assembly";
 import {
+  BlockedReason,
   GitHubIssue,
   GitHubPullRequest,
   IssueRunRecord,
+  RunState,
   SupervisorConfig,
   SupervisorStateFile,
 } from "../core/types";
@@ -33,6 +35,21 @@ import type { ActiveStatusGitHub } from "./supervisor-selection-active-status";
 
 export type ExplainIssueGitHub = Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
   Partial<ActiveStatusGitHub>;
+
+export interface SupervisorExplainDto {
+  issueNumber: number;
+  title: string;
+  state: RunState | "untracked";
+  blockedReason: BlockedReason | "none";
+  runnable: boolean;
+  changeRiskLines: string[];
+  externalReviewFollowUpSummary: string | null;
+  latestRecoverySummary: string | null;
+  selectionReason: string | null;
+  reasons: string[];
+  lastError: string | null;
+  failureSummary: string | null;
+}
 
 async function buildExplainChangeRiskSummary(args: {
   config: SupervisorConfig;
@@ -146,12 +163,12 @@ export function buildNonRunnableLocalStateReasons(record: IssueRunRecord, config
   return reasons;
 }
 
-export async function buildIssueExplainSummary(
+export async function buildIssueExplainDto(
   github: ExplainIssueGitHub,
   config: SupervisorConfig,
   state: SupervisorStateFile,
   issueNumber: number,
-): Promise<string[]> {
+): Promise<SupervisorExplainDto> {
   const [issue, issues, candidateIssues] = await Promise.all([
     github.getIssue(issueNumber),
     github.listAllIssues(),
@@ -202,33 +219,61 @@ export async function buildIssueExplainSummary(
   }
 
   const runnable = reasons.length === 0;
+  return {
+    issueNumber: issue.number,
+    title: issue.title,
+    state: record?.state ?? "untracked",
+    blockedReason: record?.blocked_reason ?? "none",
+    runnable,
+    changeRiskLines,
+    externalReviewFollowUpSummary,
+    latestRecoverySummary,
+    selectionReason: runnable
+      ? formatSelectionReason(issue, issues, state, record, readiness.isExecutionReady, config)
+      : null,
+    reasons,
+    lastError: record?.last_error ?? null,
+    failureSummary: record?.last_failure_context?.summary ?? null,
+  };
+}
+
+export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
   const lines = [
-    `issue=#${issue.number}`,
-    `title=${issue.title}`,
-    `state=${record?.state ?? "untracked"}`,
-    `blocked_reason=${record?.blocked_reason ?? "none"}`,
-    `runnable=${runnable ? "yes" : "no"}`,
-    ...changeRiskLines,
-    ...(externalReviewFollowUpSummary ? [externalReviewFollowUpSummary] : []),
-    ...(latestRecoverySummary ? [latestRecoverySummary] : []),
+    `issue=#${dto.issueNumber}`,
+    `title=${dto.title}`,
+    `state=${dto.state}`,
+    `blocked_reason=${dto.blockedReason}`,
+    `runnable=${dto.runnable ? "yes" : "no"}`,
+    ...dto.changeRiskLines,
+    ...(dto.externalReviewFollowUpSummary ? [dto.externalReviewFollowUpSummary] : []),
+    ...(dto.latestRecoverySummary ? [dto.latestRecoverySummary] : []),
   ];
 
-  if (runnable) {
-    lines.push(`selection_reason=${formatSelectionReason(issue, issues, state, record, readiness.isExecutionReady, config)}`);
+  if (dto.selectionReason) {
+    lines.push(`selection_reason=${dto.selectionReason}`);
   } else {
-    reasons.forEach((reason, index) => {
+    dto.reasons.forEach((reason, index) => {
       lines.push(`reason_${index + 1}=${reason}`);
     });
   }
 
-  if (record?.last_error) {
-    lines.push(`last_error=${record.last_error}`);
+  if (dto.lastError) {
+    lines.push(`last_error=${dto.lastError}`);
   }
-  if (record?.last_failure_context?.summary) {
-    lines.push(`failure_summary=${record.last_failure_context.summary}`);
+  if (dto.failureSummary) {
+    lines.push(`failure_summary=${dto.failureSummary}`);
   }
 
-  return lines;
+  return lines.join("\n");
+}
+
+export async function buildIssueExplainSummary(
+  github: ExplainIssueGitHub,
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+  issueNumber: number,
+): Promise<string[]> {
+  return renderIssueExplainDto(await buildIssueExplainDto(github, config, state, issueNumber)).split("\n");
 }
 
 export function formatSelectionReason(

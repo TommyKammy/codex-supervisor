@@ -1,50 +1,38 @@
-# Issue #690: Issue authoring diagnostics: warn when a child issue depends directly on its Epic
+# Issue #696: Status API prep: expose typed supervisor status and explain DTOs before CLI rendering
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/690
-- Branch: codex/issue-690
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/696
+- Branch: codex/issue-696
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: f2c40f60415be27322c66b909399ef5737630428
+- Current phase: draft_pr
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: f99809c71b669d8ad6772ef86c8c76ebbb5638ab
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ851o-uu
-- Repeated failure signature count: 1
-- Updated at: 2026-03-20T06:12:30.093Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-20T07:09:13.000Z
 
 ## Latest Codex Summary
-Validated CodeRabbit thread `PRRT_kwDORgvdZ851o-uu` as a real wording mismatch in the issue journal only. The implementation and tests already correctly warn when `Depends on` repeats the same epic listed in `Part of`; this turn updated `.codex-supervisor/issue-journal.md`, committed the fix as `1838d65`, pushed `codex/issue-690`, and resolved the review thread on PR #694.
-
-No code changes were required, so I did not rerun tests. This review-only fix is limited to the journal text in `.codex-supervisor/issue-journal.md`; the pre-existing untracked `.codex-supervisor/replay/` directory remains untouched.
-
-Summary: Aligned the issue journal wording with the implemented same-epic `issue-lint` warning, pushed commit `1838d65`, and resolved the PR #694 review thread.
-State hint: pr_open
-Blocked reason: none
-Tests: not run (journal-only wording fix)
-Failure signature: none
-Next action: Monitor PR #694 for any new review or CI follow-up.
+- Reproduced the missing transport seam with focused tests that failed on `supervisor.statusReport()` and `supervisor.explainReport()` not existing. Implemented additive DTO-first query methods for `status`, `explain`, and `doctor`, kept CLI output on render helpers, verified the focused supervisor/doctor tests plus `npm run build`, committed the change as `f99809c` (`Add supervisor status and explain DTO reports`), pushed `codex/issue-696`, and opened draft PR #701 (`https://github.com/TommyKammy/codex-supervisor/pull/701`).
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the narrowest safe fix for #690 is to keep the change inside `validateIssueMetadataSyntax(...)`, because `issue-lint` already exposes metadata diagnostics directly and this issue only needs a deterministic local warning for `Part of` plus the same `Depends on` epic.
-- What changed: added focused regression coverage in `src/issue-metadata/issue-metadata.test.ts` for both the warning case (`Part of: #123` with `Depends on: #123, #77`) and a valid sibling-dependency case (`Depends on: #77, #88`). Added `src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts` coverage asserting `issue-lint` reports the new warning. Updated `src/issue-metadata/issue-metadata-validation.ts` so `depends on` emits `depends on duplicates parent epic #<number>; remove it and keep only real blocking issues` when a child issue depends directly on the same parent epic listed in `Part of`.
+- Hypothesis: the safest fix is to expose typed transport DTOs one layer above the existing line renderers, not to redesign the status/explain computation itself. `doctor` already proves that pattern, so `status` and `explain` should follow it and keep existing CLI strings as a pure render step.
+- What changed: added focused DTO assertions in `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-diagnostics-explain.test.ts`, and the existing `doctor` diagnostic-path test. Introduced `SupervisorExplainDto` plus `buildIssueExplainDto(...)` and `renderIssueExplainDto(...)` in `src/supervisor/supervisor-selection-issue-explain.ts`, added `SupervisorStatusDto` plus `renderSupervisorStatusDto(...)` in `src/supervisor/supervisor-status-report.ts`, and routed `Supervisor.status()`, `Supervisor.explain()`, and `Supervisor.doctor()` through new structured `statusReport()`, `explainReport()`, and `doctorReport()` methods. Re-exported the new explain helpers from `src/supervisor/supervisor-selection-status.ts` and `src/supervisor/index.ts`.
 - Current blocker: none
-- Next exact step: monitor PR #694 (`https://github.com/TommyKammy/codex-supervisor/pull/694`) for any new review feedback or CI changes after resolving the journal wording thread.
-- Verification gap: none for the requested acceptance criteria. Focused validator and issue-lint tests passed, and `npm run build` passed after restoring local dev dependencies with `npm install`.
-- Files touched: `src/issue-metadata/issue-metadata-validation.ts`, `src/issue-metadata/issue-metadata.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would remove the only local deterministic warning that catches child issues being blocked behind their parent epic, reopening the issue-authoring failure that #690 is meant to prevent.
-- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){ resolveReviewThread(input:{threadId:$threadId}) { thread { id isResolved } } }' -F threadId=PRRT_kwDORgvdZ851o-uu`
-- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-690/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-690/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `rg -n "different parent epic|duplicates parent epic|same parent epic" .codex-supervisor/issue-journal.md src/issue-metadata/issue-metadata-validation.ts src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`; `git diff -- .codex-supervisor/issue-journal.md`; `git add .codex-supervisor/issue-journal.md && git commit -m "Align issue journal warning wording"`; `git push origin codex/issue-690`; `gh api graphql -f query='mutation($threadId:ID!){ resolveReviewThread(input:{threadId:$threadId}) { thread { id isResolved } } }' -F threadId=PRRT_kwDORgvdZ851o-uu`
+- Next exact step: monitor draft PR #701 for CI and review feedback, then address any follow-up without changing the new DTO/renderer seam semantics.
+- Verification gap: none against the current acceptance criteria; the focused supervisor/doctor test set passed and `npm run build` passed after `npm install` restored `tsc`.
+- Files touched: `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/supervisor/supervisor-status-report.ts`, `src/supervisor/supervisor-selection-status.ts`, `src/supervisor/index.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-diagnostics-explain.test.ts`, `src/supervisor/supervisor-selection-status.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would force future transports back to parsing rendered CLI strings for supervisor `status` and `explain`, undoing the structured seam that this issue is meant to establish.
+- Last focused command: `npm run build`
+- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-696/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-696/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `rg -n "buildIssueExplainSummary|supervisor\\.status\\(|diagnoseSupervisorHost|renderDoctorReport|status\\(" src/index.ts src/cli src/supervisor src/doctor.ts`; `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts`; `npx tsx --test src/supervisor/supervisor-status-model.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/doctor.test.ts`; `npm install`; `npm run build`
 ### Scratchpad
-- 2026-03-20 (JST): Pushed journal-only review fix commit `1838d65` (`Align issue journal warning wording`) to `codex/issue-690`, then resolved CodeRabbit thread `PRRT_kwDORgvdZ851o-uu` on PR #694 after verifying the implementation already matched the intended same-epic warning behavior.
-- 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851o-uu` as a real journal wording mismatch only; corrected `.codex-supervisor/issue-journal.md` so the handoff text now says the warning fires when `Depends on` duplicates the same epic from `Part of`. No code changes or additional test runs were needed for this review-only fix.
-- 2026-03-20 (JST): Pushed `codex/issue-671` to `origin/codex/issue-671` and opened draft PR #676 (`https://github.com/TommyKammy/codex-supervisor/pull/676`) after the focused artifact/finalize/result/status/policy tests and `npm run build` were already green locally.
-- 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
-- 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851kRrS` as a real bug: malformed SQLite rows could yield only `load_findings`, after which `loadFromSqlite()` returned fallback empty/bootstrap state without those findings. Fixed the fallback path, added a dedicated regression for the empty-state case, and reran `npx tsx --test src/core/state-store.test.ts` plus `npm run build` successfully.
+- 2026-03-20 (JST): Committed the DTO-first supervisor status/explain/doctor query-path work as `f99809c` (`Add supervisor status and explain DTO reports`), pushed `codex/issue-696`, and opened draft PR #701 (`https://github.com/TommyKammy/codex-supervisor/pull/701`).
+- 2026-03-20 (JST): Reproduced #696 with focused tests that failed on missing `Supervisor.statusReport()` and `Supervisor.explainReport()` methods, then implemented DTO-first status/explain/doctor query methods and render helpers. Focused verification passed with `npx tsx --test src/supervisor/supervisor-status-model.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/doctor.test.ts`, and `npm run build` passed after restoring local dependencies with `npm install`.
 - 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
 - 2026-03-19 (JST): Reproduced issue #559 with a focused `replay-corpus-promote` regression that expected advisory hints for `stale-head-prevents-merge` but only saw the existing explicit-case-id guidance and suggestions. Fixed it by adding deterministic `deriveReplayCorpusPromotionWorthinessHints(...)` coverage for stale-head safety, provider waits, and retry escalation, then surfacing those hints in both CLI suggestion mode and successful promotion summaries. Focused verification passed with `npx tsx --test src/index.test.ts --test-name-pattern "replay-corpus-promote"`, `npx tsx --test src/supervisor/replay-corpus.test.ts --test-name-pattern "PromotionWorthinessHints|promoteCapturedReplaySnapshot|checked-in safety case bundles|runReplayCorpus replays the checked-in PR lifecycle safety cases without mismatches"`, and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Reproduced issue #558 with a tightened CLI promotion regression that failed because stdout only contained `Promoted replay corpus case ...`; fixed it by printing case path, compact expected outcome, and conditional volatile-field normalization notes after promotion. Focused verification passed with `npx tsx --test src/index.test.ts`, `npx tsx --test src/supervisor/replay-corpus.test.ts`, and `npm run build` after restoring local dev dependencies via `npm install`.

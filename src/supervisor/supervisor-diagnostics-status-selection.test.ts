@@ -33,6 +33,10 @@ test("doctor uses the diagnostic-only state loader instead of StateStore.load", 
     throw new Error("StateStore.load should not be used by doctor");
   };
 
+  const diagnostics = await supervisor.doctorReport();
+  assert.equal(diagnostics.overallStatus, "fail");
+  assert.equal(diagnostics.checks.find((check) => check.name === "state_file")?.status, "fail");
+
   const report = await supervisor.doctor();
 
   assert.match(report, /doctor_check name=github_auth status=pass/);
@@ -116,6 +120,19 @@ Decide whether to keep the current production auth token flow or replace it befo
     getChecks: async () => [],
     getUnresolvedReviewThreads: async () => [],
   };
+
+  const report = await supervisor.statusReport();
+  assert.equal(report.reconciliationPhase, null);
+  assert.equal(report.warning?.kind ?? null, null);
+  assert.match(report.detailedStatusLines.join("\n"), /^No active issue\.$/m);
+  assert.match(
+    report.readinessLines.join("\n"),
+    /runnable_issues=#92 ready=execution_ready\+depends_on_satisfied:91/,
+  );
+  assert.match(
+    report.readinessLines.join("\n"),
+    /blocked_issues=#93 blocked_by=requirements:scope, acceptance criteria, verification; #94 blocked_by=clarification:unresolved_choice:auth/,
+  );
 
   const status = await supervisor.status();
 
