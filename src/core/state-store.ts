@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -198,11 +199,13 @@ function buildJsonQuarantinePath(filePath: string): string {
   return `${filePath}.corrupt.${nowIso().replace(/[:.]/g, "-")}`;
 }
 
-function buildJsonQuarantineMarkerTempPath(filePath: string): string {
-  return `${filePath}.quarantine.tmp`;
+function buildJsonQuarantineMarkerTempPath(filePath: string, attemptId: string): string {
+  return `${filePath}.quarantine.${attemptId}.tmp`;
 }
 
 export class StateStore {
+  private static readonly jsonLoadLocks = new Map<string, Promise<void>>();
+
   constructor(
     private readonly stateFilePath: string,
     private readonly options: StateStoreOptions,
@@ -213,7 +216,7 @@ export class StateStore {
       return this.loadFromSqlite();
     }
 
-    return this.loadFromJson(this.stateFilePath);
+    return this.withJsonLoadLock(this.stateFilePath, async () => this.loadFromJson(this.stateFilePath));
   }
 
   async save(state: SupervisorStateFile): Promise<void> {
@@ -344,6 +347,28 @@ export class StateStore {
     };
   }
 
+  private async withJsonLoadLock<T>(filePath: string, task: () => Promise<T>): Promise<T> {
+    const previous = StateStore.jsonLoadLocks.get(filePath) ?? Promise.resolve();
+    let releaseCurrentLock!: () => void;
+    const current = new Promise<void>((resolve) => {
+      releaseCurrentLock = resolve;
+    });
+    const currentChain = previous.catch(() => undefined).then(() => current);
+    StateStore.jsonLoadLocks.set(filePath, currentChain);
+
+    await previous.catch(() => undefined);
+
+    try {
+      return await task();
+    } finally {
+      releaseCurrentLock();
+
+      if (StateStore.jsonLoadLocks.get(filePath) === currentChain) {
+        StateStore.jsonLoadLocks.delete(filePath);
+      }
+    }
+  }
+
   private async loadFromJson(filePath: string): Promise<SupervisorStateFile> {
     let raw: string;
     try {
@@ -372,8 +397,9 @@ export class StateStore {
     filePath: string,
     error: Error,
   ): Promise<SupervisorStateFile> {
+    const quarantineAttemptId = randomUUID();
     const quarantinedFile = buildJsonQuarantinePath(filePath);
-    const markerTempPath = buildJsonQuarantineMarkerTempPath(filePath);
+    const markerTempPath = buildJsonQuarantineMarkerTempPath(filePath, quarantineAttemptId);
     const quarantinedAt = nowIso();
     const message = `${error.message}. Quarantined corrupt JSON state at ${quarantinedFile}; recovery marker written to ${filePath}.`;
     const markerState = withLoadFindings({
