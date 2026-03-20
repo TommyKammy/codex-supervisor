@@ -63,6 +63,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
   "sameFailureSignatureRepeatLimit": 3,
   "maxDoneWorkspaces": 24,
   "cleanupDoneWorkspacesAfterHours": 24,
+  "cleanupOrphanedWorkspacesAfterHours": 24,
   "mergeMethod": "squash",
   "draftPrAfterAttempt": 1
 }

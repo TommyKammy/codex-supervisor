@@ -95,6 +95,7 @@ export interface SupervisorConfig {
   sameFailureSignatureRepeatLimit: number;
   maxDoneWorkspaces: number;
   cleanupDoneWorkspacesAfterHours: number;
+  cleanupOrphanedWorkspacesAfterHours?: number;
   mergeMethod: "merge" | "squash" | "rebase";
   draftPrAfterAttempt: number;
 }

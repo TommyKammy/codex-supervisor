@@ -130,6 +130,10 @@ interface InspectOrphanedWorkspacePruneCandidatesOptions {
   now?: Date;
 }
 
+function orphanedWorkspaceGracePeriodHours(config: SupervisorConfig): number {
+  return config.cleanupOrphanedWorkspacesAfterHours ?? 24;
+}
+
 export async function inspectOrphanedWorkspacePruneCandidates(
   config: SupervisorConfig,
   state: SupervisorStateFile,
@@ -220,16 +224,17 @@ export async function inspectOrphanedWorkspacePruneCandidates(
       continue;
     }
 
-    if (modifiedAt && config.cleanupDoneWorkspacesAfterHours >= 0) {
+    const gracePeriodHours = orphanedWorkspaceGracePeriodHours(config);
+    if (modifiedAt && gracePeriodHours >= 0) {
       const ageMs = now.getTime() - Date.parse(modifiedAt);
-      if (ageMs >= 0 && ageMs < config.cleanupDoneWorkspacesAfterHours * 60 * 60 * 1000) {
+      if (ageMs >= 0 && ageMs < gracePeriodHours * 60 * 60 * 1000) {
         candidates.push({
           issueNumber,
           workspaceName: entry.name,
           workspacePath,
           branch,
           eligibility: "recent",
-          reason: `workspace modified within ${config.cleanupDoneWorkspacesAfterHours}h grace period`,
+          reason: `workspace modified within ${gracePeriodHours}h grace period`,
           modifiedAt,
         });
         continue;

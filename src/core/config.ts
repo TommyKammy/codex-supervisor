@@ -465,6 +465,10 @@ export function loadConfig(configPath?: string): SupervisorConfig {
       typeof raw.cleanupDoneWorkspacesAfterHours === "number" && Number.isFinite(raw.cleanupDoneWorkspacesAfterHours)
         ? raw.cleanupDoneWorkspacesAfterHours
         : 24,
+    cleanupOrphanedWorkspacesAfterHours:
+      typeof raw.cleanupOrphanedWorkspacesAfterHours === "number" && Number.isFinite(raw.cleanupOrphanedWorkspacesAfterHours)
+        ? raw.cleanupOrphanedWorkspacesAfterHours
+        : 24,
     mergeMethod:
       raw.mergeMethod === "merge" || raw.mergeMethod === "squash" || raw.mergeMethod === "rebase"
         ? raw.mergeMethod

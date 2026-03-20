@@ -80,6 +80,7 @@
   "sameFailureSignatureRepeatLimit": 3,
   "maxDoneWorkspaces": 24,
   "cleanupDoneWorkspacesAfterHours": 24,
+  "cleanupOrphanedWorkspacesAfterHours": 24,
   "mergeMethod": "squash",
   "draftPrAfterAttempt": 1
 }
