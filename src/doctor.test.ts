@@ -69,6 +69,120 @@ test("diagnoseSupervisorHost reports representative auth, state, and workspace f
   );
 });
 
+test("diagnoseSupervisorHost surfaces orphan prune candidates and representative eligibility reasons", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const stateFile = path.join(root, "state.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  await fs.writeFile(path.join(repoPath, "README.md"), "# fixture\n", "utf8");
+  execFileSync("git", ["add", "README.md"], { cwd: repoPath });
+  execFileSync("git", ["commit", "-m", "seed"], {
+    cwd: repoPath,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Codex",
+      GIT_AUTHOR_EMAIL: "codex@example.com",
+      GIT_COMMITTER_NAME: "Codex",
+      GIT_COMMITTER_EMAIL: "codex@example.com",
+    },
+  });
+
+  const eligibleWorkspace = path.join(workspaceRoot, "issue-201");
+  const lockedWorkspace = path.join(workspaceRoot, "issue-202");
+  const recentWorkspace = path.join(workspaceRoot, "issue-203");
+  execFileSync("git", ["worktree", "add", "-b", "codex/reopen-issue-201", eligibleWorkspace, "HEAD"], { cwd: repoPath });
+  execFileSync("git", ["worktree", "add", "-b", "codex/reopen-issue-202", lockedWorkspace, "HEAD"], { cwd: repoPath });
+  execFileSync("git", ["worktree", "add", "-b", "codex/reopen-issue-203", recentWorkspace, "HEAD"], { cwd: repoPath });
+
+  const oldTime = new Date("2026-03-01T00:00:00Z");
+  const recentTime = new Date();
+  await fs.utimes(eligibleWorkspace, oldTime, oldTime);
+  await fs.utimes(lockedWorkspace, oldTime, oldTime);
+  await fs.utimes(recentWorkspace, recentTime, recentTime);
+
+  const lockPath = path.join(path.dirname(stateFile), "locks", "issues", "issue-202.lock");
+  await fs.mkdir(path.dirname(lockPath), { recursive: true });
+  await fs.writeFile(
+    lockPath,
+    `${JSON.stringify({ pid: process.pid, label: "issue-202", acquired_at: "2026-03-21T00:00:00Z" }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const diagnostics = await diagnoseSupervisorHost({
+    config: createConfig({
+      repoPath,
+      workspaceRoot,
+      stateFile,
+      codexBinary: process.execPath,
+      cleanupDoneWorkspacesAfterHours: 24,
+      maxDoneWorkspaces: -1,
+    }),
+    authStatus: async () => ({ ok: true, message: null }),
+    loadState: async () => ({ activeIssueNumber: null, issues: {} }),
+  });
+
+  const report = renderDoctorReport(diagnostics);
+  assert.match(report, /doctor_check name=worktrees status=warn summary=.*orphaned prune candidate/i);
+  assert.match(report, /doctor_detail name=worktrees detail=orphan_prune_candidate issue_number=201 eligibility=eligible /);
+  assert.match(report, /doctor_detail name=worktrees detail=orphan_prune_candidate issue_number=202 eligibility=locked /);
+  assert.match(report, /doctor_detail name=worktrees detail=orphan_prune_candidate issue_number=203 eligibility=recent /);
+});
+
+test("diagnoseSupervisorHost reports unsafe orphan prune targets when branch naming is invalid", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const stateFile = path.join(root, "state.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  await fs.writeFile(path.join(repoPath, "README.md"), "# fixture\n", "utf8");
+  execFileSync("git", ["add", "README.md"], { cwd: repoPath });
+  execFileSync("git", ["commit", "-m", "seed"], {
+    cwd: repoPath,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Codex",
+      GIT_AUTHOR_EMAIL: "codex@example.com",
+      GIT_COMMITTER_NAME: "Codex",
+      GIT_COMMITTER_EMAIL: "codex@example.com",
+    },
+  });
+
+  const orphanWorkspace = path.join(workspaceRoot, "issue-301");
+  execFileSync("git", ["worktree", "add", "-b", "codex/reopen-issue-301", orphanWorkspace, "HEAD"], { cwd: repoPath });
+
+  const diagnostics = await diagnoseSupervisorHost({
+    config: createConfig({
+      repoPath,
+      workspaceRoot,
+      stateFile,
+      codexBinary: process.execPath,
+      branchPrefix: "bad ref ",
+      cleanupDoneWorkspacesAfterHours: 24,
+      maxDoneWorkspaces: -1,
+    }),
+    authStatus: async () => ({ ok: true, message: null }),
+    loadState: async () => ({ activeIssueNumber: null, issues: {} }),
+  });
+
+  assert.match(
+    renderDoctorReport(diagnostics),
+    /doctor_detail name=worktrees detail=orphan_prune_candidate issue_number=301 eligibility=unsafe_target /,
+  );
+});
+
 test("diagnoseBootstrapReadiness returns structured ready config and host summary", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-bootstrap-"));
   t.after(async () => {

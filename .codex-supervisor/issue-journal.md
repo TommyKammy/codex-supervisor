@@ -1,52 +1,48 @@
-# Issue #725: Orphan cleanup docs: define preservation rules and explicit prune expectations
+# Issue #726: Orphan cleanup visibility: surface prune candidates and eligibility reasons before deletion
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/725
-- Branch: codex/issue-725
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/726
+- Branch: codex/issue-726
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 1687069f7b72b7988663a43bbc89257c7ecd57fd
+- Last head SHA: fc825ebb4fed41272ba17e3ed8ea591b9f74c788
 - Blocked reason: none
-- Last failure signature: docs-orphan-cleanup-contract-missing
+- Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-20T19:59:57Z
+- Updated at: 2026-03-20T20:31:48.433Z
 
 ## Latest Codex Summary
-- Added a narrow docs regression test for orphan-cleanup guidance, reproduced the gap when `src/execution-safety-docs.test.ts` failed because the docs did not define orphaned workspaces, updated `README.md`, `docs/architecture.md`, `docs/getting-started.md`, and `docs/configuration.md` to distinguish tracked done cleanup from explicit orphan pruning with preservation rules for locked, recent, and manually kept workspaces, and verified with `npx tsx --test src/execution-safety-docs.test.ts` plus `npm run build`.
+- Added orphan prune candidate visibility to `doctor` by classifying untracked `issue-*` worktrees as `eligible`, `locked`, `recent`, or `unsafe_target` without changing cleanup behavior.
 
 ## Active Failure Context
-- Reproduced before the doc edits with `npx tsx --test src/execution-safety-docs.test.ts --test-name-pattern="workspace cleanup docs distinguish tracked done cleanup from explicit orphan pruning"` failing on `expected README.md to mention orphan workspaces`.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The issue is documentation drift, not runtime behavior: the repo needs one explicit orphan-cleanup contract across the top-level docs, plus a regression test that prevents architecture from implying orphan cleanup is the same as delayed cleanup for tracked `done` workspaces.
-- What changed: re-read the required memory files and journal, inspected the current orphan-cleanup wording across the requested docs, added a focused assertion to `src/execution-safety-docs.test.ts`, reproduced the gap once dependencies were installed, then updated the four docs to define orphaned workspaces, preservation rules, and explicit prune expectations.
+- Hypothesis: `#726` needs a narrow runtime visibility change, not a pruning-policy change: expose orphaned worktree prune candidates through diagnostics with deterministic eligibility reasons, while leaving actual cleanup behavior untouched.
+- What changed: added focused `doctor` regression tests for orphan prune candidate reporting, extracted `inspectOrphanedWorkspacePruneCandidates()` in `src/recovery-reconciliation.ts`, and wired `src/doctor.ts` to report orphan candidates in the existing `worktrees` diagnostic summary/details.
 - Current blocker: none
-- Next exact step: review the final diff, commit the docs and test updates, and open or update the draft PR for issue #725 if needed.
-- Verification gap: full repo test suite was not rerun; verification this turn is the focused docs test file and `npm run build`.
-- Files touched: `src/execution-safety-docs.test.ts`, `README.md`, `docs/architecture.md`, `docs/getting-started.md`, `docs/configuration.md`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting the doc updates would restore the previous ambiguity where orphan cleanup could be misread as implicit delayed cleanup for tracked `done` workspaces.
+- Next exact step: review the diff and open or update the draft PR for issue `#726`.
+- Verification gap: full repo test suite was not rerun; verification this turn is the focused orphan-cleanup/doctor tests plus `npm run build`.
+- Files touched: `src/doctor.test.ts`, `src/doctor.ts`, `src/recovery-reconciliation.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting these changes would remove the only operator-visible, testable classification of orphan prune candidates before cleanup policy changes land.
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-725/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-725/context-index.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-726/AGENTS.generated.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-726/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
-rg -n "orphan|cleanup|prune|worktree" README.md docs/architecture.md docs/getting-started.md docs/configuration.md
-sed -n '1,260p' README.md
-sed -n '1,260p' docs/getting-started.md
-sed -n '1,260p' docs/architecture.md
-sed -n '1,260p' docs/configuration.md
-sed -n '1,220p' src/getting-started-docs.test.ts
-sed -n '1,260p' src/execution-safety-docs.test.ts
-sed -n '1,260p' src/readme-docs.test.ts
-npm install
-npx tsx --test src/execution-safety-docs.test.ts --test-name-pattern="workspace cleanup docs distinguish tracked done cleanup from explicit orphan pruning"
-npx tsx --test src/execution-safety-docs.test.ts
-npm run build
 git status --short --branch
-git diff -- README.md docs/architecture.md docs/getting-started.md docs/configuration.md src/execution-safety-docs.test.ts
+rg -n "cleanupExpiredDoneWorkspaces|orphaned worktree|orphan" src/*.ts src/supervisor/*.ts
+sed -n '1,420p' src/recovery-reconciliation.ts
+sed -n '1,260p' src/doctor.ts
+sed -n '1,260p' src/doctor.test.ts
+sed -n '400,620p' src/supervisor/supervisor-execution-cleanup.test.ts
+npx tsx --test src/doctor.test.ts --test-name-pattern="orphan prune candidates|unsafe orphan prune targets"
+npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-execution-cleanup.test.ts src/doctor.test.ts
+npm install
+npm run build
 date -u +"%Y-%m-%dT%H:%M:%SZ"
 ```
 ### Scratchpad

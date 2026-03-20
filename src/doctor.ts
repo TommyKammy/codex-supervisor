@@ -6,6 +6,7 @@ import { runCommand } from "./core/command";
 import { type ConfigLoadSummary, loadConfigSummary } from "./core/config";
 import { parseJson } from "./core/utils";
 import { type IssueRunRecord, type StateLoadFinding, type SupervisorConfig, type SupervisorStateFile } from "./core/types";
+import { inspectOrphanedWorkspacePruneCandidates } from "./recovery-reconciliation";
 
 export type DoctorCheckStatus = "pass" | "warn" | "fail";
 
@@ -414,7 +415,12 @@ async function diagnoseWorktrees(
       }
     }
 
-    if (problems.length === 0) {
+    const orphanCandidates = await inspectOrphanedWorkspacePruneCandidates(config, state);
+    const orphanDetails = orphanCandidates.map((candidate) =>
+      `orphan_prune_candidate issue_number=${candidate.issueNumber} eligibility=${candidate.eligibility} workspace=${candidate.workspacePath} branch=${candidate.branch ?? "none"} modified_at=${candidate.modifiedAt ?? "unknown"} reason=${candidate.reason}`
+    );
+
+    if (problems.length === 0 && orphanCandidates.length === 0) {
       return {
         name: "worktrees",
         status: "pass",
@@ -423,11 +429,23 @@ async function diagnoseWorktrees(
       };
     }
 
+    const orphanSummary = orphanCandidates.length === 0
+      ? null
+      : [
+        `orphaned prune candidates=${orphanCandidates.length}`,
+        `eligible=${orphanCandidates.filter((candidate) => candidate.eligibility === "eligible").length}`,
+        `locked=${orphanCandidates.filter((candidate) => candidate.eligibility === "locked").length}`,
+        `recent=${orphanCandidates.filter((candidate) => candidate.eligibility === "recent").length}`,
+        `unsafe_target=${orphanCandidates.filter((candidate) => candidate.eligibility === "unsafe_target").length}`,
+      ].join(" ");
+
     return {
       name: "worktrees",
       status: "warn",
-      summary: `${problems.length} tracked workspace issue(s) detected.`,
-      details: problems,
+      summary: [problems.length > 0 ? `${problems.length} tracked workspace issue(s) detected.` : null, orphanSummary]
+        .filter((value): value is string => value !== null)
+        .join(" "),
+      details: [...problems, ...orphanDetails],
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
