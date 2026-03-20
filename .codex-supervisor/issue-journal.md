@@ -35,9 +35,9 @@ Next action: wait for CI and review feedback on PR #692, then address any follow
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: the narrowest safe review fix for #685 is to preserve the existing visibility-only warning path while changing the threshold boundary so reconciliation warns only after elapsed time strictly exceeds five minutes.
-- What changed: validated CodeRabbit thread `PRRT_kwDORgvdZ851okoy` as a real boundary bug, changed `buildLongReconciliationWarning(...)` in `src/supervisor/supervisor.ts` to return `null` when `elapsedMs <= LONG_RECONCILIATION_WARNING_THRESHOLD_MS`, and tightened `src/supervisor/supervisor-diagnostics-status-selection.test.ts` to assert no warning at exactly five minutes and a warning at five minutes plus one second.
+- What changed: validated CodeRabbit thread `PRRT_kwDORgvdZ851okoy` as a real boundary bug, changed `buildLongReconciliationWarning(...)` in `src/supervisor/supervisor.ts` to return `null` when `elapsedMs <= LONG_RECONCILIATION_WARNING_THRESHOLD_MS`, tightened `src/supervisor/supervisor-diagnostics-status-selection.test.ts` to assert no warning at exactly five minutes and a warning at five minutes plus one second, committed the fix as `45d9615`, pushed `codex/issue-685`, and resolved the PR #692 review thread in GitHub.
 - Current blocker: none
-- Next exact step: commit this review fix, push `codex/issue-685`, and resolve the remaining PR #692 review thread with the verified strict-boundary change.
+- Next exact step: monitor PR #692 for any follow-up review or CI regression; otherwise proceed toward merge once the updated branch is re-evaluated.
 - Verification gap: none for this review fix. `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build` passed locally after the boundary update.
 - Files touched: `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this checkpoint would reintroduce a mismatch between the operator-visible warning and the acceptance text that says reconciliation must exceed the five-minute threshold before warning.
