@@ -415,9 +415,11 @@ test("GitHubPullRequestHydrator reuses arrived configured-bot lifecycle for the 
   assert.equal(first?.copilotReviewState, "arrived");
   assert.equal(first?.copilotReviewRequestedAt, "2026-03-13T01:02:03Z");
   assert.equal(first?.copilotReviewArrivedAt, "2026-03-13T01:03:04Z");
+  assert.equal(first?.hydrationProvenance, "fresh");
   assert.equal(second?.copilotReviewState, "arrived");
   assert.equal(second?.copilotReviewRequestedAt, "2026-03-13T01:02:03Z");
   assert.equal(second?.copilotReviewArrivedAt, "2026-03-13T01:03:04Z");
+  assert.equal(second?.hydrationProvenance, "cached");
   assert.equal(lifecycleCallCount, 1);
 });
 

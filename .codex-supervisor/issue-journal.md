@@ -1,57 +1,55 @@
-# Issue #731: Hydration freshness docs: define fresh-vs-cached contract for supervisor action paths
+# Issue #736: Hydration provenance visibility: surface cached-vs-fresh PR hydration results
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/731
-- Branch: codex/issue-731
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/736
+- Branch: codex/issue-736
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 73eda3197818efbf924eb3c461a3c8ccd29abb67
+- Current phase: stabilizing
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: 49fa60219bda219462266360d13794c08db1dd2d
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ8510_c8
-- Repeated failure signature count: 1
-- Updated at: 2026-03-20T23:02:42Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-20T23:36:28.000Z
 
 ## Latest Codex Summary
-Addressed the remaining CodeRabbit review on [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) by removing machine-specific absolute local paths from committed journal content. The journal now records repo-relative file links and portable `.local/memory/...` command paths instead of host-specific home-directory paths.
+Added a narrow hydration provenance signal end to end. Hydrated PRs now carry `hydrationProvenance: "fresh" | "cached"` in [src/core/types.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-736/src/core/types.ts), the hydrator sets it deterministically in [src/github/github-pull-request-hydrator.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-736/src/github/github-pull-request-hydrator.ts), and detailed supervisor status renders `pr_hydration provenance=...` in [src/supervisor/supervisor-detailed-status-assembly.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-736/src/supervisor/supervisor-detailed-status-assembly.ts). Action behavior is unchanged.
 
-Focused verification confirmed `.codex-supervisor/issue-journal.md` no longer contains host-specific home-directory absolute paths. The prior docs and test changes for the hydration freshness contract remain unchanged on this branch and were already verified with `npx tsx --test src/hydration-freshness-docs.test.ts` and `npm run build`.
+Focused coverage was added in [src/github/github-pull-request-hydrator.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-736/src/github/github-pull-request-hydrator.test.ts) and [src/supervisor/supervisor-status-rendering-supervisor.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-736/src/supervisor/supervisor-status-rendering-supervisor.test.ts). I also updated the issue journal and committed the checkpoint as `49fa602` (`Surface PR hydration provenance`). The only remaining workspace dirt is pre-existing untracked `.codex-supervisor/replay/`.
 
-Summary: Normalized committed issue-journal paths to portable relative forms so the remaining review thread can be resolved without changing runtime behavior
-State hint: addressing_review
+Summary: Added deterministic fresh-vs-cached PR hydration provenance and surfaced it in supervisor status, with focused regressions and successful local verification on the acceptance test slice
+State hint: draft_pr
 Blocked reason: none
-Tests: `node -e "const fs=require('fs'); const s=fs.readFileSync('.codex-supervisor/issue-journal.md','utf8'); process.exit(s.includes('/'+'home/') ? 1 : 0)"`
-Failure signature: PRRT_kwDORgvdZ8510_c8
-Next action: commit this review fix, push `codex/issue-731`, and resolve PR thread #PRRT_kwDORgvdZ8510_c8 if the review system does not auto-dismiss it
+Tests: `npx tsx --test src/github/github-pull-request-hydrator.test.ts`; `npx tsx --test src/supervisor/supervisor-status-rendering-supervisor.test.ts`; `npx tsx --test src/pull-request-state.test.ts src/supervisor/supervisor-lifecycle.test.ts src/doctor.test.ts`; `npm ci`; `npm run build`
+Failure signature: none
+Next action: monitor or address review and CI for draft PR #755
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/754#discussion_r2968285486
-- Details:
-  - Review thread `PRRT_kwDORgvdZ8510_c8` is valid: the committed journal included machine-specific absolute paths in the logged `sed` commands used to read shared memory files.
-  - Local fix: replaced those command paths with portable `.local/memory/TommyKammy-codex-supervisor/issue-731/...` references and normalized the journal's own file links away from absolute worktree paths.
-  - Verification target: `.codex-supervisor/issue-journal.md` should contain no host-specific home-directory absolute paths after this repair.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining PR blocker is limited to committed journal portability, not the hydration freshness docs themselves; fixing the logged path forms should clear the last review thread without affecting runtime behavior.
-- What changed: normalized `.codex-supervisor/issue-journal.md` so committed command history and file links no longer embed machine-specific home-directory absolute paths.
+- Hypothesis: a small PR-level provenance field is enough for this issue because later behavior changes can reuse it without changing any action paths now.
+- What changed: added `hydrationProvenance` to hydrated pull requests, set it deterministically to `fresh` or `cached` in the GitHub PR hydrator, and rendered it as `pr_hydration provenance=...` in detailed supervisor status output.
 - Current blocker: none
-- Next exact step: commit and push the journal portability fix so PR #754 can clear the outstanding review thread.
-- Verification gap: this turn only needs a focused journal portability check; the earlier docs regression test and `npm run build` already passed for the underlying feature work.
-- Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this change would reintroduce machine-specific paths into a committed journal artifact and likely keep the review thread open.
-- Last focused command: `node -e "const fs=require('fs'); const s=fs.readFileSync('.codex-supervisor/issue-journal.md','utf8'); process.exit(s.includes('/'+'home/') ? 1 : 0)"`
-- Last focused failure: `PRRT_kwDORgvdZ8510_c8`
+- Next exact step: push the journal checkpoint for PR #755 so the branch is clean, then monitor CI and review feedback.
+- Verification gap: none on code; `npm run build` initially failed only because `node_modules/.bin/tsc` was missing before `npm ci`.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/core/types.ts`, `src/github/github-pull-request-hydrator.ts`, `src/github/github-pull-request-hydrator.test.ts`, `src/supervisor/supervisor-detailed-status-assembly.ts`, `src/supervisor/supervisor-status-rendering-supervisor.test.ts`
+- Rollback concern: removing the provenance field would drop the only deterministic operator-visible cached-vs-fresh hydration signal needed by later action-path issues.
+- Last focused command: `gh pr create --draft --base main --head codex/issue-736 --title "Surface cached-vs-fresh PR hydration provenance" ...`
+- Last focused failure: none
 - Last focused commands:
 ```bash
-sed -n '1,220p' .local/memory/TommyKammy-codex-supervisor/issue-731/AGENTS.generated.md
-sed -n '1,220p' .local/memory/TommyKammy-codex-supervisor/issue-731/context-index.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-736/AGENTS.generated.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-736/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
-git status --short --branch
-node -e "const fs=require('fs'); const s=fs.readFileSync('.codex-supervisor/issue-journal.md','utf8'); process.exit(s.includes('/'+'home/') ? 1 : 0)"
+npx tsx --test src/pull-request-state.test.ts src/supervisor/supervisor-lifecycle.test.ts src/doctor.test.ts
+npm run build
+gh pr view --json number,state,isDraft,headRefName,baseRefName,url 2>/dev/null || true
+git diff --stat origin/main...HEAD
+git push -u origin codex/issue-736
+gh pr create --draft --base main --head codex/issue-736 --title "Surface cached-vs-fresh PR hydration provenance" --body ...
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
