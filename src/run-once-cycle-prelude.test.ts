@@ -107,8 +107,8 @@ test("runOnceCyclePrelude loads state and aggregates recovery setup events in or
 
   assert.deepEqual(calls, [
     "load",
-    "reconcileStaleActiveIssueReservation",
     "handleAuthFailure",
+    "reconcileStaleActiveIssueReservation",
     "listAllIssues",
     "reconcileTrackedMergedButOpenIssues",
     "reconcileMergedIssueClosures",
@@ -140,18 +140,15 @@ test("runOnceCyclePrelude returns auth failures with accumulated recovery events
       at: "2026-03-14T00:00:00Z",
     },
   ];
-  const staleReservationEvent: RecoveryEvent = {
-    issueNumber: 41,
-    reason: "cleared stale reservation",
-    at: "2026-03-14T00:01:00Z",
-  };
 
   const result = await runOnceCyclePrelude({
     stateStore: {
       load: async () => state,
     },
     carryoverRecoveryEvents: carryover,
-    reconcileStaleActiveIssueReservation: async () => [staleReservationEvent],
+    reconcileStaleActiveIssueReservation: async () => {
+      throw new Error("unexpected reconcileStaleActiveIssueReservation call");
+    },
     handleAuthFailure: async () => "Skipped supervisor cycle: GitHub auth unavailable (gh auth status failed).",
     listAllIssues: async () => {
       throw new Error("unexpected listAllIssues call");
@@ -179,5 +176,43 @@ test("runOnceCyclePrelude returns auth failures with accumulated recovery events
   assert.ok("kind" in result);
   assert.equal(result.kind, "auth_failure");
   assert.match(result.message, /GitHub auth unavailable/);
-  assert.deepEqual(result.recoveryEvents, [...carryover, staleReservationEvent]);
+  assert.deepEqual(result.recoveryEvents, carryover);
+});
+
+test("runOnceCyclePrelude publishes the active reconciliation phase and clears it when complete", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  const observedPhases: Array<string | null> = [];
+
+  await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+    },
+    carryoverRecoveryEvents: [],
+    setReconciliationPhase: async (phase) => {
+      observedPhases.push(phase);
+    },
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => [],
+    reconcileTrackedMergedButOpenIssues: async () => [],
+    reconcileMergedIssueClosures: async () => [],
+    reconcileStaleFailedIssueStates: async () => {},
+    reconcileRecoverableBlockedIssueStates: async () => [],
+    reconcileParentEpicClosures: async () => {},
+    cleanupExpiredDoneWorkspaces: async () => [],
+  });
+
+  assert.deepEqual(observedPhases, [
+    "stale_active_issue_reservation",
+    "tracked_merged_but_open_issues",
+    "merged_issue_closures",
+    "stale_failed_issue_states",
+    "recoverable_blocked_issue_states",
+    "parent_epic_closures",
+    "cleanup_expired_done_workspaces",
+    null,
+  ]);
 });

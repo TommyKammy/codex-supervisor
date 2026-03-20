@@ -110,6 +110,11 @@ import {
   sanitizeStatusValue,
 } from "./supervisor-status-rendering";
 import {
+  clearCurrentReconciliationPhase,
+  readCurrentReconciliationPhase,
+  writeCurrentReconciliationPhase,
+} from "./supervisor-reconciliation-phase";
+import {
   buildManualReviewFailureContext,
   buildRequestedChangesFailureContext,
   buildReviewFailureContext,
@@ -614,6 +619,7 @@ export class Supervisor {
     const state = await this.stateStore.load();
     const gsdSummary = await describeGsdIntegration(this.config);
     const statusRecords = summarizeSupervisorStatusRecords(state);
+    const reconciliationPhase = await readCurrentReconciliationPhase(this.config);
 
     if (!statusRecords.activeRecord) {
       const baseStatus = formatDetailedStatus({
@@ -627,14 +633,21 @@ export class Supervisor {
         reviewThreads: [],
       });
       try {
+        const reconciliationLine =
+          reconciliationPhase === null ? [] : [`reconciliation_phase=${reconciliationPhase}`];
         const readinessLines = await buildReadinessSummary(this.github, this.config, state);
         const whyLines = options.why ? await buildSelectionWhySummary(this.github, this.config, state) : [];
-        return [gsdSummary, `${baseStatus}\n${readinessLines.join("\n")}${whyLines.length > 0 ? `\n${whyLines.join("\n")}` : ""}`]
+        return [
+          gsdSummary,
+          `${baseStatus}\n${[...reconciliationLine, ...readinessLines, ...whyLines].join("\n")}`,
+        ]
           .filter(Boolean)
           .join("\n");
       } catch (error) {
         const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
-        return [gsdSummary, `${baseStatus}\nreadiness_warning=${truncate(message, 200)}`]
+        const reconciliationLine =
+          reconciliationPhase === null ? [] : [`reconciliation_phase=${reconciliationPhase}`];
+        return [gsdSummary, `${baseStatus}\n${[...reconciliationLine, `readiness_warning=${truncate(message, 200)}`].join("\n")}`]
           .filter(Boolean)
           .join("\n");
       }
@@ -661,10 +674,12 @@ export class Supervisor {
       durableGuardrailSummary: activeStatus.durableGuardrailSummary,
       externalReviewFollowUpSummary: activeStatus.externalReviewFollowUpSummary,
     });
+    const reconciliationLine =
+      reconciliationPhase === null ? null : `reconciliation_phase=${reconciliationPhase}`;
 
     return [gsdSummary, activeStatus.warningMessage
-      ? `${detailedStatus}\nstatus_warning=${truncate(sanitizeStatusValue(activeStatus.warningMessage), 200)}`
-      : detailedStatus]
+      ? `${[detailedStatus, reconciliationLine, `status_warning=${truncate(sanitizeStatusValue(activeStatus.warningMessage), 200)}`].filter(Boolean).join("\n")}`
+      : [detailedStatus, reconciliationLine].filter(Boolean).join("\n")]
       .filter(Boolean)
       .join("\n");
   }
@@ -716,6 +731,10 @@ export class Supervisor {
     const prelude = await runOnceCyclePrelude({
       stateStore: this.stateStore,
       carryoverRecoveryEvents,
+      setReconciliationPhase: (phase) =>
+        phase === null
+          ? clearCurrentReconciliationPhase(this.config)
+          : writeCurrentReconciliationPhase(this.config, phase),
       reconcileStaleActiveIssueReservation: (state) => reconcileStaleActiveIssueReservation({
         stateStore: this.stateStore,
         state,
