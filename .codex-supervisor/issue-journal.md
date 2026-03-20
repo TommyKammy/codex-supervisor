@@ -5,30 +5,30 @@
 - Branch: codex/issue-722
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
+- Current phase: draft_pr
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 59d67c474c47da7675ece0a28a339c062d3572c5
+- Last head SHA: 2d0db2e8871d5bc0aeecf2c3e953d98f66f61f6b
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-20T17:25:35Z
+- Updated at: 2026-03-20T17:27:27Z
 
 ## Latest Codex Summary
-- Reproduced that `ensureWorkspace()` bootstrapped from `origin/main` even when `origin/codex/issue-723` existed remotely, added a focused remote-only regression in `src/core/workspace.test.ts`, and narrowed `src/core/workspace.ts` so it fetches the target issue ref into `refs/remotes/origin/<branch>` before branch creation. The restore path now reports `remote_branch` and restores from `origin/<issue-branch>` when that ref exists; the requested issue test set and `npm run build` passed after installing the missing local dev dependencies in this worktree.
+- Reproduced that `ensureWorkspace()` bootstrapped from `origin/main` even when `origin/codex/issue-723` existed remotely, added a focused remote-only regression in `src/core/workspace.test.ts`, and narrowed `src/core/workspace.ts` so it fetches the target issue ref into `refs/remotes/origin/<branch>` before branch creation. The restore path now reports `remote_branch` and restores from `origin/<issue-branch>` when that ref exists; the requested issue test set and `npm run build` passed after installing the missing local dev dependencies in this worktree, the checkpoint landed as `2d0db2e`, and draft PR #747 is open.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The narrow fetch-to-`refs/remotes/origin/<issue-branch>` check resolves the remote-only restore gap without changing the no-remote bootstrap behavior; the main remaining work is committing the verified patch and opening/updating branch review artifacts if needed.
-- What changed: added a focused remote-only fixture regression in `src/core/workspace.test.ts`; introduced `fetchIssueRemoteTrackingRef(...)` in `src/core/workspace.ts` to fetch only the target issue ref, treat a missing remote ref as a discovery result, delete stale tracking refs on that path, and restore from `origin/<issue-branch>` when present.
+- Hypothesis: The narrow fetch-to-`refs/remotes/origin/<issue-branch>` check resolves the remote-only restore gap without changing the no-remote bootstrap behavior; the remaining risk is standard CI/review fallout rather than another local restore-path gap.
+- What changed: added a focused remote-only fixture regression in `src/core/workspace.test.ts`; introduced `fetchIssueRemoteTrackingRef(...)` in `src/core/workspace.ts` to fetch only the target issue ref, treat a missing remote ref as a discovery result, delete stale tracking refs on that path, and restore from `origin/<issue-branch>` when present; committed the patch as `2d0db2e`, pushed `codex/issue-722`, and opened draft PR #747.
 - Current blocker: none
-- Next exact step: commit the workspace discovery fix on `codex/issue-722`, then check whether a draft PR already exists for this branch and open one if it does not.
+- Next exact step: watch PR #747 checks and review feedback on head `2d0db2e`, then address any CI or review fallout directly on `codex/issue-722`.
 - Verification gap: `npm run build` initially failed because `node_modules` was absent and `tsc` was unavailable in the worktree; reran after `npm install` and it passed, so there is no remaining known local verification gap.
 - Files touched: `src/core/workspace.ts`, `src/core/workspace.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this patch would reintroduce the bug where a remote-only issue branch is ignored and `ensureWorkspace()` deterministically bootstraps from `origin/<defaultBranch>` instead of restoring the discovered remote branch.
-- Last focused command: `npm run build`
+- Last focused command: `gh pr create --draft --base main --head codex/issue-722 --title "Remote branch discovery before bootstrap" --body "..."`
 - Last focused commands:
 ```bash
 sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-722/AGENTS.generated.md
@@ -53,8 +53,18 @@ test -d node_modules && echo present || echo missing
 cat package.json
 npm install
 date -u +"%Y-%m-%dT%H:%M:%SZ"
+git add src/core/workspace.ts src/core/workspace.test.ts .codex-supervisor/issue-journal.md && git commit -m "Discover remote issue branches before bootstrap"
+git status --short
+gh pr view --json number,isDraft,headRefName,url
+git branch --show-current
+git rev-parse --short HEAD
+git remote -v
+git push -u origin codex/issue-722
+gh pr create --draft --base main --head codex/issue-722 --title "Remote branch discovery before bootstrap" --body "## Summary ..."
+date -u +"%Y-%m-%dT%H:%M:%SZ"
 ```
 ### Scratchpad
+- 2026-03-21 (JST): Committed the remote-branch discovery fix as `2d0db2e`, pushed `codex/issue-722`, and opened draft PR #747 after the requested issue test set and `npm run build` both passed; the unrelated untracked `.codex-supervisor/replay/` directory remains untouched.
 - 2026-03-21 (JST): Reproduced the remote-only restore bug with a focused `src/core/workspace.test.ts` fixture where `origin/codex/issue-723` existed but the local branch did not, implemented a narrow target-branch fetch in `ensureWorkspace()`, verified the remote/local/bootstrap restore paths with the requested issue test set, and reran `npm run build` successfully after `npm install` restored the missing local `tsc` dependency in this worktree.
 - 2026-03-21 (JST): Pushed `5fe2de7` with the journal-only fenced-command-log fix, resolved CodeRabbit thread `PRRT_kwDORgvdZ851w4ly`, and confirmed via `gh pr view` that both CI build jobs were green while the refreshed CodeRabbit status was still pending on the new head.
 - 2026-03-21 (JST): Reproduced the remaining PR #746 review finding locally, confirmed the journal still had inline command-log spans in `Tests:` and `Last focused commands:`, and converted those logs to fenced `bash` blocks while keeping the failure context and handoff notes concise.
