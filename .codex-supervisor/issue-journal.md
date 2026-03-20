@@ -7,41 +7,37 @@
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
 - Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: ea71639acd0c6648d98a7611c4d6769692617599
+- Last head SHA: 8b68c9ff0e33da7451a6ca91df208d9902dd32a5
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ851oXRU
-- Repeated failure signature count: 1
-- Updated at: 2026-03-20T04:58:47.000Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-20T05:03:52.000Z
 
 ## Latest Codex Summary
-Validated CodeRabbit thread `PRRT_kwDORgvdZ851oXRU` as a real regression in [src/supervisor/supervisor.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-684/src/supervisor/supervisor.ts): denied run-lock checks could now throw if reading the reconciliation phase marker hit a non-`ENOENT` filesystem error. I changed `Supervisor.acquireSupervisorLock(...)` to return the original denied lock immediately when no reason is available, and to fall back to the original denial if `readCurrentReconciliationPhase(...)` throws. I added a focused regression in [src/supervisor/supervisor-diagnostics-status-selection.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-684/src/supervisor/supervisor-diagnostics-status-selection.test.ts) that mocks an `EACCES` reconciliation-phase read failure while the run lock is already held.
+Validated and fixed CodeRabbit thread `PRRT_kwDORgvdZ851oXRU` in [src/supervisor/supervisor.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-684/src/supervisor/supervisor.ts): denied run-lock checks now preserve the original denial when reading the reconciliation phase marker hits a non-benign filesystem error. I added focused regression coverage in [src/supervisor/supervisor-diagnostics-status-selection.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-684/src/supervisor/supervisor-diagnostics-status-selection.test.ts), committed the fix as `8b68c9f` (`Preserve lock denial on reconciliation read failure`), pushed `codex/issue-684`, and resolved the corresponding PR thread on #691.
 
 The updated verification passed locally with `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build`. The worktree still has a pre-existing untracked `.codex-supervisor/replay/` directory.
 
-Summary: hardened reconciliation-held run-lock messaging so denied lock reads fall back cleanly on reconciliation marker I/O failures
-State hint: addressing_review
+Summary: fixed the remaining PR review thread by making reconciliation-phase read failures fall back to the original lock denial, then pushed and resolved the thread
+State hint: waiting_ci
 Blocked reason: none
 Tests: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`
-Failure signature: PRRT_kwDORgvdZ851oXRU
-Next action: commit the review fix, push `codex/issue-684`, and resolve the CodeRabbit thread on PR #691
+Failure signature: none
+Next action: monitor PR #691 for any follow-up review or CI feedback
 
 ## Active Failure Context
-- Category: review
-- Summary: Local fix prepared for the remaining automated review thread; branch still needs an updated commit pushed to PR #691.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/691#discussion_r2963918105
-- Details:
-  - Fixed locally in `Supervisor.acquireSupervisorLock(...)` by returning early when the denied lock has no reason and by catching non-benign reconciliation-phase read failures so the original lock denial reason is preserved. Added focused regression coverage for an injected `EACCES` read failure on `.codex-supervisor/current-reconciliation-phase.json`.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: the narrowest safe review fix is to keep the reconciliation-held run-lock message behavior, but ensure reconciliation-phase marker reads never turn a normal lock denial into an exception path.
 - What changed: `Supervisor.acquireSupervisorLock(...)` now returns the original denied lock immediately when no reason is available and catches thrown reconciliation-phase read failures so the denial reason stays intact; added focused status-selection coverage for a mocked `EACCES` read failure while the lock is already held.
 - Current blocker: none
-- Next exact step: commit the review fix, push `codex/issue-684`, and reply on PR #691 that the lock-denial fallback is now resilient to reconciliation marker read failures.
+- Next exact step: monitor PR #691 for any follow-up review or CI feedback now that commit `8b68c9f` is pushed and the CodeRabbit thread is resolved.
 - Verification gap: none for this review-fix slice. `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build` passed locally.
 - Files touched: `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this checkpoint would reintroduce the risk that a transient reconciliation marker read failure converts a routine skipped cycle into an exception path.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`
+- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ851oXRU`
 ### Scratchpad
 - 2026-03-20 (JST): Pushed `codex/issue-671` to `origin/codex/issue-671` and opened draft PR #676 (`https://github.com/TommyKammy/codex-supervisor/pull/676`) after the focused artifact/finalize/result/status/policy tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
