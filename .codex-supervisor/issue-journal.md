@@ -11,10 +11,10 @@
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-20T22:47:56Z
+- Updated at: 2026-03-20T22:49:41Z
 
 ## Latest Codex Summary
-- Added a focused docs regression test for the pull-request hydration freshness contract and updated `README.md`, `docs/architecture.md`, and `docs/configuration.md` so action-taking PR paths require fresh GitHub review facts while cached hydration remains informational and non-authoritative.
+- Added a focused docs regression test for the pull-request hydration freshness contract, updated `README.md`, `docs/architecture.md`, and `docs/configuration.md`, pushed branch `codex/issue-731`, and opened draft PR #754.
 
 ## Active Failure Context
 - None recorded.
@@ -24,7 +24,7 @@
 - Hypothesis: the missing contract is documentation-level, not behavior-level; the repo needs one explicit fresh-vs-cached rule that distinguishes PR action paths from informational hydration consumers.
 - What changed: added `src/hydration-freshness-docs.test.ts` as a focused reproducer for the missing wording; updated `README.md`, `docs/architecture.md`, and `docs/configuration.md` to state that marking ready, unblocking review-driven state, and merging require fresh GitHub review facts, while retained cached hydration is informational and non-authoritative.
 - Current blocker: none
-- Next exact step: commit the docs-only hydration freshness checkpoint for issue #731, then open or update a draft PR if the branch does not already have one.
+- Next exact step: monitor draft PR #754 and address any review or CI follow-up if it appears.
 - Verification gap: the focused docs regression test and `npm run build` passed after hydrating dependencies with `npm ci`; the full `npm test` suite was not rerun.
 - Files touched: `README.md`, `docs/architecture.md`, `docs/configuration.md`, `src/hydration-freshness-docs.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting these changes would restore the ambiguous docs posture where cached hydration could still be read as authoritative for PR action paths.
