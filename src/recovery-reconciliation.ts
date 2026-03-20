@@ -255,13 +255,9 @@ async function cleanupOrphanedIssueWorkspaces(
   config: SupervisorConfig,
   state: SupervisorStateFile,
 ): Promise<RecoveryEvent[]> {
-  const referencedWorkspaces = new Set(
-    Object.values(state.issues).map((record) => path.resolve(record.workspace)),
-  );
   const recoveryEvents: RecoveryEvent[] = [];
-  let workspaceEntries: fs.Dirent[];
   try {
-    workspaceEntries = fs.readdirSync(config.workspaceRoot, { withFileTypes: true });
+    fs.readdirSync(config.workspaceRoot, { withFileTypes: true });
   } catch (error) {
     const maybeErr = error as NodeJS.ErrnoException;
     if (maybeErr.code !== "ENOENT") {
@@ -272,41 +268,15 @@ async function cleanupOrphanedIssueWorkspaces(
     return recoveryEvents;
   }
 
-  for (const entry of workspaceEntries) {
-    if (!entry.isDirectory()) {
+  const candidates = await inspectOrphanedWorkspacePruneCandidates(config, state);
+  for (const candidate of candidates) {
+    if (candidate.eligibility !== "eligible" || !candidate.branch) {
+      console.warn(`Skipped orphaned workspace cleanup for ${candidate.workspacePath}: ${candidate.reason}`);
       continue;
     }
 
-    const issueNumber = parseIssueNumberFromWorkspaceName(entry.name);
-    if (issueNumber === null) {
-      continue;
-    }
-
-    const workspacePath = path.join(config.workspaceRoot, entry.name);
-    if (referencedWorkspaces.has(path.resolve(workspacePath))) {
-      continue;
-    }
-
-    if (!fs.existsSync(path.join(workspacePath, ".git"))) {
-      continue;
-    }
-
-    let branch: string;
-    try {
-      branch = branchNameForIssue(config, issueNumber);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn(`Skipped orphaned workspace cleanup for ${workspacePath}: ${message}`);
-      continue;
-    }
-
-    if (!isSafeCleanupTarget(config, workspacePath, branch)) {
-      console.warn(`Skipped unsafe orphaned workspace cleanup target workspace=${workspacePath} branch=${branch}.`);
-      continue;
-    }
-
-    await cleanupWorkspace(config.repoPath, workspacePath, branch);
-    recoveryEvents.push(buildRecoveryEvent(issueNumber, `pruned orphaned worktree ${entry.name}`));
+    await cleanupWorkspace(config.repoPath, candidate.workspacePath, candidate.branch);
+    recoveryEvents.push(buildRecoveryEvent(candidate.issueNumber, `pruned orphaned worktree ${candidate.workspaceName}`));
   }
 
   return recoveryEvents;

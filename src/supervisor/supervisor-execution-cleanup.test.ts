@@ -519,6 +519,79 @@ test("runOnce ignores non-canonical orphan workspace names", async () => {
   assert.match(git(["-C", fixture.repoPath, "branch", "--list", orphanBranch]), new RegExp(orphanBranch));
 });
 
+test("runOnce skips orphaned worktree pruning when the orphan issue lock is still live", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.maxDoneWorkspaces = 1;
+  fixture.config.cleanupDoneWorkspacesAfterHours = -1;
+
+  const orphanIssueNumber = 92;
+  const orphanBranch = branchName(fixture.config, orphanIssueNumber);
+  const orphanWorkspace = path.join(fixture.workspaceRoot, `issue-${orphanIssueNumber}`);
+  const issueLockPath = path.join(path.dirname(fixture.stateFile), "locks", "issues", `issue-${orphanIssueNumber}.lock`);
+
+  await fs.mkdir(fixture.workspaceRoot, { recursive: true });
+  git(["-C", fixture.repoPath, "worktree", "add", "-b", orphanBranch, orphanWorkspace, "origin/main"]);
+  await fs.mkdir(path.dirname(issueLockPath), { recursive: true });
+  await fs.writeFile(
+    issueLockPath,
+    `${JSON.stringify({
+      pid: process.pid,
+      label: `issue-${orphanIssueNumber}`,
+      acquired_at: "2026-03-20T00:00:00.000Z",
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [],
+    listCandidateIssues: async () => [],
+    getIssue: async () => {
+      throw new Error("unexpected getIssue call");
+    },
+    resolvePullRequestForBranch: async () => {
+      throw new Error("unexpected resolvePullRequestForBranch call");
+    },
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message?: unknown, ...args: unknown[]) => {
+    warnings.push([message, ...args].map((value) => String(value)).join(" "));
+  };
+  try {
+    const message = await supervisor.runOnce({ dryRun: true });
+    assert.equal(message, "No matching open issue found.");
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.equal(
+    warnings.some((message) => /issue lock held by pid/.test(message) && message.includes(orphanWorkspace)),
+    true,
+  );
+  await fs.access(orphanWorkspace);
+  await fs.access(issueLockPath);
+  assert.match(git(["-C", fixture.repoPath, "branch", "--list", orphanBranch]), new RegExp(orphanBranch));
+});
+
 test("runOnce skips orphan cleanup when workspaceRoot cannot be listed", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.maxDoneWorkspaces = 1;
