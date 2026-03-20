@@ -14,6 +14,26 @@ import { mapConfiguredReviewProviders } from "./review-providers";
 import { isValidGitRefName, parseJson, resolveMaybeRelative } from "./utils";
 
 const DEFAULT_CONFIG_FILE = "supervisor.config.json";
+const REQUIRED_STRING_CONFIG_FIELDS = [
+  "repoPath",
+  "repoSlug",
+  "defaultBranch",
+  "workspaceRoot",
+  "stateFile",
+  "codexBinary",
+  "branchPrefix",
+] as const;
+
+export type ConfigLoadStatus = "ready" | "missing_config" | "invalid_config";
+
+export interface ConfigLoadSummary {
+  configPath: string;
+  status: ConfigLoadStatus;
+  missingRequiredFields: string[];
+  invalidFields: string[];
+  error: string | null;
+  config: SupervisorConfig | null;
+}
 
 function resolveCommandLikeValue(baseDir: string, value: string): string {
   if (path.isAbsolute(value)) {
@@ -137,6 +157,91 @@ export function resolveConfigPath(configPath?: string): string {
   return configPath
     ? path.resolve(configPath)
     : path.resolve(process.cwd(), DEFAULT_CONFIG_FILE);
+}
+
+function hasNonEmptyString(value: unknown): boolean {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function collectMissingRequiredFields(raw: Record<string, unknown>): string[] {
+  const missing = REQUIRED_STRING_CONFIG_FIELDS.filter((field) => !hasNonEmptyString(raw[field])) as string[];
+  if ((raw.codexModelStrategy === "fixed" || raw.codexModelStrategy === "alias") && !hasNonEmptyString(raw.codexModel)) {
+    missing.push("codexModel");
+  }
+  if (
+    (raw.boundedRepairModelStrategy === "fixed" || raw.boundedRepairModelStrategy === "alias") &&
+    !hasNonEmptyString(raw.boundedRepairModel)
+  ) {
+    missing.push("boundedRepairModel");
+  }
+  if (
+    (raw.localReviewModelStrategy === "fixed" || raw.localReviewModelStrategy === "alias") &&
+    !hasNonEmptyString(raw.localReviewModel)
+  ) {
+    missing.push("localReviewModel");
+  }
+
+  return missing;
+}
+
+function extractInvalidFieldName(error: unknown): string | null {
+  if (!(error instanceof Error)) {
+    return null;
+  }
+
+  const match = error.message.match(/config field: ([A-Za-z0-9_]+)/);
+  return match?.[1] ?? null;
+}
+
+export function loadConfigSummary(configPath?: string): ConfigLoadSummary {
+  const resolvedPath = resolveConfigPath(configPath);
+  if (!fs.existsSync(resolvedPath)) {
+    return {
+      configPath: resolvedPath,
+      status: "missing_config",
+      missingRequiredFields: [],
+      invalidFields: [],
+      error: `Config file not found: ${resolvedPath}`,
+      config: null,
+    };
+  }
+
+  let raw: Record<string, unknown>;
+  try {
+    raw = parseJson<Record<string, unknown>>(fs.readFileSync(resolvedPath, "utf8"), resolvedPath);
+  } catch (error) {
+    return {
+      configPath: resolvedPath,
+      status: "invalid_config",
+      missingRequiredFields: [],
+      invalidFields: [],
+      error: error instanceof Error ? error.message : String(error),
+      config: null,
+    };
+  }
+
+  const missingRequiredFields = collectMissingRequiredFields(raw);
+
+  try {
+    return {
+      configPath: resolvedPath,
+      status: "ready",
+      missingRequiredFields: [],
+      invalidFields: [],
+      error: null,
+      config: loadConfig(resolvedPath),
+    };
+  } catch (error) {
+    const invalidField = extractInvalidFieldName(error);
+    return {
+      configPath: resolvedPath,
+      status: "invalid_config",
+      missingRequiredFields,
+      invalidFields: invalidField && !missingRequiredFields.includes(invalidField) ? [invalidField] : [],
+      error: error instanceof Error ? error.message : String(error),
+      config: null,
+    };
+  }
 }
 
 export function loadConfig(configPath?: string): SupervisorConfig {

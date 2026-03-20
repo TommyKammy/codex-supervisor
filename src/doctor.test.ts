@@ -6,7 +6,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { createConfig, createRecord } from "./turn-execution-test-helpers";
-import { diagnoseSupervisorHost, loadStateReadonlyForDoctor, renderDoctorReport } from "./doctor";
+import { diagnoseBootstrapReadiness, diagnoseSupervisorHost, loadStateReadonlyForDoctor, renderDoctorReport } from "./doctor";
 import { type SupervisorStateFile } from "./core/types";
 
 test("diagnoseSupervisorHost reports representative auth, state, and workspace failures without mutating state", async (t) => {
@@ -65,6 +65,50 @@ test("diagnoseSupervisorHost reports representative auth, state, and workspace f
   assert.match(
     diagnostics.checks.find((check) => check.name === "worktrees")?.details[0] ?? "",
     /missing workspace/i,
+  );
+});
+
+test("diagnoseBootstrapReadiness returns structured ready config and host summary", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-bootstrap-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath,
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot,
+      stateFile: path.join(root, "state.json"),
+      codexBinary: process.execPath,
+      branchPrefix: "codex/issue-",
+    }),
+    "utf8",
+  );
+
+  const summary = await diagnoseBootstrapReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.config.status, "ready");
+  assert.equal(summary.config.config?.repoPath, repoPath);
+  assert.equal(summary.readiness.ready, true);
+  assert.equal(summary.readiness.overallStatus, "pass");
+  assert.equal(summary.readiness.missingRequiredFields.length, 0);
+  assert.equal(summary.readiness.repo.status, "pass");
+  assert.match(summary.readiness.repo.summary, /Tracked worktrees look consistent/);
+  assert.deepEqual(
+    summary.readiness.checks.map((check) => check.status),
+    ["pass", "pass", "pass", "pass"],
   );
 });
 

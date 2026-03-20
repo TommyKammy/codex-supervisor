@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadConfig } from "./core/config";
+import { loadConfig, loadConfigSummary } from "./core/config";
 import { SupervisorConfig } from "./core/types";
 
 test("loadConfig leaves bare codexBinary values unresolved for PATH lookup", async (t) => {
@@ -34,6 +34,36 @@ test("loadConfig leaves bare codexBinary values unresolved for PATH lookup", asy
   assert.equal(config.repoPath, tempDir);
   assert.equal(config.workspaceRoot, path.join(tempDir, "workspaces"));
   assert.equal(config.stateFile, path.join(tempDir, "state.json"));
+});
+
+test("loadConfigSummary reports missing required fields without throwing", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      defaultBranch: "main",
+    }),
+    "utf8",
+  );
+
+  const summary = loadConfigSummary(configPath);
+
+  assert.equal(summary.status, "invalid_config");
+  assert.deepEqual(summary.missingRequiredFields, [
+    "repoSlug",
+    "workspaceRoot",
+    "stateFile",
+    "codexBinary",
+    "branchPrefix",
+  ]);
+  assert.equal(summary.config, null);
+  assert.match(summary.error ?? "", /Missing or invalid config field: repoSlug/);
 });
 
 test("loadConfig still resolves codexBinary when it is an explicit relative path", async (t) => {
