@@ -111,6 +111,65 @@ test("runSupervisorCommand stops the loop after a registered signal and aborts p
   assert.match(stdout[1] ?? "", /received SIGTERM, stopping after current cycle/);
 });
 
+test("runSupervisorCommand stops the loop after a corrupt-json fail-closed block", async () => {
+  const stdout: string[] = [];
+  let loopRuns = 0;
+
+  await runSupervisorCommand(
+    { command: "loop", dryRun: false, why: false },
+    {
+      service: {
+        config: {} as SupervisorConfig,
+        pollIntervalMs: () => 50,
+        acquireSupervisorLock: async () => ({
+          acquired: true,
+          release: async () => {},
+        }),
+        runOnce: async () => {
+          loopRuns += 1;
+          return "Blocked execution-changing command: corrupted JSON supervisor state detected at /tmp/state.json. Run status, doctor, or reset-corrupt-json-state before retrying.";
+        },
+        queryStatus: async () => ({
+          gsdSummary: null,
+          detailedStatusLines: ["status"],
+          reconciliationPhase: null,
+          reconciliationWarning: null,
+          readinessLines: [],
+          whyLines: [],
+          warning: null,
+        }),
+        queryExplain: async () => {
+          throw new Error("unexpected queryExplain");
+        },
+        runRecoveryAction: async () => {
+          throw new Error("unexpected runRecoveryAction");
+        },
+        resetCorruptJsonState: async () => {
+          throw new Error("unexpected resetCorruptJsonState");
+        },
+        queryIssueLint: async () => ["lint"],
+        queryDoctor: async () => {
+          throw new Error("unexpected queryDoctor");
+        },
+      },
+      sleep: async () => {
+        throw new Error("sleep should not run after a fail-closed corruption block");
+      },
+      writeStdout: (line) => {
+        stdout.push(line);
+      },
+      writeStderr: (line) => {
+        throw new Error(`unexpected stderr: ${line}`);
+      },
+      registerStopSignals: () => {},
+    },
+  );
+
+  assert.equal(loopRuns, 1);
+  assert.equal(stdout.length, 1);
+  assert.match(stdout[0] ?? "", /Blocked execution-changing command: corrupted JSON supervisor state detected at \/tmp\/state\.json\./);
+});
+
 test("runSupervisorCommand routes query commands through the supervisor service boundary", async () => {
   const stdout: string[] = [];
   const calls: string[] = [];

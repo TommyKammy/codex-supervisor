@@ -144,6 +144,7 @@ import {
   GitHubIssue,
   GitHubPullRequest,
   IssueRunRecord,
+  JsonStateQuarantine,
   PullRequestCheck,
   ReviewThread,
   RunState,
@@ -256,6 +257,7 @@ function formatStatus(record: IssueRunRecord | null): string {
 }
 
 const MAX_RENDERED_STATUS_STATE_LOAD_FINDINGS = 5;
+const CORRUPT_JSON_FAIL_CLOSED_PREFIX = "Blocked execution-changing command: corrupted JSON supervisor state detected";
 
 function formatStatusStateLoadFinding(finding: StateLoadFinding): string {
   const issueNumber = finding.issue_number === null ? "none" : String(finding.issue_number);
@@ -299,6 +301,48 @@ function buildStateLoadDiagnosticLines(
   }
 
   return lines;
+}
+
+function readJsonParseErrorQuarantine(
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+): JsonStateQuarantine | null {
+  if (config.stateBackend !== "json") {
+    return null;
+  }
+
+  const quarantine = state.json_state_quarantine;
+  if (
+    !quarantine ||
+    quarantine.kind !== "parse_error" ||
+    quarantine.marker_file !== config.stateFile ||
+    typeof quarantine.quarantined_file !== "string" ||
+    quarantine.quarantined_file.trim() === ""
+  ) {
+    return null;
+  }
+
+  const matchingFindings = (state.load_findings ?? []).filter((finding) =>
+    finding.backend === "json" &&
+    finding.kind === "parse_error" &&
+    finding.scope === "state_file" &&
+    finding.location === config.stateFile &&
+    finding.issue_number === null
+  );
+
+  return matchingFindings.length > 0 ? quarantine : null;
+}
+
+function buildCorruptJsonFailClosedMessage(config: SupervisorConfig, quarantine: JsonStateQuarantine): string {
+  return [
+    `${CORRUPT_JSON_FAIL_CLOSED_PREFIX} at ${config.stateFile}.`,
+    `Quarantined payload: ${quarantine.quarantined_file}.`,
+    "Run status, doctor, or reset-corrupt-json-state before retrying.",
+  ].join(" ");
+}
+
+function isCorruptJsonFailClosedMessage(message: string): boolean {
+  return message.startsWith(CORRUPT_JSON_FAIL_CLOSED_PREFIX);
 }
 
 export class Supervisor {
@@ -877,6 +921,19 @@ export class Supervisor {
 
     try {
       const state = await this.stateStore.load();
+      const quarantine = readJsonParseErrorQuarantine(this.config, state);
+      if (quarantine) {
+        return {
+          action,
+          issueNumber,
+          outcome: "rejected",
+          summary: buildCorruptJsonFailClosedMessage(this.config, quarantine),
+          previousState: null,
+          previousRecordSnapshot: null,
+          nextState: null,
+          recoveryReason: null,
+        };
+      }
       return requeueIssueForOperator(this.stateStore, state, issueNumber);
     } finally {
       await lock.release();
@@ -920,6 +977,12 @@ export class Supervisor {
   }
 
   async runOnce(options: Pick<CliOptions, "dryRun">): Promise<string> {
+    const state = await this.stateStore.load();
+    const quarantine = readJsonParseErrorQuarantine(this.config, state);
+    if (quarantine) {
+      return buildCorruptJsonFailClosedMessage(this.config, quarantine);
+    }
+
     let carryoverRecoveryEvents: RecoveryEvent[] = [];
     for (;;) {
       const cycle = await this.startRunOnceCycle(carryoverRecoveryEvents);
@@ -1081,3 +1144,5 @@ export class Supervisor {
     }
   }
 }
+
+export { isCorruptJsonFailClosedMessage };
