@@ -1,4 +1,4 @@
-import { Supervisor } from "../supervisor";
+import { createSupervisorService, type SupervisorService } from "../supervisor";
 import type { CliOptions } from "../core/types";
 import { parseArgs } from "./parse-args";
 import { handleReplayCommand } from "./replay-command";
@@ -24,13 +24,13 @@ export interface CliEntrypointDependencies {
     options: Pick<CliOptions, "configPath" | "corpusPath" | "snapshotPath" | "caseId">,
     io: CliIo,
   ) => Promise<void>;
-  createSupervisor?: typeof Supervisor.fromConfig;
+  createSupervisorService?: (configPath?: string) => SupervisorService;
   isSupervisorRuntimeCommand?: (
     command: CliOptions["command"],
   ) => command is SupervisorRuntimeOptions["command"];
   runSupervisorCommand?: (
     options: SupervisorRuntimeOptions,
-    dependencies: { supervisor: Supervisor },
+    dependencies: { service: SupervisorService },
   ) => Promise<void>;
   writeStdout?: (line: string) => void;
 }
@@ -52,7 +52,7 @@ export async function runCli(
     dependencies.handleReplayCorpusCommand ?? handleReplayCorpusCommand;
   const replayCorpusPromoteCommandHandler =
     dependencies.handleReplayCorpusPromoteCommand ?? handleReplayCorpusPromoteCommand;
-  const createSupervisor = dependencies.createSupervisor ?? Supervisor.fromConfig;
+  const buildSupervisorService = dependencies.createSupervisorService ?? createSupervisorService;
   const isRuntimeCommand = dependencies.isSupervisorRuntimeCommand ?? isSupervisorRuntimeCommand;
   const supervisorCommandRunner = dependencies.runSupervisorCommand ?? runSupervisorCommand;
   const writeStdout = dependencies.writeStdout ?? ((line: string) => console.log(line));
@@ -74,7 +74,7 @@ export async function runCli(
     return;
   }
 
-  const supervisor = createSupervisor(options.configPath);
+  const service = buildSupervisorService(options.configPath);
   if (!isRuntimeCommand(options.command)) {
     throw new Error(`Unsupported supervisor runtime command: ${options.command}`);
   }
@@ -85,7 +85,7 @@ export async function runCli(
       why: options.why,
       issueNumber: options.issueNumber,
     },
-    { supervisor },
+    { service },
   );
 }
 
