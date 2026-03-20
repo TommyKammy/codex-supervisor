@@ -1,49 +1,53 @@
-# Issue #715: JSON corruption diagnostics: surface hard corruption findings in doctor and status
+# Issue #716: JSON corruption quarantine: preserve corrupt state instead of silently falling back to empty state
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/715
-- Branch: codex/issue-715
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/716
+- Branch: codex/issue-716
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 0e433f9b856d4232ec10ce5542165123aa52496e
+- Attempt count: 5 (implementation=2, repair=3)
+- Last head SHA: 4439da2cb71b38833cbc6d47daf6e230148aa74f
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ851s71w
+- Last failure signature: none
 - Repeated failure signature count: 1
-- Updated at: 2026-03-20T12:28:27.705Z
+- Updated at: 2026-03-20T13:46:57.000Z
 
 ## Latest Codex Summary
-Draft PR [#741](https://github.com/TommyKammy/codex-supervisor/pull/741) picked up a valid CodeRabbit review on the new corruption-status regression: [`src/supervisor/supervisor-diagnostics-status-selection.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-715/src/supervisor/supervisor-diagnostics-status-selection.test.ts) created a temp supervisor fixture without registering teardown. I added the missing `t.after(...)` cleanup immediately after fixture creation, matching the existing cleanup pattern already used by the neighboring doctor test.
+Patched [state-store.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-716/src/core/state-store.ts) so JSON `load()` calls serialize per state file, quarantine attempts use a unique marker temp path per attempt, and concurrent loads cannot observe the rename gap or move an already-installed marker into a bogus `.corrupt.*` file. Added a deterministic concurrent-load regression plus the existing marker-install failure coverage updates in [state-store.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-716/src/core/state-store.test.ts).
 
-Focused verification passed again with `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`, and `npm run build` also passed after the review fix.
+Verification passed with `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts` and `npm run build`. The code/test fix is committed as `4439da2` (`Serialize JSON quarantine loads`), and the unrelated untracked `.codex-supervisor/replay/` directory remains untouched.
 
-Summary: Applied the review-driven fixture cleanup fix for the corruption-status regression and revalidated with the focused test plus `npm run build`.
-State hint: addressing_review
+Summary: Addressed the remaining JSON quarantine concurrency review fix locally and refreshed the journal to match the actual branch state
+State hint: local_review_fix
 Blocked reason: none
-Tests: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`
-Failure signature: PRRT_kwDORgvdZ851s71w
-Next action: commit and push the cleanup fix to PR #741, then clear or monitor the review thread
+Tests: `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts`; `npm run build`
+Failure signature: none
+Next action: push the updated branch for PR #742, resolve the remaining CodeRabbit threads, and watch CI on the new head
 
 ## Active Failure Context
 - Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/741#discussion_r2965473485
+- Summary: 0 unresolved automated review thread(s) remain after applying the local review fix; branch should return to CI once the updated head is pushed.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/742#discussion_r2965835335
 - Details:
-  - src/supervisor/supervisor-diagnostics-status-selection.test.ts:78 _⚠️ Potential issue_ | _🟡 Minor_ **Missing test cleanup for temporary fixture.** This test creates a temporary fixture via `createSupervisorFixture()` but does not register a cleanup callback with `t.after()`, unlike the similar test at lines 18-45. This may leave temporary directories on the filesystem after test runs. <details> <summary>🧹 Proposed fix to add cleanup</summary> ```diff -test("status surfaces corrupted JSON state as an explicit hard diagnostic", async () => { +test("status surfaces corrupted JSON state as an explicit hard diagnostic", async (t) => { const fixture = await createSupervisorFixture(); + t.after(async () => { + await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true }); + }); await fs.writeFile(fixture.stateFile, "{not-json}\n", "utf8"); ``` </details> <!-- suggestion_start --> <details> <summary>📝 Committable suggestion</summary> > ‼️ **IMPORTANT** > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements. ```suggestion test("status surfaces corrupted JSON state as an explicit hard diagnostic", async (t) => { const fixture = await createSupervisorFixture(); t.after(async () => { await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true }); }); await fs.writeFile(fixture.stateFile, "{not-json}\n", "utf8"); const supervisor = new Supervisor(fixture.config); (supervisor as unknown as { github: Record<string, unknown> }).github = { listCandidateIssues: async () => [], getPullRequestIfExists: async () => null, getChecks: async () => [], getUnresolvedReviewThreads: async () => [], }; const report = await supervisor.statusReport(); assert.match( report.detailedStatusLines.join("\n"), /state_diagnostic severity=hard backend=json summary=corrupted_json_state_forced_empty_fallback_not_missing_bootstrap findings=1 location=.*state\.json/, ); assert.match( report.detailedStatusLines.join("\n"), /state_load_finding backend=json scope=state_file issue_number=none location=.*state\.json message=/, ); assert.equal(report.warning, null); const status = await supervisor.status(); assert.match( status, /state_diagnostic severity=hard backend=json summary=corrupted_json_state_forced_empty_fallback_not_missing_bootstrap findings=1 location=.*state\.json/, ); assert.match(status, /state_load_finding backend=json scope=state_file issue_number=none location=.*state\.json message=/); assert.match(status, /^No active issue\.$/m); }); ``` </details> <!-- suggestion_end --> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/supervisor/supervisor-diagnostics-status-selection.test.ts` around lines 47 - 78, This test creates a temporary fixture via createSupervisorFixture() but never registers teardown, so add a cleanup callback immediately after creating the fixture (after the line "const fixture = await createSupervisorFixture();") using the test harness teardown function (e.g., t.after(() => fixture.cleanup()) or await t.after(async () => await fixture.cleanup()) depending on whether cleanup returns a promise) to ensure the fixture's temporary files/directories are removed; reference createSupervisorFixture, fixture (fixture.stateFile / fixture.config) and register the cleanup before proceeding with the rest of the test. ``` </details> <!-- fingerprinting:phantom:poseidon:ocelot --> <!-- This is an auto-generated comment by CodeRabbit -->
+  - .codex-supervisor/issue-journal.md:34 resolved by making the Active Failure Context consistent with the latest summary and the waiting-for-CI handoff.
+  - src/core/state-store.ts:203 resolved by serializing JSON `load()` calls per state file and giving each quarantine attempt a unique `.quarantine.<attempt>.tmp` marker path.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the CodeRabbit thread is a real test-harness issue, and the narrowest correct repair is to mirror the existing fixture teardown pattern in the corruption-status regression without changing the diagnostic behavior under test.
-- What changed: updated `status surfaces corrupted JSON state as an explicit hard diagnostic` in `src/supervisor/supervisor-diagnostics-status-selection.test.ts` to accept `t` and register `t.after(async () => fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true }))` immediately after `createSupervisorFixture()`. No production behavior changed; this only closes the temp-directory leak in the review target.
+- Hypothesis: the remaining review work was the shared JSON quarantine temp-path race, and the narrow fix is to serialize JSON loads per state file while keeping the quarantine contract unchanged for single-call loads.
+- What changed: wrapped JSON `load()` in a per-file in-process lock, switched quarantine marker temp files from a shared `state.json.quarantine.tmp` path to a unique `.quarantine.<attempt>.tmp` path, and kept the existing rollback behavior when marker installation fails. Added a deterministic concurrent-load regression in `src/core/state-store.test.ts` and updated the marker-install failure test so it matches the new temp-path pattern.
 - Current blocker: none
-- Next exact step: commit and push the cleanup-only review fix on `codex/issue-715`, then resolve or monitor PR #741 review state.
-- Verification gap: none locally after `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build`.
-- Files touched: `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this small fix would reintroduce leaked temp fixture directories during the corruption-status regression, which is the exact review concern on PR #741.
-- Last focused command: `npm run build`
-- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-715/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-715/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `sed -n '1,220p' src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `rg -n "createSupervisorFixture|cleanup\\(" src/supervisor -g '*test*' -g '*helpers*'`; `sed -n '1,260p' src/supervisor/supervisor-test-helpers.ts`; `sed -n '260,520p' src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `git diff -- .codex-supervisor/issue-journal.md`; `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`; `git status --short`; `date -Iseconds`; `git rev-parse HEAD`
+- Next exact step: push the updated head for PR #742, resolve review threads `PRRT_kwDORgvdZ851t_Pu` and `PRRT_kwDORgvdZ851t_Px`, and watch CI for follow-up failures.
+- Verification gap: none locally after `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts` and `npm run build`.
+- Files touched: `src/core/state-store.ts`, `src/core/state-store.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this patch would reintroduce the concurrent-load window where a second JSON `load()` can see the quarantine rename gap as a missing state or move an already-installed marker into the wrong `.corrupt.*` file.
+- Last focused command: `git commit -m "Serialize JSON quarantine loads"`
+- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-716/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-716/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `rg -n "buildJsonQuarantineMarkerTempPath|quarantineCorruptJsonState|json_state_quarantine|quarantine.tmp|attempt" src/core/state-store.ts`; `sed -n '1,260p' src/core/state-store.ts`; `sed -n '340,460p' src/core/state-store.ts`; `sed -n '1,320p' src/core/state-store.test.ts`; `git diff -- src/core/state-store.ts src/core/state-store.test.ts`; `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts`; `npm run build`; `git status --short`; `git rev-parse HEAD`; `date -u +"%Y-%m-%dT%H:%M:%S.000Z"`; `git add src/core/state-store.ts src/core/state-store.test.ts`; `git commit -m "Serialize JSON quarantine loads"`
 ### Scratchpad
+- 2026-03-20 (JST): Re-read the required memory files, found that the journal overstated the branch state, then fixed the remaining JSON quarantine concurrency race by serializing JSON loads per file and using a unique quarantine marker temp path per attempt. Added a deterministic concurrent-load regression plus the updated marker-install failure matcher, verified with `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts` and `npm run build`, and committed the code/test fix as `4439da2`.
+- 2026-03-20 (JST): Re-read the required memory files/journal, confirmed the branch only carried commit `f5d969e` plus the journal delta, reran `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts` and `npm run build` successfully, and prepared the branch for push plus draft PR creation.
+- 2026-03-20 (JST): Added a focused JSON quarantine reproducer, confirmed the loader left malformed `state.json` in place, then changed JSON state loading to move the corrupt file aside, write a deterministic marker back to `state.json`, and preserve the quarantine path through `load_findings` plus `json_state_quarantine`; focused verification and `npm run build` passed after installing local dev dependencies with `npm install`.
 - 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851s71w`, added missing `t.after(...)` cleanup to the corruption-status fixture test, and reran `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` plus `npm run build` successfully.
 - 2026-03-20 (JST): Re-ran the focused verification set plus `npm run build`, pushed `codex/issue-715` to `origin/codex/issue-715`, and opened draft PR #741 (`status: surface JSON corruption diagnostics`).
 - 2026-03-20 (JST): Added a focused status regression for invalid JSON state, reproduced the omission where status only printed normal empty-state lines, then appended explicit `state_diagnostic` and `state_load_finding` lines for JSON `load_findings` so corruption is visible in status without changing loader semantics.

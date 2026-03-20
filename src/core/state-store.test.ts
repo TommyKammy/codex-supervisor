@@ -1,10 +1,24 @@
-import test from "node:test";
+import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { StateStore } from "./state-store";
 import { IssueRunRecord, SupervisorStateFile } from "./types";
+
+function createDeferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 function createRecord(issueNumber: number, overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
   return {
@@ -142,6 +156,165 @@ test("StateStore json load captures structured corruption findings for invalid J
       message: loaded.load_findings?.[0]?.message ?? "",
     });
     assert.match(loaded.load_findings?.[0]?.message ?? "", /failed to parse json/i);
+  });
+});
+
+test("StateStore json load quarantines corrupt state and leaves a deterministic recovery marker", async () => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.json");
+    const corruptPayload = "{not-json}\n";
+    await fs.writeFile(statePath, corruptPayload, "utf8");
+
+    const store = new StateStore(statePath, { backend: "json" });
+    const loaded = await store.load();
+
+    assert.equal(loaded.activeIssueNumber, null);
+    assert.deepEqual(loaded.issues, {});
+    assert.equal(loaded.load_findings?.length, 1);
+
+    const markerRaw = await fs.readFile(statePath, "utf8");
+    const marker = JSON.parse(markerRaw) as {
+      activeIssueNumber: number | null;
+      issues: Record<string, unknown>;
+      load_findings?: Array<{ location: string; message: string }>;
+      json_state_quarantine?: { marker_file: string; quarantined_file: string; kind: string };
+    };
+
+    assert.equal(marker.activeIssueNumber, null);
+    assert.deepEqual(marker.issues, {});
+    assert.equal(marker.load_findings?.length, 1);
+    assert.equal(marker.json_state_quarantine?.marker_file, statePath);
+    assert.equal(marker.json_state_quarantine?.kind, "parse_error");
+    assert.match(marker.json_state_quarantine?.quarantined_file ?? "", /state\.json\.corrupt\./);
+    assert.match(marker.load_findings?.[0]?.message ?? "", /quarantined corrupt json state/i);
+    assert.match(
+      marker.load_findings?.[0]?.message ?? "",
+      new RegExp(marker.json_state_quarantine?.quarantined_file?.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") ?? ""),
+    );
+
+    const quarantinedRaw = await fs.readFile(marker.json_state_quarantine?.quarantined_file ?? "", "utf8");
+    assert.equal(quarantinedRaw, corruptPayload);
+
+    const reloaded = await store.load();
+    assert.deepEqual(reloaded, loaded);
+  });
+});
+
+test("StateStore json load rethrows quarantine ENOENT after the initial read succeeds", async (t) => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.json");
+    const corruptPayload = "{not-json}\n";
+    await fs.writeFile(statePath, corruptPayload, "utf8");
+
+    const store = new StateStore(statePath, { backend: "json" });
+    const originalRename = fs.rename.bind(fs);
+    const renameMock = mock.method(
+      fs,
+      "rename",
+      async (...args: Parameters<typeof fs.rename>) => {
+        const [source] = args;
+        if (String(source) === statePath) {
+          const error = new Error("state.json disappeared during quarantine") as NodeJS.ErrnoException;
+          error.code = "ENOENT";
+          throw error;
+        }
+
+        return originalRename(...args);
+      },
+    );
+    t.after(() => {
+      renameMock.mock.restore();
+    });
+
+    await assert.rejects(() => store.load(), { code: "ENOENT" });
+    assert.equal(await fs.readFile(statePath, "utf8"), corruptPayload);
+  });
+});
+
+test("StateStore json quarantine restores the corrupt file when marker installation fails", async (t) => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.json");
+    const corruptPayload = "{not-json}\n";
+    await fs.writeFile(statePath, corruptPayload, "utf8");
+
+    const store = new StateStore(statePath, { backend: "json" });
+    const originalRename = fs.rename.bind(fs);
+    const renameMock = mock.method(
+      fs,
+      "rename",
+      async (...args: Parameters<typeof fs.rename>) => {
+        const [source, destination] = args;
+        if (
+          String(destination) === statePath &&
+          new RegExp(`^${statePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.quarantine\\..+\\.tmp$`).test(
+            String(source),
+          )
+        ) {
+          const error = new Error("device busy") as NodeJS.ErrnoException;
+          error.code = "EBUSY";
+          throw error;
+        }
+
+        return originalRename(...args);
+      },
+    );
+    t.after(() => {
+      renameMock.mock.restore();
+    });
+
+    await assert.rejects(() => store.load(), { code: "EBUSY" });
+    assert.equal(await fs.readFile(statePath, "utf8"), corruptPayload);
+    assert.deepEqual((await fs.readdir(dir)).sort(), ["state.json"]);
+  });
+});
+
+test("StateStore json load serializes concurrent quarantine attempts per state file", async (t) => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.json");
+    const corruptPayload = "{not-json}\n";
+    await fs.writeFile(statePath, corruptPayload, "utf8");
+
+    const store = new StateStore(statePath, { backend: "json" });
+    const originalRename = fs.rename.bind(fs);
+    const installMarkerStarted = createDeferred<void>();
+    const releaseMarkerInstall = createDeferred<void>();
+    let blockedInstall = false;
+    const renameMock = mock.method(
+      fs,
+      "rename",
+      async (...args: Parameters<typeof fs.rename>) => {
+        const [source, destination] = args;
+        if (
+          !blockedInstall &&
+          String(destination) === statePath &&
+          new RegExp(`^${statePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.quarantine\\..+\\.tmp$`).test(
+            String(source),
+          )
+        ) {
+          blockedInstall = true;
+          installMarkerStarted.resolve(undefined);
+          await releaseMarkerInstall.promise;
+        }
+
+        return originalRename(...args);
+      },
+    );
+    t.after(() => {
+      renameMock.mock.restore();
+    });
+
+    const firstLoad = store.load();
+    await installMarkerStarted.promise;
+
+    const secondLoad = store.load();
+    releaseMarkerInstall.resolve(undefined);
+
+    const [firstLoaded, secondLoaded] = await Promise.all([firstLoad, secondLoad]);
+
+    assert.deepEqual(secondLoaded, firstLoaded);
+    assert.equal(firstLoaded.json_state_quarantine?.marker_file, statePath);
+    assert.match(firstLoaded.json_state_quarantine?.quarantined_file ?? "", /state\.json\.corrupt\./);
+    assert.equal(await fs.readFile(firstLoaded.json_state_quarantine?.quarantined_file ?? "", "utf8"), corruptPayload);
   });
 });
 

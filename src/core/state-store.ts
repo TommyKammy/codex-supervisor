@@ -1,7 +1,8 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { IssueRunRecord, StateLoadFinding, SupervisorStateFile } from "./types";
+import { IssueRunRecord, JsonStateQuarantine, StateLoadFinding, SupervisorStateFile } from "./types";
 import { ensureDir, nowIso, parseJson, readJsonIfExists, writeJsonAtomic } from "./utils";
 
 interface StateStoreOptions {
@@ -66,7 +67,24 @@ function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
   };
 }
 
-function normalizeState(raw: SupervisorStateFile | null | undefined): SupervisorStateFile {
+function normalizeStateForLoad(raw: SupervisorStateFile | null | undefined): SupervisorStateFile {
+  const issues = Object.fromEntries(
+    Object.entries(raw?.issues ?? {}).map(([key, value]) => [key, normalizeIssueRecord(value as IssueRunRecord)]),
+  );
+  const loadFindings = raw?.load_findings?.map((finding) => ({ ...finding }));
+  const jsonStateQuarantine = raw?.json_state_quarantine
+    ? normalizeJsonStateQuarantine(raw.json_state_quarantine)
+    : undefined;
+
+  return {
+    activeIssueNumber: raw?.activeIssueNumber ?? null,
+    issues,
+    ...(loadFindings && loadFindings.length > 0 ? { load_findings: loadFindings } : {}),
+    ...(jsonStateQuarantine ? { json_state_quarantine: jsonStateQuarantine } : {}),
+  };
+}
+
+function normalizeStateForSave(raw: SupervisorStateFile | null | undefined): SupervisorStateFile {
   const issues = Object.fromEntries(
     Object.entries(raw?.issues ?? {}).map(([key, value]) => [key, normalizeIssueRecord(value as IssueRunRecord)]),
   );
@@ -165,10 +183,29 @@ function readSqliteState(db: DatabaseSync): SupervisorStateFile {
 
 async function readJsonStateFromFile(filePath: string): Promise<SupervisorStateFile | null> {
   const raw = await readJsonIfExists<SupervisorStateFile>(filePath);
-  return raw ? normalizeState(raw) : null;
+  return raw ? normalizeStateForLoad(raw) : null;
+}
+
+function normalizeJsonStateQuarantine(quarantine: JsonStateQuarantine): JsonStateQuarantine {
+  return {
+    kind: quarantine.kind,
+    marker_file: quarantine.marker_file,
+    quarantined_file: quarantine.quarantined_file,
+    quarantined_at: quarantine.quarantined_at,
+  };
+}
+
+function buildJsonQuarantinePath(filePath: string): string {
+  return `${filePath}.corrupt.${nowIso().replace(/[:.]/g, "-")}`;
+}
+
+function buildJsonQuarantineMarkerTempPath(filePath: string, attemptId: string): string {
+  return `${filePath}.quarantine.${attemptId}.tmp`;
 }
 
 export class StateStore {
+  private static readonly jsonLoadLocks = new Map<string, Promise<void>>();
+
   constructor(
     private readonly stateFilePath: string,
     private readonly options: StateStoreOptions,
@@ -179,16 +216,16 @@ export class StateStore {
       return this.loadFromSqlite();
     }
 
-    return this.loadFromJson(this.stateFilePath);
+    return this.withJsonLoadLock(this.stateFilePath, async () => this.loadFromJson(this.stateFilePath));
   }
 
   async save(state: SupervisorStateFile): Promise<void> {
     if (this.options.backend === "sqlite") {
-      await this.saveToSqlite(normalizeState(state));
+      await this.saveToSqlite(normalizeStateForSave(state));
       return;
     }
 
-    await writeJsonAtomic(this.stateFilePath, normalizeState(state));
+    await writeJsonAtomic(this.stateFilePath, normalizeStateForSave(state));
   }
 
   touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
@@ -310,33 +347,114 @@ export class StateStore {
     };
   }
 
-  private async loadFromJson(filePath: string): Promise<SupervisorStateFile> {
+  private async withJsonLoadLock<T>(filePath: string, task: () => Promise<T>): Promise<T> {
+    const previous = StateStore.jsonLoadLocks.get(filePath) ?? Promise.resolve();
+    let releaseCurrentLock!: () => void;
+    const current = new Promise<void>((resolve) => {
+      releaseCurrentLock = resolve;
+    });
+    const currentChain = previous.catch(() => undefined).then(() => current);
+    StateStore.jsonLoadLocks.set(filePath, currentChain);
+
+    await previous.catch(() => undefined);
+
     try {
-      const raw = await fs.readFile(filePath, "utf8");
-      return normalizeState(parseJson<SupervisorStateFile>(raw, filePath));
+      return await task();
+    } finally {
+      releaseCurrentLock();
+
+      if (StateStore.jsonLoadLocks.get(filePath) === currentChain) {
+        StateStore.jsonLoadLocks.delete(filePath);
+      }
+    }
+  }
+
+  private async loadFromJson(filePath: string): Promise<SupervisorStateFile> {
+    let raw: string;
+    try {
+      raw = await fs.readFile(filePath, "utf8");
     } catch (error) {
       const maybeErr = error as NodeJS.ErrnoException;
       if (maybeErr.code === "ENOENT") {
         return this.emptyState();
       }
 
-      if (error instanceof Error && error.cause instanceof SyntaxError) {
-        const message = `${error.message}. Starting with empty state.`;
-        console.warn(message);
-        return withLoadFindings(this.emptyState(), [
-          {
-            backend: "json",
-            kind: "parse_error",
-            scope: "state_file",
-            location: filePath,
-            issue_number: null,
-            message,
-          },
-        ]);
-      }
-
       throw error;
     }
+
+    try {
+      return normalizeStateForLoad(parseJson<SupervisorStateFile>(raw, filePath));
+    } catch (error) {
+      if (!(error instanceof Error) || !(error.cause instanceof SyntaxError)) {
+        throw error;
+      }
+
+      return this.quarantineCorruptJsonState(filePath, error);
+    }
+  }
+
+  private async quarantineCorruptJsonState(
+    filePath: string,
+    error: Error,
+  ): Promise<SupervisorStateFile> {
+    const quarantineAttemptId = randomUUID();
+    const quarantinedFile = buildJsonQuarantinePath(filePath);
+    const markerTempPath = buildJsonQuarantineMarkerTempPath(filePath, quarantineAttemptId);
+    const quarantinedAt = nowIso();
+    const message = `${error.message}. Quarantined corrupt JSON state at ${quarantinedFile}; recovery marker written to ${filePath}.`;
+    const markerState = withLoadFindings({
+      ...this.emptyState(),
+      json_state_quarantine: {
+        kind: "parse_error",
+        marker_file: filePath,
+        quarantined_file: quarantinedFile,
+        quarantined_at: quarantinedAt,
+      },
+    }, [
+      {
+        backend: "json",
+        kind: "parse_error",
+        scope: "state_file",
+        location: filePath,
+        issue_number: null,
+        message,
+      },
+    ]);
+
+    try {
+      await fs.writeFile(markerTempPath, `${JSON.stringify(markerState, null, 2)}\n`, "utf8");
+    } catch (writeError) {
+      await fs.rm(markerTempPath, { force: true }).catch(() => undefined);
+      throw writeError;
+    }
+
+    try {
+      await fs.rename(filePath, quarantinedFile);
+    } catch (quarantineError) {
+      await fs.rm(markerTempPath, { force: true }).catch(() => undefined);
+      throw quarantineError;
+    }
+
+    try {
+      await fs.rename(markerTempPath, filePath);
+    } catch (installError) {
+      await fs.rm(markerTempPath, { force: true }).catch(() => undefined);
+
+      try {
+        await fs.rename(quarantinedFile, filePath);
+      } catch (restoreError) {
+        const installMessage = installError instanceof Error ? installError.message : String(installError);
+        throw new Error(
+          `Failed to install JSON quarantine marker at ${filePath} after moving corrupt state to ${quarantinedFile}: ${installMessage}. Restore attempt also failed.`,
+          { cause: restoreError instanceof Error ? restoreError : undefined },
+        );
+      }
+
+      throw installError;
+    }
+    console.warn(message);
+
+    return markerState;
   }
 
   private async loadFromSqlite(): Promise<SupervisorStateFile> {

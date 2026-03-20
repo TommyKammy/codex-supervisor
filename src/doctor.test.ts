@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { StateStore } from "./core/state-store";
 import { createConfig, createRecord } from "./turn-execution-test-helpers";
 import { diagnoseBootstrapReadiness, diagnoseSupervisorHost, loadStateReadonlyForDoctor, renderDoctorReport } from "./doctor";
 import { type SupervisorStateFile } from "./core/types";
@@ -144,6 +145,33 @@ test("diagnoseSupervisorHost uses a strict default state loader for existing inv
   assert.match(
     renderDoctorReport(diagnostics),
     /doctor_detail name=state_file detail=state_load_finding backend=json scope=state_file issue_number=none location=.*state\.json message=/,
+  );
+});
+
+test("loadStateReadonlyForDoctor preserves the persisted JSON quarantine marker", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const stateFile = path.join(root, "state.json");
+  await fs.writeFile(stateFile, "{not-json}\n", "utf8");
+
+  const store = new StateStore(stateFile, { backend: "json" });
+  await store.load();
+
+  const state = await loadStateReadonlyForDoctor(
+    createConfig({
+      stateFile,
+    }),
+  );
+
+  assert.equal(state.json_state_quarantine?.marker_file, stateFile);
+  assert.match(state.json_state_quarantine?.quarantined_file ?? "", /state\.json\.corrupt\./);
+  assert.match(state.load_findings?.[0]?.message ?? "", /quarantined corrupt json state/i);
+  assert.match(
+    state.load_findings?.[0]?.message ?? "",
+    new RegExp(state.json_state_quarantine?.quarantined_file?.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") ?? ""),
   );
 });
 
