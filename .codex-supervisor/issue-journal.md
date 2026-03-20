@@ -1,37 +1,37 @@
-# Issue #697: Bootstrap API prep: expose structured config and host-readiness summary
+# Issue #698: Service boundary: add a thin supervisor application service for CLI and future API adapters
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/697
-- Branch: codex/issue-697
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/698
+- Branch: codex/issue-698
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 3f8531c1130e2f3804eddbb703dfc00df9e3c5fa
+- Last head SHA: 7ec81c1d932f541d9cc68ac343f53ba2f88e0c56
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-20T07:28:10.945Z
+- Updated at: 2026-03-20T07:55:01.375Z
 
 ## Latest Codex Summary
-- Added structured bootstrap/config DTOs so transports can inspect resolved config state, missing required fields, repo suitability, and doctor checks without parsing CLI text. Focused tests and `npm run build` pass in this worktree after restoring local dev dependencies with `npm install`; committed as `dbe9ac3` (`Add bootstrap config readiness summaries`) and opened draft PR #702 (`https://github.com/TommyKammy/codex-supervisor/pull/702`).
+- Added a thin `SupervisorService` application boundary for CLI query and run-once operations, routed the CLI runtime through it, and kept loop/signal/sleep orchestration in `src/cli/supervisor-runtime.ts`. Focused verification and `npm run build` now pass after restoring local `tsc` with `npm install`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the narrowest seam for issue #697 is to keep `loadConfig(...)` and `diagnoseSupervisorHost(...)` as the source of truth, then wrap them in transport-friendly summaries instead of teaching future adapters to parse thrown errors or rendered doctor lines.
-- What changed: added `ConfigLoadSummary` plus `loadConfigSummary(...)` in `src/core/config.ts` so callers can inspect resolved config, missing required fields, and invalid-field failures without exceptions. Added `BootstrapReadinessSummary` plus `diagnoseBootstrapReadiness(...)` in `src/doctor.ts` so callers can inspect config readiness, repo suitability, and doctor checks in one JSON-friendly object while leaving `renderDoctorReport(...)` untouched. Added focused coverage in `src/config.test.ts` and `src/doctor.test.ts` for missing required config and fully ready bootstrap cases. Restored the README provider-profiles section so the required `src/config.test.ts` target passes again.
+- Hypothesis: the narrowest seam for issue #698 is to keep `Supervisor` as the core implementation, then add a thin `SupervisorService` wrapper that exposes transport-friendly query DTOs plus run-once operations so CLI and future adapters do not depend on `Supervisor` directly.
+- What changed: added `src/supervisor/supervisor-service.ts` with `SupervisorService`, `SupervisorLock`, and `createSupervisorService(...)`; the wrapper delegates to existing `Supervisor` report/query methods and `runOnce(...)`. Updated `src/cli/entrypoint.ts` to create and pass the service boundary instead of `Supervisor.fromConfig(...)` directly. Updated `src/cli/supervisor-runtime.ts` to call `queryStatus`, `queryExplain`, `queryIssueLint`, `queryDoctor`, and `runOnce` on the service while keeping lock acquisition, signal handling, sleep, and loop orchestration in the CLI runtime. Added focused coverage in `src/cli/entrypoint.test.ts`, `src/cli/supervisor-runtime.test.ts`, and `src/supervisor/supervisor.test.ts` for the new boundary and export surface.
 - Current blocker: none
-- Next exact step: monitor draft PR #702 for CI and review feedback, then address follow-up without changing the new config/bootstrap DTO seam unless review proves a gap.
-- Verification gap: none against the current acceptance criteria in this worktree; `npx tsx --test src/config.test.ts src/doctor.test.ts` and `npm run build` passed after `npm install` restored `tsc`.
-- Files touched: `src/core/config.ts`, `src/config.test.ts`, `src/doctor.ts`, `src/doctor.test.ts`, `README.md`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would remove the structured config/bootstrap summary and push future WebUI/API adapters back toward exception parsing and doctor text scraping.
+- Next exact step: checkpoint the service-boundary slice, then open or update the draft PR so CI can validate the CLI/service seam against the full matrix.
+- Verification gap: none against the issue acceptance criteria in this worktree; `npx tsx --test src/cli/supervisor-runtime.test.ts src/supervisor/supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build` passed after `npm install` restored local `tsc`.
+- Files touched: `src/cli/entrypoint.ts`, `src/cli/entrypoint.test.ts`, `src/cli/supervisor-runtime.ts`, `src/cli/supervisor-runtime.test.ts`, `src/supervisor/supervisor-service.ts`, `src/supervisor/index.ts`, `src/supervisor/supervisor.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would put the CLI back on a transport-coupled path where adapters construct `Supervisor` directly instead of reusing an explicit application-service seam.
 - Last focused command: `npm run build`
-- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-697/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-697/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short`; `git branch --show-current`; `rg -n "config|bootstrap|readiness|doctorReport|renderDoctorReport|loadConfig|structured" src`; `sed -n '1,360p' src/core/config.ts`; `sed -n '1,320p' src/doctor.ts`; `sed -n '1,320p' src/config.test.ts`; `sed -n '1,320p' src/doctor.test.ts`; `npx tsx --test src/config.test.ts src/doctor.test.ts`; `npm install`; `npm run build`
+- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-698/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-698/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `rg -n "supervisor-runtime|runOnce|query|diagnostics|service" src`; `sed -n '1,260p' src/cli/supervisor-runtime.ts`; `sed -n '1,280p' src/cli/entrypoint.test.ts`; `sed -n '1,280p' src/cli/entrypoint.ts`; `npx tsx --test src/cli/entrypoint.test.ts src/cli/supervisor-runtime.test.ts src/supervisor/supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm install`; `npx tsx --test src/cli/supervisor-runtime.test.ts src/supervisor/supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`
 ### Scratchpad
-- 2026-03-20 (JST): Committed the structured config/bootstrap readiness slice as `dbe9ac3` (`Add bootstrap config readiness summaries`), pushed `codex/issue-697`, and opened draft PR #702 (`https://github.com/TommyKammy/codex-supervisor/pull/702`).
+- 2026-03-20 (JST): Reproduced issue #698 with focused CLI/runtime seam tests that failed because `runCli(...)` still called `Supervisor.fromConfig(...)` directly and `runSupervisorCommand(...)` still depended on `dependencies.supervisor`. Fixed it by adding a thin `SupervisorService` wrapper over `Supervisor`, routing CLI entrypoint/runtime through that boundary, and keeping loop/signal/sleep orchestration in the CLI runtime. Focused verification passed with `npx tsx --test src/cli/entrypoint.test.ts src/cli/supervisor-runtime.test.ts src/supervisor/supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; required verification passed with `npx tsx --test src/cli/supervisor-runtime.test.ts src/supervisor/supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build` after `npm install`.
 - 2026-03-20 (JST): Reproduced issue #697 with new focused coverage for `loadConfigSummary(...)` and `diagnoseBootstrapReadiness(...)`; the initial failure was missing exported helpers plus a pre-existing README/provider-profile assertion drift in `src/config.test.ts`. Implemented structured config/bootstrap DTOs on top of the existing loaders/checks, restored the README provider profile section, and verified with `npx tsx --test src/config.test.ts src/doctor.test.ts` and `npm run build` after `npm install`.
 - 2026-03-19 (JST): Reproduced issue #559 with a focused `replay-corpus-promote` regression that expected advisory hints for `stale-head-prevents-merge` but only saw the existing explicit-case-id guidance and suggestions. Fixed it by adding deterministic `deriveReplayCorpusPromotionWorthinessHints(...)` coverage for stale-head safety, provider waits, and retry escalation, then surfacing those hints in both CLI suggestion mode and successful promotion summaries. Focused verification passed with `npx tsx --test src/index.test.ts --test-name-pattern "replay-corpus-promote"`, `npx tsx --test src/supervisor/replay-corpus.test.ts --test-name-pattern "PromotionWorthinessHints|promoteCapturedReplaySnapshot|checked-in safety case bundles|runReplayCorpus replays the checked-in PR lifecycle safety cases without mismatches"`, and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Reproduced issue #558 with a tightened CLI promotion regression that failed because stdout only contained `Promoted replay corpus case ...`; fixed it by printing case path, compact expected outcome, and conditional volatile-field normalization notes after promotion. Focused verification passed with `npx tsx --test src/index.test.ts`, `npx tsx --test src/supervisor/replay-corpus.test.ts`, and `npm run build` after restoring local dev dependencies via `npm install`.

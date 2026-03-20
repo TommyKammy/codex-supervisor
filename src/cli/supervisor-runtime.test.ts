@@ -52,7 +52,7 @@ test("runSupervisorCommand stops the loop after a registered signal and aborts p
   await runSupervisorCommand(
     { command: "loop", dryRun: false, why: false },
     {
-      supervisor: {
+      service: {
         config,
         pollIntervalMs: () => 50,
         acquireSupervisorLock: async () => ({
@@ -63,10 +63,22 @@ test("runSupervisorCommand stops the loop after a registered signal and aborts p
           loopRuns += 1;
           return "cycle complete";
         },
-        status: async () => "status",
-        explain: async () => "explain",
-        issueLint: async () => "lint",
-        doctor: async () => "doctor",
+        queryStatus: async () => ({
+          gsdSummary: null,
+          detailedStatusLines: ["status"],
+          reconciliationPhase: null,
+          reconciliationWarning: null,
+          readinessLines: [],
+          whyLines: [],
+          warning: null,
+        }),
+        queryExplain: async () => {
+          throw new Error("unexpected queryExplain");
+        },
+        queryIssueLint: async () => ["lint"],
+        queryDoctor: async () => {
+          throw new Error("unexpected queryDoctor");
+        },
       },
       ensureGsdInstalled: async () => null,
       sleep: async (_ms, signal) => {
@@ -91,4 +103,57 @@ test("runSupervisorCommand stops the loop after a registered signal and aborts p
   assert.equal(sleepSignals.length, 1);
   assert.match(stdout[0] ?? "", /cycle complete/);
   assert.match(stdout[1] ?? "", /received SIGTERM, stopping after current cycle/);
+});
+
+test("runSupervisorCommand routes query commands through the supervisor service boundary", async () => {
+  const stdout: string[] = [];
+  const calls: string[] = [];
+
+  await runSupervisorCommand(
+    { command: "status", dryRun: false, why: true },
+    {
+      service: {
+        config: {} as SupervisorConfig,
+        pollIntervalMs: () => 50,
+        acquireSupervisorLock: async () => ({
+          acquired: true,
+          release: async () => {},
+        }),
+        runOnce: async () => {
+          calls.push("runOnce");
+          return "runOnce";
+        },
+        queryStatus: async (options) => {
+          calls.push(`status:${String(options.why)}`);
+          return {
+            gsdSummary: null,
+            detailedStatusLines: ["status output"],
+            reconciliationPhase: null,
+            reconciliationWarning: null,
+            readinessLines: [],
+            whyLines: [],
+            warning: null,
+          };
+        },
+        queryExplain: async (issueNumber) => {
+          calls.push(`explain:${issueNumber}`);
+          throw new Error(`unexpected queryExplain:${issueNumber}`);
+        },
+        queryIssueLint: async (issueNumber) => {
+          calls.push(`issueLint:${issueNumber}`);
+          return ["issue lint output"];
+        },
+        queryDoctor: async () => {
+          calls.push("doctor");
+          throw new Error("unexpected queryDoctor");
+        },
+      },
+      writeStdout: (line) => {
+        stdout.push(line);
+      },
+    },
+  );
+
+  assert.deepEqual(calls, ["status:true"]);
+  assert.deepEqual(stdout, ["status output"]);
 });

@@ -55,18 +55,18 @@ test("runCli routes replay-corpus commands through the CLI IO handler boundary",
 
 test("runCli routes supervisor runtime commands through the supervisor runtime boundary", async () => {
   const createdConfigs: Array<string | undefined> = [];
-  const supervisor = { tag: "supervisor" };
+  const service = { tag: "service" };
   let runtimeCommand: Record<string, unknown> | undefined;
 
   await runCli(["status", "--config", "/tmp/supervisor.config.json", "--why"], {
-    createSupervisor: (configPath) => {
+    createSupervisorService: (configPath) => {
       createdConfigs.push(configPath);
-      return supervisor as never;
+      return service as never;
     },
     runSupervisorCommand: async (command, dependencies) => {
       runtimeCommand = {
         ...command,
-        supervisor: dependencies.supervisor,
+        service: dependencies.service,
       };
     },
   });
@@ -77,7 +77,7 @@ test("runCli routes supervisor runtime commands through the supervisor runtime b
     dryRun: false,
     why: true,
     issueNumber: undefined,
-    supervisor,
+    service,
   });
 });
 

@@ -1,31 +1,18 @@
 import type { CliOptions, SupervisorConfig } from "../core/types";
 import { sleep as defaultSleep } from "../core/utils";
 import { ensureGsdInstalled as defaultEnsureGsdInstalled } from "../gsd";
+import { renderDoctorReport } from "../doctor";
+import { renderIssueExplainDto } from "../supervisor/supervisor-selection-status";
+import { type SupervisorLock, type SupervisorService } from "../supervisor/supervisor-service";
+import { renderSupervisorStatusDto } from "../supervisor/supervisor-status-report";
 
 type SupervisorRuntimeCommand = Extract<
   CliOptions["command"],
   "run-once" | "loop" | "status" | "explain" | "issue-lint" | "doctor"
 >;
 
-interface SupervisorLock {
-  acquired: boolean;
-  reason?: string;
-  release: () => Promise<void>;
-}
-
-interface SupervisorRuntime {
-  config: SupervisorConfig;
-  pollIntervalMs: () => number;
-  acquireSupervisorLock: (command: "loop" | "run-once") => Promise<SupervisorLock>;
-  runOnce: (options: Pick<CliOptions, "dryRun">) => Promise<string>;
-  status: (options: Pick<CliOptions, "why">) => Promise<string>;
-  explain: (issueNumber: number) => Promise<string>;
-  issueLint: (issueNumber: number) => Promise<string>;
-  doctor: () => Promise<string>;
-}
-
 interface SupervisorRuntimeDependencies {
-  supervisor: SupervisorRuntime;
+  service: SupervisorService;
   ensureGsdInstalled?: (config: SupervisorConfig) => Promise<string | null>;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   writeStdout?: (line: string) => void;
@@ -59,7 +46,7 @@ function registerProcessStopSignals(handler: (signal: NodeJS.Signals) => void): 
 }
 
 export async function runOnceWithSupervisorLock(
-  supervisor: Pick<SupervisorRuntime, "acquireSupervisorLock" | "runOnce">,
+  supervisor: Pick<SupervisorService, "acquireSupervisorLock" | "runOnce">,
   command: "loop" | "run-once",
   options: Pick<CliOptions, "dryRun">,
 ): Promise<string> {
@@ -80,7 +67,7 @@ export async function runSupervisorCommand(
   dependencies: SupervisorRuntimeDependencies,
 ): Promise<void> {
   const {
-    supervisor,
+    service,
     ensureGsdInstalled = defaultEnsureGsdInstalled,
     sleep = defaultSleep,
     writeStdout = (line) => console.log(line),
@@ -88,7 +75,7 @@ export async function runSupervisorCommand(
     registerStopSignals = registerProcessStopSignals,
   } = dependencies;
 
-  const pollIntervalMs = supervisor.pollIntervalMs();
+  const pollIntervalMs = service.pollIntervalMs();
   let shouldStop = false;
   let sleepController: AbortController | null = null;
 
@@ -99,40 +86,40 @@ export async function runSupervisorCommand(
   });
 
   if (requiresGsdInstall(options.command)) {
-    const installMessage = await ensureGsdInstalled(supervisor.config);
+    const installMessage = await ensureGsdInstalled(service.config);
     if (installMessage) {
       writeStdout(installMessage);
     }
   }
 
   if (options.command === "status") {
-    writeStdout(await supervisor.status({ why: options.why }));
+    writeStdout(renderSupervisorStatusDto(await service.queryStatus({ why: options.why })));
     return;
   }
 
   if (options.command === "explain") {
-    writeStdout(await supervisor.explain(options.issueNumber!));
+    writeStdout(renderIssueExplainDto(await service.queryExplain(options.issueNumber!)));
     return;
   }
 
   if (options.command === "issue-lint") {
-    writeStdout(await supervisor.issueLint(options.issueNumber!));
+    writeStdout((await service.queryIssueLint(options.issueNumber!)).join("\n"));
     return;
   }
 
   if (options.command === "doctor") {
-    writeStdout(await supervisor.doctor());
+    writeStdout(renderDoctorReport(await service.queryDoctor()));
     return;
   }
 
   if (options.command === "run-once") {
-    writeStdout(await runOnceWithSupervisorLock(supervisor, "run-once", { dryRun: options.dryRun }));
+    writeStdout(await runOnceWithSupervisorLock(service, "run-once", { dryRun: options.dryRun }));
     return;
   }
 
   while (!shouldStop) {
     try {
-      const message = await runOnceWithSupervisorLock(supervisor, "loop", { dryRun: options.dryRun });
+      const message = await runOnceWithSupervisorLock(service, "loop", { dryRun: options.dryRun });
       writeStdout(`${new Date().toISOString()} ${message}`);
     } catch (error) {
       const message = error instanceof Error ? error.stack ?? error.message : String(error);
