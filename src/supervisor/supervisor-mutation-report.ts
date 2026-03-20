@@ -1,6 +1,7 @@
 import type { IssueRunRecord, JsonCorruptStateResetResult, RunState } from "../core/types";
 
 export type SupervisorRecoveryAction = "requeue";
+export type SupervisorOrphanPruneAction = "prune-orphaned-workspaces";
 
 export type SupervisorMutationRecordSnapshotDto = Pick<
   IssueRunRecord,
@@ -38,6 +39,33 @@ export interface SupervisorMutationResultDto {
   recoveryReason: string | null;
 }
 
+export interface PrunedOrphanedWorkspaceResultDto {
+  issueNumber: number;
+  workspaceName: string;
+  workspacePath: string;
+  branch: string;
+  modifiedAt: string | null;
+  reason: string;
+}
+
+export interface SkippedOrphanedWorkspaceResultDto {
+  issueNumber: number;
+  workspaceName: string;
+  workspacePath: string;
+  branch: string | null;
+  modifiedAt: string | null;
+  eligibility: "locked" | "recent" | "unsafe_target";
+  reason: string;
+}
+
+export interface SupervisorOrphanPruneResultDto {
+  action: SupervisorOrphanPruneAction;
+  outcome: "completed" | "rejected";
+  summary: string;
+  pruned: PrunedOrphanedWorkspaceResultDto[];
+  skipped: SkippedOrphanedWorkspaceResultDto[];
+}
+
 export function buildSupervisorMutationRecordSnapshot(
   record: IssueRunRecord,
 ): SupervisorMutationRecordSnapshotDto {
@@ -72,6 +100,10 @@ export function buildSupervisorMutationRecordSnapshot(
 }
 
 export function renderSupervisorMutationResultDto(dto: SupervisorMutationResultDto): string {
+  return JSON.stringify(dto);
+}
+
+export function renderSupervisorOrphanPruneResultDto(dto: SupervisorOrphanPruneResultDto): string {
   return JSON.stringify(dto);
 }
 

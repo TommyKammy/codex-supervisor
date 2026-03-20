@@ -9,6 +9,7 @@ import {
   cleanupExpiredDoneWorkspaces,
   formatRecoveryLog,
   prependRecoveryLog,
+  pruneOrphanedWorkspacesForOperator,
   requeueIssueForOperator,
   reconcileMergedIssueClosures,
   reconcileParentEpicClosures,
@@ -114,7 +115,11 @@ import {
   sanitizeStatusValue,
 } from "./supervisor-status-rendering";
 import { buildDetailedStatusModel, buildDetailedStatusSummaryLines } from "./supervisor-status-model";
-import { type SupervisorMutationResultDto, type SupervisorRecoveryAction } from "./supervisor-mutation-report";
+import {
+  type SupervisorMutationResultDto,
+  type SupervisorOrphanPruneResultDto,
+  type SupervisorRecoveryAction,
+} from "./supervisor-mutation-report";
 import { renderSupervisorStatusDto, SupervisorStatusDto } from "./supervisor-status-report";
 import {
   clearCurrentReconciliationPhase,
@@ -935,6 +940,32 @@ export class Supervisor {
         };
       }
       return requeueIssueForOperator(this.stateStore, state, issueNumber);
+    } finally {
+      await lock.release();
+    }
+  }
+
+  async pruneOrphanedWorkspaces(): Promise<SupervisorOrphanPruneResultDto> {
+    const lock = await acquireFileLock(this.lockPath("supervisor", "run"), "supervisor-recovery-prune-orphaned-workspaces", {
+      allowAmbiguousOwnerCleanup: true,
+    });
+    if (!lock.acquired) {
+      throw new Error(`Cannot run recovery action while supervisor is active: ${lock.reason ?? "lock unavailable"}`);
+    }
+
+    try {
+      const state = await this.stateStore.load();
+      const quarantine = readJsonParseErrorQuarantine(this.config, state);
+      if (quarantine) {
+        return {
+          action: "prune-orphaned-workspaces",
+          outcome: "rejected",
+          summary: buildCorruptJsonFailClosedMessage(this.config, quarantine),
+          pruned: [],
+          skipped: [],
+        };
+      }
+      return pruneOrphanedWorkspacesForOperator(this.config, state);
     } finally {
       await lock.release();
     }

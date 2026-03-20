@@ -4,6 +4,7 @@ import { ensureGsdInstalled as defaultEnsureGsdInstalled } from "../gsd";
 import { renderDoctorReport } from "../doctor";
 import { renderJsonCorruptStateResetResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderSupervisorMutationResultDto } from "../supervisor/supervisor-mutation-report";
+import { renderSupervisorOrphanPruneResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderIssueExplainDto } from "../supervisor/supervisor-selection-status";
 import { isCorruptJsonFailClosedMessage } from "../supervisor/supervisor";
 import { type SupervisorLock, type SupervisorService } from "../supervisor/supervisor-service";
@@ -11,7 +12,15 @@ import { renderSupervisorStatusDto } from "../supervisor/supervisor-status-repor
 
 type SupervisorRuntimeCommand = Extract<
   CliOptions["command"],
-  "run-once" | "loop" | "status" | "requeue" | "reset-corrupt-json-state" | "explain" | "issue-lint" | "doctor"
+  | "run-once"
+  | "loop"
+  | "status"
+  | "requeue"
+  | "prune-orphaned-workspaces"
+  | "reset-corrupt-json-state"
+  | "explain"
+  | "issue-lint"
+  | "doctor"
 >;
 
 interface SupervisorRuntimeDependencies {
@@ -29,6 +38,7 @@ export function isSupervisorRuntimeCommand(command: CliOptions["command"]): comm
     command === "loop" ||
     command === "status" ||
     command === "requeue" ||
+    command === "prune-orphaned-workspaces" ||
     command === "reset-corrupt-json-state" ||
     command === "explain" ||
     command === "issue-lint" ||
@@ -40,6 +50,7 @@ function requiresGsdInstall(command: SupervisorRuntimeCommand): boolean {
   return (
     command !== "status" &&
     command !== "requeue" &&
+    command !== "prune-orphaned-workspaces" &&
     command !== "reset-corrupt-json-state" &&
     command !== "explain" &&
     command !== "issue-lint" &&
@@ -106,6 +117,11 @@ export async function runSupervisorCommand(
 
   if (options.command === "requeue") {
     writeStdout(renderSupervisorMutationResultDto(await service.runRecoveryAction("requeue", options.issueNumber!)));
+    return;
+  }
+
+  if (options.command === "prune-orphaned-workspaces") {
+    writeStdout(renderSupervisorOrphanPruneResultDto(await service.pruneOrphanedWorkspaces()));
     return;
   }
 

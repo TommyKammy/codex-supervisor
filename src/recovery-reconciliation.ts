@@ -13,8 +13,11 @@ import { hoursSince, nowIso } from "./core/utils";
 import { branchNameForIssue, cleanupWorkspace, isSafeCleanupTarget } from "./core/workspace";
 import {
   buildSupervisorMutationRecordSnapshot,
+  type PrunedOrphanedWorkspaceResultDto,
+  type SkippedOrphanedWorkspaceResultDto,
   type SupervisorMutationRecordSnapshotDto,
   type SupervisorMutationResultDto,
+  type SupervisorOrphanPruneResultDto,
 } from "./supervisor/supervisor-mutation-report";
 
 const OWNER_GUARDED_ACTIVE_STATES = new Set<RunState>([
@@ -285,6 +288,61 @@ async function cleanupOrphanedIssueWorkspaces(
   }
 
   return recoveryEvents;
+}
+
+export async function pruneOrphanedWorkspacesForOperator(
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+): Promise<SupervisorOrphanPruneResultDto> {
+  const candidates = await inspectOrphanedWorkspacePruneCandidates(config, state);
+  const pruned: PrunedOrphanedWorkspaceResultDto[] = [];
+  const skipped: SkippedOrphanedWorkspaceResultDto[] = [];
+
+  for (const candidate of candidates) {
+    if (candidate.eligibility === "eligible" && candidate.branch) {
+      await cleanupWorkspace(config.repoPath, candidate.workspacePath, candidate.branch);
+      pruned.push({
+        issueNumber: candidate.issueNumber,
+        workspaceName: candidate.workspaceName,
+        workspacePath: candidate.workspacePath,
+        branch: candidate.branch,
+        modifiedAt: candidate.modifiedAt,
+        reason: candidate.reason,
+      });
+      continue;
+    }
+
+    if (candidate.eligibility === "eligible") {
+      skipped.push({
+        issueNumber: candidate.issueNumber,
+        workspaceName: candidate.workspaceName,
+        workspacePath: candidate.workspacePath,
+        branch: candidate.branch,
+        modifiedAt: candidate.modifiedAt,
+        eligibility: "unsafe_target",
+        reason: candidate.reason,
+      });
+      continue;
+    }
+
+    skipped.push({
+      issueNumber: candidate.issueNumber,
+      workspaceName: candidate.workspaceName,
+      workspacePath: candidate.workspacePath,
+      branch: candidate.branch,
+      modifiedAt: candidate.modifiedAt,
+      eligibility: candidate.eligibility,
+      reason: candidate.reason,
+    });
+  }
+
+  return {
+    action: "prune-orphaned-workspaces",
+    outcome: "completed",
+    summary: `Pruned ${pruned.length} orphaned workspace(s); skipped ${skipped.length} orphaned workspace(s).`,
+    pruned,
+    skipped,
+  };
 }
 
 export function buildRecoveryEvent(issueNumber: number, reason: string): RecoveryEvent {
