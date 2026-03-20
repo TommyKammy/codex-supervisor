@@ -23,6 +23,8 @@ Requirements:
 
 Current execution posture: supervisor-managed Codex turns use `--dangerously-bypass-approvals-and-sandbox`. Approvals and sandboxing are therefore not the active safety boundary during an autonomous turn. The practical safety boundary is the operator's trust decision about the repo and the GitHub-authored text that becomes execution input.
 
+State backend posture: a missing JSON state file is a normal empty bootstrap case, but corrupted JSON state is not a normal empty-state bootstrap case. When the JSON backend reports corrupted JSON state, treat it as a recovery event to inspect, acknowledge, or reset before relying on that state again. Until that explicit operator handling happens, corrupted JSON state is not a durable recovery point.
+
 ## Provider Profiles
 
 Each shipped profile only covers supervisor-side expectations. You still need the matching provider-side setup before the supervisor can observe a usable review signal.
@@ -58,6 +60,11 @@ Repository and workspace:
 - `repoPath`, `repoSlug`, `workspaceRoot`
 - `stateBackend`, `stateFile`, `stateBootstrapFile`
 - `branchPrefix`
+
+Operator diagnostics for state:
+
+- `node dist/index.js status --config /path/to/supervisor.config.json` reports the current tracked issue/PR view, but it should not be read as permission to trust corrupted state implicitly.
+- `node dist/index.js doctor --config /path/to/supervisor.config.json` is the primary check when you need to distinguish missing JSON state from corrupted JSON state and confirm whether operator recovery is required.
 
 Codex execution policy:
 

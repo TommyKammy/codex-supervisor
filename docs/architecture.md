@@ -21,7 +21,9 @@
 - per-issue worktree
 - per-issue journal
 
-These are the recovery points after crashes, process restarts, or thread loss.
+These are the recovery points after crashes, process restarts, or thread loss, but only while the persisted data remains readable.
+
+For the JSON backend, missing JSON state means there is no durable state yet and the supervisor can bootstrap from empty state. Corrupted JSON state is different: it is a recovery event, not a normal bootstrap case, and it is not safe to treat as durable state until an operator has inspected the file and explicitly acknowledged or reset it.
 
 ## Main safety boundaries
 
@@ -33,6 +35,8 @@ These are the recovery points after crashes, process restarts, or thread loss.
 GitHub-authored issue bodies, review comments, review summaries, and similar GitHub text are also an explicit trust boundary. They are execution inputs that shape what Codex does next, so treat them as untrusted unless the operator explicitly trusts the repository and the GitHub authors who can write that text.
 
 Today the supervisor invokes Codex with `--dangerously-bypass-approvals-and-sandbox`. That means the trust decision happens before the turn starts: autonomous execution is only acceptable when the repo, issue content, and review content all come from a trusted lane. If that trust is missing, the safe posture is to stay out of autonomous execution and use a manually supervised workflow instead.
+
+The same fail-open vs fail-closed distinction applies to state recovery guidance: missing JSON state can bootstrap, but corrupted JSON state should be surfaced to the operator through diagnostics and recovery flow, not silently reused as if it were trustworthy state.
 
 ## Main reconciliations
 
