@@ -1,37 +1,36 @@
-# Issue #689: Issue metadata docs: document that child issues should not depend directly on their Epic
+# Issue #690: Issue authoring diagnostics: warn when a child issue depends directly on its Epic
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/689
-- Branch: codex/issue-689
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/690
+- Branch: codex/issue-690
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 78208c1e0ee7d5a4ea18fb1ac0d90d059eb9718b
+- Last head SHA: a953754b52475f7ab447b9382ebdc865629080c4
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-20T05:25:10.023Z
+- Updated at: 2026-03-20T05:55:44.523Z
 
 ## Latest Codex Summary
-- Added concise epic/child scheduling guidance to `docs/issue-metadata.md`, including a recommended `Part of + sibling Depends on` example and a discouraged `Depends on: <Epic>` example. Tightened `src/config.test.ts` to require that guidance, verified the focused docs assertion, restored local dev dependencies with `npm install`, and reran `npm run build` successfully.
+- Reproduced the missing epic-dependency diagnostic with focused `issue-metadata` and `issue-lint` tests, then taught `validateIssueMetadataSyntax(...)` to flag `Part of: #X` plus `Depends on: #X` as a concise local metadata warning without affecting valid sibling dependencies. Focused verification passed and `npm run build` passed after restoring local dev dependencies with `npm install`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the narrowest safe fix for #689 is a docs-only update in `docs/issue-metadata.md`, backed by a focused regression in the existing docs coverage, because current scheduler behavior already treats `Part of + Execution order` as the epic/child sequencing mechanism.
-- What changed: tightened `src/config.test.ts` so the issue-metadata docs must mention that child issues use `Part of: #42` for epic association, must not use `Depends on: #42` when `#42` is only the parent epic, and must include recommended/discouraged examples. Updated `docs/issue-metadata.md` with that rule and a concise `Epic / child pattern` section showing the preferred `Part of: #42` plus sibling `Depends on: #41` pattern and the discouraged `Depends on: #42` anti-pattern.
+- Hypothesis: the narrowest safe fix for #690 is to keep the change inside `validateIssueMetadataSyntax(...)`, because `issue-lint` already exposes metadata diagnostics directly and this issue only needs a deterministic local warning for `Part of` plus the same `Depends on` epic.
+- What changed: added focused regression coverage in `src/issue-metadata/issue-metadata.test.ts` for both the warning case (`Part of: #123` with `Depends on: #123, #77`) and a valid sibling-dependency case (`Depends on: #77, #88`). Added `src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts` coverage asserting `issue-lint` reports the new warning. Updated `src/issue-metadata/issue-metadata-validation.ts` so `depends on` emits `depends on duplicates parent epic #<number>; remove it and keep only real blocking issues` when a child issue depends directly on a different parent epic.
 - Current blocker: none
-- Next exact step: review the final diff for concision, then commit the docs/test checkpoint on `codex/issue-689` and prepare/update the draft PR if needed.
-- Verification gap: none for the requested acceptance criteria. The focused docs regression and `npm run build` both passed locally after restoring dev dependencies with `npm install`.
-- Files touched: `docs/issue-metadata.md`, `src/config.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would remove the explicit operator guidance that prevents child issues from being blocked on their parent epic via `Depends on: <Epic>`, leaving the docs inconsistent with current scheduler behavior.
-- Last focused commands: `npx tsx --test src/config.test.ts --test-name-pattern "getting started links to focused configuration and local review references"`; `npm install`; `npm run build`
+- Next exact step: review the staged diff for concision, commit the issue-lint diagnostic checkpoint on `codex/issue-690`, and open/update the draft PR if needed.
+- Verification gap: none for the requested acceptance criteria. Focused validator and issue-lint tests passed, and `npm run build` passed after restoring local dev dependencies with `npm install`.
+- Files touched: `src/issue-metadata/issue-metadata-validation.ts`, `src/issue-metadata/issue-metadata.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would remove the only local deterministic warning that catches child issues being blocked behind their parent epic, reopening the issue-authoring failure that #690 is meant to prevent.
+- Last focused command: `npm run build`
+- Last focused commands: `npx tsx --test src/issue-metadata/issue-metadata.test.ts`; `npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`; `npm install`; `npm run build`
 ### Scratchpad
-- 2026-03-20 (JST): Reproduced #689 by tightening the issue-metadata docs assertion in `src/config.test.ts`; the new check failed because `docs/issue-metadata.md` did not yet explain that child issues should use `Part of` for epic association and should not depend directly on the epic. Added a concise `Epic / child pattern` section with recommended/discouraged examples, reran the focused assertion, restored local dev dependencies with `npm install` because `tsc` was missing in this worktree, and then reran `npm run build` successfully.
-- 2026-03-20 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851okoy` by making the long-reconciliation warning boundary strict (`>` only) and extending the diagnostics test to keep the exact five-minute case non-warning; focused verification passed with `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build`.
 - 2026-03-20 (JST): Pushed `codex/issue-671` to `origin/codex/issue-671` and opened draft PR #676 (`https://github.com/TommyKammy/codex-supervisor/pull/676`) after the focused artifact/finalize/result/status/policy tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
 - 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851kRrS` as a real bug: malformed SQLite rows could yield only `load_findings`, after which `loadFromSqlite()` returned fallback empty/bootstrap state without those findings. Fixed the fallback path, added a dedicated regression for the empty-state case, and reran `npx tsx --test src/core/state-store.test.ts` plus `npm run build` successfully.

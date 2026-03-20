@@ -97,6 +97,32 @@ Parallelizable: No`,
   assert.deepEqual(validateIssueMetadataSyntax(issue), []);
 });
 
+test("validateIssueMetadataSyntax stays quiet when a child issue depends on sibling work instead of its epic", () => {
+  const issue = createIssue({
+    number: 55,
+    body: `Part of: #123
+Depends on: #77, #88
+Execution order: 2 of 4
+Parallelizable: No`,
+  });
+
+  assert.deepEqual(validateIssueMetadataSyntax(issue), []);
+});
+
+test("validateIssueMetadataSyntax warns when a child issue depends directly on its epic", () => {
+  const issue = createIssue({
+    number: 55,
+    body: `Part of: #123
+Depends on: #123, #77
+Execution order: 2 of 4
+Parallelizable: No`,
+  });
+
+  assert.deepEqual(validateIssueMetadataSyntax(issue), [
+    "depends on duplicates parent epic #123; remove it and keep only real blocking issues",
+  ]);
+});
+
 test("validateIssueMetadataSyntax reports malformed and self-inconsistent scheduling metadata", () => {
   const issue = createIssue({
     number: 55,

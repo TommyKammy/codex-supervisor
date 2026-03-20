@@ -55,6 +55,16 @@ export function validateIssueMetadataSyntax(issue: Pick<GitHubIssue, "number" | 
         errors.push("depends on references the issue itself");
       }
 
+      if (
+        metadata.parentIssueNumber !== null &&
+        metadata.parentIssueNumber !== issue.number &&
+        metadata.dependsOn.includes(metadata.parentIssueNumber)
+      ) {
+        errors.push(
+          `depends on duplicates parent epic #${metadata.parentIssueNumber}; remove it and keep only real blocking issues`,
+        );
+      }
+
       const repeatedDependencies = uniqueNumbers(
         parsedDependencyNumbers.filter(
           (dependencyNumber, index, dependencies) => dependencies.indexOf(dependencyNumber) !== index,

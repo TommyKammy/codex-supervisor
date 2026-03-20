@@ -59,3 +59,40 @@ Parallelizable: Later
   assert.match(report, /^metadata_errors=part of references the issue itself; depends on contains malformed references: #oops; depends on references the issue itself; depends on repeats #105; execution order must be N of M with 1 <= N <= M; parallelizable must be Yes or No$/m);
   assert.match(report, /^high_risk_blocking_ambiguity=none$/m);
 });
+
+test("issue lint warns when a child issue depends directly on its epic", async () => {
+  const { loadIssueLintReport } = await createIssueLintFixture();
+
+  const issue: GitHubIssue = {
+    number: 105,
+    title: "Child issue depends on epic",
+    body: `## Summary
+Issue lint should warn when a child issue depends directly on its epic.
+
+## Scope
+- keep the check local to the authored issue
+
+Part of: #900
+Depends on: #900, #901
+Execution order: 2 of 3
+Parallelizable: No
+
+## Acceptance criteria
+- issue lint warns about the epic dependency pattern
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`,
+    createdAt: "2026-03-19T00:00:00Z",
+    updatedAt: "2026-03-19T00:00:00Z",
+    url: "https://example.test/issues/105",
+    state: "OPEN",
+  };
+
+  const report = await loadIssueLintReport(issue);
+
+  assert.match(report, /^issue=#105$/m);
+  assert.match(
+    report,
+    /^metadata_errors=depends on duplicates parent epic #900; remove it and keep only real blocking issues$/m,
+  );
+});
