@@ -216,3 +216,48 @@ test("runOnceCyclePrelude publishes the active reconciliation phase and clears i
     null,
   ]);
 });
+
+test("runOnceCyclePrelude emits typed recovery events for transport adapters", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  const issues: GitHubIssue[] = [];
+  const recoveryEvents: RecoveryEvent[] = [
+    {
+      issueNumber: 77,
+      reason: "tracked_pr_head_advanced: resumed issue #77 after tracked PR advanced",
+      at: "2026-03-14T00:03:00Z",
+    },
+  ];
+  const emitted: unknown[] = [];
+
+  await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+    },
+    carryoverRecoveryEvents: [],
+    emitEvent: (event) => {
+      emitted.push(event);
+    },
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => issues,
+    reconcileTrackedMergedButOpenIssues: async () => recoveryEvents,
+    reconcileMergedIssueClosures: async () => [],
+    reconcileStaleFailedIssueStates: async () => {},
+    reconcileRecoverableBlockedIssueStates: async () => [],
+    reconcileParentEpicClosures: async () => {},
+    cleanupExpiredDoneWorkspaces: async () => [],
+  });
+
+  assert.deepEqual(emitted, [
+    {
+      type: "supervisor.recovery",
+      family: "recovery",
+      issueNumber: 77,
+      reason: "tracked_pr_head_advanced: resumed issue #77 after tracked PR advanced",
+      at: "2026-03-14T00:03:00Z",
+    },
+  ]);
+});

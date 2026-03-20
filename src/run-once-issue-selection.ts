@@ -25,6 +25,12 @@ import {
 } from "./core/types";
 import { nowIso, truncate } from "./core/utils";
 import { branchNameForIssue, ensureWorkspace, workspacePathForIssue } from "./core/workspace";
+import {
+  buildActiveIssueChangedEvent,
+  buildLoopSkippedEvent,
+  emitSupervisorEvent,
+  type SupervisorEventSink,
+} from "./supervisor/supervisor-events";
 
 export interface ReadyIssueContext {
   kind: "ready";
@@ -65,6 +71,7 @@ interface ResolveRunnableIssueContextArgs {
   acquireIssueLock?: (record: IssueRunRecord) => Promise<LockHandle>;
   ensureRecordJournalContext?: (record: IssueRunRecord) => Promise<IssueJournalContext>;
   syncIssueJournal?: (args: SyncIssueJournalArgs) => Promise<void>;
+  emitEvent?: SupervisorEventSink;
 }
 
 function createIssueRecord(config: SupervisorConfig, issueNumber: number): IssueRunRecord {
@@ -257,24 +264,44 @@ export async function resolveRunnableIssueContext(
     acquireIssueLock = (record) => defaultAcquireIssueLock(config, record),
     ensureRecordJournalContext = (record) => defaultEnsureRecordJournalContext(config, record),
     syncIssueJournal: syncIssueJournalImpl = syncIssueJournal,
+    emitEvent,
   } = args;
   const selectedRecord = await selectIssueRecord(github, config, stateStore, state, currentRecord);
   if (typeof selectedRecord === "string") {
+    emitSupervisorEvent(emitEvent, buildLoopSkippedEvent({
+      issueNumber: null,
+      reason: "no_matching_open_issue",
+      detail: selectedRecord,
+    }));
     return selectedRecord;
   }
 
   let { record, persistReservation } = selectedRecord;
   const issueLock = await acquireIssueLock(record);
   if (!issueLock.acquired) {
+    emitSupervisorEvent(emitEvent, buildLoopSkippedEvent({
+      issueNumber: record.issue_number,
+      reason: "issue_lock_unavailable",
+      detail: issueLock.reason ?? "issue lock unavailable",
+      at: record.updated_at,
+    }));
     return `Skipped issue #${record.issue_number}: ${issueLock.reason}.`;
   }
 
   let shouldReleaseIssueLock = true;
   try {
     if (persistReservation) {
+      const previousIssueNumber = state.activeIssueNumber;
       state.activeIssueNumber = record.issue_number;
       state.issues[String(record.issue_number)] = record;
       await stateStore.save(state);
+      emitSupervisorEvent(emitEvent, buildActiveIssueChangedEvent({
+        issueNumber: record.issue_number,
+        previousIssueNumber,
+        nextIssueNumber: record.issue_number,
+        reason: "reserved_for_cycle",
+        at: record.updated_at,
+      }));
       persistReservation = false;
     }
 

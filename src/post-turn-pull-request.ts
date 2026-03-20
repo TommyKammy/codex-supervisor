@@ -29,6 +29,11 @@ import {
   SupervisorStateFile,
 } from "./core/types";
 import { nowIso, truncate } from "./core/utils";
+import {
+  emitSupervisorEvent,
+  maybeBuildReviewWaitChangedEvent,
+  type SupervisorEventSink,
+} from "./supervisor/supervisor-events";
 
 export interface PostTurnPullRequestContext {
   state: SupervisorStateFile;
@@ -88,6 +93,7 @@ export interface HandlePostTurnPullRequestTransitionsArgs {
   manualReviewThreads: (config: SupervisorConfig, reviewThreads: ReviewThread[]) => ReviewThread[];
   mergeConflictDetected: (pr: GitHubPullRequest) => boolean;
   runLocalReviewImpl?: typeof runLocalReview;
+  emitEvent?: SupervisorEventSink;
   loadOpenPullRequestSnapshot?: (prNumber: number) => Promise<{
     pr: GitHubPullRequest;
     checks: PullRequestCheck[];
@@ -329,6 +335,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
   });
   state.issues[String(record.issue_number)] = record;
   await stateStore.save(state);
+  emitSupervisorEvent(args.emitEvent, maybeBuildReviewWaitChangedEvent(args.context.record, record, postReady.pr.number));
 
   return {
     record,

@@ -1,47 +1,50 @@
-# Issue #698: Service boundary: add a thin supervisor application service for CLI and future API adapters
+# Issue #699: Event model: emit typed supervisor lifecycle and recovery events for transport adapters
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/698
-- Branch: codex/issue-698
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/699
+- Branch: codex/issue-699
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: waiting_ci
-- Attempt count: 4 (implementation=2, repair=2)
-- Last head SHA: 2711bf59610eb237a6ea0d96779f12b4b70bc251
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 4bf709b3e4fb6e98aeea7aa57351fb62b2b92834
 - Blocked reason: none
-- Last failure signature: none
+- Last failure signature: PRRT_kwDORgvdZ851qhfW|PRRT_kwDORgvdZ851qhfY
 - Repeated failure signature count: 1
-- Updated at: 2026-03-20T08:24:22Z
+- Updated at: 2026-03-20T09:04:49.773Z
 
 ## Latest Codex Summary
-Committed and pushed `docs: remove local paths from issue journal` on `codex/issue-698`, then resolved the CodeRabbit review thread for PR [#703](https://github.com/TommyKammy/codex-supervisor/pull/703). As of 2026-03-20 08:24 UTC, `gh pr view` shows `build (ubuntu-latest)` and `build (macos-latest)` succeeded for commit `2711bf5`, while `CodeRabbit` is still pending.
+Added a typed transport event model in `src/supervisor/supervisor-events.ts` and threaded an optional `onEvent` sink through the existing supervisor/service seams. Recovery events now emit from prelude reconciliation, active-issue and loop-skip events from issue selection, review-wait changes from PR lifecycle sync, and run-lock blockage from `src/supervisor/supervisor.ts`. CLI output stays unchanged when no consumer is attached.
 
-Summary: Pushed the journal portability fix, resolved the matching review thread, and left PR #703 waiting only on the latest CodeRabbit run.
-State hint: waiting_ci
+Focused coverage was added for each representative event family, the requested supervisor/runtime regression tests passed, and `npm run build` passed after restoring local deps with `npm install`. Draft PR opened: `#704`.
+
+Summary: Implemented typed supervisor lifecycle/recovery transport events, added focused family coverage, pushed branch, and opened draft PR #704.
+State hint: draft_pr
 Blocked reason: none
-Tests: `rg -n '<home-prefix>' .codex-supervisor/issue-journal.md`; `git diff --check -- .codex-supervisor/issue-journal.md`; `gh pr view 703 --json isDraft,reviewDecision,mergeStateStatus,statusCheckRollup`
+Tests: `npx tsx --test src/run-once-cycle-prelude.test.ts src/run-once-issue-selection.test.ts src/post-turn-pull-request.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/cli/supervisor-runtime.test.ts`; `npm run build`
 Failure signature: none
-Next action: Monitor PR #703 until the latest CodeRabbit status completes, then address any new bot feedback only if it is concrete and valid.
+Next action: watch draft PR #704 CI/review feedback and address any follow-up failures or comments.
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 2 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/704#discussion_r2964653188
+- Details:
+  - `.codex-supervisor/issue-journal.md`: sanitize machine-specific absolute paths from the tracked summary and command notes so the journal stays portable.
+  - `src/post-turn-pull-request.ts`: harden event emission so transport adapter sink failures are logged and swallowed after state persistence instead of aborting the transition.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the narrowest seam for issue #698 is to keep `Supervisor` as the core implementation, then add a thin `SupervisorService` wrapper that exposes transport-friendly query DTOs plus run-once operations so CLI and future adapters do not depend on `Supervisor` directly.
-- What changed: added `src/supervisor/supervisor-service.ts` with `SupervisorService`, `SupervisorLock`, and `createSupervisorService(...)`; the wrapper delegates to existing `Supervisor` report/query methods and `runOnce(...)`. Updated `src/cli/entrypoint.ts` to create and pass the service boundary instead of `Supervisor.fromConfig(...)` directly. Updated `src/cli/supervisor-runtime.ts` to call `queryStatus`, `queryExplain`, `queryIssueLint`, `queryDoctor`, and `runOnce` on the service while keeping lock acquisition, signal handling, sleep, and loop orchestration in the CLI runtime. Added focused coverage in `src/cli/entrypoint.test.ts`, `src/cli/supervisor-runtime.test.ts`, and `src/supervisor/supervisor.test.ts` for the new boundary and export surface.
+- Hypothesis: the lowest-risk review fix is to harden the shared supervisor event sink boundary so all transport adapters fail open, then cover the post-ready review-wait path with a regression that proves state persistence still completes.
+- What changed: updated `src/supervisor/supervisor-events.ts` so `emitSupervisorEvent(...)` returns early when no sink is attached, catches sink exceptions, and logs a contextual warning keyed by event type plus issue/PR or lock context instead of rethrowing. Added `src/post-turn-pull-request.test.ts` coverage that forces the review-wait event sink to throw after `stateStore.save(...)` and verifies the transition still succeeds. Sanitized this journal to remove machine-specific absolute paths from the tracked summary and command history.
 - Current blocker: none
-- Next exact step: watch PR #703 until the latest CodeRabbit run settles, then only reopen code changes if a new concrete review or CI failure appears.
-- Verification gap: none against the issue acceptance criteria in this worktree; `npx tsx --test src/cli/supervisor-runtime.test.ts src/supervisor/supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build` passed after `npm install` restored local `tsc`.
-- Files touched: `src/cli/entrypoint.ts`, `src/cli/entrypoint.test.ts`, `src/cli/supervisor-runtime.ts`, `src/cli/supervisor-runtime.test.ts`, `src/supervisor/supervisor-service.ts`, `src/supervisor/index.ts`, `src/supervisor/supervisor.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would put the CLI back on a transport-coupled path where adapters construct `Supervisor` directly instead of reusing an explicit application-service seam.
-- Last focused command: `gh pr view 703 --json isDraft,reviewDecision,mergeStateStatus,statusCheckRollup`
-- Last focused commands: `sed -n '1,220p' <memory-root>/issue-698/AGENTS.generated.md`; `sed -n '1,220p' <memory-root>/issue-698/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `nl -ba .codex-supervisor/issue-journal.md | sed -n '1,120p'`; `git status --short`; `git branch --show-current`; `git rev-parse --short HEAD`; `git diff -- .codex-supervisor/issue-journal.md`; `rg -n '<home-prefix>' .codex-supervisor/issue-journal.md`; `git diff --check -- .codex-supervisor/issue-journal.md`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `git add .codex-supervisor/issue-journal.md`; `git commit -m "docs: remove local paths from issue journal"`; `git push origin codex/issue-698`; `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ851qIHJ`; `gh pr status`; `gh pr view 703 --json isDraft,reviewDecision,mergeStateStatus,statusCheckRollup`
+- Next exact step: stage the local review-fix changes, commit them on `codex/issue-699`, push the branch, and update PR #704 for the remaining review thread state.
+- Verification gap: none found against the issue acceptance criteria after focused event coverage and the requested supervisor/runtime regression suite passed.
+- Files touched: `src/supervisor/supervisor-events.ts`, `src/post-turn-pull-request.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would make adapter sink failures abort supervisor transitions after state persistence and would reintroduce machine-specific path leakage in the tracked journal.
+- Last focused command: `npm run build`
+- Last focused commands: `sed -n '1,220p' $CODEX_MEMORY_ROOT/TommyKammy-codex-supervisor/issue-699/AGENTS.generated.md`; `sed -n '1,220p' $CODEX_MEMORY_ROOT/TommyKammy-codex-supervisor/issue-699/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `rg -n "emitSupervisorEvent|maybeBuildReviewWaitChangedEvent|emitEvent|logger|console" src/post-turn-pull-request.ts src/supervisor -g'*.ts'`; `sed -n '300,380p' src/post-turn-pull-request.ts`; `sed -n '1,240p' src/supervisor/supervisor-events.ts`; `rg -n "<absolute-unix-home>|<absolute-macos-home>|<windows-drive-prefix>" .codex-supervisor/issue-journal.md`; `sed -n '1,260p' src/post-turn-pull-request.test.ts`; `npx tsx --test src/run-once-cycle-prelude.test.ts src/run-once-issue-selection.test.ts src/post-turn-pull-request.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`
 ### Scratchpad
-- 2026-03-20 (JST): Committed `docs: remove local paths from issue journal`, pushed `2711bf5` to `origin/codex/issue-698`, and resolved CodeRabbit thread `PRRT_kwDORgvdZ851qIHJ` through the GitHub GraphQL API. As of 2026-03-20 08:24 UTC, GitHub reports both build jobs passed on the new commit and only the latest `CodeRabbit` status is still pending.
-- 2026-03-20 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851qIHJ` locally by replacing checked-in workstation-specific paths in `.codex-supervisor/issue-journal.md` with repo-relative links and path-neutral command text. Focused verification will be a journal diff/readback plus a search confirming no remaining home-prefixed workstation paths in the tracked journal.
-- 2026-03-20 (JST): Pushed `codex/issue-698` to `origin` and opened draft PR #703 for the service-boundary slice. `gh pr status` shows the branch-associated PR with checks pending. No additional code changes were needed in this turn.
-- 2026-03-19 (JST): Reproduced issue #559 with a focused `replay-corpus-promote` regression that expected advisory hints for `stale-head-prevents-merge` but only saw the existing explicit-case-id guidance and suggestions. Fixed it by adding deterministic `deriveReplayCorpusPromotionWorthinessHints(...)` coverage for stale-head safety, provider waits, and retry escalation, then surfacing those hints in both CLI suggestion mode and successful promotion summaries. Focused verification passed with `npx tsx --test src/index.test.ts --test-name-pattern "replay-corpus-promote"`, `npx tsx --test src/supervisor/replay-corpus.test.ts --test-name-pattern "PromotionWorthinessHints|promoteCapturedReplaySnapshot|checked-in safety case bundles|runReplayCorpus replays the checked-in PR lifecycle safety cases without mismatches"`, and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Reproduced issue #558 with a tightened CLI promotion regression that failed because stdout only contained `Promoted replay corpus case ...`; fixed it by printing case path, compact expected outcome, and conditional volatile-field normalization notes after promotion. Focused verification passed with `npx tsx --test src/index.test.ts`, `npx tsx --test src/supervisor/replay-corpus.test.ts`, and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851N_xt` by guarding replay corpus case-id suggestion derivation in `src/index.ts`; focused verification passed with `npx tsx --test src/index.test.ts` and `npm run build`.
 - 2026-03-19 (JST): Added focused parser coverage for `replay-corpus-promote` plus an end-to-end CLI promotion regression in `src/index.test.ts`; the initial missing behavior was that the CLI had no dedicated promotion entry path at all.

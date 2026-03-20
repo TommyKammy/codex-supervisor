@@ -382,6 +382,45 @@ test("acquireSupervisorLock preserves the original denial when reconciliation ph
   }
 });
 
+test("acquireSupervisorLock emits typed run-lock blockage events", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const emitted: unknown[] = [];
+  const supervisor = new Supervisor(fixture.config, {
+    onEvent: (event) => {
+      emitted.push(event);
+    },
+  });
+  await writeCurrentReconciliationPhase(fixture.config, "tracked_merged_but_open_issues");
+
+  const heldLock = await supervisor.acquireSupervisorLock("run-once");
+  assert.equal(heldLock.acquired, true);
+
+  try {
+    const blockedLock = await supervisor.acquireSupervisorLock("run-once");
+    assert.equal(blockedLock.acquired, false);
+  } finally {
+    await heldLock.release();
+    await clearCurrentReconciliationPhase(fixture.config);
+  }
+
+  assert.equal(emitted.length, 1);
+  assert.deepEqual(
+    { ...((emitted[0] ?? {}) as Record<string, unknown>), at: "normalized" },
+    {
+      type: "supervisor.run_lock.blocked",
+      family: "run_lock",
+      command: "run-once",
+      reason: emitted[0] && typeof emitted[0] === "object" ? (emitted[0] as { reason?: unknown }).reason : undefined,
+      reconciliationPhase: "tracked_merged_but_open_issues",
+      at: "normalized",
+    },
+  );
+});
+
 test("status --why explains why the current runnable issue was selected", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {

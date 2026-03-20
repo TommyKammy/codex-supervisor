@@ -2,6 +2,7 @@ import type { CliOptions, SupervisorConfig } from "../core/types";
 import type { DoctorDiagnostics } from "../doctor";
 import type { SupervisorExplainDto } from "./supervisor-selection-status";
 import type { SupervisorStatusDto } from "./supervisor-status-report";
+import type { SupervisorEventSink } from "./supervisor-events";
 import { Supervisor } from "./supervisor";
 
 export interface SupervisorLock {
@@ -19,6 +20,10 @@ export interface SupervisorService {
   queryExplain: (issueNumber: number) => Promise<SupervisorExplainDto>;
   queryIssueLint: (issueNumber: number) => Promise<string[]>;
   queryDoctor: () => Promise<DoctorDiagnostics>;
+}
+
+export interface CreateSupervisorServiceOptions {
+  onEvent?: SupervisorEventSink;
 }
 
 class SupervisorApplicationService implements SupervisorService {
@@ -58,6 +63,9 @@ class SupervisorApplicationService implements SupervisorService {
   }
 }
 
-export function createSupervisorService(configPath?: string): SupervisorService {
-  return new SupervisorApplicationService(Supervisor.fromConfig(configPath));
+export function createSupervisorService(
+  configPath?: string,
+  options: CreateSupervisorServiceOptions = {},
+): SupervisorService {
+  return new SupervisorApplicationService(Supervisor.fromConfig(configPath, options));
 }
