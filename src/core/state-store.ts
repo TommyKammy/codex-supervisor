@@ -198,6 +198,10 @@ function buildJsonQuarantinePath(filePath: string): string {
   return `${filePath}.corrupt.${nowIso().replace(/[:.]/g, "-")}`;
 }
 
+function buildJsonQuarantineMarkerTempPath(filePath: string): string {
+  return `${filePath}.quarantine.tmp`;
+}
+
 export class StateStore {
   constructor(
     private readonly stateFilePath: string,
@@ -341,17 +345,9 @@ export class StateStore {
   }
 
   private async loadFromJson(filePath: string): Promise<SupervisorStateFile> {
+    let raw: string;
     try {
-      const raw = await fs.readFile(filePath, "utf8");
-      try {
-        return normalizeStateForLoad(parseJson<SupervisorStateFile>(raw, filePath));
-      } catch (error) {
-        if (!(error instanceof Error) || !(error.cause instanceof SyntaxError)) {
-          throw error;
-        }
-
-        return this.quarantineCorruptJsonState(filePath, error);
-      }
+      raw = await fs.readFile(filePath, "utf8");
     } catch (error) {
       const maybeErr = error as NodeJS.ErrnoException;
       if (maybeErr.code === "ENOENT") {
@@ -360,6 +356,16 @@ export class StateStore {
 
       throw error;
     }
+
+    try {
+      return normalizeStateForLoad(parseJson<SupervisorStateFile>(raw, filePath));
+    } catch (error) {
+      if (!(error instanceof Error) || !(error.cause instanceof SyntaxError)) {
+        throw error;
+      }
+
+      return this.quarantineCorruptJsonState(filePath, error);
+    }
   }
 
   private async quarantineCorruptJsonState(
@@ -367,8 +373,8 @@ export class StateStore {
     error: Error,
   ): Promise<SupervisorStateFile> {
     const quarantinedFile = buildJsonQuarantinePath(filePath);
-    await fs.rename(filePath, quarantinedFile);
-
+    const markerTempPath = buildJsonQuarantineMarkerTempPath(filePath);
+    const quarantinedAt = nowIso();
     const message = `${error.message}. Quarantined corrupt JSON state at ${quarantinedFile}; recovery marker written to ${filePath}.`;
     const markerState = withLoadFindings({
       ...this.emptyState(),
@@ -376,7 +382,7 @@ export class StateStore {
         kind: "parse_error",
         marker_file: filePath,
         quarantined_file: quarantinedFile,
-        quarantined_at: nowIso(),
+        quarantined_at: quarantinedAt,
       },
     }, [
       {
@@ -389,7 +395,37 @@ export class StateStore {
       },
     ]);
 
-    await writeJsonAtomic(filePath, markerState);
+    try {
+      await fs.writeFile(markerTempPath, `${JSON.stringify(markerState, null, 2)}\n`, "utf8");
+    } catch (writeError) {
+      await fs.rm(markerTempPath, { force: true }).catch(() => undefined);
+      throw writeError;
+    }
+
+    try {
+      await fs.rename(filePath, quarantinedFile);
+    } catch (quarantineError) {
+      await fs.rm(markerTempPath, { force: true }).catch(() => undefined);
+      throw quarantineError;
+    }
+
+    try {
+      await fs.rename(markerTempPath, filePath);
+    } catch (installError) {
+      await fs.rm(markerTempPath, { force: true }).catch(() => undefined);
+
+      try {
+        await fs.rename(quarantinedFile, filePath);
+      } catch (restoreError) {
+        const installMessage = installError instanceof Error ? installError.message : String(installError);
+        throw new Error(
+          `Failed to install JSON quarantine marker at ${filePath} after moving corrupt state to ${quarantinedFile}: ${installMessage}. Restore attempt also failed.`,
+          { cause: restoreError instanceof Error ? restoreError : undefined },
+        );
+      }
+
+      throw installError;
+    }
     console.warn(message);
 
     return markerState;

@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -183,6 +183,70 @@ test("StateStore json load quarantines corrupt state and leaves a deterministic 
 
     const reloaded = await store.load();
     assert.deepEqual(reloaded, loaded);
+  });
+});
+
+test("StateStore json load rethrows quarantine ENOENT after the initial read succeeds", async (t) => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.json");
+    const corruptPayload = "{not-json}\n";
+    await fs.writeFile(statePath, corruptPayload, "utf8");
+
+    const store = new StateStore(statePath, { backend: "json" });
+    const originalRename = fs.rename.bind(fs);
+    const renameMock = mock.method(
+      fs,
+      "rename",
+      async (...args: Parameters<typeof fs.rename>) => {
+        const [source] = args;
+        if (String(source) === statePath) {
+          const error = new Error("state.json disappeared during quarantine") as NodeJS.ErrnoException;
+          error.code = "ENOENT";
+          throw error;
+        }
+
+        return originalRename(...args);
+      },
+    );
+    t.after(() => {
+      renameMock.mock.restore();
+    });
+
+    await assert.rejects(() => store.load(), { code: "ENOENT" });
+    assert.equal(await fs.readFile(statePath, "utf8"), corruptPayload);
+  });
+});
+
+test("StateStore json quarantine restores the corrupt file when marker installation fails", async (t) => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.json");
+    const markerTempPath = `${statePath}.quarantine.tmp`;
+    const corruptPayload = "{not-json}\n";
+    await fs.writeFile(statePath, corruptPayload, "utf8");
+
+    const store = new StateStore(statePath, { backend: "json" });
+    const originalRename = fs.rename.bind(fs);
+    const renameMock = mock.method(
+      fs,
+      "rename",
+      async (...args: Parameters<typeof fs.rename>) => {
+        const [source, destination] = args;
+        if (String(source) === markerTempPath && String(destination) === statePath) {
+          const error = new Error("device busy") as NodeJS.ErrnoException;
+          error.code = "EBUSY";
+          throw error;
+        }
+
+        return originalRename(...args);
+      },
+    );
+    t.after(() => {
+      renameMock.mock.restore();
+    });
+
+    await assert.rejects(() => store.load(), { code: "EBUSY" });
+    assert.equal(await fs.readFile(statePath, "utf8"), corruptPayload);
+    assert.deepEqual((await fs.readdir(dir)).sort(), ["state.json"]);
   });
 });
 
