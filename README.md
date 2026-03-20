@@ -68,6 +68,16 @@ Not a fit:
 
 Requirements: `gh auth status` must succeed, `codex` CLI must be installed, and the managed repository should already have branch protection and CI in place.
 
+## Provider Profiles
+
+Choose the review provider profile that matches how PR feedback arrives in your repo, then keep any provider-side setup aligned with that choice.
+
+- Copilot profile: [supervisor.config.copilot.json](./supervisor.config.copilot.json)
+- Codex Connector profile: [supervisor.config.codex.json](./supervisor.config.codex.json)
+- CodeRabbit profile: [supervisor.config.coderabbit.json](./supervisor.config.coderabbit.json)
+
+Each profile is a starting point. Copy the review provider profile you want, then adjust the rest of `supervisor.config.json` for your repo.
+
 ## Docs Map
 
 - [AI agent handoff](./docs/agent-instructions.md): bootstrap read order, first-run checks, and escalation rules for repo-entering AI agents

@@ -1,39 +1,37 @@
-# Issue #696: Status API prep: expose typed supervisor status and explain DTOs before CLI rendering
+# Issue #697: Bootstrap API prep: expose structured config and host-readiness summary
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/696
-- Branch: codex/issue-696
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/697
+- Branch: codex/issue-697
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: draft_pr
+- Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: f99809c71b669d8ad6772ef86c8c76ebbb5638ab
+- Last head SHA: 3f8531c1130e2f3804eddbb703dfc00df9e3c5fa
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-20T07:09:13.000Z
+- Updated at: 2026-03-20T07:28:10.945Z
 
 ## Latest Codex Summary
-- Reproduced the missing transport seam with focused tests that failed on `supervisor.statusReport()` and `supervisor.explainReport()` not existing. Implemented additive DTO-first query methods for `status`, `explain`, and `doctor`, kept CLI output on render helpers, verified the focused supervisor/doctor tests plus `npm run build`, committed the change as `f99809c` (`Add supervisor status and explain DTO reports`), pushed `codex/issue-696`, and opened draft PR #701 (`https://github.com/TommyKammy/codex-supervisor/pull/701`).
+- Added structured bootstrap/config DTOs so transports can inspect resolved config state, missing required fields, repo suitability, and doctor checks without parsing CLI text. Focused tests and `npm run build` pass in this worktree after restoring local dev dependencies with `npm install`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the safest fix is to expose typed transport DTOs one layer above the existing line renderers, not to redesign the status/explain computation itself. `doctor` already proves that pattern, so `status` and `explain` should follow it and keep existing CLI strings as a pure render step.
-- What changed: added focused DTO assertions in `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-diagnostics-explain.test.ts`, and the existing `doctor` diagnostic-path test. Introduced `SupervisorExplainDto` plus `buildIssueExplainDto(...)` and `renderIssueExplainDto(...)` in `src/supervisor/supervisor-selection-issue-explain.ts`, added `SupervisorStatusDto` plus `renderSupervisorStatusDto(...)` in `src/supervisor/supervisor-status-report.ts`, and routed `Supervisor.status()`, `Supervisor.explain()`, and `Supervisor.doctor()` through new structured `statusReport()`, `explainReport()`, and `doctorReport()` methods. Re-exported the new explain helpers from `src/supervisor/supervisor-selection-status.ts` and `src/supervisor/index.ts`.
+- Hypothesis: the narrowest seam for issue #697 is to keep `loadConfig(...)` and `diagnoseSupervisorHost(...)` as the source of truth, then wrap them in transport-friendly summaries instead of teaching future adapters to parse thrown errors or rendered doctor lines.
+- What changed: added `ConfigLoadSummary` plus `loadConfigSummary(...)` in `src/core/config.ts` so callers can inspect resolved config, missing required fields, and invalid-field failures without exceptions. Added `BootstrapReadinessSummary` plus `diagnoseBootstrapReadiness(...)` in `src/doctor.ts` so callers can inspect config readiness, repo suitability, and doctor checks in one JSON-friendly object while leaving `renderDoctorReport(...)` untouched. Added focused coverage in `src/config.test.ts` and `src/doctor.test.ts` for missing required config and fully ready bootstrap cases. Restored the README provider-profiles section so the required `src/config.test.ts` target passes again.
 - Current blocker: none
-- Next exact step: monitor draft PR #701 for CI and review feedback, then address any follow-up without changing the new DTO/renderer seam semantics.
-- Verification gap: none against the current acceptance criteria; the focused supervisor/doctor test set passed and `npm run build` passed after `npm install` restored `tsc`.
-- Files touched: `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/supervisor/supervisor-status-report.ts`, `src/supervisor/supervisor-selection-status.ts`, `src/supervisor/index.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-diagnostics-explain.test.ts`, `src/supervisor/supervisor-selection-status.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would force future transports back to parsing rendered CLI strings for supervisor `status` and `explain`, undoing the structured seam that this issue is meant to establish.
+- Next exact step: commit this structured config/bootstrap checkpoint, then open or update the draft PR so CI can validate the new DTO seam and the restored README/test alignment.
+- Verification gap: none against the current acceptance criteria in this worktree; `npx tsx --test src/config.test.ts src/doctor.test.ts` and `npm run build` passed after `npm install` restored `tsc`.
+- Files touched: `src/core/config.ts`, `src/config.test.ts`, `src/doctor.ts`, `src/doctor.test.ts`, `README.md`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would remove the structured config/bootstrap summary and push future WebUI/API adapters back toward exception parsing and doctor text scraping.
 - Last focused command: `npm run build`
-- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-696/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-696/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `rg -n "buildIssueExplainSummary|supervisor\\.status\\(|diagnoseSupervisorHost|renderDoctorReport|status\\(" src/index.ts src/cli src/supervisor src/doctor.ts`; `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts`; `npx tsx --test src/supervisor/supervisor-status-model.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/doctor.test.ts`; `npm install`; `npm run build`
+- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-697/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-697/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short`; `git branch --show-current`; `rg -n "config|bootstrap|readiness|doctorReport|renderDoctorReport|loadConfig|structured" src`; `sed -n '1,360p' src/core/config.ts`; `sed -n '1,320p' src/doctor.ts`; `sed -n '1,320p' src/config.test.ts`; `sed -n '1,320p' src/doctor.test.ts`; `npx tsx --test src/config.test.ts src/doctor.test.ts`; `npm install`; `npm run build`
 ### Scratchpad
-- 2026-03-20 (JST): Committed the DTO-first supervisor status/explain/doctor query-path work as `f99809c` (`Add supervisor status and explain DTO reports`), pushed `codex/issue-696`, and opened draft PR #701 (`https://github.com/TommyKammy/codex-supervisor/pull/701`).
-- 2026-03-20 (JST): Reproduced #696 with focused tests that failed on missing `Supervisor.statusReport()` and `Supervisor.explainReport()` methods, then implemented DTO-first status/explain/doctor query methods and render helpers. Focused verification passed with `npx tsx --test src/supervisor/supervisor-status-model.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/doctor.test.ts`, and `npm run build` passed after restoring local dependencies with `npm install`.
-- 2026-03-19 (JST): Pushed `codex/issue-559` and opened draft PR #582 (`https://github.com/TommyKammy/codex-supervisor/pull/582`) after the focused hinting slice passed local verification.
+- 2026-03-20 (JST): Reproduced issue #697 with new focused coverage for `loadConfigSummary(...)` and `diagnoseBootstrapReadiness(...)`; the initial failure was missing exported helpers plus a pre-existing README/provider-profile assertion drift in `src/config.test.ts`. Implemented structured config/bootstrap DTOs on top of the existing loaders/checks, restored the README provider profile section, and verified with `npx tsx --test src/config.test.ts src/doctor.test.ts` and `npm run build` after `npm install`.
 - 2026-03-19 (JST): Reproduced issue #559 with a focused `replay-corpus-promote` regression that expected advisory hints for `stale-head-prevents-merge` but only saw the existing explicit-case-id guidance and suggestions. Fixed it by adding deterministic `deriveReplayCorpusPromotionWorthinessHints(...)` coverage for stale-head safety, provider waits, and retry escalation, then surfacing those hints in both CLI suggestion mode and successful promotion summaries. Focused verification passed with `npx tsx --test src/index.test.ts --test-name-pattern "replay-corpus-promote"`, `npx tsx --test src/supervisor/replay-corpus.test.ts --test-name-pattern "PromotionWorthinessHints|promoteCapturedReplaySnapshot|checked-in safety case bundles|runReplayCorpus replays the checked-in PR lifecycle safety cases without mismatches"`, and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Reproduced issue #558 with a tightened CLI promotion regression that failed because stdout only contained `Promoted replay corpus case ...`; fixed it by printing case path, compact expected outcome, and conditional volatile-field normalization notes after promotion. Focused verification passed with `npx tsx --test src/index.test.ts`, `npx tsx --test src/supervisor/replay-corpus.test.ts`, and `npm run build` after restoring local dev dependencies via `npm install`.
 - 2026-03-19 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851N_xt` by guarding replay corpus case-id suggestion derivation in `src/index.ts`; focused verification passed with `npx tsx --test src/index.test.ts` and `npm run build`.

@@ -3,6 +3,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { GitHubClient } from "./github";
 import { runCommand } from "./core/command";
+import { type ConfigLoadSummary, loadConfigSummary } from "./core/config";
 import { parseJson } from "./core/utils";
 import { type IssueRunRecord, type StateLoadFinding, type SupervisorConfig, type SupervisorStateFile } from "./core/types";
 
@@ -20,8 +21,31 @@ export interface DoctorDiagnostics {
   checks: DoctorCheck[];
 }
 
+export interface BootstrapRepoSummary {
+  status: DoctorCheckStatus | "not_ready";
+  summary: string;
+  details: string[];
+}
+
+export interface BootstrapReadinessSummary {
+  config: ConfigLoadSummary;
+  readiness: {
+    ready: boolean;
+    overallStatus: DoctorCheckStatus | "not_ready";
+    missingRequiredFields: string[];
+    repo: BootstrapRepoSummary;
+    checks: DoctorCheck[];
+  };
+}
+
 interface DiagnoseSupervisorHostArgs {
   config: SupervisorConfig;
+  authStatus?: () => Promise<{ ok: boolean; message: string | null }>;
+  loadState?: () => Promise<SupervisorStateFile>;
+}
+
+interface DiagnoseBootstrapReadinessArgs {
+  configPath?: string;
   authStatus?: () => Promise<{ ok: boolean; message: string | null }>;
   loadState?: () => Promise<SupervisorStateFile>;
 }
@@ -434,6 +458,61 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
   return {
     overallStatus: overallStatusForChecks(checks),
     checks,
+  };
+}
+
+export async function diagnoseBootstrapReadiness(
+  args: DiagnoseBootstrapReadinessArgs = {},
+): Promise<BootstrapReadinessSummary> {
+  const config = loadConfigSummary(args.configPath);
+  if (config.status !== "ready" || config.config === null) {
+    return {
+      config,
+      readiness: {
+        ready: false,
+        overallStatus: "not_ready",
+        missingRequiredFields: config.missingRequiredFields,
+        repo: {
+          status: "not_ready",
+          summary: config.status === "missing_config"
+            ? "Supervisor config file is missing."
+            : "Supervisor config is not valid.",
+          details: config.error ? [config.error] : [],
+        },
+        checks: [],
+      },
+    };
+  }
+
+  const diagnostics = await diagnoseSupervisorHost({
+    config: config.config,
+    authStatus: args.authStatus,
+    loadState: args.loadState,
+  });
+  const repoCheck = diagnostics.checks.find((check) => check.name === "worktrees");
+
+  return {
+    config,
+    readiness: {
+      ready: diagnostics.overallStatus === "pass",
+      overallStatus: diagnostics.overallStatus,
+      missingRequiredFields: [],
+      repo: repoCheck
+        ? {
+          status: repoCheck.status,
+          summary: repoCheck.summary,
+          details: [...repoCheck.details],
+        }
+        : {
+          status: "fail",
+          summary: "Repository suitability check was not produced.",
+          details: [],
+        },
+      checks: diagnostics.checks.map((check) => ({
+        ...check,
+        details: [...check.details],
+      })),
+    },
   };
 }
 
