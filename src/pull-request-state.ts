@@ -310,6 +310,34 @@ function shouldWaitForConfiguredBotDraftSkipRearm(
   return Date.now() < reviewWaitStartedAtMs + initialGraceWaitMs;
 }
 
+function shouldWaitForConfiguredBotLatestHeadRearm(
+  config: SupervisorConfig,
+  record: Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha">,
+  pr: GitHubPullRequest,
+): boolean {
+  const policy = reviewProviderWaitPolicyFromConfig(config);
+  if (!policy.shouldApplyCurrentHeadQuietPeriod || pr.isDraft || !record.review_wait_started_at) {
+    return false;
+  }
+
+  if (record.review_wait_head_sha !== pr.headRefOid) {
+    return false;
+  }
+
+  const actionableSignalAt = latestConfiguredBotActionableSignalAt(pr);
+  if (!actionableSignalAt) {
+    return false;
+  }
+
+  const reviewWaitStartedAtMs = Date.parse(record.review_wait_started_at);
+  const actionableSignalAtMs = Date.parse(actionableSignalAt);
+  if (Number.isNaN(reviewWaitStartedAtMs) || Number.isNaN(actionableSignalAtMs)) {
+    return false;
+  }
+
+  return actionableSignalAtMs < reviewWaitStartedAtMs;
+}
+
 export function buildCopilotReviewTimeoutFailureContext(
   config: SupervisorConfig,
   record: IssueRunRecord,
@@ -571,6 +599,10 @@ export function inferStateFromPullRequest(
   const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
   if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
     return "blocked";
+  }
+
+  if (shouldWaitForConfiguredBotLatestHeadRearm(config, record, pr)) {
+    return "waiting_ci";
   }
 
   if (shouldWaitForConfiguredBotDraftSkipRearm(config, record, pr)) {
