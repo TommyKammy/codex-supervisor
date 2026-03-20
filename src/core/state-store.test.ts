@@ -145,6 +145,47 @@ test("StateStore json load captures structured corruption findings for invalid J
   });
 });
 
+test("StateStore json load quarantines corrupt state and leaves a deterministic recovery marker", async () => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.json");
+    const corruptPayload = "{not-json}\n";
+    await fs.writeFile(statePath, corruptPayload, "utf8");
+
+    const store = new StateStore(statePath, { backend: "json" });
+    const loaded = await store.load();
+
+    assert.equal(loaded.activeIssueNumber, null);
+    assert.deepEqual(loaded.issues, {});
+    assert.equal(loaded.load_findings?.length, 1);
+
+    const markerRaw = await fs.readFile(statePath, "utf8");
+    const marker = JSON.parse(markerRaw) as {
+      activeIssueNumber: number | null;
+      issues: Record<string, unknown>;
+      load_findings?: Array<{ location: string; message: string }>;
+      json_state_quarantine?: { marker_file: string; quarantined_file: string; kind: string };
+    };
+
+    assert.equal(marker.activeIssueNumber, null);
+    assert.deepEqual(marker.issues, {});
+    assert.equal(marker.load_findings?.length, 1);
+    assert.equal(marker.json_state_quarantine?.marker_file, statePath);
+    assert.equal(marker.json_state_quarantine?.kind, "parse_error");
+    assert.match(marker.json_state_quarantine?.quarantined_file ?? "", /state\.json\.corrupt\./);
+    assert.match(marker.load_findings?.[0]?.message ?? "", /quarantined corrupt json state/i);
+    assert.match(
+      marker.load_findings?.[0]?.message ?? "",
+      new RegExp(marker.json_state_quarantine?.quarantined_file?.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") ?? ""),
+    );
+
+    const quarantinedRaw = await fs.readFile(marker.json_state_quarantine?.quarantined_file ?? "", "utf8");
+    assert.equal(quarantinedRaw, corruptPayload);
+
+    const reloaded = await store.load();
+    assert.deepEqual(reloaded, loaded);
+  });
+});
+
 test("StateStore sqlite load captures structured corruption findings for malformed issue rows", async () => {
   await withTempDir(async (dir) => {
     const statePath = path.join(dir, "state.sqlite");

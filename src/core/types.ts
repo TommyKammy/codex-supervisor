@@ -143,6 +143,13 @@ export interface StateLoadFinding {
   message: string;
 }
 
+export interface JsonStateQuarantine {
+  kind: "parse_error";
+  marker_file: string;
+  quarantined_file: string;
+  quarantined_at: string;
+}
+
 export interface IssueRunRecord {
   issue_number: number;
   state: RunState;
@@ -202,6 +209,7 @@ export interface SupervisorStateFile {
   activeIssueNumber: number | null;
   issues: Record<string, IssueRunRecord>;
   load_findings?: StateLoadFinding[];
+  json_state_quarantine?: JsonStateQuarantine;
 }
 
 export interface GitHubLabel {

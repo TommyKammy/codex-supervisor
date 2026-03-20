@@ -1,49 +1,37 @@
-# Issue #715: JSON corruption diagnostics: surface hard corruption findings in doctor and status
+# Issue #716: JSON corruption quarantine: preserve corrupt state instead of silently falling back to empty state
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/715
-- Branch: codex/issue-715
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/716
+- Branch: codex/issue-716
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 0e433f9b856d4232ec10ce5542165123aa52496e
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 5778e7aa79e04cb3478e50cdd1d336e87af71d43
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ851s71w
-- Repeated failure signature count: 1
-- Updated at: 2026-03-20T12:28:27.705Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-20T12:50:41.388Z
 
 ## Latest Codex Summary
-Draft PR [#741](https://github.com/TommyKammy/codex-supervisor/pull/741) picked up a valid CodeRabbit review on the new corruption-status regression: [`src/supervisor/supervisor-diagnostics-status-selection.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-715/src/supervisor/supervisor-diagnostics-status-selection.test.ts) created a temp supervisor fixture without registering teardown. I added the missing `t.after(...)` cleanup immediately after fixture creation, matching the existing cleanup pattern already used by the neighboring doctor test.
-
-Focused verification passed again with `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`, and `npm run build` also passed after the review fix.
-
-Summary: Applied the review-driven fixture cleanup fix for the corruption-status regression and revalidated with the focused test plus `npm run build`.
-State hint: addressing_review
-Blocked reason: none
-Tests: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`
-Failure signature: PRRT_kwDORgvdZ851s71w
-Next action: commit and push the cleanup fix to PR #741, then clear or monitor the review thread
+- None yet.
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/741#discussion_r2965473485
-- Details:
-  - src/supervisor/supervisor-diagnostics-status-selection.test.ts:78 _⚠️ Potential issue_ | _🟡 Minor_ **Missing test cleanup for temporary fixture.** This test creates a temporary fixture via `createSupervisorFixture()` but does not register a cleanup callback with `t.after()`, unlike the similar test at lines 18-45. This may leave temporary directories on the filesystem after test runs. <details> <summary>🧹 Proposed fix to add cleanup</summary> ```diff -test("status surfaces corrupted JSON state as an explicit hard diagnostic", async () => { +test("status surfaces corrupted JSON state as an explicit hard diagnostic", async (t) => { const fixture = await createSupervisorFixture(); + t.after(async () => { + await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true }); + }); await fs.writeFile(fixture.stateFile, "{not-json}\n", "utf8"); ``` </details> <!-- suggestion_start --> <details> <summary>📝 Committable suggestion</summary> > ‼️ **IMPORTANT** > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements. ```suggestion test("status surfaces corrupted JSON state as an explicit hard diagnostic", async (t) => { const fixture = await createSupervisorFixture(); t.after(async () => { await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true }); }); await fs.writeFile(fixture.stateFile, "{not-json}\n", "utf8"); const supervisor = new Supervisor(fixture.config); (supervisor as unknown as { github: Record<string, unknown> }).github = { listCandidateIssues: async () => [], getPullRequestIfExists: async () => null, getChecks: async () => [], getUnresolvedReviewThreads: async () => [], }; const report = await supervisor.statusReport(); assert.match( report.detailedStatusLines.join("\n"), /state_diagnostic severity=hard backend=json summary=corrupted_json_state_forced_empty_fallback_not_missing_bootstrap findings=1 location=.*state\.json/, ); assert.match( report.detailedStatusLines.join("\n"), /state_load_finding backend=json scope=state_file issue_number=none location=.*state\.json message=/, ); assert.equal(report.warning, null); const status = await supervisor.status(); assert.match( status, /state_diagnostic severity=hard backend=json summary=corrupted_json_state_forced_empty_fallback_not_missing_bootstrap findings=1 location=.*state\.json/, ); assert.match(status, /state_load_finding backend=json scope=state_file issue_number=none location=.*state\.json message=/); assert.match(status, /^No active issue\.$/m); }); ``` </details> <!-- suggestion_end --> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/supervisor/supervisor-diagnostics-status-selection.test.ts` around lines 47 - 78, This test creates a temporary fixture via createSupervisorFixture() but never registers teardown, so add a cleanup callback immediately after creating the fixture (after the line "const fixture = await createSupervisorFixture();") using the test harness teardown function (e.g., t.after(() => fixture.cleanup()) or await t.after(async () => await fixture.cleanup()) depending on whether cleanup returns a promise) to ensure the fixture's temporary files/directories are removed; reference createSupervisorFixture, fixture (fixture.stateFile / fixture.config) and register the cleanup before proceeding with the rest of the test. ``` </details> <!-- fingerprinting:phantom:poseidon:ocelot --> <!-- This is an auto-generated comment by CodeRabbit -->
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the CodeRabbit thread is a real test-harness issue, and the narrowest correct repair is to mirror the existing fixture teardown pattern in the corruption-status regression without changing the diagnostic behavior under test.
-- What changed: updated `status surfaces corrupted JSON state as an explicit hard diagnostic` in `src/supervisor/supervisor-diagnostics-status-selection.test.ts` to accept `t` and register `t.after(async () => fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true }))` immediately after `createSupervisorFixture()`. No production behavior changed; this only closes the temp-directory leak in the review target.
+- Hypothesis: the narrowest safe fix is to quarantine only parse-corrupted JSON state during `StateStore.load()`, replace the original `state.json` with a deterministic marker that carries the persisted corruption finding and quarantine path, and leave SQLite behavior unchanged.
+- What changed: added a focused reproducer in `src/core/state-store.test.ts`, confirmed the pre-fix failure where `state.json` stayed corrupt, then updated `src/core/state-store.ts` so JSON parse errors rename the bad file to `state.json.corrupt.<timestamp>`, write a recovery marker back to the configured state path, and persist `load_findings` plus `json_state_quarantine` metadata for later inspection. Added matching type support in `src/core/types.ts` and a read-only doctor regression in `src/doctor.test.ts` to verify diagnostics remain explicit after quarantine.
 - Current blocker: none
-- Next exact step: commit and push the cleanup-only review fix on `codex/issue-715`, then resolve or monitor PR #741 review state.
-- Verification gap: none locally after `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build`.
-- Files touched: `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this small fix would reintroduce leaked temp fixture directories during the corruption-status regression, which is the exact review concern on PR #741.
+- Next exact step: review the diff, commit the quarantine change on `codex/issue-716`, and open/update the draft PR if needed.
+- Verification gap: none locally after `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts` and `npm run build`.
+- Files touched: `src/core/state-store.ts`, `src/core/state-store.test.ts`, `src/core/types.ts`, `src/doctor.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: removing the marker-writing path would restore the unsafe behavior where corrupted JSON remains at the live state path and later recovery loses the preserved durable artifact location.
 - Last focused command: `npm run build`
-- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-715/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-715/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `sed -n '1,220p' src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `rg -n "createSupervisorFixture|cleanup\\(" src/supervisor -g '*test*' -g '*helpers*'`; `sed -n '1,260p' src/supervisor/supervisor-test-helpers.ts`; `sed -n '260,520p' src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `git diff -- .codex-supervisor/issue-journal.md`; `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`; `git status --short`; `date -Iseconds`; `git rev-parse HEAD`
+- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-716/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-716/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `sed -n '1,260p' src/core/state-store.test.ts`; `sed -n '1,420p' src/core/state-store.ts`; `sed -n '1,260p' src/doctor.test.ts`; `sed -n '1,260p' src/doctor.ts`; `sed -n '1,260p' src/core/types.ts`; `sed -n '260,320p' src/supervisor/supervisor.ts`; `npx tsx --test src/core/state-store.test.ts`; `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts`; `npm run build`; `npm install`; `git status --short`; `date -Iseconds`; `git rev-parse HEAD`
 ### Scratchpad
+- 2026-03-20 (JST): Added a focused JSON quarantine reproducer, confirmed the loader left malformed `state.json` in place, then changed JSON state loading to move the corrupt file aside, write a deterministic marker back to `state.json`, and preserve the quarantine path through `load_findings` plus `json_state_quarantine`; focused verification and `npm run build` passed after installing local dev dependencies with `npm install`.
 - 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851s71w`, added missing `t.after(...)` cleanup to the corruption-status fixture test, and reran `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` plus `npm run build` successfully.
 - 2026-03-20 (JST): Re-ran the focused verification set plus `npm run build`, pushed `codex/issue-715` to `origin/codex/issue-715`, and opened draft PR #741 (`status: surface JSON corruption diagnostics`).
 - 2026-03-20 (JST): Added a focused status regression for invalid JSON state, reproduced the omission where status only printed normal empty-state lines, then appended explicit `state_diagnostic` and `state_load_finding` lines for JSON `load_findings` so corruption is visible in status without changing loader semantics.
