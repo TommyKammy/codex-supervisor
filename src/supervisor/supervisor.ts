@@ -617,8 +617,18 @@ export class Supervisor {
       return lock;
     }
 
-    const reconciliationPhase = await readCurrentReconciliationPhase(this.config);
-    if (reconciliationPhase === null || !lock.reason) {
+    if (!lock.reason) {
+      return lock;
+    }
+
+    let reconciliationPhase: string | null = null;
+    try {
+      reconciliationPhase = await readCurrentReconciliationPhase(this.config);
+    } catch {
+      return lock;
+    }
+
+    if (reconciliationPhase === null) {
       return lock;
     }
 
