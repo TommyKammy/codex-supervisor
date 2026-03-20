@@ -18,15 +18,41 @@ import { shouldAutoRetryHandoffMissing } from "./supervisor-execution-policy";
 import { createConfig, createRecord, executionReadyBody } from "./supervisor-test-helpers";
 
 test("requeueIssueForOperator requeues a blocked issue with no tracked PR", async () => {
+  const original = createRecord({
+    issue_number: 366,
+    state: "blocked",
+    blocked_reason: "verification",
+    codex_session_id: "session-366",
+    last_error: "verification failed",
+    last_failure_kind: "command_error",
+    last_failure_context: {
+      category: "review",
+      summary: "Verification failed",
+      signature: "verify-failed",
+      command: "npm test",
+      details: ["suite=supervisor"],
+      url: "https://example.test/issues/366",
+      updated_at: "2026-03-11T06:00:00.000Z",
+    },
+    last_blocker_signature: "review:verify-failed",
+    last_failure_signature: "verify-failed",
+    timeout_retry_count: 2,
+    blocked_verification_retry_count: 1,
+    repeated_blocker_count: 3,
+    repeated_failure_signature_count: 4,
+    review_wait_started_at: "2026-03-11T06:10:00.000Z",
+    review_wait_head_sha: "abc1234",
+    copilot_review_requested_observed_at: "2026-03-11T06:11:00.000Z",
+    copilot_review_requested_head_sha: "abc1234",
+    copilot_review_timed_out_at: "2026-03-11T06:12:00.000Z",
+    copilot_review_timeout_action: "continue",
+    copilot_review_timeout_reason: "stale request",
+    local_review_blocker_summary: "Need operator retry",
+  });
   const state: SupervisorStateFile = {
     activeIssueNumber: null,
     issues: {
-      "366": createRecord({
-        issue_number: 366,
-        state: "blocked",
-        blocked_reason: "verification",
-        codex_session_id: "session-366",
-      }),
+      "366": original,
     },
   };
 
@@ -54,6 +80,37 @@ test("requeueIssueForOperator requeues a blocked issue with no tracked PR", asyn
       outcome: "mutated",
       summary: "Requeued issue #366 from blocked to queued.",
       previousState: "blocked",
+      previousRecordSnapshot: {
+        state: "blocked",
+        pr_number: null,
+        codex_session_id: "session-366",
+        blocked_reason: "verification",
+        last_error: "verification failed",
+        last_failure_kind: "command_error",
+        last_failure_context: {
+          category: "review",
+          summary: "Verification failed",
+          signature: "verify-failed",
+          command: "npm test",
+          details: ["suite=supervisor"],
+          url: "https://example.test/issues/366",
+          updated_at: "2026-03-11T06:00:00.000Z",
+        },
+        last_blocker_signature: "review:verify-failed",
+        last_failure_signature: "verify-failed",
+        timeout_retry_count: 2,
+        blocked_verification_retry_count: 1,
+        repeated_blocker_count: 3,
+        repeated_failure_signature_count: 4,
+        review_wait_started_at: "2026-03-11T06:10:00.000Z",
+        review_wait_head_sha: "abc1234",
+        copilot_review_requested_observed_at: "2026-03-11T06:11:00.000Z",
+        copilot_review_requested_head_sha: "abc1234",
+        copilot_review_timed_out_at: "2026-03-11T06:12:00.000Z",
+        copilot_review_timeout_action: "continue",
+        copilot_review_timeout_reason: "stale request",
+        local_review_blocker_summary: "Need operator retry",
+      },
       nextState: "queued",
       recoveryReason: "present",
     },
@@ -61,6 +118,23 @@ test("requeueIssueForOperator requeues a blocked issue with no tracked PR", asyn
   assert.equal(state.issues["366"]?.state, "queued");
   assert.equal(state.issues["366"]?.blocked_reason, null);
   assert.equal(state.issues["366"]?.codex_session_id, null);
+  assert.equal(state.issues["366"]?.last_error, "verification failed");
+  assert.equal(state.issues["366"]?.last_failure_kind, "command_error");
+  assert.deepEqual(state.issues["366"]?.last_failure_context, original.last_failure_context);
+  assert.equal(state.issues["366"]?.last_blocker_signature, "review:verify-failed");
+  assert.equal(state.issues["366"]?.last_failure_signature, "verify-failed");
+  assert.equal(state.issues["366"]?.timeout_retry_count, 2);
+  assert.equal(state.issues["366"]?.blocked_verification_retry_count, 1);
+  assert.equal(state.issues["366"]?.repeated_blocker_count, 3);
+  assert.equal(state.issues["366"]?.repeated_failure_signature_count, 4);
+  assert.equal(state.issues["366"]?.review_wait_started_at, null);
+  assert.equal(state.issues["366"]?.review_wait_head_sha, null);
+  assert.equal(state.issues["366"]?.copilot_review_requested_observed_at, null);
+  assert.equal(state.issues["366"]?.copilot_review_requested_head_sha, null);
+  assert.equal(state.issues["366"]?.copilot_review_timed_out_at, null);
+  assert.equal(state.issues["366"]?.copilot_review_timeout_action, null);
+  assert.equal(state.issues["366"]?.copilot_review_timeout_reason, null);
+  assert.equal(state.issues["366"]?.local_review_blocker_summary, null);
   assert.equal(saveCalls, 1);
 });
 
@@ -95,6 +169,37 @@ test("requeueIssueForOperator rejects active tracked-PR work", async () => {
     outcome: "rejected",
     summary: "Rejected requeue for issue #366: active issue reservations cannot be mutated.",
     previousState: "stabilizing",
+    previousRecordSnapshot: {
+      state: "stabilizing",
+      pr_number: 191,
+      codex_session_id: "session-366",
+      blocked_reason: "handoff_missing",
+      last_error: "Codex completed without updating the issue journal for issue #366.",
+      last_failure_kind: null,
+      last_failure_context: {
+        category: "blocked",
+        summary: "Codex completed without updating the issue journal for issue #366.",
+        signature: "handoff-missing",
+        command: null,
+        details: ["Update the Codex Working Notes section before ending the turn."],
+        url: null,
+        updated_at: "2026-03-11T01:50:41.997Z",
+      },
+      last_blocker_signature: null,
+      last_failure_signature: "handoff-missing",
+      timeout_retry_count: 0,
+      blocked_verification_retry_count: 0,
+      repeated_blocker_count: 0,
+      repeated_failure_signature_count: 1,
+      review_wait_started_at: null,
+      review_wait_head_sha: null,
+      copilot_review_requested_observed_at: null,
+      copilot_review_requested_head_sha: null,
+      copilot_review_timed_out_at: null,
+      copilot_review_timeout_action: null,
+      copilot_review_timeout_reason: null,
+      local_review_blocker_summary: null,
+    },
     nextState: "stabilizing",
     recoveryReason: null,
   });

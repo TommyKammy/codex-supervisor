@@ -816,12 +816,23 @@ export class Supervisor {
     action: SupervisorRecoveryAction,
     issueNumber: number,
   ): Promise<SupervisorMutationResultDto> {
-    const state = await this.stateStore.load();
-    if (action === "requeue") {
-      return requeueIssueForOperator(this.stateStore, state, issueNumber);
+    if (action !== "requeue") {
+      throw new Error(`Unsupported recovery action: ${String(action)}`);
     }
 
-    throw new Error(`Unsupported recovery action: ${String(action)}`);
+    const lock = await acquireFileLock(this.lockPath("supervisor", "run"), `supervisor-recovery-${action}`, {
+      allowAmbiguousOwnerCleanup: true,
+    });
+    if (!lock.acquired) {
+      throw new Error(`Cannot run recovery action while supervisor is active: ${lock.reason ?? "lock unavailable"}`);
+    }
+
+    try {
+      const state = await this.stateStore.load();
+      return requeueIssueForOperator(this.stateStore, state, issueNumber);
+    } finally {
+      await lock.release();
+    }
   }
 
   async explainReport(issueNumber: number): Promise<SupervisorExplainDto> {
