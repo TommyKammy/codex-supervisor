@@ -114,6 +114,143 @@ function parseIssueNumberFromWorkspaceName(workspaceName: string): number | null
   return Number.parseInt(match[1], 10);
 }
 
+export type OrphanedWorkspacePruneEligibility = "eligible" | "locked" | "recent" | "unsafe_target";
+
+export interface OrphanedWorkspacePruneCandidate {
+  issueNumber: number;
+  workspaceName: string;
+  workspacePath: string;
+  branch: string | null;
+  eligibility: OrphanedWorkspacePruneEligibility;
+  reason: string;
+  modifiedAt: string | null;
+}
+
+interface InspectOrphanedWorkspacePruneCandidatesOptions {
+  now?: Date;
+}
+
+export async function inspectOrphanedWorkspacePruneCandidates(
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+  options: InspectOrphanedWorkspacePruneCandidatesOptions = {},
+): Promise<OrphanedWorkspacePruneCandidate[]> {
+  const referencedWorkspaces = new Set(
+    Object.values(state.issues).map((record) => path.resolve(record.workspace)),
+  );
+  const candidates: OrphanedWorkspacePruneCandidate[] = [];
+  const now = options.now ?? new Date();
+  let workspaceEntries: fs.Dirent[];
+  try {
+    workspaceEntries = fs.readdirSync(config.workspaceRoot, { withFileTypes: true });
+  } catch {
+    return candidates;
+  }
+
+  for (const entry of workspaceEntries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const issueNumber = parseIssueNumberFromWorkspaceName(entry.name);
+    if (issueNumber === null) {
+      continue;
+    }
+
+    const workspacePath = path.join(config.workspaceRoot, entry.name);
+    if (referencedWorkspaces.has(path.resolve(workspacePath))) {
+      continue;
+    }
+
+    if (!fs.existsSync(path.join(workspacePath, ".git"))) {
+      continue;
+    }
+
+    let modifiedAt: string | null = null;
+    try {
+      modifiedAt = fs.statSync(workspacePath).mtime.toISOString();
+    } catch {
+      modifiedAt = null;
+    }
+
+    let branch: string | null = null;
+    try {
+      branch = branchNameForIssue(config, issueNumber);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      candidates.push({
+        issueNumber,
+        workspaceName: entry.name,
+        workspacePath,
+        branch: null,
+        eligibility: "unsafe_target",
+        reason: message,
+        modifiedAt,
+      });
+      continue;
+    }
+
+    if (!isSafeCleanupTarget(config, workspacePath, branch)) {
+      candidates.push({
+        issueNumber,
+        workspaceName: entry.name,
+        workspacePath,
+        branch,
+        eligibility: "unsafe_target",
+        reason: "unsafe cleanup target",
+        modifiedAt,
+      });
+      continue;
+    }
+
+    const issueLockPath = path.join(path.dirname(config.stateFile), "locks", "issues", `issue-${issueNumber}.lock`);
+    const issueLock = await inspectFileLock(issueLockPath);
+    if (issueLock.status === "live" || issueLock.status === "ambiguous_owner") {
+      candidates.push({
+        issueNumber,
+        workspaceName: entry.name,
+        workspacePath,
+        branch,
+        eligibility: "locked",
+        reason: issueLock.status === "live"
+          ? `issue lock held by pid ${issueLock.payload?.pid ?? "unknown"}`
+          : `issue lock has ambiguous owner metadata for pid ${issueLock.payload?.pid ?? "unknown"}`,
+        modifiedAt,
+      });
+      continue;
+    }
+
+    if (modifiedAt && config.cleanupDoneWorkspacesAfterHours >= 0) {
+      const ageMs = now.getTime() - Date.parse(modifiedAt);
+      if (ageMs >= 0 && ageMs < config.cleanupDoneWorkspacesAfterHours * 60 * 60 * 1000) {
+        candidates.push({
+          issueNumber,
+          workspaceName: entry.name,
+          workspacePath,
+          branch,
+          eligibility: "recent",
+          reason: `workspace modified within ${config.cleanupDoneWorkspacesAfterHours}h grace period`,
+          modifiedAt,
+        });
+        continue;
+      }
+    }
+
+    candidates.push({
+      issueNumber,
+      workspaceName: entry.name,
+      workspacePath,
+      branch,
+      eligibility: "eligible",
+      reason: "safe orphaned git worktree",
+      modifiedAt,
+    });
+  }
+
+  candidates.sort((left, right) => left.issueNumber - right.issueNumber || left.workspaceName.localeCompare(right.workspaceName));
+  return candidates;
+}
+
 async function cleanupOrphanedIssueWorkspaces(
   config: SupervisorConfig,
   state: SupervisorStateFile,

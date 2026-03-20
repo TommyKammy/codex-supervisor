@@ -1,52 +1,65 @@
-# Issue #725: Orphan cleanup docs: define preservation rules and explicit prune expectations
+# Issue #726: Orphan cleanup visibility: surface prune candidates and eligibility reasons before deletion
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/725
-- Branch: codex/issue-725
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/726
+- Branch: codex/issue-726
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 1687069f7b72b7988663a43bbc89257c7ecd57fd
+- Current phase: stabilizing
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: 949f3dfaa33305aca643563a06c043598435a367
 - Blocked reason: none
-- Last failure signature: docs-orphan-cleanup-contract-missing
+- Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-20T19:59:57Z
+- Updated at: 2026-03-20T20:48:46Z
 
 ## Latest Codex Summary
-- Added a narrow docs regression test for orphan-cleanup guidance, reproduced the gap when `src/execution-safety-docs.test.ts` failed because the docs did not define orphaned workspaces, updated `README.md`, `docs/architecture.md`, `docs/getting-started.md`, and `docs/configuration.md` to distinguish tracked done cleanup from explicit orphan pruning with preservation rules for locked, recent, and manually kept workspaces, and verified with `npx tsx --test src/execution-safety-docs.test.ts` plus `npm run build`.
+Added orphan prune-candidate visibility to `doctor` without changing cleanup behavior. `src/recovery-reconciliation.ts` now exports a reusable orphan inspector that classifies untracked `issue-*` worktrees as `eligible`, `locked`, `recent`, or `unsafe_target`, and `src/doctor.ts` reports those candidates through the existing `worktrees` diagnostic summary/details. Focused regression coverage in [src/doctor.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-726/src/doctor.test.ts) covers representative classifications.
+
+Published branch `codex/issue-726` and opened draft PR [#750](https://github.com/TommyKammy/codex-supervisor/pull/750) against `main`. The PR body now reflects the diagnostics-only scope and the previously completed focused verification. I left the untracked `.codex-supervisor/replay/` directory untouched.
+
+Summary: Opened draft PR #750 and pushed journal refresh commit `949f3df`; CI is now pending on the draft PR.
+State hint: waiting_ci
+Blocked reason: none
+Tests: `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-execution-cleanup.test.ts src/doctor.test.ts`; `npm run build`
+Failure signature: none
+Next action: Monitor pending CI on PR #750 and address any failures or review feedback while keeping the change diagnostics-only.
 
 ## Active Failure Context
-- Reproduced before the doc edits with `npx tsx --test src/execution-safety-docs.test.ts --test-name-pattern="workspace cleanup docs distinguish tracked done cleanup from explicit orphan pruning"` failing on `expected README.md to mention orphan workspaces`.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The issue is documentation drift, not runtime behavior: the repo needs one explicit orphan-cleanup contract across the top-level docs, plus a regression test that prevents architecture from implying orphan cleanup is the same as delayed cleanup for tracked `done` workspaces.
-- What changed: re-read the required memory files and journal, inspected the current orphan-cleanup wording across the requested docs, added a focused assertion to `src/execution-safety-docs.test.ts`, reproduced the gap once dependencies were installed, then updated the four docs to define orphaned workspaces, preservation rules, and explicit prune expectations.
+- Hypothesis: `#726` needs a narrow runtime visibility change, not a pruning-policy change: expose orphaned worktree prune candidates through diagnostics with deterministic eligibility reasons, while leaving actual cleanup behavior untouched.
+- What changed: added focused `doctor` regression tests for orphan prune candidate reporting, extracted `inspectOrphanedWorkspacePruneCandidates()` in `src/recovery-reconciliation.ts`, wired `src/doctor.ts` to report orphan candidates in the existing `worktrees` diagnostic summary/details, pushed branch `codex/issue-726`, opened draft PR `#750`, and pushed a follow-up journal-only commit `949f3df`.
 - Current blocker: none
-- Next exact step: review the final diff, commit the docs and test updates, and open or update the draft PR for issue #725 if needed.
-- Verification gap: full repo test suite was not rerun; verification this turn is the focused docs test file and `npm run build`.
-- Files touched: `src/execution-safety-docs.test.ts`, `README.md`, `docs/architecture.md`, `docs/getting-started.md`, `docs/configuration.md`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting the doc updates would restore the previous ambiguity where orphan cleanup could be misread as implicit delayed cleanup for tracked `done` workspaces.
+- Next exact step: watch pending GitHub Actions on PR `#750` (`build` on `ubuntu-latest` and `macos-latest`) and keep any follow-up scoped to diagnostics visibility only.
+- Verification gap: full repo test suite was not rerun; verification this turn is the focused orphan-cleanup/doctor tests plus `npm run build`.
+- Files touched: `src/doctor.test.ts`, `src/doctor.ts`, `src/recovery-reconciliation.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting these changes would remove the only operator-visible, testable classification of orphan prune candidates before cleanup policy changes land.
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-725/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-725/context-index.md
-sed -n '1,260p' .codex-supervisor/issue-journal.md
-rg -n "orphan|cleanup|prune|worktree" README.md docs/architecture.md docs/getting-started.md docs/configuration.md
-sed -n '1,260p' README.md
-sed -n '1,260p' docs/getting-started.md
-sed -n '1,260p' docs/architecture.md
-sed -n '1,260p' docs/configuration.md
-sed -n '1,220p' src/getting-started-docs.test.ts
-sed -n '1,260p' src/execution-safety-docs.test.ts
-sed -n '1,260p' src/readme-docs.test.ts
-npm install
-npx tsx --test src/execution-safety-docs.test.ts --test-name-pattern="workspace cleanup docs distinguish tracked done cleanup from explicit orphan pruning"
-npx tsx --test src/execution-safety-docs.test.ts
-npm run build
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-726/AGENTS.generated.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-726/context-index.md
+sed -n '1,320p' .codex-supervisor/issue-journal.md
 git status --short --branch
-git diff -- README.md docs/architecture.md docs/getting-started.md docs/configuration.md src/execution-safety-docs.test.ts
+gh pr status
+git branch -vv
+git log --oneline --decorate -n 5
+git show --stat --oneline --decorate HEAD
+git remote -v
+git push -u origin codex/issue-726
+gh pr create --draft --base main --head codex/issue-726 --title "Surface orphan prune candidates in doctor" --body "..."
+gh pr view --json number,url,state,isDraft,headRefName,baseRefName
+gh pr view 750 --json title,body,url
+gh pr edit 750 --body-file - <<'EOF'
+...
+EOF
+gh api repos/TommyKammy/codex-supervisor/pulls/750 -X PATCH --raw-field body=$'...'
+gh pr view 750 --json url,isDraft,state,mergeStateStatus,headRefName,baseRefName
+git add .codex-supervisor/issue-journal.md && git commit -m "chore: update issue 726 journal after draft PR" && git push
+gh pr view 750 --json url,isDraft,state,headRefOid,mergeStateStatus
+gh pr checks 750
 date -u +"%Y-%m-%dT%H:%M:%SZ"
 ```
 ### Scratchpad
