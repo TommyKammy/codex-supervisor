@@ -318,6 +318,102 @@ test("StateStore json load serializes concurrent quarantine attempts per state f
   });
 });
 
+test("StateStore resetCorruptJsonState replaces the quarantine marker with an empty state", async () => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.json");
+    await fs.writeFile(statePath, "{not-json}\n", "utf8");
+
+    const store = new StateStore(statePath, { backend: "json" });
+    const quarantinedState = await store.load();
+    const reset = await store.resetCorruptJsonState();
+
+    assert.equal(reset.action, "reset-corrupt-json-state");
+    assert.equal(reset.outcome, "mutated");
+    assert.equal(reset.stateFile, statePath);
+    assert.equal(reset.quarantinedFile, quarantinedState.json_state_quarantine?.quarantined_file);
+    assert.equal(reset.quarantinedAt, quarantinedState.json_state_quarantine?.quarantined_at);
+
+    const persisted = JSON.parse(await fs.readFile(statePath, "utf8")) as SupervisorStateFile;
+    assert.deepEqual(persisted, {
+      activeIssueNumber: null,
+      issues: {},
+    });
+  });
+});
+
+test("StateStore resetCorruptJsonState rejects clean JSON state without a quarantine marker", async () => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.json");
+    const store = new StateStore(statePath, { backend: "json" });
+    await store.save({
+      activeIssueNumber: null,
+      issues: {},
+    });
+
+    const reset = await store.resetCorruptJsonState();
+
+    assert.deepEqual(reset, {
+      action: "reset-corrupt-json-state",
+      outcome: "rejected",
+      summary: `Rejected reset-corrupt-json-state for ${statePath}: the current JSON state is not a corruption quarantine marker.`,
+      stateFile: statePath,
+      quarantinedFile: null,
+      quarantinedAt: null,
+    });
+  });
+});
+
+test("StateStore resetCorruptJsonState rejects a crafted marker-like JSON state", async () => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.json");
+    const quarantinedFile = `${statePath}.corrupt.manual`;
+    await fs.writeFile(
+      statePath,
+      `${JSON.stringify({
+        activeIssueNumber: null,
+        issues: {},
+        load_findings: [
+          {
+            backend: "json",
+            kind: "parse_error",
+            scope: "state_file",
+            location: statePath,
+            issue_number: null,
+            message: "manually crafted marker",
+          },
+          {
+            backend: "json",
+            kind: "parse_error",
+            scope: "state_file",
+            location: statePath,
+            issue_number: null,
+            message: "extra finding should invalidate reset",
+          },
+        ],
+        json_state_quarantine: {
+          kind: "parse_error",
+          marker_file: statePath,
+          quarantined_file: quarantinedFile,
+          quarantined_at: "2026-03-20T00:00:00.000Z",
+        },
+      }, null, 2)}\n`,
+      "utf8",
+    );
+
+    const store = new StateStore(statePath, { backend: "json" });
+    const reset = await store.resetCorruptJsonState();
+
+    assert.deepEqual(reset, {
+      action: "reset-corrupt-json-state",
+      outcome: "rejected",
+      summary: `Rejected reset-corrupt-json-state for ${statePath}: the current JSON state is not a corruption quarantine marker.`,
+      stateFile: statePath,
+      quarantinedFile: quarantinedFile,
+      quarantinedAt: "2026-03-20T00:00:00.000Z",
+    });
+  });
+});
+
 test("StateStore sqlite load captures structured corruption findings for malformed issue rows", async () => {
   await withTempDir(async (dir) => {
     const statePath = path.join(dir, "state.sqlite");

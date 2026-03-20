@@ -78,6 +78,9 @@ test("runSupervisorCommand stops the loop after a registered signal and aborts p
         runRecoveryAction: async () => {
           throw new Error("unexpected runRecoveryAction");
         },
+        resetCorruptJsonState: async () => {
+          throw new Error("unexpected resetCorruptJsonState");
+        },
         queryIssueLint: async () => ["lint"],
         queryDoctor: async () => {
           throw new Error("unexpected queryDoctor");
@@ -145,6 +148,10 @@ test("runSupervisorCommand routes query commands through the supervisor service 
         runRecoveryAction: async () => {
           calls.push("recovery");
           throw new Error("unexpected runRecoveryAction");
+        },
+        resetCorruptJsonState: async () => {
+          calls.push("resetCorruptJsonState");
+          throw new Error("unexpected resetCorruptJsonState");
         },
         queryIssueLint: async (issueNumber) => {
           calls.push(`issueLint:${issueNumber}`);
@@ -237,6 +244,9 @@ test("runSupervisorCommand renders a structured requeue result", async () => {
             recoveryReason: "operator_requeue: requeued issue #123 from blocked to queued",
           };
         },
+        resetCorruptJsonState: async () => {
+          throw new Error("unexpected resetCorruptJsonState");
+        },
       },
       writeStdout: (line) => {
         stdout.push(line);
@@ -284,5 +294,64 @@ test("runSupervisorCommand renders a structured requeue result", async () => {
     },
     nextState: "queued",
     recoveryReason: "operator_requeue: requeued issue #123 from blocked to queued",
+  });
+});
+
+test("runSupervisorCommand renders a structured corrupt-json reset result", async () => {
+  const stdout: string[] = [];
+
+  await runSupervisorCommand(
+    { command: "reset-corrupt-json-state", dryRun: false, why: false, issueNumber: undefined },
+    {
+      service: {
+        config: {} as SupervisorConfig,
+        pollIntervalMs: () => 50,
+        acquireSupervisorLock: async () => ({
+          acquired: true,
+          release: async () => {},
+        }),
+        runOnce: async () => {
+          throw new Error("unexpected runOnce");
+        },
+        queryStatus: async () => {
+          throw new Error("unexpected queryStatus");
+        },
+        queryExplain: async () => {
+          throw new Error("unexpected queryExplain");
+        },
+        queryIssueLint: async () => {
+          throw new Error("unexpected queryIssueLint");
+        },
+        queryDoctor: async () => {
+          throw new Error("unexpected queryDoctor");
+        },
+        runRecoveryAction: async () => {
+          throw new Error("unexpected runRecoveryAction");
+        },
+        resetCorruptJsonState: async () => ({
+          action: "reset-corrupt-json-state",
+          outcome: "mutated",
+          summary:
+            "Reset corrupted JSON supervisor state at /tmp/state.json and preserved the quarantined payload at /tmp/state.json.corrupt.2026-03-20T00-00-00-000Z.",
+          stateFile: "/tmp/state.json",
+          quarantinedFile: "/tmp/state.json.corrupt.2026-03-20T00-00-00-000Z",
+          quarantinedAt: "2026-03-20T00:00:00.000Z",
+        }),
+      },
+      writeStdout: (line) => {
+        stdout.push(line);
+      },
+    },
+  );
+
+  assert.equal(stdout.length, 1);
+  assert.deepEqual(JSON.parse(stdout[0] ?? ""), {
+    action: "reset-corrupt-json-state",
+    outcome: "mutated",
+    summary:
+      "Reset corrupted JSON supervisor state at /tmp/state.json and preserved the quarantined payload at /tmp/state.json.corrupt.2026-03-20T00-00-00-000Z.",
+    stateFile: "/tmp/state.json",
+    quarantinedFile: "/tmp/state.json.corrupt.2026-03-20T00-00-00-000Z",
+    quarantinedAt: "2026-03-20T00:00:00.000Z",
   });
 });

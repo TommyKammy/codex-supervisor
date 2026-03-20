@@ -150,6 +150,15 @@ export interface JsonStateQuarantine {
   quarantined_at: string;
 }
 
+export interface JsonCorruptStateResetResult {
+  action: "reset-corrupt-json-state";
+  outcome: "mutated" | "rejected";
+  summary: string;
+  stateFile: string;
+  quarantinedFile: string | null;
+  quarantinedAt: string | null;
+}
+
 export interface IssueRunRecord {
   issue_number: number;
   state: RunState;
@@ -329,6 +338,7 @@ export interface CliOptions {
     | "loop"
     | "status"
     | "requeue"
+    | "reset-corrupt-json-state"
     | "explain"
     | "issue-lint"
     | "doctor"

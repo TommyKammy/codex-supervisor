@@ -1,4 +1,4 @@
-import type { CliOptions, SupervisorConfig } from "../core/types";
+import type { CliOptions, JsonCorruptStateResetResult, SupervisorConfig } from "../core/types";
 import type { DoctorDiagnostics } from "../doctor";
 import type { SupervisorMutationResultDto, SupervisorRecoveryAction } from "./supervisor-mutation-report";
 import type { SupervisorExplainDto } from "./supervisor-selection-status";
@@ -19,6 +19,7 @@ export interface SupervisorService {
   runOnce: (options: Pick<CliOptions, "dryRun">) => Promise<string>;
   queryStatus: (options: Pick<CliOptions, "why">) => Promise<SupervisorStatusDto>;
   runRecoveryAction: (action: SupervisorRecoveryAction, issueNumber: number) => Promise<SupervisorMutationResultDto>;
+  resetCorruptJsonState: () => Promise<JsonCorruptStateResetResult>;
   queryExplain: (issueNumber: number) => Promise<SupervisorExplainDto>;
   queryIssueLint: (issueNumber: number) => Promise<string[]>;
   queryDoctor: () => Promise<DoctorDiagnostics>;
@@ -53,6 +54,10 @@ class SupervisorApplicationService implements SupervisorService {
 
   runRecoveryAction(action: SupervisorRecoveryAction, issueNumber: number): Promise<SupervisorMutationResultDto> {
     return this.supervisor.runRecoveryAction(action, issueNumber);
+  }
+
+  resetCorruptJsonState(): Promise<JsonCorruptStateResetResult> {
+    return this.supervisor.resetCorruptJsonState();
   }
 
   queryExplain(issueNumber: number): Promise<SupervisorExplainDto> {
