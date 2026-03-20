@@ -101,6 +101,14 @@ Depends on: #91`,
     listCandidateIssues: async () => [dependencyIssue, blockedIssue],
   };
 
+  const report = await supervisor.explainReport(93);
+  assert.equal(report.issueNumber, 93);
+  assert.equal(report.title, "Step 2");
+  assert.equal(report.state, "untracked");
+  assert.equal(report.blockedReason, "none");
+  assert.equal(report.runnable, false);
+  assert.deepEqual(report.reasons, ["dependency depends on #91"]);
+
   const explanation = await supervisor.explain(93);
 
   assert.match(explanation, /^issue=#93$/m);

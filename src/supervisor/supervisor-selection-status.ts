@@ -1,10 +1,12 @@
 export type { ActiveIssueStatusSnapshot } from "./supervisor-selection-active-status";
 export { loadActiveIssueStatusSnapshot } from "./supervisor-selection-active-status";
-export type { ExplainIssueGitHub } from "./supervisor-selection-issue-explain";
+export type { ExplainIssueGitHub, SupervisorExplainDto } from "./supervisor-selection-issue-explain";
 export {
+  buildIssueExplainDto,
   buildIssueExplainSummary,
   buildNonRunnableLocalStateReasons,
   formatSelectionReason,
+  renderIssueExplainDto,
 } from "./supervisor-selection-issue-explain";
 export type { IssueLintGitHub } from "./supervisor-selection-issue-lint";
 export { buildIssueLintSummary } from "./supervisor-selection-issue-lint";

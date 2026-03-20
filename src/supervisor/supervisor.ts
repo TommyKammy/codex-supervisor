@@ -89,7 +89,11 @@ import {
   buildSelectionWhySummary,
 } from "./supervisor-selection-readiness-summary";
 import { buildIssueLintSummary } from "./supervisor-selection-issue-lint";
-import { buildIssueExplainSummary } from "./supervisor-selection-issue-explain";
+import {
+  buildIssueExplainDto,
+  renderIssueExplainDto,
+  SupervisorExplainDto,
+} from "./supervisor-selection-issue-explain";
 import { loadActiveIssueStatusSnapshot } from "./supervisor-selection-active-status";
 import { summarizeSupervisorStatusRecords } from "./supervisor-selection-status-records";
 import { inferFailureContext } from "./supervisor-failure-context";
@@ -104,11 +108,12 @@ import {
   shouldStopForRepeatedFailureSignature,
 } from "./supervisor-lifecycle";
 import {
-  formatDetailedStatus,
   mergeConflictDetected,
   summarizeChecks,
   sanitizeStatusValue,
 } from "./supervisor-status-rendering";
+import { buildDetailedStatusModel, buildDetailedStatusSummaryLines } from "./supervisor-status-model";
+import { renderSupervisorStatusDto, SupervisorStatusDto } from "./supervisor-status-report";
 import {
   clearCurrentReconciliationPhase,
   readCurrentReconciliationPhase,
@@ -669,6 +674,10 @@ export class Supervisor {
   }
 
   async status(options: Pick<CliOptions, "why"> = { why: false }): Promise<string> {
+    return renderSupervisorStatusDto(await this.statusReport(options));
+  }
+
+  async statusReport(options: Pick<CliOptions, "why"> = { why: false }): Promise<SupervisorStatusDto> {
     const state = await this.stateStore.load();
     const gsdSummary = await describeGsdIntegration(this.config);
     const statusRecords = summarizeSupervisorStatusRecords(state);
@@ -677,7 +686,7 @@ export class Supervisor {
     const reconciliationWarning = buildLongReconciliationWarning(reconciliationSnapshot);
 
     if (!statusRecords.activeRecord) {
-      const baseStatus = formatDetailedStatus({
+      const detailedStatusLines = buildDetailedStatusModel({
         config: this.config,
         activeRecord: null,
         latestRecord: statusRecords.latestRecord,
@@ -686,29 +695,38 @@ export class Supervisor {
         pr: null,
         checks: [],
         reviewThreads: [],
+        manualReviewThreads,
+        configuredBotReviewThreads,
+        pendingBotReviewThreads,
+        summarizeChecks,
+        mergeConflictDetected,
       });
       try {
-        const reconciliationLines = [
-          ...(reconciliationPhase === null ? [] : [`reconciliation_phase=${reconciliationPhase}`]),
-          ...(reconciliationWarning === null ? [] : [reconciliationWarning]),
-        ];
         const readinessLines = await buildReadinessSummary(this.github, this.config, state);
         const whyLines = options.why ? await buildSelectionWhySummary(this.github, this.config, state) : [];
-        return [
+        return {
           gsdSummary,
-          `${baseStatus}\n${[...reconciliationLines, ...readinessLines, ...whyLines].join("\n")}`,
-        ]
-          .filter(Boolean)
-          .join("\n");
+          detailedStatusLines,
+          reconciliationPhase,
+          reconciliationWarning,
+          readinessLines,
+          whyLines,
+          warning: null,
+        };
       } catch (error) {
         const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
-        const reconciliationLines = [
-          ...(reconciliationPhase === null ? [] : [`reconciliation_phase=${reconciliationPhase}`]),
-          ...(reconciliationWarning === null ? [] : [reconciliationWarning]),
-        ];
-        return [gsdSummary, `${baseStatus}\n${[...reconciliationLines, `readiness_warning=${truncate(message, 200)}`].join("\n")}`]
-          .filter(Boolean)
-          .join("\n");
+        return {
+          gsdSummary,
+          detailedStatusLines,
+          reconciliationPhase,
+          reconciliationWarning,
+          readinessLines: [],
+          whyLines: [],
+          warning: {
+            kind: "readiness",
+            message: truncate(message, 200) ?? "",
+          },
+        };
       }
     }
 
@@ -717,7 +735,7 @@ export class Supervisor {
       config: this.config,
       activeRecord: statusRecords.activeRecord,
     });
-    const detailedStatus = formatDetailedStatus({
+    const detailedStatusLines = buildDetailedStatusModel({
       config: this.config,
       activeRecord: statusRecords.activeRecord,
       latestRecord: statusRecords.latestRecord,
@@ -726,6 +744,16 @@ export class Supervisor {
       pr: activeStatus.pr,
       checks: activeStatus.checks,
       reviewThreads: activeStatus.reviewThreads,
+      manualReviewThreads,
+      configuredBotReviewThreads,
+      pendingBotReviewThreads,
+      summarizeChecks,
+      mergeConflictDetected,
+    });
+    const summaryLines = buildDetailedStatusSummaryLines({
+      config: this.config,
+      activeRecord: statusRecords.activeRecord,
+      latestRecoveryRecord: statusRecords.latestRecoveryRecord,
       handoffSummary: activeStatus.handoffSummary,
       localReviewRoutingSummary: activeStatus.localReviewRoutingSummary,
       changeClassesSummary: activeStatus.changeClassesSummary,
@@ -733,21 +761,30 @@ export class Supervisor {
       durableGuardrailSummary: activeStatus.durableGuardrailSummary,
       externalReviewFollowUpSummary: activeStatus.externalReviewFollowUpSummary,
     });
-    const reconciliationLines = [
-      ...(reconciliationPhase === null ? [] : [`reconciliation_phase=${reconciliationPhase}`]),
-      ...(reconciliationWarning === null ? [] : [reconciliationWarning]),
-    ];
 
-    return [gsdSummary, activeStatus.warningMessage
-      ? `${[detailedStatus, ...reconciliationLines, `status_warning=${truncate(sanitizeStatusValue(activeStatus.warningMessage), 200)}`].filter(Boolean).join("\n")}`
-      : [detailedStatus, ...reconciliationLines].filter(Boolean).join("\n")]
-      .filter(Boolean)
-      .join("\n");
+    return {
+      gsdSummary,
+      detailedStatusLines: [...detailedStatusLines, ...summaryLines],
+      reconciliationPhase,
+      reconciliationWarning,
+      readinessLines: [],
+      whyLines: [],
+      warning: activeStatus.warningMessage
+        ? {
+          kind: "status",
+          message: truncate(sanitizeStatusValue(activeStatus.warningMessage), 200) ?? "",
+        }
+        : null,
+    };
   }
 
   async explain(issueNumber: number): Promise<string> {
+    return renderIssueExplainDto(await this.explainReport(issueNumber));
+  }
+
+  async explainReport(issueNumber: number): Promise<SupervisorExplainDto> {
     const state = await this.stateStore.load();
-    return buildIssueExplainSummary(this.github, this.config, state, issueNumber).then((lines) => lines.join("\n"));
+    return buildIssueExplainDto(this.github, this.config, state, issueNumber);
   }
 
   async issueLint(issueNumber: number): Promise<string> {
@@ -755,13 +792,15 @@ export class Supervisor {
   }
 
   async doctor(): Promise<string> {
-    return renderDoctorReport(
-      await diagnoseSupervisorHost({
-        config: this.config,
-        authStatus: () => this.github.authStatus(),
-        loadState: () => loadStateReadonlyForDoctor(this.config),
-      }),
-    );
+    return renderDoctorReport(await this.doctorReport());
+  }
+
+  async doctorReport() {
+    return diagnoseSupervisorHost({
+      config: this.config,
+      authStatus: () => this.github.authStatus(),
+      loadState: () => loadStateReadonlyForDoctor(this.config),
+    });
   }
 
   async runOnce(options: Pick<CliOptions, "dryRun">): Promise<string> {
