@@ -16,14 +16,14 @@
 ## Latest Codex Summary
 Addressed both open CodeRabbit review threads for PR #686. The latest-head CodeRabbit re-arm wait in [src/pull-request-state.ts](../src/pull-request-state.ts) now expires after the configured initial grace window instead of waiting indefinitely on stale pre-rearm review activity, and the journal summary links now use repo-relative paths.
 
-Added focused regression coverage in [src/pull-request-state-coderabbit-settled-waits.test.ts](../src/pull-request-state-coderabbit-settled-waits.test.ts) for latest-head re-arm expiry after the grace window while keeping the existing active re-arm and unchanged-head cases. Local verification passed with the focused CodeRabbit state tests, the CodeRabbit supervisor lifecycle slice, and `npm run build`. The only remaining workspace dirt is the pre-existing untracked `.codex-supervisor/replay/` directory.
+Added focused regression coverage in [src/pull-request-state-coderabbit-settled-waits.test.ts](../src/pull-request-state-coderabbit-settled-waits.test.ts) for latest-head re-arm expiry after the grace window while keeping the existing active re-arm and unchanged-head cases. Local verification passed with the focused CodeRabbit state tests, the CodeRabbit supervisor lifecycle slice, and `npm run build`, then commit `427757c` was pushed to `origin/codex/issue-680`. PR #686 is now rerunning `CodeRabbit`, `build (ubuntu-latest)`, and `build (macos-latest)` on head `427757c7d25da42fda7d2c125935fbba2438fc22`. The only remaining workspace dirt is the pre-existing untracked `.codex-supervisor/replay/` directory.
 
 Summary: Fixed the two PR #686 CodeRabbit review findings locally by bounding latest-head re-arm waiting to the initial grace window and replacing journal absolute links with repo-relative links.
 State hint: addressing_review
 Blocked reason: none
 Tests: `npx tsx --test src/pull-request-state-coderabbit-settled-waits.test.ts`; `npx tsx --test src/supervisor/supervisor-lifecycle.test.ts --test-name-pattern "CodeRabbit"`; `npm run build`
 Failure signature: PRRT_kwDORgvdZ851nYLe|PRRT_kwDORgvdZ851nYLj
-Next action: Commit and push the review-fix changes for PR #686, then monitor the rerun and resolve the addressed review threads.
+Next action: Monitor PR #686’s rerun on head `427757c7d25da42fda7d2c125935fbba2438fc22`, then resolve the addressed CodeRabbit threads if the rerun stays green.
 
 ## Active Failure Context
 - Category: review
@@ -38,7 +38,7 @@ Next action: Commit and push the review-fix changes for PR #686, then monitor th
 - Hypothesis: latest-head merge gating should only honor stale pre-rearm CodeRabbit activity during the same initial grace window that waits for fresh provider activity; after that window expires, merge progression should resume instead of remaining in `waiting_ci` forever.
 - What changed: validated both CodeRabbit findings as real enough to fix, updated `shouldWaitForConfiguredBotLatestHeadRearm(...)` to expire with `configuredBotInitialGraceWaitSeconds`, added a regression that proves the post-review head-advance wait expires while the active re-arm case still waits, and replaced the journal’s local absolute links with repo-relative links.
 - Current blocker: none
-- Next exact step: commit and push this review-fix checkpoint, then monitor PR #686’s rerun and close or resolve the addressed CodeRabbit threads as appropriate.
+- Next exact step: monitor PR #686’s rerun on pushed head `427757c7d25da42fda7d2c125935fbba2438fc22`, then close or resolve the addressed CodeRabbit threads as appropriate.
 - Verification gap: none for the scoped review fix. `npx tsx --test src/pull-request-state-coderabbit-settled-waits.test.ts`, `npx tsx --test src/supervisor/supervisor-lifecycle.test.ts --test-name-pattern "CodeRabbit"`, and `npm run build` all passed locally.
 - Files touched: `src/pull-request-state.ts`, `src/pull-request-state-coderabbit-settled-waits.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this checkpoint would restore an unbounded latest-head CodeRabbit re-arm wait, which can keep a post-review head advance stuck in `waiting_ci` after the grace window should have expired.
