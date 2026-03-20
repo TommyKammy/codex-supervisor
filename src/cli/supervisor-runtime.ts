@@ -5,6 +5,7 @@ import { renderDoctorReport } from "../doctor";
 import { renderJsonCorruptStateResetResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderSupervisorMutationResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderIssueExplainDto } from "../supervisor/supervisor-selection-status";
+import { isCorruptJsonFailClosedMessage } from "../supervisor/supervisor";
 import { type SupervisorLock, type SupervisorService } from "../supervisor/supervisor-service";
 import { renderSupervisorStatusDto } from "../supervisor/supervisor-status-report";
 
@@ -137,6 +138,9 @@ export async function runSupervisorCommand(
     try {
       const message = await runOnceWithSupervisorLock(service, "loop", { dryRun: options.dryRun });
       writeStdout(`${new Date().toISOString()} ${message}`);
+      if (isCorruptJsonFailClosedMessage(message)) {
+        shouldStop = true;
+      }
     } catch (error) {
       const message = error instanceof Error ? error.stack ?? error.message : String(error);
       writeStderr(`${new Date().toISOString()} loop-error ${message}`);

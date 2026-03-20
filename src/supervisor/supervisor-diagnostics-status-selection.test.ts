@@ -80,6 +80,44 @@ test("status surfaces corrupted JSON state as an explicit hard diagnostic", asyn
   assert.match(status, /^No active issue\.$/m);
 });
 
+test("runOnce fail-closes before execution when corrupted JSON state is quarantined", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+  await fs.writeFile(fixture.stateFile, "{not-json}\n", "utf8");
+
+  let authStatusCalls = 0;
+  let listAllIssuesCalls = 0;
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => {
+      authStatusCalls += 1;
+      return { ok: true, message: null };
+    },
+    listAllIssues: async () => {
+      listAllIssuesCalls += 1;
+      return [];
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: false });
+
+  assert.match(
+    message,
+    /Blocked execution-changing command: corrupted JSON supervisor state detected at .*state\.json\./,
+  );
+  assert.match(message, /status/);
+  assert.match(message, /doctor/);
+  assert.match(message, /reset-corrupt-json-state/);
+  assert.equal(authStatusCalls, 0);
+  assert.equal(listAllIssuesCalls, 0);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  assert.equal(persisted.json_state_quarantine?.marker_file, fixture.stateFile);
+  assert.match(persisted.json_state_quarantine?.quarantined_file ?? "", /state\.json\.corrupt\./);
+});
+
 test("status shows readiness reasons for runnable, requirements-blocked, and clarification-blocked issues", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {
@@ -458,6 +496,28 @@ test("runRecoveryAction refuses to mutate while the supervisor run lock is held"
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
   assert.equal(persisted.issues[String(issueNumber)]?.state, "blocked");
   assert.equal(persisted.issues[String(issueNumber)]?.codex_session_id, "session-91");
+});
+
+test("runRecoveryAction fail-closes requeue while corrupted JSON state is quarantined", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+  await fs.writeFile(fixture.stateFile, "{not-json}\n", "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  const result = await supervisor.runRecoveryAction("requeue", 91);
+
+  assert.equal(result.action, "requeue");
+  assert.equal(result.issueNumber, 91);
+  assert.equal(result.outcome, "rejected");
+  assert.match(
+    result.summary,
+    /Blocked execution-changing command: corrupted JSON supervisor state detected at .*state\.json\./,
+  );
+  assert.equal(result.previousState, null);
+  assert.equal(result.nextState, null);
+  assert.equal(result.recoveryReason, null);
 });
 
 test("acquireSupervisorLock emits typed run-lock blockage events", async (t) => {
