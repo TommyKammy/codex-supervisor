@@ -35,6 +35,8 @@ Current execution-safety rule: GitHub-authored issue bodies, review comments, an
 
 Current state-recovery rule: missing JSON state means there is no durable state yet, so the supervisor can bootstrap from empty state. Corrupted JSON state is not the same thing. Treat corrupted JSON state as a recovery event and not a durable recovery point until an operator has inspected the problem and completed an explicit acknowledgement or reset.
 
+Current workspace-recovery rule: when `ensureWorkspace()` needs to restore an issue workspace, it should prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap a fresh issue branch from `origin/<defaultBranch>`. Treat that default-branch bootstrap as the fallback when no existing issue branch can be restored, not as the normal response to every missing local branch.
+
 ## Choose the operating mode
 
 Use `codex-supervisor` only when the next issue is already execution-ready.
@@ -140,6 +142,7 @@ What to check after `run-once`:
 
 - the selected issue is the one you expected
 - the issue worktree was created under `workspaceRoot`
+- any restored issue workspace reused the expected local branch first, otherwise the expected remote branch, instead of silently falling back to a fresh bootstrap
 - the issue journal shows a sensible hypothesis, blocker, and next step
 - any opened PR or status transition matches the actual repo state
 

@@ -23,6 +23,8 @@
 
 These are the recovery points after crashes, process restarts, or thread loss, but only while the persisted data remains readable.
 
+For issue workspaces, the intended restore precedence is: prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap a fresh issue branch from `origin/<defaultBranch>`. That default-branch bootstrap is the fallback path when no existing issue branch can be restored.
+
 For the JSON backend, missing JSON state means there is no durable state yet and the supervisor can bootstrap from empty state. Corrupted JSON state is different: it is a recovery event, not a normal bootstrap case, and it is not safe to treat as durable state until an operator has inspected the file and explicitly acknowledged or reset it.
 
 ## Main safety boundaries

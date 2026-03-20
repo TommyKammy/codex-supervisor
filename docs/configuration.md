@@ -25,6 +25,8 @@ Current execution posture: supervisor-managed Codex turns use `--dangerously-byp
 
 State backend posture: a missing JSON state file is a normal empty bootstrap case, but corrupted JSON state is not a normal empty-state bootstrap case. When the JSON backend reports corrupted JSON state, treat it as a recovery event to inspect, acknowledge, or reset before relying on that state again. Until that explicit operator handling happens, corrupted JSON state is not a durable recovery point.
 
+Workspace restore posture: when `ensureWorkspace()` reconstructs an issue workspace, it should prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap a fresh issue branch from `origin/<defaultBranch>`. A missing local branch alone should not imply a fresh bootstrap when the remote issue branch still exists; bootstrapping from the default branch is the fallback only after both restore paths are unavailable.
+
 ## Provider Profiles
 
 Each shipped profile only covers supervisor-side expectations. You still need the matching provider-side setup before the supervisor can observe a usable review signal.
@@ -60,6 +62,7 @@ Repository and workspace:
 - `repoPath`, `repoSlug`, `workspaceRoot`
 - `stateBackend`, `stateFile`, `stateBootstrapFile`
 - `branchPrefix`
+- issue-workspace restore precedence: local branch, then remote branch, then fallback bootstrap from `origin/<defaultBranch>`
 
 Operator diagnostics for state:
 

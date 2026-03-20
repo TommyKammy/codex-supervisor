@@ -79,3 +79,33 @@ test("docs define corrupted JSON state as an explicit recovery event, not empty 
   assert.match(configuration, /not a normal empty-state bootstrap case/i);
   assert.match(configuration, /inspect, acknowledge, or reset/i);
 });
+
+test("workspace restore docs define local-branch, remote-branch, and bootstrap precedence", async () => {
+  const [readme, architecture, gettingStarted, configuration] = await Promise.all([
+    readDoc("README.md"),
+    readDoc(path.join("docs", "architecture.md")),
+    readDoc(path.join("docs", "getting-started.md")),
+    readDoc(path.join("docs", "configuration.md")),
+  ]);
+
+  for (const [label, content] of [
+    ["README.md", readme],
+    ["docs/architecture.md", architecture],
+    ["docs/getting-started.md", gettingStarted],
+    ["docs/configuration.md", configuration],
+  ] as const) {
+    assert.match(content, /local(?: issue)? branch/i, `expected ${label} to mention local branch restore`);
+    assert.match(content, /remote(?: issue)? branch/i, `expected ${label} to mention remote branch restore`);
+    assert.match(
+      content,
+      /origin\/<defaultBranch>|origin\/main|origin\/\$\{defaultBranch\}|origin\/default branch/i,
+      `expected ${label} to mention default-branch bootstrap`,
+    );
+    assert.match(content, /fallback/i, `expected ${label} to frame bootstrap as fallback`);
+    assert.match(
+      content,
+      /prefer(?:s|red)?[\s\S]{0,120}local(?: issue)? branch[\s\S]{0,120}remote(?: issue)? branch[\s\S]{0,160}bootstrap/i,
+      `expected ${label} to define local -> remote -> bootstrap precedence`,
+    );
+  }
+});
