@@ -127,6 +127,29 @@ test("runCli routes reset-corrupt-json-state through the supervisor runtime boun
   });
 });
 
+test("runCli routes prune-orphaned-workspaces through the supervisor runtime boundary", async () => {
+  const service = { tag: "service" };
+  let runtimeCommand: Record<string, unknown> | undefined;
+
+  await runCli(["prune-orphaned-workspaces"], {
+    createSupervisorService: () => service as never,
+    runSupervisorCommand: async (command, dependencies) => {
+      runtimeCommand = {
+        ...command,
+        service: dependencies.service,
+      };
+    },
+  });
+
+  assert.deepEqual(runtimeCommand, {
+    command: "prune-orphaned-workspaces",
+    dryRun: false,
+    why: false,
+    issueNumber: undefined,
+    service,
+  });
+});
+
 test("runCliMain reports failures to stderr and exits with code 1", async () => {
   const stderr: string[] = [];
   const exitCodes: number[] = [];

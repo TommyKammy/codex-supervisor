@@ -1,6 +1,10 @@
 import type { CliOptions, JsonCorruptStateResetResult, SupervisorConfig } from "../core/types";
 import type { DoctorDiagnostics } from "../doctor";
-import type { SupervisorMutationResultDto, SupervisorRecoveryAction } from "./supervisor-mutation-report";
+import type {
+  SupervisorMutationResultDto,
+  SupervisorOrphanPruneResultDto,
+  SupervisorRecoveryAction,
+} from "./supervisor-mutation-report";
 import type { SupervisorExplainDto } from "./supervisor-selection-status";
 import type { SupervisorStatusDto } from "./supervisor-status-report";
 import type { SupervisorEventSink } from "./supervisor-events";
@@ -19,6 +23,7 @@ export interface SupervisorService {
   runOnce: (options: Pick<CliOptions, "dryRun">) => Promise<string>;
   queryStatus: (options: Pick<CliOptions, "why">) => Promise<SupervisorStatusDto>;
   runRecoveryAction: (action: SupervisorRecoveryAction, issueNumber: number) => Promise<SupervisorMutationResultDto>;
+  pruneOrphanedWorkspaces: () => Promise<SupervisorOrphanPruneResultDto>;
   resetCorruptJsonState: () => Promise<JsonCorruptStateResetResult>;
   queryExplain: (issueNumber: number) => Promise<SupervisorExplainDto>;
   queryIssueLint: (issueNumber: number) => Promise<string[]>;
@@ -54,6 +59,10 @@ class SupervisorApplicationService implements SupervisorService {
 
   runRecoveryAction(action: SupervisorRecoveryAction, issueNumber: number): Promise<SupervisorMutationResultDto> {
     return this.supervisor.runRecoveryAction(action, issueNumber);
+  }
+
+  pruneOrphanedWorkspaces(): Promise<SupervisorOrphanPruneResultDto> {
+    return this.supervisor.pruneOrphanedWorkspaces();
   }
 
   resetCorruptJsonState(): Promise<JsonCorruptStateResetResult> {

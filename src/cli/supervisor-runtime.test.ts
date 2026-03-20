@@ -78,6 +78,9 @@ test("runSupervisorCommand stops the loop after a registered signal and aborts p
         runRecoveryAction: async () => {
           throw new Error("unexpected runRecoveryAction");
         },
+        pruneOrphanedWorkspaces: async () => {
+          throw new Error("unexpected pruneOrphanedWorkspaces");
+        },
         resetCorruptJsonState: async () => {
           throw new Error("unexpected resetCorruptJsonState");
         },
@@ -144,6 +147,9 @@ test("runSupervisorCommand stops the loop after a corrupt-json fail-closed block
         runRecoveryAction: async () => {
           throw new Error("unexpected runRecoveryAction");
         },
+        pruneOrphanedWorkspaces: async () => {
+          throw new Error("unexpected pruneOrphanedWorkspaces");
+        },
         resetCorruptJsonState: async () => {
           throw new Error("unexpected resetCorruptJsonState");
         },
@@ -207,6 +213,10 @@ test("runSupervisorCommand routes query commands through the supervisor service 
         runRecoveryAction: async () => {
           calls.push("recovery");
           throw new Error("unexpected runRecoveryAction");
+        },
+        pruneOrphanedWorkspaces: async () => {
+          calls.push("pruneOrphanedWorkspaces");
+          throw new Error("unexpected pruneOrphanedWorkspaces");
         },
         resetCorruptJsonState: async () => {
           calls.push("resetCorruptJsonState");
@@ -303,6 +313,9 @@ test("runSupervisorCommand renders a structured requeue result", async () => {
             recoveryReason: "operator_requeue: requeued issue #123 from blocked to queued",
           };
         },
+        pruneOrphanedWorkspaces: async () => {
+          throw new Error("unexpected pruneOrphanedWorkspaces");
+        },
         resetCorruptJsonState: async () => {
           throw new Error("unexpected resetCorruptJsonState");
         },
@@ -356,6 +369,102 @@ test("runSupervisorCommand renders a structured requeue result", async () => {
   });
 });
 
+test("runSupervisorCommand renders a structured orphan prune result", async () => {
+  const stdout: string[] = [];
+
+  await runSupervisorCommand(
+    { command: "prune-orphaned-workspaces", dryRun: false, why: false, issueNumber: undefined },
+    {
+      service: {
+        config: {} as SupervisorConfig,
+        pollIntervalMs: () => 50,
+        acquireSupervisorLock: async () => ({
+          acquired: true,
+          release: async () => {},
+        }),
+        runOnce: async () => {
+          throw new Error("unexpected runOnce");
+        },
+        queryStatus: async () => {
+          throw new Error("unexpected queryStatus");
+        },
+        queryExplain: async () => {
+          throw new Error("unexpected queryExplain");
+        },
+        queryIssueLint: async () => {
+          throw new Error("unexpected queryIssueLint");
+        },
+        queryDoctor: async () => {
+          throw new Error("unexpected queryDoctor");
+        },
+        runRecoveryAction: async () => {
+          throw new Error("unexpected runRecoveryAction");
+        },
+        pruneOrphanedWorkspaces: async () => ({
+          action: "prune-orphaned-workspaces",
+          outcome: "completed",
+          summary: "Pruned 1 orphaned workspace(s); skipped 1 orphaned workspace(s).",
+          pruned: [
+            {
+              issueNumber: 123,
+              workspaceName: "issue-123",
+              workspacePath: "/tmp/workspaces/issue-123",
+              branch: "codex/reopen-issue-123",
+              modifiedAt: "2026-03-21T00:00:00.000Z",
+              reason: "safe orphaned git worktree",
+            },
+          ],
+          skipped: [
+            {
+              issueNumber: 124,
+              workspaceName: "issue-124",
+              workspacePath: "/tmp/workspaces/issue-124",
+              branch: "codex/reopen-issue-124",
+              modifiedAt: "2026-03-21T00:00:00.000Z",
+              eligibility: "recent",
+              reason: "workspace modified within 24h grace period",
+            },
+          ],
+        }),
+        resetCorruptJsonState: async () => {
+          throw new Error("unexpected resetCorruptJsonState");
+        },
+      },
+      writeStdout: (line) => {
+        stdout.push(line);
+      },
+    },
+  );
+
+  assert.equal(stdout.length, 1);
+  assert.deepEqual(JSON.parse(stdout[0] ?? ""), {
+    action: "prune-orphaned-workspaces",
+    outcome: "completed",
+    summary: "Pruned 1 orphaned workspace(s); skipped 1 orphaned workspace(s).",
+    pruned: [
+      {
+        issueNumber: 123,
+        workspaceName: "issue-123",
+        workspacePath: "/tmp/workspaces/issue-123",
+        branch: "codex/reopen-issue-123",
+        modifiedAt: "2026-03-21T00:00:00.000Z",
+        reason: "safe orphaned git worktree",
+      },
+    ],
+    skipped: [
+      {
+        issueNumber: 124,
+        workspaceName: "issue-124",
+        workspacePath: "/tmp/workspaces/issue-124",
+        branch: "codex/reopen-issue-124",
+        modifiedAt: "2026-03-21T00:00:00.000Z",
+        eligibility: "recent",
+        reason: "workspace modified within 24h grace period",
+      },
+    ],
+  });
+});
+
 test("runSupervisorCommand renders a structured corrupt-json reset result", async () => {
   const stdout: string[] = [];
 
@@ -386,6 +495,9 @@ test("runSupervisorCommand renders a structured corrupt-json reset result", asyn
         },
         runRecoveryAction: async () => {
           throw new Error("unexpected runRecoveryAction");
+        },
+        pruneOrphanedWorkspaces: async () => {
+          throw new Error("unexpected pruneOrphanedWorkspaces");
         },
         resetCorruptJsonState: async () => ({
           action: "reset-corrupt-json-state",

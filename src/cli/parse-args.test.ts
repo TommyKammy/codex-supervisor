@@ -54,6 +54,19 @@ test("parseArgs accepts reset-corrupt-json-state without an issue number", () =>
   });
 });
 
+test("parseArgs accepts prune-orphaned-workspaces without an issue number", () => {
+  assert.deepEqual(parseArgs(["prune-orphaned-workspaces"]), {
+    command: "prune-orphaned-workspaces",
+    configPath: undefined,
+    dryRun: false,
+    why: false,
+    issueNumber: undefined,
+    snapshotPath: undefined,
+    caseId: undefined,
+    corpusPath: undefined,
+  });
+});
+
 test("parseArgs accepts replay with a snapshot path", () => {
   assert.deepEqual(parseArgs(["replay", "/tmp/decision-cycle-snapshot.json"]), {
     command: "replay",

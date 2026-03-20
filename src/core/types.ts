@@ -359,6 +359,7 @@ export interface CliOptions {
     | "loop"
     | "status"
     | "requeue"
+    | "prune-orphaned-workspaces"
     | "reset-corrupt-json-state"
     | "explain"
     | "issue-lint"

@@ -700,6 +700,68 @@ test("runOnce preserves recent orphaned worktrees until the orphan age gate expi
   assert.match(git(["-C", fixture.repoPath, "branch", "--list", orphanBranch]), new RegExp(orphanBranch));
 });
 
+test("pruneOrphanedWorkspaces prunes eligible orphan worktrees and skips recent ones", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.cleanupOrphanedWorkspacesAfterHours = 24;
+
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const eligibleIssueNumber = 92;
+  const eligibleBranch = branchName(fixture.config, eligibleIssueNumber);
+  const eligibleWorkspace = path.join(fixture.workspaceRoot, `issue-${eligibleIssueNumber}`);
+  await fs.mkdir(fixture.workspaceRoot, { recursive: true });
+  git(["-C", fixture.repoPath, "worktree", "add", "-b", eligibleBranch, eligibleWorkspace, "origin/main"]);
+
+  const recentIssueNumber = 93;
+  const recentBranch = branchName(fixture.config, recentIssueNumber);
+  const recentWorkspace = path.join(fixture.workspaceRoot, `issue-${recentIssueNumber}`);
+  git(["-C", fixture.repoPath, "worktree", "add", "-b", recentBranch, recentWorkspace, "origin/main"]);
+
+  const oldTime = new Date("2026-03-18T00:00:00.000Z");
+  await fs.utimes(eligibleWorkspace, oldTime, oldTime);
+  const recentTime = new Date(Date.now() - 60 * 60 * 1000);
+  await fs.utimes(recentWorkspace, recentTime, recentTime);
+
+  const supervisor = new Supervisor(fixture.config);
+  const result = await supervisor.pruneOrphanedWorkspaces();
+
+  assert.deepEqual(result, {
+    action: "prune-orphaned-workspaces",
+    outcome: "completed",
+    summary: "Pruned 1 orphaned workspace(s); skipped 1 orphaned workspace(s).",
+    pruned: [
+      {
+        issueNumber: eligibleIssueNumber,
+        workspaceName: `issue-${eligibleIssueNumber}`,
+        workspacePath: eligibleWorkspace,
+        branch: eligibleBranch,
+        modifiedAt: oldTime.toISOString(),
+        reason: "safe orphaned git worktree",
+      },
+    ],
+    skipped: [
+      {
+        issueNumber: recentIssueNumber,
+        workspaceName: `issue-${recentIssueNumber}`,
+        workspacePath: recentWorkspace,
+        branch: recentBranch,
+        modifiedAt: recentTime.toISOString(),
+        eligibility: "recent",
+        reason: "workspace modified within 24h grace period",
+      },
+    ],
+  });
+
+  await assert.rejects(fs.access(eligibleWorkspace));
+  await fs.access(recentWorkspace);
+  assert.match(git(["-C", fixture.repoPath, "branch", "--list", eligibleBranch]), /^$/);
+  assert.match(git(["-C", fixture.repoPath, "branch", "--list", recentBranch]), new RegExp(recentBranch));
+});
+
 test("runOnce releases the current issue lock before restarting after a merged PR", async () => {
   const fixture = await createSupervisorFixture();
   const mergedIssueNumber = 91;
