@@ -23,6 +23,7 @@ export function parseArgs(argv: string[]): CliOptions {
       token === "loop" ||
       token === "status" ||
       token === "requeue" ||
+      token === "reset-corrupt-json-state" ||
       token === "explain" ||
       token === "issue-lint" ||
       token === "doctor" ||

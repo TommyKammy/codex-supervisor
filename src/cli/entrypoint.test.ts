@@ -104,6 +104,29 @@ test("runCli routes requeue through the supervisor runtime boundary", async () =
   });
 });
 
+test("runCli routes reset-corrupt-json-state through the supervisor runtime boundary", async () => {
+  const service = { tag: "service" };
+  let runtimeCommand: Record<string, unknown> | undefined;
+
+  await runCli(["reset-corrupt-json-state"], {
+    createSupervisorService: () => service as never,
+    runSupervisorCommand: async (command, dependencies) => {
+      runtimeCommand = {
+        ...command,
+        service: dependencies.service,
+      };
+    },
+  });
+
+  assert.deepEqual(runtimeCommand, {
+    command: "reset-corrupt-json-state",
+    dryRun: false,
+    why: false,
+    issueNumber: undefined,
+    service,
+  });
+});
+
 test("runCliMain reports failures to stderr and exits with code 1", async () => {
   const stderr: string[] = [];
   const exitCodes: number[] = [];

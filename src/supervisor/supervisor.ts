@@ -883,6 +883,21 @@ export class Supervisor {
     }
   }
 
+  async resetCorruptJsonState() {
+    const lock = await acquireFileLock(this.lockPath("supervisor", "run"), "supervisor-recovery-reset-corrupt-json-state", {
+      allowAmbiguousOwnerCleanup: true,
+    });
+    if (!lock.acquired) {
+      throw new Error(`Cannot run recovery action while supervisor is active: ${lock.reason ?? "lock unavailable"}`);
+    }
+
+    try {
+      return this.stateStore.resetCorruptJsonState();
+    } finally {
+      await lock.release();
+    }
+  }
+
   async explainReport(issueNumber: number): Promise<SupervisorExplainDto> {
     const state = await this.stateStore.load();
     return buildIssueExplainDto(this.github, this.config, state, issueNumber);

@@ -41,6 +41,19 @@ test("parseArgs accepts requeue with an issue number", () => {
   });
 });
 
+test("parseArgs accepts reset-corrupt-json-state without an issue number", () => {
+  assert.deepEqual(parseArgs(["reset-corrupt-json-state"]), {
+    command: "reset-corrupt-json-state",
+    configPath: undefined,
+    dryRun: false,
+    why: false,
+    issueNumber: undefined,
+    snapshotPath: undefined,
+    caseId: undefined,
+    corpusPath: undefined,
+  });
+});
+
 test("parseArgs accepts replay with a snapshot path", () => {
   assert.deepEqual(parseArgs(["replay", "/tmp/decision-cycle-snapshot.json"]), {
     command: "replay",

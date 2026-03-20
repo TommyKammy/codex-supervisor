@@ -1,4 +1,4 @@
-import type { IssueRunRecord, RunState } from "../core/types";
+import type { IssueRunRecord, JsonCorruptStateResetResult, RunState } from "../core/types";
 
 export type SupervisorRecoveryAction = "requeue";
 
@@ -72,5 +72,9 @@ export function buildSupervisorMutationRecordSnapshot(
 }
 
 export function renderSupervisorMutationResultDto(dto: SupervisorMutationResultDto): string {
+  return JSON.stringify(dto);
+}
+
+export function renderJsonCorruptStateResetResultDto(dto: JsonCorruptStateResetResult): string {
   return JSON.stringify(dto);
 }

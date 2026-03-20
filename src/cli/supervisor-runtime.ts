@@ -2,6 +2,7 @@ import type { CliOptions, SupervisorConfig } from "../core/types";
 import { sleep as defaultSleep } from "../core/utils";
 import { ensureGsdInstalled as defaultEnsureGsdInstalled } from "../gsd";
 import { renderDoctorReport } from "../doctor";
+import { renderJsonCorruptStateResetResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderSupervisorMutationResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderIssueExplainDto } from "../supervisor/supervisor-selection-status";
 import { type SupervisorLock, type SupervisorService } from "../supervisor/supervisor-service";
@@ -9,7 +10,7 @@ import { renderSupervisorStatusDto } from "../supervisor/supervisor-status-repor
 
 type SupervisorRuntimeCommand = Extract<
   CliOptions["command"],
-  "run-once" | "loop" | "status" | "requeue" | "explain" | "issue-lint" | "doctor"
+  "run-once" | "loop" | "status" | "requeue" | "reset-corrupt-json-state" | "explain" | "issue-lint" | "doctor"
 >;
 
 interface SupervisorRuntimeDependencies {
@@ -27,6 +28,7 @@ export function isSupervisorRuntimeCommand(command: CliOptions["command"]): comm
     command === "loop" ||
     command === "status" ||
     command === "requeue" ||
+    command === "reset-corrupt-json-state" ||
     command === "explain" ||
     command === "issue-lint" ||
     command === "doctor"
@@ -37,6 +39,7 @@ function requiresGsdInstall(command: SupervisorRuntimeCommand): boolean {
   return (
     command !== "status" &&
     command !== "requeue" &&
+    command !== "reset-corrupt-json-state" &&
     command !== "explain" &&
     command !== "issue-lint" &&
     command !== "doctor"
@@ -102,6 +105,11 @@ export async function runSupervisorCommand(
 
   if (options.command === "requeue") {
     writeStdout(renderSupervisorMutationResultDto(await service.runRecoveryAction("requeue", options.issueNumber!)));
+    return;
+  }
+
+  if (options.command === "reset-corrupt-json-state") {
+    writeStdout(renderJsonCorruptStateResetResultDto(await service.resetCorruptJsonState()));
     return;
   }
 

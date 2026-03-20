@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { IssueRunRecord, JsonStateQuarantine, StateLoadFinding, SupervisorStateFile } from "./types";
+import {
+  IssueRunRecord,
+  JsonCorruptStateResetResult,
+  JsonStateQuarantine,
+  StateLoadFinding,
+  SupervisorStateFile,
+} from "./types";
 import { ensureDir, nowIso, parseJson, readJsonIfExists, writeJsonAtomic } from "./utils";
 
 interface StateStoreOptions {
@@ -203,6 +209,37 @@ function buildJsonQuarantineMarkerTempPath(filePath: string, attemptId: string):
   return `${filePath}.quarantine.${attemptId}.tmp`;
 }
 
+function buildRejectedJsonResetResult(
+  stateFile: string,
+  summary: string,
+  quarantine: JsonStateQuarantine | null = null,
+): JsonCorruptStateResetResult {
+  return {
+    action: "reset-corrupt-json-state",
+    outcome: "rejected",
+    summary,
+    stateFile,
+    quarantinedFile: quarantine?.quarantined_file ?? null,
+    quarantinedAt: quarantine?.quarantined_at ?? null,
+  };
+}
+
+function isJsonQuarantineMarkerState(state: SupervisorStateFile): state is SupervisorStateFile & {
+  json_state_quarantine: JsonStateQuarantine;
+} {
+  if (state.activeIssueNumber !== null || Object.keys(state.issues).length > 0 || !state.json_state_quarantine) {
+    return false;
+  }
+
+  const findings = state.load_findings ?? [];
+  return findings.length > 0 && findings.every((finding) =>
+    finding.backend === "json" &&
+    finding.kind === "parse_error" &&
+    finding.scope === "state_file" &&
+    finding.issue_number === null
+  );
+}
+
 export class StateStore {
   private static readonly jsonLoadLocks = new Map<string, Promise<void>>();
 
@@ -226,6 +263,17 @@ export class StateStore {
     }
 
     await writeJsonAtomic(this.stateFilePath, normalizeStateForSave(state));
+  }
+
+  async resetCorruptJsonState(): Promise<JsonCorruptStateResetResult> {
+    if (this.options.backend !== "json") {
+      return buildRejectedJsonResetResult(
+        this.stateFilePath,
+        `Rejected reset-corrupt-json-state for ${this.stateFilePath}: only the JSON state backend supports this recovery action.`,
+      );
+    }
+
+    return this.withJsonLoadLock(this.stateFilePath, async () => this.resetCorruptJsonStateFromJson(this.stateFilePath));
   }
 
   touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
@@ -391,6 +439,53 @@ export class StateStore {
 
       return this.quarantineCorruptJsonState(filePath, error);
     }
+  }
+
+  private async resetCorruptJsonStateFromJson(filePath: string): Promise<JsonCorruptStateResetResult> {
+    let raw: string;
+    try {
+      raw = await fs.readFile(filePath, "utf8");
+    } catch (error) {
+      const maybeErr = error as NodeJS.ErrnoException;
+      if (maybeErr.code === "ENOENT") {
+        return buildRejectedJsonResetResult(
+          filePath,
+          `Rejected reset-corrupt-json-state for ${filePath}: the current JSON state is not a corruption quarantine marker.`,
+        );
+      }
+
+      throw error;
+    }
+
+    let state: SupervisorStateFile;
+    try {
+      state = normalizeStateForLoad(parseJson<SupervisorStateFile>(raw, filePath));
+    } catch {
+      return buildRejectedJsonResetResult(
+        filePath,
+        `Rejected reset-corrupt-json-state for ${filePath}: the current JSON state is not a corruption quarantine marker.`,
+      );
+    }
+
+    if (!isJsonQuarantineMarkerState(state) || state.json_state_quarantine.marker_file !== filePath) {
+      return buildRejectedJsonResetResult(
+        filePath,
+        `Rejected reset-corrupt-json-state for ${filePath}: the current JSON state is not a corruption quarantine marker.`,
+        state.json_state_quarantine ?? null,
+      );
+    }
+
+    const quarantine = state.json_state_quarantine;
+    await writeJsonAtomic(filePath, normalizeStateForSave(this.emptyState()));
+    return {
+      action: "reset-corrupt-json-state",
+      outcome: "mutated",
+      summary:
+        `Reset corrupted JSON supervisor state at ${filePath} and preserved the quarantined payload at ${quarantine.quarantined_file}.`,
+      stateFile: filePath,
+      quarantinedFile: quarantine.quarantined_file,
+      quarantinedAt: quarantine.quarantined_at,
+    };
   }
 
   private async quarantineCorruptJsonState(
