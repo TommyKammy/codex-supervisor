@@ -22,9 +22,9 @@
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: automatic orphan pruning should share the same lock/in-use eligibility classification already exposed by `inspectOrphanedWorkspacePruneCandidates()`, instead of deleting orphaned worktrees after only branch/target validation.
-- What changed: added a focused `runOnce` regression test for a live orphan issue-lock skip in `src/supervisor/supervisor-execution-cleanup.test.ts`; updated `cleanupOrphanedIssueWorkspaces()` in `src/recovery-reconciliation.ts` to consume `inspectOrphanedWorkspacePruneCandidates()` and skip any non-`eligible` orphan with its deterministic reason.
+- What changed: added a focused `runOnce` regression test for a live orphan issue-lock skip in `src/supervisor/supervisor-execution-cleanup.test.ts`; updated `cleanupOrphanedIssueWorkspaces()` in `src/recovery-reconciliation.ts` to consume `inspectOrphanedWorkspacePruneCandidates()` and skip any non-`eligible` orphan with its deterministic reason; committed the change as `b0d1978` and opened draft PR `#751` (`Protect locked orphan workspaces from pruning`).
 - Current blocker: none
-- Next exact step: commit the focused cleanup gate change, push `codex/issue-727`, and open a draft PR for issue `#727`.
+- Next exact step: monitor PR `#751` CI and address any follow-up review or build feedback without widening scope beyond orphan auto-prune safety gating.
 - Verification gap: full repo test suite was not rerun; verification this turn is `npx tsx --test src/lock.test.ts src/supervisor/supervisor-execution-cleanup.test.ts` plus `npm run build`.
 - Files touched: `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-execution-cleanup.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting these changes would restore automatic deletion of orphaned worktrees that still show live lock ownership, which is the safety gap this issue is meant to close.
@@ -40,6 +40,8 @@ npx tsx --test src/lock.test.ts src/supervisor/supervisor-execution-cleanup.test
 npm ci
 npm run build
 gh pr status
+git push -u origin codex/issue-727
+gh pr create --draft --base main --head codex/issue-727 --title "Protect locked orphan workspaces from pruning" --body "..."
 date -u +"%Y-%m-%dT%H:%M:%SZ"
 ```
 ### Scratchpad
