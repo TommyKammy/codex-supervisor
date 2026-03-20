@@ -1,48 +1,36 @@
-# Issue #685: Reconciliation visibility: emit a conservative warning for unusually long reconciliation cycles
+# Issue #689: Issue metadata docs: document that child issues should not depend directly on their Epic
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/685
-- Branch: codex/issue-685
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/689
+- Branch: codex/issue-689
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 302a318e6ad9ac639c7288e45d7080ab19b76be1
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 78208c1e0ee7d5a4ea18fb1ac0d90d059eb9718b
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ851okoy
-- Repeated failure signature count: 1
-- Updated at: 2026-03-20T05:13:36.400Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-20T05:25:10.023Z
 
 ## Latest Codex Summary
-Implemented the reconciliation visibility slice and pushed it on `codex/issue-685` in commit `302a318`. The change persists reconciliation cycle start time in the phase snapshot, and [`src/supervisor/supervisor.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-685/src/supervisor/supervisor.ts) now emits a non-blocking `reconciliation_warning=long_running ...` line once a cycle has been active for more than five minutes. The snapshot handling lives in [`src/supervisor/supervisor-reconciliation-phase.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-685/src/supervisor/supervisor-reconciliation-phase.ts), and the focused regression coverage is in [`src/supervisor/supervisor-diagnostics-status-selection.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-685/src/supervisor/supervisor-diagnostics-status-selection.test.ts).
-
-Focused verification passed with `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build`. I had to run `npm install` first because `typescript` was missing from this worktree, and I opened draft PR #692: https://github.com/TommyKammy/codex-supervisor/pull/692
-
-Summary: Added a deterministic long-running reconciliation status warning, covered fresh vs long cycles with a focused test, built successfully, and opened draft PR #692.
-State hint: draft_pr
-Blocked reason: none
-Tests: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`
-Failure signature: none
-Next action: wait for CI and review feedback on PR #692, then address any follow-up if it appears
+- Added concise epic/child scheduling guidance to `docs/issue-metadata.md`, including a recommended `Part of + sibling Depends on` example and a discouraged `Depends on: <Epic>` example. Tightened `src/config.test.ts` to require that guidance, verified the focused docs assertion, restored local dev dependencies with `npm install`, and reran `npm run build` successfully.
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/692#discussion_r2963988178
-- Details:
-  - src/supervisor/supervisor.ts:173 _⚠️ Potential issue_ | _🟡 Minor_ **Use a strict “exceeds threshold” boundary.** Line 171 warns at exactly 5 minutes; the requirement says warning should appear once reconciliation **exceeds** five minutes. Keep equality non-warning. <details> <summary>Boundary fix</summary> ```diff - if (elapsedMs < LONG_RECONCILIATION_WARNING_THRESHOLD_MS) { + if (elapsedMs <= LONG_RECONCILIATION_WARNING_THRESHOLD_MS) { return null; } ``` </details> <!-- suggestion_start --> <details> <summary>📝 Committable suggestion</summary> > ‼️ **IMPORTANT** > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements. ```suggestion if (elapsedMs <= LONG_RECONCILIATION_WARNING_THRESHOLD_MS) { return null; } ``` </details> <!-- suggestion_end --> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/supervisor/supervisor.ts` around lines 171 - 173, The current check uses "if (elapsedMs < LONG_RECONCILIATION_WARNING_THRESHOLD_MS) return null;" which triggers a warning at exactly the threshold; change the boundary to be strict by guarding with "<=" so the code reads that if elapsedMs <= LONG_RECONCILIATION_WARNING_THRESHOLD_MS return null, ensuring warnings occur only when elapsedMs > LONG_RECONCILIATION_WARNING_THRESHOLD_MS (refer to elapsedMs and LONG_RECONCILIATION_WARNING_THRESHOLD_MS in supervisor.ts). ``` </details> <!-- fingerprinting:phantom:poseidon:hawk --> <!-- This is an auto-generated comment by CodeRabbit -->
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the narrowest safe review fix for #685 is to preserve the existing visibility-only warning path while changing the threshold boundary so reconciliation warns only after elapsed time strictly exceeds five minutes.
-- What changed: validated CodeRabbit thread `PRRT_kwDORgvdZ851okoy` as a real boundary bug, changed `buildLongReconciliationWarning(...)` in `src/supervisor/supervisor.ts` to return `null` when `elapsedMs <= LONG_RECONCILIATION_WARNING_THRESHOLD_MS`, tightened `src/supervisor/supervisor-diagnostics-status-selection.test.ts` to assert no warning at exactly five minutes and a warning at five minutes plus one second, committed the fix as `45d9615`, pushed `codex/issue-685`, and resolved the PR #692 review thread in GitHub.
+- Hypothesis: the narrowest safe fix for #689 is a docs-only update in `docs/issue-metadata.md`, backed by a focused regression in the existing docs coverage, because current scheduler behavior already treats `Part of + Execution order` as the epic/child sequencing mechanism.
+- What changed: tightened `src/config.test.ts` so the issue-metadata docs must mention that child issues use `Part of: #42` for epic association, must not use `Depends on: #42` when `#42` is only the parent epic, and must include recommended/discouraged examples. Updated `docs/issue-metadata.md` with that rule and a concise `Epic / child pattern` section showing the preferred `Part of: #42` plus sibling `Depends on: #41` pattern and the discouraged `Depends on: #42` anti-pattern.
 - Current blocker: none
-- Next exact step: monitor PR #692 for any follow-up review or CI regression; otherwise proceed toward merge once the updated branch is re-evaluated.
-- Verification gap: none for this review fix. `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build` passed locally after the boundary update.
-- Files touched: `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would reintroduce a mismatch between the operator-visible warning and the acceptance text that says reconciliation must exceed the five-minute threshold before warning.
-- Last focused commands: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`
+- Next exact step: review the final diff for concision, then commit the docs/test checkpoint on `codex/issue-689` and prepare/update the draft PR if needed.
+- Verification gap: none for the requested acceptance criteria. The focused docs regression and `npm run build` both passed locally after restoring dev dependencies with `npm install`.
+- Files touched: `docs/issue-metadata.md`, `src/config.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would remove the explicit operator guidance that prevents child issues from being blocked on their parent epic via `Depends on: <Epic>`, leaving the docs inconsistent with current scheduler behavior.
+- Last focused commands: `npx tsx --test src/config.test.ts --test-name-pattern "getting started links to focused configuration and local review references"`; `npm install`; `npm run build`
 ### Scratchpad
+- 2026-03-20 (JST): Reproduced #689 by tightening the issue-metadata docs assertion in `src/config.test.ts`; the new check failed because `docs/issue-metadata.md` did not yet explain that child issues should use `Part of` for epic association and should not depend directly on the epic. Added a concise `Epic / child pattern` section with recommended/discouraged examples, reran the focused assertion, restored local dev dependencies with `npm install` because `tsc` was missing in this worktree, and then reran `npm run build` successfully.
 - 2026-03-20 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851okoy` by making the long-reconciliation warning boundary strict (`>` only) and extending the diagnostics test to keep the exact five-minute case non-warning; focused verification passed with `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build`.
 - 2026-03-20 (JST): Pushed `codex/issue-671` to `origin/codex/issue-671` and opened draft PR #676 (`https://github.com/TommyKammy/codex-supervisor/pull/676`) after the focused artifact/finalize/result/status/policy tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.

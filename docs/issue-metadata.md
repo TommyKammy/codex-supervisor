@@ -24,6 +24,7 @@ These fields are the core metadata format for execution-ready work:
 Use `Part of: #42` to point at the parent epic or tracking issue.
 
 - Use one parent issue for a sequenced set of child issues.
+- Child issues should use `Part of: #42` to associate with an epic.
 - Prefer the `Part of: #...` form in new issues for consistency.
 - The parser still accepts the legacy `Part of #42` form.
 
@@ -31,9 +32,34 @@ Use `Part of: #42` to point at the parent epic or tracking issue.
 
 Use `Depends on: #41` for prerequisites that must be closed before this issue can run.
 
+- Do not use `Depends on: #42` when `#42` is only the parent epic; reserve `Depends on` for real execution prerequisites.
 - List every true prerequisite, not just the most recent one.
 - Use comma-separated issue numbers when there are multiple dependencies.
 - Prefer `Depends on` even when `Execution order` also implies the sequence.
+
+### Epic / child pattern
+
+When child issues belong to an epic, use `Part of` for the parent relationship and `Depends on` only for sibling or non-epic prerequisites.
+
+Recommended:
+
+```md
+Part of: #42
+Depends on: #41
+
+## Execution order
+2 of 4
+```
+
+Discouraged:
+
+```md
+Part of: #42
+Depends on: #42
+
+## Execution order
+2 of 4
+```
 
 ### `Parallelizable`
 
