@@ -14,16 +14,16 @@
 - Updated at: 2026-03-20T13:27:13.487Z
 
 ## Latest Codex Summary
-Addressed the two open CodeRabbit review findings on the JSON quarantine implementation in [state-store.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-716/src/core/state-store.ts). `loadFromJson()` now only treats an `ENOENT` from the initial `readFile()` as missing state, and the quarantine path now stages the recovery marker under a temp path before moving the corrupt file, with rollback to the original corrupt file if the final marker install fails. Added focused regressions in [state-store.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-716/src/core/state-store.test.ts) and reran the requested tests plus `npm run build` successfully.
+Addressed the two open CodeRabbit review findings on the JSON quarantine implementation in [state-store.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-716/src/core/state-store.ts). `loadFromJson()` now only treats an `ENOENT` from the initial `readFile()` as missing state, and the quarantine path now stages the recovery marker under a temp path before moving the corrupt file, with rollback to the original corrupt file if the final marker install fails. Added focused regressions in [state-store.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-716/src/core/state-store.test.ts), reran the requested tests plus `npm run build` successfully, pushed commit `c3bab7b` to `origin/codex/issue-716`, and resolved both CodeRabbit threads.
 
 The branch still targets draft PR #742: https://github.com/TommyKammy/codex-supervisor/pull/742. The only unrelated local dirt remains the untracked `.codex-supervisor/replay/` directory, which I left untouched.
 
-Summary: Addressed the two JSON quarantine review findings with focused tests and clean local verification
-State hint: addressing_review
+Summary: Addressed and pushed the JSON quarantine review fixes, with both CodeRabbit threads resolved
+State hint: waiting_ci
 Blocked reason: none
 Tests: `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts`; `npm run build`
-Failure signature: PRRT_kwDORgvdZ851ttMF|PRRT_kwDORgvdZ851ttMQ
-Next action: commit and push the review fix to `codex/issue-716`, then resolve the PR threads and watch CI
+Failure signature: none
+Next action: watch PR #742 CI on commit `c3bab7b` and handle any follow-up review or failures
 
 ## Active Failure Context
 - Category: review
@@ -38,13 +38,14 @@ Next action: commit and push the review fix to `codex/issue-716`, then resolve t
 - Hypothesis: the remaining review work is limited to JSON loader/quarantine error handling, so the fix should stay inside `src/core/state-store.ts` plus focused regression coverage.
 - What changed: split `loadFromJson()` so only the initial `readFile()` maps `ENOENT` to `emptyState()`, preventing quarantine-time `ENOENT` from being swallowed. Reworked `quarantineCorruptJsonState()` to write the marker to `state.json.quarantine.tmp` before moving the corrupt file aside, then restore the original corrupt file if the final marker rename fails. Added two focused regressions in `src/core/state-store.test.ts` for the rethrown `ENOENT` path and the rollback-on-marker-install-failure path.
 - Current blocker: none
-- Next exact step: commit and push the review fix, then resolve the two CodeRabbit threads on PR #742 and watch CI.
+- Next exact step: watch PR #742 CI for commit `c3bab7b` and handle any follow-up review or failures.
 - Verification gap: none locally after `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts` and `npm run build`.
 - Files touched: `src/core/state-store.ts`, `src/core/state-store.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this patch would reintroduce the silent `ENOENT` fallback after a successful JSON read and would allow a failed marker write/swap to leave `state.json` missing.
-- Last focused command: `npm run build`
-- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-716/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-716/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `sed -n '300,470p' src/core/state-store.ts`; `sed -n '1,260p' src/core/state-store.test.ts`; `sed -n '1,220p' src/core/utils.ts`; `rg -n "mock\\.|import \\{ mock \\}|from \\\"node:test\\\"" src --glob '*test.ts'`; `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts`; `npm run build`; `git diff -- src/core/state-store.ts src/core/state-store.test.ts`; `git status --short`
+- Last focused command: `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id='PRRT_kwDORgvdZ851ttMQ'`
+- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-716/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-716/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `sed -n '300,470p' src/core/state-store.ts`; `sed -n '1,260p' src/core/state-store.test.ts`; `sed -n '1,220p' src/core/utils.ts`; `rg -n "mock\\.|import \\{ mock \\}|from \\\"node:test\\\"" src --glob '*test.ts'`; `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts`; `npm run build`; `git diff -- src/core/state-store.ts src/core/state-store.test.ts`; `git status --short`; `git add src/core/state-store.ts src/core/state-store.test.ts .codex-supervisor/issue-journal.md`; `git commit -m "Fix JSON quarantine review regressions"`; `git push origin codex/issue-716`; `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id='PRRT_kwDORgvdZ851ttMF'`; `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id='PRRT_kwDORgvdZ851ttMQ'`
 ### Scratchpad
+- 2026-03-20 (JST): Committed the review fix as `c3bab7b`, pushed `codex/issue-716` to origin, and resolved CodeRabbit threads `PRRT_kwDORgvdZ851ttMF` and `PRRT_kwDORgvdZ851ttMQ`; next step is to watch PR #742 CI on the updated head.
 - 2026-03-20 (JST): Validated both CodeRabbit review threads against the current `StateStore` implementation, split JSON load error handling so only the initial read converts `ENOENT` into missing state, staged the quarantine marker before moving the corrupt file, added rollback if the final marker install fails, and verified with `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts` plus `npm run build`.
 - 2026-03-20 (JST): Re-read the required memory files/journal, confirmed the branch only carried commit `f5d969e` plus the journal delta, reran `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts` and `npm run build` successfully, and prepared the branch for push plus draft PR creation.
 - 2026-03-20 (JST): Added a focused JSON quarantine reproducer, confirmed the loader left malformed `state.json` in place, then changed JSON state loading to move the corrupt file aside, write a deterministic marker back to `state.json`, and preserve the quarantine path through `load_findings` plus `json_state_quarantine`; focused verification and `npm run build` passed after installing local dev dependencies with `npm install`.
