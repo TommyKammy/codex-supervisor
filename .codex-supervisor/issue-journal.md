@@ -6,42 +6,42 @@
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: d0761a16c1f89a2f5c4f2d029311e123873e2732
+- Attempt count: 3 (implementation=1, repair=2)
+- Last head SHA: 71d37a09f95b80118bac8599474037f9e37865a8
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ851xgdP
+- Last failure signature: PRRT_kwDORgvdZ851xv4Z
 - Repeated failure signature count: 1
-- Updated at: 2026-03-20T17:38:12.389Z
+- Updated at: 2026-03-20T17:55:33.861Z
 
 ## Latest Codex Summary
-Implemented the remote-branch discovery fix in [src/core/workspace.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-722/src/core/workspace.ts) and added the focused remote-only regression in [src/core/workspace.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-722/src/core/workspace.test.ts). `ensureWorkspace()` now fetches the target issue ref into `refs/remotes/origin/<branch>` before bootstrapping, restores from `origin/<issue-branch>` when present, and keeps the default-branch bootstrap path for the remote-missing case.
+Pinned the issue-branch probe in [workspace.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-722/src/core/workspace.ts) to `LC_ALL=C` so the existing missing-remote `stderr` check stays deterministic on non-English Git installs. I updated the issue journal in [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-722/.codex-supervisor/issue-journal.md), committed the fix as `a74d400`, followed with the journal sync commit `71d37a0`, pushed `codex/issue-722`, and resolved the remaining CodeRabbit thread.
 
-I committed the code as `2d0db2e`, updated the journal in `d0761a1`, pushed `codex/issue-722`, and opened draft PR #747: https://github.com/TommyKammy/codex-supervisor/pull/747
+Verification passed with `npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/core/workspace.test.ts` and `npm run build`. PR #747 is now on head `71d37a0`; GitHub reports `mergeStateStatus: UNSTABLE`, which is consistent with checks rerunning after the push. The only remaining local dirt is the pre-existing untracked `.codex-supervisor/replay/` directory, which I left untouched.
 
-Summary: Implemented deterministic remote issue-branch discovery before bootstrap, added the focused regression, pushed `codex/issue-722`, and opened draft PR #747.
-State hint: draft_pr
+Summary: Forced the remote issue-branch fetch probe to run under `LC_ALL=C`, pushed the fix on `codex/issue-722`, and resolved the outstanding CodeRabbit review thread.
+State hint: waiting_ci
 Blocked reason: none
 Tests: `npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/core/workspace.test.ts`; `npm run build`
 Failure signature: none
-Next action: Watch PR #747 on head `d0761a1` for CI and review feedback, then address any fallout on `codex/issue-722`.
+Next action: Watch PR #747 checks on head `71d37a0` and address any new CI or review fallout if it appears.
 
 ## Active Failure Context
 - Category: review
 - Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/747#discussion_r2967063046
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/747#discussion_r2967148689
 - Details:
-  - src/core/workspace.ts:69 _⚠️ Potential issue_ | _🟡 Minor_ <details> <summary>🧩 Analysis chain</summary> 🌐 Web query: `Does git fetch use exit code 128 for missing remote refs?` 💡 Result: Yes—when `git fetch` is asked to fetch a ref that doesn’t exist on the remote (e.g., `fatal: couldn't find remote ref <name>`), it’s treated as a **fatal** error and Git typically exits with **status 128**. Git’s own error-handling docs note that fatal errors use `die()` and “exit with status 128.” [1] Examples in CI logs/community reports show the same “couldn’t find remote ref …” message followed by “exit status 128.” [2][3] **Caveat:** `128` is Git’s generic “fatal error” code, not a code unique to “missing remote refs.” [1] **Sources:** [1] [2] [3] --- 🏁 Script executed: ```shell # Search for the runCommand function definition fd -t f -e ts -e js | xargs grep -l "function runCommand" | head -5 ``` Repository: TommyKammy/codex-supervisor Length of output: 90 --- 🏁 Script executed: ```shell # Also search for runCommand with async keyword rg "export.*function runCommand|export.*const runCommand" -A 10 ``` Repository: TommyKammy/codex-supervisor Length of output: 664 --- 🏁 Script executed: ```shell # Look at the workspace.ts file around the function to understand context head -100 src/core/workspace.ts | tail -70 ``` Repository: TommyKammy/codex-supervisor Length of output: 2231 --- 🏁 Script executed: ```shell # Look at the CommandOptions type definition rg "type CommandOptions|interface CommandOptions" -A 5 src/core/command.ts ``` Repository: TommyKammy/codex-supervisor Length of output: 200 --- 🏁 Script executed: ```shell # See the full runCommand implementation cat -n src/core/command.ts | head -50 ``` Repository: TommyKammy/codex-supervisor Length of output: 2017 --- 🏁 Script executed: ```shell # Check the spawn call to see what options are passed rg "spawn\(command" -A 15 src/core/command.ts ``` Repository: TommyKammy/codex-supervisor Length of output: 561 --- 🏁 Script executed: ```shell # Check if LC_ALL=C is used elsewhere in the codebase rg "LC_ALL" src/ ``` Repository: TommyKammy/codex-supervisor Length of output: 53 --- 🏁 Script executed: ```shell # Check if there are other places in the code that parse stderr from git commands rg "stderr\.includes|stderr\.match" src/ -A 2 ``` Repository: TommyKammy/codex-supervisor Length of output: 570 --- 🏁 Script executed: ```shell # Look at how other git error handling is done in the codebase rg "throw new Error.*stderr" src/ -B 3 -A 2 ``` Repository: TommyKammy/codex-supervisor Length of output: 812 --- </details> **The error message check is locale-dependent and may fail with non-English Git installations.** The string check on line 59 (`couldn't find remote ref refs/heads/${branch}`) will not match if Git is configured with a non-English locale (e.g., `LANG=de_DE.UTF-8`), causing the function to throw an error instead of returning `false` for a missing remote ref. Use `{ allowExitCodes: [0, 128], env: { ...process.env, LC_ALL: "C" } }` to force English output, or alternatively check if the remote tracking ref actually exists after the fetch fails (similar to the existing `remoteTrackingRefExists` pattern). <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/core/workspace.ts` around lines 46 - 69, fetchIssueRemoteTrackingRef currently relies on parsing an English git stderr message which breaks for non-English locales; update the git fetch call in fetchIssueRemoteTrackingRef so it forces C/English output (pass env: { ...process.env, LC_ALL: "C" } to the runCommand options) and include 128 in allowExitCodes as already done, or instead avoid parsing stderr by, after a non-zero fetch result, checking the existence of remoteRef (the refs/remotes/origin/${branch} created/updated by the fetch) with the same remoteTrackingRefExists-style check and only throw when that ref truly doesn't exist; target the runCommand fetch call and the subsequent error-handling branch in fetchIssueRemoteTrackingRef. ``` </details> <!-- fingerprinting:phantom:medusa:ocelot --> <!-- This is an auto-generated comment by CodeRabbit -->
+  - `.codex-supervisor/issue-journal.md:33`: the journal copied the full CodeRabbit locale review into this section, which made the file hard to scan and introduced markdownlint noise (`MD038`, `MD052` for the missing `[3]` definition). Keep only a concise summary here and link back to the original review at `discussion_r2967063046`: https://github.com/TommyKammy/codex-supervisor/pull/747#discussion_r2967063046
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: Pinning the issue-branch fetch probe to `LC_ALL=C` resolves the remaining locale-sensitive review risk without changing the restore/bootstrap behavior already covered by the existing integration fixtures.
-- What changed: updated `fetchIssueRemoteTrackingRef(...)` in `src/core/workspace.ts` so the narrow `git fetch origin +refs/heads/<issue-branch>:refs/remotes/origin/<issue-branch>` probe always runs with `LC_ALL=C` while keeping the existing `[0, 128]` handling and stale tracking-ref cleanup for the missing-remote path; committed the review fix as `a74d400`, pushed `codex/issue-722`, and resolved CodeRabbit thread `PRRT_kwDORgvdZ851xgdP`.
+- Hypothesis: The remaining PR feedback is purely about journal readability, so replacing the embedded bot transcript with a short summary and direct discussion link should satisfy thread `PRRT_kwDORgvdZ851xv4Z` without changing runtime behavior.
+- What changed: trimmed `Active Failure Context` in `.codex-supervisor/issue-journal.md` down to a short description of the journal-specific review issue and linked the original locale discussion at `discussion_r2967063046` instead of copying its full body into this file.
 - Current blocker: none
-- Next exact step: watch PR #747 on head `a74d400` for CI and any follow-up review activity, then address fallout directly on `codex/issue-722` if anything new appears.
-- Verification gap: none; the issue's focused verification commands passed after the locale fix.
-- Files touched: `src/core/workspace.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this patch would reintroduce locale-sensitive missing-remote detection, so non-English Git environments could throw instead of preserving the existing bootstrap path.
-- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ851xgdP`
+- Next exact step: run focused markdown verification on `.codex-supervisor/issue-journal.md`, commit the journal cleanup, push `codex/issue-722`, and resolve thread `PRRT_kwDORgvdZ851xv4Z` if the rendered diff is clean.
+- Verification gap: none beyond confirming the journal no longer trips the reported markdownlint warnings.
+- Files touched: `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this patch would reintroduce the unreadable inline transcript and the missing-reference markdown noise in the journal, but would not affect product behavior.
+- Last focused command: `gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id,isResolved,path,comments(first:10){nodes{databaseId,url,body}}}}}}}' -F owner=TommyKammy -F repo=codex-supervisor -F number=747`
 - Last focused commands:
 ```bash
 sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-722/AGENTS.generated.md
@@ -86,14 +86,15 @@ git rev-parse --short HEAD
 git add src/core/workspace.ts .codex-supervisor/issue-journal.md && git commit -m "Force C locale for issue branch probe"
 git push origin codex/issue-722
 gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ851xgdP
+git status --short --branch
+git diff -- .codex-supervisor/issue-journal.md
+gh pr view 747 --json number,url,headRefName,isDraft,mergeStateStatus,reviewDecision,statusCheckRollup
+gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id,isResolved,path,comments(first:10){nodes{databaseId,url,body}}}}}}}' -F owner=TommyKammy -F repo=codex-supervisor -F number=747
+nl -ba .codex-supervisor/issue-journal.md | sed -n '1,140p'
+git rev-parse --short HEAD
 ```
 ### Scratchpad
-- 2026-03-21 (JST): Committed the locale-stable fetch probe fix as `a74d400`, pushed `codex/issue-722`, and resolved the last configured CodeRabbit thread on PR #747 after the required focused tests and `npm run build` both passed.
-- 2026-03-21 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851xgdP` by forcing the issue-branch discovery fetch in `src/core/workspace.ts` to run with `LC_ALL=C`; the existing integration coverage for remote-present and remote-missing discovery paths still passed, while a mock-based unit regression attempt was dropped because `tsx` exposed an unstable patch target for `runCommand` in this test harness.
-- 2026-03-20 (JST): Added a focused status regression for invalid JSON state, reproduced the omission where status only printed normal empty-state lines, then appended explicit `state_diagnostic` and `state_load_finding` lines for JSON `load_findings` so corruption is visible in status without changing loader semantics.
-- 2026-03-20 (JST): Added a focused docs regression for the missing JSON corruption contract, confirmed the new assertion failed first, then updated the English operator docs so they consistently say corrupted JSON state is a recovery event requiring explicit acknowledgement/reset and `status`/`doctor` triage before reuse.
-- 2026-03-19 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851N_xt` by guarding replay corpus case-id suggestion derivation in `src/index.ts`; focused verification passed with `npx tsx --test src/index.test.ts` and `npm run build`.
-- 2026-03-19 (JST): Added focused parser coverage for `replay-corpus-promote` plus an end-to-end CLI promotion regression in `src/index.test.ts`; the initial missing behavior was that the CLI had no dedicated promotion entry path at all.
+- 2026-03-21 (JST): Verified PR #747 is otherwise clean and that the only unresolved review thread is `PRRT_kwDORgvdZ851xv4Z` on `.codex-supervisor/issue-journal.md`; simplifying the stored failure context is sufficient because the underlying locale fix in `src/core/workspace.ts` is already merged into this branch head.
 - 2026-03-19 (JST): Implemented `replay-corpus-promote` in `src/index.ts` and extended `CliOptions` in `src/core/types.ts` with explicit `caseId` support; the new CLI path uses the existing `promoteCapturedReplaySnapshot(...)` implementation and defaults `corpusPath` to checked-in `replay-corpus`.
 - 2026-03-19 (JST): Focused verification passed with `npx tsx --test src/index.test.ts src/supervisor/replay-corpus.test.ts`; `npm run build` first failed because `tsc` was missing locally, so ran `npm install` and reran `npm run build` successfully.
 - 2026-03-19 (JST): Added `suggestReplayCorpusCaseIds(...)` with deterministic issue/state and normalized-title candidates, plus focused helper coverage in `src/supervisor/replay-corpus.test.ts`.
