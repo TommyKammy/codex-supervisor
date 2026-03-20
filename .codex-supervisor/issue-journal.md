@@ -1,37 +1,36 @@
-# Issue #672: Model routing: add guarded support for mini on bounded repair states
+# Issue #673: Supervisor bug: stale run lock with ambiguous owner metadata can stall the loop indefinitely
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/672
-- Branch: codex/issue-672
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/673
+- Branch: codex/issue-673
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 5f82b6a80f35467c0ce34ac7a7ae1fc385f7c754
+- Last head SHA: ede56f4ff369f2b7b8f19e1464fcb0a373a2d556
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-19T23:38:39.503Z
+- Updated at: 2026-03-20T00:10:17.120Z
 
 ## Latest Codex Summary
-- Added explicit bounded-repair model routing so `repairing_ci` and `addressing_review` can opt into a smaller model without changing default supervisor routing for broader implementation states.
+- None yet.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: bounded repair-state mini support should be an explicit config opt-in that applies only to supervisor turns in `repairing_ci` and `addressing_review`, leaving broader implementation states on the default GPT-5.4 path.
-- What changed: reproduced the gap with a focused `resolveCodexExecutionPolicy(...)` regression, then added optional `boundedRepairModelStrategy` / `boundedRepairModel` config parsing and validation plus repair-state-only routing in `src/codex/codex-policy.ts`. Updated shipped example configs and configuration docs to surface the new opt-in.
+- Hypothesis: the supervisor run lock should be allowed to reclaim a dead-pid lock even when host/owner metadata is ambiguous, while generic issue/session locks should keep refusing ambiguous-owner cleanup.
+- What changed: reproduced the stale run-lock gap with a focused `acquireFileLock(..., { allowAmbiguousOwnerCleanup: true })` regression in `src/lock.test.ts`, then added an explicit `AcquireFileLockOptions` override in `src/core/lock.ts` and used it only from `Supervisor.acquireSupervisorLock(...)` in `src/supervisor/supervisor.ts`.
 - Current blocker: none
-- Next exact step: watch CI and respond to any review feedback on draft PR #677.
-- Verification gap: none in the scoped worktree. Focused policy/config/repair-state prompt tests passed, and `npm run build` passed after restoring local dev dependencies with `npm install`.
-- Files touched: `src/core/types.ts`, `src/core/config.ts`, `src/codex/codex-policy.ts`, `src/codex/codex-policy.test.ts`, `src/core/config-local-review-model-routing.test.ts`, `docs/configuration.md`, `docs/examples/atlaspm.md`, `docs/examples/atlaspm.supervisor.config.example.json`, `supervisor.config.example.json`, `supervisor.config.codex.json`, `supervisor.config.copilot.json`, `supervisor.config.coderabbit.json`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would remove the only explicit way to route bounded repair turns to a smaller model while keeping broader implementation states on the default model policy.
-- Last focused command: `npx tsx --test src/codex/codex-policy.test.ts`; `npx tsx --test src/core/config-local-review-model-routing.test.ts`; `npx tsx --test src/codex/codex-prompt.test.ts --test-name-pattern "repairing_ci|addressing_review"`; `npm install`; `npm run build`
+- Next exact step: commit the scoped run-lock recovery fix, then open or update a draft PR for issue #673.
+- Verification gap: none for the scoped issue verification. `npx tsx --test src/lock.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/doctor.test.ts` and `npm run build` passed after restoring local dev dependencies with `npm install`. Note: repo-wide `npm test -- ...` still executes the full suite and fails on unrelated pre-existing assertions in `README`/runtime-layout/turn-orchestration tests.
+- Files touched: `src/core/lock.ts`, `src/lock.test.ts`, `src/supervisor/supervisor.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would restore the indefinite skip loop for a dead ambiguous supervisor run lock, while generic ambiguous-owner protections for issue/session locks would remain unchanged.
+- Last focused command: `npx tsx --test src/lock.test.ts`; `npx tsx --test src/cli/supervisor-runtime.test.ts`; `npm install`; `npx tsx --test src/lock.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/doctor.test.ts`; `npm run build`
 ### Scratchpad
-- 2026-03-20 (JST): Pushed `codex/issue-672` to `origin/codex/issue-672` and opened draft PR #677 (`https://github.com/TommyKammy/codex-supervisor/pull/677`) after the focused policy/config/repair-state prompt tests and `npm run build` were green locally.
-- 2026-03-20 (JST): Reproduced issue #672 with a focused `src/codex/codex-policy.test.ts` regression where `boundedRepairModelStrategy: "alias"` plus `boundedRepairModel: "gpt-5.4-mini"` still left `repairing_ci` on `gpt-5-codex`. Fixed it by adding optional bounded repair config parsing/validation and repair-state-only routing, then reran focused policy/config/repair-state prompt tests and `npm run build` successfully after `npm install`.
+- 2026-03-20 (JST): Reproduced issue #673 with a new `src/lock.test.ts` regression for reclaiming an ambiguous dead-pid supervisor run lock only when explicitly allowed. Implemented the narrow override in `src/core/lock.ts`, routed only `Supervisor.acquireSupervisorLock(...)` through it, and verified with `npx tsx --test src/lock.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/doctor.test.ts` plus `npm run build` after `npm install`. The package-level `npm test -- ...` command still ran the full suite and failed on unrelated pre-existing assertions outside this issue slice.
 - 2026-03-20 (JST): Pushed `codex/issue-671` to `origin/codex/issue-671` and opened draft PR #676 (`https://github.com/TommyKammy/codex-supervisor/pull/676`) after the focused artifact/finalize/result/status/policy tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
 - 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851kRrS` as a real bug: malformed SQLite rows could yield only `load_findings`, after which `loadFromSqlite()` returned fallback empty/bootstrap state without those findings. Fixed the fallback path, added a dedicated regression for the empty-state case, and reran `npx tsx --test src/core/state-store.test.ts` plus `npm run build` successfully.

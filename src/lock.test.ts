@@ -153,3 +153,38 @@ test("acquireFileLock refuses to clean up ambiguous owner locks", async () => {
   assert.match(lock.reason ?? "", /ambiguous owner/i);
   await fs.access(lockPath);
 });
+
+test("acquireFileLock can reclaim ambiguous owner locks when explicitly allowed", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-lock-"));
+  const lockPath = path.join(root, "supervisor", "run.lock");
+  await fs.mkdir(path.dirname(lockPath), { recursive: true });
+  await fs.writeFile(
+    lockPath,
+    `${JSON.stringify({
+      pid: 999_999,
+      label: "supervisor-loop",
+      acquired_at: "2026-03-20T00:00:00.000Z",
+      host: "other-host",
+      owner: "other-user",
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const lock = await acquireFileLock(lockPath, "supervisor-loop", {
+    allowAmbiguousOwnerCleanup: true,
+  });
+
+  assert.equal(lock.acquired, true);
+  const payload = JSON.parse(await fs.readFile(lockPath, "utf8")) as {
+    pid: number;
+    label: string;
+    acquired_at: string;
+    host?: string;
+    owner?: string;
+  };
+  assert.equal(payload.pid, process.pid);
+  assert.equal(payload.label, "supervisor-loop");
+
+  await lock.release();
+  await assert.rejects(fs.access(lockPath));
+});
