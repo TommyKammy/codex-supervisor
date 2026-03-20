@@ -147,6 +147,7 @@ import {
   PullRequestCheck,
   ReviewThread,
   RunState,
+  StateLoadFinding,
   SupervisorConfig,
   SupervisorStateFile,
   WorkspaceStatus,
@@ -252,6 +253,52 @@ function formatStatus(record: IssueRunRecord | null): string {
     `attempts=${record.attempt_count} impl=${record.implementation_attempt_count} repair=${record.repair_attempt_count}`,
     `workspace=${record.workspace}`,
   ].join(" ");
+}
+
+const MAX_RENDERED_STATUS_STATE_LOAD_FINDINGS = 5;
+
+function formatStatusStateLoadFinding(finding: StateLoadFinding): string {
+  const issueNumber = finding.issue_number === null ? "none" : String(finding.issue_number);
+  return [
+    "state_load_finding",
+    `backend=${finding.backend}`,
+    `scope=${finding.scope}`,
+    `issue_number=${issueNumber}`,
+    `location=${sanitizeStatusValue(finding.location)}`,
+    `message=${sanitizeStatusValue(finding.message)}`,
+  ].join(" ");
+}
+
+function buildStateLoadDiagnosticLines(
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+): string[] {
+  if (config.stateBackend !== "json") {
+    return [];
+  }
+
+  const findings = (state.load_findings ?? []).filter((finding) => finding.backend === "json");
+  if (findings.length === 0) {
+    return [];
+  }
+
+  const lines = [
+    [
+      "state_diagnostic",
+      "severity=hard",
+      "backend=json",
+      "summary=corrupted_json_state_forced_empty_fallback_not_missing_bootstrap",
+      `findings=${findings.length}`,
+      `location=${sanitizeStatusValue(config.stateFile)}`,
+    ].join(" "),
+    ...findings.slice(0, MAX_RENDERED_STATUS_STATE_LOAD_FINDINGS).map((finding) => formatStatusStateLoadFinding(finding)),
+  ];
+
+  if (findings.length > MAX_RENDERED_STATUS_STATE_LOAD_FINDINGS) {
+    lines.push(`state_load_finding_omitted count=${findings.length - MAX_RENDERED_STATUS_STATE_LOAD_FINDINGS}`);
+  }
+
+  return lines;
 }
 
 export class Supervisor {
@@ -709,6 +756,7 @@ export class Supervisor {
 
   async statusReport(options: Pick<CliOptions, "why"> = { why: false }): Promise<SupervisorStatusDto> {
     const state = await this.stateStore.load();
+    const stateDiagnosticLines = buildStateLoadDiagnosticLines(this.config, state);
     const gsdSummary = await describeGsdIntegration(this.config);
     const statusRecords = summarizeSupervisorStatusRecords(state);
     const reconciliationSnapshot = await readCurrentReconciliationPhaseSnapshot(this.config);
@@ -736,7 +784,7 @@ export class Supervisor {
         const whyLines = options.why ? await buildSelectionWhySummary(this.github, this.config, state) : [];
         return {
           gsdSummary,
-          detailedStatusLines,
+          detailedStatusLines: [...detailedStatusLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationWarning,
           readinessLines,
@@ -747,7 +795,7 @@ export class Supervisor {
         const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
         return {
           gsdSummary,
-          detailedStatusLines,
+          detailedStatusLines: [...detailedStatusLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationWarning,
           readinessLines: [],
@@ -794,7 +842,7 @@ export class Supervisor {
 
     return {
       gsdSummary,
-      detailedStatusLines: [...detailedStatusLines, ...summaryLines],
+      detailedStatusLines: [...detailedStatusLines, ...summaryLines, ...stateDiagnosticLines],
       reconciliationPhase,
       reconciliationWarning,
       readinessLines: [],

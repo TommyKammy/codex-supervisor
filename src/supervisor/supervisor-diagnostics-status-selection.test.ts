@@ -44,6 +44,39 @@ test("doctor uses the diagnostic-only state loader instead of StateStore.load", 
   assert.match(report, /doctor_check name=worktrees status=pass/);
 });
 
+test("status surfaces corrupted JSON state as an explicit hard diagnostic", async () => {
+  const fixture = await createSupervisorFixture();
+  await fs.writeFile(fixture.stateFile, "{not-json}\n", "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /state_diagnostic severity=hard backend=json summary=corrupted_json_state_forced_empty_fallback_not_missing_bootstrap findings=1 location=.*state\.json/,
+  );
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /state_load_finding backend=json scope=state_file issue_number=none location=.*state\.json message=/,
+  );
+  assert.equal(report.warning, null);
+
+  const status = await supervisor.status();
+  assert.match(
+    status,
+    /state_diagnostic severity=hard backend=json summary=corrupted_json_state_forced_empty_fallback_not_missing_bootstrap findings=1 location=.*state\.json/,
+  );
+  assert.match(status, /state_load_finding backend=json scope=state_file issue_number=none location=.*state\.json message=/);
+  assert.match(status, /^No active issue\.$/m);
+});
+
 test("status shows readiness reasons for runnable, requirements-blocked, and clarification-blocked issues", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {
