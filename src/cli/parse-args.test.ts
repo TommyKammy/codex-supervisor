@@ -28,6 +28,19 @@ test("parseArgs accepts issue-lint with an issue number", () => {
   });
 });
 
+test("parseArgs accepts requeue with an issue number", () => {
+  assert.deepEqual(parseArgs(["requeue", "123"]), {
+    command: "requeue",
+    configPath: undefined,
+    dryRun: false,
+    why: false,
+    issueNumber: 123,
+    snapshotPath: undefined,
+    caseId: undefined,
+    corpusPath: undefined,
+  });
+});
+
 test("parseArgs accepts replay with a snapshot path", () => {
   assert.deepEqual(parseArgs(["replay", "/tmp/decision-cycle-snapshot.json"]), {
     command: "replay",
@@ -122,5 +135,12 @@ test("parseArgs rejects a second command after replay", () => {
   assert.throws(
     () => parseArgs(["replay", "/tmp/decision-cycle-snapshot.json", "run-once"]),
     /Unexpected second command: run-once/,
+  );
+});
+
+test("parseArgs requires an issue number for requeue", () => {
+  assert.throws(
+    () => parseArgs(["requeue"]),
+    /The requeue command requires one issue number\./,
   );
 });

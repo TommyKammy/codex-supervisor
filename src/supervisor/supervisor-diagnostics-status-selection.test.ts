@@ -382,6 +382,48 @@ test("acquireSupervisorLock preserves the original denial when reconciliation ph
   }
 });
 
+test("runRecoveryAction refuses to mutate while the supervisor run lock is held", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const issueNumber = 91;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        blocked_reason: "verification",
+        pr_number: null,
+        codex_session_id: "session-91",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  const heldLock = await supervisor.acquireSupervisorLock("run-once");
+  assert.equal(heldLock.acquired, true);
+
+  try {
+    await assert.rejects(
+      supervisor.runRecoveryAction("requeue", issueNumber),
+      /Cannot run recovery action while supervisor is active: lock held by pid \d+ for supervisor-run-once/,
+    );
+  } finally {
+    await heldLock.release();
+  }
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  assert.equal(persisted.issues[String(issueNumber)]?.state, "blocked");
+  assert.equal(persisted.issues[String(issueNumber)]?.codex_session_id, "session-91");
+});
+
 test("acquireSupervisorLock emits typed run-lock blockage events", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {

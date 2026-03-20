@@ -2,13 +2,14 @@ import type { CliOptions, SupervisorConfig } from "../core/types";
 import { sleep as defaultSleep } from "../core/utils";
 import { ensureGsdInstalled as defaultEnsureGsdInstalled } from "../gsd";
 import { renderDoctorReport } from "../doctor";
+import { renderSupervisorMutationResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderIssueExplainDto } from "../supervisor/supervisor-selection-status";
 import { type SupervisorLock, type SupervisorService } from "../supervisor/supervisor-service";
 import { renderSupervisorStatusDto } from "../supervisor/supervisor-status-report";
 
 type SupervisorRuntimeCommand = Extract<
   CliOptions["command"],
-  "run-once" | "loop" | "status" | "explain" | "issue-lint" | "doctor"
+  "run-once" | "loop" | "status" | "requeue" | "explain" | "issue-lint" | "doctor"
 >;
 
 interface SupervisorRuntimeDependencies {
@@ -25,6 +26,7 @@ export function isSupervisorRuntimeCommand(command: CliOptions["command"]): comm
     command === "run-once" ||
     command === "loop" ||
     command === "status" ||
+    command === "requeue" ||
     command === "explain" ||
     command === "issue-lint" ||
     command === "doctor"
@@ -34,6 +36,7 @@ export function isSupervisorRuntimeCommand(command: CliOptions["command"]): comm
 function requiresGsdInstall(command: SupervisorRuntimeCommand): boolean {
   return (
     command !== "status" &&
+    command !== "requeue" &&
     command !== "explain" &&
     command !== "issue-lint" &&
     command !== "doctor"
@@ -94,6 +97,11 @@ export async function runSupervisorCommand(
 
   if (options.command === "status") {
     writeStdout(renderSupervisorStatusDto(await service.queryStatus({ why: options.why })));
+    return;
+  }
+
+  if (options.command === "requeue") {
+    writeStdout(renderSupervisorMutationResultDto(await service.runRecoveryAction("requeue", options.issueNumber!)));
     return;
   }
 

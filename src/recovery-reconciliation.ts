@@ -11,6 +11,11 @@ import { StateStore } from "./core/state-store";
 import { GitHubIssue, IssueRunRecord, PullRequestCheck, ReviewThread, RunState, SupervisorConfig, SupervisorStateFile } from "./core/types";
 import { hoursSince, nowIso } from "./core/utils";
 import { branchNameForIssue, cleanupWorkspace, isSafeCleanupTarget } from "./core/workspace";
+import {
+  buildSupervisorMutationRecordSnapshot,
+  type SupervisorMutationRecordSnapshotDto,
+  type SupervisorMutationResultDto,
+} from "./supervisor/supervisor-mutation-report";
 
 const OWNER_GUARDED_ACTIVE_STATES = new Set<RunState>([
   "planning",
@@ -22,6 +27,7 @@ const OWNER_GUARDED_ACTIVE_STATES = new Set<RunState>([
   "resolving_conflict",
   "addressing_review",
 ]);
+const OPERATOR_REQUEUEABLE_STATES = new Set<RunState>(["blocked", "failed"]);
 
 type StateStoreLike = Pick<StateStore, "touch" | "save">;
 
@@ -201,6 +207,101 @@ export function formatRecoveryLog(events: RecoveryEvent[]): string | null {
 
 export function prependRecoveryLog(message: string, recoveryLog: string | null): string {
   return recoveryLog ? `${recoveryLog}; ${message}` : message;
+}
+
+function buildRejectedMutationResult(
+  issueNumber: number,
+  previousState: RunState | null,
+  previousRecordSnapshot: SupervisorMutationRecordSnapshotDto | null,
+  summary: string,
+): SupervisorMutationResultDto {
+  return {
+    action: "requeue",
+    issueNumber,
+    outcome: "rejected",
+    summary,
+    previousState,
+    previousRecordSnapshot,
+    nextState: previousState,
+    recoveryReason: null,
+  };
+}
+
+export async function requeueIssueForOperator(
+  stateStore: StateStoreLike,
+  state: SupervisorStateFile,
+  issueNumber: number,
+): Promise<SupervisorMutationResultDto> {
+  const record = state.issues[String(issueNumber)];
+  if (!record) {
+    return buildRejectedMutationResult(
+      issueNumber,
+      null,
+      null,
+      `Rejected requeue for issue #${issueNumber}: the issue is not tracked in supervisor state.`,
+    );
+  }
+
+  const previousRecordSnapshot = buildSupervisorMutationRecordSnapshot(record);
+  const previousState = previousRecordSnapshot.state;
+
+  if (state.activeIssueNumber === issueNumber) {
+    return buildRejectedMutationResult(
+      issueNumber,
+      previousState,
+      previousRecordSnapshot,
+      `Rejected requeue for issue #${issueNumber}: active issue reservations cannot be mutated.`,
+    );
+  }
+
+  if (record.pr_number !== null) {
+    return buildRejectedMutationResult(
+      issueNumber,
+      previousState,
+      previousRecordSnapshot,
+      `Rejected requeue for issue #${issueNumber}: tracked PR work cannot be requeued explicitly.`,
+    );
+  }
+
+  if (!OPERATOR_REQUEUEABLE_STATES.has(record.state)) {
+    return buildRejectedMutationResult(
+      issueNumber,
+      previousState,
+      previousRecordSnapshot,
+      `Rejected requeue for issue #${issueNumber}: only blocked or failed issues can be requeued safely.`,
+    );
+  }
+
+  const recoveryEvent = buildRecoveryEvent(
+    issueNumber,
+    `operator_requeue: requeued issue #${issueNumber} from ${previousState} to queued`,
+  );
+  const updated = stateStore.touch(record, applyRecoveryEvent({
+    state: "queued",
+    codex_session_id: null,
+    blocked_reason: null,
+    review_wait_started_at: null,
+    review_wait_head_sha: null,
+    copilot_review_requested_observed_at: null,
+    copilot_review_requested_head_sha: null,
+    copilot_review_timed_out_at: null,
+    copilot_review_timeout_action: null,
+    copilot_review_timeout_reason: null,
+    local_review_blocker_summary: null,
+  }, recoveryEvent));
+  state.issues[String(issueNumber)] = updated;
+  await stateStore.save(state);
+
+  return {
+    action: "requeue",
+    issueNumber,
+    outcome: "mutated",
+    summary: `Requeued issue #${issueNumber} from ${previousState} to queued.`,
+    previousState,
+    previousRecordSnapshot,
+    nextState: updated.state,
+    recoveryReason: recoveryEvent.reason,
+  };
 }
 
 function buildTrackedPrResumeRecoveryEvent(

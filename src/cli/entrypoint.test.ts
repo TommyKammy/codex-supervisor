@@ -81,6 +81,29 @@ test("runCli routes supervisor runtime commands through the supervisor runtime b
   });
 });
 
+test("runCli routes requeue through the supervisor runtime boundary", async () => {
+  const service = { tag: "service" };
+  let runtimeCommand: Record<string, unknown> | undefined;
+
+  await runCli(["requeue", "123"], {
+    createSupervisorService: () => service as never,
+    runSupervisorCommand: async (command, dependencies) => {
+      runtimeCommand = {
+        ...command,
+        service: dependencies.service,
+      };
+    },
+  });
+
+  assert.deepEqual(runtimeCommand, {
+    command: "requeue",
+    dryRun: false,
+    why: false,
+    issueNumber: 123,
+    service,
+  });
+});
+
 test("runCliMain reports failures to stderr and exits with code 1", async () => {
   const stderr: string[] = [];
   const exitCodes: number[] = [];

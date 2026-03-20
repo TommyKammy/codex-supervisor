@@ -1,5 +1,6 @@
 import type { CliOptions, SupervisorConfig } from "../core/types";
 import type { DoctorDiagnostics } from "../doctor";
+import type { SupervisorMutationResultDto, SupervisorRecoveryAction } from "./supervisor-mutation-report";
 import type { SupervisorExplainDto } from "./supervisor-selection-status";
 import type { SupervisorStatusDto } from "./supervisor-status-report";
 import type { SupervisorEventSink } from "./supervisor-events";
@@ -17,6 +18,7 @@ export interface SupervisorService {
   acquireSupervisorLock: (command: "loop" | "run-once") => Promise<SupervisorLock>;
   runOnce: (options: Pick<CliOptions, "dryRun">) => Promise<string>;
   queryStatus: (options: Pick<CliOptions, "why">) => Promise<SupervisorStatusDto>;
+  runRecoveryAction: (action: SupervisorRecoveryAction, issueNumber: number) => Promise<SupervisorMutationResultDto>;
   queryExplain: (issueNumber: number) => Promise<SupervisorExplainDto>;
   queryIssueLint: (issueNumber: number) => Promise<string[]>;
   queryDoctor: () => Promise<DoctorDiagnostics>;
@@ -47,6 +49,10 @@ class SupervisorApplicationService implements SupervisorService {
 
   queryStatus(options: Pick<CliOptions, "why">): Promise<SupervisorStatusDto> {
     return this.supervisor.statusReport(options);
+  }
+
+  runRecoveryAction(action: SupervisorRecoveryAction, issueNumber: number): Promise<SupervisorMutationResultDto> {
+    return this.supervisor.runRecoveryAction(action, issueNumber);
   }
 
   queryExplain(issueNumber: number): Promise<SupervisorExplainDto> {
