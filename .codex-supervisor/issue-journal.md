@@ -17,6 +17,7 @@
 - Added transient reconciliation-phase tracking so operator-facing `status` output can show `reconciliation_phase=...` while the run-once reconciliation prelude is active, then omit that line once reconciliation completes.
 - Tightened the focused prelude and status diagnostics coverage for the new phase visibility, and corrected the stale doctor fixture expectation in the same diagnostics slice so the required verification gate is reliable again.
 - Local verification passed with `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build` after restoring local dev dependencies via `npm install`.
+- Committed the checkpoint as `b8377b8` (`Surface reconciliation phase in status output`), pushed `codex/issue-683`, and opened draft PR #687 (`https://github.com/TommyKammy/codex-supervisor/pull/687`).
 
 ## Active Failure Context
 - None recorded.
@@ -26,11 +27,11 @@
 - Hypothesis: the narrowest safe implementation is to persist a single concise reconciliation phase label during `runOnceCyclePrelude(...)`, read that label from `status()`, and clear it in a `finally` block so the operator sees reconciliation progress only while it is actually in flight.
 - What changed: added `src/supervisor/supervisor-reconciliation-phase.ts` to read/write a transient `.codex-supervisor/current-reconciliation-phase.json` marker, wired `runOnceCyclePrelude(...)` to publish deterministic phase labels for each reconciliation step and clear them on completion/error, surfaced `reconciliation_phase=<label>` in `Supervisor.status()` when the marker exists, added focused regressions in `src/run-once-cycle-prelude.test.ts` and `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, and updated the stale doctor expectation in the diagnostics slice from `worktrees status=fail` to `worktrees status=pass`.
 - Current blocker: none
-- Next exact step: commit the #683 reconciliation-visibility checkpoint, then push `codex/issue-683` and open/update the draft PR for review.
+- Next exact step: monitor draft PR #687’s CI, then address any review or CI feedback if it appears.
 - Verification gap: none for the scoped issue work. `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build` passed locally after `npm install` restored missing `tsc`.
 - Files touched: `src/run-once-cycle-prelude.ts`, `src/run-once-cycle-prelude.test.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-reconciliation-phase.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this checkpoint removes the only transient signal that tells operators which reconciliation step is currently running, returning the pre-selection phase to opaque `No active issue.` output during long GitHub reconciliation work.
-- Last focused command: `npm run build`
+- Last focused command: `gh pr create --draft --base main --head codex/issue-683 --title "Surface current reconciliation phase in operator output" --body ...`
 ### Scratchpad
 - 2026-03-20 (JST): Pushed `codex/issue-671` to `origin/codex/issue-671` and opened draft PR #676 (`https://github.com/TommyKammy/codex-supervisor/pull/676`) after the focused artifact/finalize/result/status/policy tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
