@@ -9,6 +9,7 @@ import {
   cleanupExpiredDoneWorkspaces,
   formatRecoveryLog,
   prependRecoveryLog,
+  requeueIssueForOperator,
   reconcileMergedIssueClosures,
   reconcileParentEpicClosures,
   reconcileRecoverableBlockedIssueStates,
@@ -113,6 +114,7 @@ import {
   sanitizeStatusValue,
 } from "./supervisor-status-rendering";
 import { buildDetailedStatusModel, buildDetailedStatusSummaryLines } from "./supervisor-status-model";
+import { type SupervisorMutationResultDto, type SupervisorRecoveryAction } from "./supervisor-mutation-report";
 import { renderSupervisorStatusDto, SupervisorStatusDto } from "./supervisor-status-report";
 import {
   clearCurrentReconciliationPhase,
@@ -808,6 +810,18 @@ export class Supervisor {
 
   async explain(issueNumber: number): Promise<string> {
     return renderIssueExplainDto(await this.explainReport(issueNumber));
+  }
+
+  async runRecoveryAction(
+    action: SupervisorRecoveryAction,
+    issueNumber: number,
+  ): Promise<SupervisorMutationResultDto> {
+    const state = await this.stateStore.load();
+    if (action === "requeue") {
+      return requeueIssueForOperator(this.stateStore, state, issueNumber);
+    }
+
+    throw new Error(`Unsupported recovery action: ${String(action)}`);
   }
 
   async explainReport(issueNumber: number): Promise<SupervisorExplainDto> {

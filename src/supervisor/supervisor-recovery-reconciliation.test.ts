@@ -6,6 +6,7 @@ import test from "node:test";
 import { GitHubIssue, GitHubPullRequest, IssueRunRecord, SupervisorStateFile } from "../core/types";
 import {
   formatRecoveryLog,
+  requeueIssueForOperator,
   reconcileMergedIssueClosures,
   reconcileParentEpicClosures,
   reconcileRecoverableBlockedIssueStates,
@@ -15,6 +16,91 @@ import {
 } from "../recovery-reconciliation";
 import { shouldAutoRetryHandoffMissing } from "./supervisor-execution-policy";
 import { createConfig, createRecord, executionReadyBody } from "./supervisor-test-helpers";
+
+test("requeueIssueForOperator requeues a blocked issue with no tracked PR", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "366": createRecord({
+        issue_number: 366,
+        state: "blocked",
+        blocked_reason: "verification",
+        codex_session_id: "session-366",
+      }),
+    },
+  };
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...record,
+        ...patch,
+        updated_at: "2026-03-11T06:33:08.821Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const result = await requeueIssueForOperator(stateStore, state, 366);
+
+  assert.deepEqual(
+    { ...result, recoveryReason: result.recoveryReason ? "present" : null },
+    {
+      action: "requeue",
+      issueNumber: 366,
+      outcome: "mutated",
+      summary: "Requeued issue #366 from blocked to queued.",
+      previousState: "blocked",
+      nextState: "queued",
+      recoveryReason: "present",
+    },
+  );
+  assert.equal(state.issues["366"]?.state, "queued");
+  assert.equal(state.issues["366"]?.blocked_reason, null);
+  assert.equal(state.issues["366"]?.codex_session_id, null);
+  assert.equal(saveCalls, 1);
+});
+
+test("requeueIssueForOperator rejects active tracked-PR work", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 366,
+    issues: {
+      "366": createRecord({
+        issue_number: 366,
+        state: "stabilizing",
+        pr_number: 191,
+        codex_session_id: "session-366",
+      }),
+    },
+  };
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(record: IssueRunRecord): IssueRunRecord {
+      return record;
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const result = await requeueIssueForOperator(stateStore, state, 366);
+
+  assert.deepEqual(result, {
+    action: "requeue",
+    issueNumber: 366,
+    outcome: "rejected",
+    summary: "Rejected requeue for issue #366: active issue reservations cannot be mutated.",
+    previousState: "stabilizing",
+    nextState: "stabilizing",
+    recoveryReason: null,
+  });
+  assert.equal(state.issues["366"]?.state, "stabilizing");
+  assert.equal(saveCalls, 0);
+});
 
 test("reconcileRecoverableBlockedIssueStates requeues open handoff-missing issues without dropping repeat tracking", async () => {
   const config = createConfig();

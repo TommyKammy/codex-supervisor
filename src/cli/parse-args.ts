@@ -22,6 +22,7 @@ export function parseArgs(argv: string[]): CliOptions {
       token === "run-once" ||
       token === "loop" ||
       token === "status" ||
+      token === "requeue" ||
       token === "explain" ||
       token === "issue-lint" ||
       token === "doctor" ||
@@ -52,7 +53,7 @@ export function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
-    if ((command === "explain" || command === "issue-lint") && issueNumber === undefined) {
+    if ((command === "explain" || command === "issue-lint" || command === "requeue") && issueNumber === undefined) {
       if (/^[1-9]\d*$/.test(token)) {
         issueNumber = Number(token);
         continue;
@@ -99,6 +100,10 @@ export function parseArgs(argv: string[]): CliOptions {
 
   if (command === "issue-lint" && issueNumber === undefined) {
     throw new Error("The issue-lint command requires one issue number.");
+  }
+
+  if (command === "requeue" && issueNumber === undefined) {
+    throw new Error("The requeue command requires one issue number.");
   }
 
   if (command === "replay" && snapshotPath === undefined) {

@@ -75,6 +75,9 @@ test("runSupervisorCommand stops the loop after a registered signal and aborts p
         queryExplain: async () => {
           throw new Error("unexpected queryExplain");
         },
+        runRecoveryAction: async () => {
+          throw new Error("unexpected runRecoveryAction");
+        },
         queryIssueLint: async () => ["lint"],
         queryDoctor: async () => {
           throw new Error("unexpected queryDoctor");
@@ -139,6 +142,10 @@ test("runSupervisorCommand routes query commands through the supervisor service 
           calls.push(`explain:${issueNumber}`);
           throw new Error(`unexpected queryExplain:${issueNumber}`);
         },
+        runRecoveryAction: async () => {
+          calls.push("recovery");
+          throw new Error("unexpected runRecoveryAction");
+        },
         queryIssueLint: async (issueNumber) => {
           calls.push(`issueLint:${issueNumber}`);
           return ["issue lint output"];
@@ -156,4 +163,64 @@ test("runSupervisorCommand routes query commands through the supervisor service 
 
   assert.deepEqual(calls, ["status:true"]);
   assert.deepEqual(stdout, ["status output"]);
+});
+
+test("runSupervisorCommand renders a structured requeue result", async () => {
+  const stdout: string[] = [];
+
+  await runSupervisorCommand(
+    { command: "requeue", dryRun: false, why: false, issueNumber: 123 },
+    {
+      service: {
+        config: {} as SupervisorConfig,
+        pollIntervalMs: () => 50,
+        acquireSupervisorLock: async () => ({
+          acquired: true,
+          release: async () => {},
+        }),
+        runOnce: async () => {
+          throw new Error("unexpected runOnce");
+        },
+        queryStatus: async () => {
+          throw new Error("unexpected queryStatus");
+        },
+        queryExplain: async () => {
+          throw new Error("unexpected queryExplain");
+        },
+        queryIssueLint: async () => {
+          throw new Error("unexpected queryIssueLint");
+        },
+        queryDoctor: async () => {
+          throw new Error("unexpected queryDoctor");
+        },
+        runRecoveryAction: async (action, issueNumber) => {
+          assert.equal(action, "requeue");
+          assert.equal(issueNumber, 123);
+          return {
+            action,
+            issueNumber,
+            outcome: "mutated",
+            summary: "Requeued issue #123 from blocked to queued.",
+            previousState: "blocked",
+            nextState: "queued",
+            recoveryReason: "operator_requeue: requeued issue #123 from blocked to queued",
+          };
+        },
+      },
+      writeStdout: (line) => {
+        stdout.push(line);
+      },
+    },
+  );
+
+  assert.equal(stdout.length, 1);
+  assert.deepEqual(JSON.parse(stdout[0] ?? ""), {
+    action: "requeue",
+    issueNumber: 123,
+    outcome: "mutated",
+    summary: "Requeued issue #123 from blocked to queued.",
+    previousState: "blocked",
+    nextState: "queued",
+    recoveryReason: "operator_requeue: requeued issue #123 from blocked to queued",
+  });
 });

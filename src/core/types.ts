@@ -320,6 +320,7 @@ export interface CliOptions {
     | "run-once"
     | "loop"
     | "status"
+    | "requeue"
     | "explain"
     | "issue-lint"
     | "doctor"
