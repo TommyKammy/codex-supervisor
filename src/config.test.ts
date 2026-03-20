@@ -550,6 +550,10 @@ test("getting started links to focused configuration and local review references
   assert.match(issueMetadata, /^## Issue body template$/m);
   assert.match(issueMetadata, /Part of: #42/m);
   assert.match(issueMetadata, /Depends on: #41/m);
+  assert.match(issueMetadata, /child issues should use `Part of: #42` to associate with an epic/i);
+  assert.match(issueMetadata, /do not use `Depends on: #42` when `#42` is only the parent epic/i);
+  assert.match(issueMetadata, /recommended/i);
+  assert.match(issueMetadata, /discouraged/i);
   assert.match(issueMetadata, /Parallelizable: No/m);
   assert.match(issueMetadata, /## Execution order/m);
   assert.match(issueMetadata, /2 of 4/m);
