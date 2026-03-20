@@ -287,6 +287,52 @@ test("formatDetailedStatus surfaces not_requested Copilot review lifecycle", () 
   assert.match(status, /copilot_review state=not_requested/);
 });
 
+test("formatDetailedStatus surfaces fresh PR hydration provenance", () => {
+  const config = createConfig({ copilotReviewWaitMinutes: 10 });
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: createRecord({
+      pr_number: 22,
+      state: "pr_open",
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr: createPullRequest({
+      number: 22,
+      title: "Add review learning",
+      headRefName: "codex/issue-58",
+      hydrationProvenance: "fresh",
+    }),
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(status, /pr_hydration provenance=fresh head_sha=deadbeef/);
+});
+
+test("formatDetailedStatus surfaces cached PR hydration provenance", () => {
+  const config = createConfig({ copilotReviewWaitMinutes: 10 });
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: createRecord({
+      pr_number: 22,
+      state: "pr_open",
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr: createPullRequest({
+      number: 22,
+      title: "Add review learning",
+      headRefName: "codex/issue-58",
+      hydrationProvenance: "cached",
+    }),
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(status, /pr_hydration provenance=cached head_sha=deadbeef/);
+});
+
 test("formatDetailedStatus surfaces unknown Copilot review lifecycle when hydration fails", () => {
   const config = createConfig({ copilotReviewWaitMinutes: 10 });
   const status = formatDetailedStatus({

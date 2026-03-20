@@ -117,7 +117,7 @@ export class GitHubPullRequestHydrator {
     const cachedSummary = this.reviewSummaryCache.get(cacheKey);
     if (cachedSummary) {
       const summary = await cachedSummary;
-      return applyConfiguredBotReviewSummary(pr, summary);
+      return withHydrationProvenance(applyConfiguredBotReviewSummary(pr, summary), "cached");
     }
 
     const summaryPromise = this.reviewSummaryCache.set(
@@ -127,11 +127,11 @@ export class GitHubPullRequestHydrator {
 
     try {
       const summary = await summaryPromise;
-      return applyConfiguredBotReviewSummary(pr, summary);
+      return withHydrationProvenance(applyConfiguredBotReviewSummary(pr, summary), "fresh");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`Failed to hydrate Copilot review lifecycle for PR #${pr.number}: ${truncate(message, 500) ?? "unknown error"}`);
-      return applyConfiguredBotReviewSummary(pr, null);
+      return withHydrationProvenance(applyConfiguredBotReviewSummary(pr, null), "fresh");
     }
   }
 
@@ -298,6 +298,16 @@ export class GitHubPullRequestHydrator {
 
     return buildConfiguredBotReviewSummary(payload.data?.repository?.pullRequest, this.config.reviewBotLogins, currentHeadOid);
   }
+}
+
+function withHydrationProvenance(
+  pr: GitHubPullRequest,
+  hydrationProvenance: NonNullable<GitHubPullRequest["hydrationProvenance"]>,
+): GitHubPullRequest {
+  return {
+    ...pr,
+    hydrationProvenance,
+  };
 }
 
 function repoOwnerAndName(repoSlug: string): { owner: string; repo: string } {

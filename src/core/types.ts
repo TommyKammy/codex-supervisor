@@ -29,6 +29,7 @@ export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
 export type LocalReviewPolicy = "advisory" | "block_ready" | "block_merge";
 export type LocalReviewHighSeverityAction = "retry" | "blocked";
 export type CopilotReviewState = "not_requested" | "requested" | "arrived";
+export type PullRequestHydrationProvenance = "fresh" | "cached";
 export type CopilotReviewTimeoutAction = "continue" | "block";
 export type ConfiguredReviewProviderKind = "copilot" | "codex" | "coderabbit" | "custom";
 export type ConfiguredReviewSignalSource = "copilot_lifecycle" | "review_threads";
@@ -261,6 +262,7 @@ export interface GitHubPullRequest {
   configuredBotDraftSkipAt?: string | null;
   configuredBotTopLevelReviewStrength?: "nitpick_only" | "blocking" | null;
   configuredBotTopLevelReviewSubmittedAt?: string | null;
+  hydrationProvenance?: PullRequestHydrationProvenance | null;
   mergedAt?: string | null;
 }
 
