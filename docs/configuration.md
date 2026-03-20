@@ -108,8 +108,9 @@ Workspace cleanup:
 
 - `maxDoneWorkspaces`
 - `cleanupDoneWorkspacesAfterHours`
+- `cleanupOrphanedWorkspacesAfterHours`
 
-These settings apply to tracked done workspaces, not to every orphaned `issue-*` worktree under `workspaceRoot`. An orphaned workspace is an untracked canonical issue workspace that no longer has a live state entry. Preserve orphan workspaces that are locked, recently touched, or intentionally kept for manual recovery. If you want to prune abandoned orphan workspaces more aggressively, treat that as an explicit operator cleanup action rather than an implicit side effect of the done-workspace settings.
+`maxDoneWorkspaces` and `cleanupDoneWorkspacesAfterHours` apply to tracked done workspaces. `cleanupOrphanedWorkspacesAfterHours` applies only to automatic orphaned `issue-*` worktree pruning under `workspaceRoot`, with a default 24 hour grace period. An orphaned workspace is an untracked canonical issue workspace that no longer has a live state entry. Preserve orphan workspaces that are locked, recently touched, or intentionally kept for manual recovery. If you want to prune abandoned orphan workspaces more aggressively, treat that as an explicit operator cleanup action rather than an implicit side effect of the done-workspace settings.
 
 ## Model and Reasoning Guidance
 
