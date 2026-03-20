@@ -245,9 +245,7 @@ function shouldWaitForConfiguredBotInitialGracePeriod(
     return false;
   }
 
-  const initialGraceWaitMs =
-    (config.configuredBotInitialGraceWaitSeconds ?? DEFAULT_CONFIGURED_BOT_INITIAL_GRACE_WAIT_MS / 1_000) * 1_000;
-  return Date.now() < ciGreenAtMs + initialGraceWaitMs;
+  return Date.now() < ciGreenAtMs + configuredBotInitialGraceWaitMs(config);
 }
 
 function latestConfiguredBotActionableSignalAt(pr: GitHubPullRequest): string | null {
@@ -305,9 +303,7 @@ function shouldWaitForConfiguredBotDraftSkipRearm(
     }
   }
 
-  const initialGraceWaitMs =
-    (config.configuredBotInitialGraceWaitSeconds ?? DEFAULT_CONFIGURED_BOT_INITIAL_GRACE_WAIT_MS / 1_000) * 1_000;
-  return Date.now() < reviewWaitStartedAtMs + initialGraceWaitMs;
+  return Date.now() < reviewWaitStartedAtMs + configuredBotInitialGraceWaitMs(config);
 }
 
 function shouldWaitForConfiguredBotLatestHeadRearm(
@@ -335,7 +331,14 @@ function shouldWaitForConfiguredBotLatestHeadRearm(
     return false;
   }
 
-  return actionableSignalAtMs < reviewWaitStartedAtMs;
+  return (
+    actionableSignalAtMs < reviewWaitStartedAtMs &&
+    Date.now() < reviewWaitStartedAtMs + configuredBotInitialGraceWaitMs(config)
+  );
+}
+
+function configuredBotInitialGraceWaitMs(config: SupervisorConfig): number {
+  return (config.configuredBotInitialGraceWaitSeconds ?? DEFAULT_CONFIGURED_BOT_INITIAL_GRACE_WAIT_MS / 1_000) * 1_000;
 }
 
 export function buildCopilotReviewTimeoutFailureContext(
