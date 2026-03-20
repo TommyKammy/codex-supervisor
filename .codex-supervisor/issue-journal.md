@@ -1,37 +1,47 @@
-# Issue #689: Issue metadata docs: document that child issues should not depend directly on their Epic
+# Issue #690: Issue authoring diagnostics: warn when a child issue depends directly on its Epic
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/689
-- Branch: codex/issue-689
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/690
+- Branch: codex/issue-690
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 78208c1e0ee7d5a4ea18fb1ac0d90d059eb9718b
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: f2c40f60415be27322c66b909399ef5737630428
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-20T05:25:10.023Z
+- Last failure signature: PRRT_kwDORgvdZ851o-uu
+- Repeated failure signature count: 1
+- Updated at: 2026-03-20T06:12:30.093Z
 
 ## Latest Codex Summary
-- Added concise epic/child scheduling guidance to `docs/issue-metadata.md`, including a recommended `Part of + sibling Depends on` example and a discouraged `Depends on: <Epic>` example. Tightened `src/config.test.ts` to require that guidance, verified the focused docs assertion, restored local dev dependencies with `npm install`, and reran `npm run build` successfully.
+Validated CodeRabbit thread `PRRT_kwDORgvdZ851o-uu` as a real wording mismatch in the issue journal only. The implementation and tests already correctly warn when `Depends on` repeats the same epic listed in `Part of`; this turn updated `.codex-supervisor/issue-journal.md`, committed the fix as `1838d65`, pushed `codex/issue-690`, and resolved the review thread on PR #694.
+
+No code changes were required, so I did not rerun tests. This review-only fix is limited to the journal text in `.codex-supervisor/issue-journal.md`; the pre-existing untracked `.codex-supervisor/replay/` directory remains untouched.
+
+Summary: Aligned the issue journal wording with the implemented same-epic `issue-lint` warning, pushed commit `1838d65`, and resolved the PR #694 review thread.
+State hint: pr_open
+Blocked reason: none
+Tests: not run (journal-only wording fix)
+Failure signature: none
+Next action: Monitor PR #694 for any new review or CI follow-up.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the narrowest safe fix for #689 is a docs-only update in `docs/issue-metadata.md`, backed by a focused regression in the existing docs coverage, because current scheduler behavior already treats `Part of + Execution order` as the epic/child sequencing mechanism.
-- What changed: tightened `src/config.test.ts` so the issue-metadata docs must mention that child issues use `Part of: #42` for epic association, must not use `Depends on: #42` when `#42` is only the parent epic, and must include recommended/discouraged examples. Updated `docs/issue-metadata.md` with that rule and a concise `Epic / child pattern` section showing the preferred `Part of: #42` plus sibling `Depends on: #41` pattern and the discouraged `Depends on: #42` anti-pattern.
+- Hypothesis: the narrowest safe fix for #690 is to keep the change inside `validateIssueMetadataSyntax(...)`, because `issue-lint` already exposes metadata diagnostics directly and this issue only needs a deterministic local warning for `Part of` plus the same `Depends on` epic.
+- What changed: added focused regression coverage in `src/issue-metadata/issue-metadata.test.ts` for both the warning case (`Part of: #123` with `Depends on: #123, #77`) and a valid sibling-dependency case (`Depends on: #77, #88`). Added `src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts` coverage asserting `issue-lint` reports the new warning. Updated `src/issue-metadata/issue-metadata-validation.ts` so `depends on` emits `depends on duplicates parent epic #<number>; remove it and keep only real blocking issues` when a child issue depends directly on the same parent epic listed in `Part of`.
 - Current blocker: none
-- Next exact step: review the final diff for concision, then commit the docs/test checkpoint on `codex/issue-689` and prepare/update the draft PR if needed.
-- Verification gap: none for the requested acceptance criteria. The focused docs regression and `npm run build` both passed locally after restoring dev dependencies with `npm install`.
-- Files touched: `docs/issue-metadata.md`, `src/config.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would remove the explicit operator guidance that prevents child issues from being blocked on their parent epic via `Depends on: <Epic>`, leaving the docs inconsistent with current scheduler behavior.
-- Last focused commands: `npx tsx --test src/config.test.ts --test-name-pattern "getting started links to focused configuration and local review references"`; `npm install`; `npm run build`
+- Next exact step: monitor PR #694 (`https://github.com/TommyKammy/codex-supervisor/pull/694`) for any new review feedback or CI changes after resolving the journal wording thread.
+- Verification gap: none for the requested acceptance criteria. Focused validator and issue-lint tests passed, and `npm run build` passed after restoring local dev dependencies with `npm install`.
+- Files touched: `src/issue-metadata/issue-metadata-validation.ts`, `src/issue-metadata/issue-metadata.test.ts`, `src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would remove the only local deterministic warning that catches child issues being blocked behind their parent epic, reopening the issue-authoring failure that #690 is meant to prevent.
+- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){ resolveReviewThread(input:{threadId:$threadId}) { thread { id isResolved } } }' -F threadId=PRRT_kwDORgvdZ851o-uu`
+- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-690/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-690/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `rg -n "different parent epic|duplicates parent epic|same parent epic" .codex-supervisor/issue-journal.md src/issue-metadata/issue-metadata-validation.ts src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`; `git diff -- .codex-supervisor/issue-journal.md`; `git add .codex-supervisor/issue-journal.md && git commit -m "Align issue journal warning wording"`; `git push origin codex/issue-690`; `gh api graphql -f query='mutation($threadId:ID!){ resolveReviewThread(input:{threadId:$threadId}) { thread { id isResolved } } }' -F threadId=PRRT_kwDORgvdZ851o-uu`
 ### Scratchpad
-- 2026-03-20 (JST): Reproduced #689 by tightening the issue-metadata docs assertion in `src/config.test.ts`; the new check failed because `docs/issue-metadata.md` did not yet explain that child issues should use `Part of` for epic association and should not depend directly on the epic. Added a concise `Epic / child pattern` section with recommended/discouraged examples, reran the focused assertion, restored local dev dependencies with `npm install` because `tsc` was missing in this worktree, and then reran `npm run build` successfully.
-- 2026-03-20 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851okoy` by making the long-reconciliation warning boundary strict (`>` only) and extending the diagnostics test to keep the exact five-minute case non-warning; focused verification passed with `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build`.
+- 2026-03-20 (JST): Pushed journal-only review fix commit `1838d65` (`Align issue journal warning wording`) to `codex/issue-690`, then resolved CodeRabbit thread `PRRT_kwDORgvdZ851o-uu` on PR #694 after verifying the implementation already matched the intended same-epic warning behavior.
+- 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851o-uu` as a real journal wording mismatch only; corrected `.codex-supervisor/issue-journal.md` so the handoff text now says the warning fires when `Depends on` duplicates the same epic from `Part of`. No code changes or additional test runs were needed for this review-only fix.
 - 2026-03-20 (JST): Pushed `codex/issue-671` to `origin/codex/issue-671` and opened draft PR #676 (`https://github.com/TommyKammy/codex-supervisor/pull/676`) after the focused artifact/finalize/result/status/policy tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
 - 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851kRrS` as a real bug: malformed SQLite rows could yield only `load_findings`, after which `loadFromSqlite()` returned fallback empty/bootstrap state without those findings. Fixed the fallback path, added a dedicated regression for the empty-state case, and reran `npx tsx --test src/core/state-store.test.ts` plus `npm run build` successfully.
