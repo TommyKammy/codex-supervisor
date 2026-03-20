@@ -23,6 +23,8 @@ Requirements:
 
 Current execution posture: supervisor-managed Codex turns use `--dangerously-bypass-approvals-and-sandbox`. Approvals and sandboxing are therefore not the active safety boundary during an autonomous turn. The practical safety boundary is the operator's trust decision about the repo and the GitHub-authored text that becomes execution input.
 
+Pull-request hydration posture: fresh GitHub review facts are required before the supervisor takes PR actions such as marking ready, clearing review-driven blockers, or merging. Retained cached hydration data may still appear in diagnostics or operator-facing status output, but it is informational and non-authoritative. No configuration should treat cached pull-request hydration as authority for readiness, review-blocking, or merge decisions.
+
 State backend posture: a missing JSON state file is a normal empty bootstrap case, but corrupted JSON state is not a normal empty-state bootstrap case. When the JSON backend reports corrupted JSON state, treat it as a recovery event to inspect, acknowledge, or reset before relying on that state again. Until that explicit operator handling happens, corrupted JSON state is not a durable recovery point.
 
 Workspace restore posture: when `ensureWorkspace()` reconstructs an issue workspace, it should prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap a fresh issue branch from `origin/<defaultBranch>`. A missing local branch alone should not imply a fresh bootstrap when the remote issue branch still exists; bootstrapping from the default branch is the fallback only after both restore paths are unavailable.
