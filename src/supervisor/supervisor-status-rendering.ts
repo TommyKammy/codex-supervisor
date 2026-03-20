@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { runCommand } from "../core/command";
+import { parseJson } from "../core/utils";
 import {
   compareExternalReviewPatterns,
   EXTERNAL_REVIEW_GUARDRAILS_PATH,
@@ -28,6 +29,9 @@ import {
 import { displayRelativeArtifactPath } from "./supervisor-status-summary-helpers";
 import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
 import { loadRelevantVerifierGuardrails } from "../verifier-guardrails";
+import { type LocalReviewArtifact, type LocalReviewExecutionRouting } from "../local-review/types";
+
+interface LocalReviewRoutingArtifactLike extends Pick<LocalReviewArtifact, "roleReports" | "verifierReport"> {}
 
 export function summarizeChecks(
   checks: PullRequestCheck[],
@@ -246,6 +250,71 @@ export async function buildExternalReviewFollowUpStatusLine(args: {
   return `external_review_follow_up unresolved=${summary.missedFindings} actions=${actions.length > 0 ? actions.join("|") : "none"}`;
 }
 
+function summarizeRoutingLabels(labels: string[], count: number): string {
+  if (count === 0) {
+    return "none";
+  }
+
+  const summary = [...new Set(labels)].sort().join("|");
+  return `${summary}(${count})`;
+}
+
+function describeGenericLocalReviewRouting(
+  config: Pick<SupervisorConfig, "localReviewModelStrategy">,
+  routing: LocalReviewExecutionRouting,
+): string {
+  if (!config.localReviewModelStrategy || config.localReviewModelStrategy === "inherit") {
+    return routing.model ? `inherit->${routing.model}` : "inherit";
+  }
+
+  return routing.model ?? "inherit";
+}
+
+function describeResolvedRouting(routing: LocalReviewExecutionRouting | null | undefined): string {
+  return routing?.model ?? "inherit";
+}
+
+export async function buildLocalReviewRoutingStatusLine(args: {
+  config: Pick<SupervisorConfig, "localReviewModelStrategy">;
+  activeRecord: Pick<IssueRunRecord, "local_review_summary_path">;
+}): Promise<string | null> {
+  const summaryPath = args.activeRecord.local_review_summary_path;
+  if (!summaryPath || path.extname(summaryPath) !== ".md") {
+    return null;
+  }
+
+  const findingsPath = `${summaryPath.slice(0, -3)}.json`;
+  let raw: string;
+  try {
+    raw = await fs.readFile(findingsPath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+
+  const artifact = parseJson<LocalReviewRoutingArtifactLike>(raw, findingsPath);
+  const roleReports = Array.isArray(artifact.roleReports) ? artifact.roleReports : [];
+  const genericReports = roleReports.filter((report) => report.routing.target === "local_review_generic");
+  const specialistReports = roleReports.filter((report) => report.routing.target === "local_review_specialist");
+  const verifierRouting = artifact.verifierReport?.routing ?? null;
+
+  if (genericReports.length === 0 && specialistReports.length === 0 && !verifierRouting) {
+    return null;
+  }
+
+  const genericSummary = summarizeRoutingLabels(
+    genericReports.map((report) => describeGenericLocalReviewRouting(args.config, report.routing)),
+    genericReports.length,
+  );
+  const specialistSummary = summarizeRoutingLabels(
+    specialistReports.map((report) => describeResolvedRouting(report.routing)),
+    specialistReports.length,
+  );
+  return `local_review_routing generic=${genericSummary} specialists=${specialistSummary} verifier=${describeResolvedRouting(verifierRouting)}`;
+}
+
 export function formatDetailedStatus(args: {
   config: SupervisorConfig;
   activeRecord: IssueRunRecord | null;
@@ -256,6 +325,7 @@ export function formatDetailedStatus(args: {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
   handoffSummary?: string | null;
+  localReviewRoutingSummary?: string | null;
   changeClassesSummary?: string | null;
   verificationPolicySummary?: string | null;
   durableGuardrailSummary?: string | null;
@@ -281,6 +351,7 @@ export function formatDetailedStatus(args: {
     activeRecord: args.activeRecord,
     latestRecoveryRecord: args.latestRecoveryRecord,
     handoffSummary: args.handoffSummary,
+    localReviewRoutingSummary: args.localReviewRoutingSummary,
     changeClassesSummary: args.changeClassesSummary,
     verificationPolicySummary: args.verificationPolicySummary,
     durableGuardrailSummary: args.durableGuardrailSummary,

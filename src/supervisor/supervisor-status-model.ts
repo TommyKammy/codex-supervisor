@@ -46,6 +46,7 @@ export interface BuildDetailedStatusSummaryLinesArgs {
   activeRecord: IssueRunRecord | null;
   latestRecoveryRecord?: IssueRunRecord | null;
   handoffSummary?: string | null;
+  localReviewRoutingSummary?: string | null;
   changeClassesSummary?: string | null;
   verificationPolicySummary?: string | null;
   durableGuardrailSummary?: string | null;
@@ -68,6 +69,7 @@ export function buildDetailedStatusSummaryLines(args: BuildDetailedStatusSummary
     activeRecord,
     latestRecoveryRecord = null,
     handoffSummary = null,
+    localReviewRoutingSummary = null,
     changeClassesSummary = null,
     verificationPolicySummary = null,
     durableGuardrailSummary = null,
@@ -77,6 +79,10 @@ export function buildDetailedStatusSummaryLines(args: BuildDetailedStatusSummary
 
   if (handoffSummary) {
     lines.push(`handoff_summary=${truncate(sanitizeStatusValue(handoffSummary), 200)}`);
+  }
+
+  if (localReviewRoutingSummary) {
+    lines.push(truncate(sanitizeStatusValue(localReviewRoutingSummary), 200) ?? "");
   }
 
   if (changeClassesSummary) {

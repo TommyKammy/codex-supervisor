@@ -1,46 +1,36 @@
-# Issue #673: Supervisor bug: stale run lock with ambiguous owner metadata can stall the loop indefinitely
+# Issue #678: Status visibility: surface a compact local-review model routing summary
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/673
-- Branch: codex/issue-673
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/678
+- Branch: codex/issue-678
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: ffcfccbfd95db6c53ea98d1f21a882a0dfa5dc7b
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 0d3d5a4ae4f5b32ac16663d067461579cb6eaef0
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-20T00:35:18.068Z
+- Updated at: 2026-03-20T00:51:34.027Z
 
 ## Latest Codex Summary
-Pushed `ffcfccb` (`Clean journal review context links`) to `origin/codex/issue-673` after validating the remaining CodeRabbit thread as a real journal-content issue. The fix replaces the verbatim review-body dump in the journal with a compact summary so the tracked file no longer republishes machine-local absolute links.
-
-I also verified the review thread state via `gh api graphql` and resolved `PRRT_kwDORgvdZ851m5DV` once GitHub marked it outdated on the new head.
-
-Summary: Pushed the journal-only review fix and resolved the remaining CodeRabbit thread on PR #679.
-State hint: pr_open
-Blocked reason: none
-Tests: focused `rg` scan confirming no machine-local absolute path prefix remains in `.codex-supervisor/issue-journal.md`; `gh api graphql` thread-state query; `gh api graphql` `resolveReviewThread`
-Failure signature: none
-Next action: monitor PR #679 for any new review feedback or merge readiness changes
+- Added a compact `local_review_routing` status summary sourced from the saved local-review artifact so operators can see whether generic reviewer roles ran on `gpt-5.4-mini` or inherited routing without opening the artifact. Focused status tests cover both an explicit mini-routed case and an inherited-routing case, and `npm run build` passes after restoring local dependencies with `npm install`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the supervisor run lock should be allowed to reclaim a dead-pid lock even when host/owner metadata is ambiguous, while generic issue/session locks should keep refusing ambiguous-owner cleanup.
-- What changed: reproduced the stale run-lock gap with a focused `acquireFileLock(..., { allowAmbiguousOwnerCleanup: true })` regression in `src/lock.test.ts`, then added an explicit `AcquireFileLockOptions` override in `src/core/lock.ts` and used it only from `Supervisor.acquireSupervisorLock(...)` in `src/supervisor/supervisor.ts`.
+- Hypothesis: `status` can stay compact by adding one artifact-backed `local_review_routing` line that aggregates routing by generic roles, specialist roles, and verifier, while labeling when generic routing inherits the main model path instead of using an explicit override such as `gpt-5.4-mini`.
+- What changed: reproduced the missing visibility with focused `buildLocalReviewRoutingStatusLine(...)` regressions in `src/supervisor/supervisor-status-rendering.test.ts`, then implemented the summary in `src/supervisor/supervisor-status-rendering.ts` and threaded it through `src/supervisor/supervisor-selection-active-status.ts`, `src/supervisor/supervisor-status-model.ts`, and `src/supervisor/supervisor.ts`.
 - Current blocker: none
-- Next exact step: monitor PR #679 for any new review feedback or merge-readiness changes.
-- Verification gap: none for the scoped issue verification. `npx tsx --test src/lock.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/doctor.test.ts` and `npm run build` passed after restoring local dev dependencies with `npm install`. No additional verification was needed after pushing/opening the draft PR. Note: repo-wide `npm test -- ...` still executes the full suite and fails on unrelated pre-existing assertions in `README`/runtime-layout/turn-orchestration tests.
-- Files touched: `src/core/lock.ts`, `src/lock.test.ts`, `src/supervisor/supervisor.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: reverting this checkpoint would restore the indefinite skip loop for a dead ambiguous supervisor run lock, while generic ambiguous-owner protections for issue/session locks would remain unchanged.
-- Last focused command: `gh api graphql` `resolveReviewThread` for `PRRT_kwDORgvdZ851m5DV`
+- Next exact step: commit the scoped status-summary change, then open or update the draft PR for issue #678.
+- Verification gap: none for the scoped issue verification. `npx tsx --test src/supervisor/supervisor-status-rendering.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-selection-status-active-status.test.ts` and `npm run build` passed after restoring local dev dependencies with `npm install`.
+- Files touched: `src/supervisor/supervisor-selection-active-status.test.ts`, `src/supervisor/supervisor-selection-active-status.ts`, `src/supervisor/supervisor-status-model-supervisor.test.ts`, `src/supervisor/supervisor-status-model.ts`, `src/supervisor/supervisor-status-rendering.test.ts`, `src/supervisor/supervisor-status-rendering.ts`, `src/supervisor/supervisor.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: reverting this checkpoint would remove the new compact routing visibility from `status`, forcing operators back to opening local-review artifacts to confirm whether generic reviewer turns used `gpt-5.4-mini` or inherited routing.
+- Last focused command: `npm run build`
 ### Scratchpad
-- 2026-03-20 (JST): Pushed `ffcfccb` (`Clean journal review context links`) to `origin/codex/issue-673`, confirmed the CodeRabbit thread was outdated on the new head, and resolved `PRRT_kwDORgvdZ851m5DV` via `gh api graphql`.
-- 2026-03-20 (JST): Validated review thread `PRRT_kwDORgvdZ851m5DV` as a real journal-content issue, then replaced the verbatim comment dump in `.codex-supervisor/issue-journal.md` with a compact summary so the tracked file no longer republishes machine-local links.
+- 2026-03-20 (JST): Reproduced issue #678 with focused status-rendering regressions for explicit `gpt-5.4-mini` generic routing and inherited generic routing, then added an artifact-backed `local_review_routing` summary line to status output. Focused verification passed with `npx tsx --test src/supervisor/supervisor-status-rendering.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-selection-status-active-status.test.ts`, and `npm run build` passed after `npm install` restored missing `tsc`.
 - 2026-03-20 (JST): Pushed `codex/issue-673` to `origin/codex/issue-673` and opened draft PR #679 (`https://github.com/TommyKammy/codex-supervisor/pull/679`) after the scoped lock/recovery/doctor tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-671` to `origin/codex/issue-671` and opened draft PR #676 (`https://github.com/TommyKammy/codex-supervisor/pull/676`) after the focused artifact/finalize/result/status/policy tests and `npm run build` were already green locally.
 - 2026-03-20 (JST): Pushed `codex/issue-660` and opened draft PR #667 (`https://github.com/TommyKammy/codex-supervisor/pull/667`) after the focused doctor/state-store verification and build had already passed locally.
