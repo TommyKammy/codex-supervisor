@@ -5,16 +5,25 @@
 - Branch: codex/issue-716
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 5778e7aa79e04cb3478e50cdd1d336e87af71d43
+- Current phase: draft_pr
+- Attempt count: 3 (implementation=3, repair=0)
+- Last head SHA: f5d969e977a9d00bcc43953aeae02a98bf0ca7a5
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-20T12:50:41.388Z
+- Updated at: 2026-03-20T13:05:55.000Z
 
 ## Latest Codex Summary
-- None yet.
+Implemented the JSON quarantine path in [`src/core/state-store.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-716/src/core/state-store.ts). On JSON parse corruption, the loader now moves the unreadable `state.json` aside to a timestamped `state.json.corrupt.*` file, writes a recovery marker back to the configured state path, and persists both `load_findings` and structured `json_state_quarantine` metadata so later status/doctor runs still point operators at the preserved artifact. I added the new state shape in [`src/core/types.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-716/src/core/types.ts).
+
+The reproducer and focused coverage are in [`src/core/state-store.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-716/src/core/state-store.test.ts) and [`src/doctor.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-716/src/doctor.test.ts). I updated the journal and checkpointed the work as commit `f5d969e` (`Quarantine corrupt JSON state files`). `npm run build` initially failed because `tsc` was not installed in this worktree, so I ran `npm install` and reran the build successfully. There is still an unrelated untracked `.codex-supervisor/replay/` directory in the worktree that I left untouched.
+
+Summary: Quarantined corrupt JSON state into a preserved side file and replaced the live state path with a deterministic recovery marker that keeps diagnostics explicit.
+State hint: implementing
+Blocked reason: none
+Tests: `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts`; `npm run build`
+Failure signature: none
+Next action: push `codex/issue-716`, open the draft PR, and watch for review/CI feedback
 
 ## Active Failure Context
 - None recorded.
@@ -24,13 +33,14 @@
 - Hypothesis: the narrowest safe fix is to quarantine only parse-corrupted JSON state during `StateStore.load()`, replace the original `state.json` with a deterministic marker that carries the persisted corruption finding and quarantine path, and leave SQLite behavior unchanged.
 - What changed: added a focused reproducer in `src/core/state-store.test.ts`, confirmed the pre-fix failure where `state.json` stayed corrupt, then updated `src/core/state-store.ts` so JSON parse errors rename the bad file to `state.json.corrupt.<timestamp>`, write a recovery marker back to the configured state path, and persist `load_findings` plus `json_state_quarantine` metadata for later inspection. Added matching type support in `src/core/types.ts` and a read-only doctor regression in `src/doctor.test.ts` to verify diagnostics remain explicit after quarantine.
 - Current blocker: none
-- Next exact step: review the diff, commit the quarantine change on `codex/issue-716`, and open/update the draft PR if needed.
+- Next exact step: push `codex/issue-716` to `origin`, open the draft PR against `main`, and watch the initial CI run.
 - Verification gap: none locally after `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts` and `npm run build`.
 - Files touched: `src/core/state-store.ts`, `src/core/state-store.test.ts`, `src/core/types.ts`, `src/doctor.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: removing the marker-writing path would restore the unsafe behavior where corrupted JSON remains at the live state path and later recovery loses the preserved durable artifact location.
 - Last focused command: `npm run build`
-- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-716/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-716/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `sed -n '1,260p' src/core/state-store.test.ts`; `sed -n '1,420p' src/core/state-store.ts`; `sed -n '1,260p' src/doctor.test.ts`; `sed -n '1,260p' src/doctor.ts`; `sed -n '1,260p' src/core/types.ts`; `sed -n '260,320p' src/supervisor/supervisor.ts`; `npx tsx --test src/core/state-store.test.ts`; `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts`; `npm run build`; `npm install`; `git status --short`; `date -Iseconds`; `git rev-parse HEAD`
+- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-716/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-716/context-index.md`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `git diff -- .codex-supervisor/issue-journal.md`; `git log --oneline --decorate -5`; `gh pr status`; `git diff --stat HEAD~1..HEAD`; `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts`; `npm run build`; `date -Iseconds`; `gh repo view --json nameWithOwner,defaultBranchRef`
 ### Scratchpad
+- 2026-03-20 (JST): Re-read the required memory files/journal, confirmed the branch only carried commit `f5d969e` plus the journal delta, reran `npx tsx --test src/core/state-store.test.ts src/doctor.test.ts` and `npm run build` successfully, and prepared the branch for push plus draft PR creation.
 - 2026-03-20 (JST): Added a focused JSON quarantine reproducer, confirmed the loader left malformed `state.json` in place, then changed JSON state loading to move the corrupt file aside, write a deterministic marker back to `state.json`, and preserve the quarantine path through `load_findings` plus `json_state_quarantine`; focused verification and `npm run build` passed after installing local dev dependencies with `npm install`.
 - 2026-03-20 (JST): Validated CodeRabbit thread `PRRT_kwDORgvdZ851s71w`, added missing `t.after(...)` cleanup to the corruption-status fixture test, and reran `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts` plus `npm run build` successfully.
 - 2026-03-20 (JST): Re-ran the focused verification set plus `npm run build`, pushed `codex/issue-715` to `origin/codex/issue-715`, and opened draft PR #741 (`status: surface JSON corruption diagnostics`).
