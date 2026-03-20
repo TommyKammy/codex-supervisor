@@ -25,6 +25,8 @@ These are the recovery points after crashes, process restarts, or thread loss, b
 
 For issue workspaces, the intended restore precedence is: prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap a fresh issue branch from `origin/<defaultBranch>`. That default-branch bootstrap is the fallback path when no existing issue branch can be restored.
 
+For workspace cleanup, keep tracked done workspaces separate from orphaned workspaces. Tracked done cleanup is the bounded cleanup policy for issue workspaces that still have supervisor state and have reached `done`. An orphaned workspace is an untracked canonical `issue-*` worktree under `workspaceRoot` that no longer has a live state entry. Locked orphan workspaces, recently touched orphan workspaces, and orphan workspaces the operator intentionally keeps for manual recovery should be preserved. More aggressive orphan prune actions are explicit operator cleanup actions, not an implicit equivalent of delayed done-workspace cleanup.
+
 For the JSON backend, missing JSON state means there is no durable state yet and the supervisor can bootstrap from empty state. Corrupted JSON state is different: it is a recovery event, not a normal bootstrap case, and it is not safe to treat as durable state until an operator has inspected the file and explicitly acknowledged or reset it.
 
 ## Main safety boundaries
@@ -46,4 +48,5 @@ The same fail-open vs fail-closed distinction applies to state recovery guidance
 - closed child issues -> close parent epic
 - timeout failure -> bounded retry
 - verification blocker -> bounded retry
-- stale worktree cleanup -> delayed cleanup for `done` issues
+- tracked done workspace cleanup -> delayed cleanup for `done` issues
+- orphaned workspace prune action -> explicit operator action with preservation rules for locked, recent, or manually kept workspaces
