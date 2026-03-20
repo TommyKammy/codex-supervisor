@@ -35,13 +35,13 @@ Next action: Watch PR #747 on head `d0761a1` for CI and review feedback, then ad
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: Pinning the issue-branch fetch probe to `LC_ALL=C` resolves the remaining locale-sensitive review risk without changing the restore/bootstrap behavior already covered by the existing integration fixtures.
-- What changed: updated `fetchIssueRemoteTrackingRef(...)` in `src/core/workspace.ts` so the narrow `git fetch origin +refs/heads/<issue-branch>:refs/remotes/origin/<issue-branch>` probe always runs with `LC_ALL=C` while keeping the existing `[0, 128]` handling and stale tracking-ref cleanup for the missing-remote path.
+- What changed: updated `fetchIssueRemoteTrackingRef(...)` in `src/core/workspace.ts` so the narrow `git fetch origin +refs/heads/<issue-branch>:refs/remotes/origin/<issue-branch>` probe always runs with `LC_ALL=C` while keeping the existing `[0, 128]` handling and stale tracking-ref cleanup for the missing-remote path; committed the review fix as `a74d400`, pushed `codex/issue-722`, and resolved CodeRabbit thread `PRRT_kwDORgvdZ851xgdP`.
 - Current blocker: none
-- Next exact step: commit the locale fix on top of `d0761a1`, push `codex/issue-722`, then reply to or resolve the remaining CodeRabbit thread on PR #747.
+- Next exact step: watch PR #747 on head `a74d400` for CI and any follow-up review activity, then address fallout directly on `codex/issue-722` if anything new appears.
 - Verification gap: none; the issue's focused verification commands passed after the locale fix.
 - Files touched: `src/core/workspace.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: reverting this patch would reintroduce locale-sensitive missing-remote detection, so non-English Git environments could throw instead of preserving the existing bootstrap path.
-- Last focused command: `npm run build`
+- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ851xgdP`
 - Last focused commands:
 ```bash
 sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-722/AGENTS.generated.md
@@ -83,8 +83,12 @@ npm run build
 git status --short
 date -u +"%Y-%m-%dT%H:%M:%SZ"
 git rev-parse --short HEAD
+git add src/core/workspace.ts .codex-supervisor/issue-journal.md && git commit -m "Force C locale for issue branch probe"
+git push origin codex/issue-722
+gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ851xgdP
 ```
 ### Scratchpad
+- 2026-03-21 (JST): Committed the locale-stable fetch probe fix as `a74d400`, pushed `codex/issue-722`, and resolved the last configured CodeRabbit thread on PR #747 after the required focused tests and `npm run build` both passed.
 - 2026-03-21 (JST): Addressed CodeRabbit thread `PRRT_kwDORgvdZ851xgdP` by forcing the issue-branch discovery fetch in `src/core/workspace.ts` to run with `LC_ALL=C`; the existing integration coverage for remote-present and remote-missing discovery paths still passed, while a mock-based unit regression attempt was dropped because `tsx` exposed an unstable patch target for `runCommand` in this test harness.
 - 2026-03-20 (JST): Added a focused status regression for invalid JSON state, reproduced the omission where status only printed normal empty-state lines, then appended explicit `state_diagnostic` and `state_load_finding` lines for JSON `load_findings` so corruption is visible in status without changing loader semantics.
 - 2026-03-20 (JST): Added a focused docs regression for the missing JSON corruption contract, confirmed the new assertion failed first, then updated the English operator docs so they consistently say corrupted JSON state is a recovery event requiring explicit acknowledgement/reset and `status`/`doctor` triage before reuse.
