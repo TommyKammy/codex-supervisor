@@ -64,8 +64,32 @@ export function emitSupervisorEvent(
   emitEvent: SupervisorEventSink | undefined,
   event: SupervisorEvent | null,
 ): void {
-  if (event) {
-    emitEvent?.(event);
+  if (!emitEvent || !event) {
+    return;
+  }
+
+  try {
+    emitEvent(event);
+  } catch (error) {
+    console.warn(
+      `Supervisor event sink failed for ${event.type} (${describeSupervisorEventContext(event)}).`,
+      error,
+    );
+  }
+}
+
+function describeSupervisorEventContext(event: SupervisorEvent): string {
+  switch (event.type) {
+    case "supervisor.recovery":
+      return `issue=${event.issueNumber} reason=${event.reason}`;
+    case "supervisor.active_issue.changed":
+      return `issue=${event.issueNumber} previous=${event.previousIssueNumber ?? "none"} next=${event.nextIssueNumber ?? "none"}`;
+    case "supervisor.loop.skipped":
+      return `issue=${event.issueNumber ?? "none"} reason=${event.reason}`;
+    case "supervisor.run_lock.blocked":
+      return `command=${event.command} phase=${event.reconciliationPhase ?? "none"}`;
+    case "supervisor.review_wait.changed":
+      return `issue=${event.issueNumber} pr=${event.prNumber}`;
   }
 }
 

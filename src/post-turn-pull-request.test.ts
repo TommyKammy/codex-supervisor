@@ -201,3 +201,110 @@ test("handlePostTurnPullRequestTransitionsPhase emits typed review-wait change e
     },
   ]);
 });
+
+test("handlePostTurnPullRequestTransitionsPhase swallows event sink failures after saving state", async () => {
+  const config = createConfig();
+  const issue = createIssue({ title: "Swallow review wait event sink failures" });
+  const pr = createPullRequest({ title: "Swallow review wait event sink failures", headRefOid: "head-116" });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        review_wait_started_at: null,
+        review_wait_head_sha: null,
+      }),
+    },
+  };
+
+  let saveCalls = 0;
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message?: unknown, ...args: unknown[]) => {
+    warnings.push([message, ...args].map((value) => String(value)).join(" "));
+  };
+
+  try {
+    const result = await handlePostTurnPullRequestTransitionsPhase({
+      config,
+      stateStore: {
+        touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+        save: async () => {
+          saveCalls += 1;
+        },
+      },
+      github: {
+        getPullRequest: async () => {
+          throw new Error("unexpected getPullRequest call");
+        },
+        getChecks: async () => {
+          throw new Error("unexpected getChecks call");
+        },
+        getUnresolvedReviewThreads: async () => {
+          throw new Error("unexpected getUnresolvedReviewThreads call");
+        },
+        markPullRequestReady: async () => undefined,
+      },
+      context: {
+        state,
+        record: state.issues["102"]!,
+        issue,
+        workspacePath: path.join("/tmp/workspaces", "issue-102"),
+        syncJournal: async () => undefined,
+        memoryArtifacts: {
+          alwaysReadFiles: [],
+          onDemandFiles: [],
+          contextIndexPath: "/tmp/context-index.md",
+          agentsPath: "/tmp/AGENTS.generated.md",
+        },
+        pr,
+        options: { dryRun: false },
+      },
+      emitEvent: () => {
+        throw new Error("adapter unavailable");
+      },
+      derivePullRequestLifecycleSnapshot: (record, currentPr) => ({
+        recordForState: record,
+        nextState: "pr_open",
+        failureContext: null,
+        reviewWaitPatch: {
+          review_wait_started_at: "2026-03-13T06:26:22Z",
+          review_wait_head_sha: currentPr.headRefOid,
+        },
+        copilotRequestObservationPatch: {},
+        copilotTimeoutPatch: {
+          copilot_review_timed_out_at: null,
+          copilot_review_timeout_action: null,
+          copilot_review_timeout_reason: null,
+        },
+      }),
+      applyFailureSignature: () => ({
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+      }),
+      blockedReasonFromReviewState: () => null,
+      summarizeChecks: () => ({
+        hasPending: false,
+        hasFailing: false,
+      }),
+      configuredBotReviewThreads: () => [],
+      manualReviewThreads: () => [],
+      mergeConflictDetected: () => false,
+      loadOpenPullRequestSnapshot: async () => ({
+        pr,
+        checks: [],
+        reviewThreads: [],
+      }),
+    });
+
+    assert.equal(result.record.review_wait_head_sha, "head-116");
+    assert.equal(saveCalls, 1);
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.equal(warnings.length, 1);
+  assert.match(
+    warnings[0]!,
+    /Supervisor event sink failed for supervisor\.review_wait\.changed \(issue=102 pr=116\)\. Error: adapter unavailable/,
+  );
+});
