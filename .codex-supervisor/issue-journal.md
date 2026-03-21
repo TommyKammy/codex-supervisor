@@ -24,11 +24,11 @@
 - Hypothesis: issue #708 was still open because config summaries, `status`, and `doctor` had no explicit trust posture surface, so operators could not tell whether the current supervisor was relying on trusted GitHub-authored inputs while running in the current unsandboxed autonomous mode.
 - What changed: added optional diagnostics-only `trustMode` and `executionSafetyMode` config fields with default posture summarization in `summarizeTrustDiagnostics()`. `loadConfigSummary()` now exposes `trustDiagnostics`, `status` renders trust posture lines plus a conservative execution-safety warning, and `doctor` exposes the same posture in both the structured object and CLI output. Focused tests cover the default warning posture and an explicit safer override that clears the warning without altering execution behavior.
 - Current blocker: none
-- Next exact step: commit the trust-diagnostics checkpoint on `codex/issue-708`, then open or update the draft PR if one is not already present.
+- Next exact step: monitor draft PR #761 for CI and review feedback on commit `d89184d`.
 - Verification gap: none for the requested scope; the targeted tests and build both pass locally after the trust posture diagnostics update.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/config.test.ts`, `src/core/config.ts`, `src/core/types.ts`, `src/doctor.test.ts`, `src/doctor.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-status-model.test.ts`, `src/supervisor/supervisor-status-report.ts`, `src/supervisor/supervisor-test-helpers.ts`, `src/supervisor/supervisor.ts`, `src/turn-execution-test-helpers.ts`
 - Rollback concern: removing the new trust posture defaults or warning rendering would hide when the current unsandboxed autonomous runtime is relying on trusted GitHub-authored inputs, which is the operator-facing safety signal this issue adds.
-- Last focused command: `npm run build`
+- Last focused command: `gh pr create --draft --base main --head codex/issue-708 --title "Trust diagnostics: surface trust mode and execution-safety posture" --body ...`
 - Last focused failure: `trust-diagnostics-missing`
 - Last focused commands:
 ```bash
