@@ -263,7 +263,7 @@ test("renderDoctorReport surfaces merge-critical recheck cadence visibility", ()
       mergeCriticalEffectiveSeconds: 30,
       mergeCriticalRecheckEnabled: true,
     },
-    candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=first_page_only",
+    candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
     candidateDiscoveryWarning: null,
   };
 
@@ -272,7 +272,7 @@ test("renderDoctorReport surfaces merge-critical recheck cadence visibility", ()
   assert.match(report, /doctor_cadence poll_interval_seconds=120 merge_critical_recheck_seconds=30 merge_critical_effective_seconds=30 enabled=true/);
 });
 
-test("diagnoseSupervisorHost and renderDoctorReport warn when candidate discovery may be truncated", async (t) => {
+test("diagnoseSupervisorHost and renderDoctorReport surface paginated candidate discovery", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
   t.after(async () => {
     await fs.rm(root, { recursive: true, force: true });
@@ -299,18 +299,15 @@ test("diagnoseSupervisorHost and renderDoctorReport warn when candidate discover
       getCandidateDiscoveryDiagnostics: async () => ({
         fetchWindow: 250,
         observedMatchingOpenIssues: 251,
-        truncated: true,
+        truncated: false,
       }),
     },
   });
 
   const report = renderDoctorReport(diagnostics);
 
-  assert.match(report, /doctor_candidate_discovery fetch_window=250 strategy=first_page_only/);
-  assert.match(
-    report,
-    /doctor_warning kind=candidate_discovery detail=Candidate discovery may be truncated: more than 250 matching open issues exceed the current first-page fetch window, so runnable selection may be incomplete\./,
-  );
+  assert.match(report, /doctor_candidate_discovery fetch_window=250 strategy=paginated/);
+  assert.doesNotMatch(report, /doctor_warning kind=candidate_discovery/);
 });
 
 test("diagnoseSupervisorHost uses a strict default state loader for existing invalid JSON", async (t) => {

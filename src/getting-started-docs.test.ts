@@ -53,17 +53,17 @@ test("getting-started stays focused on operator setup and flow", async () => {
   assert.doesNotMatch(content, /^## State machine$/m);
 });
 
-test("getting-started explains the current first-page candidate discovery limit", async () => {
+test("getting-started explains paginated candidate discovery across the open backlog", async () => {
   const [gettingStarted, japaneseGettingStarted] = await Promise.all([
     readGettingStarted(),
     readJapaneseGettingStarted(),
   ]);
 
-  assert.match(gettingStarted, /first fetched page of matching open issues/i);
-  assert.match(gettingStarted, /does not evaluate the entire open backlog/i);
-  assert.match(gettingStarted, /older runnable issues can be invisible/i);
-  assert.match(japaneseGettingStarted, /最初に取得した 1 page/i);
-  assert.match(japaneseGettingStarted, /backlog 全体を評価していません/i);
+  assert.match(gettingStarted, /pages through matching open issues/i);
+  assert.match(gettingStarted, /matching open backlog/i);
+  assert.match(gettingStarted, /older runnable issues remain discoverable/i);
+  assert.match(japaneseGettingStarted, /backlog 全体を見て/i);
+  assert.match(japaneseGettingStarted, /最初の page の外にあるだけで選定対象から見えなくなることはありません/i);
 });
 
 test("japanese docs keep overview and getting-started responsibilities separate", async () => {

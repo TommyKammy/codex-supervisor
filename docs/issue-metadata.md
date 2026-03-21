@@ -102,14 +102,14 @@ Use verification steps for the exact commands or manual checks that prove the is
 
 ## How scheduling uses the fields
 
-The supervisor is readiness-driven within the current candidate discovery window. It does not just pick the newest issue, but today it only evaluates the first fetched page of matching open issues rather than the entire open backlog.
+The supervisor is readiness-driven across the matching open backlog. It does not just pick the newest issue; it pages through matching open issues using the configured candidate discovery fetch window as the page size, then selects the first runnable issue in deterministic order.
 
 - `Depends on` blocks an issue while any listed dependency is still open.
 - `Part of` plus `Execution order` blocks later siblings until earlier siblings are done.
 - `Acceptance criteria` and `Verification` make the issue execution-ready for implementation and review.
 - `Parallelizable` is documentation today; it does not override explicit dependencies.
 
-Operator expectation: a correctly authored older issue can still be invisible to runnable selection when it falls outside that first fetched page. If selection looks wrong in a large backlog, confirm both the metadata and whether the issue is currently outside the candidate fetch window.
+Operator expectation: a correctly authored older issue should remain discoverable even when it starts beyond the first page. If selection looks wrong in a large backlog, confirm the metadata before assuming candidate discovery skipped it.
 
 When in doubt, make the dependency explicit. A conservative queue is better than an ambiguous one.
 
