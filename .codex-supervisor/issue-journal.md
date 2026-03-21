@@ -1,58 +1,53 @@
-# Issue #782: WebUI prep: split loop process control from supervisor application service
+# Issue #783: Backend adapter MVP: add a read-only HTTP API over SupervisorService
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/782
-- Branch: codex/issue-782
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/783
+- Branch: codex/issue-783
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 8bb08533e4d2baf3e8c14332d96f3bdbbc1f603a
+- Attempt count: 4 (implementation=1, repair=3)
+- Last head SHA: 84ba33297926ca1d707a6c8ca2689a1ef0fdd627
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ8515Clw|PRRT_kwDORgvdZ8515Clx
+- Last failure signature: PRRT_kwDORgvdZ8515NrU
 - Repeated failure signature count: 1
-- Updated at: 2026-03-21T15:30:53.983Z
+- Updated at: 2026-03-21T16:28:30Z
 
 ## Latest Codex Summary
-Separated loop/runtime control from the shared supervisor application boundary. `SupervisorService` no longer exposes lock acquisition; a new [`src/supervisor/supervisor-loop-controller.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-782/src/supervisor/supervisor-loop-controller.ts) owns lock-wrapped cycle execution, and the CLI now injects that controller only for `loop` and `run-once` via [`src/cli/entrypoint.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-782/src/cli/entrypoint.ts) and [`src/cli/supervisor-runtime.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-782/src/cli/supervisor-runtime.ts). The focused tests in [`src/cli/entrypoint.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-782/src/cli/entrypoint.test.ts) and [`src/cli/supervisor-runtime.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-782/src/cli/supervisor-runtime.test.ts) now make that split explicit.
+Cleaned the remaining CodeRabbit journal excerpt so it no longer contains the padded inline-code example called out in the MD038 review comment. I committed and pushed that journal-only fix as `84ba332` on `codex/issue-783`, then resolved the remaining review thread on PR #793. The only local dirt left is the pre-existing untracked `.codex-supervisor/replay/` directory.
 
-I committed and pushed the change on `codex/issue-782` (`f056086`, plus journal update `8bb0853`) and opened draft PR #792: https://github.com/TommyKammy/codex-supervisor/pull/792. Initial PR checks are already green. `.codex-supervisor/replay/` remains untracked and untouched.
-
-Summary: Split loop process control into a dedicated controller boundary, kept shared service/query paths intact, passed targeted tests and build, and opened draft PR #792
-State hint: draft_pr
+Summary: Cleaned the stale MD038 example in the issue journal, pushed commit `84ba332`, and resolved the last open CodeRabbit thread on PR #793.
+State hint: addressing_review
 Blocked reason: none
-Tests: `npx tsx --test src/cli/supervisor-runtime.test.ts src/cli/entrypoint.test.ts`; `npm ci`; `npm run build`
+Tests: `npx markdownlint-cli2 .codex-supervisor/issue-journal.md` (expected broader pre-existing journal lint failures; no `MD038` reproduced); targeted inline-code spacing scan
 Failure signature: none
-Next action: monitor draft PR #792 for CI or review feedback and address any follow-up if it appears
+Next action: Monitor PR #793 for any follow-up CI or review feedback.
 
 ## Active Failure Context
 - Category: review
-- Summary: 2 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/792#discussion_r2969707829
+- Summary: No unresolved automated review threads remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/793#discussion_r2969762789
 - Details:
-  - src/cli/supervisor-runtime.ts:152 _⚠️ Potential issue_ | _🟡 Minor_ **Fail fast before side effects when `loopController` is required.** For `"run-once"` and `"loop"`, these guards run after Lines 94-105. A wiring mistake now registers process signal handlers and may run `ensureGsdInstalled()` before throwing. Please validate the required controller earlier so this path errors without side effects. <details> <summary>💡 Example shape</summary> ```diff } = dependencies; + + if (options.command === "run-once" && !loopController) { + throw new Error("Missing supervisor loop controller for run-once command"); + } + + if (options.command === "loop" && !loopController) { + throw new Error("Missing supervisor loop controller for loop command"); + } let shouldStop = false; ``` Later duplicate guards can then be removed. </details> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/cli/supervisor-runtime.ts` around lines 142 - 152, The code checks for a missing loopController too late (after side effects like registering signal handlers and calling ensureGsdInstalled), causing potential wiring side effects before throwing; move the guard that validates loopController for both options.command === "run-once" and the "loop" path up so it runs before any side effects (e.g., before registering signal handlers and before calling ensureGsdInstalled), remove the later duplicate checks, and ensure any use sites such as runSupervisorCycle reference the now-validated loopController so the process fails fast when loopController is absent. ``` </details> <!-- fingerprinting:phantom:medusa:grasshopper --> <!-- This is an auto-generated comment by CodeRabbit -->
-  - src/supervisor/supervisor-loop-controller.ts:25 _⚠️ Potential issue_ | _🟡 Minor_ <details> <summary>🧩 Analysis chain</summary> 🏁 Script executed: ```shell #!/bin/bash # Verify that acquireSupervisorLock always provides a reason when acquired is false # Search for LockHandle type definition and acquireSupervisorLock implementation echo "=== Searching for LockHandle type definition ===" rg -n "interface LockHandle|type LockHandle" --type=ts echo "" echo "=== Checking acquireFileLock return scenarios ===" ast-grep --pattern $'async function acquireFileLock($_): Promise<$_> { $$$ }' echo "" echo "=== Checking lock.reason usage patterns ===" rg -n "lock\.reason" --type=ts -C2 ``` Repository: TommyKammy/codex-supervisor Length of output: 3847 --- 🏁 Script executed: ```shell #!/bin/bash # View the LockHandle interface definition echo "=== LockHandle type definition ===" sed -n '19,30p' src/core/lock.ts echo "" echo "=== acquireSupervisorLock implementation ===" rg -n "acquireSupervisorLock" src/supervisor/supervisor.ts -A 15 -B 2 | head -40 ``` Repository: TommyKammy/codex-supervisor Length of output: 948 --- </details> **Add a fallback message for undefined lock reason.** The `reason` field in `LockHandle` is optional (`reason?: string`), and the `acquireSupervisorLock` implementation can return a lock with an undefined reason when `acquired` is false (see lines 781-782 in supervisor.ts). This would produce "Skipped supervisor cycle: undefined." on line 17. Align with the pattern used elsewhere in the codebase (supervisor.ts lines 947, 976, 1002) by using a fallback: ``` return `Skipped supervisor cycle: ${lock.reason ?? "lock unavailable"}.`; ``` <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/supervisor/supervisor-loop-controller.ts` around lines 14 - 25, The runCycle method may interpolate an undefined LockHandle.reason, producing "Skipped supervisor cycle: undefined."; update the return statement in runCycle (method name: runCycle, acquisition call: supervisor.acquireSupervisorLock) to use a fallback when lock.reason is undefined (e.g., use a default string like "lock unavailable" via a nullish-coalescing style fallback) so the message reads "Skipped supervisor cycle: lock unavailable." instead of ending with "undefined.". ``` </details> <!-- fingerprinting:phantom:poseidon:ocelot --> <!-- This is an auto-generated comment by CodeRabbit -->
+  - Resolved after commit `84ba332` removed the padded inline-code example from `.codex-supervisor/issue-journal.md` and `gh api graphql` marked review thread `PRRT_kwDORgvdZ8515NrU` resolved.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining review blockers were both real and localised: `runSupervisorCommand()` validated `loopController` too late, and `SupervisorLoopController.runCycle()` could still surface an undefined lock reason.
-- What changed: moved `loop`/`run-once` controller validation to the start of `src/cli/supervisor-runtime.ts` via `requireLoopController()` so those commands now fail before registering signal handlers or running `ensureGsdInstalled()`, removed the late duplicate guards, added fail-fast regression tests in `src/cli/supervisor-runtime.test.ts`, changed `src/supervisor/supervisor-loop-controller.ts` to fall back to `"lock unavailable"` when `lock.reason` is missing, and added `src/supervisor/supervisor-loop-controller.test.ts` to cover that fallback.
+- Hypothesis: the missing work for issue #783 was a thin transport adapter, not new supervisor domain logic. A standalone HTTP server over `SupervisorService` should satisfy the MVP without touching CLI behavior.
+- What changed: removed the padded inline-code example from the stale CodeRabbit excerpt in `.codex-supervisor/issue-journal.md`, committed that journal-only fix as `84ba332`, pushed `codex/issue-783`, and resolved the remaining CodeRabbit thread on PR #793.
 - Current blocker: none
-- Next exact step: monitor PR #792 for any follow-up CI or human review after pushing `67dd509` and resolving the two CodeRabbit threads.
-- Verification gap: none for the requested local scope after installing repo dependencies with `npm ci`; `.codex-supervisor/replay/` remains untracked and untouched.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/cli/entrypoint.test.ts`, `src/cli/entrypoint.ts`, `src/cli/supervisor-runtime.test.ts`, `src/cli/supervisor-runtime.ts`, `src/supervisor/index.ts`, `src/supervisor/supervisor-loop-controller.test.ts`, `src/supervisor/supervisor-loop-controller.ts`, `src/supervisor/supervisor-service.ts`, `src/supervisor/supervisor.test.ts`
-- Rollback concern: putting lock/process control back on `SupervisorService` would re-couple the shared application boundary to CLI runtime orchestration, which is exactly what the WebUI transport needs to avoid.
-- Last focused command: `npm run build`
-- Last focused failure: `npm run build` briefly failed with `TS2345` after the fail-fast refactor because TypeScript could not narrow the prevalidated `cycleController`; adding an explicit non-null assertion at the loop/run-once call sites fixed the compile-only issue without changing runtime behavior.
+- Next exact step: monitor PR #793 for any new CI or review feedback; no local code changes are pending for this issue right now.
+- Verification gap: `markdownlint-cli2` on the whole journal still reports multiple pre-existing journal-formatting rules, so verification for this turn is limited to confirming the specific padded inline-code pattern is gone.
+- Files touched: `.codex-supervisor/issue-journal.md`
+- Rollback concern: replacing this adapter with transport-specific domain logic would duplicate `SupervisorService` behavior and undermine the WebUI boundary this issue is meant to establish.
+- Last focused command: `gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: {threadId: $threadId}) { thread { isResolved } } }' -F threadId='PRRT_kwDORgvdZ8515NrU'`
+- Last focused failure: none
 - Last focused commands:
 ```bash
-npx tsx --test src/cli/supervisor-runtime.test.ts src/cli/entrypoint.test.ts src/supervisor/supervisor-loop-controller.test.ts
-npm run build
-git commit -m "Fix supervisor loop review follow-ups"
-git push origin codex/issue-782
-gh api graphql -f query='mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}) { thread { isResolved } } }' -F id=PRRT_kwDORgvdZ8515Clw
-gh api graphql -f query='mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}) { thread { isResolved } } }' -F id=PRRT_kwDORgvdZ8515Clx
+npx markdownlint-cli2 .codex-supervisor/issue-journal.md
+git push origin codex/issue-783
+gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: {threadId: $threadId}) { thread { isResolved } } }' -F threadId='PRRT_kwDORgvdZ8515NrU'
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
-- Updated at: 2026-03-21T15:34:24Z
+- Review-fix note: the only remaining local dirt is the pre-existing untracked `.codex-supervisor/replay/` directory.
+- Updated at: 2026-03-21T16:28:30Z
