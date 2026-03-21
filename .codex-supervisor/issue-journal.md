@@ -14,7 +14,7 @@
 - Updated at: 2026-03-21T15:18:14Z
 
 ## Latest Codex Summary
-- Split loop process control into a dedicated `SupervisorLoopController` boundary, removed lock acquisition from `SupervisorService`, rewired the CLI runtime/entrypoint seam, and passed the targeted CLI tests plus `npm run build`.
+- Split loop process control into a dedicated `SupervisorLoopController` boundary, removed lock acquisition from `SupervisorService`, rewired the CLI runtime/entrypoint seam, passed the targeted CLI tests plus `npm run build`, committed `f056086`, pushed `codex/issue-782`, and opened draft PR #792 (`https://github.com/TommyKammy/codex-supervisor/pull/792`).
 
 ## Active Failure Context
 - None recorded.
@@ -24,7 +24,7 @@
 - Hypothesis: the remaining WebUI-prep coupling was `SupervisorService.acquireSupervisorLock()`, because the shared service boundary still exposed process/runtime control that only the CLI loop should own.
 - What changed: added `src/supervisor/supervisor-loop-controller.ts` with a thin `SupervisorLoopController.runCycle()` wrapper around supervisor lock + `runOnce`, removed `acquireSupervisorLock()` from `SupervisorService`, exported the new factory from `src/supervisor/index.ts`, updated `src/cli/supervisor-runtime.ts` so `loop` and `run-once` use the dedicated loop controller while query/mutation commands keep using the shared service, updated `src/cli/entrypoint.ts` to inject the loop controller only for `loop`/`run-once`, and tightened `src/cli/entrypoint.test.ts`, `src/cli/supervisor-runtime.test.ts`, and `src/supervisor/supervisor.test.ts` to make the separation explicit.
 - Current blocker: none
-- Next exact step: commit the loop-controller split on `codex/issue-782`, then open or update a draft PR from this branch if one does not already exist.
+- Next exact step: monitor draft PR #792 CI and address any failures or review feedback.
 - Verification gap: none for the requested local scope after installing repo dependencies with `npm ci`; `.codex-supervisor/replay/` remains untracked and untouched.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/cli/entrypoint.test.ts`, `src/cli/entrypoint.ts`, `src/cli/supervisor-runtime.test.ts`, `src/cli/supervisor-runtime.ts`, `src/supervisor/index.ts`, `src/supervisor/supervisor-loop-controller.ts`, `src/supervisor/supervisor-service.ts`, `src/supervisor/supervisor.test.ts`
 - Rollback concern: putting lock/process control back on `SupervisorService` would re-couple the shared application boundary to CLI runtime orchestration, which is exactly what the WebUI transport needs to avoid.
@@ -36,6 +36,8 @@ npx tsx --test src/cli/entrypoint.test.ts
 npx tsx --test src/cli/supervisor-runtime.test.ts src/cli/entrypoint.test.ts
 npm ci
 npm run build
+git push -u origin codex/issue-782
+gh pr create --draft --base main --head codex/issue-782 --title "WebUI prep: split loop process control from supervisor service" --body ...
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
