@@ -33,7 +33,7 @@ export function formatCandidateDiscoveryBehaviorLine(
   prefix = "candidate_discovery",
 ): string {
   const fetchWindow = config.candidateDiscoveryFetchWindow ?? DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW;
-  return `${prefix} fetch_window=${fetchWindow} strategy=first_page_only`;
+  return `${prefix} fetch_window=${fetchWindow} strategy=paginated`;
 }
 
 export function formatCandidateDiscoveryStatusLine(

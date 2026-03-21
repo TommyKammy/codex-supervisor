@@ -288,6 +288,96 @@ test("GitHubClient falls back from gh pr checks to statusCheckRollup", async () 
   ]);
 });
 
+test("GitHubClient listCandidateIssues discovers matching open issues beyond the first 100 results", async () => {
+  const config = createConfig();
+  const backlog = Array.from({ length: 101 }, (_value, index) =>
+    createIssue({
+      number: index + 1,
+      title: `Issue ${index + 1}`,
+      createdAt: `2026-03-${String((index % 28) + 1).padStart(2, "0")}T00:00:00Z`,
+      updatedAt: `2026-03-${String((index % 28) + 1).padStart(2, "0")}T00:00:00Z`,
+      url: `https://example.test/issues/${index + 1}`,
+    }),
+  );
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "api" && args[1] === "repos/owner/repo/issues") {
+      const page = Number(args.find((arg) => arg.startsWith("page="))?.slice("page=".length) ?? "1");
+      const perPage = Number(args.find((arg) => arg.startsWith("per_page="))?.slice("per_page=".length) ?? "100");
+      const start = (page - 1) * perPage;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify(backlog.slice(start, start + perPage).map((issue) => ({
+          number: issue.number,
+          title: issue.title,
+          body: issue.body,
+          created_at: issue.createdAt,
+          updated_at: issue.updatedAt,
+          html_url: issue.url,
+          state: issue.state ?? "OPEN",
+          labels: issue.labels ?? [],
+        }))),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const issues = await client.listCandidateIssues();
+
+  assert.equal(issues.length, 101);
+  assert.equal(issues[0]?.number, 1);
+  assert.equal(issues.at(-1)?.number, 84);
+  assert.ok(issues.some((issue) => issue.number === 101));
+});
+
+test("GitHubClient listCandidateIssues preserves small backlogs without extra paging churn", async () => {
+  const config = createConfig();
+  const backlog = [
+    createIssue({
+      number: 12,
+      title: "Later-created issue",
+      createdAt: "2026-03-12T00:00:00Z",
+      updatedAt: "2026-03-12T00:00:00Z",
+      url: "https://example.test/issues/12",
+    }),
+    createIssue({
+      number: 11,
+      title: "Earlier-created issue",
+      createdAt: "2026-03-11T00:00:00Z",
+      updatedAt: "2026-03-11T00:00:00Z",
+      url: "https://example.test/issues/11",
+    }),
+  ];
+  let pagesFetched = 0;
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "api" && args[1] === "repos/owner/repo/issues") {
+      pagesFetched += 1;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify(backlog.map((issue) => ({
+          number: issue.number,
+          title: issue.title,
+          body: issue.body,
+          created_at: issue.createdAt,
+          updated_at: issue.updatedAt,
+          html_url: issue.url,
+          state: issue.state ?? "OPEN",
+          labels: issue.labels ?? [],
+        }))),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const issues = await client.listCandidateIssues();
+
+  assert.equal(pagesFetched, 1);
+  assert.deepEqual(issues.map((issue) => issue.number), [11, 12]);
+});
+
 test("GitHubClient createPullRequest recovers when the first open-branch lookup misses the new PR", async () => {
   const config = createConfig();
   const createdPr = createPullRequest();

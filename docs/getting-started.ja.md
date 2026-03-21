@@ -78,9 +78,9 @@ config の全項目、model policy、durable memory、provider guidance は [Con
 
 ## execution-ready issue を書く
 
-scheduler は「新しく open された issue」ではなく「今 runnable な issue」を選びます。ただし現状は matching する open issues のうち最初に取得した 1 page の範囲だけで判断しています。したがって、issue 側の metadata を explicit にしておく必要があります。
+scheduler は「新しく open された issue」ではなく「今 runnable な issue」を選びます。matching する open issues を candidate discovery fetch window ごとに page しながら backlog 全体を見て、deterministic な順序で最初に runnable な issue を選びます。したがって、issue 側の metadata を explicit にしておく必要があります。
 
-現在の制約: candidate discovery は GitHub から取得した matching open issues の最初の 1 page だけを評価し、backlog 全体を評価していません。repo が大きいと、より古い runnable issue はその 1 page に入ってくるまで選定対象から見えないことがあります。backlog の順番がおかしく見える時は、metadata だけでなく想定 issue がこの first-page fetch window の外にいないかも確認してください。
+candidate discovery は matching する open backlog 全体を評価します。repo が大きくても、より古い runnable issue が最初の page の外にあるだけで選定対象から見えなくなることはありません。backlog の順番がおかしく見える時は、まず metadata を確認してください。
 
 最低限そろえたい項目:
 

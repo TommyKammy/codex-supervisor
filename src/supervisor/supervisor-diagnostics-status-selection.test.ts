@@ -460,7 +460,7 @@ Execution order: 3 of 3`,
   );
 });
 
-test("status warns when candidate discovery may be truncated by the first-page fetch window", async () => {
+test("status reports paginated candidate discovery without a truncation warning", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {
     activeIssueNumber: null,
@@ -497,7 +497,7 @@ Keep selection behavior unchanged while surfacing the current discovery limit.
     getCandidateDiscoveryDiagnostics: async () => ({
       fetchWindow: 250,
       observedMatchingOpenIssues: 251,
-      truncated: true,
+      truncated: false,
     }),
     getPullRequestIfExists: async () => null,
     getChecks: async () => [],
@@ -505,18 +505,12 @@ Keep selection behavior unchanged while surfacing the current discovery limit.
   };
 
   const report = await supervisor.statusReport();
-  assert.equal(report.candidateDiscoverySummary, "candidate_discovery fetch_window=250 strategy=first_page_only");
-  assert.match(
-    report.readinessLines.join("\n"),
-    /candidate_discovery_warning=matching_open_issues_exceed_first_page_window fetch_window=250 observed_matching_open_issues=251\+ runnable_selection_incomplete=yes/,
-  );
+  assert.equal(report.candidateDiscoverySummary, "candidate_discovery fetch_window=250 strategy=paginated");
+  assert.doesNotMatch(report.readinessLines.join("\n"), /candidate_discovery_warning=/);
 
   const status = await supervisor.status();
-  assert.match(status, /candidate_discovery fetch_window=250 strategy=first_page_only/);
-  assert.match(
-    status,
-    /candidate_discovery_warning=matching_open_issues_exceed_first_page_window fetch_window=250 observed_matching_open_issues=251\+ runnable_selection_incomplete=yes/,
-  );
+  assert.match(status, /candidate_discovery fetch_window=250 strategy=paginated/);
+  assert.doesNotMatch(status, /candidate_discovery_warning=/);
 });
 
 test("status surfaces the current reconciliation phase only while reconciliation is in progress", async () => {

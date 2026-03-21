@@ -86,9 +86,9 @@ If you need the full field-by-field setup, model policy, durable memory, or prov
 
 ## Write execution-ready issues
 
-The scheduler is readiness-driven within the current candidate discovery window. It does not just pick the newest open issue; it picks the first issue that is actually runnable from the first fetched page of matching open issues.
+The scheduler is readiness-driven across the matching open backlog. It does not just pick the newest open issue; it pages through matching open issues using the configured candidate discovery fetch window as the page size, then picks the first issue that is actually runnable in deterministic order.
 
-Current limitation: candidate discovery only evaluates the first fetched page of matching open issues from GitHub today, not the entire open backlog. In large repositories, older runnable issues can be invisible to selection until they move onto that first page or the earlier page contents change. If the backlog order looks wrong, check both the issue metadata and whether the runnable issue is currently outside that first-page fetch window.
+Candidate discovery now evaluates the matching open backlog rather than stopping after the first page. In large repositories, older runnable issues remain discoverable even when they begin beyond the first page. If the backlog order looks wrong, check the issue metadata before assuming discovery skipped part of the backlog.
 
 Before you run the supervisor, make sure each candidate issue includes:
 
@@ -149,7 +149,7 @@ What to check after `run-once`:
 - the issue journal shows a sensible hypothesis, blocker, and next step
 - any opened PR or status transition matches the actual repo state
 
-If the first pass picks the wrong issue, first check whether the expected issue is present in the first fetched page of matching open issues. Then fix the issue metadata before running again. Do not treat issue creation time as the source of truth.
+If the first pass picks the wrong issue, inspect `status` or `doctor` for the effective candidate discovery settings and then fix the issue metadata before running again. Do not treat issue creation time as the source of truth.
 If `status` or `doctor` reports corrupted JSON state, stop treating that file as a safe checkpoint. Inspect the file and recent operator actions first, then explicitly acknowledge the corruption or reset the state before trusting future runs.
 
 ## Move from run-once to loop
@@ -192,7 +192,7 @@ When should orphaned workspaces be cleaned up?
 Treat orphaned `issue-*` worktrees as explicit cleanup work, not as the same thing as delayed cleanup for tracked done workspaces. Preserve orphan workspaces that are locked, recently touched, or intentionally kept for manual recovery, and prune abandoned orphan workspaces only when you have made that operator decision explicitly.
 
 What if the backlog order looks wrong?
-Fix `Depends on` and `Execution order` in GitHub, and confirm the expected issue is still inside the first fetched page of matching open issues. The scheduler follows runnable order within that current candidate page, not operator intuition or chat history, and it does not evaluate the entire open backlog yet.
+Fix `Depends on` and `Execution order` in GitHub. The scheduler pages through the matching open backlog and follows runnable order across that full candidate set, not operator intuition or chat history.
 
 What if the loop keeps hitting blocked work?
 Stop treating the issue as execution-ready. Tighten the issue body, split the work, or use GSD to rebuild the backlog.

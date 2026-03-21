@@ -27,6 +27,22 @@ export type { GitHubCommandRunner } from "./github-transport";
 const POST_CREATE_PR_LOOKUP_RETRY_LIMIT = 2;
 const POST_CREATE_PR_LOOKUP_BASE_DELAY_MS = 200;
 
+interface GitHubRestIssue {
+  number: number;
+  title: string;
+  body: string | null;
+  created_at: string;
+  updated_at: string;
+  html_url: string;
+  state: string;
+  labels?: Array<{ name: string }>;
+  pull_request?: unknown;
+}
+
+interface GitHubSearchIssuesResponse {
+  items: GitHubRestIssue[];
+}
+
 export class GitHubClient {
   private readonly pullRequestHydrator: GitHubPullRequestHydrator;
   private readonly transport: GitHubTransport;
@@ -106,47 +122,126 @@ export class GitHubClient {
     return parseJson<GitHubIssue[]>(result.stdout, "gh issue list");
   }
 
-  private buildCandidateIssueListArgs(limit: number): string[] {
+  private candidateDiscoveryPageSize(): number {
+    return this.config.candidateDiscoveryFetchWindow ?? DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW;
+  }
+
+  private mapRestIssue(issue: GitHubRestIssue): GitHubIssue | null {
+    if (issue.pull_request) {
+      return null;
+    }
+
+    return {
+      number: issue.number,
+      title: issue.title,
+      body: issue.body ?? "",
+      createdAt: issue.created_at,
+      updatedAt: issue.updated_at,
+      url: issue.html_url,
+      labels: issue.labels?.map((label) => ({ name: label.name })),
+      state: issue.state.toUpperCase(),
+    };
+  }
+
+  private sortCandidateIssues(issues: GitHubIssue[]): GitHubIssue[] {
+    return [...issues].sort((left, right) => {
+      const createdAtOrder = left.createdAt.localeCompare(right.createdAt);
+      if (createdAtOrder !== 0) {
+        return createdAtOrder;
+      }
+
+      return left.number - right.number;
+    });
+  }
+
+  private async listRepositoryCandidateIssuePage(page: number, perPage: number): Promise<GitHubIssue[]> {
+    const { owner, repo } = this.repoOwnerAndName();
     const args = [
-      "issue",
-      "list",
-      "--repo",
-      this.config.repoSlug,
-      "--state",
-      "open",
-      "--limit",
-      String(limit),
-      "--json",
-      "number,title,body,createdAt,updatedAt,url,labels,state",
+      "api",
+      `repos/${owner}/${repo}/issues`,
+      "--method",
+      "GET",
+      "-f",
+      "state=open",
+      "-f",
+      `per_page=${perPage}`,
+      "-f",
+      `page=${page}`,
     ];
 
     if (this.config.issueLabel) {
-      args.push("--label", this.config.issueLabel);
+      args.push("-f", `labels=${this.config.issueLabel}`);
     }
 
-    if (this.config.issueSearch) {
-      args.push("--search", this.config.issueSearch);
+    const result = await this.runGhCommand(args);
+    const issues = parseJson<GitHubRestIssue[]>(result.stdout, `gh api repos/${owner}/${repo}/issues page=${page}`);
+    return issues
+      .map((issue) => this.mapRestIssue(issue))
+      .filter((issue): issue is GitHubIssue => issue !== null);
+  }
+
+  private buildCandidateSearchQuery(): string {
+    const qualifiers = [`repo:${this.config.repoSlug}`, "is:issue", "is:open"];
+    if (this.config.issueLabel) {
+      qualifiers.push(`label:"${this.config.issueLabel.replace(/["\\]/g, "\\$&")}"`);
     }
 
-    return args;
+    if (this.config.issueSearch && this.config.issueSearch.trim() !== "") {
+      qualifiers.push(this.config.issueSearch.trim());
+    }
+
+    return qualifiers.join(" ");
+  }
+
+  private async listSearchCandidateIssuePage(page: number, perPage: number): Promise<GitHubIssue[]> {
+    const args = [
+      "api",
+      "search/issues",
+      "--method",
+      "GET",
+      "-f",
+      `q=${this.buildCandidateSearchQuery()}`,
+      "-f",
+      `per_page=${perPage}`,
+      "-f",
+      `page=${page}`,
+    ];
+    const result = await this.runGhCommand(args);
+    const response = parseJson<GitHubSearchIssuesResponse>(result.stdout, `gh api search/issues page=${page}`);
+    return response.items
+      .map((issue) => this.mapRestIssue(issue))
+      .filter((issue): issue is GitHubIssue => issue !== null);
+  }
+
+  private async fetchAllCandidateIssues(): Promise<GitHubIssue[]> {
+    const perPage = this.candidateDiscoveryPageSize();
+    const issues: GitHubIssue[] = [];
+
+    for (let page = 1; ; page += 1) {
+      const pageIssues =
+        this.config.issueSearch && this.config.issueSearch.trim() !== ""
+          ? await this.listSearchCandidateIssuePage(page, perPage)
+          : await this.listRepositoryCandidateIssuePage(page, perPage);
+      issues.push(...pageIssues);
+      if (pageIssues.length < perPage) {
+        break;
+      }
+    }
+
+    return this.sortCandidateIssues(issues);
   }
 
   async listCandidateIssues(): Promise<GitHubIssue[]> {
-    const fetchWindow = this.config.candidateDiscoveryFetchWindow ?? DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW;
-    const result = await this.runGhCommand(this.buildCandidateIssueListArgs(fetchWindow));
-    const issues = parseJson<GitHubIssue[]>(result.stdout, "gh issue list --candidate");
-    return issues.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    return this.fetchAllCandidateIssues();
   }
 
   async getCandidateDiscoveryDiagnostics(): Promise<CandidateDiscoveryDiagnostics> {
-    const fetchWindow = this.config.candidateDiscoveryFetchWindow ?? DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW;
-    const probeLimit = fetchWindow + 1;
-    const result = await this.runGhCommand(this.buildCandidateIssueListArgs(probeLimit));
-    const issues = parseJson<GitHubIssue[]>(result.stdout, "gh issue list --candidate-window-probe");
+    const fetchWindow = this.candidateDiscoveryPageSize();
+    const issues = await this.fetchAllCandidateIssues();
     return {
       fetchWindow,
       observedMatchingOpenIssues: issues.length,
-      truncated: issues.length > fetchWindow,
+      truncated: false,
     };
   }
 
