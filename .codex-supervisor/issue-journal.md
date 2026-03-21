@@ -5,29 +5,29 @@
 - Branch: codex/issue-787
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
+- Current phase: draft_pr
 - Attempt count: 4 (implementation=2, repair=2)
-- Last head SHA: 2328fa72ef6e72669b74fe6eb4108487ab8de1a9
+- Last head SHA: 6723ced481c8c3d782001468cd19cdcb0fba1acb
 - Blocked reason: none
 - Last failure signature: PRRT_kwDORgvdZ8516bxR|PRRT_kwDORgvdZ8516bxS|PRRT_kwDORgvdZ8516bxU|PRRT_kwDORgvdZ8516bxV|PRRT_kwDORgvdZ8516bxW
 - Repeated failure signature count: 1
-- Updated at: 2026-03-21T20:50:48Z
+- Updated at: 2026-03-21T20:51:49Z
 
 ## Latest Codex Summary
-Committed `2328fa7` on `codex/issue-787` to address the five outstanding CodeRabbit review findings locally. The journal handoff now avoids worktree-local summary links and points at the live PR `#797`, while the dashboard script now keeps requeue disabled until an issue loads successfully, preserves successful command results when follow-up refreshes fail, and prevents duplicate operator POSTs with a shared in-flight lock.
+Pushed `codex/issue-787` through `6723ced` and resolved the five outstanding CodeRabbit review threads on PR [#797](https://github.com/TommyKammy/codex-supervisor/pull/797). The branch now contains the dashboard safety fixes for requeue gating, refresh-after-success handling, duplicate command prevention, and the journal handoff cleanup that removed worktree-local summary links.
 
-Added `src/backend/webui-dashboard.test.ts` to execute the inline dashboard script under a fake DOM so the UI-specific review regressions are covered directly. The worktree is clean aside from the pre-existing untracked `.codex-supervisor/replay/` directory.
+Added `src/backend/webui-dashboard.test.ts` to execute the inline dashboard script under a fake DOM so the UI-specific review regressions are covered directly. The only remaining gap is the original manual browser verification of the operator action flow against a live backend.
 
-Summary: Committed `2328fa7` with the remaining dashboard review fixes and direct UI regression tests
-State hint: addressing_review
+Summary: Pushed the remaining dashboard review fixes, resolved the PR #797 review threads, and left only manual browser verification
+State hint: draft_pr
 Blocked reason: none
 Tests: `npx tsx --test src/backend/webui-dashboard.test.ts`; `npx tsx --test src/backend/supervisor-http-server.test.ts`; `npm run build`
 Failure signature: none
-Next action: push `codex/issue-787`, update PR #797, and resolve the corresponding review threads before the remaining manual browser verification pass
+Next action: manually verify the WebUI operator actions against a live backend, then move PR #797 toward review
 
 ## Active Failure Context
 - Category: review
-- Summary: The five automated review threads were reproduced locally and fixed in commit `2328fa7`; the remaining work is to push that commit and resolve them on PR #797.
+- Summary: The previously open automated review threads are now fixed on the branch and resolved on PR #797; the remaining work is manual browser verification.
 - Reference: https://github.com/TommyKammy/codex-supervisor/pull/797#discussion_r2970199904
 - Details:
   - `.codex-supervisor/issue-journal.md`: the handoff summary now keeps links repo-relative and points the stale next action at PR `#797`.
@@ -41,7 +41,7 @@ Next action: push `codex/issue-787`, update PR #797, and resolve the correspondi
 - Hypothesis: the remaining gap on this branch is no longer the dashboard action surface itself; the review threads were about client-side safety details around button enablement, refresh handling, and duplicate submissions.
 - What changed: fixed the dashboard script so requeue is only available after a successful issue load, successful command results survive follow-up refresh failures, and all operator actions share an in-flight lock. Added a direct script-level test harness for those UI regressions.
 - Current blocker: none
-- Next exact step: push commit `2328fa7`, update PR #797, and resolve the matching review threads before the remaining manual browser verification pass.
+- Next exact step: perform the remaining manual browser verification of the operator actions against a live backend, then move PR #797 out of draft when that check is complete.
 - Verification gap: manual browser verification against a live backend still remains for the operator action flow.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard.test.ts`, `src/backend/webui-dashboard.ts`
 - Rollback concern: keep the HTTP command surface narrow and transport-level only; do not add loop control or any new mutation authority before the backend/UI MVP is stabilized.
@@ -68,4 +68,4 @@ npm run build
 - Review fix on 2026-03-22: CodeRabbit threads `PRRT_kwDORgvdZ8516bxU`, `PRRT_kwDORgvdZ8516bxV`, and `PRRT_kwDORgvdZ8516bxW` were valid; the dashboard now gates requeue on a loaded issue, keeps successful command results when refreshes fail, and blocks duplicate command POSTs while one is already running.
 - Review fix on 2026-03-22: added `src/backend/webui-dashboard.test.ts` to execute the inline dashboard script with a fake DOM and verify the review regressions directly.
 - Review state on 2026-03-22: after pushing `6898b72`, GraphQL confirmed both current CodeRabbit review threads on PR #796 are resolved.
-- Updated at: 2026-03-21T20:50:48Z
+- Updated at: 2026-03-21T20:51:49Z
