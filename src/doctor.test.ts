@@ -241,6 +241,35 @@ test("diagnoseBootstrapReadiness returns structured ready config and host summar
   );
 });
 
+test("renderDoctorReport surfaces merge-critical recheck cadence visibility", () => {
+  const diagnostics = {
+    overallStatus: "pass",
+    trustDiagnostics: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+    },
+    checks: [
+      {
+        name: "github_auth",
+        status: "pass",
+        summary: "GitHub auth looks healthy.",
+        details: [],
+      },
+    ],
+    cadenceDiagnostics: {
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: 30,
+      mergeCriticalEffectiveSeconds: 30,
+      mergeCriticalRecheckEnabled: true,
+    },
+  };
+
+  const report = renderDoctorReport(diagnostics as Awaited<ReturnType<typeof diagnoseSupervisorHost>>);
+
+  assert.match(report, /doctor_cadence poll_interval_seconds=120 merge_critical_recheck_seconds=30 merge_critical_effective_seconds=30 enabled=true/);
+});
+
 test("diagnoseSupervisorHost uses a strict default state loader for existing invalid JSON", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
   t.after(async () => {

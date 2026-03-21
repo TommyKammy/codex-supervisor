@@ -1,6 +1,6 @@
 import path from "node:path";
 import { runCommand } from "../core/command";
-import { loadConfig, summarizeTrustDiagnostics } from "../core/config";
+import { loadConfig, summarizeCadenceDiagnostics, summarizeTrustDiagnostics } from "../core/config";
 import { GitHubClient } from "../github";
 import { describeGsdIntegration } from "../gsd";
 import { issueJournalPath } from "../core/journal";
@@ -808,6 +808,7 @@ export class Supervisor {
     const state = await this.stateStore.load();
     const stateDiagnosticLines = buildStateLoadDiagnosticLines(this.config, state);
     const trustDiagnostics = summarizeTrustDiagnostics(this.config);
+    const cadenceDiagnostics = summarizeCadenceDiagnostics(this.config);
     const gsdSummary = await describeGsdIntegration(this.config);
     const statusRecords = summarizeSupervisorStatusRecords(state);
     const reconciliationSnapshot = await readCurrentReconciliationPhaseSnapshot(this.config);
@@ -836,6 +837,7 @@ export class Supervisor {
         return {
           gsdSummary,
           trustDiagnostics,
+          cadenceDiagnostics,
           detailedStatusLines: [...detailedStatusLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationWarning,
@@ -848,6 +850,7 @@ export class Supervisor {
         return {
           gsdSummary,
           trustDiagnostics,
+          cadenceDiagnostics,
           detailedStatusLines: [...detailedStatusLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationWarning,
@@ -896,6 +899,7 @@ export class Supervisor {
     return {
       gsdSummary,
       trustDiagnostics,
+      cadenceDiagnostics,
       detailedStatusLines: [...detailedStatusLines, ...summaryLines, ...stateDiagnosticLines],
       reconciliationPhase,
       reconciliationWarning,

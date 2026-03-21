@@ -1,4 +1,4 @@
-import type { TrustDiagnosticsSummary } from "../core/types";
+import type { CadenceDiagnosticsSummary, TrustDiagnosticsSummary } from "../core/types";
 import { sanitizeStatusValue } from "./supervisor-status-rendering";
 import { truncate } from "../core/utils";
 
@@ -10,6 +10,7 @@ export interface SupervisorStatusWarningDto {
 export interface SupervisorStatusDto {
   gsdSummary: string | null;
   trustDiagnostics?: TrustDiagnosticsSummary | null;
+  cadenceDiagnostics?: CadenceDiagnosticsSummary | null;
   detailedStatusLines: string[];
   reconciliationPhase: string | null;
   reconciliationWarning: string | null;
@@ -24,6 +25,16 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
     executionSafetyMode: "unsandboxed_autonomous",
     warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
   };
+  const cadenceDiagnostics = dto.cadenceDiagnostics ?? {
+    pollIntervalSeconds: 120,
+    mergeCriticalRecheckSeconds: null,
+    mergeCriticalEffectiveSeconds: 120,
+    mergeCriticalRecheckEnabled: false,
+  };
+  const mergeCriticalRecheckSeconds =
+    cadenceDiagnostics.mergeCriticalRecheckSeconds === null
+      ? "disabled"
+      : String(cadenceDiagnostics.mergeCriticalRecheckSeconds);
   const lines = [
     ...dto.detailedStatusLines,
     `trust_mode=${trustDiagnostics.trustMode}`,
@@ -31,6 +42,7 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
     ...(trustDiagnostics.warning === null
       ? []
       : [`execution_safety_warning=${truncate(sanitizeStatusValue(trustDiagnostics.warning), 200)}`]),
+    `merge_critical_recheck_seconds=${mergeCriticalRecheckSeconds} merge_critical_effective_seconds=${cadenceDiagnostics.mergeCriticalEffectiveSeconds} merge_critical_recheck_enabled=${cadenceDiagnostics.mergeCriticalRecheckEnabled}`,
     ...(dto.reconciliationPhase === null ? [] : [`reconciliation_phase=${dto.reconciliationPhase}`]),
     ...(dto.reconciliationWarning === null ? [] : [dto.reconciliationWarning]),
     ...dto.readinessLines,
