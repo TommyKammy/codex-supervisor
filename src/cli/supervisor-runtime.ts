@@ -163,9 +163,15 @@ export async function runSupervisorCommand(
 
     if (!shouldStop) {
       const pollIntervalMs = await service.pollIntervalMs();
+      if (shouldStop) {
+        break;
+      }
       sleepController = new AbortController();
-      await sleep(pollIntervalMs, sleepController.signal);
-      sleepController = null;
+      try {
+        await sleep(pollIntervalMs, sleepController.signal);
+      } finally {
+        sleepController = null;
+      }
     }
   }
 }

@@ -328,6 +328,20 @@ test("selectSupervisorPollIntervalMs keeps the general cadence when waiting_ci i
       selectSupervisorPollIntervalMs(
         config,
         createRecord({
+          state: "waiting_ci",
+          blocked_reason: null,
+          last_head_sha: "head123",
+          provider_success_observed_at: "2026-03-13T02:04:00Z",
+          provider_success_head_sha: null,
+        }),
+      ),
+      120_000,
+    );
+
+    assert.equal(
+      selectSupervisorPollIntervalMs(
+        config,
+        createRecord({
           state: "repairing_ci",
           blocked_reason: null,
           last_head_sha: "head123",

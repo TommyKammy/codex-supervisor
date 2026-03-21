@@ -185,6 +185,97 @@ test("runSupervisorCommand re-reads the poll cadence between loop cycles", async
   assert.deepEqual(sleepCalls, [100, 20]);
 });
 
+test("runSupervisorCommand skips sleep when stop is requested while resolving the next cadence", async () => {
+  const stdout: string[] = [];
+  let signalHandler: ((signal: NodeJS.Signals) => void) | undefined;
+  let releasePollInterval: (() => void) | undefined;
+  let loopRuns = 0;
+  let sleepCalls = 0;
+  let pollIntervalRequested = false;
+
+  const commandPromise = runSupervisorCommand(
+    { command: "loop", dryRun: false, why: false },
+    {
+      service: {
+        config: {} as SupervisorConfig,
+        pollIntervalMs: async () => {
+          pollIntervalRequested = true;
+          await new Promise<void>((resolve) => {
+            releasePollInterval = resolve;
+          });
+          return 50;
+        },
+        acquireSupervisorLock: async () => ({
+          acquired: true,
+          release: async () => {},
+        }),
+        runOnce: async () => {
+          loopRuns += 1;
+          return "cycle complete";
+        },
+        queryStatus: async () => ({
+          gsdSummary: null,
+          detailedStatusLines: ["status"],
+          reconciliationPhase: null,
+          reconciliationWarning: null,
+          readinessLines: [],
+          whyLines: [],
+          warning: null,
+        }),
+        queryExplain: async () => {
+          throw new Error("unexpected queryExplain");
+        },
+        runRecoveryAction: async () => {
+          throw new Error("unexpected runRecoveryAction");
+        },
+        pruneOrphanedWorkspaces: async () => {
+          throw new Error("unexpected pruneOrphanedWorkspaces");
+        },
+        resetCorruptJsonState: async () => {
+          throw new Error("unexpected resetCorruptJsonState");
+        },
+        queryIssueLint: async () => ["lint"],
+        queryDoctor: async () => {
+          throw new Error("unexpected queryDoctor");
+        },
+      },
+      ensureGsdInstalled: async () => null,
+      sleep: async () => {
+        sleepCalls += 1;
+      },
+      writeStdout: (line) => {
+        stdout.push(line);
+      },
+      writeStderr: (line) => {
+        throw new Error(`unexpected stderr: ${line}`);
+      },
+      registerStopSignals: (handler) => {
+        signalHandler = handler;
+      },
+    },
+  );
+
+  await new Promise<void>((resolve) => {
+    const check = () => {
+      if (pollIntervalRequested) {
+        resolve();
+        return;
+      }
+      queueMicrotask(check);
+    };
+    check();
+  });
+
+  signalHandler?.("SIGTERM");
+  releasePollInterval?.();
+  await commandPromise;
+
+  assert.equal(loopRuns, 1);
+  assert.equal(sleepCalls, 0);
+  assert.match(stdout[0] ?? "", /cycle complete/);
+  assert.match(stdout[1] ?? "", /received SIGTERM, stopping after current cycle/);
+});
+
 test("runSupervisorCommand stops the loop after a corrupt-json fail-closed block", async () => {
   const stdout: string[] = [];
   let loopRuns = 0;

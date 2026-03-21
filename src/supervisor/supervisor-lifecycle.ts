@@ -47,7 +47,7 @@ function progressMatchesCurrentHead(
   progressHeadSha: string | null | undefined,
   record: Pick<IssueRunRecord, "last_head_sha">,
 ): boolean {
-  return progressHeadSha === null || progressHeadSha === undefined || record.last_head_sha === null || progressHeadSha === record.last_head_sha;
+  return typeof record.last_head_sha === "string" && typeof progressHeadSha === "string" && progressHeadSha === record.last_head_sha;
 }
 
 function latestMergeCriticalProgressMs(record: IssueRunRecord): number | null {
