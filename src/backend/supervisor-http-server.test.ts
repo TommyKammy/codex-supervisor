@@ -264,7 +264,9 @@ function createStubService(args?: {
       };
     },
     pruneOrphanedWorkspaces: async () => {
-      args!.pruneCalls = (args?.pruneCalls ?? 0) + 1;
+      if (args) {
+        args.pruneCalls = (args.pruneCalls ?? 0) + 1;
+      }
       return {
         action: "prune-orphaned-workspaces",
         outcome: "completed",
@@ -274,7 +276,9 @@ function createStubService(args?: {
       };
     },
     resetCorruptJsonState: async () => {
-      args!.resetCalls = (args?.resetCalls ?? 0) + 1;
+      if (args) {
+        args.resetCalls = (args.resetCalls ?? 0) + 1;
+      }
       return {
         action: "reset-corrupt-json-state",
         outcome: "mutated",
