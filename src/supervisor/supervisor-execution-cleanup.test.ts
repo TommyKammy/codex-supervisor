@@ -661,13 +661,17 @@ test("runOnce preserves recent orphaned worktrees until the orphan age gate expi
   const orphanBranch = branchName(fixture.config, orphanIssueNumber);
   const orphanWorkspace = path.join(fixture.workspaceRoot, `issue-${orphanIssueNumber}`);
 
+  await fs.mkdir(path.join(fixture.repoPath, "docs"), { recursive: true });
+  await fs.writeFile(path.join(fixture.repoPath, "docs", "keep.md"), "keep docs directory\n", "utf8");
+  await fs.writeFile(path.join(fixture.repoPath, "docs", "recent-orphan-delete.md"), "tracked orphan activity\n", "utf8");
+  git(["-C", fixture.repoPath, "add", "docs/keep.md", "docs/recent-orphan-delete.md"]);
+  git(["-C", fixture.repoPath, "commit", "-m", "Add nested orphan activity fixture"]);
+  git(["-C", fixture.repoPath, "push", "origin", "main"]);
+
   await fs.mkdir(fixture.workspaceRoot, { recursive: true });
   git(["-C", fixture.repoPath, "worktree", "add", "-b", orphanBranch, orphanWorkspace, "origin/main"]);
-  const recentActivityTime = new Date(Date.now() - 60 * 60 * 1000);
   const staleWorkspaceTime = new Date("2026-03-18T00:00:00.000Z");
-  const recentActivityFile = path.join(orphanWorkspace, "README.md");
-  await fs.writeFile(recentActivityFile, "recent orphan activity\n", "utf8");
-  await fs.utimes(recentActivityFile, recentActivityTime, recentActivityTime);
+  git(["-C", orphanWorkspace, "rm", "docs/recent-orphan-delete.md"]);
   await fs.utimes(orphanWorkspace, staleWorkspaceTime, staleWorkspaceTime);
 
   const state: SupervisorStateFile = {

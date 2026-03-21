@@ -138,10 +138,44 @@ function orphanedWorkspaceGracePeriodHours(config: SupervisorConfig): number {
   return config.cleanupOrphanedWorkspacesAfterHours ?? 24;
 }
 
+function updateLatestModifiedMs(currentModifiedMs: number, candidateModifiedMs: number): number {
+  if (Number.isNaN(currentModifiedMs) || candidateModifiedMs > currentModifiedMs) {
+    return candidateModifiedMs;
+  }
+
+  return currentModifiedMs;
+}
+
+function readExistingAncestorModifiedMs(candidatePath: string, workspaceRootPath: string): number | null {
+  let existingAncestorPath = path.dirname(candidatePath);
+
+  while (
+    existingAncestorPath === workspaceRootPath
+    || existingAncestorPath.startsWith(`${workspaceRootPath}${path.sep}`)
+  ) {
+    try {
+      return fs.statSync(existingAncestorPath).mtimeMs;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        return null;
+      }
+
+      const parentPath = path.dirname(existingAncestorPath);
+      if (parentPath === existingAncestorPath) {
+        return null;
+      }
+      existingAncestorPath = parentPath;
+    }
+  }
+
+  return null;
+}
+
 async function readOrphanedWorkspaceActivityTimestamp(workspacePath: string): Promise<string | null> {
+  const resolvedWorkspacePath = path.resolve(workspacePath);
   let latestModifiedMs = Number.NaN;
   try {
-    latestModifiedMs = fs.statSync(workspacePath).mtimeMs;
+    latestModifiedMs = fs.statSync(resolvedWorkspacePath).mtimeMs;
   } catch {
     latestModifiedMs = Number.NaN;
   }
@@ -161,18 +195,22 @@ async function readOrphanedWorkspaceActivityTimestamp(workspacePath: string): Pr
     );
 
     for (const relativePath of dirtyPaths) {
-      const candidatePath = path.resolve(workspacePath, relativePath);
-      if (!candidatePath.startsWith(`${path.resolve(workspacePath)}${path.sep}`)) {
+      const candidatePath = path.resolve(resolvedWorkspacePath, relativePath);
+      if (!candidatePath.startsWith(`${resolvedWorkspacePath}${path.sep}`)) {
         continue;
       }
 
       try {
-        const candidateModifiedMs = fs.statSync(candidatePath).mtimeMs;
-        if (Number.isNaN(latestModifiedMs) || candidateModifiedMs > latestModifiedMs) {
-          latestModifiedMs = candidateModifiedMs;
+        latestModifiedMs = updateLatestModifiedMs(latestModifiedMs, fs.statSync(candidatePath).mtimeMs);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          continue;
         }
-      } catch {
-        continue;
+
+        const ancestorModifiedMs = readExistingAncestorModifiedMs(candidatePath, resolvedWorkspacePath);
+        if (ancestorModifiedMs !== null) {
+          latestModifiedMs = updateLatestModifiedMs(latestModifiedMs, ancestorModifiedMs);
+        }
       }
     }
   } catch {
