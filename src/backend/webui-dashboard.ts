@@ -446,6 +446,7 @@ export function renderSupervisorDashboardHtml(): string {
     <script>
       const state = {
         selectedIssueNumber: null,
+        loadedIssueNumber: null,
         status: null,
         doctor: null,
         explain: null,
@@ -761,15 +762,19 @@ export function renderSupervisorDashboardHtml(): string {
 
       function renderSelectedIssue() {
         setText(elements.selectedIssueBadge, state.selectedIssueNumber ? "#" + state.selectedIssueNumber : "none");
-        if (state.selectedIssueNumber && elements.issueNumberInput) {
-          elements.issueNumberInput.value = String(state.selectedIssueNumber);
+        if (elements.issueNumberInput) {
+          if (state.loadedIssueNumber) {
+            elements.issueNumberInput.value = String(state.loadedIssueNumber);
+          } else if (state.selectedIssueNumber) {
+            elements.issueNumberInput.value = String(state.selectedIssueNumber);
+          }
         }
         if (elements.runOnceButton) {
           elements.runOnceButton.disabled = state.commandInFlight;
         }
         if (elements.requeueButton) {
           elements.requeueButton.disabled =
-            state.commandInFlight || state.selectedIssueNumber === null || state.explain === null;
+            state.commandInFlight || state.loadedIssueNumber === null || state.explain === null;
         }
         if (elements.pruneWorkspacesButton) {
           elements.pruneWorkspacesButton.disabled = state.commandInFlight;
@@ -786,8 +791,18 @@ export function renderSupervisorDashboardHtml(): string {
           return;
         }
 
-        setText(elements.commandStatus, state.commandResult.summary || "Command completed.");
+        setText(elements.commandStatus, state.commandResult.status || state.commandResult.summary || "Command completed.");
         setCode(elements.commandResult, JSON.stringify(state.commandResult, null, 2));
+      }
+
+      function rejectCommand(action, summary, status) {
+        state.commandResult = {
+          action,
+          outcome: "rejected",
+          summary,
+          status,
+        };
+        renderCommandResult();
       }
 
       function markRefresh() {
@@ -826,10 +841,7 @@ export function renderSupervisorDashboardHtml(): string {
         ]);
         state.status = status;
         state.doctor = doctor;
-        const inferredIssueNumber = parseSelectedIssueNumber(status);
-        if (inferredIssueNumber !== null && state.selectedIssueNumber === null) {
-          state.selectedIssueNumber = inferredIssueNumber;
-        }
+        state.selectedIssueNumber = parseSelectedIssueNumber(status);
         renderStatus();
         renderDoctor();
         renderIssueShortcuts();
@@ -839,7 +851,7 @@ export function renderSupervisorDashboardHtml(): string {
 
       async function loadIssue(issueNumber) {
         const requestedIssueNumber = issueNumber;
-        state.selectedIssueNumber = requestedIssueNumber;
+        state.loadedIssueNumber = requestedIssueNumber;
         state.explain = null;
         state.issueLint = null;
         renderSelectedIssue();
@@ -851,7 +863,7 @@ export function renderSupervisorDashboardHtml(): string {
             readJson("/api/issues/" + requestedIssueNumber + "/explain"),
             readJson("/api/issues/" + requestedIssueNumber + "/issue-lint"),
           ]);
-          if (state.selectedIssueNumber !== requestedIssueNumber) {
+          if (state.loadedIssueNumber !== requestedIssueNumber) {
             return;
           }
           state.explain = explain;
@@ -860,7 +872,7 @@ export function renderSupervisorDashboardHtml(): string {
           renderIssue();
           markRefresh();
         } catch (error) {
-          if (state.selectedIssueNumber !== requestedIssueNumber) {
+          if (state.loadedIssueNumber !== requestedIssueNumber) {
             return;
           }
           throw error;
@@ -896,8 +908,9 @@ export function renderSupervisorDashboardHtml(): string {
           renderCommandResult();
           try {
             await refreshStatusAndDoctor();
-            if (state.selectedIssueNumber !== null) {
-              await loadIssue(state.selectedIssueNumber);
+            const issueNumberToLoad = state.selectedIssueNumber ?? state.loadedIssueNumber;
+            if (issueNumberToLoad !== null) {
+              await loadIssue(issueNumberToLoad);
             }
           } catch (error) {
             reportRefreshError(error);
@@ -954,8 +967,9 @@ export function renderSupervisorDashboardHtml(): string {
           pushEvent(parsed);
           try {
             await refreshStatusAndDoctor();
-            if (state.selectedIssueNumber !== null) {
-              await loadIssue(state.selectedIssueNumber);
+            const issueNumberToLoad = state.selectedIssueNumber ?? state.loadedIssueNumber;
+            if (issueNumberToLoad !== null) {
+              await loadIssue(issueNumberToLoad);
             }
           } catch (error) {
             reportRefreshError(error);
@@ -992,12 +1006,7 @@ export function renderSupervisorDashboardHtml(): string {
 
       elements.requeueButton?.addEventListener("click", async () => {
         if (state.explain === null) {
-          state.commandResult = {
-            action: "requeue",
-            outcome: "rejected",
-            summary: "Load an issue successfully before requeueing.",
-          };
-          renderCommandResult();
+          rejectCommand("requeue", "Load an issue successfully before requeueing.");
           return;
         }
 
@@ -1010,6 +1019,11 @@ export function renderSupervisorDashboardHtml(): string {
 
       elements.pruneWorkspacesButton?.addEventListener("click", async () => {
         if (!window.confirm("Confirm prune of orphaned workspaces?")) {
+          rejectCommand(
+            "prune-orphaned-workspaces",
+            "Operator declined confirmation.",
+            "prune-orphaned-workspaces cancelled",
+          );
           return;
         }
 
@@ -1022,6 +1036,11 @@ export function renderSupervisorDashboardHtml(): string {
 
       elements.resetJsonStateButton?.addEventListener("click", async () => {
         if (!window.confirm("Confirm reset of the corrupt JSON state marker?")) {
+          rejectCommand(
+            "reset-corrupt-json-state",
+            "Operator declined confirmation.",
+            "reset-corrupt-json-state cancelled",
+          );
           return;
         }
 
@@ -1035,8 +1054,9 @@ export function renderSupervisorDashboardHtml(): string {
       async function bootstrap() {
         try {
           await refreshStatusAndDoctor();
-          if (state.selectedIssueNumber !== null) {
-            await loadIssue(state.selectedIssueNumber);
+          const issueNumberToLoad = state.selectedIssueNumber ?? state.loadedIssueNumber;
+          if (issueNumberToLoad !== null) {
+            await loadIssue(issueNumberToLoad);
           }
         } catch (error) {
           setText(elements.statusWarning, error instanceof Error ? error.message : String(error));
