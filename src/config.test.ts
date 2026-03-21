@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadConfig, loadConfigSummary } from "./core/config";
+import { loadConfig, loadConfigSummary, summarizeCadenceDiagnostics } from "./core/config";
 import { SupervisorConfig } from "./core/types";
 
 test("loadConfig leaves bare codexBinary values unresolved for PATH lookup", async (t) => {
@@ -446,6 +446,34 @@ test("loadConfig disables mergeCriticalRecheckSeconds for invalid values and pre
   assert.equal(config.pollIntervalSeconds, 120);
   assert.equal(config.mergeCriticalRecheckSeconds, undefined);
   assert.equal(summary.config?.mergeCriticalRecheckSeconds, undefined);
+});
+
+test("summarizeCadenceDiagnostics disables invalid programmatic mergeCriticalRecheckSeconds values", () => {
+  assert.deepEqual(
+    summarizeCadenceDiagnostics({
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: Number.POSITIVE_INFINITY,
+    }),
+    {
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: null,
+      mergeCriticalEffectiveSeconds: 120,
+      mergeCriticalRecheckEnabled: false,
+    },
+  );
+
+  assert.deepEqual(
+    summarizeCadenceDiagnostics({
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: 1.5,
+    }),
+    {
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: null,
+      mergeCriticalEffectiveSeconds: 120,
+      mergeCriticalRecheckEnabled: false,
+    },
+  );
 });
 
 test("loadConfig defaults localReviewHighSeverityAction to blocked", async (t) => {

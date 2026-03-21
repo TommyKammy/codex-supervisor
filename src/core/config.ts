@@ -220,7 +220,10 @@ export function summarizeCadenceDiagnostics(
   config: Pick<SupervisorConfig, "pollIntervalSeconds" | "mergeCriticalRecheckSeconds">,
 ): CadenceDiagnosticsSummary {
   const mergeCriticalRecheckSeconds =
-    typeof config.mergeCriticalRecheckSeconds === "number" && config.mergeCriticalRecheckSeconds > 0
+    typeof config.mergeCriticalRecheckSeconds === "number" &&
+    Number.isFinite(config.mergeCriticalRecheckSeconds) &&
+    Number.isInteger(config.mergeCriticalRecheckSeconds) &&
+    config.mergeCriticalRecheckSeconds > 0
       ? config.mergeCriticalRecheckSeconds
       : null;
 
