@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { SupervisorConfig } from "../core/types";
 import type { SupervisorIssueLintDto } from "../supervisor/supervisor-selection-issue-lint";
-import { runOnceWithSupervisorLock, runSupervisorCommand } from "./supervisor-runtime";
+import { runSupervisorCycle, runSupervisorCommand } from "./supervisor-runtime";
 
 function createIssueLintDto(overrides: Partial<SupervisorIssueLintDto> = {}): SupervisorIssueLintDto {
   return {
@@ -18,37 +18,31 @@ function createIssueLintDto(overrides: Partial<SupervisorIssueLintDto> = {}): Su
   };
 }
 
-test("runOnceWithSupervisorLock releases the supervisor lock after a successful cycle", async () => {
-  let released = false;
-  const supervisor = {
-    acquireSupervisorLock: async () => ({
-      acquired: true,
-      release: async () => {
-        released = true;
-      },
-    }),
-    runOnce: async () => "cycle complete",
-  };
-
-  const result = await runOnceWithSupervisorLock(supervisor, "run-once", { dryRun: false });
-
-  assert.equal(result, "cycle complete");
-  assert.equal(released, true);
-});
-
-test("runOnceWithSupervisorLock surfaces reconciliation-held lock skips verbatim", async () => {
-  const supervisor = {
-    acquireSupervisorLock: async () => ({
-      acquired: false,
-      reason: "lock held by pid 123 for supervisor-run-once for reconciliation work (tracked_merged_but_open_issues)",
-      release: async () => {},
-    }),
-    runOnce: async () => {
-      throw new Error("runOnce should not execute when the supervisor lock is unavailable");
+test("runSupervisorCycle delegates run-once execution to the loop controller", async () => {
+  let receivedCommand: "loop" | "run-once" | undefined;
+  let receivedDryRun: boolean | undefined;
+  const loopController = {
+    runCycle: async (command: "loop" | "run-once", options: { dryRun: boolean }) => {
+      receivedCommand = command;
+      receivedDryRun = options.dryRun;
+      return "cycle complete";
     },
   };
 
-  const result = await runOnceWithSupervisorLock(supervisor, "run-once", { dryRun: false });
+  const result = await runSupervisorCycle(loopController, "run-once", { dryRun: false });
+
+  assert.equal(result, "cycle complete");
+  assert.equal(receivedCommand, "run-once");
+  assert.equal(receivedDryRun, false);
+});
+
+test("runSupervisorCycle preserves loop-controller skip messages verbatim", async () => {
+  const loopController = {
+    runCycle: async () =>
+      "Skipped supervisor cycle: lock held by pid 123 for supervisor-run-once for reconciliation work (tracked_merged_but_open_issues).",
+  };
+
+  const result = await runSupervisorCycle(loopController, "run-once", { dryRun: false });
 
   assert.equal(
     result,
@@ -70,13 +64,8 @@ test("runSupervisorCommand stops the loop after a registered signal and aborts p
       service: {
         config,
         pollIntervalMs: async () => 50,
-        acquireSupervisorLock: async () => ({
-          acquired: true,
-          release: async () => {},
-        }),
         runOnce: async () => {
-          loopRuns += 1;
-          return "cycle complete";
+          throw new Error("unexpected runOnce");
         },
         queryStatus: async () => ({
           gsdSummary: null,
@@ -102,6 +91,12 @@ test("runSupervisorCommand stops the loop after a registered signal and aborts p
         queryIssueLint: async () => createIssueLintDto(),
         queryDoctor: async () => {
           throw new Error("unexpected queryDoctor");
+        },
+      },
+      loopController: {
+        runCycle: async () => {
+          loopRuns += 1;
+          return "cycle complete";
         },
       },
       ensureGsdInstalled: async () => null,
@@ -129,6 +124,106 @@ test("runSupervisorCommand stops the loop after a registered signal and aborts p
   assert.match(stdout[1] ?? "", /received SIGTERM, stopping after current cycle/);
 });
 
+test("runSupervisorCommand fails fast for run-once without a loop controller", async () => {
+  let registerStopSignalsCalled = false;
+  let ensureGsdInstalledCalled = false;
+
+  await assert.rejects(
+    runSupervisorCommand(
+      { command: "run-once", dryRun: false, why: false },
+      {
+        service: {
+          config: {} as SupervisorConfig,
+          pollIntervalMs: async () => 50,
+          runOnce: async () => {
+            throw new Error("unexpected runOnce");
+          },
+          queryStatus: async () => {
+            throw new Error("unexpected queryStatus");
+          },
+          queryExplain: async () => {
+            throw new Error("unexpected queryExplain");
+          },
+          runRecoveryAction: async () => {
+            throw new Error("unexpected runRecoveryAction");
+          },
+          pruneOrphanedWorkspaces: async () => {
+            throw new Error("unexpected pruneOrphanedWorkspaces");
+          },
+          resetCorruptJsonState: async () => {
+            throw new Error("unexpected resetCorruptJsonState");
+          },
+          queryIssueLint: async () => createIssueLintDto(),
+          queryDoctor: async () => {
+            throw new Error("unexpected queryDoctor");
+          },
+        },
+        ensureGsdInstalled: async () => {
+          ensureGsdInstalledCalled = true;
+          return null;
+        },
+        registerStopSignals: () => {
+          registerStopSignalsCalled = true;
+        },
+      },
+    ),
+    /Missing supervisor loop controller for run-once command/,
+  );
+
+  assert.equal(registerStopSignalsCalled, false);
+  assert.equal(ensureGsdInstalledCalled, false);
+});
+
+test("runSupervisorCommand fails fast for loop without a loop controller", async () => {
+  let registerStopSignalsCalled = false;
+  let ensureGsdInstalledCalled = false;
+
+  await assert.rejects(
+    runSupervisorCommand(
+      { command: "loop", dryRun: false, why: false },
+      {
+        service: {
+          config: {} as SupervisorConfig,
+          pollIntervalMs: async () => 50,
+          runOnce: async () => {
+            throw new Error("unexpected runOnce");
+          },
+          queryStatus: async () => {
+            throw new Error("unexpected queryStatus");
+          },
+          queryExplain: async () => {
+            throw new Error("unexpected queryExplain");
+          },
+          runRecoveryAction: async () => {
+            throw new Error("unexpected runRecoveryAction");
+          },
+          pruneOrphanedWorkspaces: async () => {
+            throw new Error("unexpected pruneOrphanedWorkspaces");
+          },
+          resetCorruptJsonState: async () => {
+            throw new Error("unexpected resetCorruptJsonState");
+          },
+          queryIssueLint: async () => createIssueLintDto(),
+          queryDoctor: async () => {
+            throw new Error("unexpected queryDoctor");
+          },
+        },
+        ensureGsdInstalled: async () => {
+          ensureGsdInstalledCalled = true;
+          return null;
+        },
+        registerStopSignals: () => {
+          registerStopSignalsCalled = true;
+        },
+      },
+    ),
+    /Missing supervisor loop controller for loop command/,
+  );
+
+  assert.equal(registerStopSignalsCalled, false);
+  assert.equal(ensureGsdInstalledCalled, false);
+});
+
 test("runSupervisorCommand re-reads the poll cadence between loop cycles", async () => {
   const sleepCalls: number[] = [];
   let signalHandler: ((signal: NodeJS.Signals) => void) | undefined;
@@ -144,13 +239,8 @@ test("runSupervisorCommand re-reads the poll cadence between loop cycles", async
           pollIntervalCalls += 1;
           return pollIntervalCalls === 1 ? 100 : 20;
         },
-        acquireSupervisorLock: async () => ({
-          acquired: true,
-          release: async () => {},
-        }),
         runOnce: async () => {
-          loopRuns += 1;
-          return "cycle complete";
+          throw new Error("unexpected runOnce");
         },
         queryStatus: async () => ({
           gsdSummary: null,
@@ -176,6 +266,12 @@ test("runSupervisorCommand re-reads the poll cadence between loop cycles", async
         queryIssueLint: async () => createIssueLintDto(),
         queryDoctor: async () => {
           throw new Error("unexpected queryDoctor");
+        },
+      },
+      loopController: {
+        runCycle: async () => {
+          loopRuns += 1;
+          return "cycle complete";
         },
       },
       ensureGsdInstalled: async () => null,
@@ -220,13 +316,8 @@ test("runSupervisorCommand skips sleep when stop is requested while resolving th
           });
           return 50;
         },
-        acquireSupervisorLock: async () => ({
-          acquired: true,
-          release: async () => {},
-        }),
         runOnce: async () => {
-          loopRuns += 1;
-          return "cycle complete";
+          throw new Error("unexpected runOnce");
         },
         queryStatus: async () => ({
           gsdSummary: null,
@@ -252,6 +343,12 @@ test("runSupervisorCommand skips sleep when stop is requested while resolving th
         queryIssueLint: async () => createIssueLintDto(),
         queryDoctor: async () => {
           throw new Error("unexpected queryDoctor");
+        },
+      },
+      loopController: {
+        runCycle: async () => {
+          loopRuns += 1;
+          return "cycle complete";
         },
       },
       ensureGsdInstalled: async () => null,
@@ -301,13 +398,8 @@ test("runSupervisorCommand stops the loop after a corrupt-json fail-closed block
       service: {
         config: {} as SupervisorConfig,
         pollIntervalMs: async () => 50,
-        acquireSupervisorLock: async () => ({
-          acquired: true,
-          release: async () => {},
-        }),
         runOnce: async () => {
-          loopRuns += 1;
-          return "Blocked execution-changing command: corrupted JSON supervisor state detected at /tmp/state.json. Run status, doctor, or reset-corrupt-json-state before retrying.";
+          throw new Error("unexpected runOnce");
         },
         queryStatus: async () => ({
           gsdSummary: null,
@@ -333,6 +425,12 @@ test("runSupervisorCommand stops the loop after a corrupt-json fail-closed block
         queryIssueLint: async () => createIssueLintDto(),
         queryDoctor: async () => {
           throw new Error("unexpected queryDoctor");
+        },
+      },
+      loopController: {
+        runCycle: async () => {
+          loopRuns += 1;
+          return "Blocked execution-changing command: corrupted JSON supervisor state detected at /tmp/state.json. Run status, doctor, or reset-corrupt-json-state before retrying.";
         },
       },
       sleep: async () => {
@@ -363,10 +461,6 @@ test("runSupervisorCommand routes query commands through the supervisor service 
       service: {
         config: {} as SupervisorConfig,
         pollIntervalMs: async () => 50,
-        acquireSupervisorLock: async () => ({
-          acquired: true,
-          release: async () => {},
-        }),
         runOnce: async () => {
           calls.push("runOnce");
           return "runOnce";
@@ -436,10 +530,6 @@ test("runSupervisorCommand renders issue-lint output from the structured DTO", a
       service: {
         config: {} as SupervisorConfig,
         pollIntervalMs: async () => 50,
-        acquireSupervisorLock: async () => ({
-          acquired: true,
-          release: async () => {},
-        }),
         runOnce: async () => {
           throw new Error("unexpected runOnce");
         },
@@ -495,10 +585,6 @@ test("runSupervisorCommand renders a structured requeue result", async () => {
       service: {
         config: {} as SupervisorConfig,
         pollIntervalMs: async () => 50,
-        acquireSupervisorLock: async () => ({
-          acquired: true,
-          release: async () => {},
-        }),
         runOnce: async () => {
           throw new Error("unexpected runOnce");
         },
@@ -623,10 +709,6 @@ test("runSupervisorCommand renders a structured orphan prune result", async () =
       service: {
         config: {} as SupervisorConfig,
         pollIntervalMs: async () => 50,
-        acquireSupervisorLock: async () => ({
-          acquired: true,
-          release: async () => {},
-        }),
         runOnce: async () => {
           throw new Error("unexpected runOnce");
         },
@@ -719,10 +801,6 @@ test("runSupervisorCommand renders a structured corrupt-json reset result", asyn
       service: {
         config: {} as SupervisorConfig,
         pollIntervalMs: async () => 50,
-        acquireSupervisorLock: async () => ({
-          acquired: true,
-          release: async () => {},
-        }),
         runOnce: async () => {
           throw new Error("unexpected runOnce");
         },

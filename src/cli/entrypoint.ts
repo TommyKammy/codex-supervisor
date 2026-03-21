@@ -1,4 +1,9 @@
-import { createSupervisorService, type SupervisorService } from "../supervisor";
+import {
+  createSupervisorLoopController,
+  createSupervisorService,
+  type SupervisorLoopController,
+  type SupervisorService,
+} from "../supervisor";
 import type { CliOptions } from "../core/types";
 import { parseArgs } from "./parse-args";
 import { handleReplayCommand } from "./replay-command";
@@ -25,12 +30,13 @@ export interface CliEntrypointDependencies {
     io: CliIo,
   ) => Promise<void>;
   createSupervisorService?: (configPath?: string) => SupervisorService;
+  createSupervisorLoopController?: (configPath?: string) => SupervisorLoopController;
   isSupervisorRuntimeCommand?: (
     command: CliOptions["command"],
   ) => command is SupervisorRuntimeOptions["command"];
   runSupervisorCommand?: (
     options: SupervisorRuntimeOptions,
-    dependencies: { service: SupervisorService },
+    dependencies: { service: SupervisorService; loopController?: SupervisorLoopController },
   ) => Promise<void>;
   writeStdout?: (line: string) => void;
 }
@@ -53,6 +59,8 @@ export async function runCli(
   const replayCorpusPromoteCommandHandler =
     dependencies.handleReplayCorpusPromoteCommand ?? handleReplayCorpusPromoteCommand;
   const buildSupervisorService = dependencies.createSupervisorService ?? createSupervisorService;
+  const buildSupervisorLoopController =
+    dependencies.createSupervisorLoopController ?? createSupervisorLoopController;
   const isRuntimeCommand = dependencies.isSupervisorRuntimeCommand ?? isSupervisorRuntimeCommand;
   const supervisorCommandRunner = dependencies.runSupervisorCommand ?? runSupervisorCommand;
   const writeStdout = dependencies.writeStdout ?? ((line: string) => console.log(line));
@@ -75,6 +83,10 @@ export async function runCli(
   }
 
   const service = buildSupervisorService(options.configPath);
+  const loopController =
+    options.command === "loop" || options.command === "run-once"
+      ? buildSupervisorLoopController(options.configPath)
+      : undefined;
   if (!isRuntimeCommand(options.command)) {
     throw new Error(`Unsupported supervisor runtime command: ${options.command}`);
   }
@@ -85,7 +97,7 @@ export async function runCli(
       why: options.why,
       issueNumber: options.issueNumber,
     },
-    { service },
+    { service, loopController },
   );
 }
 
