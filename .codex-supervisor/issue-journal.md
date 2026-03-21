@@ -31,7 +31,7 @@
 - Hypothesis: the missing work for issue #786 was still the backend mutation surface itself, specifically exposing only the pre-existing safe supervisor commands over HTTP without widening authority.
 - What changed: added a focused backend test covering representative command success and rejection cases; implemented `POST /api/commands/run-once`, `POST /api/commands/requeue`, `POST /api/commands/prune-orphaned-workspaces`, and `POST /api/commands/reset-corrupt-json-state`; added request JSON parsing with `400` for malformed bodies; updated the dashboard copy to reflect the new limited command transport.
 - Current blocker: none
-- Next exact step: commit this backend command slice, then update the existing draft PR with the new HTTP mutation surface and focused verification.
+- Next exact step: monitor draft PR #796 for review feedback, with particular attention to whether `run-once` should keep its lightweight structured wrapper or move to a shared DTO type.
 - Verification gap: no known local automated gap for this slice; browser-level manual exercise remains optional if the PR review wants it.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.ts`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard.ts`
 - Rollback concern: keep the HTTP command surface narrow and transport-level only; do not add loop control or any new mutation authority before the backend/UI MVP is stabilized.
@@ -50,5 +50,5 @@ npm run build
 - Local dirt besides this work remains the pre-existing untracked `.codex-supervisor/replay/` directory.
 - `npm ci` was required locally because `npm run build` initially failed with `sh: 1: tsc: not found`.
 - The new backend tests cover the intended allowlist and keep `loop` blocked at the HTTP layer with `404`.
-- Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/795
-- Updated at: 2026-03-21T19:15:23Z
+- Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/796
+- Updated at: 2026-03-21T19:16:31Z
