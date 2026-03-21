@@ -474,6 +474,71 @@ test("createSupervisorHttpServer streams supervisor events over SSE with reconne
   await closeServer(server);
 });
 
+test("createSupervisorHttpServer starts fresh SSE connections at the live edge", async (t) => {
+  const eventEmitter: { current: ((event: SupervisorEvent) => void) | null } = { current: null };
+  const server = createSupervisorHttpServer({
+    service: {
+      ...createStubService(),
+      subscribeEvents: (listener) => {
+        eventEmitter.current = listener;
+        return () => {
+          if (eventEmitter.current === listener) {
+            eventEmitter.current = null;
+          }
+        };
+      },
+    },
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const emitEvent = eventEmitter.current;
+  if (!emitEvent) {
+    throw new Error("Expected the SSE adapter to subscribe to supervisor events.");
+  }
+
+  emitEvent(buildActiveIssueChangedEvent({
+    issueNumber: 42,
+    previousIssueNumber: null,
+    nextIssueNumber: 42,
+    reason: "reserved_for_cycle",
+    at: "2026-03-22T00:00:00.000Z",
+  }));
+
+  const response = await openSseStream({ server, path: "/api/events" });
+  assert.equal(response.statusCode, 200);
+
+  const nextEventPromise = readSseEvent(response);
+  emitEvent(buildActiveIssueChangedEvent({
+    issueNumber: 43,
+    previousIssueNumber: 42,
+    nextIssueNumber: 43,
+    reason: "reserved_for_cycle",
+    at: "2026-03-22T00:01:00.000Z",
+  }));
+  const nextEvent = await nextEventPromise;
+  assert.equal(nextEvent.id, "2");
+  assert.equal(nextEvent.event, "supervisor.active_issue.changed");
+  assert.deepEqual(nextEvent.data, [
+    JSON.stringify({
+      type: "supervisor.active_issue.changed",
+      family: "active_issue",
+      issueNumber: 43,
+      previousIssueNumber: 42,
+      nextIssueNumber: 43,
+      reason: "reserved_for_cycle",
+      at: "2026-03-22T00:01:00.000Z",
+    }),
+  ]);
+
+  await closeResponse(response);
+});
+
 test("createSupervisorHttpServer sends SSE heartbeats while idle", async (t) => {
   const server = createSupervisorHttpServer({
     service: createStubService(),

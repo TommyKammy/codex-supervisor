@@ -145,9 +145,11 @@ class SupervisorSseEventStream {
     response.socket?.setKeepAlive(true);
     response.socket?.setNoDelay(true);
 
-    for (const entry of this.eventBuffer) {
-      if (lastEventId === null || entry.id > lastEventId) {
-        response.write(formatSseEvent(entry));
+    if (lastEventId !== null) {
+      for (const entry of this.eventBuffer) {
+        if (entry.id > lastEventId) {
+          response.write(formatSseEvent(entry));
+        }
       }
     }
 

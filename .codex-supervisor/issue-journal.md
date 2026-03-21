@@ -5,47 +5,50 @@
 - Branch: codex/issue-784
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 7c847e668f27bf5155c696d1ba64d3ea68a319e2
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: 27706c15aaa54305b80a8b6a80b4edb492c439b6
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-21T17:11:02.621Z
+- Last failure signature: PRRT_kwDORgvdZ8515bGn|PRRT_kwDORgvdZ8515bGs
+- Repeated failure signature count: 1
+- Updated at: 2026-03-21T17:22:44.476Z
 
 ## Latest Codex Summary
-Added an SSE transport at `/api/events` over the existing supervisor event stream. The backend now keeps a small in-memory replay buffer, emits heartbeat comments, honors `Last-Event-ID`, and leaves CLI behavior unchanged. I also added focused backend tests for JSON endpoints, SSE delivery/replay, and idle heartbeats, and wired `createSupervisorService()` to expose event subscriptions without pushing transport concerns into supervisor domain logic.
+Addressed the two CodeRabbit review findings on PR #794 locally. Fresh `/api/events` connections now start at the live edge instead of replaying buffered history, and supervisor event subscribers now fan out asynchronously with isolated error logging so one bad transport listener cannot block the rest. Added focused regression coverage for both behaviors.
 
-Verification passed after installing the locked dev dependencies with `npm ci`: `npx tsx --test src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-execution-orchestration.test.ts` and `npm run build`. The checkpoint commit is `7c847e6` (`Add supervisor SSE event streaming adapter`). The only remaining local dirt is the pre-existing untracked `.codex-supervisor/replay/` directory.
-
-Summary: Added SSE event streaming with heartbeat and replay buffering, covered by focused backend tests, and committed as `7c847e6`.
-State hint: draft_pr
+Summary: Fixed the SSE replay edge case and isolated subscriber failures, with focused regression tests.
+State hint: addressing_review
 Blocked reason: none
-Tests: `npm ci`; `npx tsx --test src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`; `npm run build`
+Tests: `npx tsx --test src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`; `npm run build`
 Failure signature: none
-Next action: Open or update the draft PR for `codex/issue-784` with the SSE adapter commit and verification results.
+Next action: Commit and push the review-fix patch to `codex/issue-784`, then update PR #794.
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: Local fixes for the two automated review findings are implemented and verified; PR thread resolution is pending the pushed branch update.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/794#discussion_r2969829475
+- Details:
+  - `src/backend/supervisor-http-server.ts`: replay now occurs only when `Last-Event-ID` is present, so a first-time `/api/events` connection starts at the live edge.
+  - `src/supervisor/supervisor-service.ts`: subscriber delivery now runs through isolated microtasks with `console.error` logging on failure, so later listeners still receive the event.
+  - Regression coverage added in `src/backend/supervisor-http-server.test.ts` and `src/supervisor/supervisor-service.test.ts`.
 
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: the right MVP is still a thin transport adapter. Keep replay buffering and heartbeat in the backend SSE layer while reusing existing `SupervisorEvent` emission from the supervisor domain.
-- What changed: pushed `codex/issue-784` to origin and opened draft PR #794 (`https://github.com/TommyKammy/codex-supervisor/pull/794`) for commit `7c847e6`. The PR body captures the SSE adapter scope and focused verification.
+- What changed: applied both CodeRabbit review fixes locally. The SSE adapter no longer replays buffered events on a fresh connection, and service-level event subscribers are now isolated so a thrown listener cannot block sibling subscribers. Added focused regression tests for both paths.
 - Current blocker: none
-- Next exact step: monitor PR #794 CI and review feedback, then address any failures without widening the transport scope.
-- Verification gap: no new code changed after the prior passing test/build run; this turn only pushed the branch and opened the draft PR. GitHub currently reports merge state `UNSTABLE`, so CI follow-up is the next check.
-- Files touched: `.codex-supervisor/issue-journal.md`
+- Next exact step: commit and push the review-fix patch to PR #794, then re-check CI/review state.
+- Verification gap: none for the local review fixes; targeted tests and `npm run build` passed after the changes.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.ts`, `src/backend/supervisor-http-server.test.ts`, `src/supervisor/supervisor-service.ts`, `src/supervisor/supervisor-service.test.ts`
 - Rollback concern: moving replay state into supervisor domain objects would blur the backend transport boundary and make future WebSocket work harder; keep transport buffering local to the HTTP adapter.
-- Last focused command: `gh pr view 794 --json url,isDraft,state,mergeStateStatus,headRefName,baseRefName`
+- Last focused command: `npx tsx --test src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`
 - Last focused failure: none
 - Last focused commands:
 ```bash
-git push -u origin codex/issue-784
-gh pr create --draft --base main --head codex/issue-784 --title "Add SSE streaming for supervisor events" --body ...
-gh pr view 794 --json url,isDraft,state,mergeStateStatus,headRefName,baseRefName
+npx tsx --test src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-execution-orchestration.test.ts
+npm run build
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
 - Local dirt besides this work remains the pre-existing untracked `.codex-supervisor/replay/` directory.
-- Updated at: 2026-03-21T17:12:00Z
+- Updated at: 2026-03-22T00:26:00Z

@@ -36,7 +36,11 @@ class SupervisorEventSubscriberRegistry {
 
   emit(event: SupervisorEvent): void {
     for (const listener of this.listeners) {
-      listener(event);
+      void Promise.resolve()
+        .then(() => listener(event))
+        .catch((error: unknown) => {
+          console.error(`Supervisor event subscriber failed for ${event.type}.`, error);
+        });
     }
   }
 
