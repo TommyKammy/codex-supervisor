@@ -118,9 +118,11 @@ export async function runSupervisorCommand(
   let shouldStop = false;
   let sleepController: AbortController | null = null;
   let stopWebServer: (() => void) | null = null;
+  let lastStopSignal: NodeJS.Signals | null = null;
 
   registerStopSignals((signal) => {
     shouldStop = true;
+    lastStopSignal = signal;
     sleepController?.abort();
     if (stopWebServer) {
       writeStdout(`${new Date().toISOString()} received ${signal}, shutting down WebUI`);
@@ -202,6 +204,10 @@ export async function runSupervisorCommand(
         server.closeAllConnections?.();
         server.close((error) => complete(error ?? undefined));
       };
+      if (shouldStop) {
+        writeStdout(`${new Date().toISOString()} received ${lastStopSignal ?? "SIGTERM"}, shutting down WebUI`);
+        stopWebServer();
+      }
     });
     return;
   }

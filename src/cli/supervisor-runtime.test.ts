@@ -997,3 +997,74 @@ test("runSupervisorCommand closes active WebUI connections before closing the se
 
   assert.deepEqual(closeOrder, ["closeAllConnections", "close"]);
 });
+
+test("runSupervisorCommand still shuts down the WebUI when a signal arrives before the close handler is assigned", async () => {
+  const stdout: string[] = [];
+  const closeOrder: string[] = [];
+  let signalHandler: ((signal: NodeJS.Signals) => void) | undefined;
+
+  await runSupervisorCommand(
+    { command: "web", dryRun: false, why: false },
+    {
+      service: {
+        config: {} as SupervisorConfig,
+        pollIntervalMs: async () => 50,
+        runOnce: async () => "unused",
+        queryStatus: async () => ({
+          gsdSummary: null,
+          detailedStatusLines: ["status"],
+          reconciliationPhase: null,
+          reconciliationWarning: null,
+          readinessLines: [],
+          whyLines: [],
+          warning: null,
+        }),
+        queryExplain: async () => {
+          throw new Error("unexpected queryExplain");
+        },
+        runRecoveryAction: async () => {
+          throw new Error("unexpected runRecoveryAction");
+        },
+        pruneOrphanedWorkspaces: async () => {
+          throw new Error("unexpected pruneOrphanedWorkspaces");
+        },
+        resetCorruptJsonState: async () => {
+          throw new Error("unexpected resetCorruptJsonState");
+        },
+        queryIssueLint: async () => createIssueLintDto(),
+        queryDoctor: async () => {
+          throw new Error("unexpected queryDoctor");
+        },
+      },
+      createHttpServer: () => ({
+        listen: (_port, _host, listeningListener) => {
+          listeningListener?.();
+          signalHandler?.("SIGTERM");
+        },
+        once: () => {},
+        closeAllConnections: () => {
+          closeOrder.push("closeAllConnections");
+        },
+        close: (callback) => {
+          closeOrder.push("close");
+          callback();
+        },
+        address: () => ({ address: "127.0.0.1", family: "IPv4", port: 4310 }),
+      }),
+      writeStdout: (line) => {
+        stdout.push(line);
+      },
+      writeStderr: (line) => {
+        throw new Error(`unexpected stderr: ${line}`);
+      },
+      registerStopSignals: (handler) => {
+        signalHandler = handler;
+      },
+    },
+  );
+
+  assert.deepEqual(closeOrder, ["closeAllConnections", "close"]);
+  assert.match(stdout[0] ?? "", /WebUI listening on http:\/\/127\.0\.0\.1:4310/);
+  assert.match(stdout[1] ?? "", /received SIGTERM, stopping after current cycle/);
+  assert.match(stdout[2] ?? "", /received SIGTERM, shutting down WebUI/);
+});
