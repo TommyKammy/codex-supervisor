@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { runRoleReview, runVerifierReview, type LocalReviewTurnRequest } from "./runner";
+import { runCodexReviewTurn, runRoleReview, runVerifierReview, type LocalReviewTurnRequest } from "./runner";
 import {
   createConfig,
   createFakeLocalReviewRunner,
@@ -277,6 +277,63 @@ test("runVerifierReview routes verifier turns through the injected execution con
   } finally {
     await fs.rm(workspacePath, { recursive: true, force: true });
   }
+});
+
+test("runCodexReviewTurn omits bypass flags when execution safety mode is operator gated", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-runner-test-"));
+  const workspacePath = path.join(root, "workspace");
+  const codexBinary = path.join(root, "fake-codex.sh");
+  const argsPath = path.join(root, "args.log");
+  await fs.mkdir(workspacePath, { recursive: true });
+  await fs.writeFile(
+    codexBinary,
+    `#!/bin/sh
+set -eu
+printf '%s\n' "$@" > "${argsPath}"
+out=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+cat <<'EOF' > "$out"
+Review summary: Operator gated local review ran
+Recommendation: ready
+REVIEW_FINDINGS_JSON_START
+{"findings":[]}
+REVIEW_FINDINGS_JSON_END
+EOF
+exit 0
+`,
+    "utf8",
+  );
+  await fs.chmod(codexBinary, 0o755);
+
+  const result = await runCodexReviewTurn({
+    config: createConfig({
+      codexBinary,
+      executionSafetyMode: "operator_gated",
+    }),
+    workspacePath,
+    role: "reviewer",
+    outputFileName: "reviewer.txt",
+    prompt: "operator gated local review prompt",
+    executionTarget: "local_review_generic",
+  });
+  const args = (await fs.readFile(argsPath, "utf8")).trim().split("\n");
+
+  assert.equal(result.exitCode, 0);
+  assert.match(result.rawOutput, /Operator gated local review ran/);
+  assert.equal(args.includes("--dangerously-bypass-approvals-and-sandbox"), false);
+  assert.deepEqual(args.slice(0, 5), [
+    "exec",
+    "-c",
+    'model_reasoning_effort="low"',
+    "--json",
+    "-C",
+  ]);
+  assert.equal(args[5], workspacePath);
 });
 
 test("runRoleReview accepts empty fake-runner output as a configured result", async () => {

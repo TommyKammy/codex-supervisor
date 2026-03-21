@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runCommand } from "../core/command";
-import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "../codex/codex-policy";
+import { buildCodexConfigOverrideArgs, buildCodexExecutionSafetyArgs, resolveCodexExecutionPolicy } from "../codex/codex-policy";
 import { loadRelevantExternalReviewMissPatterns, type ExternalReviewMissPattern } from "../external-review/external-review-misses";
 import { reviewDir } from "./artifacts";
 import { buildRolePrompt, buildVerifierPrompt, parseRoleFooter, parseVerifierFooter } from "./prompt";
@@ -38,13 +38,14 @@ export async function runCodexReviewTurn(args: LocalReviewTurnRequest): Promise<
   const overrideArgs = buildCodexConfigOverrideArgs(
     resolveCodexExecutionPolicy(args.config, "local_review", undefined, args.executionTarget),
   );
+  const executionSafetyArgs = buildCodexExecutionSafetyArgs(args.config);
   const result = await runCommand(
     args.config.codexBinary,
     [
       "exec",
       ...overrideArgs,
       "--json",
-      "--dangerously-bypass-approvals-and-sandbox",
+      ...executionSafetyArgs,
       "-C",
       args.workspacePath,
       "-o",

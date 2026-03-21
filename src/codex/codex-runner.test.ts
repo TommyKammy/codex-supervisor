@@ -177,6 +177,46 @@ exit 0
   assert.equal(args.includes("-C"), false);
 });
 
+test("runCodexTurn omits bypass flags when execution safety mode is operator gated", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-runner-test-"));
+  const workspacePath = path.join(root, "workspace");
+  const codexBinary = path.join(root, "fake-codex.sh");
+  const argsPath = path.join(root, "args.log");
+  await fs.mkdir(workspacePath, { recursive: true });
+
+  await writeExecutableScript(
+    codexBinary,
+    `#!/bin/sh
+set -eu
+printf '%s\n' "$@" > "${argsPath}"
+printf 'operator gated stdout\n'
+exit 0
+`,
+  );
+
+  const result = await runCodexTurn(
+    createConfig({
+      codexBinary,
+      executionSafetyMode: "operator_gated",
+    }),
+    workspacePath,
+    "operator gated prompt",
+    "implementing",
+  );
+  const args = (await fs.readFile(argsPath, "utf8")).trim().split("\n");
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(args.includes("--dangerously-bypass-approvals-and-sandbox"), false);
+  assert.deepEqual(args.slice(0, 5), [
+    "exec",
+    "-c",
+    'model_reasoning_effort="high"',
+    "--json",
+    "-C",
+  ]);
+  assert.equal(args[5], workspacePath);
+});
+
 test("runCodexTurn removes its temp dir when command execution fails", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-runner-test-"));
   const workspacePath = path.join(root, "workspace");

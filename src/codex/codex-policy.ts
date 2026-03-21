@@ -153,3 +153,11 @@ export function buildCodexConfigOverrideArgs(policy: CodexExecutionPolicy): stri
   args.push("-c", `model_reasoning_effort="${policy.reasoningEffort}"`);
   return args;
 }
+
+export function buildCodexExecutionSafetyArgs(
+  config: Pick<SupervisorConfig, "executionSafetyMode">,
+): string[] {
+  return config.executionSafetyMode === "operator_gated"
+    ? []
+    : ["--dangerously-bypass-approvals-and-sandbox"];
+}
