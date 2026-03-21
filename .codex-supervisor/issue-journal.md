@@ -16,6 +16,7 @@
 ## Latest Codex Summary
 - Added a focused docs reproducer for the missing candidate-discovery wording, then updated the operator docs to state that runnable selection is currently limited to the first fetched page of matching open issues instead of the entire backlog.
 - Focused verification passed for `src/getting-started-docs.test.ts`, the requested `src/config.test.ts src/doctor.test.ts` suites, and `npm run build` after restoring local dependencies with `npm ci` because this worktree initially had no `node_modules/.bin/tsc`.
+- Checkpoint committed as `9860500` (`Document first-page candidate discovery limit`) and pushed to draft PR `#779`.
 
 ## Active Failure Context
 - None recorded.
@@ -25,7 +26,7 @@
 - Hypothesis: operator docs still implied full-backlog readiness selection even though `listCandidateIssues()` only fetches the first GitHub candidate page (`gh issue list --limit 100`) before sorting and choosing a runnable issue.
 - What changed: added a focused docs assertion that failed on the missing first-page disclosure, then updated `docs/getting-started.md`, `docs/getting-started.ja.md`, and `docs/issue-metadata.md` to describe the first-page discovery limit, backlog-truncation impact, and the right operator expectation when backlog order looks wrong.
 - Current blocker: none
-- Next exact step: create or update the draft PR for this docs checkpoint, then address any review or wording feedback.
+- Next exact step: watch draft PR `#779` and address any review, wording, or CI feedback if it appears.
 - Verification gap: none in the targeted suites or build; `.codex-supervisor/replay/` remains untracked and untouched.
 - Files touched: `.codex-supervisor/issue-journal.md`, `docs/getting-started.md`, `docs/getting-started.ja.md`, `docs/issue-metadata.md`, `src/config.test.ts`, `src/getting-started-docs.test.ts`
 - Rollback concern: removing the first-page wording would make the docs overstate scheduler completeness again and hide the current backlog-truncation behavior from operators.
