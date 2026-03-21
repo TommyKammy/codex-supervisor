@@ -18,6 +18,7 @@ import { mapConfiguredReviewProviders } from "./review-providers";
 import { isValidGitRefName, parseJson, resolveMaybeRelative } from "./utils";
 
 const DEFAULT_CONFIG_FILE = "supervisor.config.json";
+export const DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW = 100;
 const REQUIRED_STRING_CONFIG_FIELDS = [
   "repoPath",
   "repoSlug",
@@ -442,6 +443,13 @@ export function loadConfig(configPath?: string): SupervisorConfig {
         : 6000,
     issueLabel: typeof raw.issueLabel === "string" ? raw.issueLabel : undefined,
     issueSearch: typeof raw.issueSearch === "string" ? raw.issueSearch : undefined,
+    candidateDiscoveryFetchWindow:
+      typeof raw.candidateDiscoveryFetchWindow === "number" &&
+      Number.isFinite(raw.candidateDiscoveryFetchWindow) &&
+      Number.isInteger(raw.candidateDiscoveryFetchWindow) &&
+      raw.candidateDiscoveryFetchWindow > 0
+        ? raw.candidateDiscoveryFetchWindow
+        : DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW,
     skipTitlePrefixes: Array.isArray(raw.skipTitlePrefixes)
       ? raw.skipTitlePrefixes.filter((value): value is string => typeof value === "string")
       : ["Epic:"],

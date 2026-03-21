@@ -89,6 +89,7 @@ import {
 import {
   buildReadinessSummary,
   buildSelectionWhySummary,
+  formatCandidateDiscoveryBehaviorLine,
 } from "./supervisor-selection-readiness-summary";
 import { buildIssueLintSummary } from "./supervisor-selection-issue-lint";
 import {
@@ -818,6 +819,7 @@ export class Supervisor {
     const stateDiagnosticLines = buildStateLoadDiagnosticLines(this.config, state);
     const trustDiagnostics = summarizeTrustDiagnostics(this.config);
     const cadenceDiagnostics = summarizeCadenceDiagnostics(this.config);
+    const candidateDiscoverySummary = formatCandidateDiscoveryBehaviorLine(this.config);
     const gsdSummary = await describeGsdIntegration(this.config);
     const statusRecords = summarizeSupervisorStatusRecords(state);
     const reconciliationSnapshot = await readCurrentReconciliationPhaseSnapshot(this.config);
@@ -847,6 +849,7 @@ export class Supervisor {
           gsdSummary,
           trustDiagnostics,
           cadenceDiagnostics,
+          candidateDiscoverySummary,
           detailedStatusLines: [...detailedStatusLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationWarning,
@@ -860,6 +863,7 @@ export class Supervisor {
           gsdSummary,
           trustDiagnostics,
           cadenceDiagnostics,
+          candidateDiscoverySummary,
           detailedStatusLines: [...detailedStatusLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationWarning,
@@ -909,6 +913,7 @@ export class Supervisor {
       gsdSummary,
       trustDiagnostics,
       cadenceDiagnostics,
+      candidateDiscoverySummary,
       detailedStatusLines: [...detailedStatusLines, ...summaryLines, ...stateDiagnosticLines],
       reconciliationPhase,
       reconciliationWarning,

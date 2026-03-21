@@ -15,7 +15,10 @@ import {
   type TrustDiagnosticsSummary,
 } from "./core/types";
 import { inspectOrphanedWorkspacePruneCandidates } from "./recovery-reconciliation";
-import { formatCandidateDiscoveryWarningDetail } from "./supervisor/supervisor-selection-readiness-summary";
+import {
+  formatCandidateDiscoveryBehaviorLine,
+  formatCandidateDiscoveryWarningDetail,
+} from "./supervisor/supervisor-selection-readiness-summary";
 
 export type DoctorCheckStatus = "pass" | "warn" | "fail";
 
@@ -31,6 +34,7 @@ export interface DoctorDiagnostics {
   checks: DoctorCheck[];
   trustDiagnostics: TrustDiagnosticsSummary;
   cadenceDiagnostics: CadenceDiagnosticsSummary;
+  candidateDiscoverySummary: string;
   candidateDiscoveryWarning: string | null;
 }
 
@@ -499,6 +503,7 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
     checks,
     trustDiagnostics: summarizeTrustDiagnostics(args.config),
     cadenceDiagnostics: summarizeCadenceDiagnostics(args.config),
+    candidateDiscoverySummary: formatCandidateDiscoveryBehaviorLine(args.config, "doctor_candidate_discovery"),
     candidateDiscoveryWarning,
   };
 }
@@ -568,6 +573,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     `doctor overall=${diagnostics.overallStatus} checks=${diagnostics.checks.length}`,
     `doctor_posture trust_mode=${diagnostics.trustDiagnostics.trustMode} execution_safety_mode=${diagnostics.trustDiagnostics.executionSafetyMode}`,
     `doctor_cadence poll_interval_seconds=${diagnostics.cadenceDiagnostics.pollIntervalSeconds} merge_critical_recheck_seconds=${mergeCriticalRecheckSeconds} merge_critical_effective_seconds=${diagnostics.cadenceDiagnostics.mergeCriticalEffectiveSeconds} enabled=${diagnostics.cadenceDiagnostics.mergeCriticalRecheckEnabled}`,
+    diagnostics.candidateDiscoverySummary,
     ...(diagnostics.trustDiagnostics.warning === null
       ? []
       : [`doctor_warning kind=execution_safety detail=${sanitizeDoctorValue(diagnostics.trustDiagnostics.warning)}`]),

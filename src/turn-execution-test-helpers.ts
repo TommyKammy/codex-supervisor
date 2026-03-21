@@ -41,6 +41,7 @@ export function createConfig(overrides: Partial<SupervisorConfig> = {}): Supervi
     humanReviewBlocksMerge: true,
     issueJournalRelativePath: ".codex-supervisor/issue-journal.md",
     issueJournalMaxChars: 6000,
+    candidateDiscoveryFetchWindow: 100,
     skipTitlePrefixes: [],
     branchPrefix: "codex/issue-",
     pollIntervalSeconds: 60,

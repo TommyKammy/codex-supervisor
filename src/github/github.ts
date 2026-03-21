@@ -9,6 +9,7 @@ import {
   ReviewThread,
   SupervisorConfig,
 } from "../core/types";
+import { DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW } from "../core/config";
 import { CommandOptions, runCommand } from "../core/command";
 import {
   normalizeRollupChecks,
@@ -25,8 +26,6 @@ export type { GitHubCommandRunner } from "./github-transport";
 
 const POST_CREATE_PR_LOOKUP_RETRY_LIMIT = 2;
 const POST_CREATE_PR_LOOKUP_BASE_DELAY_MS = 200;
-const CANDIDATE_DISCOVERY_FETCH_WINDOW = 100;
-const CANDIDATE_DISCOVERY_PROBE_LIMIT = CANDIDATE_DISCOVERY_FETCH_WINDOW + 1;
 
 export class GitHubClient {
   private readonly pullRequestHydrator: GitHubPullRequestHydrator;
@@ -133,18 +132,21 @@ export class GitHubClient {
   }
 
   async listCandidateIssues(): Promise<GitHubIssue[]> {
-    const result = await this.runGhCommand(this.buildCandidateIssueListArgs(CANDIDATE_DISCOVERY_FETCH_WINDOW));
+    const fetchWindow = this.config.candidateDiscoveryFetchWindow ?? DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW;
+    const result = await this.runGhCommand(this.buildCandidateIssueListArgs(fetchWindow));
     const issues = parseJson<GitHubIssue[]>(result.stdout, "gh issue list --candidate");
     return issues.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   }
 
   async getCandidateDiscoveryDiagnostics(): Promise<CandidateDiscoveryDiagnostics> {
-    const result = await this.runGhCommand(this.buildCandidateIssueListArgs(CANDIDATE_DISCOVERY_PROBE_LIMIT));
+    const fetchWindow = this.config.candidateDiscoveryFetchWindow ?? DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW;
+    const probeLimit = fetchWindow + 1;
+    const result = await this.runGhCommand(this.buildCandidateIssueListArgs(probeLimit));
     const issues = parseJson<GitHubIssue[]>(result.stdout, "gh issue list --candidate-window-probe");
     return {
-      fetchWindow: CANDIDATE_DISCOVERY_FETCH_WINDOW,
+      fetchWindow,
       observedMatchingOpenIssues: issues.length,
-      truncated: issues.length > CANDIDATE_DISCOVERY_FETCH_WINDOW,
+      truncated: issues.length > fetchWindow,
     };
   }
 

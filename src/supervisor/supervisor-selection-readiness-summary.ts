@@ -1,4 +1,5 @@
 import { GitHubClient } from "../github";
+import { DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW } from "../core/config";
 import {
   findBlockingIssue,
   findHighRiskBlockingAmbiguity,
@@ -26,6 +27,14 @@ type ReadinessSummaryGitHub =
   Pick<GitHubClient, "listCandidateIssues">
   & Partial<Pick<GitHubClient, "getCandidateDiscoveryDiagnostics">>;
 type SelectionWhyGitHub = Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">;
+
+export function formatCandidateDiscoveryBehaviorLine(
+  config: Pick<SupervisorConfig, "candidateDiscoveryFetchWindow">,
+  prefix = "candidate_discovery",
+): string {
+  const fetchWindow = config.candidateDiscoveryFetchWindow ?? DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW;
+  return `${prefix} fetch_window=${fetchWindow} strategy=first_page_only`;
+}
 
 export function formatCandidateDiscoveryStatusLine(
   diagnostics: CandidateDiscoveryDiagnostics | null,

@@ -488,12 +488,15 @@ Keep selection behavior unchanged while surfacing the current discovery limit.
     state: "OPEN",
   };
 
-  const supervisor = new Supervisor(fixture.config);
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    candidateDiscoveryFetchWindow: 250,
+  });
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     listCandidateIssues: async () => [selectedIssue],
     getCandidateDiscoveryDiagnostics: async () => ({
-      fetchWindow: 100,
-      observedMatchingOpenIssues: 101,
+      fetchWindow: 250,
+      observedMatchingOpenIssues: 251,
       truncated: true,
     }),
     getPullRequestIfExists: async () => null,
@@ -502,15 +505,17 @@ Keep selection behavior unchanged while surfacing the current discovery limit.
   };
 
   const report = await supervisor.statusReport();
+  assert.equal(report.candidateDiscoverySummary, "candidate_discovery fetch_window=250 strategy=first_page_only");
   assert.match(
     report.readinessLines.join("\n"),
-    /candidate_discovery_warning=matching_open_issues_exceed_first_page_window fetch_window=100 observed_matching_open_issues=101\+ runnable_selection_incomplete=yes/,
+    /candidate_discovery_warning=matching_open_issues_exceed_first_page_window fetch_window=250 observed_matching_open_issues=251\+ runnable_selection_incomplete=yes/,
   );
 
   const status = await supervisor.status();
+  assert.match(status, /candidate_discovery fetch_window=250 strategy=first_page_only/);
   assert.match(
     status,
-    /candidate_discovery_warning=matching_open_issues_exceed_first_page_window fetch_window=100 observed_matching_open_issues=101\+ runnable_selection_incomplete=yes/,
+    /candidate_discovery_warning=matching_open_issues_exceed_first_page_window fetch_window=250 observed_matching_open_issues=251\+ runnable_selection_incomplete=yes/,
   );
 });
 
