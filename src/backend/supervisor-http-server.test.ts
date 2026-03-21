@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import test from "node:test";
 import type { DoctorDiagnostics } from "../doctor";
+import { buildActiveIssueChangedEvent, type SupervisorEvent, type SupervisorEventSink } from "../supervisor";
 import type { SupervisorService } from "../supervisor";
 import { createSupervisorHttpServer } from "./supervisor-http-server";
 
@@ -21,6 +22,7 @@ async function readJson(args: {
         port: address.port,
         path: args.path,
         method: "GET",
+        agent: false,
       },
       (response) => {
         let payload = "";
@@ -45,10 +47,136 @@ async function readJson(args: {
   });
 }
 
+interface ReadSseEventResult {
+  id: string | null;
+  event: string | null;
+  data: string[];
+  comments: string[];
+}
+
+async function openSseStream(args: {
+  server: http.Server;
+  path: string;
+  lastEventId?: string;
+}): Promise<http.IncomingMessage> {
+  const address = args.server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Expected server to listen on an ephemeral port.");
+  }
+
+  return await new Promise((resolve, reject) => {
+    const request = http.request({
+      host: "127.0.0.1",
+      port: address.port,
+      path: args.path,
+      method: "GET",
+      agent: false,
+      headers: args.lastEventId ? { "Last-Event-ID": args.lastEventId } : undefined,
+    });
+    request.on("response", resolve);
+    request.on("error", reject);
+    request.end();
+  });
+}
+
+async function readSseEvent(response: http.IncomingMessage): Promise<ReadSseEventResult> {
+  let buffer = "";
+
+  return await new Promise((resolve, reject) => {
+    const consume = () => {
+      let chunk: string | null;
+      while ((chunk = response.read() as string | null) !== null) {
+        buffer += chunk;
+        const boundary = buffer.indexOf("\n\n");
+        if (boundary === -1) {
+          continue;
+        }
+
+        const rawEvent = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        response.off("readable", consume);
+        response.off("error", onError);
+        response.off("end", onEnd);
+
+        let id: string | null = null;
+        let event: string | null = null;
+        const data: string[] = [];
+        const comments: string[] = [];
+        for (const line of rawEvent.split("\n")) {
+          if (line.startsWith(":")) {
+            comments.push(line.slice(1).trimStart());
+            continue;
+          }
+          if (line.startsWith("id:")) {
+            id = line.slice(3).trimStart();
+            continue;
+          }
+          if (line.startsWith("event:")) {
+            event = line.slice(6).trimStart();
+            continue;
+          }
+          if (line.startsWith("data:")) {
+            data.push(line.slice(5).trimStart());
+            continue;
+          }
+        }
+
+        resolve({ id, event, data, comments });
+        return;
+      }
+    };
+
+    const onError = (error: Error) => {
+      response.off("readable", consume);
+      response.off("error", onError);
+      response.off("end", onEnd);
+      reject(error);
+    };
+
+    const onEnd = () => {
+      response.off("readable", consume);
+      response.off("error", onError);
+      response.off("end", onEnd);
+      reject(new Error("SSE stream ended before the next event."));
+    };
+
+    response.setEncoding("utf8");
+    response.on("readable", consume);
+    response.on("error", onError);
+    response.on("end", onEnd);
+    consume();
+  });
+}
+
+async function closeResponse(response: http.IncomingMessage): Promise<void> {
+  if (response.destroyed) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    response.once("close", () => resolve());
+    response.destroy();
+  });
+}
+
+async function closeServer(server: http.Server): Promise<void> {
+  server.closeAllConnections?.();
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
 function createStubService(args?: {
   statusWhyCalls?: boolean[];
   explainCalls?: number[];
   issueLintCalls?: number[];
+  subscribeEventCalls?: number;
 }): SupervisorService {
   const doctorDiagnostics: DoctorDiagnostics = {
     overallStatus: "pass",
@@ -74,6 +202,8 @@ function createStubService(args?: {
     candidateDiscoverySummary: "candidate_discovery fetch_window=100 strategy=paginated",
     candidateDiscoveryWarning: null,
   };
+
+  const eventSubscribers = new Set<SupervisorEventSink>();
 
   return {
     config: {} as SupervisorService["config"],
@@ -143,6 +273,15 @@ function createStubService(args?: {
       };
     },
     queryDoctor: async () => doctorDiagnostics,
+    subscribeEvents: (listener) => {
+      if (args) {
+        args.subscribeEventCalls = (args.subscribeEventCalls ?? 0) + 1;
+      }
+      eventSubscribers.add(listener);
+      return () => {
+        eventSubscribers.delete(listener);
+      };
+    },
   };
 }
 
@@ -154,15 +293,7 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
     service: createStubService({ statusWhyCalls, explainCalls, issueLintCalls }),
   });
   t.after(async () => {
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      });
-    });
+    await closeServer(server);
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -263,4 +394,104 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
   assert.deepEqual(issueLintZeroResponse.body, { error: "Issue number must be a positive integer." });
   assert.deepEqual(explainCalls, [42]);
   assert.deepEqual(issueLintCalls, [42]);
+});
+
+test("createSupervisorHttpServer streams supervisor events over SSE with reconnect replay", async (t) => {
+  let subscribeEventCalls = 0;
+  const eventEmitter: { current: ((event: SupervisorEvent) => void) | null } = { current: null };
+  const server = createSupervisorHttpServer({
+    service: {
+      ...createStubService({ subscribeEventCalls }),
+      subscribeEvents: (listener) => {
+        subscribeEventCalls += 1;
+        eventEmitter.current = listener;
+        return () => {
+          if (eventEmitter.current === listener) {
+            eventEmitter.current = null;
+          }
+        };
+      },
+    },
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const response = await openSseStream({ server, path: "/api/events" });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers["content-type"], "text/event-stream; charset=utf-8");
+  assert.equal(response.headers["cache-control"], "no-cache, no-transform");
+  assert.equal(response.headers.connection, "keep-alive");
+  assert.equal(subscribeEventCalls, 1);
+
+  const firstEventPromise = readSseEvent(response);
+  const emitEvent = eventEmitter.current;
+  if (!emitEvent) {
+    throw new Error("Expected the SSE adapter to subscribe to supervisor events.");
+  }
+  emitEvent(buildActiveIssueChangedEvent({
+    issueNumber: 42,
+    previousIssueNumber: null,
+    nextIssueNumber: 42,
+    reason: "reserved_for_cycle",
+    at: "2026-03-22T00:00:00.000Z",
+  }));
+  const firstEvent = await firstEventPromise;
+  assert.equal(firstEvent.id, "1");
+  assert.equal(firstEvent.event, "supervisor.active_issue.changed");
+  assert.deepEqual(firstEvent.data, [
+    JSON.stringify({
+      type: "supervisor.active_issue.changed",
+      family: "active_issue",
+      issueNumber: 42,
+      previousIssueNumber: null,
+      nextIssueNumber: 42,
+      reason: "reserved_for_cycle",
+      at: "2026-03-22T00:00:00.000Z",
+    }),
+  ]);
+  assert.deepEqual(firstEvent.comments, []);
+
+  await closeResponse(response);
+
+  const replayResponse = await openSseStream({
+    server,
+    path: "/api/events",
+    lastEventId: "0",
+  });
+
+  assert.equal(replayResponse.statusCode, 200);
+  assert.equal(subscribeEventCalls, 1);
+
+  const replayedEvent = await readSseEvent(replayResponse);
+  assert.equal(replayedEvent.id, "1");
+  assert.equal(replayedEvent.event, "supervisor.active_issue.changed");
+  assert.deepEqual(replayedEvent.data, firstEvent.data);
+  assert.deepEqual(replayedEvent.comments, []);
+  await closeResponse(replayResponse);
+  await closeServer(server);
+});
+
+test("createSupervisorHttpServer sends SSE heartbeats while idle", async (t) => {
+  const server = createSupervisorHttpServer({
+    service: createStubService(),
+    heartbeatIntervalMs: 20,
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const response = await openSseStream({ server, path: "/api/events" });
+
+  assert.equal(response.statusCode, 200);
+  const heartbeat = await readSseEvent(response);
+  assert.equal(heartbeat.id, null);
+  assert.equal(heartbeat.event, null);
+  assert.deepEqual(heartbeat.data, []);
+  assert.deepEqual(heartbeat.comments, ["heartbeat"]);
+  await closeResponse(response);
+  await closeServer(server);
 });

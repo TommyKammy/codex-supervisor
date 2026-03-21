@@ -1,53 +1,43 @@
-# Issue #783: Backend adapter MVP: add a read-only HTTP API over SupervisorService
+# Issue #784: Backend adapter MVP: add SSE event streaming over existing supervisor events
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/783
-- Branch: codex/issue-783
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/784
+- Branch: codex/issue-784
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 4 (implementation=1, repair=3)
-- Last head SHA: 84ba33297926ca1d707a6c8ca2689a1ef0fdd627
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 5016095410f77e514b35f06e54064a41a82b2f37
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ8515NrU
-- Repeated failure signature count: 1
-- Updated at: 2026-03-21T16:28:30Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-21T16:49:35.014Z
 
 ## Latest Codex Summary
-Cleaned the remaining CodeRabbit journal excerpt so it no longer contains the padded inline-code example called out in the MD038 review comment. I committed and pushed that journal-only fix as `84ba332` on `codex/issue-783`, then resolved the remaining review thread on PR #793. The only local dirt left is the pre-existing untracked `.codex-supervisor/replay/` directory.
-
-Summary: Cleaned the stale MD038 example in the issue journal, pushed commit `84ba332`, and resolved the last open CodeRabbit thread on PR #793.
-State hint: addressing_review
-Blocked reason: none
-Tests: `npx markdownlint-cli2 .codex-supervisor/issue-journal.md` (expected broader pre-existing journal lint failures; no `MD038` reproduced); targeted inline-code spacing scan
-Failure signature: none
-Next action: Monitor PR #793 for any follow-up CI or review feedback.
+- Added an SSE adapter at `/api/events` over existing typed supervisor events with a small in-memory replay buffer and heartbeat comments. `SupervisorService` now exposes an event subscription hook so the backend can stream supervisor events without changing CLI behavior.
 
 ## Active Failure Context
-- Category: review
-- Summary: No unresolved automated review threads remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/793#discussion_r2969762789
-- Details:
-  - Resolved after commit `84ba332` removed the padded inline-code example from `.codex-supervisor/issue-journal.md` and `gh api graphql` marked review thread `PRRT_kwDORgvdZ8515NrU` resolved.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the missing work for issue #783 was a thin transport adapter, not new supervisor domain logic. A standalone HTTP server over `SupervisorService` should satisfy the MVP without touching CLI behavior.
-- What changed: removed the padded inline-code example from the stale CodeRabbit excerpt in `.codex-supervisor/issue-journal.md`, committed that journal-only fix as `84ba332`, pushed `codex/issue-783`, and resolved the remaining CodeRabbit thread on PR #793.
+- Hypothesis: the right MVP is still a thin transport adapter. Keep replay buffering and heartbeat in the backend SSE layer while reusing existing `SupervisorEvent` emission from the supervisor domain.
+- What changed: added `SupervisorService.subscribeEvents`, wired `createSupervisorService()` through a subscriber registry, and added `/api/events` SSE support with `Last-Event-ID` replay and heartbeat comments in `src/backend/supervisor-http-server.ts`. Added focused backend tests for JSON endpoints, SSE event delivery/replay, and heartbeats.
 - Current blocker: none
-- Next exact step: monitor PR #793 for any new CI or review feedback; no local code changes are pending for this issue right now.
-- Verification gap: `markdownlint-cli2` on the whole journal still reports multiple pre-existing journal-formatting rules, so verification for this turn is limited to confirming the specific padded inline-code pattern is gone.
-- Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: replacing this adapter with transport-specific domain logic would duplicate `SupervisorService` behavior and undermine the WebUI boundary this issue is meant to establish.
-- Last focused command: `gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: {threadId: $threadId}) { thread { isResolved } } }' -F threadId='PRRT_kwDORgvdZ8515NrU'`
-- Last focused failure: none
+- Next exact step: commit the SSE adapter checkpoint on `codex/issue-784`, then open or update the draft PR with the new backend transport coverage.
+- Verification gap: `npm run build` required a local `npm ci` first because `tsc` was not installed in the worktree yet; after installing locked dependencies, the build passed.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-service.ts`, `src/backend/supervisor-http-server.ts`, `src/backend/supervisor-http-server.test.ts`
+- Rollback concern: moving replay state into supervisor domain objects would blur the backend transport boundary and make future WebSocket work harder; keep transport buffering local to the HTTP adapter.
+- Last focused command: `npx tsx --test src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`
+- Last focused failure: `npm run build` initially failed with `sh: 1: tsc: not found` before `npm ci`; no code failures remain after installing dependencies and rebuilding.
 - Last focused commands:
 ```bash
-npx markdownlint-cli2 .codex-supervisor/issue-journal.md
-git push origin codex/issue-783
-gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: {threadId: $threadId}) { thread { isResolved } } }' -F threadId='PRRT_kwDORgvdZ8515NrU'
+npx tsx --test src/backend/supervisor-http-server.test.ts
+npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-execution-orchestration.test.ts
+npm ci
+npm run build
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
-- Review-fix note: the only remaining local dirt is the pre-existing untracked `.codex-supervisor/replay/` directory.
-- Updated at: 2026-03-21T16:28:30Z
+- Local dirt besides this work remains the pre-existing untracked `.codex-supervisor/replay/` directory.
+- Updated at: 2026-03-21T17:00:28Z
