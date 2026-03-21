@@ -5,48 +5,53 @@
 - Branch: codex/issue-787
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: d0d0ab56f52b87f2b346c2580c030fbd4ce2bbb6
+- Current phase: addressing_review
+- Attempt count: 4 (implementation=2, repair=2)
+- Last head SHA: ab7654fbb7c8f75fe323152a21ce348a6e5f18e2
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-21T20:31:41.431Z
+- Last failure signature: PRRT_kwDORgvdZ8516bxR|PRRT_kwDORgvdZ8516bxS|PRRT_kwDORgvdZ8516bxU|PRRT_kwDORgvdZ8516bxV|PRRT_kwDORgvdZ8516bxW
+- Repeated failure signature count: 1
+- Updated at: 2026-03-21T20:48:55Z
 
 ## Latest Codex Summary
-Added the WebUI operator action surface for the four existing safe backend commands in [webui-dashboard.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-787/src/backend/webui-dashboard.ts#L368). The dashboard now exposes `run-once`, `requeue`, `prune-orphaned-workspaces`, and `reset-corrupt-json-state`, keeps everything routed through `/api/commands/*`, requires browser confirmation for prune/reset, disables requeue until an issue is selected, and renders structured JSON command results in the UI.
+Addressed the five outstanding CodeRabbit review findings locally. The journal handoff now avoids worktree-local summary links and points at the live PR `#797`, while the dashboard script now keeps requeue disabled until an issue loads successfully, preserves successful command results when follow-up refreshes fail, and prevents duplicate operator POSTs with a shared in-flight lock.
 
-I tightened the focused dashboard-shell test in [supervisor-http-server.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-787/src/backend/supervisor-http-server.test.ts#L555) to prove the missing UI surface first, then implemented the fix. I also updated the issue journal and committed the checkpoint as `d0d0ab5` on `codex/issue-787`. Local dirt remaining is only the pre-existing untracked `.codex-supervisor/replay/` directory.
+Added `src/backend/webui-dashboard.test.ts` to execute the inline dashboard script under a fake DOM so the UI-specific review regressions are covered directly. Local dirt is now the intended review-fix changes plus the pre-existing untracked `.codex-supervisor/replay/` directory.
 
-Summary: Added the narrow WebUI operator actions panel, confirmation UX, and structured command result rendering; committed as `d0d0ab5`
-State hint: draft_pr
+Summary: Addressed the remaining dashboard review findings and added direct UI regression tests
+State hint: local_review_fix
 Blocked reason: none
-Tests: `npx tsx --test src/backend/supervisor-http-server.test.ts`; `npm run build`
+Tests: `npx tsx --test src/backend/webui-dashboard.test.ts`; `npx tsx --test src/backend/supervisor-http-server.test.ts`; `npm run build`
 Failure signature: none
-Next action: push `codex/issue-787` and update draft PR #796 with the WebUI command MVP changes
+Next action: commit these review fixes, push `codex/issue-787`, update PR #797, and resolve the corresponding review threads
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: The five automated review threads were reproduced locally and addressed in this turn; the remaining work is to commit/push and resolve them on PR #797.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/797#discussion_r2970199904
+- Details:
+  - `.codex-supervisor/issue-journal.md`: the handoff summary now keeps links repo-relative and points the stale next action at PR `#797`.
+  - `src/backend/webui-dashboard.ts`: requeue now stays disabled unless an issue has finished loading successfully.
+  - `src/backend/webui-dashboard.ts`: `runCommand()` now preserves the successful backend result if the follow-up status or issue refresh fails, and surfaces the refresh problem separately.
+  - `src/backend/webui-dashboard.ts`: all operator actions now share a command lock so duplicate POSTs are blocked while a request is in flight.
+  - `src/backend/webui-dashboard.test.ts`: added direct regression coverage for optimistic issue loading, refresh-after-success failures, and duplicate command clicks.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining gap on this branch was the dashboard UI itself; backend command APIs already existed, but the WebUI still exposed only read-only views and needed a narrow operator action surface.
-- What changed: tightened the existing dashboard-shell test to assert the four safe command routes and result panel hooks, reproduced the missing `/api/commands/*` action references in the HTML, then added an Operator actions panel with `run-once`, `requeue`, `prune-orphaned-workspaces`, and `reset-corrupt-json-state`, confirmation prompts for prune/reset, and structured JSON result rendering routed only through backend command endpoints.
+- Hypothesis: the remaining gap on this branch is no longer the dashboard action surface itself; the review threads were about client-side safety details around button enablement, refresh handling, and duplicate submissions.
+- What changed: fixed the dashboard script so requeue is only available after a successful issue load, successful command results survive follow-up refresh failures, and all operator actions share an in-flight lock. Added a direct script-level test harness for those UI regressions.
 - Current blocker: none
-- Next exact step: monitor draft PR #797, then perform manual browser verification of the operator action flow against a live backend before moving out of stabilizing.
+- Next exact step: commit and push the local review-fix changes, update PR #797, and resolve the matching review threads before the remaining manual browser verification pass.
 - Verification gap: manual browser verification against a live backend still remains for the operator action flow.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard.ts`
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard.test.ts`, `src/backend/webui-dashboard.ts`
 - Rollback concern: keep the HTTP command surface narrow and transport-level only; do not add loop control or any new mutation authority before the backend/UI MVP is stabilized.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-787 --title "Add narrow WebUI operator actions" ...`
-- Last focused failure: none
+- Last focused command: `npx tsx --test src/backend/webui-dashboard.test.ts`
+- Last focused failure: the first draft of the new dashboard test exposed a missing `renderSelectedIssue()` call after a successful `loadIssue()`; adding that render fixed the regression and the test now passes.
 - Last focused commands:
 ```bash
-npm ci
-npx tsx --test src/backend/supervisor-http-server.test.ts --test-name-pattern="dashboard shell with only the safe operator command actions"
+npx tsx --test src/backend/webui-dashboard.test.ts
 npx tsx --test src/backend/supervisor-http-server.test.ts
 npm run build
-git push -u origin codex/issue-787
-gh pr create --draft --base main --head codex/issue-787 --title "Add narrow WebUI operator actions" --body ...
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
@@ -60,5 +65,7 @@ gh pr create --draft --base main --head codex/issue-787 --title "Add narrow WebU
   the same event in local JST.
 - Review fix on 2026-03-22: CodeRabbit thread `PRRT_kwDORgvdZ8515_nW` was valid; `createStubService()` could reach `args!` in the prune/reset stubs. Guarding those counters keeps the helper safe when called without tracking state.
 - Review fix on 2026-03-22: CodeRabbit thread `PRRT_kwDORgvdZ8516Cux` is valid; the journal summary used a worktree-local absolute path that would not resolve on GitHub. Converting that committed link to a repo-relative target preserves the record and fixes the portability issue.
+- Review fix on 2026-03-22: CodeRabbit threads `PRRT_kwDORgvdZ8516bxU`, `PRRT_kwDORgvdZ8516bxV`, and `PRRT_kwDORgvdZ8516bxW` were valid; the dashboard now gates requeue on a loaded issue, keeps successful command results when refreshes fail, and blocks duplicate command POSTs while one is already running.
+- Review fix on 2026-03-22: added `src/backend/webui-dashboard.test.ts` to execute the inline dashboard script with a fake DOM and verify the review regressions directly.
 - Review state on 2026-03-22: after pushing `6898b72`, GraphQL confirmed both current CodeRabbit review threads on PR #796 are resolved.
-- Updated at: 2026-03-21T19:41:57Z
+- Updated at: 2026-03-21T20:48:55Z

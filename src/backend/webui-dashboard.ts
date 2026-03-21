@@ -421,6 +421,7 @@ export function renderSupervisorDashboardHtml(): string {
         doctor: null,
         explain: null,
         issueLint: null,
+        commandInFlight: false,
         commandResult: null,
         events: [],
       };
@@ -503,6 +504,7 @@ export function renderSupervisorDashboardHtml(): string {
         const status = state.status;
         setText(elements.statusReconciliation, status.reconciliationPhase || "steady");
         setText(elements.statusWarning, status.warning ? status.warning.message : "");
+        elements.statusWarning?.classList.remove("danger");
         const lines = []
           .concat(status.detailedStatusLines || [])
           .concat(status.readinessLines || [])
@@ -597,8 +599,18 @@ export function renderSupervisorDashboardHtml(): string {
         if (state.selectedIssueNumber && elements.issueNumberInput) {
           elements.issueNumberInput.value = String(state.selectedIssueNumber);
         }
+        if (elements.runOnceButton) {
+          elements.runOnceButton.disabled = state.commandInFlight;
+        }
         if (elements.requeueButton) {
-          elements.requeueButton.disabled = state.selectedIssueNumber === null;
+          elements.requeueButton.disabled =
+            state.commandInFlight || state.selectedIssueNumber === null || state.explain === null;
+        }
+        if (elements.pruneWorkspacesButton) {
+          elements.pruneWorkspacesButton.disabled = state.commandInFlight;
+        }
+        if (elements.resetJsonStateButton) {
+          elements.resetJsonStateButton.disabled = state.commandInFlight;
         }
       }
 
@@ -615,6 +627,18 @@ export function renderSupervisorDashboardHtml(): string {
 
       function markRefresh() {
         setText(elements.lastRefreshBadge, new Date().toLocaleTimeString());
+      }
+
+      function reportRefreshError(error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setText(elements.statusWarning, message);
+        elements.statusWarning?.classList.add("danger");
+        pushEvent({
+          type: "dashboard.refresh.error",
+          family: "dashboard",
+          at: new Date().toISOString(),
+          message,
+        });
       }
 
       async function readJson(path) {
@@ -666,6 +690,7 @@ export function renderSupervisorDashboardHtml(): string {
           }
           state.explain = explain;
           state.issueLint = issueLint;
+          renderSelectedIssue();
           renderIssue();
           markRefresh();
         } catch (error) {
@@ -700,11 +725,16 @@ export function renderSupervisorDashboardHtml(): string {
         const previousStatus = elements.commandStatus ? elements.commandStatus.textContent : "";
         setText(elements.commandStatus, "Running " + args.label + "...");
         try {
-          state.commandResult = await postCommand(args.path, args.body);
+          const result = await postCommand(args.path, args.body);
+          state.commandResult = result;
           renderCommandResult();
-          await refreshStatusAndDoctor();
-          if (state.selectedIssueNumber !== null) {
-            await loadIssue(state.selectedIssueNumber);
+          try {
+            await refreshStatusAndDoctor();
+            if (state.selectedIssueNumber !== null) {
+              await loadIssue(state.selectedIssueNumber);
+            }
+          } catch (error) {
+            reportRefreshError(error);
           }
         } catch (error) {
           setText(elements.commandStatus, previousStatus || "Command failed.");
@@ -721,6 +751,21 @@ export function renderSupervisorDashboardHtml(): string {
         state.events.unshift(event);
         state.events = state.events.slice(0, 40);
         renderEvents();
+      }
+
+      async function runCommandWithLock(args) {
+        if (state.commandInFlight) {
+          return;
+        }
+
+        state.commandInFlight = true;
+        renderSelectedIssue();
+        try {
+          await runCommand(args);
+        } finally {
+          state.commandInFlight = false;
+          renderSelectedIssue();
+        }
       }
 
       function wireEvents() {
@@ -747,12 +792,7 @@ export function renderSupervisorDashboardHtml(): string {
               await loadIssue(state.selectedIssueNumber);
             }
           } catch (error) {
-            pushEvent({
-              type: "dashboard.refresh.error",
-              family: "dashboard",
-              at: new Date().toISOString(),
-              message: error instanceof Error ? error.message : String(error),
-            });
+            reportRefreshError(error);
           }
         };
 
@@ -777,7 +817,7 @@ export function renderSupervisorDashboardHtml(): string {
       });
 
       elements.runOnceButton?.addEventListener("click", async () => {
-        await runCommand({
+        await runCommandWithLock({
           label: "run-once",
           path: "/api/commands/run-once",
           body: { dryRun: false },
@@ -785,20 +825,20 @@ export function renderSupervisorDashboardHtml(): string {
       });
 
       elements.requeueButton?.addEventListener("click", async () => {
-        if (state.selectedIssueNumber === null) {
+        if (state.explain === null) {
           state.commandResult = {
             action: "requeue",
             outcome: "rejected",
-            summary: "Load a positive issue number before requeueing.",
+            summary: "Load an issue successfully before requeueing.",
           };
           renderCommandResult();
           return;
         }
 
-        await runCommand({
+        await runCommandWithLock({
           label: "requeue",
           path: "/api/commands/requeue",
-          body: { issueNumber: state.selectedIssueNumber },
+          body: { issueNumber: state.explain.issueNumber },
         });
       });
 
@@ -807,7 +847,7 @@ export function renderSupervisorDashboardHtml(): string {
           return;
         }
 
-        await runCommand({
+        await runCommandWithLock({
           label: "prune-orphaned-workspaces",
           path: "/api/commands/prune-orphaned-workspaces",
           body: {},
@@ -819,7 +859,7 @@ export function renderSupervisorDashboardHtml(): string {
           return;
         }
 
-        await runCommand({
+        await runCommandWithLock({
           label: "reset-corrupt-json-state",
           path: "/api/commands/reset-corrupt-json-state",
           body: {},
