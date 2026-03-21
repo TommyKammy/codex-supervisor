@@ -394,6 +394,7 @@ export interface CliOptions {
     | "explain"
     | "issue-lint"
     | "doctor"
+    | "web"
     | "replay"
     | "replay-corpus"
     | "replay-corpus-promote";

@@ -1,4 +1,5 @@
 import type { CliOptions, SupervisorConfig } from "../core/types";
+import { createSupervisorHttpServer } from "../backend/supervisor-http-server";
 import { sleep as defaultSleep } from "../core/utils";
 import { ensureGsdInstalled as defaultEnsureGsdInstalled } from "../gsd";
 import { renderDoctorReport } from "../doctor";
@@ -23,6 +24,7 @@ type SupervisorRuntimeCommand = Extract<
   | "explain"
   | "issue-lint"
   | "doctor"
+  | "web"
 >;
 
 interface SupervisorRuntimeDependencies {
@@ -33,6 +35,12 @@ interface SupervisorRuntimeDependencies {
   writeStdout?: (line: string) => void;
   writeStderr?: (line: string) => void;
   registerStopSignals?: (handler: (signal: NodeJS.Signals) => void) => void;
+  createHttpServer?: (service: SupervisorService) => {
+    listen: (port: number, host: string, listeningListener?: () => void) => void;
+    once: (event: "error", listener: (error: Error) => void) => void;
+    close: (callback: (error?: Error) => void) => void;
+    address: () => string | { address: string; family: string; port: number } | null;
+  };
 }
 
 export function isSupervisorRuntimeCommand(command: CliOptions["command"]): command is SupervisorRuntimeCommand {
@@ -45,7 +53,8 @@ export function isSupervisorRuntimeCommand(command: CliOptions["command"]): comm
     command === "reset-corrupt-json-state" ||
     command === "explain" ||
     command === "issue-lint" ||
-    command === "doctor"
+    command === "doctor" ||
+    command === "web"
   );
 }
 
@@ -57,7 +66,8 @@ function requiresGsdInstall(command: SupervisorRuntimeCommand): boolean {
     command !== "reset-corrupt-json-state" &&
     command !== "explain" &&
     command !== "issue-lint" &&
-    command !== "doctor"
+    command !== "doctor" &&
+    command !== "web"
   );
 }
 
@@ -97,6 +107,7 @@ export async function runSupervisorCommand(
     writeStdout = (line) => console.log(line),
     writeStderr = (line) => console.error(line),
     registerStopSignals = registerProcessStopSignals,
+    createHttpServer = (createdService) => createSupervisorHttpServer({ service: createdService }),
   } = dependencies;
   const cycleController =
     options.command === "run-once" || options.command === "loop"
@@ -105,10 +116,16 @@ export async function runSupervisorCommand(
 
   let shouldStop = false;
   let sleepController: AbortController | null = null;
+  let stopWebServer: (() => void) | null = null;
 
   registerStopSignals((signal) => {
     shouldStop = true;
     sleepController?.abort();
+    if (stopWebServer) {
+      writeStdout(`${new Date().toISOString()} received ${signal}, shutting down WebUI`);
+      stopWebServer();
+      return;
+    }
     writeStdout(`${new Date().toISOString()} received ${signal}, stopping after current cycle`);
   });
 
@@ -151,6 +168,39 @@ export async function runSupervisorCommand(
 
   if (options.command === "doctor") {
     writeStdout(renderDoctorReport(await service.queryDoctor()));
+    return;
+  }
+
+  if (options.command === "web") {
+    const server = createHttpServer(service);
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const complete = (error?: Error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      };
+
+      server.once("error", (error) => complete(error));
+      server.listen(4310, "127.0.0.1", () => {
+        const address = server.address();
+        if (!address || typeof address === "string") {
+          complete(new Error("Supervisor WebUI server did not report a listen address."));
+          return;
+        }
+
+        writeStdout(`WebUI listening on http://127.0.0.1:${address.port}`);
+      });
+      stopWebServer = () => {
+        server.close((error) => complete(error ?? undefined));
+      };
+    });
     return;
   }
 
