@@ -24,7 +24,7 @@
 - Hypothesis: the missing work for issue #783 was a thin transport adapter, not new supervisor domain logic. A standalone HTTP server over `SupervisorService` should satisfy the MVP without touching CLI behavior.
 - What changed: added `src/backend/supervisor-http-server.ts` with read-only `GET /api/status`, `GET /api/doctor`, `GET /api/issues/:issueNumber/explain`, and `GET /api/issues/:issueNumber/issue-lint` routes that serialize the existing DTOs directly to JSON, plus minimal 400/404/405 JSON error responses. Added `src/backend/supervisor-http-server.test.ts` to reproduce the missing adapter first, then verify representative JSON responses for all four endpoints against a stub `SupervisorService`.
 - Current blocker: none
-- Next exact step: commit the backend adapter checkpoint, push `codex/issue-783`, and open a draft PR if one does not already exist.
+- Next exact step: monitor draft PR #793 for CI and any review feedback, then wire this adapter into the eventual WebUI backend startup path in a follow-up slice.
 - Verification gap: local verification covered the new adapter test plus `npm run build`; broader runtime wiring for starting the HTTP server is still out of scope for this slice.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/backend/supervisor-http-server.ts`
 - Rollback concern: replacing this adapter with transport-specific domain logic would duplicate `SupervisorService` behavior and undermine the WebUI boundary this issue is meant to establish.
