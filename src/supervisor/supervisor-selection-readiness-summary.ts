@@ -33,6 +33,32 @@ export interface SupervisorSelectionSummaryDto {
   selectionReason: string | null;
 }
 
+export interface SupervisorCandidateDiscoveryDto {
+  fetchWindow: number;
+  strategy: "paginated";
+  truncated: boolean;
+  observedMatchingOpenIssues: number | null;
+  warning: string | null;
+}
+
+export interface SupervisorRunnableIssueDto {
+  issueNumber: number;
+  title: string;
+  readiness: string;
+}
+
+export interface SupervisorBlockedIssueDto {
+  issueNumber: number;
+  title: string;
+  blockedBy: string;
+}
+
+export interface SupervisorReadinessSummaryDto {
+  runnableIssues: SupervisorRunnableIssueDto[];
+  blockedIssues: SupervisorBlockedIssueDto[];
+  readinessLines: string[];
+}
+
 export function formatCandidateDiscoveryBehaviorLine(
   config: Pick<SupervisorConfig, "candidateDiscoveryFetchWindow">,
   prefix = "candidate_discovery",
@@ -66,19 +92,38 @@ export function formatCandidateDiscoveryWarningDetail(
   return `Candidate discovery may be truncated: more than ${diagnostics.fetchWindow} matching open issues exceed the current first-page fetch window, so runnable selection may be incomplete.`;
 }
 
+export function buildCandidateDiscoverySummary(
+  config: Pick<SupervisorConfig, "candidateDiscoveryFetchWindow">,
+  diagnostics: CandidateDiscoveryDiagnostics | null,
+): SupervisorCandidateDiscoveryDto {
+  const fetchWindow = diagnostics?.fetchWindow ?? (
+    config.candidateDiscoveryFetchWindow ?? DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW
+  );
+  return {
+    fetchWindow,
+    strategy: "paginated",
+    truncated: diagnostics?.truncated ?? false,
+    observedMatchingOpenIssues: diagnostics?.observedMatchingOpenIssues ?? null,
+    warning: formatCandidateDiscoveryWarningDetail(diagnostics),
+  };
+}
+
 export async function buildReadinessSummary(
   github: ReadinessSummaryGitHub,
   config: SupervisorConfig,
   state: SupervisorStateFile,
-): Promise<string[]> {
-  const candidateDiscoveryDiagnostics =
-    typeof github.getCandidateDiscoveryDiagnostics === "function"
-      ? await github.getCandidateDiscoveryDiagnostics()
-      : null;
-  const candidateDiscoveryWarningLine = formatCandidateDiscoveryStatusLine(candidateDiscoveryDiagnostics);
+  candidateDiscoveryDiagnostics: CandidateDiscoveryDiagnostics | null | undefined = undefined,
+): Promise<SupervisorReadinessSummaryDto> {
+  const diagnostics =
+    candidateDiscoveryDiagnostics === undefined
+      ? typeof github.getCandidateDiscoveryDiagnostics === "function"
+        ? await github.getCandidateDiscoveryDiagnostics()
+        : null
+      : candidateDiscoveryDiagnostics;
+  const candidateDiscoveryWarningLine = formatCandidateDiscoveryStatusLine(diagnostics);
   const issues = await github.listCandidateIssues();
-  const runnable: string[] = [];
-  const blocked: string[] = [];
+  const runnableIssues: SupervisorRunnableIssueDto[] = [];
+  const blockedIssues: SupervisorBlockedIssueDto[] = [];
 
   for (const issue of issues) {
     if (config.skipTitlePrefixes.some((prefix) => issue.title.startsWith(prefix))) {
@@ -88,29 +133,41 @@ export async function buildReadinessSummary(
     const existing = state.issues[String(issue.number)];
     const readiness = lintExecutionReadyIssueBody(issue);
     if (shouldEnforceExecutionReady(existing) && !readiness.isExecutionReady) {
-      blocked.push(
-        `#${issue.number} blocked_by=requirements:${formatExecutionReadyMissingFields(readiness.missingRequired)}`,
-      );
+      blockedIssues.push({
+        issueNumber: issue.number,
+        title: issue.title,
+        blockedBy: `requirements:${formatExecutionReadyMissingFields(readiness.missingRequired)}`,
+      });
       continue;
     }
 
     const clarificationBlock = findHighRiskBlockingAmbiguity(issue);
     if (clarificationBlock) {
-      blocked.push(
-        `#${issue.number} blocked_by=clarification:${clarificationBlock.ambiguityClasses.join("|")}:${clarificationBlock.riskyChangeClasses.join("|")}`,
-      );
+      blockedIssues.push({
+        issueNumber: issue.number,
+        title: issue.title,
+        blockedBy: `clarification:${clarificationBlock.ambiguityClasses.join("|")}:${clarificationBlock.riskyChangeClasses.join("|")}`,
+      });
       continue;
     }
 
     const trustDecision = evaluateAutonomousExecutionTrust(config, issue);
     if (!trustDecision.allowed) {
-      blocked.push(`#${issue.number} blocked_by=trust_gate:${trustDecision.readinessToken}`);
+      blockedIssues.push({
+        issueNumber: issue.number,
+        title: issue.title,
+        blockedBy: `trust_gate:${trustDecision.readinessToken}`,
+      });
       continue;
     }
 
     const blockingIssue = findBlockingIssue(issue, issues, state);
     if (blockingIssue) {
-      blocked.push(`#${issue.number} blocked_by=${blockingIssue.reason}`);
+      blockedIssues.push({
+        issueNumber: issue.number,
+        title: issue.title,
+        blockedBy: blockingIssue.reason,
+      });
       continue;
     }
 
@@ -118,18 +175,30 @@ export async function buildReadinessSummary(
       !isEligibleForSelection(existing, config) &&
       !(isAutonomousExecutionTrustBlockedRecord(existing) && trustDecision.allowed)
     ) {
-      blocked.push(`#${issue.number} blocked_by=local_state:${existing?.state ?? "unknown"}`);
+      blockedIssues.push({
+        issueNumber: issue.number,
+        title: issue.title,
+        blockedBy: `local_state:${existing?.state ?? "unknown"}`,
+      });
       continue;
     }
 
-    runnable.push(`#${issue.number} ready=${formatRunnableReadinessReason(issue, issues, state, readiness.isExecutionReady)}`);
+    runnableIssues.push({
+      issueNumber: issue.number,
+      title: issue.title,
+      readiness: formatRunnableReadinessReason(issue, issues, state, readiness.isExecutionReady),
+    });
   }
 
-  return [
-    ...(candidateDiscoveryWarningLine === null ? [] : [candidateDiscoveryWarningLine]),
-    `runnable_issues=${runnable.length > 0 ? runnable.join(",") : "none"}`,
-    `blocked_issues=${blocked.length > 0 ? blocked.join("; ") : "none"}`,
-  ];
+  return {
+    runnableIssues,
+    blockedIssues,
+    readinessLines: [
+      ...(candidateDiscoveryWarningLine === null ? [] : [candidateDiscoveryWarningLine]),
+      `runnable_issues=${runnableIssues.length > 0 ? runnableIssues.map((issue) => `#${issue.issueNumber} ready=${issue.readiness}`).join(",") : "none"}`,
+      `blocked_issues=${blockedIssues.length > 0 ? blockedIssues.map((issue) => `#${issue.issueNumber} blocked_by=${issue.blockedBy}`).join("; ") : "none"}`,
+    ],
+  };
 }
 
 export async function buildSelectionWhySummary(

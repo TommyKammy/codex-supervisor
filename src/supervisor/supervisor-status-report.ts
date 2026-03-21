@@ -1,8 +1,13 @@
 import type { CadenceDiagnosticsSummary, TrustDiagnosticsSummary } from "../core/types";
 import { sanitizeStatusValue } from "./supervisor-status-rendering";
 import { truncate } from "../core/utils";
-import type { BlockedReason, RunState } from "../core/types";
-import type { SupervisorSelectionSummaryDto } from "./supervisor-selection-readiness-summary";
+import type { BlockedReason, RunState, SupervisorStateFile } from "../core/types";
+import type {
+  SupervisorBlockedIssueDto,
+  SupervisorCandidateDiscoveryDto,
+  SupervisorRunnableIssueDto,
+  SupervisorSelectionSummaryDto,
+} from "./supervisor-selection-readiness-summary";
 
 export interface SupervisorStatusWarningDto {
   kind: "readiness" | "status";
@@ -17,13 +22,25 @@ export interface SupervisorActiveIssueDto {
   blockedReason: BlockedReason | null;
 }
 
+export interface SupervisorTrackedIssueDto {
+  issueNumber: number;
+  state: RunState;
+  branch: string;
+  prNumber: number | null;
+  blockedReason: BlockedReason | null;
+}
+
 export interface SupervisorStatusDto {
   gsdSummary: string | null;
   trustDiagnostics?: TrustDiagnosticsSummary | null;
   cadenceDiagnostics?: CadenceDiagnosticsSummary | null;
   candidateDiscoverySummary?: string | null;
+  candidateDiscovery: SupervisorCandidateDiscoveryDto | null;
   activeIssue: SupervisorActiveIssueDto | null;
   selectionSummary: SupervisorSelectionSummaryDto | null;
+  trackedIssues: SupervisorTrackedIssueDto[];
+  runnableIssues: SupervisorRunnableIssueDto[];
+  blockedIssues: SupervisorBlockedIssueDto[];
   detailedStatusLines: string[];
   reconciliationPhase: string | null;
   reconciliationWarning: string | null;
@@ -67,4 +84,16 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
   ];
 
   return [dto.gsdSummary, lines.join("\n")].filter(Boolean).join("\n");
+}
+
+export function buildTrackedIssueDtos(state: SupervisorStateFile): SupervisorTrackedIssueDto[] {
+  return Object.values(state.issues)
+    .sort((left, right) => left.issue_number - right.issue_number)
+    .map((record) => ({
+      issueNumber: record.issue_number,
+      state: record.state,
+      branch: record.branch,
+      prNumber: record.pr_number,
+      blockedReason: record.blocked_reason,
+    }));
 }

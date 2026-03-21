@@ -164,7 +164,29 @@ function jsonResponse(body: unknown, statusCode = 200): MockResponseLike {
   };
 }
 
-function createStatus(args: { selectedIssueNumber?: number | null; includeWhyLines?: boolean } = {}) {
+function createStatus(args: {
+  selectedIssueNumber?: number | null;
+  includeWhyLines?: boolean;
+  trackedIssues?: Array<{
+    issueNumber: number;
+    state: string;
+    branch: string;
+    prNumber: number | null;
+    blockedReason: string | null;
+  }>;
+  blockedIssues?: Array<{
+    issueNumber: number;
+    title: string;
+    blockedBy: string;
+  }>;
+  candidateDiscovery?: {
+    fetchWindow: number;
+    strategy: string;
+    truncated: boolean;
+    observedMatchingOpenIssues: number | null;
+    warning: string | null;
+  } | null;
+} = {}) {
   const selectedIssueNumber = args.selectedIssueNumber ?? null;
   const includeWhyLines = args.includeWhyLines ?? true;
   return {
@@ -173,6 +195,9 @@ function createStatus(args: { selectedIssueNumber?: number | null; includeWhyLin
       selectedIssueNumber,
       selectionReason: selectedIssueNumber === null ? "no_runnable_issue" : "selected",
     },
+    trackedIssues: args.trackedIssues ?? [],
+    runnableIssues: [],
+    blockedIssues: args.blockedIssues ?? [],
     reconciliationPhase: null,
     warning: null,
     detailedStatusLines: [],
@@ -183,6 +208,7 @@ function createStatus(args: { selectedIssueNumber?: number | null; includeWhyLin
         : [`selected_issue=#${selectedIssueNumber}`]
       : [],
     candidateDiscoverySummary: null,
+    candidateDiscovery: args.candidateDiscovery ?? null,
     reconciliationWarning: null,
   };
 }
@@ -331,6 +357,58 @@ test("dashboard derives the selected issue from typed status fields without pars
 
   assert.equal(selectedIssueBadge.textContent, "#42");
   assert.equal(issueNumberInput.value, "42");
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard renders typed tracked and blocked issue context without relying on flat status lines", async () => {
+  const harness = createDashboardHarness([
+    {
+      path: "/api/status?why=true",
+      response: jsonResponse(
+        createStatus({
+          includeWhyLines: false,
+          trackedIssues: [
+            {
+              issueNumber: 58,
+              state: "queued",
+              branch: "codex/issue-58",
+              prNumber: 58,
+              blockedReason: null,
+            },
+          ],
+          blockedIssues: [
+            {
+              issueNumber: 93,
+              title: "Underspecified issue",
+              blockedBy: "requirements:scope, acceptance criteria, verification",
+            },
+          ],
+          candidateDiscovery: {
+            fetchWindow: 250,
+            strategy: "paginated",
+            truncated: true,
+            observedMatchingOpenIssues: 251,
+            warning: "Candidate discovery may be truncated.",
+          },
+        }),
+      ),
+    },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+  ]);
+  await harness.flush();
+
+  const statusLines = harness.document.getElementById("status-lines");
+  assert.ok(statusLines);
+
+  assert.match(statusLines.textContent, /tracked issue #58 \[queued\] branch=codex\/issue-58 pr=#58/u);
+  assert.match(
+    statusLines.textContent,
+    /blocked issue #93 Underspecified issue blocked_by=requirements:scope, acceptance criteria, verification/u,
+  );
+  assert.match(
+    statusLines.textContent,
+    /candidate discovery fetch_window=250 strategy=paginated truncated=yes observed_matching_open_issues=251/u,
+  );
   assert.equal(harness.remainingFetches.length, 0);
 });
 

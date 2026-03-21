@@ -316,6 +316,41 @@ Decide whether to keep the current production auth token flow or replace it befo
   assert.equal(report.reconciliationPhase, null);
   assert.equal(report.warning?.kind ?? null, null);
   assert.match(report.detailedStatusLines.join("\n"), /^No active issue\.$/m);
+  assert.deepEqual(report.trackedIssues, [
+    {
+      issueNumber: 91,
+      state: "done",
+      branch: branchName(fixture.config, 91),
+      prNumber: null,
+      blockedReason: null,
+    },
+  ]);
+  assert.deepEqual(report.runnableIssues, [
+    {
+      issueNumber: 92,
+      title: "Step 2",
+      readiness: "execution_ready+depends_on_satisfied:91",
+    },
+  ]);
+  assert.deepEqual(report.blockedIssues, [
+    {
+      issueNumber: 93,
+      title: "Underspecified issue",
+      blockedBy: "requirements:scope, acceptance criteria, verification",
+    },
+    {
+      issueNumber: 94,
+      title: "Decide which auth path to keep",
+      blockedBy: "clarification:unresolved_choice:auth",
+    },
+  ]);
+  assert.deepEqual(report.candidateDiscovery, {
+    fetchWindow: 100,
+    strategy: "paginated",
+    truncated: false,
+    observedMatchingOpenIssues: null,
+    warning: null,
+  });
   assert.match(
     report.readinessLines.join("\n"),
     /runnable_issues=#92 ready=execution_ready\+depends_on_satisfied:91/,
@@ -551,6 +586,13 @@ Keep selection behavior unchanged while surfacing the current discovery limit.
 
   const report = await supervisor.statusReport();
   assert.equal(report.candidateDiscoverySummary, "candidate_discovery fetch_window=250 strategy=paginated");
+  assert.deepEqual(report.candidateDiscovery, {
+    fetchWindow: 250,
+    strategy: "paginated",
+    truncated: false,
+    observedMatchingOpenIssues: 251,
+    warning: null,
+  });
   assert.doesNotMatch(report.readinessLines.join("\n"), /candidate_discovery_warning=/);
 
   const status = await supervisor.status();

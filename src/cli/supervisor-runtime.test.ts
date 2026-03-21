@@ -22,8 +22,12 @@ function createIssueLintDto(overrides: Partial<SupervisorIssueLintDto> = {}): Su
 function createStatusDto(overrides: Partial<SupervisorStatusDto> = {}): SupervisorStatusDto {
   return {
     gsdSummary: null,
+    candidateDiscovery: null,
     activeIssue: null,
     selectionSummary: null,
+    trackedIssues: [],
+    runnableIssues: [],
+    blockedIssues: [],
     detailedStatusLines: ["status"],
     reconciliationPhase: null,
     reconciliationWarning: null,

@@ -502,6 +502,55 @@ export function renderSupervisorDashboardHtml(): string {
           .join("\\n");
       }
 
+      function formatTrackedIssues(status) {
+        const trackedIssues = Array.isArray(status?.trackedIssues) ? status.trackedIssues : [];
+        return trackedIssues.map((issue) =>
+          "tracked issue #" +
+          issue.issueNumber +
+          " [" +
+          issue.state +
+          "] branch=" +
+          issue.branch +
+          " pr=" +
+          (Number.isInteger(issue.prNumber) ? "#" + issue.prNumber : "none") +
+          " blocked_reason=" +
+          (issue.blockedReason || "none")
+        );
+      }
+
+      function formatRunnableIssues(status) {
+        const runnableIssues = Array.isArray(status?.runnableIssues) ? status.runnableIssues : [];
+        return runnableIssues.map((issue) =>
+          "runnable issue #" + issue.issueNumber + " " + issue.title + " ready=" + issue.readiness
+        );
+      }
+
+      function formatBlockedIssues(status) {
+        const blockedIssues = Array.isArray(status?.blockedIssues) ? status.blockedIssues : [];
+        return blockedIssues.map((issue) =>
+          "blocked issue #" + issue.issueNumber + " " + issue.title + " blocked_by=" + issue.blockedBy
+        );
+      }
+
+      function formatCandidateDiscovery(status) {
+        if (status?.candidateDiscovery) {
+          const summary = status.candidateDiscovery;
+          return [
+            "candidate discovery fetch_window=" +
+              summary.fetchWindow +
+              " strategy=" +
+              summary.strategy +
+              " truncated=" +
+              (summary.truncated ? "yes" : "no") +
+              " observed_matching_open_issues=" +
+              (summary.observedMatchingOpenIssues === null ? "unknown" : summary.observedMatchingOpenIssues),
+            ...(summary.warning ? [summary.warning] : []),
+          ];
+        }
+
+        return status?.candidateDiscoverySummary ? [status.candidateDiscoverySummary] : [];
+      }
+
       function renderStatus() {
         if (!state.status) {
           return;
@@ -512,10 +561,13 @@ export function renderSupervisorDashboardHtml(): string {
         setText(elements.statusWarning, status.warning ? status.warning.message : "");
         elements.statusWarning?.classList.remove("danger");
         const lines = []
+          .concat(formatTrackedIssues(status))
+          .concat(formatRunnableIssues(status))
+          .concat(formatBlockedIssues(status))
           .concat(status.detailedStatusLines || [])
           .concat(status.readinessLines || [])
           .concat(status.whyLines || [])
-          .concat(status.candidateDiscoverySummary ? [status.candidateDiscoverySummary] : [])
+          .concat(formatCandidateDiscovery(status))
           .concat(status.reconciliationWarning ? [status.reconciliationWarning] : []);
         setCode(elements.statusLines, lines.length > 0 ? lines : ["No status lines reported."]);
       }
