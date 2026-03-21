@@ -36,19 +36,21 @@ Next action: Watch PR #771 CI and address any review or build feedback if it app
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: the remaining valid review fixes are limited to the stale journal handoff and `summarizeCadenceDiagnostics` being too permissive for programmatic `mergeCriticalRecheckSeconds`; `pollIntervalSeconds` should not be tightened here because `loadConfig` still accepts any positive numeric poll cadence.
-- What changed: updated the journal handoff text for PR `#771`; tightened `summarizeCadenceDiagnostics` so invalid programmatic merge-critical recheck values fall back to disabled; and added a regression test covering `Infinity` and fractional merge-critical values.
+- What changed: updated the journal handoff text for PR `#771`; tightened `summarizeCadenceDiagnostics` so invalid programmatic merge-critical recheck values fall back to disabled; added a regression test covering `Infinity` and fractional merge-critical values; and pushed commit `e3bb2e9` to `codex/issue-767`.
 - Current blocker: none
-- Next exact step: commit and push the review-fix patch for PR `#771`, then reply to or resolve the two automated review threads.
+- Next exact step: reply to or resolve the two automated review threads on PR `#771`, then watch CI for the pushed head.
 - Verification gap: none locally; the untracked `.codex-supervisor/replay/` workspace artifact remains present but was not touched.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/config.test.ts`, `src/core/config.ts`
 - Rollback concern: removing the cadence-summary helper or the new renderer lines would drop the explicit visibility promised by issue #767 even though runtime polling behavior would still fall back safely.
-- Last focused command: `npm run build`
+- Last focused command: `git push`
 - Last focused failure: `none`
 - Last focused commands:
 ```bash
 npx tsx --test src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts
 npm run build
 git diff -- src/core/config.ts src/config.test.ts .codex-supervisor/issue-journal.md
+git commit -m "Tighten merge-critical cadence diagnostics"
+git push
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
