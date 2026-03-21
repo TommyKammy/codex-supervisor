@@ -24,7 +24,7 @@
 - Hypothesis: the remaining WebUI gap was that readiness and candidate-discovery context still crossed the backend boundary only as rendered strings, so the dashboard could not render tracked/blocked collections or discovery state without parsing free-form text.
 - What changed: added typed `trackedIssues`, `runnableIssues`, `blockedIssues`, and `candidateDiscovery` fields to the status DTO; refactored readiness assembly to return typed collections plus legacy `readinessLines`; and updated the dashboard to render the typed collections and candidate-discovery summary first while preserving existing CLI/status-line text output.
 - Current blocker: none
-- Next exact step: commit the issue-800 checkpoint, push `codex/issue-800`, and open or update the draft PR for review.
+- Next exact step: monitor draft PR #805 CI and address any failing checks or review feedback.
 - Verification gap: remote CI has not run on the issue-800 branch yet.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard.test.ts`, `src/backend/webui-dashboard.ts`, `src/cli/supervisor-runtime.test.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-selection-readiness-summary.ts`, `src/supervisor/supervisor-status-report.ts`, `src/supervisor/supervisor.ts`
 - Rollback concern: keep typed readiness collections and legacy rendered lines derived from the same readiness builder so the dashboard DTO and CLI status text cannot drift independently.
@@ -43,3 +43,4 @@ npm run build
 - 2026-03-22T00:00:00Z: reproduced the issue with a new dashboard harness case that supplied typed tracked/blocked/candidate-discovery data but no legacy readiness lines; the dashboard rendered `No status lines reported.`
 - 2026-03-22T00:00:00Z: refactored readiness assembly to emit typed runnable and blocked issue collections alongside the existing line-based summary, and added typed tracked issue DTOs plus typed candidate-discovery summary fields to `statusReport()`.
 - 2026-03-22T00:00:00Z: focused verification passed; `npm run build` again needed a local `npm ci` because `tsc` was missing in this worktree.
+- 2026-03-22T00:00:00Z: pushed `codex/issue-800` and opened draft PR #805 (`https://github.com/TommyKammy/codex-supervisor/pull/805`).
