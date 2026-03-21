@@ -66,6 +66,11 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking
         : createFailureContext("unexpected failure"),
       reviewWaitPatch: { review_wait_started_at: "2026-03-13T06:26:22Z", review_wait_head_sha: pr.headRefOid },
       copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
       copilotTimeoutPatch: {
         copilot_review_timed_out_at: null,
         copilot_review_timeout_action: null,
@@ -161,6 +166,11 @@ test("handlePostTurnPullRequestTransitionsPhase emits typed review-wait change e
         review_wait_head_sha: currentPr.headRefOid,
       },
       copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
       copilotTimeoutPatch: {
         copilot_review_timed_out_at: null,
         copilot_review_timeout_action: null,
@@ -271,6 +281,11 @@ test("handlePostTurnPullRequestTransitionsPhase swallows event sink failures aft
           review_wait_head_sha: currentPr.headRefOid,
         },
         copilotRequestObservationPatch: {},
+        mergeLatencyVisibilityPatch: {
+          provider_success_observed_at: null,
+          provider_success_head_sha: null,
+          merge_readiness_last_evaluated_at: null,
+        },
         copilotTimeoutPatch: {
           copilot_review_timed_out_at: null,
           copilot_review_timeout_action: null,

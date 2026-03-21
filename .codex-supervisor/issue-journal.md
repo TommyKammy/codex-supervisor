@@ -5,40 +5,59 @@
 - Branch: codex/issue-766
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: fce9f0b5fc40a245e4a52ec4bc0e7cd5a4480989
+- Current phase: repairing_ci
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 3bb551d60c09bff6ce14c2e8503d1087b97cad62
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-21T07:43:53.245Z
+- Last failure signature: build (ubuntu-latest):fail|build (macos-latest):fail
+- Repeated failure signature count: 1
+- Updated at: 2026-03-21T08:10:18.878Z
 
 ## Latest Codex Summary
-- Added informational merge-latency visibility fields to the issue record, persisted from PR lifecycle reevaluations and surfaced in status/replay artifacts with focused tests.
+Reproduced the failing PR #770 build jobs from Actions. The concrete failures were:
+- `npx tsx src/index.ts replay-corpus`: checked-in replay corpus snapshots were missing the newly added merge-latency fields, so validation rejected them.
+- `npm run build`: strict test mocks in `src/post-turn-pull-request.test.ts` and `src/run-once-turn-execution.test.ts` were missing the required `mergeLatencyVisibilityPatch` property on `PullRequestLifecycleSnapshot`.
+
+Repaired the CI break by backfilling the checked-in replay corpus snapshots with explicit null merge-latency fields, updating the strict lifecycle snapshot test doubles, and refreshing the CLI replay tests in `src/index.test.ts` so their temporary snapshots and promotion-hint fixture match the new schema and current hint rules.
+
+Summary: Repaired the PR #770 build failures by fixing replay corpus fixtures and strict lifecycle snapshot test doubles for the new merge-latency visibility fields.
+State hint: repairing_ci
+Blocked reason: none
+Tests: npm ci; npm run build; npx tsx src/index.ts replay-corpus; npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-status-model.test.ts src/post-turn-pull-request.test.ts src/run-once-turn-execution.test.ts src/index.test.ts
+Failure signature: none
+Next action: Commit this CI repair on `codex/issue-766`, push the branch, and recheck PR #770 status.
 
 ## Active Failure Context
-- None recorded.
+- Category: checks
+- Summary: PR #770 has failing checks.
+- Command or source: gh pr checks
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/770
+- Details:
+  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23375173869/job/68005868684
+  - build (macos-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23375173869/job/68005868702
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the missing visibility belongs in the PR lifecycle patch layer, because that is where the supervisor already persists informational review-wait timing without changing merge policy.
-- What changed: added nullable record fields for `provider_success_observed_at`, `provider_success_head_sha`, and `merge_readiness_last_evaluated_at`; normalized and patched them through `StateStore`; added `syncMergeLatencyVisibility()` in `src/pull-request-state.ts`; wired the resulting patch through `derivePullRequestLifecycleSnapshot()` and post-turn persistence; cleared the fields on requeue/new-record reset paths; surfaced the fields in detailed status and replay cycle snapshots; and tightened focused tests in `src/supervisor/supervisor-lifecycle.test.ts`, `src/supervisor/supervisor-status-model.test.ts`, and `src/supervisor/supervisor-cycle-snapshot.test.ts`.
+- Hypothesis: the remaining CI break was fixture drift rather than feature logic, because the new informational fields changed replay-corpus schema and the strict snapshot interface used by a few tests.
+- What changed: added explicit null `provider_success_observed_at`, `provider_success_head_sha`, and `merge_readiness_last_evaluated_at` fields to every checked-in replay corpus input snapshot; added `mergeLatencyVisibilityPatch` to the `PullRequestLifecycleSnapshot` test doubles in `src/post-turn-pull-request.test.ts` and `src/run-once-turn-execution.test.ts`; and updated the CLI replay tests in `src/index.test.ts` so their temporary snapshots include the new fields and the promotion-hint coverage uses a snapshot that actually satisfies `stale-head-safety`.
 - Current blocker: none
-- Next exact step: commit this checkpoint on `codex/issue-766`, then open/update the draft PR and run any missing broader verification once TypeScript tooling is available in the worktree.
-- Verification gap: `npm run build` cannot complete here because `tsc`/`typescript` is not installed in the worktree, so only focused `tsx --test` verification ran.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/core/state-store.ts`, `src/core/types.ts`, `src/post-turn-pull-request.ts`, `src/pull-request-state.ts`, `src/recovery-reconciliation.ts`, `src/run-once-issue-selection.ts`, `src/supervisor/replay-corpus-validation.ts`, `src/supervisor/supervisor-cycle-snapshot.test.ts`, `src/supervisor/supervisor-cycle-snapshot.ts`, `src/supervisor/supervisor-detailed-status-assembly.ts`, `src/supervisor/supervisor-lifecycle.test.ts`, `src/supervisor/supervisor-lifecycle.ts`, `src/supervisor/supervisor-status-model.test.ts`
-- Rollback concern: removing the lifecycle visibility patching or status/snapshot wiring would erase the only persisted distinction between provider delay and supervisor reevaluation delay for active PR heads.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-lifecycle.test.ts src/supervisor/supervisor-status-model.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts`
-- Last focused failure: `build-tooling-missing:tsc-not-installed`
+- Next exact step: commit and push the repair, then confirm PR #770 checks rerun green.
+- Verification gap: none for the reproduced CI commands; the untracked `.codex-supervisor/replay/` workspace artifact remains present but did not affect the repair.
+- Files touched: `.codex-supervisor/issue-journal.md`, `replay-corpus/cases/provider-wait-initial-grace/input/snapshot.json`, `replay-corpus/cases/provider-wait-settled-after-observation/input/snapshot.json`, `replay-corpus/cases/repeated-failure-escalates-to-failed/input/snapshot.json`, `replay-corpus/cases/required-check-pending/input/snapshot.json`, `replay-corpus/cases/review-blocked/input/snapshot.json`, `replay-corpus/cases/review-timing-ready-for-review-after-draft-skip/input/snapshot.json`, `replay-corpus/cases/stale-head-prevents-merge/input/snapshot.json`, `replay-corpus/cases/timeout-retry-budget-progression/input/snapshot.json`, `replay-corpus/cases/verification-blocker-retry-exhausted/input/snapshot.json`, `src/index.test.ts`, `src/post-turn-pull-request.test.ts`, `src/run-once-turn-execution.test.ts`
+- Rollback concern: dropping the replay-corpus fixture backfill or the added snapshot patch property would re-break the exact CI jobs currently failing on PR #770.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-status-model.test.ts src/post-turn-pull-request.test.ts src/run-once-turn-execution.test.ts src/index.test.ts`
+- Last focused failure: `none`
 - Last focused commands:
 ```bash
-npx tsx --test src/supervisor/supervisor-lifecycle.test.ts
-npx tsx --test src/supervisor/supervisor-status-model.test.ts
-npx tsx --test src/supervisor/supervisor-cycle-snapshot.test.ts
-npx tsx --test src/supervisor/supervisor-pr-readiness.test.ts
-npx tsx --test src/core/state-store.test.ts
+npm ci
+gh run view 23375173869 --log-failed
 npm run build
-npx tsc -p tsconfig.json
+npx tsx src/index.ts replay-corpus
+npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-status-model.test.ts src/post-turn-pull-request.test.ts src/run-once-turn-execution.test.ts src/index.test.ts
+npx tsx --test src/index.test.ts
+npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-status-model.test.ts src/post-turn-pull-request.test.ts src/run-once-turn-execution.test.ts src/index.test.ts
+npx tsx src/index.ts replay-corpus
+npm run build
 date -u +"%Y-%m-%dT%H:%M:%SZ"
 ```
 ### Scratchpad
