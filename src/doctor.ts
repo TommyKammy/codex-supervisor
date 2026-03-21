@@ -3,9 +3,16 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { GitHubClient } from "./github";
 import { runCommand } from "./core/command";
-import { summarizeTrustDiagnostics, type ConfigLoadSummary, loadConfigSummary } from "./core/config";
+import { summarizeCadenceDiagnostics, summarizeTrustDiagnostics, type ConfigLoadSummary, loadConfigSummary } from "./core/config";
 import { parseJson } from "./core/utils";
-import { type IssueRunRecord, type StateLoadFinding, type SupervisorConfig, type SupervisorStateFile, type TrustDiagnosticsSummary } from "./core/types";
+import {
+  type CadenceDiagnosticsSummary,
+  type IssueRunRecord,
+  type StateLoadFinding,
+  type SupervisorConfig,
+  type SupervisorStateFile,
+  type TrustDiagnosticsSummary,
+} from "./core/types";
 import { inspectOrphanedWorkspacePruneCandidates } from "./recovery-reconciliation";
 
 export type DoctorCheckStatus = "pass" | "warn" | "fail";
@@ -21,6 +28,7 @@ export interface DoctorDiagnostics {
   overallStatus: DoctorCheckStatus;
   checks: DoctorCheck[];
   trustDiagnostics: TrustDiagnosticsSummary;
+  cadenceDiagnostics: CadenceDiagnosticsSummary;
 }
 
 export interface BootstrapRepoSummary {
@@ -478,6 +486,7 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
     overallStatus: overallStatusForChecks(checks),
     checks,
     trustDiagnostics: summarizeTrustDiagnostics(args.config),
+    cadenceDiagnostics: summarizeCadenceDiagnostics(args.config),
   };
 }
 
@@ -537,9 +546,15 @@ export async function diagnoseBootstrapReadiness(
 }
 
 export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
+  const mergeCriticalRecheckSeconds =
+    diagnostics.cadenceDiagnostics.mergeCriticalRecheckSeconds === null
+      ? "disabled"
+      : String(diagnostics.cadenceDiagnostics.mergeCriticalRecheckSeconds);
+
   return [
     `doctor overall=${diagnostics.overallStatus} checks=${diagnostics.checks.length}`,
     `doctor_posture trust_mode=${diagnostics.trustDiagnostics.trustMode} execution_safety_mode=${diagnostics.trustDiagnostics.executionSafetyMode}`,
+    `doctor_cadence poll_interval_seconds=${diagnostics.cadenceDiagnostics.pollIntervalSeconds} merge_critical_recheck_seconds=${mergeCriticalRecheckSeconds} merge_critical_effective_seconds=${diagnostics.cadenceDiagnostics.mergeCriticalEffectiveSeconds} enabled=${diagnostics.cadenceDiagnostics.mergeCriticalRecheckEnabled}`,
     ...(diagnostics.trustDiagnostics.warning === null
       ? []
       : [`doctor_warning kind=execution_safety detail=${sanitizeDoctorValue(diagnostics.trustDiagnostics.warning)}`]),

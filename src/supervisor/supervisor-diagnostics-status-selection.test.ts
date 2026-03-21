@@ -109,6 +109,49 @@ test("status surfaces the default trust posture and execution-safety warning", a
   assert.match(status, /execution_safety_warning=Unsandboxed autonomous execution assumes trusted GitHub-authored inputs\./);
 });
 
+test("status surfaces merge-critical recheck cadence and disabled fallback visibility", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const enabledSupervisor = new Supervisor({
+    ...fixture.config,
+    pollIntervalSeconds: 120,
+    mergeCriticalRecheckSeconds: 30,
+  });
+  (enabledSupervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const enabledStatus = await enabledSupervisor.status();
+  assert.match(
+    enabledStatus,
+    /merge_critical_recheck_seconds=30 merge_critical_effective_seconds=30 merge_critical_recheck_enabled=true/,
+  );
+
+  const disabledSupervisor = new Supervisor({
+    ...fixture.config,
+    pollIntervalSeconds: 120,
+    mergeCriticalRecheckSeconds: 0,
+  });
+  (disabledSupervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const disabledStatus = await disabledSupervisor.status();
+  assert.match(
+    disabledStatus,
+    /merge_critical_recheck_seconds=disabled merge_critical_effective_seconds=120 merge_critical_recheck_enabled=false/,
+  );
+});
+
 test("runOnce fail-closes before execution when corrupted JSON state is quarantined", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {

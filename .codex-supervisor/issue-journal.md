@@ -1,62 +1,39 @@
-# Issue #766: Merge latency visibility: record provider-observation and reevaluation timestamps
+# Issue #767: Merge latency config: add a dedicated recheck cadence for merge-critical PR states
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/766
-- Branch: codex/issue-766
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/767
+- Branch: codex/issue-767
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: repairing_ci
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 3bb551d60c09bff6ce14c2e8503d1087b97cad62
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 5ec4a3cf16c49c0a02a587d4fbb8b7649e156564
 - Blocked reason: none
-- Last failure signature: build (ubuntu-latest):fail|build (macos-latest):fail
-- Repeated failure signature count: 1
-- Updated at: 2026-03-21T08:10:18.878Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-21T08:38:09.096Z
 
 ## Latest Codex Summary
-Reproduced the failing PR #770 build jobs from Actions. The concrete failures were:
-- `npx tsx src/index.ts replay-corpus`: checked-in replay corpus snapshots were missing the newly added merge-latency fields, so validation rejected them.
-- `npm run build`: strict test mocks in `src/post-turn-pull-request.test.ts` and `src/run-once-turn-execution.test.ts` were missing the required `mergeLatencyVisibilityPatch` property on `PullRequestLifecycleSnapshot`.
-
-Repaired the CI break by backfilling the checked-in replay corpus snapshots with explicit null merge-latency fields, updating the strict lifecycle snapshot test doubles, and refreshing the CLI replay tests in `src/index.test.ts` so their temporary snapshots and promotion-hint fixture match the new schema and current hint rules. Committed the repair as `fcbc2f2` and pushed it to `codex/issue-766`; PR #770 checks are now rerunning.
-
-Summary: Repaired the PR #770 build failures by fixing replay corpus fixtures and strict lifecycle snapshot test doubles for the new merge-latency visibility fields.
-State hint: repairing_ci
-Blocked reason: none
-Tests: npm ci; npm run build; npx tsx src/index.ts replay-corpus; npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-status-model.test.ts src/post-turn-pull-request.test.ts src/run-once-turn-execution.test.ts src/index.test.ts
-Failure signature: none
-Next action: Watch PR #770 check run `23375603279` to completion and confirm the build jobs pass.
+- None yet.
 
 ## Active Failure Context
-- Category: checks
-- Summary: PR #770 has failing checks.
-- Command or source: gh pr checks
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/770
-- Details:
-  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23375173869/job/68005868684
-  - build (macos-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23375173869/job/68005868702
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining CI break was fixture drift rather than feature logic, because the new informational fields changed replay-corpus schema and the strict snapshot interface used by a few tests.
-- What changed: added explicit null `provider_success_observed_at`, `provider_success_head_sha`, and `merge_readiness_last_evaluated_at` fields to every checked-in replay corpus input snapshot; added `mergeLatencyVisibilityPatch` to the `PullRequestLifecycleSnapshot` test doubles in `src/post-turn-pull-request.test.ts` and `src/run-once-turn-execution.test.ts`; and updated the CLI replay tests in `src/index.test.ts` so their temporary snapshots include the new fields and the promotion-hint coverage uses a snapshot that actually satisfies `stale-head-safety`.
+- Hypothesis: issue #767 only needed a narrow config-surface change, because the scheduler already has a global poll cadence and the acceptance criteria explicitly exclude applying a faster merge-critical loop yet.
+- What changed: added optional `mergeCriticalRecheckSeconds` parsing with conservative integer validation and disabled fallback semantics; added shared cadence diagnostics summarization; surfaced cadence visibility in `doctor` and `status`; and added focused tests in `src/config.test.ts`, `src/doctor.test.ts`, and `src/supervisor/supervisor-diagnostics-status-selection.test.ts`.
 - Current blocker: none
-- Next exact step: watch the rerun checks on PR #770 and confirm the repaired build jobs finish green.
-- Verification gap: none for the reproduced CI commands; the untracked `.codex-supervisor/replay/` workspace artifact remains present but did not affect the repair.
-- Files touched: `.codex-supervisor/issue-journal.md`, `replay-corpus/cases/provider-wait-initial-grace/input/snapshot.json`, `replay-corpus/cases/provider-wait-settled-after-observation/input/snapshot.json`, `replay-corpus/cases/repeated-failure-escalates-to-failed/input/snapshot.json`, `replay-corpus/cases/required-check-pending/input/snapshot.json`, `replay-corpus/cases/review-blocked/input/snapshot.json`, `replay-corpus/cases/review-timing-ready-for-review-after-draft-skip/input/snapshot.json`, `replay-corpus/cases/stale-head-prevents-merge/input/snapshot.json`, `replay-corpus/cases/timeout-retry-budget-progression/input/snapshot.json`, `replay-corpus/cases/verification-blocker-retry-exhausted/input/snapshot.json`, `src/index.test.ts`, `src/post-turn-pull-request.test.ts`, `src/run-once-turn-execution.test.ts`
-- Rollback concern: dropping the replay-corpus fixture backfill or the added snapshot patch property would re-break the exact CI jobs currently failing on PR #770.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-status-model.test.ts src/post-turn-pull-request.test.ts src/run-once-turn-execution.test.ts src/index.test.ts`
+- Next exact step: commit the config/visibility change, then open or update the branch PR if one is not already present.
+- Verification gap: `npm run build` initially failed only because local dependencies were missing and was re-run successfully after `npm ci`; the untracked `.codex-supervisor/replay/` workspace artifact remains present but was not touched.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/config.test.ts`, `src/core/config.ts`, `src/core/types.ts`, `src/doctor.test.ts`, `src/doctor.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-status-report.ts`, `src/supervisor/supervisor.ts`
+- Rollback concern: removing the cadence-summary helper or the new renderer lines would drop the explicit visibility promised by issue #767 even though runtime polling behavior would still fall back safely.
+- Last focused command: `npm run build`
 - Last focused failure: `none`
 - Last focused commands:
 ```bash
+npx tsx --test src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts
 npm ci
-gh run view 23375173869 --log-failed
-npm run build
-npx tsx src/index.ts replay-corpus
-npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-status-model.test.ts src/post-turn-pull-request.test.ts src/run-once-turn-execution.test.ts src/index.test.ts
-npx tsx --test src/index.test.ts
-npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-status-model.test.ts src/post-turn-pull-request.test.ts src/run-once-turn-execution.test.ts src/index.test.ts
-npx tsx src/index.ts replay-corpus
 npm run build
 date -u +"%Y-%m-%dT%H:%M:%SZ"
 ```

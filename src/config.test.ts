@@ -383,6 +383,71 @@ test("loadConfig accepts an explicit configuredBotInitialGraceWaitSeconds overri
   assert.equal(config.configuredBotInitialGraceWaitSeconds, 120);
 });
 
+test("loadConfig accepts an explicit mergeCriticalRecheckSeconds override", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: 30,
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath) as SupervisorConfig & {
+    mergeCriticalRecheckSeconds?: number;
+  };
+  const summary = loadConfigSummary(configPath);
+
+  assert.equal(config.mergeCriticalRecheckSeconds, 30);
+  assert.equal(summary.config?.mergeCriticalRecheckSeconds, 30);
+});
+
+test("loadConfig disables mergeCriticalRecheckSeconds for invalid values and preserves poll cadence fallback", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: -5,
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath) as SupervisorConfig & {
+    mergeCriticalRecheckSeconds?: number;
+  };
+  const summary = loadConfigSummary(configPath);
+
+  assert.equal(config.pollIntervalSeconds, 120);
+  assert.equal(config.mergeCriticalRecheckSeconds, undefined);
+  assert.equal(summary.config?.mergeCriticalRecheckSeconds, undefined);
+});
+
 test("loadConfig defaults localReviewHighSeverityAction to blocked", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
   t.after(async () => {

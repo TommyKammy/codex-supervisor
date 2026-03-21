@@ -48,6 +48,13 @@ export interface TrustDiagnosticsSummary {
   warning: string | null;
 }
 
+export interface CadenceDiagnosticsSummary {
+  pollIntervalSeconds: number;
+  mergeCriticalRecheckSeconds: number | null;
+  mergeCriticalEffectiveSeconds: number;
+  mergeCriticalRecheckEnabled: boolean;
+}
+
 export interface SupervisorConfig {
   repoPath: string;
   repoSlug: string;
@@ -91,6 +98,7 @@ export interface SupervisorConfig {
   skipTitlePrefixes: string[];
   branchPrefix: string;
   pollIntervalSeconds: number;
+  mergeCriticalRecheckSeconds?: number;
   copilotReviewWaitMinutes: number;
   copilotReviewTimeoutAction: CopilotReviewTimeoutAction;
   configuredBotRateLimitWaitMinutes?: number;

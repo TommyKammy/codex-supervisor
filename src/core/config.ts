@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
+  CadenceDiagnosticsSummary,
   CopilotReviewTimeoutAction,
   ExecutionSafetyMode,
   LocalReviewHighSeverityAction,
@@ -212,6 +213,22 @@ export function summarizeTrustDiagnostics(
       trustMode === "trusted_repo_and_authors" && executionSafetyMode === "unsandboxed_autonomous"
         ? "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs."
         : null,
+  };
+}
+
+export function summarizeCadenceDiagnostics(
+  config: Pick<SupervisorConfig, "pollIntervalSeconds" | "mergeCriticalRecheckSeconds">,
+): CadenceDiagnosticsSummary {
+  const mergeCriticalRecheckSeconds =
+    typeof config.mergeCriticalRecheckSeconds === "number" && config.mergeCriticalRecheckSeconds > 0
+      ? config.mergeCriticalRecheckSeconds
+      : null;
+
+  return {
+    pollIntervalSeconds: config.pollIntervalSeconds,
+    mergeCriticalRecheckSeconds,
+    mergeCriticalEffectiveSeconds: mergeCriticalRecheckSeconds ?? config.pollIntervalSeconds,
+    mergeCriticalRecheckEnabled: mergeCriticalRecheckSeconds !== null,
   };
 }
 
@@ -430,6 +447,13 @@ export function loadConfig(configPath?: string): SupervisorConfig {
       typeof raw.pollIntervalSeconds === "number" && raw.pollIntervalSeconds > 0
         ? raw.pollIntervalSeconds
         : 120,
+    mergeCriticalRecheckSeconds:
+      typeof raw.mergeCriticalRecheckSeconds === "number" &&
+      Number.isFinite(raw.mergeCriticalRecheckSeconds) &&
+      Number.isInteger(raw.mergeCriticalRecheckSeconds) &&
+      raw.mergeCriticalRecheckSeconds > 0
+        ? raw.mergeCriticalRecheckSeconds
+        : undefined,
     copilotReviewWaitMinutes:
       typeof raw.copilotReviewWaitMinutes === "number" && raw.copilotReviewWaitMinutes >= 0
         ? raw.copilotReviewWaitMinutes
