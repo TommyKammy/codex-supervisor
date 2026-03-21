@@ -263,11 +263,49 @@ test("renderDoctorReport surfaces merge-critical recheck cadence visibility", ()
       mergeCriticalEffectiveSeconds: 30,
       mergeCriticalRecheckEnabled: true,
     },
+    candidateDiscoveryWarning: null,
   };
 
   const report = renderDoctorReport(diagnostics as Awaited<ReturnType<typeof diagnoseSupervisorHost>>);
 
   assert.match(report, /doctor_cadence poll_interval_seconds=120 merge_critical_recheck_seconds=30 merge_critical_effective_seconds=30 enabled=true/);
+});
+
+test("diagnoseSupervisorHost and renderDoctorReport warn when candidate discovery may be truncated", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const stateFile = path.join(root, "state.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+
+  const diagnostics = await diagnoseSupervisorHost({
+    config: createConfig({
+      repoPath,
+      workspaceRoot,
+      stateFile,
+      codexBinary: process.execPath,
+    }),
+    authStatus: async () => ({ ok: true, message: null }),
+    loadState: async () => ({ activeIssueNumber: null, issues: {} }),
+    github: {
+      getCandidateDiscoveryDiagnostics: async () => ({
+        fetchWindow: 100,
+        observedMatchingOpenIssues: 101,
+        truncated: true,
+      }),
+    },
+  });
+
+  assert.match(
+    renderDoctorReport(diagnostics),
+    /doctor_warning kind=candidate_discovery detail=Candidate discovery may be truncated: more than 100 matching open issues exceed the current first-page fetch window, so runnable selection may be incomplete\./,
+  );
 });
 
 test("diagnoseSupervisorHost uses a strict default state loader for existing invalid JSON", async (t) => {

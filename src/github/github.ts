@@ -1,4 +1,5 @@
 import {
+  CandidateDiscoveryDiagnostics,
   GitHubIssue,
   GitHubPullRequest,
   IssueComment,
@@ -24,6 +25,8 @@ export type { GitHubCommandRunner } from "./github-transport";
 
 const POST_CREATE_PR_LOOKUP_RETRY_LIMIT = 2;
 const POST_CREATE_PR_LOOKUP_BASE_DELAY_MS = 200;
+const CANDIDATE_DISCOVERY_FETCH_WINDOW = 100;
+const CANDIDATE_DISCOVERY_PROBE_LIMIT = CANDIDATE_DISCOVERY_FETCH_WINDOW + 1;
 
 export class GitHubClient {
   private readonly pullRequestHydrator: GitHubPullRequestHydrator;
@@ -104,7 +107,7 @@ export class GitHubClient {
     return parseJson<GitHubIssue[]>(result.stdout, "gh issue list");
   }
 
-  async listCandidateIssues(): Promise<GitHubIssue[]> {
+  private buildCandidateIssueListArgs(limit: number): string[] {
     const args = [
       "issue",
       "list",
@@ -113,7 +116,7 @@ export class GitHubClient {
       "--state",
       "open",
       "--limit",
-      "100",
+      String(limit),
       "--json",
       "number,title,body,createdAt,updatedAt,url,labels,state",
     ];
@@ -126,9 +129,23 @@ export class GitHubClient {
       args.push("--search", this.config.issueSearch);
     }
 
-    const result = await this.runGhCommand(args);
+    return args;
+  }
+
+  async listCandidateIssues(): Promise<GitHubIssue[]> {
+    const result = await this.runGhCommand(this.buildCandidateIssueListArgs(CANDIDATE_DISCOVERY_FETCH_WINDOW));
     const issues = parseJson<GitHubIssue[]>(result.stdout, "gh issue list --candidate");
     return issues.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  }
+
+  async getCandidateDiscoveryDiagnostics(): Promise<CandidateDiscoveryDiagnostics> {
+    const result = await this.runGhCommand(this.buildCandidateIssueListArgs(CANDIDATE_DISCOVERY_PROBE_LIMIT));
+    const issues = parseJson<GitHubIssue[]>(result.stdout, "gh issue list --candidate-window-probe");
+    return {
+      fetchWindow: CANDIDATE_DISCOVERY_FETCH_WINDOW,
+      observedMatchingOpenIssues: issues.length,
+      truncated: issues.length > CANDIDATE_DISCOVERY_FETCH_WINDOW,
+    };
   }
 
   async getIssue(issueNumber: number): Promise<GitHubIssue> {

@@ -460,6 +460,60 @@ Execution order: 3 of 3`,
   );
 });
 
+test("status warns when candidate discovery may be truncated by the first-page fetch window", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const selectedIssue: GitHubIssue = {
+    number: 101,
+    title: "Ready issue in first page",
+    body: `## Summary
+Keep selection behavior unchanged while surfacing the current discovery limit.
+
+## Scope
+- preserve current first-page candidate fetching
+
+## Acceptance criteria
+- status warns when more matching open issues exist than the fetch window can cover
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`,
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: "https://example.test/issues/101",
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [selectedIssue],
+    getCandidateDiscoveryDiagnostics: async () => ({
+      fetchWindow: 100,
+      observedMatchingOpenIssues: 101,
+      truncated: true,
+    }),
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+  assert.match(
+    report.readinessLines.join("\n"),
+    /candidate_discovery_warning=matching_open_issues_exceed_first_page_window fetch_window=100 observed_matching_open_issues=101\+ runnable_selection_incomplete=yes/,
+  );
+
+  const status = await supervisor.status();
+  assert.match(
+    status,
+    /candidate_discovery_warning=matching_open_issues_exceed_first_page_window fetch_window=100 observed_matching_open_issues=101\+ runnable_selection_incomplete=yes/,
+  );
+});
+
 test("status surfaces the current reconciliation phase only while reconciliation is in progress", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {

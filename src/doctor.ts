@@ -6,6 +6,7 @@ import { runCommand } from "./core/command";
 import { summarizeCadenceDiagnostics, summarizeTrustDiagnostics, type ConfigLoadSummary, loadConfigSummary } from "./core/config";
 import { parseJson } from "./core/utils";
 import {
+  type CandidateDiscoveryDiagnostics,
   type CadenceDiagnosticsSummary,
   type IssueRunRecord,
   type StateLoadFinding,
@@ -14,6 +15,7 @@ import {
   type TrustDiagnosticsSummary,
 } from "./core/types";
 import { inspectOrphanedWorkspacePruneCandidates } from "./recovery-reconciliation";
+import { formatCandidateDiscoveryWarningDetail } from "./supervisor/supervisor-selection-readiness-summary";
 
 export type DoctorCheckStatus = "pass" | "warn" | "fail";
 
@@ -29,6 +31,7 @@ export interface DoctorDiagnostics {
   checks: DoctorCheck[];
   trustDiagnostics: TrustDiagnosticsSummary;
   cadenceDiagnostics: CadenceDiagnosticsSummary;
+  candidateDiscoveryWarning: string | null;
 }
 
 export interface BootstrapRepoSummary {
@@ -52,6 +55,9 @@ interface DiagnoseSupervisorHostArgs {
   config: SupervisorConfig;
   authStatus?: () => Promise<{ ok: boolean; message: string | null }>;
   loadState?: () => Promise<SupervisorStateFile>;
+  github?: {
+    getCandidateDiscoveryDiagnostics: () => Promise<CandidateDiscoveryDiagnostics>;
+  };
 }
 
 interface DiagnoseBootstrapReadinessArgs {
@@ -474,6 +480,9 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
   const loadState =
     args.loadState ??
     (() => loadStateReadonlyForDoctor(args.config));
+  const github =
+    args.github ??
+    new GitHubClient(args.config);
 
   const checks = await Promise.all([
     diagnoseGitHubAuth(authStatus),
@@ -481,12 +490,16 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
     diagnoseStateFile(args.config),
     diagnoseWorktrees(args.config, loadState),
   ]);
+  const candidateDiscoveryWarning = formatCandidateDiscoveryWarningDetail(
+    await github.getCandidateDiscoveryDiagnostics().catch(() => null),
+  );
 
   return {
     overallStatus: overallStatusForChecks(checks),
     checks,
     trustDiagnostics: summarizeTrustDiagnostics(args.config),
     cadenceDiagnostics: summarizeCadenceDiagnostics(args.config),
+    candidateDiscoveryWarning,
   };
 }
 
@@ -558,6 +571,9 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     ...(diagnostics.trustDiagnostics.warning === null
       ? []
       : [`doctor_warning kind=execution_safety detail=${sanitizeDoctorValue(diagnostics.trustDiagnostics.warning)}`]),
+    ...(diagnostics.candidateDiscoveryWarning === null
+      ? []
+      : [`doctor_warning kind=candidate_discovery detail=${sanitizeDoctorValue(diagnostics.candidateDiscoveryWarning)}`]),
     ...diagnostics.checks.map(
       (check) =>
         `doctor_check name=${check.name} status=${check.status} summary=${sanitizeDoctorValue(check.summary)}`,
