@@ -68,9 +68,13 @@ function latestMergeCriticalProgressMs(record: IssueRunRecord): number | null {
   return Math.max(...candidates);
 }
 
-function shouldUseMergeCriticalWaitingCadence(config: SupervisorConfig, record: IssueRunRecord): boolean {
+function shouldUseMergeCriticalCadence(config: SupervisorConfig, record: IssueRunRecord): boolean {
   const recheckIntervalMs = mergeCriticalRecheckIntervalMs(config);
-  if (recheckIntervalMs === null || record.state !== "waiting_ci" || record.blocked_reason !== null) {
+  if (
+    recheckIntervalMs === null ||
+    (record.state !== "waiting_ci" && record.state !== "ready_to_merge") ||
+    record.blocked_reason !== null
+  ) {
     return false;
   }
 
@@ -83,7 +87,7 @@ function shouldUseMergeCriticalWaitingCadence(config: SupervisorConfig, record: 
 }
 
 export function selectSupervisorPollIntervalMs(config: SupervisorConfig, record: IssueRunRecord | null): number {
-  if (record && shouldUseMergeCriticalWaitingCadence(config, record)) {
+  if (record && shouldUseMergeCriticalCadence(config, record)) {
     return mergeCriticalRecheckIntervalMs(config) ?? config.pollIntervalSeconds * 1000;
   }
 
