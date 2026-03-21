@@ -87,6 +87,7 @@ import {
   shouldAutoRetryHandoffMissing,
 } from "./supervisor-execution-policy";
 import {
+  buildCandidateDiscoverySummary,
   buildReadinessSummary,
   buildSelectionSummary,
   buildSelectionWhySummary,
@@ -123,7 +124,7 @@ import {
   type SupervisorOrphanPruneResultDto,
   type SupervisorRecoveryAction,
 } from "./supervisor-mutation-report";
-import { renderSupervisorStatusDto, SupervisorStatusDto } from "./supervisor-status-report";
+import { buildTrackedIssueDtos, renderSupervisorStatusDto, SupervisorStatusDto } from "./supervisor-status-report";
 import {
   clearCurrentReconciliationPhase,
   readCurrentReconciliationPhase,
@@ -823,6 +824,7 @@ export class Supervisor {
     const candidateDiscoverySummary = formatCandidateDiscoveryBehaviorLine(this.config);
     const gsdSummary = await describeGsdIntegration(this.config);
     const statusRecords = summarizeSupervisorStatusRecords(state);
+    const trackedIssues = buildTrackedIssueDtos(state);
     const reconciliationSnapshot = await readCurrentReconciliationPhaseSnapshot(this.config);
     const reconciliationPhase = reconciliationSnapshot?.phase ?? null;
     const reconciliationWarning = buildLongReconciliationWarning(reconciliationSnapshot);
@@ -844,19 +846,33 @@ export class Supervisor {
         mergeConflictDetected,
       });
       try {
-        const readinessLines = await buildReadinessSummary(this.github, this.config, state);
+        const candidateDiscoveryDiagnostics =
+          typeof this.github.getCandidateDiscoveryDiagnostics === "function"
+            ? await this.github.getCandidateDiscoveryDiagnostics()
+            : null;
+        const candidateDiscovery = buildCandidateDiscoverySummary(this.config, candidateDiscoveryDiagnostics);
+        const readinessSummary = await buildReadinessSummary(
+          this.github,
+          this.config,
+          state,
+          candidateDiscoveryDiagnostics,
+        );
         const whyLines = options.why ? await buildSelectionWhySummary(this.github, this.config, state) : [];
         return {
           gsdSummary,
           trustDiagnostics,
           cadenceDiagnostics,
           candidateDiscoverySummary,
+          candidateDiscovery,
           activeIssue: null,
           selectionSummary: options.why ? await buildSelectionSummary(this.github, this.config, state) : null,
+          trackedIssues,
+          runnableIssues: readinessSummary.runnableIssues,
+          blockedIssues: readinessSummary.blockedIssues,
           detailedStatusLines: [...detailedStatusLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationWarning,
-          readinessLines,
+          readinessLines: readinessSummary.readinessLines,
           whyLines,
           warning: null,
         };
@@ -867,8 +883,12 @@ export class Supervisor {
           trustDiagnostics,
           cadenceDiagnostics,
           candidateDiscoverySummary,
+          candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
           activeIssue: null,
           selectionSummary: null,
+          trackedIssues,
+          runnableIssues: [],
+          blockedIssues: [],
           detailedStatusLines: [...detailedStatusLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationWarning,
@@ -919,6 +939,7 @@ export class Supervisor {
       trustDiagnostics,
       cadenceDiagnostics,
       candidateDiscoverySummary,
+      candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
       activeIssue: {
         issueNumber: statusRecords.activeRecord.issue_number,
         state: statusRecords.activeRecord.state,
@@ -930,6 +951,9 @@ export class Supervisor {
         selectedIssueNumber: null,
         selectionReason: null,
       },
+      trackedIssues,
+      runnableIssues: [],
+      blockedIssues: [],
       detailedStatusLines: [...detailedStatusLines, ...summaryLines, ...stateDiagnosticLines],
       reconciliationPhase,
       reconciliationWarning,
