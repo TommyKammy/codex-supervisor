@@ -13,6 +13,21 @@ interface JsonErrorBody {
   error: string;
 }
 
+class HttpRequestError extends Error {
+  constructor(
+    readonly statusCode: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+interface RunOnceCommandResultDto {
+  command: "run-once";
+  dryRun: boolean;
+  summary: string;
+}
+
 interface BufferedSupervisorEvent {
   id: number;
   event: SupervisorEvent;
@@ -32,6 +47,10 @@ export function createSupervisorHttpServer(options: CreateSupervisorHttpServerOp
     try {
       await handleRequest(request, response, options.service, events);
     } catch (error) {
+      if (error instanceof HttpRequestError) {
+        writeJson(response, error.statusCode, { error: error.message });
+        return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       writeJson(response, 500, { error: message });
     }
@@ -48,14 +67,26 @@ async function handleRequest(
   service: SupervisorService,
   events: SupervisorSseEventStream,
 ): Promise<void> {
-  if ((request.method ?? "GET") !== "GET") {
+  const method = request.method ?? "GET";
+  const url = new URL(request.url ?? "/", "http://127.0.0.1");
+  const pathname = url.pathname;
+
+  if (pathname.startsWith("/api/commands/")) {
+    if (method !== "POST") {
+      response.setHeader("Allow", "POST");
+      writeJson(response, 405, { error: "Method not allowed." });
+      return;
+    }
+
+    await handleCommandRequest(request, response, pathname, service);
+    return;
+  }
+
+  if (method !== "GET") {
     response.setHeader("Allow", "GET");
     writeJson(response, 405, { error: "Method not allowed." });
     return;
   }
-
-  const url = new URL(request.url ?? "/", "http://127.0.0.1");
-  const pathname = url.pathname;
 
   if (pathname === "/" || pathname === "/index.html") {
     writeHtml(response, 200, renderSupervisorDashboardHtml());
@@ -104,6 +135,51 @@ async function handleRequest(
   writeJson(response, 404, { error: "Not found." });
 }
 
+async function handleCommandRequest(
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+  pathname: string,
+  service: SupervisorService,
+): Promise<void> {
+  if (pathname === "/api/commands/run-once") {
+    const body = await readJsonBody(request);
+    const dryRun = body && typeof body === "object" && "dryRun" in body ? body.dryRun === true : false;
+    const result: RunOnceCommandResultDto = {
+      command: "run-once",
+      dryRun,
+      summary: await service.runOnce({ dryRun }),
+    };
+    writeJson(response, 200, result);
+    return;
+  }
+
+  if (pathname === "/api/commands/requeue") {
+    const body = await readJsonBody(request);
+    const issueNumber = readPositiveInteger(body, "issueNumber");
+    if (issueNumber === null) {
+      writeJson(response, 400, { error: "Issue number must be a positive integer." });
+      return;
+    }
+
+    writeJson(response, 200, await service.runRecoveryAction("requeue", issueNumber));
+    return;
+  }
+
+  if (pathname === "/api/commands/prune-orphaned-workspaces") {
+    await readJsonBody(request);
+    writeJson(response, 200, await service.pruneOrphanedWorkspaces());
+    return;
+  }
+
+  if (pathname === "/api/commands/reset-corrupt-json-state") {
+    await readJsonBody(request);
+    writeJson(response, 200, await service.resetCorruptJsonState());
+    return;
+  }
+
+  writeJson(response, 404, { error: "Not found." });
+}
+
 function parseBooleanQueryValue(value: string | null): boolean {
   return value === "1" || value === "true";
 }
@@ -117,6 +193,33 @@ function parseLastEventId(value: string | string[] | undefined): number | null {
     return null;
   }
   return Number.parseInt(normalized, 10);
+}
+
+async function readJsonBody(request: http.IncomingMessage): Promise<unknown> {
+  let payload = "";
+  request.setEncoding("utf8");
+  for await (const chunk of request) {
+    payload += chunk;
+  }
+
+  if (payload.length === 0) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(payload) as unknown;
+  } catch {
+    throw new HttpRequestError(400, "Request body must be valid JSON.");
+  }
+}
+
+function readPositiveInteger(body: unknown, fieldName: string): number | null {
+  if (!body || typeof body !== "object" || !(fieldName in body)) {
+    return null;
+  }
+
+  const value = body[fieldName as keyof typeof body];
+  return Number.isInteger(value) && (value as number) > 0 ? (value as number) : null;
 }
 
 function writeJson(response: http.ServerResponse, statusCode: number, body: JsonErrorBody | unknown): void {

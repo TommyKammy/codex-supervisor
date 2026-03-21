@@ -266,8 +266,8 @@ export function renderSupervisorDashboardHtml(): string {
         <div>
           <h1>Operator dashboard</h1>
           <p>
-            Read-only supervisor status backed only by JSON endpoints and the live SSE stream.
-            No browser mutation actions are exposed here.
+            Supervisor status and safe command transport backed by JSON endpoints and the live SSE stream.
+            The command surface stays limited to existing operator-safe mutations.
           </p>
         </div>
         <div class="hero-bar">

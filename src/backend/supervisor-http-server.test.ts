@@ -9,6 +9,9 @@ import { createSupervisorHttpServer } from "./supervisor-http-server";
 async function readJson(args: {
   server: http.Server;
   path: string;
+  method?: string;
+  body?: string;
+  headers?: http.OutgoingHttpHeaders;
 }): Promise<{ statusCode: number; body: unknown }> {
   const address = args.server.address();
   if (!address || typeof address === "string") {
@@ -21,8 +24,12 @@ async function readJson(args: {
         host: "127.0.0.1",
         port: address.port,
         path: args.path,
-        method: "GET",
+        method: args.method ?? "GET",
         agent: false,
+        headers: {
+          ...(args.body ? { "Content-Length": Buffer.byteLength(args.body) } : {}),
+          ...args.headers,
+        },
       },
       (response) => {
         let payload = "";
@@ -43,6 +50,9 @@ async function readJson(args: {
       },
     );
     request.on("error", reject);
+    if (args.body) {
+      request.write(args.body);
+    }
     request.end();
   });
 }
@@ -176,6 +186,10 @@ function createStubService(args?: {
   statusWhyCalls?: boolean[];
   explainCalls?: number[];
   issueLintCalls?: number[];
+  runOnceDryRunCalls?: boolean[];
+  recoveryCalls?: { action: string; issueNumber: number }[];
+  pruneCalls?: number;
+  resetCalls?: number;
   subscribeEventCalls?: number;
 }): SupervisorService {
   const doctorDiagnostics: DoctorDiagnostics = {
@@ -208,7 +222,10 @@ function createStubService(args?: {
   return {
     config: {} as SupervisorService["config"],
     pollIntervalMs: async () => 60_000,
-    runOnce: async () => "unused",
+    runOnce: async ({ dryRun }) => {
+      args?.runOnceDryRunCalls?.push(dryRun);
+      return "run-once complete";
+    },
     queryStatus: async ({ why }) => {
       args?.statusWhyCalls?.push(why);
       return {
@@ -233,14 +250,43 @@ function createStubService(args?: {
         warning: null,
       };
     },
-    runRecoveryAction: async () => {
-      throw new Error("unused");
+    runRecoveryAction: async (action, issueNumber) => {
+      args?.recoveryCalls?.push({ action, issueNumber });
+      return {
+        action,
+        issueNumber,
+        outcome: "mutated",
+        summary: `Requeued issue #${issueNumber}.`,
+        previousState: "blocked",
+        previousRecordSnapshot: null,
+        nextState: "queued",
+        recoveryReason: "operator_requested",
+      };
     },
     pruneOrphanedWorkspaces: async () => {
-      throw new Error("unused");
+      if (args) {
+        args.pruneCalls = (args.pruneCalls ?? 0) + 1;
+      }
+      return {
+        action: "prune-orphaned-workspaces",
+        outcome: "completed",
+        summary: "Pruned 0 orphaned workspaces.",
+        pruned: [],
+        skipped: [],
+      };
     },
     resetCorruptJsonState: async () => {
-      throw new Error("unused");
+      if (args) {
+        args.resetCalls = (args.resetCalls ?? 0) + 1;
+      }
+      return {
+        action: "reset-corrupt-json-state",
+        outcome: "mutated",
+        summary: "Reset corrupt JSON state.",
+        stateFile: "/tmp/state.json",
+        quarantinedFile: "/tmp/state.json.corrupt",
+        quarantinedAt: "2026-03-22T00:00:00.000Z",
+      };
     },
     queryExplain: async (issueNumber) => {
       args?.explainCalls?.push(issueNumber);
@@ -394,6 +440,116 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
   assert.deepEqual(issueLintZeroResponse.body, { error: "Issue number must be a positive integer." });
   assert.deepEqual(explainCalls, [42]);
   assert.deepEqual(issueLintCalls, [42]);
+});
+
+test("createSupervisorHttpServer exposes only the safe supervisor mutations over HTTP", async (t) => {
+  const runOnceDryRunCalls: boolean[] = [];
+  const recoveryCalls: { action: string; issueNumber: number }[] = [];
+  const serviceCallCounts = { pruneCalls: 0, resetCalls: 0 };
+  const server = createSupervisorHttpServer({
+    service: createStubService({
+      runOnceDryRunCalls,
+      recoveryCalls,
+      ...serviceCallCounts,
+    }),
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const runOnceResponse = await readJson({
+    server,
+    path: "/api/commands/run-once",
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dryRun: true }),
+  });
+  assert.equal(runOnceResponse.statusCode, 200);
+  assert.deepEqual(runOnceDryRunCalls, [true]);
+  assert.deepEqual(runOnceResponse.body, {
+    command: "run-once",
+    dryRun: true,
+    summary: "run-once complete",
+  });
+
+  const requeueResponse = await readJson({
+    server,
+    path: "/api/commands/requeue",
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ issueNumber: 42 }),
+  });
+  assert.equal(requeueResponse.statusCode, 200);
+  assert.deepEqual(recoveryCalls, [{ action: "requeue", issueNumber: 42 }]);
+  assert.deepEqual(requeueResponse.body, {
+    action: "requeue",
+    issueNumber: 42,
+    outcome: "mutated",
+    summary: "Requeued issue #42.",
+    previousState: "blocked",
+    previousRecordSnapshot: null,
+    nextState: "queued",
+    recoveryReason: "operator_requested",
+  });
+
+  const pruneResponse = await readJson({
+    server,
+    path: "/api/commands/prune-orphaned-workspaces",
+    method: "POST",
+  });
+  assert.equal(pruneResponse.statusCode, 200);
+  assert.deepEqual(pruneResponse.body, {
+    action: "prune-orphaned-workspaces",
+    outcome: "completed",
+    summary: "Pruned 0 orphaned workspaces.",
+    pruned: [],
+    skipped: [],
+  });
+
+  const resetResponse = await readJson({
+    server,
+    path: "/api/commands/reset-corrupt-json-state",
+    method: "POST",
+  });
+  assert.equal(resetResponse.statusCode, 200);
+  assert.deepEqual(resetResponse.body, {
+    action: "reset-corrupt-json-state",
+    outcome: "mutated",
+    summary: "Reset corrupt JSON state.",
+    stateFile: "/tmp/state.json",
+    quarantinedFile: "/tmp/state.json.corrupt",
+    quarantinedAt: "2026-03-22T00:00:00.000Z",
+  });
+
+  const invalidRequeueResponse = await readJson({
+    server,
+    path: "/api/commands/requeue",
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ issueNumber: 0 }),
+  });
+  assert.equal(invalidRequeueResponse.statusCode, 400);
+  assert.deepEqual(invalidRequeueResponse.body, { error: "Issue number must be a positive integer." });
+
+  const blockedCommandResponse = await readJson({
+    server,
+    path: "/api/commands/loop",
+    method: "POST",
+  });
+  assert.equal(blockedCommandResponse.statusCode, 404);
+  assert.deepEqual(blockedCommandResponse.body, { error: "Not found." });
+
+  const wrongMethodResponse = await readJson({
+    server,
+    path: "/api/commands/run-once",
+  });
+  assert.equal(wrongMethodResponse.statusCode, 405);
+  assert.deepEqual(wrongMethodResponse.body, { error: "Method not allowed." });
 });
 
 test("createSupervisorHttpServer serves a read-only dashboard shell", async (t) => {

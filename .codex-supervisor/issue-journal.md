@@ -1,59 +1,97 @@
-# Issue #785: WebUI MVP: ship a read-only operator dashboard backed only by HTTP and SSE
+# Issue #786: Backend commands MVP: expose only existing safe supervisor mutations over HTTP
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/785
-- Branch: codex/issue-785
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/786
+- Branch: codex/issue-786
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 5 (implementation=2, repair=3)
-- Last head SHA: cbe44d77210795c20854ded21437f3b07ad0e7cb
+- Attempt count: 4 (implementation=1, repair=3)
+- Last head SHA: b66b7b304adedc92113e1308ed6218b252f73ecb
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ8515y3q|PRRT_kwDORgvdZ8515y3s
+- Last failure signature: PRRT_kwDORgvdZ8516G0B|PRRT_kwDORgvdZ8516G0C|PRRT_kwDORgvdZ8516IOy
 - Repeated failure signature count: 1
-- Updated at: 2026-03-21T18:46:59.046Z
+- Updated at: 2026-03-21T19:53:25.680Z
 
 ## Latest Codex Summary
-Updated [issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-785/.codex-supervisor/issue-journal.md) to address the two remaining review-only follow-ups: the Active Failure Context now records the live no-active-failure state instead of copying stale thread text, and the inline triple-backtick excerpt that triggered `markdownlint-cli2` MD038 is gone.
+Applied the remaining journal-only review fixes locally. The verification
+transcript now uses a fenced `bash` block instead of chained inline code, and
+the embedded review transcript is summarized as normal Markdown so the recorded
+CodeRabbit excerpts no longer rely on single-line pseudo-fences.
 
-Focused verification passed with `npx markdownlint-cli2 ".codex-supervisor/issue-journal.md" --config /tmp/md038-check.*.markdownlint-cli2.jsonc` using a temporary config that enabled only MD038. Committed as `82a19cf`, pushed to `codex/issue-785`, and resolved review threads `PRRT_kwDORgvdZ8515y3q` and `PRRT_kwDORgvdZ8515y3s`. The pre-existing untracked `.codex-supervisor/replay/` directory remains outside this fix.
+I also verified that the future-date review note is a timezone false positive:
+the journal snapshot uses UTC, while commits `6898b72` and `b66b7b3` were both
+created on `2026-03-22` in JST. The only remaining local dirt is the
+pre-existing untracked `.codex-supervisor/replay/` directory.
 
-Summary: Fixed the remaining journal-only review follow-ups and cleared the MD038 complaint
-State hint: addressing_review
+Summary: Applied the remaining valid journal-only markdown fixes and verified
+the date-review comment is a timezone false positive
+State hint: local_review_fix
 Blocked reason: none
-Tests: `npx markdownlint-cli2 ".codex-supervisor/issue-journal.md" --config /tmp/md038-check.*.markdownlint-cli2.jsonc`
-Failure signature: none
-Next action: Return to the remaining manual browser verification gap for the read-only WebUI
+Tests:
+```bash
+git show -s --format='%H %cI %s' 6898b72
+git show -s --format='%H %cI %s' b66b7b3
+npx --yes markdownlint-cli2 .codex-supervisor/issue-journal.md
+gh api graphql -f query='query($owner: String!, $repo: String!, $number: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $number) { reviewThreads(first: 100) { nodes { id isResolved isOutdated path comments(first: 20) { nodes { databaseId url body author { login } } } } } } } }' -F owner=TommyKammy -F repo=codex-supervisor -F number=796
+```
+Failure signature: PRRT_kwDORgvdZ8516G0B|PRRT_kwDORgvdZ8516G0C|PRRT_kwDORgvdZ8516IOy
+Next action: Commit and push this journal-only follow-up, then reconcile the
+remaining CodeRabbit review threads on PR #796
 
 ## Active Failure Context
-- Category: none
-- Summary: none
-- Reference: none
+- Category: review
+- Summary: 3 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/796#discussion_r2970071273
 - Details:
-  - No active local failure context remains after the journal-only review fix. The remaining issue-level gap is the previously noted manual browser verification pass for the read-only WebUI.
+  - `.codex-supervisor/issue-journal.md:24` thread
+    `PRRT_kwDORgvdZ8516IOy` is valid. The previous `Tests:` entry chained inline
+    code spans while the `rg` pattern contained literal backticks, which
+    triggered `markdownlint` rule `MD038/no-space-in-code`. The verification
+    commands now live in a fenced `bash` block.
+  - `.codex-supervisor/issue-journal.md:33` thread
+    `PRRT_kwDORgvdZ8516G0B` is valid. The embedded review transcript had been
+    flattened into a single line with inline pseudo-fences, which also produced
+    `MD038` noise. The journal now records the same finding as normal Markdown
+    summary text instead of one-line pseudo-fenced content.
+  - `.codex-supervisor/issue-journal.md:62-64` thread
+    `PRRT_kwDORgvdZ8516G0C` is not valid. The journal snapshot timestamp is in
+    UTC, but commits `6898b72` and `b66b7b3` were created on `2026-03-22` in
+    JST, so the scratchpad dates are already accurate and remain unchanged.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining review comments were journal-only follow-ups, so the correct fix is to stop copying stale CodeRabbit text into Active Failure Context and record the live state directly.
-- What changed: replaced the stale Active Failure Context entries with a neutral no-active-failure summary so the journal no longer contradicts the resolved prior thread or embed markdown that triggers MD038.
+- Hypothesis: the only remaining actionable review feedback is the journal
+  formatting lint, while the date-review note is a timezone false positive.
+- What changed: reformatted the journal verification transcript into a fenced
+  `bash` block, replaced the one-line embedded review transcript with condensed
+  Markdown summaries, and verified the `2026-03-22` scratchpad notes against
+  the actual commit timestamps for `6898b72` and `b66b7b3`.
 - Current blocker: none
-- Next exact step: return to the manual browser verification gap against a live local backend with SSE events now that the remaining review threads are resolved.
-- Verification gap: the journal-only review fix is verified; the broader issue still needs the real browser pass with a live emitted SSE event.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.ts`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard.ts`, `src/cli/entrypoint.test.ts`, `src/cli/parse-args.test.ts`, `src/cli/parse-args.ts`, `src/cli/supervisor-runtime.test.ts`, `src/cli/supervisor-runtime.ts`, `src/core/types.ts`
-- Rollback concern: keep the dashboard thin and transport-driven; avoid pulling supervisor state interpretation or mutation workflows into the browser, and avoid coupling the UI to local files outside the existing HTTP/SSE surface.
-- Last focused command: `markdownlint-cli2 .codex-supervisor/issue-journal.md`
-- Last focused failure: none
+- Next exact step: commit, push, and reconcile the remaining review threads on
+  PR #796.
+- Verification gap: no known automated gap beyond reconciling the invalid
+  timezone-based review thread.
+- Files touched: `.codex-supervisor/issue-journal.md`
+- Rollback concern: keep the HTTP command surface narrow and transport-level only; do not add loop control or any new mutation authority before the backend/UI MVP is stabilized.
+- Last focused command: `npx --yes markdownlint-cli2 .codex-supervisor/issue-journal.md`
+- Last focused failure: `MD038/no-space-in-code at .codex-supervisor/issue-journal.md:24 and :33 before this edit`
 - Last focused commands:
 ```bash
-npx tsx --test src/cli/supervisor-runtime.test.ts
-npm run build
-markdownlint-cli2 .codex-supervisor/issue-journal.md
+git show -s --format='%H %cI %s' 6898b72
+git show -s --format='%H %cI %s' b66b7b3
+npx --yes markdownlint-cli2 .codex-supervisor/issue-journal.md
+gh api graphql -f query='query($owner: String!, $repo: String!, $number: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $number) { reviewThreads(first: 100) { nodes { id isResolved isOutdated path comments(first: 20) { nodes { databaseId url body author { login } } } } } } } }' -F owner=TommyKammy -F repo=codex-supervisor -F number=796
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
 - Local dirt besides this work remains the pre-existing untracked `.codex-supervisor/replay/` directory.
-- The two currently reported CodeRabbit follow-ups were valid against the previous journal revision because it carried stale review-thread state and embedded inline triple-backtick spans that markdownlint flags as MD038.
-- This turn should stay journal-only unless focused verification shows another live markdown problem.
-- Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/795
-- Review threads resolved: `PRRT_kwDORgvdZ8515vMs`, `PRRT_kwDORgvdZ8515y3q`, `PRRT_kwDORgvdZ8515y3s`
-- Updated at: 2026-03-21T18:51:07Z
+- `npm ci` was required locally because `npm run build` initially failed with `sh: 1: tsc: not found`.
+- The new backend tests cover the intended allowlist and keep `loop` blocked at the HTTP layer with `404`.
+- Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/796
+- Timezone note: `Updated at` is recorded in UTC, but scratchpad notes may cite
+  the same event in local JST.
+- Review fix on 2026-03-22: CodeRabbit thread `PRRT_kwDORgvdZ8515_nW` was valid; `createStubService()` could reach `args!` in the prune/reset stubs. Guarding those counters keeps the helper safe when called without tracking state.
+- Review fix on 2026-03-22: CodeRabbit thread `PRRT_kwDORgvdZ8516Cux` is valid; the journal summary used a worktree-local absolute path that would not resolve on GitHub. Converting that committed link to a repo-relative target preserves the record and fixes the portability issue.
+- Review state on 2026-03-22: after pushing `6898b72`, GraphQL confirmed both current CodeRabbit review threads on PR #796 are resolved.
+- Updated at: 2026-03-21T19:41:57Z
