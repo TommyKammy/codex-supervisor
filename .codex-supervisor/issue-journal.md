@@ -38,7 +38,7 @@ Next action: monitor draft PR #792 for CI or review feedback and address any fol
 - Hypothesis: the remaining review blockers were both real and localised: `runSupervisorCommand()` validated `loopController` too late, and `SupervisorLoopController.runCycle()` could still surface an undefined lock reason.
 - What changed: moved `loop`/`run-once` controller validation to the start of `src/cli/supervisor-runtime.ts` via `requireLoopController()` so those commands now fail before registering signal handlers or running `ensureGsdInstalled()`, removed the late duplicate guards, added fail-fast regression tests in `src/cli/supervisor-runtime.test.ts`, changed `src/supervisor/supervisor-loop-controller.ts` to fall back to `"lock unavailable"` when `lock.reason` is missing, and added `src/supervisor/supervisor-loop-controller.test.ts` to cover that fallback.
 - Current blocker: none
-- Next exact step: commit the review fixes, push `codex/issue-782`, and resolve the two automated review threads on PR #792.
+- Next exact step: monitor PR #792 for any follow-up CI or human review after pushing `67dd509` and resolving the two CodeRabbit threads.
 - Verification gap: none for the requested local scope after installing repo dependencies with `npm ci`; `.codex-supervisor/replay/` remains untracked and untouched.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/cli/entrypoint.test.ts`, `src/cli/entrypoint.ts`, `src/cli/supervisor-runtime.test.ts`, `src/cli/supervisor-runtime.ts`, `src/supervisor/index.ts`, `src/supervisor/supervisor-loop-controller.test.ts`, `src/supervisor/supervisor-loop-controller.ts`, `src/supervisor/supervisor-service.ts`, `src/supervisor/supervisor.test.ts`
 - Rollback concern: putting lock/process control back on `SupervisorService` would re-couple the shared application boundary to CLI runtime orchestration, which is exactly what the WebUI transport needs to avoid.
@@ -48,7 +48,11 @@ Next action: monitor draft PR #792 for CI or review feedback and address any fol
 ```bash
 npx tsx --test src/cli/supervisor-runtime.test.ts src/cli/entrypoint.test.ts src/supervisor/supervisor-loop-controller.test.ts
 npm run build
+git commit -m "Fix supervisor loop review follow-ups"
+git push origin codex/issue-782
+gh api graphql -f query='mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}) { thread { isResolved } } }' -F id=PRRT_kwDORgvdZ8515Clw
+gh api graphql -f query='mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}) { thread { isResolved } } }' -F id=PRRT_kwDORgvdZ8515Clx
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
-- Updated at: 2026-03-21T15:33:10Z
+- Updated at: 2026-03-21T15:34:24Z
