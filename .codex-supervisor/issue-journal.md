@@ -7,23 +7,23 @@
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
 - Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: b8ad84138d125553c17fb337420f3276bf27bc46
+- Last head SHA: 3e46f8bbf22cd94b0eca21b858297c443badbfaa
 - Blocked reason: none
 - Last failure signature: PRRT_kwDORgvdZ8515skc|PRRT_kwDORgvdZ8515skh|PRRT_kwDORgvdZ8515skm
 - Repeated failure signature count: 1
-- Updated at: 2026-03-21T18:21:43Z
+- Updated at: 2026-03-21T18:22:53Z
 
 ## Latest Codex Summary
-Addressed the three open automated review threads on PR #795. In the dashboard, `loadIssue()` now clears prior issue data, shows loading placeholders, and ignores stale async responses so the selected badge cannot drift from the explain/lint panes; the SSE badge now stays in `connecting` until the browser receives the EventSource `open` event. In the CLI runtime, WebUI shutdown now calls `server.closeAllConnections?.()` before `server.close()` so an active `/api/events` subscriber cannot keep shutdown pending.
+Addressed the three open automated review threads on PR #795, committed the fixes as `3e46f8b`, and pushed `codex/issue-785`. In the dashboard, `loadIssue()` now clears prior issue data, shows loading placeholders, and ignores stale async responses so the selected badge cannot drift from the explain/lint panes; the SSE badge now stays in `connecting` until the browser receives the EventSource `open` event. In the CLI runtime, WebUI shutdown now calls `server.closeAllConnections?.()` before `server.close()` so an active `/api/events` subscriber cannot keep shutdown pending.
 
 I added focused regression coverage for the shutdown order and re-ran the WebUI server/runtime tests plus a full build. The only local dirt is this journal update, the review-fix code changes, and the pre-existing untracked `.codex-supervisor/replay/` directory.
 
-Summary: Fixed the three PR review issues in the dashboard/runtime, added focused shutdown coverage, and re-verified the WebUI build and tests.
-State hint: local_review_fix
+Summary: Fixed the three PR review issues, added focused shutdown coverage, and pushed commit `3e46f8b` to PR #795.
+State hint: addressing_review
 Blocked reason: none
 Tests: `npx tsx --test src/cli/supervisor-runtime.test.ts`; `npm run build`; `npx tsx --test src/backend/supervisor-http-server.test.ts src/cli/supervisor-runtime.test.ts`
 Failure signature: none
-Next action: Commit the review fixes, push `codex/issue-785`, and update/respond on PR #795
+Next action: Update/respond on PR #795 review threads and continue the remaining manual browser verification gap
 
 ## Active Failure Context
 - Category: review
@@ -39,7 +39,7 @@ Next action: Commit the review fixes, push `codex/issue-785`, and update/respond
 - Hypothesis: the remaining review risk is local state drift around async issue loads and WebUI shutdown behavior, so the right fix is to keep the browser state pessimistic during issue fetches and explicitly tear down long-lived HTTP connections before waiting on server close.
 - What changed: updated `src/backend/webui-dashboard.ts` so issue selection clears old explain/lint data, renders loading placeholders, and ignores stale async responses; changed the SSE badge to remain `connecting` until EventSource emits `open`; updated `src/cli/supervisor-runtime.ts` to call `closeAllConnections?.()` before `close()`; added a focused runtime regression test covering that shutdown order.
 - Current blocker: none
-- Next exact step: commit these review fixes, push the branch, and update PR #795 before returning to the remaining manual browser verification gap.
+- Next exact step: update PR #795 review threads to point at `3e46f8b`, then return to the remaining manual browser verification gap.
 - Verification gap: automated verification for the review fixes passed; the only remaining gap from the broader issue is still a real browser pass with a live emitted SSE event.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.ts`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard.ts`, `src/cli/entrypoint.test.ts`, `src/cli/parse-args.test.ts`, `src/cli/parse-args.ts`, `src/cli/supervisor-runtime.test.ts`, `src/cli/supervisor-runtime.ts`, `src/core/types.ts`
 - Rollback concern: keep the dashboard thin and transport-driven; avoid pulling supervisor state interpretation or mutation workflows into the browser, and avoid coupling the UI to local files outside the existing HTTP/SSE surface.
@@ -56,4 +56,4 @@ npx tsx --test src/backend/supervisor-http-server.test.ts src/cli/supervisor-run
 - Local dirt besides this work remains the pre-existing untracked `.codex-supervisor/replay/` directory.
 - The three CodeRabbit comments were all valid against the checked-out code; no rejection response is needed.
 - Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/795
-- Updated at: 2026-03-21T18:21:43Z
+- Updated at: 2026-03-21T18:22:53Z
