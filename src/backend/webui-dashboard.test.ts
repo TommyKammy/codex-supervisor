@@ -575,6 +575,30 @@ test("dashboard reports a rejected safe command when the operator declines confi
   assert.equal(harness.remainingFetches.length, 0);
 });
 
+test("dashboard reports a rejected requeue command before issue details load", async () => {
+  const harness = createDashboardHarness([
+    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+  ]);
+  await harness.flush();
+
+  const requeueButton = harness.document.getElementById("requeue-button");
+  const commandStatus = harness.document.getElementById("command-status");
+  const commandResult = harness.document.getElementById("command-result");
+  assert.ok(requeueButton);
+  assert.ok(commandStatus);
+  assert.ok(commandResult);
+
+  await requeueButton.dispatch("click");
+  await harness.flush();
+
+  assert.equal(commandStatus.textContent, "requeue cancelled");
+  assert.match(commandResult.textContent, /"outcome": "rejected"/u);
+  assert.match(commandResult.textContent, /"summary": "Load an issue successfully before requeueing\."/u);
+  assert.equal(harness.fetchCalls.filter((call) => call.path === "/api/commands/requeue").length, 0);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
 test("dashboard adopts the refreshed selected issue after a command-triggered status change", async () => {
   const harness = createDashboardHarness([
     { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 42 })) },

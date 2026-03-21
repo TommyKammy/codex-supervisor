@@ -1006,7 +1006,7 @@ export function renderSupervisorDashboardHtml(): string {
 
       elements.requeueButton?.addEventListener("click", async () => {
         if (state.explain === null) {
-          rejectCommand("requeue", "Load an issue successfully before requeueing.");
+          rejectCommand("requeue", "Load an issue successfully before requeueing.", "requeue cancelled");
           return;
         }
 

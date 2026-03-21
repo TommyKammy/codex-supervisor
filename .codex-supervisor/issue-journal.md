@@ -5,49 +5,55 @@
 - Branch: codex/issue-802
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: f677ae404c33e15d3ee892b59f6f19a28e669fd7
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: a64185a85af840f5d5e2fbdca0c9e209ecef97f3
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-21T23:44:23Z
+- Last failure signature: PRRT_kwDORgvdZ8517YKs
+- Repeated failure signature count: 1
+- Updated at: 2026-03-21T23:54:52.187Z
 
 ## Latest Codex Summary
-Implemented a focused checkpoint for #802 in [`src/backend/webui-dashboard.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-802/src/backend/webui-dashboard.ts) and [`src/backend/webui-dashboard.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-802/src/backend/webui-dashboard.test.ts), committed as `f677ae4` (`Improve dashboard command refresh feedback`).
+Draft PR [#807](https://github.com/TommyKammy/codex-supervisor/pull/807) is open from `codex/issue-802`. I reran the focused verification on the current checkpoint, then pushed the branch and committed the journal handoff updates so the PR tip reflects the current state.
 
-The dashboard now keeps supervisor-selected issue state separate from the currently loaded issue details, so command-triggered refreshes adopt the refreshed selection instead of reloading stale issue data. It also surfaces explicit rejected-command feedback when an operator declines a confirm-only safe command, rather than failing silently. I added focused regressions for the rejection flow and the stale refresh-selection flow, alongside the existing success and refresh-error coverage. The journal was updated in [`.codex-supervisor/issue-journal.md`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-802/.codex-supervisor/issue-journal.md). The only remaining worktree dirt is the pre-existing untracked [`.codex-supervisor/replay/`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-802/.codex-supervisor/replay/) directory.
+Worktree is clean except for the pre-existing untracked [`.codex-supervisor/replay/`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-802/.codex-supervisor/replay/) directory. Focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build`.
 
-Summary: Added focused dashboard fixes and tests for declined safe-command feedback and stale post-command refresh selection, verified locally, pushed `codex/issue-802`, and opened draft PR #807.
+Summary: Verified the #802 checkpoint locally, pushed `codex/issue-802`, opened draft PR #807, and updated the issue journal with the current PR state
 State hint: draft_pr
 Blocked reason: none
-Tests: `npx tsx --test src/backend/webui-dashboard.test.ts`; `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`; `npm ci`; `npm run build`; `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`; `npm run build`
+Tests: `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`; `npm run build`
 Failure signature: none
-Next action: monitor draft PR #807 (`https://github.com/TommyKammy/codex-supervisor/pull/807`) and address any CI or review feedback
+Next action: monitor draft PR #807 and address any CI or review feedback
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/807#discussion_r2970553908
+- Details:
+  - src/backend/webui-dashboard.ts:1011 _⚠️ Potential issue_ | _🟡 Minor_ **Missing `status` parameter for consistent feedback.** The `rejectCommand` call here passes only 2 arguments while the function expects 3. Due to the fallback in `renderCommandResult()`, the full summary text will be displayed as the status, which is verbose compared to the concise "cancelled" status used in other rejection paths. <details> <summary>🔧 Proposed fix for consistency</summary> ```diff if (state.explain === null) { - rejectCommand("requeue", "Load an issue successfully before requeueing."); + rejectCommand("requeue", "Load an issue successfully before requeueing.", "requeue cancelled"); return; } ``` </details> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/backend/webui-dashboard.ts` around lines 1007 - 1011, The rejectCommand call inside the elements.requeueButton click handler is missing the required third status argument; update the call in the event listener (where it checks if state.explain === null) to pass a concise status (e.g., "cancelled") as the third parameter so rejectCommand and renderCommandResult produce the same short status text as other rejection paths; locate the handler attached to elements.requeueButton and add the status argument to the rejectCommand invocation. ``` </details> <!-- fingerprinting:phantom:medusa:ocelot --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the WebUI command surface still had two operator-UX gaps: browser-side command rejections were silent, and post-command refreshes could preserve stale issue detail state even after supervisor selection changed.
-- What changed: added focused dashboard regressions for declined confirmation feedback and post-command selection refresh, split selected-vs-loaded issue state in the dashboard, and surfaced cancelled command results for confirm-only safe commands.
+- Hypothesis: the only remaining #802 review gap is a browser-side requeue precondition rejection that still falls back to a verbose summary string instead of the concise cancelled status used by the other safe-command rejection paths.
+- What changed: added the missing explicit `requeue cancelled` status for the dashboard's no-loaded-issue rejection path and covered it with a focused harness regression.
 - Current blocker: none
-- Next exact step: monitor draft PR #807 and respond to CI or review feedback.
+- Next exact step: push the review-fix checkpoint to `codex/issue-802`, then monitor PR #807 for refreshed CI and review state.
 - Verification gap: none locally after restoring dependencies with `npm ci`; remote CI has not run on this checkpoint yet.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard.test.ts`, `src/backend/webui-dashboard.ts`
 - Rollback concern: keep supervisor-selected issue state separate from manually loaded issue details so refreshes follow backend selection without breaking explicit issue inspection or widening the command surface.
 - Last focused command: `npm run build`
-- Last focused failure: `dashboard_stale_selection_after_command_refresh`; command-triggered refreshes held onto stale issue detail state and declined confirm-only commands produced no visible rejection feedback.
+- Last focused failure: `PRRT_kwDORgvdZ8517YKs`; the requeue button's browser-side rejection path omitted the explicit status text and rendered the full summary as the visible command status.
 - Last focused commands:
 ```bash
 npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts
-npm ci
 npm run build
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
 - Local dirt besides this work remains the pre-existing untracked `.codex-supervisor/replay/` directory.
+- 2026-03-21T23:56:04Z: validated CodeRabbit thread `PRRT_kwDORgvdZ8517YKs`; the review comment was correct because the requeue click handler still called `rejectCommand()` without the explicit status argument.
+- 2026-03-21T23:56:04Z: fixed the requeue no-loaded-issue rejection path to emit `requeue cancelled` and added a focused dashboard harness regression asserting the concise status plus zero POST attempts.
+- 2026-03-21T23:56:04Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build`.
 - 2026-03-22T00:00:00Z: reproduced stale post-command refresh handling with a new dashboard harness case where bootstrap loaded issue #42, `run-once` refreshed status to selected issue #77, and the UI incorrectly kept `#42` selected until state was split into supervisor-selected vs loaded issue numbers.
 - 2026-03-22T00:00:00Z: reproduced missing rejection feedback with a confirm-decline dashboard case for prune workspaces; the browser returned early without a visible command result until declined confirmations were routed through a rejected-command renderer.
 - 2026-03-22T00:00:00Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts`, `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`, `npm ci`, and `npm run build`.
