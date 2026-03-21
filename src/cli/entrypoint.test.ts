@@ -81,6 +81,41 @@ test("runCli routes supervisor runtime commands through the supervisor runtime b
   });
 });
 
+test("runCli routes loop commands through a dedicated loop controller boundary", async () => {
+  const createdConfigs: Array<string | undefined> = [];
+  const service = { tag: "service" };
+  const loopController = { tag: "loop-controller" };
+  let runtimeCommand: Record<string, unknown> | undefined;
+
+  await runCli(["loop", "--config", "/tmp/supervisor.config.json"], {
+    createSupervisorService: (configPath) => {
+      createdConfigs.push(configPath);
+      return service as never;
+    },
+    createSupervisorLoopController: (configPath) => {
+      createdConfigs.push(configPath);
+      return loopController as never;
+    },
+    runSupervisorCommand: async (command, dependencies) => {
+      runtimeCommand = {
+        ...command,
+        service: dependencies.service,
+        loopController: dependencies.loopController,
+      };
+    },
+  });
+
+  assert.deepEqual(createdConfigs, ["/tmp/supervisor.config.json", "/tmp/supervisor.config.json"]);
+  assert.deepEqual(runtimeCommand, {
+    command: "loop",
+    dryRun: false,
+    why: false,
+    issueNumber: undefined,
+    service,
+    loopController,
+  });
+});
+
 test("runCli routes requeue through the supervisor runtime boundary", async () => {
   const service = { tag: "service" };
   let runtimeCommand: Record<string, unknown> | undefined;

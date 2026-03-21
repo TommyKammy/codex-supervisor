@@ -1,40 +1,41 @@
-# Issue #781: WebUI prep: make issue-lint return a typed DTO instead of CLI-oriented string lines
+# Issue #782: WebUI prep: split loop process control from supervisor application service
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/781
-- Branch: codex/issue-781
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/782
+- Branch: codex/issue-782
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 6c36a253b6bfe586afe0350e77415cf1a36d1d2c
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: a1365c8da31e672c0c6f56875bbad5b5fdf8cf7e
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-21T14:49:33.468Z
+- Updated at: 2026-03-21T15:18:14Z
 
 ## Latest Codex Summary
-Opened draft PR #791 for commit `6c36a25` after pushing `codex/issue-781` to `origin`. The implementation and focused local verification remain unchanged from the previous checkpoint; current remote status is PR open with CI started (`build` on ubuntu/macos in progress, CodeRabbit already successful). `.codex-supervisor/replay/` remains untracked and untouched.
+- Split loop process control into a dedicated `SupervisorLoopController` boundary, removed lock acquisition from `SupervisorService`, rewired the CLI runtime/entrypoint seam, and passed the targeted CLI tests plus `npm run build`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `issue-lint` was still coupled to CLI line rendering because the supervisor returned newline-joined strings and the service re-split them for the CLI, so introducing a typed DTO plus a dedicated renderer should preserve current CLI output while making the result JSON-ready for WebUI/API consumers.
-- What changed: added `SupervisorIssueLintDto`, `buildIssueLintDto()`, and `renderIssueLintDto()`, switched `Supervisor.issueLint()` and `SupervisorService.queryIssueLint()` to return the DTO, updated the CLI to render from the DTO, kept diagnostics fixture coverage stable by rendering inside the test helper, added focused tests for DTO generation, CLI rendering, and facade exports, pushed `codex/issue-781` to `origin`, and opened draft PR #791 (`https://github.com/TommyKammy/codex-supervisor/pull/791`).
+- Hypothesis: the remaining WebUI-prep coupling was `SupervisorService.acquireSupervisorLock()`, because the shared service boundary still exposed process/runtime control that only the CLI loop should own.
+- What changed: added `src/supervisor/supervisor-loop-controller.ts` with a thin `SupervisorLoopController.runCycle()` wrapper around supervisor lock + `runOnce`, removed `acquireSupervisorLock()` from `SupervisorService`, exported the new factory from `src/supervisor/index.ts`, updated `src/cli/supervisor-runtime.ts` so `loop` and `run-once` use the dedicated loop controller while query/mutation commands keep using the shared service, updated `src/cli/entrypoint.ts` to inject the loop controller only for `loop`/`run-once`, and tightened `src/cli/entrypoint.test.ts`, `src/cli/supervisor-runtime.test.ts`, and `src/supervisor/supervisor.test.ts` to make the separation explicit.
 - Current blocker: none
-- Next exact step: monitor PR #791 CI to completion and address any review or check failures if they appear.
-- Verification gap: none for the requested local scope. No additional code verification was needed for the PR-open step; the previously passing targeted tests and `npm run build` remain the current local checkpoint. `.codex-supervisor/replay/` remains untracked and untouched.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/cli/supervisor-runtime.test.ts`, `src/cli/supervisor-runtime.ts`, `src/supervisor/supervisor-selection-issue-lint.test.ts`, `src/supervisor/supervisor-selection-issue-lint.ts`, `src/supervisor/supervisor-selection-status.test.ts`, `src/supervisor/supervisor-selection-status.ts`, `src/supervisor/supervisor-service.ts`, `src/supervisor/supervisor-test-helpers.ts`, `src/supervisor/supervisor.ts`
-- Rollback concern: reverting the DTO boundary would force future WebUI/API consumers back to parsing CLI-formatted strings and would reintroduce string splitting/rendering logic across the service boundary.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-781 --title "WebUI prep: make issue-lint return a typed DTO instead of CLI-oriented string lines" ...`
-- Last focused failure: none
+- Next exact step: commit the loop-controller split on `codex/issue-782`, then open or update a draft PR from this branch if one does not already exist.
+- Verification gap: none for the requested local scope after installing repo dependencies with `npm ci`; `.codex-supervisor/replay/` remains untracked and untouched.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/cli/entrypoint.test.ts`, `src/cli/entrypoint.ts`, `src/cli/supervisor-runtime.test.ts`, `src/cli/supervisor-runtime.ts`, `src/supervisor/index.ts`, `src/supervisor/supervisor-loop-controller.ts`, `src/supervisor/supervisor-service.ts`, `src/supervisor/supervisor.test.ts`
+- Rollback concern: putting lock/process control back on `SupervisorService` would re-couple the shared application boundary to CLI runtime orchestration, which is exactly what the WebUI transport needs to avoid.
+- Last focused command: `npm run build`
+- Last focused failure: `npm run build` initially failed with `sh: 1: tsc: not found` because `node_modules/` was missing; `npm ci` fixed the environment, after which the build surfaced and I fixed stale `acquireSupervisorLock` test doubles in `src/cli/supervisor-runtime.test.ts`.
 - Last focused commands:
 ```bash
-git push -u origin codex/issue-781
-gh pr create --draft --base main --head codex/issue-781 --title "WebUI prep: make issue-lint return a typed DTO instead of CLI-oriented string lines" --body ...
-gh pr view 791 --json number,url,state,isDraft,baseRefName,headRefName,statusCheckRollup
+npx tsx --test src/cli/entrypoint.test.ts
+npx tsx --test src/cli/supervisor-runtime.test.ts src/cli/entrypoint.test.ts
+npm ci
+npm run build
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

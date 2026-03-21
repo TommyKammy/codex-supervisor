@@ -8,7 +8,8 @@ import { renderSupervisorOrphanPruneResultDto } from "../supervisor/supervisor-m
 import { renderIssueExplainDto } from "../supervisor/supervisor-selection-status";
 import { renderIssueLintDto } from "../supervisor/supervisor-selection-issue-lint";
 import { isCorruptJsonFailClosedMessage } from "../supervisor/supervisor";
-import { type SupervisorLock, type SupervisorService } from "../supervisor/supervisor-service";
+import type { SupervisorLoopController } from "../supervisor/supervisor-loop-controller";
+import type { SupervisorService } from "../supervisor/supervisor-service";
 import { renderSupervisorStatusDto } from "../supervisor/supervisor-status-report";
 
 type SupervisorRuntimeCommand = Extract<
@@ -26,6 +27,7 @@ type SupervisorRuntimeCommand = Extract<
 
 interface SupervisorRuntimeDependencies {
   service: SupervisorService;
+  loopController?: SupervisorLoopController;
   ensureGsdInstalled?: (config: SupervisorConfig) => Promise<string | null>;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   writeStdout?: (line: string) => void;
@@ -64,21 +66,12 @@ function registerProcessStopSignals(handler: (signal: NodeJS.Signals) => void): 
   process.once("SIGTERM", () => handler("SIGTERM"));
 }
 
-export async function runOnceWithSupervisorLock(
-  supervisor: Pick<SupervisorService, "acquireSupervisorLock" | "runOnce">,
+export async function runSupervisorCycle(
+  loopController: Pick<SupervisorLoopController, "runCycle">,
   command: "loop" | "run-once",
   options: Pick<CliOptions, "dryRun">,
 ): Promise<string> {
-  const lock = await supervisor.acquireSupervisorLock(command);
-  if (!lock.acquired) {
-    return `Skipped supervisor cycle: ${lock.reason}.`;
-  }
-
-  try {
-    return await supervisor.runOnce(options);
-  } finally {
-    await lock.release();
-  }
+  return loopController.runCycle(command, options);
 }
 
 export async function runSupervisorCommand(
@@ -87,6 +80,7 @@ export async function runSupervisorCommand(
 ): Promise<void> {
   const {
     service,
+    loopController,
     ensureGsdInstalled = defaultEnsureGsdInstalled,
     sleep = defaultSleep,
     writeStdout = (line) => console.log(line),
@@ -146,13 +140,20 @@ export async function runSupervisorCommand(
   }
 
   if (options.command === "run-once") {
-    writeStdout(await runOnceWithSupervisorLock(service, "run-once", { dryRun: options.dryRun }));
+    if (!loopController) {
+      throw new Error("Missing supervisor loop controller for run-once command");
+    }
+    writeStdout(await runSupervisorCycle(loopController, "run-once", { dryRun: options.dryRun }));
     return;
+  }
+
+  if (!loopController) {
+    throw new Error("Missing supervisor loop controller for loop command");
   }
 
   while (!shouldStop) {
     try {
-      const message = await runOnceWithSupervisorLock(service, "loop", { dryRun: options.dryRun });
+      const message = await runSupervisorCycle(loopController, "loop", { dryRun: options.dryRun });
       writeStdout(`${new Date().toISOString()} ${message}`);
       if (isCorruptJsonFailClosedMessage(message)) {
         shouldStop = true;

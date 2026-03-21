@@ -11,16 +11,9 @@ import type { SupervisorStatusDto } from "./supervisor-status-report";
 import type { SupervisorEventSink } from "./supervisor-events";
 import { Supervisor } from "./supervisor";
 
-export interface SupervisorLock {
-  acquired: boolean;
-  reason?: string;
-  release: () => Promise<void>;
-}
-
 export interface SupervisorService {
   config: SupervisorConfig;
   pollIntervalMs: () => Promise<number>;
-  acquireSupervisorLock: (command: "loop" | "run-once") => Promise<SupervisorLock>;
   runOnce: (options: Pick<CliOptions, "dryRun">) => Promise<string>;
   queryStatus: (options: Pick<CliOptions, "why">) => Promise<SupervisorStatusDto>;
   runRecoveryAction: (action: SupervisorRecoveryAction, issueNumber: number) => Promise<SupervisorMutationResultDto>;
@@ -44,10 +37,6 @@ class SupervisorApplicationService implements SupervisorService {
 
   pollIntervalMs(): Promise<number> {
     return this.supervisor.pollIntervalMs();
-  }
-
-  acquireSupervisorLock(command: "loop" | "run-once"): Promise<SupervisorLock> {
-    return this.supervisor.acquireSupervisorLock(command);
   }
 
   runOnce(options: Pick<CliOptions, "dryRun">): Promise<string> {
@@ -83,9 +72,13 @@ class SupervisorApplicationService implements SupervisorService {
   }
 }
 
+export function createSupervisorServiceFromSupervisor(supervisor: Supervisor): SupervisorService {
+  return new SupervisorApplicationService(supervisor);
+}
+
 export function createSupervisorService(
   configPath?: string,
   options: CreateSupervisorServiceOptions = {},
 ): SupervisorService {
-  return new SupervisorApplicationService(Supervisor.fromConfig(configPath, options));
+  return createSupervisorServiceFromSupervisor(Supervisor.fromConfig(configPath, options));
 }
