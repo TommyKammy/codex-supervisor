@@ -28,6 +28,11 @@ type ReadinessSummaryGitHub =
   & Partial<Pick<GitHubClient, "getCandidateDiscoveryDiagnostics">>;
 type SelectionWhyGitHub = Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">;
 
+export interface SupervisorSelectionSummaryDto {
+  selectedIssueNumber: number | null;
+  selectionReason: string | null;
+}
+
 export function formatCandidateDiscoveryBehaviorLine(
   config: Pick<SupervisorConfig, "candidateDiscoveryFetchWindow">,
   prefix = "candidate_discovery",
@@ -132,6 +137,18 @@ export async function buildSelectionWhySummary(
   config: SupervisorConfig,
   state: SupervisorStateFile,
 ): Promise<string[]> {
+  const summary = await buildSelectionSummary(github, config, state);
+  return [
+    summary.selectedIssueNumber === null ? "selected_issue=none" : `selected_issue=#${summary.selectedIssueNumber}`,
+    `selection_reason=${summary.selectionReason ?? "no_runnable_issue"}`,
+  ];
+}
+
+export async function buildSelectionSummary(
+  github: SelectionWhyGitHub,
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+): Promise<SupervisorSelectionSummaryDto> {
   const candidateIssues = await github.listCandidateIssues();
   const issues = await github.listAllIssues();
 
@@ -166,13 +183,16 @@ export async function buildSelectionWhySummary(
       continue;
     }
 
-    return [
-      `selected_issue=#${issue.number}`,
-      `selection_reason=${formatSelectionReason(issue, issues, state, existing, readiness.isExecutionReady, config)}`,
-    ];
+    return {
+      selectedIssueNumber: issue.number,
+      selectionReason: formatSelectionReason(issue, issues, state, existing, readiness.isExecutionReady, config),
+    };
   }
 
-  return ["selected_issue=none", "selection_reason=no_runnable_issue"];
+  return {
+    selectedIssueNumber: null,
+    selectionReason: "no_runnable_issue",
+  };
 }
 
 function formatRunnableReadinessReason(

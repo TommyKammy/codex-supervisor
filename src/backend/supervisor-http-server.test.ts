@@ -242,6 +242,11 @@ function createStubService(args?: {
           mergeCriticalRecheckEnabled: false,
         },
         candidateDiscoverySummary: null,
+        activeIssue: null,
+        selectionSummary: {
+          selectedIssueNumber: null,
+          selectionReason: why ? "no_runnable_issue" : null,
+        },
         detailedStatusLines: ["tracked_issues=0"],
         reconciliationPhase: null,
         reconciliationWarning: null,
@@ -364,6 +369,11 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
       mergeCriticalRecheckEnabled: false,
     },
     candidateDiscoverySummary: null,
+    activeIssue: null,
+    selectionSummary: {
+      selectedIssueNumber: null,
+      selectionReason: "no_runnable_issue",
+    },
     detailedStatusLines: ["tracked_issues=0"],
     reconciliationPhase: null,
     reconciliationWarning: null,

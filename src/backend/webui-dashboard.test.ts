@@ -164,13 +164,24 @@ function jsonResponse(body: unknown, statusCode = 200): MockResponseLike {
   };
 }
 
-function createStatus(selectedIssueNumber: number | null = null) {
+function createStatus(args: { selectedIssueNumber?: number | null; includeWhyLines?: boolean } = {}) {
+  const selectedIssueNumber = args.selectedIssueNumber ?? null;
+  const includeWhyLines = args.includeWhyLines ?? true;
   return {
+    activeIssue: null,
+    selectionSummary: {
+      selectedIssueNumber,
+      selectionReason: selectedIssueNumber === null ? "no_runnable_issue" : "selected",
+    },
     reconciliationPhase: null,
     warning: null,
     detailedStatusLines: [],
     readinessLines: [],
-    whyLines: selectedIssueNumber === null ? ["selected_issue=none"] : [`selected_issue=#${selectedIssueNumber}`],
+    whyLines: includeWhyLines
+      ? selectedIssueNumber === null
+        ? ["selected_issue=none"]
+        : [`selected_issue=#${selectedIssueNumber}`]
+      : [],
     candidateDiscoverySummary: null,
     reconciliationWarning: null,
   };
@@ -303,6 +314,23 @@ test("dashboard keeps requeue disabled until the selected issue finishes loading
   await harness.flush();
 
   assert.equal(requeueButton.disabled, false);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard derives the selected issue from typed status fields without parsing why lines", async () => {
+  const harness = createDashboardHarness([
+    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 42, includeWhyLines: false })) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+  ]);
+  await harness.flush();
+
+  const selectedIssueBadge = harness.document.getElementById("selected-issue-badge");
+  const issueNumberInput = harness.document.getElementById("issue-number-input");
+  assert.ok(selectedIssueBadge);
+  assert.ok(issueNumberInput);
+
+  assert.equal(selectedIssueBadge.textContent, "#42");
+  assert.equal(issueNumberInput.value, "42");
   assert.equal(harness.remainingFetches.length, 0);
 });
 
