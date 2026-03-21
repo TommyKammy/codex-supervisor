@@ -186,6 +186,7 @@ test("prepareIssueExecutionContext prepares workspace, journal, memory, and head
   const workspaceStatus = createWorkspaceStatus({ headSha: "workspace-head-240" });
   const saveSnapshots: SupervisorStateFile[] = [];
   const touchedRecords: IssueRunRecord[] = [];
+  const resolvePurposes: Array<"status" | "action" | undefined> = [];
   const replaySnapshots: Array<{
     pr: GitHubPullRequest | null;
     checks: { name: string; state: string; bucket: string }[];
@@ -195,7 +196,10 @@ test("prepareIssueExecutionContext prepares workspace, journal, memory, and head
 
   const result = await prepareIssueExecutionContext({
     github: {
-      resolvePullRequestForBranch: async () => null,
+      resolvePullRequestForBranch: async (_branch, _prNumber, options) => {
+        resolvePurposes.push(options?.purpose);
+        return null;
+      },
       getChecks: async () => [],
       getUnresolvedReviewThreads: async () => [],
       createPullRequest: async () => {
@@ -253,6 +257,7 @@ test("prepareIssueExecutionContext prepares workspace, journal, memory, and head
   assert.equal(result.workspacePath, "/tmp/workspaces/issue-240");
   assert.equal(result.journalPath, "/tmp/workspaces/issue-240/.codex-supervisor/issue-journal.md");
   assert.equal(result.pr, null);
+  assert.deepEqual(resolvePurposes, ["action"]);
   assert.equal(saveSnapshots.length, 2);
   assert.equal(saveSnapshots[0]?.issues["240"]?.journal_path, "/tmp/workspaces/issue-240/.codex-supervisor/issue-journal.md");
   assert.equal(saveSnapshots[1]?.issues["240"]?.last_head_sha, "workspace-head-240");

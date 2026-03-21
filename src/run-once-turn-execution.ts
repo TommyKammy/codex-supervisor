@@ -396,7 +396,11 @@ export async function executeCodexTurnPhase(
         workspaceStatus = await getWorkspaceStatusImpl(workspacePath, record.branch, config.defaultBranch);
       }
 
-      const refreshedResolvedPr = await github.resolvePullRequestForBranch(record.branch, record.pr_number);
+      const refreshedResolvedPr = await github.resolvePullRequestForBranch(
+        record.branch,
+        record.pr_number,
+        { purpose: "action" },
+      );
       pr = isOpenPullRequest(refreshedResolvedPr) ? refreshedResolvedPr : null;
       if (
         !pr &&

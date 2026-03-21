@@ -597,3 +597,54 @@ test("GitHubClient resolvePullRequestForBranch reuses cached hydration for infor
   assert.equal(second?.hydrationProvenance, "cached");
   assert.equal(graphqlCalls, 1);
 });
+
+test("GitHubClient resolvePullRequestForBranch refreshes same-head hydration for action reads", async () => {
+  const config = createConfig();
+  const branch = "codex/issue-363";
+  const pullRequest = createPullRequest({
+    number: 363,
+    headRefName: branch,
+    headRefOid: "head-363",
+  });
+  let graphqlCalls = 0;
+
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "pr" && args[1] === "list" && args.includes("--state") && args.includes("open")) {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify([pullRequest]),
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "graphql") {
+      graphqlCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: { nodes: [] },
+                reviews: { nodes: [] },
+                comments: { nodes: [] },
+                reviewThreads: { nodes: [] },
+                timelineItems: { nodes: [] },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const first = await client.resolvePullRequestForBranch(branch, null, { purpose: "action" });
+  const second = await client.resolvePullRequestForBranch(branch, null, { purpose: "action" });
+
+  assert.equal(first?.hydrationProvenance, "fresh");
+  assert.equal(second?.hydrationProvenance, "fresh");
+  assert.equal(graphqlCalls, 2);
+});

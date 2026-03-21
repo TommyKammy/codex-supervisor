@@ -1,47 +1,47 @@
-# Issue #737: Hydration consumer split: separate informational PR hydration from action-taking reads
+# Issue #738: Hydration freshness for transitions: require fresh PR reads for readiness and review-wait decisions
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/737
-- Branch: codex/issue-737
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/738
+- Branch: codex/issue-738
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 2a2663f8cc327b2d4c1756d1637feb3fd0e0787b
+- Last head SHA: 06412e75f85ab23dfb283a5c3a3d615a3623bec7
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-21T09:09:33+09:00
+- Updated at: 2026-03-21T00:43:32Z
 
 ## Latest Codex Summary
-- None yet.
+- Transition-driving PR reads now bypass same-head hydration cache while informational/status reads still reuse it.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the narrowest safe split is to keep branch/status discovery on cached hydration while forcing action-oriented direct PR reads through an explicitly fresh hydrator path.
-- What changed: added explicit `hydrateForStatus` and `hydrateForAction` paths in the PR hydrator, routed `resolvePullRequestForBranch`/branch discovery through the status path, and routed `getPullRequest` through the action path. Added focused client tests proving repeated action reads stay `fresh` while informational reads reuse cached hydration.
+- Hypothesis: readiness and review-wait transitions should resolve branch PRs through an explicit action-purpose hydration path so same-head review-state changes are never hidden behind informational cache reuse.
+- What changed: added a `purpose` selector to PR branch/tracked lookups in `GitHubClient`, kept status reads on cached hydration, and routed transition-driving `resolvePullRequestForBranch` calls in issue preparation and post-turn execution through `{ purpose: "action" }`. Added focused tests proving action-purpose branch reads stay `fresh` and that both preparation and post-turn execution request the action path.
 - Current blocker: none
-- Next exact step: commit the hydration consumer split checkpoint, then open or update the draft PR for issue #737.
-- Verification gap: the issue guidance references `src/pull-request-state.test.ts`, but that file does not exist in this worktree; I verified the split with `src/github/github.test.ts` plus the listed hydrator/lifecycle suites instead.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/github/github-pull-request-hydrator.ts`, `src/github/github.ts`, `src/github/github.test.ts`
-- Rollback concern: collapsing the two hydrator entry points back into one would reintroduce cached reads on post-turn action paths and remove the explicit seam needed for later freshness tightening.
+- Next exact step: commit this readiness/review-wait freshness checkpoint and open or update the draft PR for issue #738.
+- Verification gap: the issue guidance references `src/pull-request-state.test.ts`, but that file does not exist in this worktree; I verified the transition freshness with the listed lifecycle/state suites plus focused preparation/turn execution coverage.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/github/github.ts`, `src/github/github.test.ts`, `src/run-once-issue-preparation.ts`, `src/run-once-issue-preparation.test.ts`, `src/run-once-turn-execution.ts`, `src/run-once-turn-execution.test.ts`
+- Rollback concern: removing the action-purpose resolver or reverting its transition call sites would let same-head cached hydration hide newly arrived configured-bot review signals during readiness and review-wait decisions.
 - Last focused command: `npm run build`
-- Last focused failure: `GitHubClient getPullRequest does not reuse cached hydration for action reads` failed with `'cached' !== 'fresh'` before the split.
+- Last focused failure: `npm run build` initially failed with `sh: 1: tsc: not found` before restoring dependencies with `npm ci`.
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-737/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-737/context-index.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-738/AGENTS.generated.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-738/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
-rg -n "hydrate|hydration|pull request hydrator|HydratedPullRequest|hydrationProvenance" src
-sed -n '1,240p' src/github/github.ts
-sed -n '90,170p' src/github/github-pull-request-hydrator.ts
-sed -n '1,260p' src/github/github.test.ts
-npx tsx --test src/github/github.test.ts
-npx tsx --test src/github/github-pull-request-hydrator.test.ts src/supervisor/supervisor-lifecycle.test.ts src/github/github.test.ts
+rg -n "review-wait|readiness|ready|wait.*review|coderabbit|settled|getPullRequest\\(|resolvePullRequestForBranch|hydrateForAction|hydrateForStatus" src
+sed -n '1,360p' src/post-turn-pull-request.ts
+sed -n '340,470p' src/run-once-turn-execution.ts
+sed -n '220,320p' src/run-once-issue-preparation.ts
+npx tsx --test src/github/github.test.ts src/run-once-issue-preparation.test.ts src/run-once-turn-execution.test.ts
 npm ci
+npx tsx --test src/pull-request-state-coderabbit-settled-waits.test.ts src/supervisor/supervisor-lifecycle.test.ts src/github/github.test.ts src/run-once-issue-preparation.test.ts src/run-once-turn-execution.test.ts
 npm run build
 ```
 ### Scratchpad

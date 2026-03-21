@@ -46,6 +46,7 @@ test("executeCodexTurnPhase does not mark review threads processed for a refresh
 
   let journalReads = 0;
   let resolveCalls = 0;
+  const resolvePurposes: Array<"status" | "action" | undefined> = [];
   const result = await executeCodexTurnPhase({
     config,
     stateStore: {
@@ -53,8 +54,9 @@ test("executeCodexTurnPhase does not mark review threads processed for a refresh
       save: async () => undefined,
     },
     github: {
-      resolvePullRequestForBranch: async () => {
+      resolvePullRequestForBranch: async (_branch, _prNumber, options) => {
         resolveCalls += 1;
+        resolvePurposes.push(options?.purpose);
         return resolveCalls === 1 ? refreshedPr : refreshedPr;
       },
       createPullRequest: async () => {
@@ -175,6 +177,7 @@ test("executeCodexTurnPhase does not mark review threads processed for a refresh
   assert.equal(state.issues["102"]?.last_head_sha, "head-b");
   assert.deepEqual(state.issues["102"]?.processed_review_thread_ids, ["thread-1@head-a"]);
   assert.deepEqual(state.issues["102"]?.processed_review_thread_fingerprints, ["thread-1@head-a#comment-1"]);
+  assert.deepEqual(resolvePurposes, ["action"]);
 });
 
 test("executeCodexTurnPhase skips prompt preparation side effects when the session lock is unavailable", async () => {

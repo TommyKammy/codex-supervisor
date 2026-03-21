@@ -58,6 +58,13 @@ export class GitHubClient {
     return this.transport.run(args, options);
   }
 
+  private async hydratePullRequestForPurpose(
+    pr: GitHubPullRequest | null,
+    purpose: "status" | "action",
+  ): Promise<GitHubPullRequest | null> {
+    return purpose === "action" ? this.hydratePullRequestForAction(pr) : this.hydratePullRequestForStatus(pr);
+  }
+
   async authStatus(): Promise<{ ok: boolean; message: string | null }> {
     try {
       const result = await this.runGhCommand(
@@ -137,7 +144,10 @@ export class GitHubClient {
     return parseJson<GitHubIssue>(result.stdout, `gh issue view #${issueNumber}`);
   }
 
-  async findOpenPullRequest(branch: string): Promise<GitHubPullRequest | null> {
+  async findOpenPullRequest(
+    branch: string,
+    options: { purpose?: "status" | "action" } = {},
+  ): Promise<GitHubPullRequest | null> {
     const result = await this.runGhCommand([
       "pr",
       "list",
@@ -153,10 +163,13 @@ export class GitHubClient {
       "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,headRefName,headRefOid,mergedAt",
     ]);
     const pullRequests = parseJson<GitHubPullRequest[]>(result.stdout, `gh pr list --head ${branch}`);
-    return this.hydratePullRequestForStatus(pullRequests[0] ?? null);
+    return this.hydratePullRequestForPurpose(pullRequests[0] ?? null, options.purpose ?? "status");
   }
 
-  async findLatestPullRequestForBranch(branch: string): Promise<GitHubPullRequest | null> {
+  async findLatestPullRequestForBranch(
+    branch: string,
+    options: { purpose?: "status" | "action" } = {},
+  ): Promise<GitHubPullRequest | null> {
     const result = await this.runGhCommand([
       "pr",
       "list",
@@ -177,7 +190,7 @@ export class GitHubClient {
       const rightTimestamp = Date.parse(right.updatedAt ?? right.createdAt);
       return rightTimestamp - leftTimestamp;
     });
-    return this.hydratePullRequestForStatus(sorted[0] ?? null);
+    return this.hydratePullRequestForPurpose(sorted[0] ?? null, options.purpose ?? "status");
   }
 
   async getPullRequest(prNumber: number): Promise<GitHubPullRequest> {
@@ -194,7 +207,10 @@ export class GitHubClient {
     return (await this.hydratePullRequestForAction(pullRequest)) as GitHubPullRequest;
   }
 
-  async getPullRequestIfExists(prNumber: number): Promise<GitHubPullRequest | null> {
+  async getPullRequestIfExists(
+    prNumber: number,
+    options: { purpose?: "status" | "action" } = {},
+  ): Promise<GitHubPullRequest | null> {
     const result = await this.runGhCommand(
       [
         "pr",
@@ -210,7 +226,7 @@ export class GitHubClient {
 
     if (result.exitCode === 0) {
       const pullRequest = parseJson<GitHubPullRequest>(result.stdout, `gh pr view #${prNumber}`);
-      return this.hydratePullRequestForStatus(pullRequest);
+      return this.hydratePullRequestForPurpose(pullRequest, options.purpose ?? "status");
     }
 
     const stderr = result.stderr.toLowerCase();
@@ -230,20 +246,22 @@ export class GitHubClient {
   async resolvePullRequestForBranch(
     branch: string,
     trackedPrNumber: number | null,
+    options: { purpose?: "status" | "action" } = {},
   ): Promise<GitHubPullRequest | null> {
-    const openPullRequest = await this.findOpenPullRequest(branch);
+    const purpose = options.purpose ?? "status";
+    const openPullRequest = await this.findOpenPullRequest(branch, { purpose });
     if (openPullRequest) {
       return openPullRequest;
     }
 
     if (trackedPrNumber !== null) {
-      const trackedPullRequest = await this.getPullRequestIfExists(trackedPrNumber);
+      const trackedPullRequest = await this.getPullRequestIfExists(trackedPrNumber, { purpose });
       if (trackedPullRequest && trackedPullRequest.headRefName === branch) {
         return trackedPullRequest;
       }
     }
 
-    return this.findLatestPullRequestForBranch(branch);
+    return this.findLatestPullRequestForBranch(branch, { purpose });
   }
 
   async getMergedPullRequestsClosingIssue(issueNumber: number): Promise<GitHubPullRequest[]> {
