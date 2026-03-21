@@ -6,6 +6,7 @@ import { renderJsonCorruptStateResetResultDto } from "../supervisor/supervisor-m
 import { renderSupervisorMutationResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderSupervisorOrphanPruneResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderIssueExplainDto } from "../supervisor/supervisor-selection-status";
+import { renderIssueLintDto } from "../supervisor/supervisor-selection-issue-lint";
 import { isCorruptJsonFailClosedMessage } from "../supervisor/supervisor";
 import { type SupervisorLock, type SupervisorService } from "../supervisor/supervisor-service";
 import { renderSupervisorStatusDto } from "../supervisor/supervisor-status-report";
@@ -135,7 +136,7 @@ export async function runSupervisorCommand(
   }
 
   if (options.command === "issue-lint") {
-    writeStdout((await service.queryIssueLint(options.issueNumber!)).join("\n"));
+    writeStdout(renderIssueLintDto(await service.queryIssueLint(options.issueNumber!)));
     return;
   }
 

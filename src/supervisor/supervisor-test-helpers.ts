@@ -9,6 +9,7 @@ import {
   SupervisorConfig,
   SupervisorStateFile,
 } from "../core/types";
+import { renderIssueLintDto } from "./supervisor-selection-issue-lint";
 import { Supervisor } from "./supervisor";
 
 export function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
@@ -292,7 +293,7 @@ export async function createIssueLintFixture(): Promise<{
     fixture,
     loadIssueLintReport: async (issue: GitHubIssue) => {
       stubbedIssue = issue;
-      return supervisor.issueLint(issue.number);
+      return renderIssueLintDto(await supervisor.issueLint(issue.number));
     },
   };
 }

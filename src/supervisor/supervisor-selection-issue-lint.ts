@@ -9,35 +9,53 @@ import type { ClarificationBlock, ExecutionReadyLintResult } from "../issue-meta
 
 export type IssueLintGitHub = Pick<GitHubClient, "getIssue">;
 
-export async function buildIssueLintSummary(
+export interface SupervisorIssueLintDto {
+  issueNumber: number;
+  title: string;
+  executionReady: boolean;
+  missingRequired: string[];
+  missingRecommended: string[];
+  metadataErrors: string[];
+  highRiskBlockingAmbiguity: string | null;
+  repairGuidance: string[];
+}
+
+export async function buildIssueLintDto(
   github: IssueLintGitHub,
   issueNumber: number,
-): Promise<string[]> {
+): Promise<SupervisorIssueLintDto> {
   const issue = await github.getIssue(issueNumber);
   const readiness = lintExecutionReadyIssueBody(issue);
   const metadataErrors = validateIssueMetadataSyntax(issue);
   const clarificationBlock = findHighRiskBlockingAmbiguity(issue);
 
+  return {
+    issueNumber: issue.number,
+    title: issue.title,
+    executionReady: readiness.isExecutionReady,
+    missingRequired: [...readiness.missingRequired],
+    missingRecommended: [...readiness.missingRecommended],
+    metadataErrors,
+    highRiskBlockingAmbiguity: clarificationBlock?.reason ?? null,
+    repairGuidance: buildIssueLintRepairGuidance(readiness, metadataErrors, clarificationBlock),
+  };
+}
+
+export function renderIssueLintDto(dto: SupervisorIssueLintDto): string {
   return [
-    `issue=#${issue.number}`,
-    `title=${issue.title}`,
-    `execution_ready=${readiness.isExecutionReady ? "yes" : "no"}`,
+    `issue=#${dto.issueNumber}`,
+    `title=${dto.title}`,
+    `execution_ready=${dto.executionReady ? "yes" : "no"}`,
     `missing_required=${
-      readiness.missingRequired.length > 0
-        ? formatExecutionReadyMissingFields(readiness.missingRequired)
-        : "none"
+      dto.missingRequired.length > 0 ? formatExecutionReadyMissingFields(dto.missingRequired) : "none"
     }`,
     `missing_recommended=${
-      readiness.missingRecommended.length > 0
-        ? formatExecutionReadyMissingFields(readiness.missingRecommended)
-        : "none"
+      dto.missingRecommended.length > 0 ? formatExecutionReadyMissingFields(dto.missingRecommended) : "none"
     }`,
-    `metadata_errors=${metadataErrors.length > 0 ? metadataErrors.join("; ") : "none"}`,
-    `high_risk_blocking_ambiguity=${clarificationBlock?.reason ?? "none"}`,
-    ...buildIssueLintRepairGuidance(readiness, metadataErrors, clarificationBlock).map(
-      (line, index) => `repair_guidance_${index + 1}=${line}`,
-    ),
-  ];
+    `metadata_errors=${dto.metadataErrors.length > 0 ? dto.metadataErrors.join("; ") : "none"}`,
+    `high_risk_blocking_ambiguity=${dto.highRiskBlockingAmbiguity ?? "none"}`,
+    ...dto.repairGuidance.map((line, index) => `repair_guidance_${index + 1}=${line}`),
+  ].join("\n");
 }
 
 function buildIssueLintRepairGuidance(
