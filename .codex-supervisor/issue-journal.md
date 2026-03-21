@@ -14,7 +14,7 @@
 - Updated at: 2026-03-21T18:34:09.234Z
 
 ## Latest Codex Summary
-Validated the last open CodeRabbit thread as real and fixed the remaining WebUI shutdown race in [supervisor-runtime.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-785/src/cli/supervisor-runtime.ts): stop signals now retain the last signal value and the `web` command re-checks `shouldStop` immediately after assigning `stopWebServer`, so a signal that lands during `listen()` still triggers graceful shutdown once the close handler exists. Added focused regression coverage in [supervisor-runtime.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-785/src/cli/supervisor-runtime.test.ts) for the pre-assignment signal path.
+Validated the last open CodeRabbit thread as real and fixed the remaining WebUI shutdown race in [supervisor-runtime.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-785/src/cli/supervisor-runtime.ts): stop signals now retain the last signal value and the `web` command re-checks `shouldStop` immediately after assigning `stopWebServer`, so a signal that lands during `listen()` still triggers graceful shutdown once the close handler exists. Added focused regression coverage in [supervisor-runtime.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-785/src/cli/supervisor-runtime.test.ts) for the pre-assignment signal path. Committed as `8699d00` and pushed to `codex/issue-785`; the GitHub review thread `PRRT_kwDORgvdZ8515vMs` is resolved.
 
 Verification passed with `npx tsx --test src/cli/supervisor-runtime.test.ts` and `npm run build`. Worktree still includes the pre-existing untracked `.codex-supervisor/replay/` directory.
 
@@ -23,7 +23,7 @@ State hint: addressing_review
 Blocked reason: none
 Tests: `npx tsx --test src/cli/supervisor-runtime.test.ts`; `npm run build`
 Failure signature: none
-Next action: Commit and push this review fix, then update/respond on PR #795 review threads
+Next action: Continue the remaining manual browser verification gap for the read-only WebUI
 
 ## Active Failure Context
 - Category: review
@@ -37,7 +37,7 @@ Next action: Commit and push this review fix, then update/respond on PR #795 rev
 - Hypothesis: the only remaining review risk was a stop-signal race in `web` mode where `registerStopSignals()` could fire before `stopWebServer` existed, so the correct fix is to preserve the signal and re-check `shouldStop` immediately after wiring the server close function.
 - What changed: updated `src/cli/supervisor-runtime.ts` to store the last stop signal and immediately shut down the WebUI if `shouldStop` was already set when `stopWebServer` is assigned; added a focused runtime regression test covering a signal that arrives during `listen()` before the close handler exists.
 - Current blocker: none
-- Next exact step: commit and push the runtime race fix, then update PR #795 review threads and return to the remaining manual browser verification gap.
+- Next exact step: continue the remaining manual browser verification gap against a live local backend with SSE events.
 - Verification gap: automated verification for the review fix passed; the broader issue still needs the real browser pass with a live emitted SSE event.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.ts`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard.ts`, `src/cli/entrypoint.test.ts`, `src/cli/parse-args.test.ts`, `src/cli/parse-args.ts`, `src/cli/supervisor-runtime.test.ts`, `src/cli/supervisor-runtime.ts`, `src/core/types.ts`
 - Rollback concern: keep the dashboard thin and transport-driven; avoid pulling supervisor state interpretation or mutation workflows into the browser, and avoid coupling the UI to local files outside the existing HTTP/SSE surface.
@@ -54,4 +54,5 @@ npm run build
 - The three CodeRabbit comments were all valid against the checked-out code; no rejection response is needed.
 - The final remaining CodeRabbit thread was also valid against `7c8fb28`: a stop signal during `server.listen()` could be consumed before `stopWebServer` existed, leaving the WebUI process running.
 - Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/795
-- Updated at: 2026-03-21T18:35:21Z
+- Review thread resolved: `PRRT_kwDORgvdZ8515vMs`
+- Updated at: 2026-03-21T18:36:31Z
