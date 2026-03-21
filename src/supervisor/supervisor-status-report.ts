@@ -1,3 +1,4 @@
+import type { TrustDiagnosticsSummary } from "../core/types";
 import { sanitizeStatusValue } from "./supervisor-status-rendering";
 import { truncate } from "../core/utils";
 
@@ -8,6 +9,7 @@ export interface SupervisorStatusWarningDto {
 
 export interface SupervisorStatusDto {
   gsdSummary: string | null;
+  trustDiagnostics?: TrustDiagnosticsSummary | null;
   detailedStatusLines: string[];
   reconciliationPhase: string | null;
   reconciliationWarning: string | null;
@@ -17,8 +19,18 @@ export interface SupervisorStatusDto {
 }
 
 export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
+  const trustDiagnostics = dto.trustDiagnostics ?? {
+    trustMode: "trusted_repo_and_authors",
+    executionSafetyMode: "unsandboxed_autonomous",
+    warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+  };
   const lines = [
     ...dto.detailedStatusLines,
+    `trust_mode=${trustDiagnostics.trustMode}`,
+    `execution_safety_mode=${trustDiagnostics.executionSafetyMode}`,
+    ...(trustDiagnostics.warning === null
+      ? []
+      : [`execution_safety_warning=${truncate(sanitizeStatusValue(trustDiagnostics.warning), 200)}`]),
     ...(dto.reconciliationPhase === null ? [] : [`reconciliation_phase=${dto.reconciliationPhase}`]),
     ...(dto.reconciliationWarning === null ? [] : [dto.reconciliationWarning]),
     ...dto.readinessLines,

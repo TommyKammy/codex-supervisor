@@ -26,6 +26,8 @@ export type CodexModelStrategy = "inherit" | "fixed" | "alias";
 export type CodexExecutionTarget = "supervisor" | "local_review_generic" | "local_review_specialist" | "local_review_verifier";
 
 export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
+export type TrustMode = "trusted_repo_and_authors" | "untrusted_or_mixed";
+export type ExecutionSafetyMode = "unsandboxed_autonomous" | "operator_gated";
 export type LocalReviewPolicy = "advisory" | "block_ready" | "block_merge";
 export type LocalReviewHighSeverityAction = "retry" | "blocked";
 export type CopilotReviewState = "not_requested" | "requested" | "arrived";
@@ -40,6 +42,12 @@ export interface ConfiguredReviewProvider {
   signalSource: ConfiguredReviewSignalSource;
 }
 
+export interface TrustDiagnosticsSummary {
+  trustMode: TrustMode;
+  executionSafetyMode: ExecutionSafetyMode;
+  warning: string | null;
+}
+
 export interface SupervisorConfig {
   repoPath: string;
   repoSlug: string;
@@ -49,6 +57,8 @@ export interface SupervisorConfig {
   stateFile: string;
   stateBootstrapFile?: string;
   codexBinary: string;
+  trustMode?: TrustMode;
+  executionSafetyMode?: ExecutionSafetyMode;
   codexModelStrategy: CodexModelStrategy;
   codexModel?: string;
   boundedRepairModelStrategy?: CodexModelStrategy;

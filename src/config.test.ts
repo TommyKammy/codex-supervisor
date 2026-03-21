@@ -66,6 +66,68 @@ test("loadConfigSummary reports missing required fields without throwing", async
   assert.match(summary.error ?? "", /Missing or invalid config field: repoSlug/);
 });
 
+test("loadConfigSummary surfaces the default trust diagnostics posture", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+    }),
+    "utf8",
+  );
+
+  const summary = loadConfigSummary(configPath);
+
+  assert.deepEqual(summary.trustDiagnostics, {
+    trustMode: "trusted_repo_and_authors",
+    executionSafetyMode: "unsandboxed_autonomous",
+    warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+  });
+});
+
+test("loadConfigSummary accepts an explicit safer trust diagnostics posture without warning", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      trustMode: "untrusted_or_mixed",
+      executionSafetyMode: "operator_gated",
+    }),
+    "utf8",
+  );
+
+  const summary = loadConfigSummary(configPath);
+
+  assert.deepEqual(summary.trustDiagnostics, {
+    trustMode: "untrusted_or_mixed",
+    executionSafetyMode: "operator_gated",
+    warning: null,
+  });
+});
+
 test("loadConfig still resolves codexBinary when it is an explicit relative path", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
   t.after(async () => {

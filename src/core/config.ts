@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   CopilotReviewTimeoutAction,
+  ExecutionSafetyMode,
   LocalReviewHighSeverityAction,
   LocalReviewPolicy,
   LocalReviewReviewerThresholdConfig,
@@ -9,6 +10,8 @@ import {
   ReasoningEffort,
   RunState,
   SupervisorConfig,
+  TrustDiagnosticsSummary,
+  TrustMode,
 } from "./types";
 import { mapConfiguredReviewProviders } from "./review-providers";
 import { isValidGitRefName, parseJson, resolveMaybeRelative } from "./utils";
@@ -33,6 +36,7 @@ export interface ConfigLoadSummary {
   invalidFields: string[];
   error: string | null;
   config: SupervisorConfig | null;
+  trustDiagnostics: TrustDiagnosticsSummary | null;
 }
 
 function resolveCommandLikeValue(baseDir: string, value: string): string {
@@ -76,6 +80,8 @@ function assertBranchPrefix(value: string, label: string): string {
 }
 
 const VALID_REASONING_EFFORTS = new Set<ReasoningEffort>(["none", "low", "medium", "high", "xhigh"]);
+const VALID_TRUST_MODES = new Set<TrustMode>(["trusted_repo_and_authors", "untrusted_or_mixed"]);
+const VALID_EXECUTION_SAFETY_MODES = new Set<ExecutionSafetyMode>(["unsandboxed_autonomous", "operator_gated"]);
 const VALID_LOCAL_REVIEW_POLICIES = new Set<LocalReviewPolicy>(["advisory", "block_ready", "block_merge"]);
 const VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS = new Set<LocalReviewHighSeverityAction>(["retry", "blocked"]);
 const VALID_COPILOT_REVIEW_TIMEOUT_ACTIONS = new Set<CopilotReviewTimeoutAction>(["continue", "block"]);
@@ -193,6 +199,22 @@ function extractInvalidFieldName(error: unknown): string | null {
   return match?.[1] ?? null;
 }
 
+export function summarizeTrustDiagnostics(
+  config: Pick<SupervisorConfig, "trustMode" | "executionSafetyMode">,
+): TrustDiagnosticsSummary {
+  const trustMode = config.trustMode ?? "trusted_repo_and_authors";
+  const executionSafetyMode = config.executionSafetyMode ?? "unsandboxed_autonomous";
+
+  return {
+    trustMode,
+    executionSafetyMode,
+    warning:
+      trustMode === "trusted_repo_and_authors" && executionSafetyMode === "unsandboxed_autonomous"
+        ? "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs."
+        : null,
+  };
+}
+
 export function loadConfigSummary(configPath?: string): ConfigLoadSummary {
   const resolvedPath = resolveConfigPath(configPath);
   if (!fs.existsSync(resolvedPath)) {
@@ -203,6 +225,7 @@ export function loadConfigSummary(configPath?: string): ConfigLoadSummary {
       invalidFields: [],
       error: `Config file not found: ${resolvedPath}`,
       config: null,
+      trustDiagnostics: null,
     };
   }
 
@@ -217,19 +240,22 @@ export function loadConfigSummary(configPath?: string): ConfigLoadSummary {
       invalidFields: [],
       error: error instanceof Error ? error.message : String(error),
       config: null,
+      trustDiagnostics: null,
     };
   }
 
   const missingRequiredFields = collectMissingRequiredFields(raw);
 
   try {
+    const config = loadConfig(resolvedPath);
     return {
       configPath: resolvedPath,
       status: "ready",
       missingRequiredFields: [],
       invalidFields: [],
       error: null,
-      config: loadConfig(resolvedPath),
+      config,
+      trustDiagnostics: summarizeTrustDiagnostics(config),
     };
   } catch (error) {
     const invalidField = extractInvalidFieldName(error);
@@ -240,6 +266,7 @@ export function loadConfigSummary(configPath?: string): ConfigLoadSummary {
       invalidFields: invalidField && !missingRequiredFields.includes(invalidField) ? [invalidField] : [],
       error: error instanceof Error ? error.message : String(error),
       config: null,
+      trustDiagnostics: null,
     };
   }
 }
@@ -274,6 +301,15 @@ export function loadConfig(configPath?: string): SupervisorConfig {
         ? resolveMaybeRelative(configDir, raw.stateBootstrapFile)
         : undefined,
     codexBinary: resolveCommandLikeValue(configDir, assertString(raw.codexBinary, "codexBinary")),
+    trustMode:
+      typeof raw.trustMode === "string" && VALID_TRUST_MODES.has(raw.trustMode as TrustMode)
+        ? (raw.trustMode as TrustMode)
+        : "trusted_repo_and_authors",
+    executionSafetyMode:
+      typeof raw.executionSafetyMode === "string" &&
+      VALID_EXECUTION_SAFETY_MODES.has(raw.executionSafetyMode as ExecutionSafetyMode)
+        ? (raw.executionSafetyMode as ExecutionSafetyMode)
+        : "unsandboxed_autonomous",
     codexModelStrategy:
       raw.codexModelStrategy === "fixed" || raw.codexModelStrategy === "alias" || raw.codexModelStrategy === "inherit"
         ? raw.codexModelStrategy

@@ -3,9 +3,9 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { GitHubClient } from "./github";
 import { runCommand } from "./core/command";
-import { type ConfigLoadSummary, loadConfigSummary } from "./core/config";
+import { summarizeTrustDiagnostics, type ConfigLoadSummary, loadConfigSummary } from "./core/config";
 import { parseJson } from "./core/utils";
-import { type IssueRunRecord, type StateLoadFinding, type SupervisorConfig, type SupervisorStateFile } from "./core/types";
+import { type IssueRunRecord, type StateLoadFinding, type SupervisorConfig, type SupervisorStateFile, type TrustDiagnosticsSummary } from "./core/types";
 import { inspectOrphanedWorkspacePruneCandidates } from "./recovery-reconciliation";
 
 export type DoctorCheckStatus = "pass" | "warn" | "fail";
@@ -20,6 +20,7 @@ export interface DoctorCheck {
 export interface DoctorDiagnostics {
   overallStatus: DoctorCheckStatus;
   checks: DoctorCheck[];
+  trustDiagnostics: TrustDiagnosticsSummary;
 }
 
 export interface BootstrapRepoSummary {
@@ -476,6 +477,7 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
   return {
     overallStatus: overallStatusForChecks(checks),
     checks,
+    trustDiagnostics: summarizeTrustDiagnostics(args.config),
   };
 }
 
@@ -537,6 +539,10 @@ export async function diagnoseBootstrapReadiness(
 export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
   return [
     `doctor overall=${diagnostics.overallStatus} checks=${diagnostics.checks.length}`,
+    `doctor_posture trust_mode=${diagnostics.trustDiagnostics.trustMode} execution_safety_mode=${diagnostics.trustDiagnostics.executionSafetyMode}`,
+    ...(diagnostics.trustDiagnostics.warning === null
+      ? []
+      : [`doctor_warning kind=execution_safety detail=${sanitizeDoctorValue(diagnostics.trustDiagnostics.warning)}`]),
     ...diagnostics.checks.map(
       (check) =>
         `doctor_check name=${check.name} status=${check.status} summary=${sanitizeDoctorValue(check.summary)}`,

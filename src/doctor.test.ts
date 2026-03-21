@@ -67,6 +67,20 @@ test("diagnoseSupervisorHost reports representative auth, state, and workspace f
     diagnostics.checks.find((check) => check.name === "worktrees")?.details[0] ?? "",
     /missing workspace/i,
   );
+  assert.equal(diagnostics.trustDiagnostics.trustMode, "trusted_repo_and_authors");
+  assert.equal(diagnostics.trustDiagnostics.executionSafetyMode, "unsandboxed_autonomous");
+  assert.match(
+    diagnostics.trustDiagnostics.warning ?? "",
+    /trusted GitHub-authored inputs/i,
+  );
+  assert.match(
+    renderDoctorReport(diagnostics),
+    /doctor_posture trust_mode=trusted_repo_and_authors execution_safety_mode=unsandboxed_autonomous/,
+  );
+  assert.match(
+    renderDoctorReport(diagnostics),
+    /doctor_warning kind=execution_safety detail=Unsandboxed autonomous execution assumes trusted GitHub-authored inputs\./,
+  );
 });
 
 test("diagnoseSupervisorHost surfaces orphan prune candidates and representative eligibility reasons", async (t) => {

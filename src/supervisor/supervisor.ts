@@ -1,6 +1,6 @@
 import path from "node:path";
 import { runCommand } from "../core/command";
-import { loadConfig } from "../core/config";
+import { loadConfig, summarizeTrustDiagnostics } from "../core/config";
 import { GitHubClient } from "../github";
 import { describeGsdIntegration } from "../gsd";
 import { issueJournalPath } from "../core/journal";
@@ -807,6 +807,7 @@ export class Supervisor {
   async statusReport(options: Pick<CliOptions, "why"> = { why: false }): Promise<SupervisorStatusDto> {
     const state = await this.stateStore.load();
     const stateDiagnosticLines = buildStateLoadDiagnosticLines(this.config, state);
+    const trustDiagnostics = summarizeTrustDiagnostics(this.config);
     const gsdSummary = await describeGsdIntegration(this.config);
     const statusRecords = summarizeSupervisorStatusRecords(state);
     const reconciliationSnapshot = await readCurrentReconciliationPhaseSnapshot(this.config);
@@ -834,6 +835,7 @@ export class Supervisor {
         const whyLines = options.why ? await buildSelectionWhySummary(this.github, this.config, state) : [];
         return {
           gsdSummary,
+          trustDiagnostics,
           detailedStatusLines: [...detailedStatusLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationWarning,
@@ -845,6 +847,7 @@ export class Supervisor {
         const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
         return {
           gsdSummary,
+          trustDiagnostics,
           detailedStatusLines: [...detailedStatusLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationWarning,
@@ -892,6 +895,7 @@ export class Supervisor {
 
     return {
       gsdSummary,
+      trustDiagnostics,
       detailedStatusLines: [...detailedStatusLines, ...summaryLines, ...stateDiagnosticLines],
       reconciliationPhase,
       reconciliationWarning,
