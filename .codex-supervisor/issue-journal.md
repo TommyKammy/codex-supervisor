@@ -1,47 +1,51 @@
-# Issue #738: Hydration freshness for transitions: require fresh PR reads for readiness and review-wait decisions
+# Issue #739: Hydration freshness before merge: require a fresh PR read before merge-enabling actions
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/738
-- Branch: codex/issue-738
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/739
+- Branch: codex/issue-739
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 06412e75f85ab23dfb283a5c3a3d615a3623bec7
+- Last head SHA: 8570eae969c78cdce22065c9f177538e53edc51e
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-21T00:43:32Z
+- Updated at: 2026-03-21T01:13:56.047Z
 
 ## Latest Codex Summary
-- Transition-driving PR reads now bypass same-head hydration cache while informational/status reads still reuse it.
+- Merge-enable actions now force a fresh PR read immediately before `enableAutoMerge`, and supervisor coverage includes a stale-head regression test for that last-step safeguard.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: readiness and review-wait transitions should resolve branch PRs through an explicit action-purpose hydration path so same-head review-state changes are never hidden behind informational cache reuse.
-- What changed: added a `purpose` selector to PR branch/tracked lookups in `GitHubClient`, kept status reads on cached hydration, and routed transition-driving `resolvePullRequestForBranch` calls in issue preparation and post-turn execution through `{ purpose: "action" }`. Added focused tests proving action-purpose branch reads stay `fresh` and that both preparation and post-turn execution request the action path.
+- Hypothesis: the final merge-enable action still trusts the previously carried PR snapshot, so same-number same-branch review/head changes can slip past if `enableAutoMerge` does not force one last authoritative PR hydration read.
+- What changed: `Supervisor.handlePostTurnMergeAndCompletion` now re-reads the PR with `getPullRequest` immediately before calling `enableAutoMerge`. Added a focused regression test that passes a stale PR head into merge enablement and proves the fresh head SHA is used instead.
 - Current blocker: none
-- Next exact step: commit this readiness/review-wait freshness checkpoint and open or update the draft PR for issue #738.
-- Verification gap: the issue guidance references `src/pull-request-state.test.ts`, but that file does not exist in this worktree; I verified the transition freshness with the listed lifecycle/state suites plus focused preparation/turn execution coverage.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/github/github.ts`, `src/github/github.test.ts`, `src/run-once-issue-preparation.ts`, `src/run-once-issue-preparation.test.ts`, `src/run-once-turn-execution.ts`, `src/run-once-turn-execution.test.ts`
-- Rollback concern: removing the action-purpose resolver or reverting its transition call sites would let same-head cached hydration hide newly arrived configured-bot review signals during readiness and review-wait decisions.
+- Next exact step: commit this merge-enable freshness checkpoint on `codex/issue-739`, then open or update the draft PR if needed.
+- Verification gap: the issue guidance references `src/pull-request-state.test.ts`, but that file does not exist in this worktree; I verified the merge-enable freshness path with the focused supervisor readiness suite plus the requested lifecycle/hydrator suites.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-pr-readiness.test.ts`
+- Rollback concern: removing the last-moment `getPullRequest` refresh would let `enableAutoMerge` reuse a stale carried PR head and merge-authoritative review facts from an earlier snapshot.
 - Last focused command: `npm run build`
-- Last focused failure: `npm run build` initially failed with `sh: 1: tsc: not found` before restoring dependencies with `npm ci`.
+- Last focused failure: `npm run build` failed with `sh: 1: tsc: not found` until restoring dependencies with `npm ci`.
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-738/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-738/context-index.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-739/AGENTS.generated.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-739/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
-rg -n "review-wait|readiness|ready|wait.*review|coderabbit|settled|getPullRequest\\(|resolvePullRequestForBranch|hydrateForAction|hydrateForStatus" src
-sed -n '1,360p' src/post-turn-pull-request.ts
-sed -n '340,470p' src/run-once-turn-execution.ts
-sed -n '220,320p' src/run-once-issue-preparation.ts
-npx tsx --test src/github/github.test.ts src/run-once-issue-preparation.test.ts src/run-once-turn-execution.test.ts
+git status --short
+rg -n "auto-merge|enable.*merge|merge-enabl|ready to merge|readiness-to-merge|enablePullRequestAutoMerge|merge.*action|hydrateForAction|resolvePullRequestForBranch|getPullRequest\\(" src
+sed -n '360,470p' src/run-once-turn-execution.ts
+sed -n '680,760p' src/supervisor/supervisor.ts
+sed -n '1,260p' src/supervisor/supervisor-pr-readiness.test.ts
+sed -n '520,760p' src/github/github.test.ts
+sed -n '1,280p' src/post-turn-pull-request.ts
+npx tsx --test src/supervisor/supervisor-pr-readiness.test.ts
+npx tsx --test src/github/github-pull-request-hydrator.test.ts src/supervisor/supervisor-lifecycle.test.ts
 npm ci
-npx tsx --test src/pull-request-state-coderabbit-settled-waits.test.ts src/supervisor/supervisor-lifecycle.test.ts src/github/github.test.ts src/run-once-issue-preparation.test.ts src/run-once-turn-execution.test.ts
+npx tsx --test src/supervisor/supervisor-pr-readiness.test.ts src/supervisor/supervisor-lifecycle.test.ts src/github/github-pull-request-hydrator.test.ts
 npm run build
 ```
 ### Scratchpad

@@ -375,6 +375,70 @@ test("handlePostTurnPullRequestTransitions refreshes PR state after marking read
   assert.equal(syncJournalCalls, 0);
 });
 
+test("handlePostTurnMergeAndCompletion refreshes PR state before enabling auto-merge", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 103;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+      }),
+    },
+  };
+
+  const stalePr: GitHubPullRequest = {
+    number: 117,
+    title: "Enable auto-merge from fresh head",
+    url: "https://example.test/pr/117",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-103",
+    headRefOid: "head-stale-117",
+    mergedAt: null,
+  };
+  const freshPr: GitHubPullRequest = {
+    ...stalePr,
+    headRefOid: "head-fresh-117",
+  };
+
+  let getPullRequestCalls = 0;
+  let autoMergeCalls = 0;
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 117);
+      getPullRequestCalls += 1;
+      return freshPr;
+    },
+    enableAutoMerge: async (prNumber: number, headSha: string) => {
+      assert.equal(prNumber, 117);
+      assert.equal(headSha, "head-fresh-117");
+      autoMergeCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, state.issues[String(issueNumber)]!, stalePr, { dryRun: false });
+
+  assert.equal(result.state, "merging");
+  assert.equal(getPullRequestCalls, 1);
+  assert.equal(autoMergeCalls, 1);
+});
+
 test("runOnce records an observed Copilot request time when GitHub omits the request timestamp", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 115;

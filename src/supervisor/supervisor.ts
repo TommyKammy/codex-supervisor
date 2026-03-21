@@ -745,7 +745,8 @@ export class Supervisor {
     let nextRecord = record;
 
     if (nextRecord.state === "ready_to_merge" && !options.dryRun) {
-      await this.github.enableAutoMerge(pr.number, pr.headRefOid);
+      const refreshedPr = await this.github.getPullRequest(pr.number);
+      await this.github.enableAutoMerge(refreshedPr.number, refreshedPr.headRefOid);
       nextRecord = this.stateStore.touch(nextRecord, { state: "merging" });
       state.issues[String(nextRecord.issue_number)] = nextRecord;
     }
