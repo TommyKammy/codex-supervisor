@@ -24,7 +24,7 @@ import {
 import { formatSelectionReason } from "./supervisor-selection-issue-explain";
 
 type ReadinessSummaryGitHub =
-  Pick<GitHubClient, "listCandidateIssues">
+  Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">
   & Partial<Pick<GitHubClient, "getCandidateDiscoveryDiagnostics">>;
 type SelectionWhyGitHub = Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">;
 
@@ -121,11 +121,12 @@ export async function buildReadinessSummary(
         : null
       : candidateDiscoveryDiagnostics;
   const candidateDiscoveryWarningLine = formatCandidateDiscoveryStatusLine(diagnostics);
-  const issues = await github.listCandidateIssues();
+  const candidateIssues = await github.listCandidateIssues();
+  const issues = await github.listAllIssues();
   const runnableIssues: SupervisorRunnableIssueDto[] = [];
   const blockedIssues: SupervisorBlockedIssueDto[] = [];
 
-  for (const issue of issues) {
+  for (const issue of candidateIssues) {
     if (config.skipTitlePrefixes.some((prefix) => issue.title.startsWith(prefix))) {
       continue;
     }

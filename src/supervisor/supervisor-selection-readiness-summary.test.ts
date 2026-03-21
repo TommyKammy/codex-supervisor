@@ -112,18 +112,40 @@ Choose whether to keep the production auth path or replace it before rollout.
 - npx tsx --test src/supervisor/supervisor-selection-readiness-summary.test.ts`,
   });
 
-  const lines = await buildReadinessSummary(
+  const summary = await buildReadinessSummary(
     {
-      listCandidateIssues: async () => [predecessorIssue, runnableIssue, missingMetadataIssue, clarificationBlockedIssue],
+      listCandidateIssues: async () => [runnableIssue, missingMetadataIssue, clarificationBlockedIssue],
+      listAllIssues: async () => [predecessorIssue, runnableIssue, missingMetadataIssue, clarificationBlockedIssue],
     },
     config,
     state,
   );
 
-  assert.deepEqual(lines, [
-    "runnable_issues=#92 ready=execution_ready+depends_on_satisfied:91+execution_order_satisfied:91",
-    "blocked_issues=#93 blocked_by=requirements:scope, acceptance criteria, verification; #94 blocked_by=clarification:unresolved_choice:auth",
-  ]);
+  assert.deepEqual(summary, {
+    runnableIssues: [
+      {
+        issueNumber: 92,
+        title: "Execution order ready",
+        readiness: "execution_ready+depends_on_satisfied:91+execution_order_satisfied:91",
+      },
+    ],
+    blockedIssues: [
+      {
+        issueNumber: 93,
+        title: "Missing readiness sections",
+        blockedBy: "requirements:scope, acceptance criteria, verification",
+      },
+      {
+        issueNumber: 94,
+        title: "Choose auth approach",
+        blockedBy: "clarification:unresolved_choice:auth",
+      },
+    ],
+    readinessLines: [
+      "runnable_issues=#92 ready=execution_ready+depends_on_satisfied:91+execution_order_satisfied:91",
+      "blocked_issues=#93 blocked_by=requirements:scope, acceptance criteria, verification; #94 blocked_by=clarification:unresolved_choice:auth",
+    ],
+  });
 });
 
 test("buildSelectionWhySummary keeps the selected issue explanation stable", async () => {

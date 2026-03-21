@@ -55,6 +55,7 @@ test("status surfaces corrupted JSON state as an explicit hard diagnostic", asyn
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
     getPullRequestIfExists: async () => null,
     getChecks: async () => [],
     getUnresolvedReviewThreads: async () => [],
@@ -90,6 +91,7 @@ test("status surfaces the default trust posture and execution-safety warning", a
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
     getPullRequestIfExists: async () => null,
     getChecks: async () => [],
     getUnresolvedReviewThreads: async () => [],
@@ -167,6 +169,7 @@ test("status surfaces merge-critical recheck cadence and disabled fallback visib
   });
   (enabledSupervisor as unknown as { github: Record<string, unknown> }).github = {
     listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
     getPullRequestIfExists: async () => null,
     getChecks: async () => [],
     getUnresolvedReviewThreads: async () => [],
@@ -185,6 +188,7 @@ test("status surfaces merge-critical recheck cadence and disabled fallback visib
   });
   (disabledSupervisor as unknown as { github: Record<string, unknown> }).github = {
     listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
     getPullRequestIfExists: async () => null,
     getChecks: async () => [],
     getUnresolvedReviewThreads: async () => [],
@@ -307,6 +311,7 @@ Decide whether to keep the current production auth token flow or replace it befo
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     listCandidateIssues: async () => [runnableIssue, missingMetadataIssue, clarificationBlockedIssue],
+    listAllIssues: async () => [runnableIssue, missingMetadataIssue, clarificationBlockedIssue],
     getPullRequestIfExists: async () => null,
     getChecks: async () => [],
     getUnresolvedReviewThreads: async () => [],
@@ -411,6 +416,7 @@ Do not run this issue autonomously without an explicit trust signal.
   });
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     listCandidateIssues: async () => [blockedIssue, allowedIssue],
+    listAllIssues: async () => [blockedIssue, allowedIssue],
     getPullRequestIfExists: async () => null,
     getChecks: async () => [],
     getUnresolvedReviewThreads: async () => [],
@@ -425,6 +431,78 @@ Do not run this issue autonomously without an explicit trust signal.
   assert.match(status, /execution_safety_mode=operator_gated/);
   assert.match(status, /runnable_issues=#96 ready=execution_ready/);
   assert.match(status, /blocked_issues=#95 blocked_by=trust_gate:trusted-input-required/);
+});
+
+test("status uses the full issue set when a candidate is blocked by a non-candidate dependency", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const dependencyIssue: GitHubIssue = {
+    number: 91,
+    title: "Foundational dependency",
+    body: `## Summary
+Ship the dependency first.
+
+## Scope
+- land the prerequisite work
+
+## Acceptance criteria
+- downstream issues stay blocked until this closes
+
+## Verification
+- npm test -- src/supervisor/supervisor-diagnostics-status-selection.test.ts`,
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: "https://example.test/issues/91",
+    state: "OPEN",
+  };
+  const candidateIssue: GitHubIssue = {
+    number: 92,
+    title: "Blocked by non-candidate dependency",
+    body: `## Summary
+This issue should stay blocked until its dependency is done.
+
+## Scope
+- verify readiness uses the full issue set
+
+## Acceptance criteria
+- status does not report this issue as runnable while #91 is open
+
+## Verification
+- npm test -- src/supervisor/supervisor-diagnostics-status-selection.test.ts
+
+Depends on: #91`,
+    createdAt: "2026-03-13T00:05:00Z",
+    updatedAt: "2026-03-13T00:05:00Z",
+    url: "https://example.test/issues/92",
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [candidateIssue],
+    listAllIssues: async () => [dependencyIssue, candidateIssue],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+
+  assert.deepEqual(report.runnableIssues, []);
+  assert.deepEqual(report.blockedIssues, [
+    {
+      issueNumber: 92,
+      title: "Blocked by non-candidate dependency",
+      blockedBy: "depends on #91",
+    },
+  ]);
+  assert.match(report.readinessLines.join("\n"), /runnable_issues=none/);
+  assert.match(report.readinessLines.join("\n"), /blocked_issues=#92 blocked_by=depends on #91/);
 });
 
 test("status marks skipped readiness checks explicitly and uses non-conflicting inner separators", async () => {
@@ -527,6 +605,7 @@ Execution order: 3 of 3`,
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     listCandidateIssues: async () => [predecessorOne, predecessorTwo, skippedRequirementsIssue],
+    listAllIssues: async () => [predecessorOne, predecessorTwo, skippedRequirementsIssue],
     getPullRequestIfExists: async () => null,
     getChecks: async () => [],
     getUnresolvedReviewThreads: async () => [],
@@ -574,6 +653,7 @@ Keep selection behavior unchanged while surfacing the current discovery limit.
   });
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     listCandidateIssues: async () => [selectedIssue],
+    listAllIssues: async () => [selectedIssue],
     getCandidateDiscoveryDiagnostics: async () => ({
       fetchWindow: 250,
       observedMatchingOpenIssues: 251,
@@ -611,6 +691,7 @@ test("status surfaces the current reconciliation phase only while reconciliation
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
     getPullRequestIfExists: async () => null,
     getChecks: async () => [],
     getUnresolvedReviewThreads: async () => [],
@@ -636,6 +717,7 @@ test("status emits a warning only after reconciliation exceeds the long-running 
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
     getPullRequestIfExists: async () => null,
     getChecks: async () => [],
     getUnresolvedReviewThreads: async () => [],
