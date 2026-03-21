@@ -1,61 +1,56 @@
-# Issue #739: Hydration freshness before merge: require a fresh PR read before merge-enabling actions
+# Issue #759: Orphan age gate follow-up: base recent-orphan safety on actual worktree activity
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/739
-- Branch: codex/issue-739
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/759
+- Branch: codex/issue-759
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 4 (implementation=2, repair=2)
-- Last head SHA: ca7b9f1e91da9782388377afa995e045d04df740
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 82a36368223f5b48a3e43b92d7d6f30f0e72debb
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 1
-- Updated at: 2026-03-21T01:40:28Z
+- Updated at: 2026-03-21T02:21:27Z
 
 ## Latest Codex Summary
-Implemented the merge-enable freshness guard in [supervisor.ts](src/supervisor/supervisor.ts#L747): `handlePostTurnMergeAndCompletion` now re-reads the PR with `getPullRequest` immediately before `enableAutoMerge`, so the final merge-enabling action uses a fresh authoritative head SHA instead of the carried snapshot. I also added a focused regression in [supervisor-pr-readiness.test.ts](src/supervisor/supervisor-pr-readiness.test.ts#L378) that reproduces the stale-head case and proves the refreshed head is the one passed to auto-merge.
+Addressed the remaining CodeRabbit review on [src/recovery-reconciliation.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-759/src/recovery-reconciliation.ts): missing dirty paths no longer get dropped when `statSync` hits `ENOENT`. The orphan recency check now falls back to the nearest existing ancestor mtime inside the worktree, so staged deletions still count as recent activity without relying on commit history timestamps.
 
-PR [#758](https://github.com/TommyKammy/codex-supervisor/pull/758) is open on `codex/issue-739` and is no longer draft. This turn narrowed to the review-reported machine-local links in the journal, and I pushed the journal-only fix as `ca7b9f1`.
+I added focused staged-deletion regression coverage in [src/supervisor/supervisor-execution-cleanup.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-759/src/supervisor/supervisor-execution-cleanup.test.ts) and [src/supervisor/supervisor-diagnostics-status-selection.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-759/src/supervisor/supervisor-diagnostics-status-selection.test.ts). The tests now seed a tracked nested file, stage its deletion in the orphan worktree, keep the worktree directory timestamp stale, and verify the recent-orphan safeguard still preserves the workspace.
 
-The implementation checkpoint remains `4a27f93` for the actual merge-freshness change, with prior focused verification already recorded in the journal. GitHub currently reports PR `#758` as `OPEN`, not draft, with merge state `UNSTABLE`.
+Commit `82a3636` is pushed on `codex/issue-759`, and the unresolved CodeRabbit thread `PRRT_kwDORgvdZ8512GIt` is resolved on PR #760 after the fix landed.
 
-Summary: Pushed `ca7b9f1` to replace the journal's machine-local file links with repository-relative links for PR #758 review feedback.
-State hint: addressing_review
+Summary: Added staged-deletion activity fallback for orphan recency, covered it with focused orphan prune regressions, pushed `82a3636`, and resolved the remaining bot thread on PR #760.
+State hint: waiting_ci
 Blocked reason: none
-Tests: Not rerun this turn; journal-only review fix. Prior verified commands remain `npx tsx --test src/supervisor/supervisor-pr-readiness.test.ts src/supervisor/supervisor-lifecycle.test.ts src/github/github-pull-request-hydrator.test.ts` and `npm run build`
+Tests: `npx tsx --test src/supervisor/supervisor-execution-cleanup.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`
 Failure signature: none
-Next action: Refresh PR #758 review status and address any remaining review or CI feedback
+Next action: monitor PR #760 for fresh review or CI regressions and only re-enter review-fix mode if a new thread appears
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/758#discussion_r2968648846
-- Details:
-  - CodeRabbit thread `PRRT_kwDORgvdZ8511-fE` flagged the old Latest Codex Summary entry for using machine-local links to `src/supervisor/supervisor.ts#L747` and `src/supervisor/supervisor-pr-readiness.test.ts#L378`; fix commit `ca7b9f1` replaces them with repository-relative links and is now pushed to the PR branch.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the final merge-enable action still trusts the previously carried PR snapshot, so same-number same-branch review/head changes can slip past if `enableAutoMerge` does not force one last authoritative PR hydration read.
-- What changed: `Supervisor.handlePostTurnMergeAndCompletion` now re-reads the PR with `getPullRequest` immediately before calling `enableAutoMerge`. Added a focused regression test that passes a stale PR head into merge enablement and proves the fresh head SHA is used instead.
+- Hypothesis: the remaining review thread is valid because staged deletions are emitted by `git diff --name-only --cached -z`, but the orphan activity collector was still dropping those paths on `ENOENT`, which could misclassify a recently used orphan as old.
+- What changed: `readOrphanedWorkspaceActivityTimestamp` now keeps the resolved workspace root once, updates `latestModifiedMs` through a helper, and on `ENOENT` walks up to the nearest existing ancestor under the worktree to reuse that directory mtime as the deletion-activity signal. Focused prune tests now cover staged deletion of a tracked nested file while the orphan worktree directory timestamp stays stale.
 - Current blocker: none
-- Next exact step: recheck PR #758 review status after pushed fix `ca7b9f1` and respond to any remaining review or CI feedback.
-- Verification gap: the issue guidance references `src/pull-request-state.test.ts`, but that file does not exist in this worktree; I verified the merge-enable freshness path with the focused supervisor readiness suite plus the requested lifecycle/hydrator suites.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-pr-readiness.test.ts`
-- Rollback concern: removing the last-moment `getPullRequest` refresh would let `enableAutoMerge` reuse a stale carried PR head and merge-authoritative review facts from an earlier snapshot.
-- Last focused command: `git push origin codex/issue-739`
-- Last focused failure: none
+- Next exact step: monitor PR #760 for fresh CI or review feedback now that commit `82a3636` is pushed and the last CodeRabbit thread is resolved.
+- Verification gap: none for the requested scope; the targeted tests and build both pass locally after the staged-deletion regression update.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-execution-cleanup.test.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`
+- Rollback concern: reverting the new `ENOENT` fallback would reintroduce false-positive orphan pruning for orphan worktrees whose only recent activity is a staged deletion or removed nested path.
+- Last focused command: `npm run build`
+- Last focused failure: `staged-delete-empty-dir-stat-enoent`
 - Last focused commands:
 ```bash
-git diff -- .codex-supervisor/issue-journal.md
-nl -ba .codex-supervisor/issue-journal.md | sed -n '1,120p'
-rg -n '/home/tommy/Dev/codex-supervisor-self-worktrees/issue-739' .codex-supervisor/issue-journal.md
-git show HEAD:.codex-supervisor/issue-journal.md | sed -n '1,120p'
+sed -n '1,260p' .codex-supervisor/issue-journal.md
+sed -n '1,260p' src/recovery-reconciliation.ts
+sed -n '654,785p' src/supervisor/supervisor-execution-cleanup.test.ts
+sed -n '524,590p' src/supervisor/supervisor-diagnostics-status-selection.test.ts
+npx tsx --test src/supervisor/supervisor-execution-cleanup.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts
+npm run build
+git diff -- src/recovery-reconciliation.ts src/supervisor/supervisor-execution-cleanup.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts .codex-supervisor/issue-journal.md
 git status --short --branch
-git add .codex-supervisor/issue-journal.md
-git commit -m "Fix journal links for review thread"
-git push origin codex/issue-739
-gh pr view 758 --json number,state,isDraft,mergeStateStatus,reviewDecision,url,headRefOid
 date -u +"%Y-%m-%dT%H:%M:%SZ"
 ```
 ### Scratchpad

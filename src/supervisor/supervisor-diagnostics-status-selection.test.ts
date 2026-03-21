@@ -535,6 +535,13 @@ test("pruneOrphanedWorkspaces prunes eligible orphan workspaces and reports skip
   };
   await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 
+  await fs.mkdir(path.join(fixture.repoPath, "docs"), { recursive: true });
+  await fs.writeFile(path.join(fixture.repoPath, "docs", "keep.md"), "keep docs directory\n", "utf8");
+  await fs.writeFile(path.join(fixture.repoPath, "docs", "recent-orphan-delete.md"), "tracked orphan activity\n", "utf8");
+  git(["-C", fixture.repoPath, "add", "docs/keep.md", "docs/recent-orphan-delete.md"]);
+  git(["-C", fixture.repoPath, "commit", "-m", "Add nested orphan activity fixture"]);
+  git(["-C", fixture.repoPath, "push", "origin", "main"]);
+
   const eligibleIssueNumber = 91;
   const eligibleBranch = branchName(fixture.config, eligibleIssueNumber);
   const eligibleWorkspace = path.join(fixture.workspaceRoot, `issue-${eligibleIssueNumber}`);
@@ -547,8 +554,10 @@ test("pruneOrphanedWorkspaces prunes eligible orphan workspaces and reports skip
 
   const oldTime = new Date("2026-03-18T00:00:00.000Z");
   await fs.utimes(eligibleWorkspace, oldTime, oldTime);
-  const recentTime = new Date(Date.now() - 60 * 60 * 1000);
-  await fs.utimes(recentWorkspace, recentTime, recentTime);
+  const recentActivityFile = path.join(recentWorkspace, "docs", "recent-orphan-delete.md");
+  git(["-C", recentWorkspace, "rm", "docs/recent-orphan-delete.md"]);
+  const recentActivityTimestamp = new Date((await fs.stat(path.dirname(recentActivityFile))).mtimeMs).toISOString();
+  await fs.utimes(recentWorkspace, oldTime, oldTime);
 
   const supervisor = new Supervisor(fixture.config);
   const result = await supervisor.pruneOrphanedWorkspaces();
@@ -573,7 +582,7 @@ test("pruneOrphanedWorkspaces prunes eligible orphan workspaces and reports skip
         workspaceName: `issue-${recentIssueNumber}`,
         workspacePath: recentWorkspace,
         branch: recentBranch,
-        modifiedAt: recentTime.toISOString(),
+        modifiedAt: recentActivityTimestamp,
         eligibility: "recent",
         reason: "workspace modified within 24h grace period",
       },

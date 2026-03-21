@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { runCommand } from "./core/command";
 import {
   findHighRiskBlockingAmbiguity,
   findParentIssuesReadyToClose,
@@ -137,6 +138,92 @@ function orphanedWorkspaceGracePeriodHours(config: SupervisorConfig): number {
   return config.cleanupOrphanedWorkspacesAfterHours ?? 24;
 }
 
+function updateLatestModifiedMs(currentModifiedMs: number, candidateModifiedMs: number): number {
+  if (Number.isNaN(currentModifiedMs) || candidateModifiedMs > currentModifiedMs) {
+    return candidateModifiedMs;
+  }
+
+  return currentModifiedMs;
+}
+
+function readExistingAncestorModifiedMs(candidatePath: string, workspaceRootPath: string): number | null {
+  let existingAncestorPath = path.dirname(candidatePath);
+
+  while (
+    existingAncestorPath === workspaceRootPath
+    || existingAncestorPath.startsWith(`${workspaceRootPath}${path.sep}`)
+  ) {
+    try {
+      return fs.statSync(existingAncestorPath).mtimeMs;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        return null;
+      }
+
+      const parentPath = path.dirname(existingAncestorPath);
+      if (parentPath === existingAncestorPath) {
+        return null;
+      }
+      existingAncestorPath = parentPath;
+    }
+  }
+
+  return null;
+}
+
+async function readOrphanedWorkspaceActivityTimestamp(workspacePath: string): Promise<string | null> {
+  const resolvedWorkspacePath = path.resolve(workspacePath);
+  let latestModifiedMs = Number.NaN;
+  try {
+    latestModifiedMs = fs.statSync(resolvedWorkspacePath).mtimeMs;
+  } catch {
+    latestModifiedMs = Number.NaN;
+  }
+
+  try {
+    const [unstagedResult, stagedResult] = await Promise.all([
+      runCommand(
+        "git",
+        ["-C", workspacePath, "ls-files", "--modified", "--others", "--exclude-standard", "-z"],
+      ),
+      runCommand("git", ["-C", workspacePath, "diff", "--name-only", "--cached", "-z"]),
+    ]);
+    const dirtyPaths = new Set(
+      `${unstagedResult.stdout}${stagedResult.stdout}`
+        .split("\0")
+        .filter((relativePath) => relativePath.length > 0),
+    );
+
+    for (const relativePath of dirtyPaths) {
+      const candidatePath = path.resolve(resolvedWorkspacePath, relativePath);
+      if (!candidatePath.startsWith(`${resolvedWorkspacePath}${path.sep}`)) {
+        continue;
+      }
+
+      try {
+        latestModifiedMs = updateLatestModifiedMs(latestModifiedMs, fs.statSync(candidatePath).mtimeMs);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          continue;
+        }
+
+        const ancestorModifiedMs = readExistingAncestorModifiedMs(candidatePath, resolvedWorkspacePath);
+        if (ancestorModifiedMs !== null) {
+          latestModifiedMs = updateLatestModifiedMs(latestModifiedMs, ancestorModifiedMs);
+        }
+      }
+    }
+  } catch {
+    // Fall back to the workspace directory timestamp if git cannot report dirty paths.
+  }
+
+  if (Number.isNaN(latestModifiedMs)) {
+    return null;
+  }
+
+  return new Date(latestModifiedMs).toISOString();
+}
+
 export async function inspectOrphanedWorkspacePruneCandidates(
   config: SupervisorConfig,
   state: SupervisorStateFile,
@@ -173,12 +260,7 @@ export async function inspectOrphanedWorkspacePruneCandidates(
       continue;
     }
 
-    let modifiedAt: string | null = null;
-    try {
-      modifiedAt = fs.statSync(workspacePath).mtime.toISOString();
-    } catch {
-      modifiedAt = null;
-    }
+    const modifiedAt = await readOrphanedWorkspaceActivityTimestamp(workspacePath);
 
     let branch: string | null = null;
     try {

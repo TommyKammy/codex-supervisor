@@ -661,8 +661,18 @@ test("runOnce preserves recent orphaned worktrees until the orphan age gate expi
   const orphanBranch = branchName(fixture.config, orphanIssueNumber);
   const orphanWorkspace = path.join(fixture.workspaceRoot, `issue-${orphanIssueNumber}`);
 
+  await fs.mkdir(path.join(fixture.repoPath, "docs"), { recursive: true });
+  await fs.writeFile(path.join(fixture.repoPath, "docs", "keep.md"), "keep docs directory\n", "utf8");
+  await fs.writeFile(path.join(fixture.repoPath, "docs", "recent-orphan-delete.md"), "tracked orphan activity\n", "utf8");
+  git(["-C", fixture.repoPath, "add", "docs/keep.md", "docs/recent-orphan-delete.md"]);
+  git(["-C", fixture.repoPath, "commit", "-m", "Add nested orphan activity fixture"]);
+  git(["-C", fixture.repoPath, "push", "origin", "main"]);
+
   await fs.mkdir(fixture.workspaceRoot, { recursive: true });
   git(["-C", fixture.repoPath, "worktree", "add", "-b", orphanBranch, orphanWorkspace, "origin/main"]);
+  const staleWorkspaceTime = new Date("2026-03-18T00:00:00.000Z");
+  git(["-C", orphanWorkspace, "rm", "docs/recent-orphan-delete.md"]);
+  await fs.utimes(orphanWorkspace, staleWorkspaceTime, staleWorkspaceTime);
 
   const state: SupervisorStateFile = {
     activeIssueNumber: null,
@@ -724,7 +734,11 @@ test("pruneOrphanedWorkspaces prunes eligible orphan worktrees and skips recent 
   const oldTime = new Date("2026-03-18T00:00:00.000Z");
   await fs.utimes(eligibleWorkspace, oldTime, oldTime);
   const recentTime = new Date(Date.now() - 60 * 60 * 1000);
-  await fs.utimes(recentWorkspace, recentTime, recentTime);
+  const recentActivityFile = path.join(recentWorkspace, "README.md");
+  await fs.writeFile(recentActivityFile, "recent orphan activity\n", "utf8");
+  await fs.utimes(recentActivityFile, recentTime, recentTime);
+  await fs.utimes(recentWorkspace, oldTime, oldTime);
+  const recentActivityTimestamp = new Date((await fs.stat(recentActivityFile)).mtimeMs).toISOString();
 
   const supervisor = new Supervisor(fixture.config);
   const result = await supervisor.pruneOrphanedWorkspaces();
@@ -749,7 +763,7 @@ test("pruneOrphanedWorkspaces prunes eligible orphan worktrees and skips recent 
         workspaceName: `issue-${recentIssueNumber}`,
         workspacePath: recentWorkspace,
         branch: recentBranch,
-        modifiedAt: recentTime.toISOString(),
+        modifiedAt: recentActivityTimestamp,
         eligibility: "recent",
         reason: "workspace modified within 24h grace period",
       },
