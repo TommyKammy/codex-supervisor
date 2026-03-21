@@ -8,8 +8,10 @@ import type {
 import type { SupervisorIssueLintDto } from "./supervisor-selection-issue-lint";
 import type { SupervisorExplainDto } from "./supervisor-selection-status";
 import type { SupervisorStatusDto } from "./supervisor-status-report";
-import type { SupervisorEventSink } from "./supervisor-events";
+import type { SupervisorEvent, SupervisorEventSink } from "./supervisor-events";
 import { Supervisor } from "./supervisor";
+
+export type SupervisorEventUnsubscribe = () => void;
 
 export interface SupervisorService {
   config: SupervisorConfig;
@@ -22,16 +24,41 @@ export interface SupervisorService {
   queryExplain: (issueNumber: number) => Promise<SupervisorExplainDto>;
   queryIssueLint: (issueNumber: number) => Promise<SupervisorIssueLintDto>;
   queryDoctor: () => Promise<DoctorDiagnostics>;
+  subscribeEvents?: (listener: SupervisorEventSink) => SupervisorEventUnsubscribe;
 }
 
 export interface CreateSupervisorServiceOptions {
   onEvent?: SupervisorEventSink;
 }
 
+class SupervisorEventSubscriberRegistry {
+  private readonly listeners = new Set<SupervisorEventSink>();
+
+  emit(event: SupervisorEvent): void {
+    for (const listener of this.listeners) {
+      void Promise.resolve()
+        .then(() => listener(event))
+        .catch((error: unknown) => {
+          console.error(`Supervisor event subscriber failed for ${event.type}.`, error);
+        });
+    }
+  }
+
+  subscribe(listener: SupervisorEventSink): SupervisorEventUnsubscribe {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+}
+
 class SupervisorApplicationService implements SupervisorService {
   readonly config: SupervisorConfig;
 
-  constructor(private readonly supervisor: Supervisor) {
+  constructor(
+    private readonly supervisor: Supervisor,
+    private readonly subscribeToEvents: (listener: SupervisorEventSink) => SupervisorEventUnsubscribe = () => () => {},
+  ) {
     this.config = supervisor.config;
   }
 
@@ -70,15 +97,34 @@ class SupervisorApplicationService implements SupervisorService {
   queryDoctor(): Promise<DoctorDiagnostics> {
     return this.supervisor.doctorReport();
   }
+
+  subscribeEvents(listener: SupervisorEventSink): SupervisorEventUnsubscribe {
+    return this.subscribeToEvents(listener);
+  }
 }
 
-export function createSupervisorServiceFromSupervisor(supervisor: Supervisor): SupervisorService {
-  return new SupervisorApplicationService(supervisor);
+export function createSupervisorServiceFromSupervisor(
+  supervisor: Supervisor,
+  options: { subscribeEvents?: (listener: SupervisorEventSink) => SupervisorEventUnsubscribe } = {},
+): SupervisorService {
+  return new SupervisorApplicationService(supervisor, options.subscribeEvents);
 }
 
 export function createSupervisorService(
   configPath?: string,
   options: CreateSupervisorServiceOptions = {},
 ): SupervisorService {
-  return createSupervisorServiceFromSupervisor(Supervisor.fromConfig(configPath, options));
+  const subscriberRegistry = new SupervisorEventSubscriberRegistry();
+  const emitEvent: SupervisorEventSink = (event) => {
+    subscriberRegistry.emit(event);
+    options.onEvent?.(event);
+  };
+
+  return createSupervisorServiceFromSupervisor(
+    Supervisor.fromConfig(configPath, {
+      ...options,
+      onEvent: emitEvent,
+    }),
+    { subscribeEvents: (listener) => subscriberRegistry.subscribe(listener) },
+  );
 }
