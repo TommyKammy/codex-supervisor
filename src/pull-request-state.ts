@@ -382,6 +382,69 @@ function pullRequestHeadMatchesRecord(record: Pick<IssueRunRecord, "last_head_sh
   return record.last_head_sha === null || record.last_head_sha === pr.headRefOid;
 }
 
+function isMergeCriticalPullRequest(pr: GitHubPullRequest): boolean {
+  return pr.state === "OPEN" && !pr.isDraft && !pr.mergedAt;
+}
+
+function hasConfiguredProviderSuccess(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+  reviewThreads: ReviewThread[],
+): boolean {
+  if (!repoExpectsConfiguredBotReview(config) || !isMergeCriticalPullRequest(pr)) {
+    return false;
+  }
+
+  if (configuredBotReviewThreads(config, reviewThreads).length > 0) {
+    return false;
+  }
+
+  if (pr.reviewDecision === "CHANGES_REQUESTED" && pr.configuredBotTopLevelReviewStrength !== "nitpick_only") {
+    return false;
+  }
+
+  return Boolean(
+    pr.configuredBotCurrentHeadObservedAt ||
+      pr.copilotReviewArrivedAt ||
+      (pr.configuredBotTopLevelReviewStrength === "nitpick_only" && pr.configuredBotTopLevelReviewSubmittedAt),
+  );
+}
+
+export function syncMergeLatencyVisibility(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+  reviewThreads: ReviewThread[],
+): Pick<
+  IssueRunRecord,
+  "provider_success_observed_at" | "provider_success_head_sha" | "merge_readiness_last_evaluated_at"
+> {
+  const observedNow = nowIso();
+  const mergeReadinessLastEvaluatedAt = isMergeCriticalPullRequest(pr) ? observedNow : null;
+
+  if (!hasConfiguredProviderSuccess(config, pr, reviewThreads)) {
+    return {
+      provider_success_observed_at: null,
+      provider_success_head_sha: null,
+      merge_readiness_last_evaluated_at: mergeReadinessLastEvaluatedAt,
+    };
+  }
+
+  if (record.provider_success_head_sha === pr.headRefOid && record.provider_success_observed_at) {
+    return {
+      provider_success_observed_at: record.provider_success_observed_at,
+      provider_success_head_sha: record.provider_success_head_sha ?? pr.headRefOid,
+      merge_readiness_last_evaluated_at: mergeReadinessLastEvaluatedAt,
+    };
+  }
+
+  return {
+    provider_success_observed_at: observedNow,
+    provider_success_head_sha: pr.headRefOid,
+    merge_readiness_last_evaluated_at: mergeReadinessLastEvaluatedAt,
+  };
+}
+
 export function blockedReasonFromReviewState(
   config: SupervisorConfig,
   record: IssueRunRecord,

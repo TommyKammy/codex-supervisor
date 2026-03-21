@@ -61,6 +61,10 @@ export interface PullRequestLifecycleSnapshot {
   copilotRequestObservationPatch: Partial<
     Pick<IssueRunRecord, "copilot_review_requested_observed_at" | "copilot_review_requested_head_sha">
   >;
+  mergeLatencyVisibilityPatch: Pick<
+    IssueRunRecord,
+    "provider_success_observed_at" | "provider_success_head_sha" | "merge_readiness_last_evaluated_at"
+  >;
   copilotTimeoutPatch: Pick<
     IssueRunRecord,
     "copilot_review_timed_out_at" | "copilot_review_timeout_action" | "copilot_review_timeout_reason"
@@ -297,6 +301,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     pr_number: postReady.pr.number,
     ...refreshedLifecycle.reviewWaitPatch,
     ...refreshedLifecycle.copilotRequestObservationPatch,
+    ...refreshedLifecycle.mergeLatencyVisibilityPatch,
     ...refreshedLifecycle.copilotTimeoutPatch,
     state: refreshedLifecycle.nextState,
     last_head_sha: postReady.pr.headRefOid,

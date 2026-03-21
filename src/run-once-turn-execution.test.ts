@@ -121,6 +121,11 @@ test("executeCodexTurnPhase does not mark review threads processed for a refresh
       failureContext: null,
       reviewWaitPatch: {},
       copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
       copilotTimeoutPatch: {
         copilot_review_timed_out_at: null,
         copilot_review_timeout_action: null,
@@ -416,6 +421,11 @@ test("executeCodexTurnPhase routes start and resume turns through the shared age
       failureContext: null,
       reviewWaitPatch: {},
       copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
       copilotTimeoutPatch: {
         copilot_review_timed_out_at: null,
         copilot_review_timeout_action: null,
@@ -583,6 +593,11 @@ test("executeCodexTurnPhase falls back to a fresh start when the agent runner ca
       failureContext: null,
       reviewWaitPatch: {},
       copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
       copilotTimeoutPatch: {
         copilot_review_timed_out_at: null,
         copilot_review_timeout_action: null,
@@ -766,6 +781,11 @@ test("executeCodexTurnPhase does not take a session lock when the turn must rest
       failureContext: null,
       reviewWaitPatch: {},
       copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
       copilotTimeoutPatch: {
         copilot_review_timed_out_at: null,
         copilot_review_timeout_action: null,

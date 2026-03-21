@@ -3,6 +3,7 @@ import type { PullRequestLifecycleSnapshot } from "../post-turn-pull-request";
 import {
   blockedReasonFromReviewState,
   inferStateFromPullRequest,
+  syncMergeLatencyVisibility,
   syncCopilotReviewRequestObservation,
   syncCopilotReviewTimeoutState,
   syncReviewWaitWindow,
@@ -72,9 +73,11 @@ export function derivePullRequestLifecycleSnapshot(
     ...reviewWaitPatch,
     ...copilotRequestObservationPatch,
   };
+  const mergeLatencyVisibilityPatch = syncMergeLatencyVisibility(config, recordForState, pr, reviewThreads);
   const copilotTimeoutPatch = syncCopilotReviewTimeoutState(config, recordForState, pr);
   const finalizedRecordForState = {
     ...recordForState,
+    ...mergeLatencyVisibilityPatch,
     ...copilotTimeoutPatch,
   };
 
@@ -84,6 +87,7 @@ export function derivePullRequestLifecycleSnapshot(
     failureContext: inferFailureContext(config, finalizedRecordForState, pr, checks, reviewThreads),
     reviewWaitPatch,
     copilotRequestObservationPatch,
+    mergeLatencyVisibilityPatch,
     copilotTimeoutPatch,
   };
 }
@@ -125,6 +129,9 @@ export function resetNoPrLifecycleFailureTracking(
   | "copilot_review_timed_out_at"
   | "copilot_review_timeout_action"
   | "copilot_review_timeout_reason"
+  | "provider_success_observed_at"
+  | "provider_success_head_sha"
+  | "merge_readiness_last_evaluated_at"
   | "last_failure_context"
   | "last_failure_signature"
   | "repeated_failure_signature_count"
@@ -137,6 +144,9 @@ export function resetNoPrLifecycleFailureTracking(
     copilot_review_timed_out_at: null,
     copilot_review_timeout_action: null,
     copilot_review_timeout_reason: null,
+    provider_success_observed_at: null,
+    provider_success_head_sha: null,
+    merge_readiness_last_evaluated_at: null,
     last_failure_context: preserveFailureTracking ? record.last_failure_context : null,
     last_failure_signature: preserveFailureTracking ? record.last_failure_signature : null,
     repeated_failure_signature_count: preserveFailureTracking ? record.repeated_failure_signature_count : 0,

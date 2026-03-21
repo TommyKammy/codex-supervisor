@@ -1,58 +1,63 @@
-# Issue #711: Trust enforcement: gate autonomous execution on explicit trusted-input or safer-mode policy
+# Issue #766: Merge latency visibility: record provider-observation and reevaluation timestamps
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/711
-- Branch: codex/issue-711
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/766
+- Branch: codex/issue-766
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: draft_pr
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 16096dbfb1ed33899bfadcf8f291b763e5b7144c
+- Current phase: repairing_ci
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 3bb551d60c09bff6ce14c2e8503d1087b97cad62
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-21T06:20:31Z
+- Last failure signature: build (ubuntu-latest):fail|build (macos-latest):fail
+- Repeated failure signature count: 1
+- Updated at: 2026-03-21T08:10:18.878Z
 
 ## Latest Codex Summary
-Verified the trust-gate checkpoint at `16096db` and opened draft PR #764: https://github.com/TommyKammy/codex-supervisor/pull/764
+Reproduced the failing PR #770 build jobs from Actions. The concrete failures were:
+- `npx tsx src/index.ts replay-corpus`: checked-in replay corpus snapshots were missing the newly added merge-latency fields, so validation rejected them.
+- `npm run build`: strict test mocks in `src/post-turn-pull-request.test.ts` and `src/run-once-turn-execution.test.ts` were missing the required `mergeLatencyVisibilityPatch` property on `PullRequestLifecycleSnapshot`.
 
-The new behavior is narrow:
-- In `trustMode=untrusted_or_mixed` plus `executionSafetyMode=operator_gated`, autonomous execution now blocks before handoff unless the issue has the `trusted-input` label.
-- `trusted_repo_and_authors` and `unsandboxed_autonomous` still allow execution.
-- Readiness/status/explain now surface the decision explicitly with `blocked_by=trust_gate:trusted-input-required`.
+Repaired the CI break by backfilling the checked-in replay corpus snapshots with explicit null merge-latency fields, updating the strict lifecycle snapshot test doubles, and refreshing the CLI replay tests in `src/index.test.ts` so their temporary snapshots and promotion-hint fixture match the new schema and current hint rules. Committed the repair as `fcbc2f2` and pushed it to `codex/issue-766`; PR #770 checks are now rerunning.
 
-Focused verification passed again in the current worktree, and the branch now tracks `origin/codex/issue-711`. One unrelated untracked path remains: `.codex-supervisor/replay/`.
-
-Summary: Re-verified the safer-mode autonomous execution trust gate, pushed `codex/issue-711`, and opened draft PR #764 for review.
-State hint: draft_pr
+Summary: Repaired the PR #770 build failures by fixing replay corpus fixtures and strict lifecycle snapshot test doubles for the new merge-latency visibility fields.
+State hint: repairing_ci
 Blocked reason: none
-Tests: `npx tsx --test src/run-once-turn-execution.test.ts src/supervisor/supervisor.test.ts`; `npx tsx --test src/run-once-turn-execution.test.ts src/supervisor/supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npx tsx --test src/run-once-issue-selection.test.ts`; `npm run build`
+Tests: npm ci; npm run build; npx tsx src/index.ts replay-corpus; npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-status-model.test.ts src/post-turn-pull-request.test.ts src/run-once-turn-execution.test.ts src/index.test.ts
 Failure signature: none
-Next action: monitor PR #764 for CI and review feedback, then address follow-up if any appears.
+Next action: Watch PR #770 check run `23375603279` to completion and confirm the build jobs pass.
 
 ## Active Failure Context
-- None recorded.
+- Category: checks
+- Summary: PR #770 has failing checks.
+- Command or source: gh pr checks
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/770
+- Details:
+  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23375173869/job/68005868684
+  - build (macos-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23375173869/job/68005868702
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: enforcement belonged in issue selection, not deep in the Codex runner, so safer-mode trust gating could fail closed before consuming a turn and still surface a deterministic operator-facing reason.
-- What changed: added `src/supervisor/supervisor-trust-gate.ts` with a narrow `trusted-input` label rule. `resolveRunnableIssueContext()` now blocks safer-mode autonomous execution when `trustMode=untrusted_or_mixed` and `executionSafetyMode=operator_gated` unless the issue has the `trusted-input` label, while trusted-repo mode or explicit unsafe override still allow execution. Readiness and explain/status paths now report `blocked_by=trust_gate:trusted-input-required` and still treat previously trust-gated records as selectable once the issue becomes trusted. Draft PR #764 is open against `main`.
+- Hypothesis: the remaining CI break was fixture drift rather than feature logic, because the new informational fields changed replay-corpus schema and the strict snapshot interface used by a few tests.
+- What changed: added explicit null `provider_success_observed_at`, `provider_success_head_sha`, and `merge_readiness_last_evaluated_at` fields to every checked-in replay corpus input snapshot; added `mergeLatencyVisibilityPatch` to the `PullRequestLifecycleSnapshot` test doubles in `src/post-turn-pull-request.test.ts` and `src/run-once-turn-execution.test.ts`; and updated the CLI replay tests in `src/index.test.ts` so their temporary snapshots include the new fields and the promotion-hint coverage uses a snapshot that actually satisfies `stale-head-safety`.
 - Current blocker: none
-- Next exact step: watch PR #764 for CI and review results, then address any follow-up without broadening the trust rule.
-- Verification gap: none in the implemented scope after installing local dev dependencies in this worktree.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/run-once-issue-selection.ts`, `src/run-once-issue-selection.test.ts`, `src/supervisor/supervisor-trust-gate.ts`, `src/supervisor/supervisor-selection-readiness-summary.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`
-- Rollback concern: removing the selection-stage trust gate or readiness/explain wiring would silently restore autonomous execution for untrusted GitHub-authored issue/review input in `operator_gated` safer mode.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-711 --title "Gate safer-mode autonomous execution on trusted input" --body ...`
-- Last focused failure: none
+- Next exact step: watch the rerun checks on PR #770 and confirm the repaired build jobs finish green.
+- Verification gap: none for the reproduced CI commands; the untracked `.codex-supervisor/replay/` workspace artifact remains present but did not affect the repair.
+- Files touched: `.codex-supervisor/issue-journal.md`, `replay-corpus/cases/provider-wait-initial-grace/input/snapshot.json`, `replay-corpus/cases/provider-wait-settled-after-observation/input/snapshot.json`, `replay-corpus/cases/repeated-failure-escalates-to-failed/input/snapshot.json`, `replay-corpus/cases/required-check-pending/input/snapshot.json`, `replay-corpus/cases/review-blocked/input/snapshot.json`, `replay-corpus/cases/review-timing-ready-for-review-after-draft-skip/input/snapshot.json`, `replay-corpus/cases/stale-head-prevents-merge/input/snapshot.json`, `replay-corpus/cases/timeout-retry-budget-progression/input/snapshot.json`, `replay-corpus/cases/verification-blocker-retry-exhausted/input/snapshot.json`, `src/index.test.ts`, `src/post-turn-pull-request.test.ts`, `src/run-once-turn-execution.test.ts`
+- Rollback concern: dropping the replay-corpus fixture backfill or the added snapshot patch property would re-break the exact CI jobs currently failing on PR #770.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-status-model.test.ts src/post-turn-pull-request.test.ts src/run-once-turn-execution.test.ts src/index.test.ts`
+- Last focused failure: `none`
 - Last focused commands:
 ```bash
-npx tsx --test src/run-once-turn-execution.test.ts src/supervisor/supervisor.test.ts
-npx tsx --test src/run-once-turn-execution.test.ts src/supervisor/supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts
-npx tsx --test src/run-once-issue-selection.test.ts
+npm ci
+gh run view 23375173869 --log-failed
 npm run build
-git push -u origin codex/issue-711
-gh pr create --draft --base main --head codex/issue-711 --title "Gate safer-mode autonomous execution on trusted input" --body ...
-gh pr view 764 --json number,title,state,isDraft,url,headRefName,baseRefName
+npx tsx src/index.ts replay-corpus
+npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-status-model.test.ts src/post-turn-pull-request.test.ts src/run-once-turn-execution.test.ts src/index.test.ts
+npx tsx --test src/index.test.ts
+npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-status-model.test.ts src/post-turn-pull-request.test.ts src/run-once-turn-execution.test.ts src/index.test.ts
+npx tsx src/index.ts replay-corpus
+npm run build
 date -u +"%Y-%m-%dT%H:%M:%SZ"
 ```
 ### Scratchpad
