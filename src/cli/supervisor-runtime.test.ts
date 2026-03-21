@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { SupervisorConfig } from "../core/types";
 import type { SupervisorIssueLintDto } from "../supervisor/supervisor-selection-issue-lint";
+import type { SupervisorStatusDto } from "../supervisor/supervisor-status-report";
 import { runSupervisorCycle, runSupervisorCommand } from "./supervisor-runtime";
 
 function createIssueLintDto(overrides: Partial<SupervisorIssueLintDto> = {}): SupervisorIssueLintDto {
@@ -14,6 +15,21 @@ function createIssueLintDto(overrides: Partial<SupervisorIssueLintDto> = {}): Su
     metadataErrors: [],
     highRiskBlockingAmbiguity: null,
     repairGuidance: [],
+    ...overrides,
+  };
+}
+
+function createStatusDto(overrides: Partial<SupervisorStatusDto> = {}): SupervisorStatusDto {
+  return {
+    gsdSummary: null,
+    activeIssue: null,
+    selectionSummary: null,
+    detailedStatusLines: ["status"],
+    reconciliationPhase: null,
+    reconciliationWarning: null,
+    readinessLines: [],
+    whyLines: [],
+    warning: null,
     ...overrides,
   };
 }
@@ -67,15 +83,7 @@ test("runSupervisorCommand stops the loop after a registered signal and aborts p
         runOnce: async () => {
           throw new Error("unexpected runOnce");
         },
-        queryStatus: async () => ({
-          gsdSummary: null,
-          detailedStatusLines: ["status"],
-          reconciliationPhase: null,
-          reconciliationWarning: null,
-          readinessLines: [],
-          whyLines: [],
-          warning: null,
-        }),
+        queryStatus: async () => createStatusDto(),
         queryExplain: async () => {
           throw new Error("unexpected queryExplain");
         },
@@ -242,15 +250,7 @@ test("runSupervisorCommand re-reads the poll cadence between loop cycles", async
         runOnce: async () => {
           throw new Error("unexpected runOnce");
         },
-        queryStatus: async () => ({
-          gsdSummary: null,
-          detailedStatusLines: ["status"],
-          reconciliationPhase: null,
-          reconciliationWarning: null,
-          readinessLines: [],
-          whyLines: [],
-          warning: null,
-        }),
+        queryStatus: async () => createStatusDto(),
         queryExplain: async () => {
           throw new Error("unexpected queryExplain");
         },
@@ -319,15 +319,7 @@ test("runSupervisorCommand skips sleep when stop is requested while resolving th
         runOnce: async () => {
           throw new Error("unexpected runOnce");
         },
-        queryStatus: async () => ({
-          gsdSummary: null,
-          detailedStatusLines: ["status"],
-          reconciliationPhase: null,
-          reconciliationWarning: null,
-          readinessLines: [],
-          whyLines: [],
-          warning: null,
-        }),
+        queryStatus: async () => createStatusDto(),
         queryExplain: async () => {
           throw new Error("unexpected queryExplain");
         },
@@ -401,15 +393,7 @@ test("runSupervisorCommand stops the loop after a corrupt-json fail-closed block
         runOnce: async () => {
           throw new Error("unexpected runOnce");
         },
-        queryStatus: async () => ({
-          gsdSummary: null,
-          detailedStatusLines: ["status"],
-          reconciliationPhase: null,
-          reconciliationWarning: null,
-          readinessLines: [],
-          whyLines: [],
-          warning: null,
-        }),
+        queryStatus: async () => createStatusDto(),
         queryExplain: async () => {
           throw new Error("unexpected queryExplain");
         },
@@ -467,15 +451,20 @@ test("runSupervisorCommand routes query commands through the supervisor service 
         },
         queryStatus: async (options) => {
           calls.push(`status:${String(options.why)}`);
-          return {
-            gsdSummary: null,
+          return createStatusDto({
+            activeIssue: {
+              issueNumber: 58,
+              state: "queued",
+              branch: "codex/issue-58",
+              prNumber: 58,
+              blockedReason: null,
+            },
+            selectionSummary: {
+              selectedIssueNumber: 58,
+              selectionReason: "ready execution_ready=yes",
+            },
             detailedStatusLines: ["status output"],
-            reconciliationPhase: null,
-            reconciliationWarning: null,
-            readinessLines: [],
-            whyLines: [],
-            warning: null,
-          };
+          });
         },
         queryExplain: async (issueNumber) => {
           calls.push(`explain:${issueNumber}`);
@@ -865,15 +854,7 @@ test("runSupervisorCommand starts the read-only WebUI server and shuts it down o
         config: {} as SupervisorConfig,
         pollIntervalMs: async () => 50,
         runOnce: async () => "unused",
-        queryStatus: async () => ({
-          gsdSummary: null,
-          detailedStatusLines: ["status"],
-          reconciliationPhase: null,
-          reconciliationWarning: null,
-          readinessLines: [],
-          whyLines: [],
-          warning: null,
-        }),
+        queryStatus: async () => createStatusDto(),
         queryExplain: async () => {
           throw new Error("unexpected queryExplain");
         },
@@ -942,15 +923,7 @@ test("runSupervisorCommand closes active WebUI connections before closing the se
         config: {} as SupervisorConfig,
         pollIntervalMs: async () => 50,
         runOnce: async () => "unused",
-        queryStatus: async () => ({
-          gsdSummary: null,
-          detailedStatusLines: ["status"],
-          reconciliationPhase: null,
-          reconciliationWarning: null,
-          readinessLines: [],
-          whyLines: [],
-          warning: null,
-        }),
+        queryStatus: async () => createStatusDto(),
         queryExplain: async () => {
           throw new Error("unexpected queryExplain");
         },
@@ -1010,15 +983,7 @@ test("runSupervisorCommand still shuts down the WebUI when a signal arrives befo
         config: {} as SupervisorConfig,
         pollIntervalMs: async () => 50,
         runOnce: async () => "unused",
-        queryStatus: async () => ({
-          gsdSummary: null,
-          detailedStatusLines: ["status"],
-          reconciliationPhase: null,
-          reconciliationWarning: null,
-          readinessLines: [],
-          whyLines: [],
-          warning: null,
-        }),
+        queryStatus: async () => createStatusDto(),
         queryExplain: async () => {
           throw new Error("unexpected queryExplain");
         },

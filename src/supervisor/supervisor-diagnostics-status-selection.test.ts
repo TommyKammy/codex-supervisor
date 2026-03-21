@@ -109,6 +109,51 @@ test("status surfaces the default trust posture and execution-safety warning", a
   assert.match(status, /execution_safety_warning=Unsandboxed autonomous execution assumes trusted GitHub-authored inputs\./);
 });
 
+test("statusReport exposes typed active-issue and selection summary fields alongside legacy lines", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 58,
+    issues: {
+      "58": createRecord({
+        issue_number: 58,
+        state: "queued",
+        branch: branchName(fixture.config, 58),
+        pr_number: 58,
+        workspace: path.join(fixture.workspaceRoot, "issue-58"),
+        journal_path: null,
+        blocked_reason: null,
+        last_error: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport({ why: true });
+
+  assert.deepEqual(report.activeIssue, {
+    issueNumber: 58,
+    state: "queued",
+    branch: branchName(fixture.config, 58),
+    prNumber: 58,
+    blockedReason: null,
+  });
+  assert.deepEqual(report.selectionSummary, {
+    selectedIssueNumber: null,
+    selectionReason: null,
+  });
+  assert.match(report.detailedStatusLines.join("\n"), /^issue=#58$/m);
+  assert.match(report.detailedStatusLines.join("\n"), /^state=queued$/m);
+});
+
 test("status surfaces merge-critical recheck cadence and disabled fallback visibility", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {

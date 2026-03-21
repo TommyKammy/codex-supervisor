@@ -477,6 +477,12 @@ export function renderSupervisorDashboardHtml(): string {
       }
 
       function parseSelectedIssueNumber(status) {
+        if (status?.selectionSummary && Number.isInteger(status.selectionSummary.selectedIssueNumber)) {
+          return status.selectionSummary.selectedIssueNumber;
+        }
+        if (status?.activeIssue && Number.isInteger(status.activeIssue.issueNumber)) {
+          return status.activeIssue.issueNumber;
+        }
         const candidates = []
           .concat(status?.whyLines || [])
           .concat(status?.detailedStatusLines || []);

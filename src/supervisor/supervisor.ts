@@ -88,6 +88,7 @@ import {
 } from "./supervisor-execution-policy";
 import {
   buildReadinessSummary,
+  buildSelectionSummary,
   buildSelectionWhySummary,
   formatCandidateDiscoveryBehaviorLine,
 } from "./supervisor-selection-readiness-summary";
@@ -850,6 +851,8 @@ export class Supervisor {
           trustDiagnostics,
           cadenceDiagnostics,
           candidateDiscoverySummary,
+          activeIssue: null,
+          selectionSummary: options.why ? await buildSelectionSummary(this.github, this.config, state) : null,
           detailedStatusLines: [...detailedStatusLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationWarning,
@@ -864,6 +867,8 @@ export class Supervisor {
           trustDiagnostics,
           cadenceDiagnostics,
           candidateDiscoverySummary,
+          activeIssue: null,
+          selectionSummary: null,
           detailedStatusLines: [...detailedStatusLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationWarning,
@@ -914,6 +919,17 @@ export class Supervisor {
       trustDiagnostics,
       cadenceDiagnostics,
       candidateDiscoverySummary,
+      activeIssue: {
+        issueNumber: statusRecords.activeRecord.issue_number,
+        state: statusRecords.activeRecord.state,
+        branch: statusRecords.activeRecord.branch,
+        prNumber: statusRecords.activeRecord.pr_number,
+        blockedReason: statusRecords.activeRecord.blocked_reason,
+      },
+      selectionSummary: {
+        selectedIssueNumber: null,
+        selectionReason: null,
+      },
       detailedStatusLines: [...detailedStatusLines, ...summaryLines, ...stateDiagnosticLines],
       reconciliationPhase,
       reconciliationWarning,

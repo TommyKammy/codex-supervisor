@@ -1,10 +1,20 @@
 import type { CadenceDiagnosticsSummary, TrustDiagnosticsSummary } from "../core/types";
 import { sanitizeStatusValue } from "./supervisor-status-rendering";
 import { truncate } from "../core/utils";
+import type { BlockedReason, RunState } from "../core/types";
+import type { SupervisorSelectionSummaryDto } from "./supervisor-selection-readiness-summary";
 
 export interface SupervisorStatusWarningDto {
   kind: "readiness" | "status";
   message: string;
+}
+
+export interface SupervisorActiveIssueDto {
+  issueNumber: number;
+  state: RunState;
+  branch: string;
+  prNumber: number | null;
+  blockedReason: BlockedReason | null;
 }
 
 export interface SupervisorStatusDto {
@@ -12,6 +22,8 @@ export interface SupervisorStatusDto {
   trustDiagnostics?: TrustDiagnosticsSummary | null;
   cadenceDiagnostics?: CadenceDiagnosticsSummary | null;
   candidateDiscoverySummary?: string | null;
+  activeIssue: SupervisorActiveIssueDto | null;
+  selectionSummary: SupervisorSelectionSummaryDto | null;
   detailedStatusLines: string[];
   reconciliationPhase: string | null;
   reconciliationWarning: string | null;
