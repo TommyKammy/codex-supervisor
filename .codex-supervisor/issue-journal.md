@@ -1,44 +1,43 @@
-# Issue #709: Prompt hardening: frame GitHub-authored issue and review text as non-authoritative input
+# Issue #710: Safer mode: add a configurable supervisor execution mode without bypassed approvals/sandbox
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/709
-- Branch: codex/issue-709
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/710
+- Branch: codex/issue-710
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: f322faa895d82261ca1b8fb969ec2d8585068b26
+- Last head SHA: f62f64bb8c00ab694f65cccd7d6dbc6a7192a14d
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-21T05:10:00Z
+- Updated at: 2026-03-21T05:40:16Z
 
 ## Latest Codex Summary
-- Hardened prompt text so GitHub-authored issue bodies, review-thread excerpts, and review-derived local-review context are explicitly marked non-authoritative while preserving their factual content.
+- Added configurable execution-safety plumbing to Codex and local-review command construction so `operator_gated` omits bypass flags while explicit `unsandboxed_autonomous` behavior remains unchanged.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: Codex execution and local-review prompts were still presenting GitHub-authored issue bodies and review-derived text as plain prompt content, so a narrow trust-boundary label plus precedence guidance should reduce prompt-injection risk without changing supervisor flow.
-- What changed: added focused prompt tests first, then updated `buildCodexPrompt()` to label the issue body and unresolved review-thread excerpts as `GitHub-authored ... (non-authoritative input)` with explicit precedence guidance. Updated local-review prompt rendering so prior external misses are framed as GitHub-authored review-derived context whose instructions are outranked by supervisor guidance, the current diff, and local repository evidence.
+- Hypothesis: `executionSafetyMode` was already configurable in loaded config and diagnostics, but the actual Codex execution paths still hard-coded `--dangerously-bypass-approvals-and-sandbox`, so focused runner tests should reproduce the gap before wiring the mode into command assembly.
+- What changed: added focused runner tests proving `operator_gated` must omit bypass flags for both `runCodexTurn()` and `runCodexReviewTurn()`. Added shared `buildCodexExecutionSafetyArgs()` in `src/codex/codex-policy.ts` and used it in the normal Codex runner and local-review runner so only explicit `unsandboxed_autonomous` includes the bypass flag.
 - Current blocker: none
-- Next exact step: monitor draft PR #762 for CI and review feedback on commit `c8347cc`.
-- Verification gap: none for the requested scope; `npx tsx --test src/codex/codex-prompt.test.ts src/local-review/prompt.test.ts` and `npm run build` pass locally after installing dev dependencies in this worktree.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/codex/codex-prompt.test.ts`, `src/codex/codex-prompt.ts`, `src/local-review/prompt.test.ts`, `src/local-review/prompt.ts`
-- Rollback concern: removing the new non-authoritative framing would restore the old prompt shape where GitHub-authored instructions appear with implicit supervisor-level authority, increasing prompt-injection risk in execution and local-review turns.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-709 --title "Prompt hardening: frame GitHub-authored prompt context" --body ...`
-- Last focused failure: none
+- Next exact step: commit this safer-mode checkpoint and open or update a draft PR for branch `codex/issue-710`.
+- Verification gap: none for the requested scope; `npx tsx --test src/codex/codex-runner.test.ts src/local-review/runner.test.ts src/config.test.ts` and `npm run build` pass locally after installing dev dependencies in this worktree.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/codex/codex-policy.ts`, `src/codex/codex-runner.test.ts`, `src/codex/codex-runner.ts`, `src/local-review/runner.test.ts`, `src/local-review/runner.ts`
+- Rollback concern: removing the shared execution-safety arg helper or its runner call sites would silently restore forced bypassed approvals/sandbox even when the safer `operator_gated` mode is selected.
+- Last focused command: `npx tsx --test src/codex/codex-runner.test.ts src/local-review/runner.test.ts src/config.test.ts && npm run build`
+- Last focused failure: before the fix, the new operator-gated runner tests failed because both execution paths still appended `--dangerously-bypass-approvals-and-sandbox`.
 - Last focused commands:
 ```bash
-npx tsx --test src/codex/codex-prompt.test.ts src/local-review/prompt.test.ts
-npm install
+npx tsx --test src/codex/codex-runner.test.ts src/local-review/runner.test.ts
+npx tsx --test src/codex/codex-runner.test.ts src/local-review/runner.test.ts src/config.test.ts
 npm run build
-git diff --stat
-gh pr view codex/issue-709 --json number,url,isDraft,state
-git push -u origin codex/issue-709
-gh pr create --draft --base main --head codex/issue-709 --title "Prompt hardening: frame GitHub-authored prompt context" --body ...
+npm install
+git status --short
+git diff -- src/codex/codex-policy.ts src/codex/codex-runner.ts src/codex/codex-runner.test.ts src/local-review/runner.ts src/local-review/runner.test.ts .codex-supervisor/issue-journal.md
 date -u +"%Y-%m-%dT%H:%M:%SZ"
 ```
 ### Scratchpad

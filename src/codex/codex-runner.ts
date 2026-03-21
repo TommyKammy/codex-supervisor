@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runCommand } from "../core/command";
-import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "./codex-policy";
+import { buildCodexConfigOverrideArgs, buildCodexExecutionSafetyArgs, resolveCodexExecutionPolicy } from "./codex-policy";
 import { CodexTurnResult, IssueRunRecord, RunState, SupervisorConfig } from "../core/types";
 
 function extractSessionId(stdout: string, sessionId?: string | null): string | null {
@@ -46,13 +46,14 @@ export async function runCodexTurn(
   const messageFile = path.join(tempDir, "last-message.txt");
   try {
     const overrideArgs = buildCodexConfigOverrideArgs(resolveCodexExecutionPolicy(config, state, record));
+    const executionSafetyArgs = buildCodexExecutionSafetyArgs(config);
     const commandArgs = sessionId
       ? [
           "exec",
           "resume",
           ...overrideArgs,
           "--json",
-          "--dangerously-bypass-approvals-and-sandbox",
+          ...executionSafetyArgs,
           "-o",
           messageFile,
           sessionId,
@@ -62,7 +63,7 @@ export async function runCodexTurn(
           "exec",
           ...overrideArgs,
           "--json",
-          "--dangerously-bypass-approvals-and-sandbox",
+          ...executionSafetyArgs,
           "-C",
           workspacePath,
           "-o",
