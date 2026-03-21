@@ -108,7 +108,22 @@ export class GitHubPullRequestHydrator {
     this.reviewSummaryCache = new ConfiguredBotReviewSummaryCache(now);
   }
 
-  async hydrate(pr: GitHubPullRequest | null): Promise<GitHubPullRequest | null> {
+  async hydrateForAction(pr: GitHubPullRequest | null): Promise<GitHubPullRequest | null> {
+    if (!pr) {
+      return null;
+    }
+
+    try {
+      const summary = await this.fetchConfiguredBotReviewSummary(pr.number, pr.headRefOid);
+      return withHydrationProvenance(applyConfiguredBotReviewSummary(pr, summary), "fresh");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`Failed to hydrate Copilot review lifecycle for PR #${pr.number}: ${truncate(message, 500) ?? "unknown error"}`);
+      return withHydrationProvenance(applyConfiguredBotReviewSummary(pr, null), "fresh");
+    }
+  }
+
+  async hydrateForStatus(pr: GitHubPullRequest | null): Promise<GitHubPullRequest | null> {
     if (!pr) {
       return null;
     }
@@ -133,6 +148,10 @@ export class GitHubPullRequestHydrator {
       console.warn(`Failed to hydrate Copilot review lifecycle for PR #${pr.number}: ${truncate(message, 500) ?? "unknown error"}`);
       return withHydrationProvenance(applyConfiguredBotReviewSummary(pr, null), "fresh");
     }
+  }
+
+  async hydrate(pr: GitHubPullRequest | null): Promise<GitHubPullRequest | null> {
+    return this.hydrateForStatus(pr);
   }
 
   private async fetchConfiguredBotReviewSummary(
