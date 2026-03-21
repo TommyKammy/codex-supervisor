@@ -304,6 +304,18 @@ function validateLocalRecord(raw: unknown, context: string): ReplayCorpusInputSn
     last_head_sha: expectNullableString(record.last_head_sha, `${context} last_head_sha`),
     review_wait_started_at: expectNullableString(record.review_wait_started_at, `${context} review_wait_started_at`),
     review_wait_head_sha: expectNullableString(record.review_wait_head_sha, `${context} review_wait_head_sha`),
+    provider_success_observed_at: expectNullableString(
+      record.provider_success_observed_at,
+      `${context} provider_success_observed_at`,
+    ),
+    provider_success_head_sha: expectNullableString(
+      record.provider_success_head_sha,
+      `${context} provider_success_head_sha`,
+    ),
+    merge_readiness_last_evaluated_at: expectNullableString(
+      record.merge_readiness_last_evaluated_at,
+      `${context} merge_readiness_last_evaluated_at`,
+    ),
     copilot_review_requested_observed_at: expectNullableString(
       record.copilot_review_requested_observed_at,
       `${context} copilot_review_requested_observed_at`,

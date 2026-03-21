@@ -180,6 +180,9 @@ export interface IssueRunRecord {
   journal_path: string | null;
   review_wait_started_at: string | null;
   review_wait_head_sha: string | null;
+  provider_success_observed_at?: string | null;
+  provider_success_head_sha?: string | null;
+  merge_readiness_last_evaluated_at?: string | null;
   copilot_review_requested_observed_at: string | null;
   copilot_review_requested_head_sha: string | null;
   copilot_review_timed_out_at: string | null;

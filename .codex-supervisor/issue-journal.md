@@ -1,58 +1,44 @@
-# Issue #711: Trust enforcement: gate autonomous execution on explicit trusted-input or safer-mode policy
+# Issue #766: Merge latency visibility: record provider-observation and reevaluation timestamps
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/711
-- Branch: codex/issue-711
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/766
+- Branch: codex/issue-766
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: draft_pr
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 16096dbfb1ed33899bfadcf8f291b763e5b7144c
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: fce9f0b5fc40a245e4a52ec4bc0e7cd5a4480989
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-21T06:20:31Z
+- Updated at: 2026-03-21T07:43:53.245Z
 
 ## Latest Codex Summary
-Verified the trust-gate checkpoint at `16096db` and opened draft PR #764: https://github.com/TommyKammy/codex-supervisor/pull/764
-
-The new behavior is narrow:
-- In `trustMode=untrusted_or_mixed` plus `executionSafetyMode=operator_gated`, autonomous execution now blocks before handoff unless the issue has the `trusted-input` label.
-- `trusted_repo_and_authors` and `unsandboxed_autonomous` still allow execution.
-- Readiness/status/explain now surface the decision explicitly with `blocked_by=trust_gate:trusted-input-required`.
-
-Focused verification passed again in the current worktree, and the branch now tracks `origin/codex/issue-711`. One unrelated untracked path remains: `.codex-supervisor/replay/`.
-
-Summary: Re-verified the safer-mode autonomous execution trust gate, pushed `codex/issue-711`, and opened draft PR #764 for review.
-State hint: draft_pr
-Blocked reason: none
-Tests: `npx tsx --test src/run-once-turn-execution.test.ts src/supervisor/supervisor.test.ts`; `npx tsx --test src/run-once-turn-execution.test.ts src/supervisor/supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npx tsx --test src/run-once-issue-selection.test.ts`; `npm run build`
-Failure signature: none
-Next action: monitor PR #764 for CI and review feedback, then address follow-up if any appears.
+- Added informational merge-latency visibility fields to the issue record, persisted from PR lifecycle reevaluations and surfaced in status/replay artifacts with focused tests.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: enforcement belonged in issue selection, not deep in the Codex runner, so safer-mode trust gating could fail closed before consuming a turn and still surface a deterministic operator-facing reason.
-- What changed: added `src/supervisor/supervisor-trust-gate.ts` with a narrow `trusted-input` label rule. `resolveRunnableIssueContext()` now blocks safer-mode autonomous execution when `trustMode=untrusted_or_mixed` and `executionSafetyMode=operator_gated` unless the issue has the `trusted-input` label, while trusted-repo mode or explicit unsafe override still allow execution. Readiness and explain/status paths now report `blocked_by=trust_gate:trusted-input-required` and still treat previously trust-gated records as selectable once the issue becomes trusted. Draft PR #764 is open against `main`.
+- Hypothesis: the missing visibility belongs in the PR lifecycle patch layer, because that is where the supervisor already persists informational review-wait timing without changing merge policy.
+- What changed: added nullable record fields for `provider_success_observed_at`, `provider_success_head_sha`, and `merge_readiness_last_evaluated_at`; normalized and patched them through `StateStore`; added `syncMergeLatencyVisibility()` in `src/pull-request-state.ts`; wired the resulting patch through `derivePullRequestLifecycleSnapshot()` and post-turn persistence; cleared the fields on requeue/new-record reset paths; surfaced the fields in detailed status and replay cycle snapshots; and tightened focused tests in `src/supervisor/supervisor-lifecycle.test.ts`, `src/supervisor/supervisor-status-model.test.ts`, and `src/supervisor/supervisor-cycle-snapshot.test.ts`.
 - Current blocker: none
-- Next exact step: watch PR #764 for CI and review results, then address any follow-up without broadening the trust rule.
-- Verification gap: none in the implemented scope after installing local dev dependencies in this worktree.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/run-once-issue-selection.ts`, `src/run-once-issue-selection.test.ts`, `src/supervisor/supervisor-trust-gate.ts`, `src/supervisor/supervisor-selection-readiness-summary.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`
-- Rollback concern: removing the selection-stage trust gate or readiness/explain wiring would silently restore autonomous execution for untrusted GitHub-authored issue/review input in `operator_gated` safer mode.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-711 --title "Gate safer-mode autonomous execution on trusted input" --body ...`
-- Last focused failure: none
+- Next exact step: commit this checkpoint on `codex/issue-766`, then open/update the draft PR and run any missing broader verification once TypeScript tooling is available in the worktree.
+- Verification gap: `npm run build` cannot complete here because `tsc`/`typescript` is not installed in the worktree, so only focused `tsx --test` verification ran.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/core/state-store.ts`, `src/core/types.ts`, `src/post-turn-pull-request.ts`, `src/pull-request-state.ts`, `src/recovery-reconciliation.ts`, `src/run-once-issue-selection.ts`, `src/supervisor/replay-corpus-validation.ts`, `src/supervisor/supervisor-cycle-snapshot.test.ts`, `src/supervisor/supervisor-cycle-snapshot.ts`, `src/supervisor/supervisor-detailed-status-assembly.ts`, `src/supervisor/supervisor-lifecycle.test.ts`, `src/supervisor/supervisor-lifecycle.ts`, `src/supervisor/supervisor-status-model.test.ts`
+- Rollback concern: removing the lifecycle visibility patching or status/snapshot wiring would erase the only persisted distinction between provider delay and supervisor reevaluation delay for active PR heads.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-lifecycle.test.ts src/supervisor/supervisor-status-model.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts`
+- Last focused failure: `build-tooling-missing:tsc-not-installed`
 - Last focused commands:
 ```bash
-npx tsx --test src/run-once-turn-execution.test.ts src/supervisor/supervisor.test.ts
-npx tsx --test src/run-once-turn-execution.test.ts src/supervisor/supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts
-npx tsx --test src/run-once-issue-selection.test.ts
+npx tsx --test src/supervisor/supervisor-lifecycle.test.ts
+npx tsx --test src/supervisor/supervisor-status-model.test.ts
+npx tsx --test src/supervisor/supervisor-cycle-snapshot.test.ts
+npx tsx --test src/supervisor/supervisor-pr-readiness.test.ts
+npx tsx --test src/core/state-store.test.ts
 npm run build
-git push -u origin codex/issue-711
-gh pr create --draft --base main --head codex/issue-711 --title "Gate safer-mode autonomous execution on trusted input" --body ...
-gh pr view 764 --json number,title,state,isDraft,url,headRefName,baseRefName
+npx tsc -p tsconfig.json
 date -u +"%Y-%m-%dT%H:%M:%SZ"
 ```
 ### Scratchpad

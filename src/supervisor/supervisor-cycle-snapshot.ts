@@ -41,6 +41,9 @@ export interface SupervisorCycleDecisionSnapshot {
       | "last_head_sha"
       | "review_wait_started_at"
       | "review_wait_head_sha"
+      | "provider_success_observed_at"
+      | "provider_success_head_sha"
+      | "merge_readiness_last_evaluated_at"
       | "copilot_review_requested_observed_at"
       | "copilot_review_requested_head_sha"
       | "copilot_review_timed_out_at"
@@ -126,6 +129,9 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
         last_head_sha: record.last_head_sha,
         review_wait_started_at: record.review_wait_started_at,
         review_wait_head_sha: record.review_wait_head_sha,
+        provider_success_observed_at: record.provider_success_observed_at ?? null,
+        provider_success_head_sha: record.provider_success_head_sha ?? null,
+        merge_readiness_last_evaluated_at: record.merge_readiness_last_evaluated_at ?? null,
         copilot_review_requested_observed_at: record.copilot_review_requested_observed_at,
         copilot_review_requested_head_sha: record.copilot_review_requested_head_sha,
         copilot_review_timed_out_at: record.copilot_review_timed_out_at,
@@ -196,6 +202,9 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
         last_head_sha: record.last_head_sha,
         review_wait_started_at: record.review_wait_started_at,
         review_wait_head_sha: record.review_wait_head_sha,
+        provider_success_observed_at: record.provider_success_observed_at ?? null,
+        provider_success_head_sha: record.provider_success_head_sha ?? null,
+        merge_readiness_last_evaluated_at: record.merge_readiness_last_evaluated_at ?? null,
         copilot_review_requested_observed_at: record.copilot_review_requested_observed_at,
         copilot_review_requested_head_sha: record.copilot_review_requested_head_sha,
         copilot_review_timed_out_at: record.copilot_review_timed_out_at,

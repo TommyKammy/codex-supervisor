@@ -72,6 +72,9 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     journal_path: "/tmp/workspaces/issue-366/.codex-supervisor/issue-journal.md",
     review_wait_started_at: null,
     review_wait_head_sha: null,
+    provider_success_observed_at: null,
+    provider_success_head_sha: null,
+    merge_readiness_last_evaluated_at: null,
     copilot_review_requested_observed_at: null,
     copilot_review_requested_head_sha: null,
     copilot_review_timed_out_at: null,
@@ -268,6 +271,36 @@ test("derivePullRequestLifecycleSnapshot keeps CodeRabbit repos in waiting_ci fo
     const snapshot = derivePullRequestLifecycleSnapshot(config, record, pr, checks, reviewThreads);
 
     assert.equal(snapshot.nextState, "waiting_ci");
+  });
+});
+
+test("derivePullRequestLifecycleSnapshot records provider-success observation and merge-readiness reevaluation timestamps for merge-ready current heads", () => {
+  withStubbedDateNow("2026-03-13T02:06:00Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    });
+    const record = createRecord({
+      state: "waiting_ci",
+      provider_success_observed_at: null,
+      provider_success_head_sha: null,
+      merge_readiness_last_evaluated_at: null,
+    });
+    const pr = createPullRequest({
+      copilotReviewState: "arrived",
+      copilotReviewArrivedAt: "2026-03-13T02:04:00Z",
+    });
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+    const reviewThreads: ReviewThread[] = [];
+
+    const snapshot = derivePullRequestLifecycleSnapshot(config, record, pr, checks, reviewThreads);
+
+    assert.equal(snapshot.nextState, "ready_to_merge");
+    assert.equal(Number.isNaN(Date.parse(snapshot.recordForState.provider_success_observed_at ?? "")), false);
+    assert.equal(snapshot.recordForState.provider_success_head_sha, "head123");
+    assert.equal(
+      snapshot.recordForState.merge_readiness_last_evaluated_at,
+      snapshot.recordForState.provider_success_observed_at,
+    );
   });
 });
 

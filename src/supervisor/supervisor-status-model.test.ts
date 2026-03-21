@@ -188,6 +188,11 @@ test("buildDetailedStatusModel preserves check summaries and local-review drift 
   assert.ok(lines.includes("failing_checks=unit"));
   assert.ok(lines.includes("pending_checks=lint"));
   assert.ok(
+    lines.includes(
+      "merge_latency provider_success_observed_at=none provider_success_head_sha=none merge_readiness_last_evaluated_at=none",
+    ),
+  );
+  assert.ok(
     lines.some((line) =>
       line.includes(
         "local_review gating=no policy=block_ready findings=2 root_causes=1 max_severity=high verified_findings=1 verified_max_severity=high head=stale reviewed_head_sha=cafebabe pr_head_sha=deadbeef ran_at=2026-03-11T15:00:00Z needs_review_run=yes drift=cafebabe->deadbeef signature=local-review:high:2 repeated=2 stalled=no",
@@ -231,6 +236,9 @@ test("buildDetailedStatusModel preserves active-line ordering across PR and fail
       blocked_reason: "verification",
       last_failure_kind: "command_error",
       last_failure_signature: "build:red",
+      provider_success_observed_at: "2026-03-11T15:05:00Z",
+      provider_success_head_sha: "deadbeef",
+      merge_readiness_last_evaluated_at: "2026-03-11T15:06:00Z",
       last_error: "build failed\nsee logs",
       copilot_review_timeout_reason: "provider timeout\nwaiting",
       last_failure_context: {
@@ -266,6 +274,7 @@ test("buildDetailedStatusModel preserves active-line ordering across PR and fail
 
   const prefixesInOrder = [
     "issue=#58",
+    "merge_latency provider_success_observed_at=2026-03-11T15:05:00Z provider_success_head_sha=deadbeef merge_readiness_last_evaluated_at=2026-03-11T15:06:00Z",
     "local_review gating=",
     "external_review head=",
     "last_error=build failed\\nsee logs",

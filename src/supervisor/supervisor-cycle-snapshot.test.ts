@@ -73,6 +73,9 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     journal_path: "/tmp/workspaces/issue-407/.codex-supervisor/issue-journal.md",
     review_wait_started_at: "2026-03-16T10:00:00Z",
     review_wait_head_sha: "head-407",
+    provider_success_observed_at: "2026-03-16T10:04:30Z",
+    provider_success_head_sha: "head-407",
+    merge_readiness_last_evaluated_at: "2026-03-16T10:05:00Z",
     copilot_review_requested_observed_at: null,
     copilot_review_requested_head_sha: null,
     copilot_review_timed_out_at: null,
@@ -216,6 +219,8 @@ test("buildSupervisorCycleDecisionSnapshot keeps the decision inputs narrow and 
   assert.equal(snapshot.local.record.blocked_verification_retry_count, 0);
   assert.equal(snapshot.local.record.repeated_blocker_count, 0);
   assert.equal(snapshot.local.record.repeated_failure_signature_count, 0);
+  assert.equal(snapshot.local.record.provider_success_observed_at, "2026-03-16T10:04:30Z");
+  assert.equal(snapshot.local.record.merge_readiness_last_evaluated_at, "2026-03-16T10:05:00Z");
   assert.equal(snapshot.local.record.last_failure_kind, null);
   assert.equal(snapshot.local.record.last_failure_context, null);
   assert.equal(snapshot.decision.nextState, "addressing_review");
@@ -244,6 +249,7 @@ test("writeSupervisorCycleDecisionSnapshot serializes one cycle into the workspa
   assert.equal(persisted.capturedAt, "2026-03-16T10:07:00Z");
   assert.equal(persisted.local.record.issue_number, 407);
   assert.equal(persisted.local.record.timeout_retry_count, 0);
+  assert.equal(persisted.local.record.provider_success_head_sha, "head-407");
   assert.equal(persisted.local.record.last_failure_context, null);
   assert.equal(persisted.github.pullRequest?.number, 88);
   assert.equal(persisted.decision.nextState, "addressing_review");
