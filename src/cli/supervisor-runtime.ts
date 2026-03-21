@@ -66,6 +66,17 @@ function registerProcessStopSignals(handler: (signal: NodeJS.Signals) => void): 
   process.once("SIGTERM", () => handler("SIGTERM"));
 }
 
+function requireLoopController(
+  command: "loop" | "run-once",
+  loopController?: SupervisorLoopController,
+): SupervisorLoopController {
+  if (!loopController) {
+    throw new Error(`Missing supervisor loop controller for ${command} command`);
+  }
+
+  return loopController;
+}
+
 export async function runSupervisorCycle(
   loopController: Pick<SupervisorLoopController, "runCycle">,
   command: "loop" | "run-once",
@@ -87,6 +98,10 @@ export async function runSupervisorCommand(
     writeStderr = (line) => console.error(line),
     registerStopSignals = registerProcessStopSignals,
   } = dependencies;
+  const cycleController =
+    options.command === "run-once" || options.command === "loop"
+      ? requireLoopController(options.command, loopController)
+      : null;
 
   let shouldStop = false;
   let sleepController: AbortController | null = null;
@@ -140,20 +155,13 @@ export async function runSupervisorCommand(
   }
 
   if (options.command === "run-once") {
-    if (!loopController) {
-      throw new Error("Missing supervisor loop controller for run-once command");
-    }
-    writeStdout(await runSupervisorCycle(loopController, "run-once", { dryRun: options.dryRun }));
+    writeStdout(await runSupervisorCycle(cycleController!, "run-once", { dryRun: options.dryRun }));
     return;
-  }
-
-  if (!loopController) {
-    throw new Error("Missing supervisor loop controller for loop command");
   }
 
   while (!shouldStop) {
     try {
-      const message = await runSupervisorCycle(loopController, "loop", { dryRun: options.dryRun });
+      const message = await runSupervisorCycle(cycleController!, "loop", { dryRun: options.dryRun });
       writeStdout(`${new Date().toISOString()} ${message}`);
       if (isCorruptJsonFailClosedMessage(message)) {
         shouldStop = true;

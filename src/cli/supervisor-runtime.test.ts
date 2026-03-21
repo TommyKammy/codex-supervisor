@@ -124,6 +124,106 @@ test("runSupervisorCommand stops the loop after a registered signal and aborts p
   assert.match(stdout[1] ?? "", /received SIGTERM, stopping after current cycle/);
 });
 
+test("runSupervisorCommand fails fast for run-once without a loop controller", async () => {
+  let registerStopSignalsCalled = false;
+  let ensureGsdInstalledCalled = false;
+
+  await assert.rejects(
+    runSupervisorCommand(
+      { command: "run-once", dryRun: false, why: false },
+      {
+        service: {
+          config: {} as SupervisorConfig,
+          pollIntervalMs: async () => 50,
+          runOnce: async () => {
+            throw new Error("unexpected runOnce");
+          },
+          queryStatus: async () => {
+            throw new Error("unexpected queryStatus");
+          },
+          queryExplain: async () => {
+            throw new Error("unexpected queryExplain");
+          },
+          runRecoveryAction: async () => {
+            throw new Error("unexpected runRecoveryAction");
+          },
+          pruneOrphanedWorkspaces: async () => {
+            throw new Error("unexpected pruneOrphanedWorkspaces");
+          },
+          resetCorruptJsonState: async () => {
+            throw new Error("unexpected resetCorruptJsonState");
+          },
+          queryIssueLint: async () => createIssueLintDto(),
+          queryDoctor: async () => {
+            throw new Error("unexpected queryDoctor");
+          },
+        },
+        ensureGsdInstalled: async () => {
+          ensureGsdInstalledCalled = true;
+          return null;
+        },
+        registerStopSignals: () => {
+          registerStopSignalsCalled = true;
+        },
+      },
+    ),
+    /Missing supervisor loop controller for run-once command/,
+  );
+
+  assert.equal(registerStopSignalsCalled, false);
+  assert.equal(ensureGsdInstalledCalled, false);
+});
+
+test("runSupervisorCommand fails fast for loop without a loop controller", async () => {
+  let registerStopSignalsCalled = false;
+  let ensureGsdInstalledCalled = false;
+
+  await assert.rejects(
+    runSupervisorCommand(
+      { command: "loop", dryRun: false, why: false },
+      {
+        service: {
+          config: {} as SupervisorConfig,
+          pollIntervalMs: async () => 50,
+          runOnce: async () => {
+            throw new Error("unexpected runOnce");
+          },
+          queryStatus: async () => {
+            throw new Error("unexpected queryStatus");
+          },
+          queryExplain: async () => {
+            throw new Error("unexpected queryExplain");
+          },
+          runRecoveryAction: async () => {
+            throw new Error("unexpected runRecoveryAction");
+          },
+          pruneOrphanedWorkspaces: async () => {
+            throw new Error("unexpected pruneOrphanedWorkspaces");
+          },
+          resetCorruptJsonState: async () => {
+            throw new Error("unexpected resetCorruptJsonState");
+          },
+          queryIssueLint: async () => createIssueLintDto(),
+          queryDoctor: async () => {
+            throw new Error("unexpected queryDoctor");
+          },
+        },
+        ensureGsdInstalled: async () => {
+          ensureGsdInstalledCalled = true;
+          return null;
+        },
+        registerStopSignals: () => {
+          registerStopSignalsCalled = true;
+        },
+      },
+    ),
+    /Missing supervisor loop controller for loop command/,
+  );
+
+  assert.equal(registerStopSignalsCalled, false);
+  assert.equal(ensureGsdInstalledCalled, false);
+});
+
 test("runSupervisorCommand re-reads the poll cadence between loop cycles", async () => {
   const sleepCalls: number[] = [];
   let signalHandler: ((signal: NodeJS.Signals) => void) | undefined;

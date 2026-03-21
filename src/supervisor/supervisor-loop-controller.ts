@@ -14,7 +14,7 @@ class SupervisorProcessLoopController implements SupervisorLoopController {
   async runCycle(command: "loop" | "run-once", options: Pick<CliOptions, "dryRun">): Promise<string> {
     const lock = await this.supervisor.acquireSupervisorLock(command);
     if (!lock.acquired) {
-      return `Skipped supervisor cycle: ${lock.reason}.`;
+      return `Skipped supervisor cycle: ${lock.reason ?? "lock unavailable"}.`;
     }
 
     try {
