@@ -55,6 +55,12 @@ export interface CadenceDiagnosticsSummary {
   mergeCriticalRecheckEnabled: boolean;
 }
 
+export interface CandidateDiscoveryDiagnostics {
+  fetchWindow: number;
+  observedMatchingOpenIssues: number;
+  truncated: boolean;
+}
+
 export interface SupervisorConfig {
   repoPath: string;
   repoSlug: string;

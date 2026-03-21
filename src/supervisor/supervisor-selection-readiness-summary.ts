@@ -15,20 +15,53 @@ import {
   isAutonomousExecutionTrustBlockedRecord,
 } from "./supervisor-trust-gate";
 import {
+  CandidateDiscoveryDiagnostics,
   GitHubIssue,
   SupervisorConfig,
   SupervisorStateFile,
 } from "../core/types";
 import { formatSelectionReason } from "./supervisor-selection-issue-explain";
 
-type ReadinessSummaryGitHub = Pick<GitHubClient, "listCandidateIssues">;
+type ReadinessSummaryGitHub =
+  Pick<GitHubClient, "listCandidateIssues">
+  & Partial<Pick<GitHubClient, "getCandidateDiscoveryDiagnostics">>;
 type SelectionWhyGitHub = Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">;
+
+export function formatCandidateDiscoveryStatusLine(
+  diagnostics: CandidateDiscoveryDiagnostics | null,
+): string | null {
+  if (!diagnostics?.truncated) {
+    return null;
+  }
+
+  return [
+    "candidate_discovery_warning=matching_open_issues_exceed_first_page_window",
+    `fetch_window=${diagnostics.fetchWindow}`,
+    `observed_matching_open_issues=${diagnostics.observedMatchingOpenIssues}+`,
+    "runnable_selection_incomplete=yes",
+  ].join(" ");
+}
+
+export function formatCandidateDiscoveryWarningDetail(
+  diagnostics: CandidateDiscoveryDiagnostics | null,
+): string | null {
+  if (!diagnostics?.truncated) {
+    return null;
+  }
+
+  return `Candidate discovery may be truncated: more than ${diagnostics.fetchWindow} matching open issues exceed the current first-page fetch window, so runnable selection may be incomplete.`;
+}
 
 export async function buildReadinessSummary(
   github: ReadinessSummaryGitHub,
   config: SupervisorConfig,
   state: SupervisorStateFile,
 ): Promise<string[]> {
+  const candidateDiscoveryDiagnostics =
+    typeof github.getCandidateDiscoveryDiagnostics === "function"
+      ? await github.getCandidateDiscoveryDiagnostics()
+      : null;
+  const candidateDiscoveryWarningLine = formatCandidateDiscoveryStatusLine(candidateDiscoveryDiagnostics);
   const issues = await github.listCandidateIssues();
   const runnable: string[] = [];
   const blocked: string[] = [];
@@ -79,6 +112,7 @@ export async function buildReadinessSummary(
   }
 
   return [
+    ...(candidateDiscoveryWarningLine === null ? [] : [candidateDiscoveryWarningLine]),
     `runnable_issues=${runnable.length > 0 ? runnable.join(",") : "none"}`,
     `blocked_issues=${blocked.length > 0 ? blocked.join("; ") : "none"}`,
   ];
