@@ -11,6 +11,10 @@ import {
   shouldEnforceExecutionReady,
 } from "./supervisor-execution-policy";
 import {
+  evaluateAutonomousExecutionTrust,
+  isAutonomousExecutionTrustBlockedRecord,
+} from "./supervisor-trust-gate";
+import {
   GitHubIssue,
   SupervisorConfig,
   SupervisorStateFile,
@@ -51,13 +55,22 @@ export async function buildReadinessSummary(
       continue;
     }
 
+    const trustDecision = evaluateAutonomousExecutionTrust(config, issue);
+    if (!trustDecision.allowed) {
+      blocked.push(`#${issue.number} blocked_by=trust_gate:${trustDecision.readinessToken}`);
+      continue;
+    }
+
     const blockingIssue = findBlockingIssue(issue, issues, state);
     if (blockingIssue) {
       blocked.push(`#${issue.number} blocked_by=${blockingIssue.reason}`);
       continue;
     }
 
-    if (!isEligibleForSelection(existing, config)) {
+    if (
+      !isEligibleForSelection(existing, config) &&
+      !(isAutonomousExecutionTrustBlockedRecord(existing) && trustDecision.allowed)
+    ) {
       blocked.push(`#${issue.number} blocked_by=local_state:${existing?.state ?? "unknown"}`);
       continue;
     }
@@ -94,11 +107,19 @@ export async function buildSelectionWhySummary(
       continue;
     }
 
+    const trustDecision = evaluateAutonomousExecutionTrust(config, issue);
+    if (!trustDecision.allowed) {
+      continue;
+    }
+
     if (findBlockingIssue(issue, issues, state)) {
       continue;
     }
 
-    if (!isEligibleForSelection(existing, config)) {
+    if (
+      !isEligibleForSelection(existing, config) &&
+      !(isAutonomousExecutionTrustBlockedRecord(existing) && trustDecision.allowed)
+    ) {
       continue;
     }
 
