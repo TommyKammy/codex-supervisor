@@ -81,6 +81,34 @@ test("status surfaces corrupted JSON state as an explicit hard diagnostic", asyn
   assert.match(status, /^No active issue\.$/m);
 });
 
+test("status surfaces the default trust posture and execution-safety warning", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+
+  assert.deepEqual(report.trustDiagnostics, {
+    trustMode: "trusted_repo_and_authors",
+    executionSafetyMode: "unsandboxed_autonomous",
+    warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+  });
+
+  const status = await supervisor.status();
+  assert.match(status, /trust_mode=trusted_repo_and_authors/);
+  assert.match(status, /execution_safety_mode=unsandboxed_autonomous/);
+  assert.match(status, /execution_safety_warning=Unsandboxed autonomous execution assumes trusted GitHub-authored inputs\./);
+});
+
 test("runOnce fail-closes before execution when corrupted JSON state is quarantined", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {
