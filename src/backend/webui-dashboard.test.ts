@@ -179,6 +179,11 @@ function createStatus(args: {
     title: string;
     blockedBy: string;
   }>;
+  runnableIssues?: Array<{
+    issueNumber: number;
+    title: string;
+    readiness: string;
+  }>;
   candidateDiscovery?: {
     fetchWindow: number;
     strategy: string;
@@ -196,7 +201,7 @@ function createStatus(args: {
       selectionReason: selectedIssueNumber === null ? "no_runnable_issue" : "selected",
     },
     trackedIssues: args.trackedIssues ?? [],
-    runnableIssues: [],
+    runnableIssues: args.runnableIssues ?? [],
     blockedIssues: args.blockedIssues ?? [],
     reconciliationPhase: null,
     warning: null,
@@ -309,6 +314,14 @@ function createDashboardHarness(queue: QueuedFetchResponse[]) {
   };
 }
 
+function findChildByText(element: FakeElement, pattern: RegExp): FakeElement | undefined {
+  return element.children.find((child) => pattern.test(child.textContent));
+}
+
+function joinChildText(element: FakeElement): string {
+  return element.children.map((child) => child.textContent).join("\n");
+}
+
 test("dashboard keeps requeue disabled until the selected issue finishes loading", async () => {
   const explainResponse = createDeferred<MockResponseLike>();
   const issueLintResponse = createDeferred<MockResponseLike>();
@@ -409,6 +422,55 @@ test("dashboard renders typed tracked and blocked issue context without relying 
     statusLines.textContent,
     /candidate discovery fetch_window=250 strategy=paginated truncated=yes observed_matching_open_issues=251/u,
   );
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard lets operators inspect typed runnable and blocked issues without manual number entry", async () => {
+  const harness = createDashboardHarness([
+    {
+      path: "/api/status?why=true",
+      response: jsonResponse(
+        createStatus({
+          includeWhyLines: false,
+          runnableIssues: [
+            {
+              issueNumber: 77,
+              title: "Ready for inspection",
+              readiness: "ready",
+            },
+          ],
+          blockedIssues: [
+            {
+              issueNumber: 93,
+              title: "Needs scope repair",
+              blockedBy: "requirements:scope, verification",
+            },
+          ],
+        }),
+      ),
+    },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    { path: "/api/issues/93/explain", response: jsonResponse(createExplain(93)) },
+    { path: "/api/issues/93/issue-lint", response: jsonResponse(createIssueLint(93)) },
+  ]);
+  await harness.flush();
+
+  const issueShortcuts = harness.document.getElementById("issue-shortcuts");
+  const issueSummary = harness.document.getElementById("issue-summary");
+  assert.ok(issueShortcuts);
+  assert.ok(issueSummary);
+
+  assert.equal(issueShortcuts.children.length, 2);
+  assert.match(joinChildText(issueShortcuts), /#77 runnable ready Ready for inspection/u);
+  assert.match(joinChildText(issueShortcuts), /#93 blocked requirements:scope, verification Needs scope repair/u);
+
+  const blockedIssueButton = findChildByText(issueShortcuts, /#93 blocked/u);
+  assert.ok(blockedIssueButton);
+
+  await blockedIssueButton.dispatch("click");
+  await harness.flush();
+
+  assert.match(issueSummary.textContent, /#93 Issue 93/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 

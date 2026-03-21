@@ -189,6 +189,29 @@ export function renderSupervisorDashboardHtml(): string {
         align-items: center;
       }
 
+      .shortcut-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 10px;
+      }
+
+      .shortcut-button {
+        width: 100%;
+        padding: 12px 14px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.78);
+        color: var(--text);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .shortcut-button:hover {
+        border-color: rgba(15, 108, 120, 0.35);
+        background: rgba(255, 255, 255, 0.92);
+      }
+
       .toolbar input {
         min-width: 180px;
         padding: 12px 14px;
@@ -350,6 +373,12 @@ export function renderSupervisorDashboardHtml(): string {
             <span id="issue-summary" class="hint">No issue loaded.</span>
           </div>
           <div class="panel-body stack">
+            <div class="row">
+              <div class="row-label">Typed issue shortcuts</div>
+              <div id="issue-shortcuts" class="shortcut-list">
+                <div class="hint">Waiting for typed issue context…</div>
+              </div>
+            </div>
             <form id="issue-form" class="toolbar">
               <input id="issue-number-input" type="number" min="1" step="1" inputmode="numeric" placeholder="Issue number">
               <button type="submit">Load issue details</button>
@@ -436,6 +465,7 @@ export function renderSupervisorDashboardHtml(): string {
         doctorOverall: document.getElementById("doctor-overall"),
         doctorChecks: document.getElementById("doctor-checks"),
         issueSummary: document.getElementById("issue-summary"),
+        issueShortcuts: document.getElementById("issue-shortcuts"),
         issueExplain: document.getElementById("issue-explain"),
         issueLint: document.getElementById("issue-lint"),
         issueForm: document.getElementById("issue-form"),
@@ -551,6 +581,51 @@ export function renderSupervisorDashboardHtml(): string {
         return status?.candidateDiscoverySummary ? [status.candidateDiscoverySummary] : [];
       }
 
+      function collectIssueShortcuts(status) {
+        const shortcuts = [];
+        const seenIssueNumbers = new Set();
+
+        function pushShortcut(issueNumber, label, detail) {
+          if (!Number.isInteger(issueNumber) || seenIssueNumbers.has(issueNumber)) {
+            return;
+          }
+          seenIssueNumbers.add(issueNumber);
+          shortcuts.push({
+            issueNumber,
+            label,
+            detail,
+          });
+        }
+
+        if (status?.activeIssue) {
+          pushShortcut(
+            status.activeIssue.issueNumber,
+            "active",
+            [status.activeIssue.state, status.activeIssue.branch].filter(Boolean).join(" "),
+          );
+        }
+
+        for (const issue of Array.isArray(status?.runnableIssues) ? status.runnableIssues : []) {
+          pushShortcut(issue.issueNumber, "runnable " + issue.readiness, [issue.title].filter(Boolean).join(" "));
+        }
+
+        for (const issue of Array.isArray(status?.blockedIssues) ? status.blockedIssues : []) {
+          pushShortcut(issue.issueNumber, "blocked " + issue.blockedBy, [issue.title].filter(Boolean).join(" "));
+        }
+
+        for (const issue of Array.isArray(status?.trackedIssues) ? status.trackedIssues : []) {
+          pushShortcut(
+            issue.issueNumber,
+            "tracked " + issue.state,
+            [issue.branch, Number.isInteger(issue.prNumber) ? "pr=#" + issue.prNumber : "pr=none"]
+              .filter(Boolean)
+              .join(" "),
+          );
+        }
+
+        return shortcuts;
+      }
+
       function renderStatus() {
         if (!state.status) {
           return;
@@ -629,6 +704,38 @@ export function renderSupervisorDashboardHtml(): string {
               ["repair_guidance", (lint.repairGuidance || []).join(" | ") || "none"],
             ]),
           );
+        }
+      }
+
+      function renderIssueShortcuts() {
+        if (!elements.issueShortcuts) {
+          return;
+        }
+
+        const shortcuts = collectIssueShortcuts(state.status);
+        elements.issueShortcuts.innerHTML = "";
+
+        if (shortcuts.length === 0) {
+          const emptyState = document.createElement("div");
+          emptyState.className = "hint";
+          emptyState.textContent = "No typed issue shortcuts reported.";
+          elements.issueShortcuts.appendChild(emptyState);
+          return;
+        }
+
+        for (const shortcut of shortcuts) {
+          const button = document.createElement("button");
+          button.className = "shortcut-button";
+          button.textContent =
+            "#" + shortcut.issueNumber + " " + shortcut.label + (shortcut.detail ? " " + shortcut.detail : "");
+          button.addEventListener("click", async () => {
+            try {
+              await loadIssue(shortcut.issueNumber);
+            } catch (error) {
+              setText(elements.issueSummary, error instanceof Error ? error.message : String(error));
+            }
+          });
+          elements.issueShortcuts.appendChild(button);
         }
       }
 
@@ -725,6 +832,7 @@ export function renderSupervisorDashboardHtml(): string {
         }
         renderStatus();
         renderDoctor();
+        renderIssueShortcuts();
         renderSelectedIssue();
         markRefresh();
       }
