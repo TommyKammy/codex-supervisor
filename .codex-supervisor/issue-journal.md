@@ -26,7 +26,7 @@
 - Hypothesis: #801 was still incomplete because the dashboard exposed typed runnable/blocked/tracked issue models only as status text, leaving issue inspection dependent on manual issue-number entry.
 - What changed: added a focused dashboard regression for typed shortcut-driven inspection, rendered read-only typed issue shortcut buttons from the status DTO, and wired those buttons into the existing explain/issue-lint loading path.
 - Current blocker: none
-- Next exact step: commit the typed issue-shortcut dashboard change, then push `codex/issue-801` and open or update the draft PR for #801.
+- Next exact step: monitor draft PR #806 CI and address any review or verification failures on `codex/issue-801`.
 - Verification gap: none locally; remote CI has not run on this checkpoint yet.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard.test.ts`, `src/backend/webui-dashboard.ts`
 - Rollback concern: keep the shortcut strip read-only and sourced only from typed backend status fields so browser-side selection logic does not drift from supervisor behavior.
@@ -45,6 +45,7 @@ npm run build
 - 2026-03-21T23:07:19Z: reproduced the current #801 gap with a new dashboard test that expected typed runnable/blocked issues to expose clickable shortcuts for explain and issue-lint without using the manual number field.
 - 2026-03-21T23:07:19Z: added a read-only typed issue shortcut strip to the dashboard, deduped across active/runnable/blocked/tracked issue DTOs, and reused the existing `loadIssue()` path for inspection.
 - 2026-03-21T23:07:19Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts`, `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`, and `npm run build` after restoring local dependencies via `npm ci`.
+- 2026-03-21T23:07:19Z: committed `9921e48` (`Add typed dashboard issue shortcuts`), pushed `codex/issue-801`, and opened draft PR #806 (`https://github.com/TommyKammy/codex-supervisor/pull/806`).
 - 2026-03-22T00:00:00Z: reproduced the issue with a new dashboard harness case that supplied typed tracked/blocked/candidate-discovery data but no legacy readiness lines; the dashboard rendered `No status lines reported.`
 - 2026-03-22T00:00:00Z: refactored readiness assembly to emit typed runnable and blocked issue collections alongside the existing line-based summary, and added typed tracked issue DTOs plus typed candidate-discovery summary fields to `statusReport()`.
 - 2026-03-22T00:00:00Z: focused verification passed; `npm run build` again needed a local `npm ci` because `tsc` was missing in this worktree.
