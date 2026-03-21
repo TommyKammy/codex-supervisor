@@ -91,7 +91,7 @@ import {
   buildSelectionWhySummary,
   formatCandidateDiscoveryBehaviorLine,
 } from "./supervisor-selection-readiness-summary";
-import { buildIssueLintSummary } from "./supervisor-selection-issue-lint";
+import { buildIssueLintDto, type SupervisorIssueLintDto } from "./supervisor-selection-issue-lint";
 import {
   buildIssueExplainDto,
   renderIssueExplainDto,
@@ -1014,8 +1014,8 @@ export class Supervisor {
     return buildIssueExplainDto(this.github, this.config, state, issueNumber);
   }
 
-  async issueLint(issueNumber: number): Promise<string> {
-    return buildIssueLintSummary(this.github, issueNumber).then((lines) => lines.join("\n"));
+  async issueLint(issueNumber: number): Promise<SupervisorIssueLintDto> {
+    return buildIssueLintDto(this.github, issueNumber);
   }
 
   async doctor(): Promise<string> {

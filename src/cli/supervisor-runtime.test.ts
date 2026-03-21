@@ -1,7 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SupervisorConfig } from "../core/types";
+import type { SupervisorIssueLintDto } from "../supervisor/supervisor-selection-issue-lint";
 import { runOnceWithSupervisorLock, runSupervisorCommand } from "./supervisor-runtime";
+
+function createIssueLintDto(overrides: Partial<SupervisorIssueLintDto> = {}): SupervisorIssueLintDto {
+  return {
+    issueNumber: 123,
+    title: "Issue lint",
+    executionReady: true,
+    missingRequired: [],
+    missingRecommended: [],
+    metadataErrors: [],
+    highRiskBlockingAmbiguity: null,
+    repairGuidance: [],
+    ...overrides,
+  };
+}
 
 test("runOnceWithSupervisorLock releases the supervisor lock after a successful cycle", async () => {
   let released = false;
@@ -84,7 +99,7 @@ test("runSupervisorCommand stops the loop after a registered signal and aborts p
         resetCorruptJsonState: async () => {
           throw new Error("unexpected resetCorruptJsonState");
         },
-        queryIssueLint: async () => ["lint"],
+        queryIssueLint: async () => createIssueLintDto(),
         queryDoctor: async () => {
           throw new Error("unexpected queryDoctor");
         },
@@ -158,7 +173,7 @@ test("runSupervisorCommand re-reads the poll cadence between loop cycles", async
         resetCorruptJsonState: async () => {
           throw new Error("unexpected resetCorruptJsonState");
         },
-        queryIssueLint: async () => ["lint"],
+        queryIssueLint: async () => createIssueLintDto(),
         queryDoctor: async () => {
           throw new Error("unexpected queryDoctor");
         },
@@ -234,7 +249,7 @@ test("runSupervisorCommand skips sleep when stop is requested while resolving th
         resetCorruptJsonState: async () => {
           throw new Error("unexpected resetCorruptJsonState");
         },
-        queryIssueLint: async () => ["lint"],
+        queryIssueLint: async () => createIssueLintDto(),
         queryDoctor: async () => {
           throw new Error("unexpected queryDoctor");
         },
@@ -315,7 +330,7 @@ test("runSupervisorCommand stops the loop after a corrupt-json fail-closed block
         resetCorruptJsonState: async () => {
           throw new Error("unexpected resetCorruptJsonState");
         },
-        queryIssueLint: async () => ["lint"],
+        queryIssueLint: async () => createIssueLintDto(),
         queryDoctor: async () => {
           throw new Error("unexpected queryDoctor");
         },
@@ -386,7 +401,7 @@ test("runSupervisorCommand routes query commands through the supervisor service 
         },
         queryIssueLint: async (issueNumber) => {
           calls.push(`issueLint:${issueNumber}`);
-          return ["issue lint output"];
+          return createIssueLintDto({ issueNumber, title: "issue lint output" });
         },
         queryDoctor: async () => {
           calls.push("doctor");
@@ -402,6 +417,73 @@ test("runSupervisorCommand routes query commands through the supervisor service 
   assert.deepEqual(calls, ["status:true"]);
   assert.equal(stdout.length, 1);
   assert.match(stdout[0] ?? "", /status output/);
+});
+
+test("runSupervisorCommand renders issue-lint output from the structured DTO", async () => {
+  const stdout: string[] = [];
+  const dto = createIssueLintDto({
+    title: "Render structured issue lint",
+    executionReady: false,
+    missingRequired: ["verification"],
+    missingRecommended: ["depends on"],
+    metadataErrors: ["parallelizable must be Yes or No"],
+    repairGuidance: ["Add a `## Verification` section with the exact command to run."],
+  });
+
+  await runSupervisorCommand(
+    { command: "issue-lint", dryRun: false, why: false, issueNumber: 123 },
+    {
+      service: {
+        config: {} as SupervisorConfig,
+        pollIntervalMs: async () => 50,
+        acquireSupervisorLock: async () => ({
+          acquired: true,
+          release: async () => {},
+        }),
+        runOnce: async () => {
+          throw new Error("unexpected runOnce");
+        },
+        queryStatus: async () => {
+          throw new Error("unexpected queryStatus");
+        },
+        queryExplain: async () => {
+          throw new Error("unexpected queryExplain");
+        },
+        queryIssueLint: async (issueNumber) => {
+          assert.equal(issueNumber, 123);
+          return dto;
+        },
+        queryDoctor: async () => {
+          throw new Error("unexpected queryDoctor");
+        },
+        runRecoveryAction: async () => {
+          throw new Error("unexpected runRecoveryAction");
+        },
+        pruneOrphanedWorkspaces: async () => {
+          throw new Error("unexpected pruneOrphanedWorkspaces");
+        },
+        resetCorruptJsonState: async () => {
+          throw new Error("unexpected resetCorruptJsonState");
+        },
+      },
+      writeStdout: (line) => {
+        stdout.push(line);
+      },
+    },
+  );
+
+  assert.deepEqual(stdout, [
+    [
+      "issue=#123",
+      "title=Render structured issue lint",
+      "execution_ready=no",
+      "missing_required=verification",
+      "missing_recommended=depends on",
+      "metadata_errors=parallelizable must be Yes or No",
+      "high_risk_blocking_ambiguity=none",
+      "repair_guidance_1=Add a `## Verification` section with the exact command to run.",
+    ].join("\n"),
+  ]);
 });
 
 test("runSupervisorCommand renders a structured requeue result", async () => {

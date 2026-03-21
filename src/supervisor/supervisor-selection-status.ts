@@ -8,8 +8,8 @@ export {
   formatSelectionReason,
   renderIssueExplainDto,
 } from "./supervisor-selection-issue-explain";
-export type { IssueLintGitHub } from "./supervisor-selection-issue-lint";
-export { buildIssueLintSummary } from "./supervisor-selection-issue-lint";
+export type { IssueLintGitHub, SupervisorIssueLintDto } from "./supervisor-selection-issue-lint";
+export { buildIssueLintDto, renderIssueLintDto } from "./supervisor-selection-issue-lint";
 export { buildReadinessSummary, buildSelectionWhySummary } from "./supervisor-selection-readiness-summary";
 export type { SupervisorStatusRecords } from "./supervisor-selection-status-records";
 export { summarizeSupervisorStatusRecords } from "./supervisor-selection-status-records";

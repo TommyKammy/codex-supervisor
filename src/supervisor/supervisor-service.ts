@@ -5,6 +5,7 @@ import type {
   SupervisorOrphanPruneResultDto,
   SupervisorRecoveryAction,
 } from "./supervisor-mutation-report";
+import type { SupervisorIssueLintDto } from "./supervisor-selection-issue-lint";
 import type { SupervisorExplainDto } from "./supervisor-selection-status";
 import type { SupervisorStatusDto } from "./supervisor-status-report";
 import type { SupervisorEventSink } from "./supervisor-events";
@@ -26,7 +27,7 @@ export interface SupervisorService {
   pruneOrphanedWorkspaces: () => Promise<SupervisorOrphanPruneResultDto>;
   resetCorruptJsonState: () => Promise<JsonCorruptStateResetResult>;
   queryExplain: (issueNumber: number) => Promise<SupervisorExplainDto>;
-  queryIssueLint: (issueNumber: number) => Promise<string[]>;
+  queryIssueLint: (issueNumber: number) => Promise<SupervisorIssueLintDto>;
   queryDoctor: () => Promise<DoctorDiagnostics>;
 }
 
@@ -73,9 +74,8 @@ class SupervisorApplicationService implements SupervisorService {
     return this.supervisor.explainReport(issueNumber);
   }
 
-  async queryIssueLint(issueNumber: number): Promise<string[]> {
-    const summary = await this.supervisor.issueLint(issueNumber);
-    return summary.split("\n");
+  queryIssueLint(issueNumber: number): Promise<SupervisorIssueLintDto> {
+    return this.supervisor.issueLint(issueNumber);
   }
 
   queryDoctor(): Promise<DoctorDiagnostics> {
