@@ -1,93 +1,48 @@
-# Issue #786: Backend commands MVP: expose only existing safe supervisor mutations over HTTP
+# Issue #787: WebUI commands MVP: add narrow operator actions for existing safe backend commands
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/786
-- Branch: codex/issue-786
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/787
+- Branch: codex/issue-787
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 4 (implementation=1, repair=3)
-- Last head SHA: b66b7b304adedc92113e1308ed6218b252f73ecb
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: ceaa503f2d4378882b49f9bf2943eb8be23e8757
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ8516G0B|PRRT_kwDORgvdZ8516G0C|PRRT_kwDORgvdZ8516IOy
-- Repeated failure signature count: 1
-- Updated at: 2026-03-21T19:53:25.680Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-21T20:18:08.246Z
 
 ## Latest Codex Summary
-Applied the remaining journal-only review fixes locally. The verification
-transcript now uses a fenced `bash` block instead of chained inline code, and
-the embedded review transcript is summarized as normal Markdown so the recorded
-CodeRabbit excerpts no longer rely on single-line pseudo-fences.
-
-I also verified that the future-date review note is a timezone false positive:
-the journal snapshot uses UTC, while commits `6898b72` and `b66b7b3` were both
-created on `2026-03-22` in JST. The only remaining local dirt is the
-pre-existing untracked `.codex-supervisor/replay/` directory.
-
-Summary: Applied the remaining valid journal-only markdown fixes and verified
-the date-review comment is a timezone false positive
-State hint: local_review_fix
-Blocked reason: none
-Tests:
-```bash
-git show -s --format='%H %cI %s' 6898b72
-git show -s --format='%H %cI %s' b66b7b3
-npx --yes markdownlint-cli2 .codex-supervisor/issue-journal.md
-gh api graphql -f query='query($owner: String!, $repo: String!, $number: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $number) { reviewThreads(first: 100) { nodes { id isResolved isOutdated path comments(first: 20) { nodes { databaseId url body author { login } } } } } } } }' -F owner=TommyKammy -F repo=codex-supervisor -F number=796
-```
-Failure signature: PRRT_kwDORgvdZ8516G0B|PRRT_kwDORgvdZ8516G0C|PRRT_kwDORgvdZ8516IOy
-Next action: Commit and push this journal-only follow-up, then reconcile the
-remaining CodeRabbit review threads on PR #796
+- None yet.
 
 ## Active Failure Context
-- Category: review
-- Summary: 3 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/796#discussion_r2970071273
-- Details:
-  - `.codex-supervisor/issue-journal.md:24` thread
-    `PRRT_kwDORgvdZ8516IOy` is valid. The previous `Tests:` entry chained inline
-    code spans while the `rg` pattern contained literal backticks, which
-    triggered `markdownlint` rule `MD038/no-space-in-code`. The verification
-    commands now live in a fenced `bash` block.
-  - `.codex-supervisor/issue-journal.md:33` thread
-    `PRRT_kwDORgvdZ8516G0B` is valid. The embedded review transcript had been
-    flattened into a single line with inline pseudo-fences, which also produced
-    `MD038` noise. The journal now records the same finding as normal Markdown
-    summary text instead of one-line pseudo-fenced content.
-  - `.codex-supervisor/issue-journal.md:62-64` thread
-    `PRRT_kwDORgvdZ8516G0C` is not valid. The journal snapshot timestamp is in
-    UTC, but commits `6898b72` and `b66b7b3` were created on `2026-03-22` in
-    JST, so the scratchpad dates are already accurate and remain unchanged.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the only remaining actionable review feedback is the journal
-  formatting lint, while the date-review note is a timezone false positive.
-- What changed: reformatted the journal verification transcript into a fenced
-  `bash` block, replaced the one-line embedded review transcript with condensed
-  Markdown summaries, and verified the `2026-03-22` scratchpad notes against
-  the actual commit timestamps for `6898b72` and `b66b7b3`.
+- Hypothesis: the remaining gap on this branch was the dashboard UI itself; backend command APIs already existed, but the WebUI still exposed only read-only views and needed a narrow operator action surface.
+- What changed: tightened the existing dashboard-shell test to assert the four safe command routes and result panel hooks, reproduced the missing `/api/commands/*` action references in the HTML, then added an Operator actions panel with `run-once`, `requeue`, `prune-orphaned-workspaces`, and `reset-corrupt-json-state`, confirmation prompts for prune/reset, and structured JSON result rendering routed only through backend command endpoints.
 - Current blocker: none
-- Next exact step: commit, push, and reconcile the remaining review threads on
-  PR #796.
-- Verification gap: no known automated gap beyond reconciling the invalid
-  timezone-based review thread.
-- Files touched: `.codex-supervisor/issue-journal.md`
+- Next exact step: commit the dashboard MVP update, then push the branch and refresh PR #796 with the focused UI action coverage.
+- Verification gap: manual browser verification against a live backend still remains for the operator action flow.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard.ts`
 - Rollback concern: keep the HTTP command surface narrow and transport-level only; do not add loop control or any new mutation authority before the backend/UI MVP is stabilized.
-- Last focused command: `npx --yes markdownlint-cli2 .codex-supervisor/issue-journal.md`
-- Last focused failure: `MD038/no-space-in-code at .codex-supervisor/issue-journal.md:24 and :33 before this edit`
+- Last focused command: `npx tsx --test src/backend/supervisor-http-server.test.ts --test-name-pattern="dashboard shell with only the safe operator command actions"`
+- Last focused failure: `AssertionError: /api/commands/run-once/ missing from dashboard HTML before adding the operator actions panel`
 - Last focused commands:
 ```bash
-git show -s --format='%H %cI %s' 6898b72
-git show -s --format='%H %cI %s' b66b7b3
-npx --yes markdownlint-cli2 .codex-supervisor/issue-journal.md
-gh api graphql -f query='query($owner: String!, $repo: String!, $number: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $number) { reviewThreads(first: 100) { nodes { id isResolved isOutdated path comments(first: 20) { nodes { databaseId url body author { login } } } } } } } }' -F owner=TommyKammy -F repo=codex-supervisor -F number=796
+npm ci
+npx tsx --test src/backend/supervisor-http-server.test.ts --test-name-pattern="dashboard shell with only the safe operator command actions"
+npx tsx --test src/backend/supervisor-http-server.test.ts
+npm run build
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
 - Local dirt besides this work remains the pre-existing untracked `.codex-supervisor/replay/` directory.
 - `npm ci` was required locally because `npm run build` initially failed with `sh: 1: tsc: not found`.
 - The new backend tests cover the intended allowlist and keep `loop` blocked at the HTTP layer with `404`.
+- 2026-03-21T20:21:01Z: reproduced the WebUI gap with a tightened dashboard-shell test, then added the four safe operator actions, prune/reset confirmation prompts, and a structured command result panel in `src/backend/webui-dashboard.ts`.
 - Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/796
 - Timezone note: `Updated at` is recorded in UTC, but scratchpad notes may cite
   the same event in local JST.

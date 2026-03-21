@@ -213,6 +213,41 @@ export function renderSupervisorDashboardHtml(): string {
         filter: brightness(1.04);
       }
 
+      .toolbar button:disabled {
+        cursor: not-allowed;
+        filter: grayscale(0.2);
+        opacity: 0.6;
+      }
+
+      .action-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+      }
+
+      .action-card {
+        display: grid;
+        gap: 8px;
+        padding: 14px;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.7);
+      }
+
+      .action-card strong {
+        font-size: 1rem;
+      }
+
+      .action-card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .action-card button {
+        justify-self: start;
+      }
+
       .event-list {
         display: grid;
         gap: 10px;
@@ -332,6 +367,41 @@ export function renderSupervisorDashboardHtml(): string {
 
         <article class="panel">
           <div class="panel-header">
+            <h2>Operator actions</h2>
+            <span id="command-status" class="hint">No command run yet.</span>
+          </div>
+          <div class="panel-body stack">
+            <div class="action-grid">
+              <div class="action-card">
+                <strong>Run once</strong>
+                <p>Trigger one safe supervisor cycle through <code>/api/commands/run-once</code>.</p>
+                <button type="button" id="run-once-button">Run once</button>
+              </div>
+              <div class="action-card">
+                <strong>Requeue issue</strong>
+                <p>Requeue the selected issue only after issue details are loaded.</p>
+                <button type="button" id="requeue-button">Requeue selected issue</button>
+              </div>
+              <div class="action-card">
+                <strong>Prune orphaned workspaces</strong>
+                <p>Requires confirm before calling <code>/api/commands/prune-orphaned-workspaces</code>.</p>
+                <button type="button" id="prune-workspaces-button">Confirm and prune</button>
+              </div>
+              <div class="action-card">
+                <strong>Reset corrupt JSON state</strong>
+                <p>Requires confirm before calling <code>/api/commands/reset-corrupt-json-state</code>.</p>
+                <button type="button" id="reset-json-state-button">Confirm and reset</button>
+              </div>
+            </div>
+            <div class="row">
+              <div class="row-label">Command result</div>
+              <pre id="command-result" class="code">Structured command result JSON appears here.</pre>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
             <h2>Live events</h2>
             <span class="hint">SSE from /api/events</span>
           </div>
@@ -351,6 +421,7 @@ export function renderSupervisorDashboardHtml(): string {
         doctor: null,
         explain: null,
         issueLint: null,
+        commandResult: null,
         events: [],
       };
 
@@ -368,6 +439,12 @@ export function renderSupervisorDashboardHtml(): string {
         issueLint: document.getElementById("issue-lint"),
         issueForm: document.getElementById("issue-form"),
         issueNumberInput: document.getElementById("issue-number-input"),
+        commandStatus: document.getElementById("command-status"),
+        commandResult: document.getElementById("command-result"),
+        runOnceButton: document.getElementById("run-once-button"),
+        requeueButton: document.getElementById("requeue-button"),
+        pruneWorkspacesButton: document.getElementById("prune-workspaces-button"),
+        resetJsonStateButton: document.getElementById("reset-json-state-button"),
         eventList: document.getElementById("event-list"),
       };
 
@@ -520,6 +597,20 @@ export function renderSupervisorDashboardHtml(): string {
         if (state.selectedIssueNumber && elements.issueNumberInput) {
           elements.issueNumberInput.value = String(state.selectedIssueNumber);
         }
+        if (elements.requeueButton) {
+          elements.requeueButton.disabled = state.selectedIssueNumber === null;
+        }
+      }
+
+      function renderCommandResult() {
+        if (!state.commandResult) {
+          setText(elements.commandStatus, "No command run yet.");
+          setCode(elements.commandResult, "Structured command result JSON appears here.");
+          return;
+        }
+
+        setText(elements.commandStatus, state.commandResult.summary || "Command completed.");
+        setCode(elements.commandResult, JSON.stringify(state.commandResult, null, 2));
       }
 
       function markRefresh() {
@@ -585,6 +676,47 @@ export function renderSupervisorDashboardHtml(): string {
         }
       }
 
+      async function postCommand(path, body) {
+        const response = await fetch(path, {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: body ? JSON.stringify(body) : "{}",
+        });
+
+        const payload = await response.json();
+        if (!response.ok) {
+          const message =
+            payload && typeof payload === "object" && "error" in payload ? payload.error : "Request failed";
+          throw new Error(path + ": " + message);
+        }
+
+        return payload;
+      }
+
+      async function runCommand(args) {
+        const previousStatus = elements.commandStatus ? elements.commandStatus.textContent : "";
+        setText(elements.commandStatus, "Running " + args.label + "...");
+        try {
+          state.commandResult = await postCommand(args.path, args.body);
+          renderCommandResult();
+          await refreshStatusAndDoctor();
+          if (state.selectedIssueNumber !== null) {
+            await loadIssue(state.selectedIssueNumber);
+          }
+        } catch (error) {
+          setText(elements.commandStatus, previousStatus || "Command failed.");
+          state.commandResult = {
+            action: args.label,
+            outcome: "rejected",
+            summary: error instanceof Error ? error.message : String(error),
+          };
+          renderCommandResult();
+        }
+      }
+
       function pushEvent(event) {
         state.events.unshift(event);
         state.events = state.events.slice(0, 40);
@@ -644,6 +776,56 @@ export function renderSupervisorDashboardHtml(): string {
         }
       });
 
+      elements.runOnceButton?.addEventListener("click", async () => {
+        await runCommand({
+          label: "run-once",
+          path: "/api/commands/run-once",
+          body: { dryRun: false },
+        });
+      });
+
+      elements.requeueButton?.addEventListener("click", async () => {
+        if (state.selectedIssueNumber === null) {
+          state.commandResult = {
+            action: "requeue",
+            outcome: "rejected",
+            summary: "Load a positive issue number before requeueing.",
+          };
+          renderCommandResult();
+          return;
+        }
+
+        await runCommand({
+          label: "requeue",
+          path: "/api/commands/requeue",
+          body: { issueNumber: state.selectedIssueNumber },
+        });
+      });
+
+      elements.pruneWorkspacesButton?.addEventListener("click", async () => {
+        if (!window.confirm("Confirm prune of orphaned workspaces?")) {
+          return;
+        }
+
+        await runCommand({
+          label: "prune-orphaned-workspaces",
+          path: "/api/commands/prune-orphaned-workspaces",
+          body: {},
+        });
+      });
+
+      elements.resetJsonStateButton?.addEventListener("click", async () => {
+        if (!window.confirm("Confirm reset of the corrupt JSON state marker?")) {
+          return;
+        }
+
+        await runCommand({
+          label: "reset-corrupt-json-state",
+          path: "/api/commands/reset-corrupt-json-state",
+          body: {},
+        });
+      });
+
       async function bootstrap() {
         try {
           await refreshStatusAndDoctor();
@@ -655,6 +837,7 @@ export function renderSupervisorDashboardHtml(): string {
           elements.statusWarning?.classList.add("danger");
         }
 
+        renderCommandResult();
         wireEvents();
         renderEvents();
       }
