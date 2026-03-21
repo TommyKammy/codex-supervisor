@@ -300,6 +300,28 @@ test("selectSupervisorPollIntervalMs uses merge-critical cadence for waiting_ci 
   });
 });
 
+test("selectSupervisorPollIntervalMs keeps merge-critical cadence for ready_to_merge after fresh provider progress", () => {
+  withStubbedDateNow("2026-03-13T02:04:20Z", () => {
+    const config = createConfig({
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: 30,
+    });
+
+    const intervalMs = selectSupervisorPollIntervalMs(
+      config,
+      createRecord({
+        state: "ready_to_merge",
+        blocked_reason: null,
+        last_head_sha: "head123",
+        provider_success_observed_at: "2026-03-13T02:04:00Z",
+        provider_success_head_sha: "head123",
+      }),
+    );
+
+    assert.equal(intervalMs, 30_000);
+  });
+});
+
 test("selectSupervisorPollIntervalMs keeps the general cadence when waiting_ci is not blocked on fresh PR or provider progress", () => {
   withStubbedDateNow("2026-03-13T02:04:20Z", () => {
     const config = createConfig({
