@@ -106,6 +106,7 @@ import {
   derivePullRequestLifecycleSnapshot,
   isOpenPullRequest,
   resetNoPrLifecycleFailureTracking,
+  selectSupervisorPollIntervalMs,
   shouldRunCodex,
   shouldStopForRepeatedFailureSignature,
 } from "./supervisor-lifecycle";
@@ -376,8 +377,16 @@ export class Supervisor {
     return new Supervisor(loadConfig(configPath), options);
   }
 
-  pollIntervalMs(): number {
-    return this.config.pollIntervalSeconds * 1000;
+  async pollIntervalMs(): Promise<number> {
+    try {
+      const state = await this.stateStore.load();
+      const activeIssueNumber = state.activeIssueNumber;
+      const activeRecord =
+        activeIssueNumber === null ? null : state.issues[String(activeIssueNumber)] ?? null;
+      return selectSupervisorPollIntervalMs(this.config, activeRecord);
+    } catch {
+      return this.config.pollIntervalSeconds * 1000;
+    }
   }
 
   private lockPath(kind: "issues" | "sessions" | "supervisor", key: string): string {

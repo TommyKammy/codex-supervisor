@@ -25,6 +25,71 @@ import {
   SupervisorConfig,
 } from "../core/types";
 
+function mergeCriticalRecheckIntervalMs(config: SupervisorConfig): number | null {
+  return typeof config.mergeCriticalRecheckSeconds === "number" &&
+    Number.isFinite(config.mergeCriticalRecheckSeconds) &&
+    Number.isInteger(config.mergeCriticalRecheckSeconds) &&
+    config.mergeCriticalRecheckSeconds > 0
+    ? config.mergeCriticalRecheckSeconds * 1000
+    : null;
+}
+
+function progressTimestampMs(timestamp: string | null | undefined): number | null {
+  if (!timestamp) {
+    return null;
+  }
+
+  const parsed = Date.parse(timestamp);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function progressMatchesCurrentHead(
+  progressHeadSha: string | null | undefined,
+  record: Pick<IssueRunRecord, "last_head_sha">,
+): boolean {
+  return typeof record.last_head_sha === "string" && typeof progressHeadSha === "string" && progressHeadSha === record.last_head_sha;
+}
+
+function latestMergeCriticalProgressMs(record: IssueRunRecord): number | null {
+  const candidates = [
+    progressMatchesCurrentHead(record.provider_success_head_sha, record)
+      ? progressTimestampMs(record.provider_success_observed_at)
+      : null,
+    progressMatchesCurrentHead(record.review_wait_head_sha, record) ? progressTimestampMs(record.review_wait_started_at) : null,
+    progressMatchesCurrentHead(record.copilot_review_requested_head_sha, record)
+      ? progressTimestampMs(record.copilot_review_requested_observed_at)
+      : null,
+  ].filter((value): value is number => value !== null);
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  return Math.max(...candidates);
+}
+
+function shouldUseMergeCriticalWaitingCadence(config: SupervisorConfig, record: IssueRunRecord): boolean {
+  const recheckIntervalMs = mergeCriticalRecheckIntervalMs(config);
+  if (recheckIntervalMs === null || record.state !== "waiting_ci" || record.blocked_reason !== null) {
+    return false;
+  }
+
+  const latestProgressMs = latestMergeCriticalProgressMs(record);
+  if (latestProgressMs === null) {
+    return false;
+  }
+
+  return Date.now() - latestProgressMs < config.pollIntervalSeconds * 1000;
+}
+
+export function selectSupervisorPollIntervalMs(config: SupervisorConfig, record: IssueRunRecord | null): number {
+  if (record && shouldUseMergeCriticalWaitingCadence(config, record)) {
+    return mergeCriticalRecheckIntervalMs(config) ?? config.pollIntervalSeconds * 1000;
+  }
+
+  return config.pollIntervalSeconds * 1000;
+}
+
 export function shouldStopForRepeatedFailureSignature(record: IssueRunRecord, config: SupervisorConfig): boolean {
   return (
     record.last_failure_signature !== null &&

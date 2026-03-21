@@ -18,7 +18,7 @@ export interface SupervisorLock {
 
 export interface SupervisorService {
   config: SupervisorConfig;
-  pollIntervalMs: () => number;
+  pollIntervalMs: () => Promise<number>;
   acquireSupervisorLock: (command: "loop" | "run-once") => Promise<SupervisorLock>;
   runOnce: (options: Pick<CliOptions, "dryRun">) => Promise<string>;
   queryStatus: (options: Pick<CliOptions, "why">) => Promise<SupervisorStatusDto>;
@@ -41,7 +41,7 @@ class SupervisorApplicationService implements SupervisorService {
     this.config = supervisor.config;
   }
 
-  pollIntervalMs(): number {
+  pollIntervalMs(): Promise<number> {
     return this.supervisor.pollIntervalMs();
   }
 
