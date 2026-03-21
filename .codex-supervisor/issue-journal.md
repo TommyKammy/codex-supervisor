@@ -1,48 +1,40 @@
-# Issue #769: Merge-ready recheck cadence: keep ready_to_merge on the faster merge-critical schedule
+# Issue #775: Candidate discovery docs: define first-page limit and operator expectations
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/769
-- Branch: codex/issue-769
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/775
+- Branch: codex/issue-775
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: c187072cebeff76a4b7e805015a414efa8ebdc44
+- Last head SHA: 3adaf5410844078ab5965b8edbfa035122b02477
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-21T11:14:50Z
+- Updated at: 2026-03-21T11:50:12.899Z
 
 ## Latest Codex Summary
-Added the missing `ready_to_merge` fast recheck coverage and widened the merge-critical cadence selector so the active issue keeps the short cadence in both `waiting_ci` and `ready_to_merge`, while blocked and non-merge-critical states still use the general poll interval.
-
-Focused verification passed for the lifecycle reproducer and the issue-targeted supervisor suites. `npm run build` also passed after restoring the local dev dependencies with `npm ci` because this worktree initially had no `node_modules/.bin/tsc`.
-
-Summary: Extended merge-critical recheck cadence through `ready_to_merge`, added the focused reproducer, verified the targeted suites plus build, and opened draft PR #773
-State hint: draft_pr
-Blocked reason: none
-Tests: `npx tsx --test src/supervisor/supervisor-lifecycle.test.ts`; `npx tsx --test src/supervisor/supervisor-pr-readiness.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`; `npm run build`
-Failure signature: none
-Next action: watch draft PR #773 CI and address any review or verification feedback
+- Added a focused docs reproducer for the missing candidate-discovery wording, then updated the operator docs to state that runnable selection is currently limited to the first fetched page of matching open issues instead of the entire backlog.
+- Focused verification passed for `src/getting-started-docs.test.ts`, the requested `src/config.test.ts src/doctor.test.ts` suites, and `npm run build` after restoring local dependencies with `npm ci` because this worktree initially had no `node_modules/.bin/tsc`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining issue-769 gap was that the merge-critical cadence selector still only recognized `waiting_ci`, so `ready_to_merge` silently fell back to the coarse poll interval despite current-head merge progress.
-- What changed: added a focused lifecycle test that reproduces the `ready_to_merge` cadence miss, then widened the selector to allow the same fast cadence for `ready_to_merge` while preserving the existing blocked-state and non-merge-critical guards.
+- Hypothesis: operator docs still implied full-backlog readiness selection even though `listCandidateIssues()` only fetches the first GitHub candidate page (`gh issue list --limit 100`) before sorting and choosing a runnable issue.
+- What changed: added a focused docs assertion that failed on the missing first-page disclosure, then updated `docs/getting-started.md`, `docs/getting-started.ja.md`, and `docs/issue-metadata.md` to describe the first-page discovery limit, backlog-truncation impact, and the right operator expectation when backlog order looks wrong.
 - Current blocker: none
-- Next exact step: watch draft PR `#773` and address CI or review feedback if it appears.
+- Next exact step: create or update the draft PR for this docs checkpoint, then address any review or wording feedback.
 - Verification gap: none in the targeted suites or build; `.codex-supervisor/replay/` remains untracked and untouched.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-lifecycle.test.ts`, `src/supervisor/supervisor-lifecycle.ts`
-- Rollback concern: narrowing the cadence back to `waiting_ci` would reintroduce avoidable idle time after a PR is already merge-ready.
+- Files touched: `.codex-supervisor/issue-journal.md`, `docs/getting-started.md`, `docs/getting-started.ja.md`, `docs/issue-metadata.md`, `src/config.test.ts`, `src/getting-started-docs.test.ts`
+- Rollback concern: removing the first-page wording would make the docs overstate scheduler completeness again and hide the current backlog-truncation behavior from operators.
 - Last focused command: `npm run build`
-- Last focused failure: `cadence-ready-to-merge`
+- Last focused failure: `candidate-discovery-first-page-docs`
 - Last focused commands:
 ```bash
-npx tsx --test src/supervisor/supervisor-lifecycle.test.ts
-npx tsx --test src/supervisor/supervisor-pr-readiness.test.ts src/supervisor/supervisor-execution-orchestration.test.ts
+npx tsx --test src/getting-started-docs.test.ts
+npx tsx --test src/config.test.ts src/doctor.test.ts
 npm ci
 npm run build
 ```

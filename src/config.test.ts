@@ -732,6 +732,9 @@ test("getting started links to focused configuration and local review references
   assert.match(issueMetadata, /^# Issue Metadata$/m);
   assert.match(issueMetadata, /^## Canonical fields$/m);
   assert.match(issueMetadata, /^## How scheduling uses the fields$/m);
+  assert.match(issueMetadata, /first fetched page of matching open issues/i);
+  assert.match(issueMetadata, /rather than the entire open backlog/i);
+  assert.match(issueMetadata, /older issue can still be invisible to runnable selection/i);
   assert.match(issueMetadata, /^## Issue body template$/m);
   assert.match(issueMetadata, /Part of: #42/m);
   assert.match(issueMetadata, /Depends on: #41/m);

@@ -78,7 +78,9 @@ config の全項目、model policy、durable memory、provider guidance は [Con
 
 ## execution-ready issue を書く
 
-scheduler は「新しく open された issue」ではなく「今 runnable な issue」を選びます。したがって、issue 側の metadata を explicit にしておく必要があります。
+scheduler は「新しく open された issue」ではなく「今 runnable な issue」を選びます。ただし現状は matching する open issues のうち最初に取得した 1 page の範囲だけで判断しています。したがって、issue 側の metadata を explicit にしておく必要があります。
+
+現在の制約: candidate discovery は GitHub から取得した matching open issues の最初の 1 page だけを評価し、backlog 全体を評価していません。repo が大きいと、より古い runnable issue はその 1 page に入ってくるまで選定対象から見えないことがあります。backlog の順番がおかしく見える時は、metadata だけでなく想定 issue がこの first-page fetch window の外にいないかも確認してください。
 
 最低限そろえたい項目:
 
@@ -135,7 +137,7 @@ node dist/index.js status --config /path/to/supervisor.config.json
 - issue journal に仮説、blocker、次の一手が残っているか
 - PR や state hint の変化が実際の GitHub 状態と一致しているか
 
-もし違う issue を拾うなら、コードではなく issue metadata を先に直してください。
+もし違う issue を拾うなら、まず想定 issue が matching open issues の最初に取得した 1 page に入っているか確認してください。そのうえで、コードではなく issue metadata を先に直してください。
 
 ## run-once から loop に移る
 
@@ -176,7 +178,7 @@ local review はいつ有効にすべきか?
 merge 前の追加 gate を入れたい時、または外部 review の前にローカル advisory pass を入れたい時です。role、threshold、artifact、guardrail は [Local review reference](./local-review.md) を参照してください。
 
 backlog の順番がおかしい時は?
-GitHub issue の `Depends on` と `Execution order` を直してください。scheduler は chat history ではなく metadata に従います。
+GitHub issue の `Depends on` と `Execution order` を直し、想定 issue が matching open issues の最初に取得した 1 page に入っているか確認してください。scheduler は chat history ではなく metadata に従いますが、現状は backlog 全体ではなくその candidate page の範囲だけを見ています。
 
 loop が blocked issue に当たり続ける時は?
 その issue は execution-ready ではありません。issue body を締めるか、分割するか、GSD で backlog を作り直してください。
