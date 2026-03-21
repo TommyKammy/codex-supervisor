@@ -930,3 +930,70 @@ test("runSupervisorCommand starts the read-only WebUI server and shuts it down o
   assert.match(stdout[0] ?? "", /WebUI listening on http:\/\/127\.0\.0\.1:4310/);
   assert.match(stdout[1] ?? "", /received SIGTERM, shutting down WebUI/);
 });
+
+test("runSupervisorCommand closes active WebUI connections before closing the server", async () => {
+  const closeOrder: string[] = [];
+  let signalHandler: ((signal: NodeJS.Signals) => void) | undefined;
+
+  await runSupervisorCommand(
+    { command: "web", dryRun: false, why: false },
+    {
+      service: {
+        config: {} as SupervisorConfig,
+        pollIntervalMs: async () => 50,
+        runOnce: async () => "unused",
+        queryStatus: async () => ({
+          gsdSummary: null,
+          detailedStatusLines: ["status"],
+          reconciliationPhase: null,
+          reconciliationWarning: null,
+          readinessLines: [],
+          whyLines: [],
+          warning: null,
+        }),
+        queryExplain: async () => {
+          throw new Error("unexpected queryExplain");
+        },
+        runRecoveryAction: async () => {
+          throw new Error("unexpected runRecoveryAction");
+        },
+        pruneOrphanedWorkspaces: async () => {
+          throw new Error("unexpected pruneOrphanedWorkspaces");
+        },
+        resetCorruptJsonState: async () => {
+          throw new Error("unexpected resetCorruptJsonState");
+        },
+        queryIssueLint: async () => createIssueLintDto(),
+        queryDoctor: async () => {
+          throw new Error("unexpected queryDoctor");
+        },
+      },
+      createHttpServer: () => ({
+        listen: (_port, _host, listeningListener) => {
+          listeningListener?.();
+          queueMicrotask(() => {
+            signalHandler?.("SIGINT");
+          });
+        },
+        once: () => {},
+        closeAllConnections: () => {
+          closeOrder.push("closeAllConnections");
+        },
+        close: (callback) => {
+          closeOrder.push("close");
+          callback();
+        },
+        address: () => ({ address: "127.0.0.1", family: "IPv4", port: 4310 }),
+      }),
+      writeStdout: () => {},
+      writeStderr: (line) => {
+        throw new Error(`unexpected stderr: ${line}`);
+      },
+      registerStopSignals: (handler) => {
+        signalHandler = handler;
+      },
+    },
+  );
+
+  assert.deepEqual(closeOrder, ["closeAllConnections", "close"]);
+});

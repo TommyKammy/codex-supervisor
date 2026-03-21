@@ -557,16 +557,32 @@ export function renderSupervisorDashboardHtml(): string {
       }
 
       async function loadIssue(issueNumber) {
-        state.selectedIssueNumber = issueNumber;
+        const requestedIssueNumber = issueNumber;
+        state.selectedIssueNumber = requestedIssueNumber;
+        state.explain = null;
+        state.issueLint = null;
         renderSelectedIssue();
-        const [explain, issueLint] = await Promise.all([
-          readJson("/api/issues/" + issueNumber + "/explain"),
-          readJson("/api/issues/" + issueNumber + "/issue-lint"),
-        ]);
-        state.explain = explain;
-        state.issueLint = issueLint;
-        renderIssue();
-        markRefresh();
+        setText(elements.issueSummary, "Loading issue...");
+        setCode(elements.issueExplain, "Loading /api/issues/" + requestedIssueNumber + "/explain...");
+        setCode(elements.issueLint, "Loading /api/issues/" + requestedIssueNumber + "/issue-lint...");
+        try {
+          const [explain, issueLint] = await Promise.all([
+            readJson("/api/issues/" + requestedIssueNumber + "/explain"),
+            readJson("/api/issues/" + requestedIssueNumber + "/issue-lint"),
+          ]);
+          if (state.selectedIssueNumber !== requestedIssueNumber) {
+            return;
+          }
+          state.explain = explain;
+          state.issueLint = issueLint;
+          renderIssue();
+          markRefresh();
+        } catch (error) {
+          if (state.selectedIssueNumber !== requestedIssueNumber) {
+            return;
+          }
+          throw error;
+        }
       }
 
       function pushEvent(event) {
@@ -577,7 +593,7 @@ export function renderSupervisorDashboardHtml(): string {
 
       function wireEvents() {
         const source = new EventSource("/api/events");
-        setText(elements.connectionState, "open");
+        setText(elements.connectionState, "connecting");
 
         source.addEventListener("open", () => {
           setText(elements.connectionState, "open");

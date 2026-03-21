@@ -39,6 +39,7 @@ interface SupervisorRuntimeDependencies {
     listen: (port: number, host: string, listeningListener?: () => void) => void;
     once: (event: "error", listener: (error: Error) => void) => void;
     close: (callback: (error?: Error) => void) => void;
+    closeAllConnections?: () => void;
     address: () => string | { address: string; family: string; port: number } | null;
   };
 }
@@ -198,6 +199,7 @@ export async function runSupervisorCommand(
         writeStdout(`WebUI listening on http://127.0.0.1:${address.port}`);
       });
       stopWebServer = () => {
+        server.closeAllConnections?.();
         server.close((error) => complete(error ?? undefined));
       };
     });
