@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { runCommand } from "./core/command";
 import {
   findHighRiskBlockingAmbiguity,
   findParentIssuesReadyToClose,
@@ -137,6 +138,54 @@ function orphanedWorkspaceGracePeriodHours(config: SupervisorConfig): number {
   return config.cleanupOrphanedWorkspacesAfterHours ?? 24;
 }
 
+async function readOrphanedWorkspaceActivityTimestamp(workspacePath: string): Promise<string | null> {
+  let latestModifiedMs = Number.NaN;
+  try {
+    latestModifiedMs = fs.statSync(workspacePath).mtimeMs;
+  } catch {
+    latestModifiedMs = Number.NaN;
+  }
+
+  try {
+    const [unstagedResult, stagedResult] = await Promise.all([
+      runCommand(
+        "git",
+        ["-C", workspacePath, "ls-files", "--modified", "--others", "--exclude-standard", "-z"],
+      ),
+      runCommand("git", ["-C", workspacePath, "diff", "--name-only", "--cached", "-z"]),
+    ]);
+    const dirtyPaths = new Set(
+      `${unstagedResult.stdout}${stagedResult.stdout}`
+        .split("\0")
+        .filter((relativePath) => relativePath.length > 0),
+    );
+
+    for (const relativePath of dirtyPaths) {
+      const candidatePath = path.resolve(workspacePath, relativePath);
+      if (!candidatePath.startsWith(`${path.resolve(workspacePath)}${path.sep}`)) {
+        continue;
+      }
+
+      try {
+        const candidateModifiedMs = fs.statSync(candidatePath).mtimeMs;
+        if (Number.isNaN(latestModifiedMs) || candidateModifiedMs > latestModifiedMs) {
+          latestModifiedMs = candidateModifiedMs;
+        }
+      } catch {
+        continue;
+      }
+    }
+  } catch {
+    // Fall back to the workspace directory timestamp if git cannot report dirty paths.
+  }
+
+  if (Number.isNaN(latestModifiedMs)) {
+    return null;
+  }
+
+  return new Date(latestModifiedMs).toISOString();
+}
+
 export async function inspectOrphanedWorkspacePruneCandidates(
   config: SupervisorConfig,
   state: SupervisorStateFile,
@@ -173,12 +222,7 @@ export async function inspectOrphanedWorkspacePruneCandidates(
       continue;
     }
 
-    let modifiedAt: string | null = null;
-    try {
-      modifiedAt = fs.statSync(workspacePath).mtime.toISOString();
-    } catch {
-      modifiedAt = null;
-    }
+    const modifiedAt = await readOrphanedWorkspaceActivityTimestamp(workspacePath);
 
     let branch: string | null = null;
     try {

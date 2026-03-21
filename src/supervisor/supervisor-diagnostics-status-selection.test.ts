@@ -548,7 +548,11 @@ test("pruneOrphanedWorkspaces prunes eligible orphan workspaces and reports skip
   const oldTime = new Date("2026-03-18T00:00:00.000Z");
   await fs.utimes(eligibleWorkspace, oldTime, oldTime);
   const recentTime = new Date(Date.now() - 60 * 60 * 1000);
-  await fs.utimes(recentWorkspace, recentTime, recentTime);
+  const recentActivityFile = path.join(recentWorkspace, "README.md");
+  await fs.writeFile(recentActivityFile, "recent orphan activity\n", "utf8");
+  await fs.utimes(recentActivityFile, recentTime, recentTime);
+  await fs.utimes(recentWorkspace, oldTime, oldTime);
+  const recentActivityTimestamp = new Date((await fs.stat(recentActivityFile)).mtimeMs).toISOString();
 
   const supervisor = new Supervisor(fixture.config);
   const result = await supervisor.pruneOrphanedWorkspaces();
@@ -573,7 +577,7 @@ test("pruneOrphanedWorkspaces prunes eligible orphan workspaces and reports skip
         workspaceName: `issue-${recentIssueNumber}`,
         workspacePath: recentWorkspace,
         branch: recentBranch,
-        modifiedAt: recentTime.toISOString(),
+        modifiedAt: recentActivityTimestamp,
         eligibility: "recent",
         reason: "workspace modified within 24h grace period",
       },
