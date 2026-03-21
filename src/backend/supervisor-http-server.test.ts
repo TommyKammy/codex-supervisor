@@ -552,7 +552,7 @@ test("createSupervisorHttpServer exposes only the safe supervisor mutations over
   assert.deepEqual(wrongMethodResponse.body, { error: "Method not allowed." });
 });
 
-test("createSupervisorHttpServer serves a read-only dashboard shell", async (t) => {
+test("createSupervisorHttpServer serves a dashboard shell with only the safe operator command actions", async (t) => {
   const server = createSupervisorHttpServer({
     service: createStubService(),
   });
@@ -598,7 +598,15 @@ test("createSupervisorHttpServer serves a read-only dashboard shell", async (t) 
   assert.match(html, /\/api\/status\?why=true/u);
   assert.match(html, /\/api\/doctor/u);
   assert.match(html, /\/api\/events/u);
+  assert.match(html, /\/api\/commands\/run-once/u);
+  assert.match(html, /\/api\/commands\/requeue/u);
+  assert.match(html, /\/api\/commands\/prune-orphaned-workspaces/u);
+  assert.match(html, /\/api\/commands\/reset-corrupt-json-state/u);
+  assert.doesNotMatch(html, /\/api\/commands\/loop/u);
   assert.match(html, /load issue details/iu);
+  assert.match(html, /operator actions/iu);
+  assert.match(html, /confirm/i);
+  assert.match(html, /command result/iu);
   assert.match(html, /live events/iu);
 });
 
