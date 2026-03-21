@@ -15,6 +15,11 @@ import {
   isEligibleForSelection,
   shouldEnforceExecutionReady,
 } from "./supervisor/supervisor-execution-policy";
+import {
+  buildAutonomousExecutionTrustFailureContext,
+  evaluateAutonomousExecutionTrust,
+  isAutonomousExecutionTrustBlockedRecord,
+} from "./supervisor/supervisor-trust-gate";
 import { StateStore } from "./core/state-store";
 import {
   FailureContext,
@@ -226,7 +231,11 @@ async function selectIssueRecord(
       }
 
       const existing = state.issues[String(issue.number)];
-      if (!isEligibleForSelection(existing, config)) {
+      const trustDecision = evaluateAutonomousExecutionTrust(config, issue);
+      if (
+        !isEligibleForSelection(existing, config) &&
+        !(isAutonomousExecutionTrustBlockedRecord(existing) && trustDecision.allowed)
+      ) {
         continue;
       }
 
@@ -373,6 +382,36 @@ export async function resolveRunnableIssueContext(
         last_failure_context: failureContext,
         ...applyFailureSignature(record, failureContext),
         blocked_reason: "clarification",
+      });
+      state.issues[String(blockedRecord.issue_number)] = blockedRecord;
+      state.activeIssueNumber = null;
+      await stateStore.save(state);
+      if (blockedRecord.journal_path) {
+        await syncIssueJournalImpl({
+          issue,
+          record: blockedRecord,
+          journalPath: blockedRecord.journal_path,
+          maxChars: config.issueJournalMaxChars,
+        });
+      }
+      shouldReleaseIssueLock = false;
+      await issueLock.release();
+      return { kind: "restart" };
+    }
+
+    const trustDecision = evaluateAutonomousExecutionTrust(config, issue);
+    if (!trustDecision.allowed) {
+      const journalContext = await ensureRecordJournalContext(record);
+      const failureContext = buildAutonomousExecutionTrustFailureContext(config, issue);
+      const blockedRecord = stateStore.touch(record, {
+        ...journalContext,
+        state: "blocked",
+        codex_session_id: null,
+        last_error: failureContext.summary,
+        last_failure_kind: null,
+        last_failure_context: failureContext,
+        ...applyFailureSignature(record, failureContext),
+        blocked_reason: "permissions",
       });
       state.issues[String(blockedRecord.issue_number)] = blockedRecord;
       state.activeIssueNumber = null;

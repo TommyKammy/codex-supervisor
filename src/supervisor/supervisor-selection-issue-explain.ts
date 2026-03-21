@@ -16,6 +16,10 @@ import {
 } from "./supervisor-execution-policy";
 import { shouldAutoRetryTimeout } from "./supervisor-failure-helpers";
 import {
+  evaluateAutonomousExecutionTrust,
+  isAutonomousExecutionTrustBlockedRecord,
+} from "./supervisor-trust-gate";
+import {
   buildChangeClassesStatusLine,
   buildExternalReviewFollowUpStatusLine,
   buildVerificationPolicyStatusLine,
@@ -214,7 +218,16 @@ export async function buildIssueExplainDto(
     reasons.push(`dependency ${blockingIssue.reason}`);
   }
 
-  if (record && !isEligibleForSelection(record, config)) {
+  const trustDecision = evaluateAutonomousExecutionTrust(config, issue);
+  if (!trustDecision.allowed) {
+    reasons.push(`trust_gate ${trustDecision.readinessToken}`);
+  }
+
+  if (
+    record &&
+    !isEligibleForSelection(record, config) &&
+    !(isAutonomousExecutionTrustBlockedRecord(record) && trustDecision.allowed)
+  ) {
     reasons.push(...buildNonRunnableLocalStateReasons(record, config));
   }
 

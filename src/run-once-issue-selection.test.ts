@@ -251,6 +251,114 @@ test("resolveRunnableIssueContext keeps the acquired lock attached to a ready is
   assert.equal(savedStates.length, 1);
 });
 
+test("resolveRunnableIssueContext blocks safer-mode autonomous execution without the trusted-input label", async () => {
+  const config = createConfig({
+    trustMode: "untrusted_or_mixed",
+    executionSafetyMode: "operator_gated",
+  });
+  const issue: GitHubIssue = {
+    number: 94,
+    title: "Safer-mode trust gate",
+    body: executionReadyBody("Do not autonomously execute untrusted GitHub-authored input."),
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/94",
+    state: "OPEN",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  const savedStates: SupervisorStateFile[] = [];
+  const journalSyncs: IssueRunRecord[] = [];
+  let released = false;
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [issue],
+      getIssue: async () => issue,
+    },
+    config,
+    stateStore: createTouchStateStore(savedStates),
+    state,
+    currentRecord: null,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {
+        released = true;
+      },
+    }),
+    ensureRecordJournalContext: async (record) => ({
+      workspace: record.workspace,
+      journal_path: "/tmp/workspaces/issue-94/.codex-supervisor/issue-journal.md",
+    }),
+    syncIssueJournal: async ({ record }) => {
+      journalSyncs.push(record);
+    },
+  });
+
+  assert.deepEqual(result, { kind: "restart" });
+  assert.equal(released, true);
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(state.issues["94"]?.state, "blocked");
+  assert.equal(state.issues["94"]?.blocked_reason, "permissions");
+  assert.equal(state.issues["94"]?.last_failure_signature, "autonomous-trust-gate");
+  assert.match(state.issues["94"]?.last_error ?? "", /Autonomous execution blocked for issue #94/);
+  assert.match(state.issues["94"]?.last_error ?? "", /GitHub-authored issue or review input is untrusted/i);
+  assert.equal(journalSyncs.length, 1);
+  assert.equal(savedStates.length, 2);
+});
+
+test("resolveRunnableIssueContext allows safer-mode execution when the issue has the trusted-input label", async () => {
+  const config = createConfig({
+    trustMode: "untrusted_or_mixed",
+    executionSafetyMode: "operator_gated",
+  });
+  const issue: GitHubIssue = {
+    number: 95,
+    title: "Trusted-input override",
+    body: executionReadyBody("Allow this issue to run in safer mode."),
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/95",
+    state: "OPEN",
+    labels: [{ name: "trusted-input" }],
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  const savedStates: SupervisorStateFile[] = [];
+  let released = false;
+  const issueLock = {
+    acquired: true as const,
+    release: async () => {
+      released = true;
+    },
+  };
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [issue],
+      getIssue: async () => issue,
+    },
+    config,
+    stateStore: createTouchStateStore(savedStates),
+    state,
+    currentRecord: null,
+    acquireIssueLock: async () => issueLock,
+  });
+
+  assert.ok(typeof result !== "string");
+  assert.equal(result.kind, "ready");
+  assert.equal(result.record.issue_number, 95);
+  assert.equal(result.issue.number, 95);
+  assert.equal(released, false);
+  assert.equal(state.activeIssueNumber, 95);
+  assert.equal(state.issues["95"]?.state, "queued");
+  assert.equal(savedStates.length, 1);
+});
+
 test("resolveRunnableIssueContext does not persist a new active reservation when the issue lock is busy", async () => {
   const config = createConfig();
   const issue: GitHubIssue = {

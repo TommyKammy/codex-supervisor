@@ -246,6 +246,64 @@ Decide whether to keep the current production auth token flow or replace it befo
   );
 });
 
+test("status makes safer-mode trust gating explicit while allowing trusted-input issues", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const blockedIssue: GitHubIssue = {
+    number: 95,
+    title: "Blocked by trust gate",
+    body: `## Summary
+Do not run this issue autonomously without an explicit trust signal.
+
+## Scope
+- keep the issue execution-ready
+
+## Acceptance criteria
+- status explains why safer-mode execution is blocked
+
+## Verification
+- npm test -- src/supervisor/supervisor-diagnostics-status-selection.test.ts`,
+    createdAt: "2026-03-13T00:20:00Z",
+    updatedAt: "2026-03-13T00:20:00Z",
+    url: "https://example.test/issues/95",
+    state: "OPEN",
+  };
+  const allowedIssue: GitHubIssue = {
+    ...blockedIssue,
+    number: 96,
+    title: "Allowed by trusted-input label",
+    url: "https://example.test/issues/96",
+    labels: [{ name: "trusted-input" }],
+  };
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    trustMode: "untrusted_or_mixed",
+    executionSafetyMode: "operator_gated",
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [blockedIssue, allowedIssue],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+  assert.match(report.readinessLines.join("\n"), /runnable_issues=#96 ready=execution_ready/);
+  assert.match(report.readinessLines.join("\n"), /blocked_issues=#95 blocked_by=trust_gate:trusted-input-required/);
+
+  const status = await supervisor.status();
+  assert.match(status, /trust_mode=untrusted_or_mixed/);
+  assert.match(status, /execution_safety_mode=operator_gated/);
+  assert.match(status, /runnable_issues=#96 ready=execution_ready/);
+  assert.match(status, /blocked_issues=#95 blocked_by=trust_gate:trusted-input-required/);
+});
+
 test("status marks skipped readiness checks explicitly and uses non-conflicting inner separators", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {
