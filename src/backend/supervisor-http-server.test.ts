@@ -45,7 +45,11 @@ async function readJson(args: {
   });
 }
 
-function createStubService(): SupervisorService {
+function createStubService(args?: {
+  statusWhyCalls?: boolean[];
+  explainCalls?: number[];
+  issueLintCalls?: number[];
+}): SupervisorService {
   const doctorDiagnostics: DoctorDiagnostics = {
     overallStatus: "pass",
     checks: [
@@ -75,27 +79,30 @@ function createStubService(): SupervisorService {
     config: {} as SupervisorService["config"],
     pollIntervalMs: async () => 60_000,
     runOnce: async () => "unused",
-    queryStatus: async () => ({
-      gsdSummary: null,
-      trustDiagnostics: {
-        trustMode: "trusted_repo_and_authors",
-        executionSafetyMode: "unsandboxed_autonomous",
+    queryStatus: async ({ why }) => {
+      args?.statusWhyCalls?.push(why);
+      return {
+        gsdSummary: null,
+        trustDiagnostics: {
+          trustMode: "trusted_repo_and_authors",
+          executionSafetyMode: "unsandboxed_autonomous",
+          warning: null,
+        },
+        cadenceDiagnostics: {
+          pollIntervalSeconds: 60,
+          mergeCriticalRecheckSeconds: null,
+          mergeCriticalEffectiveSeconds: 60,
+          mergeCriticalRecheckEnabled: false,
+        },
+        candidateDiscoverySummary: null,
+        detailedStatusLines: ["tracked_issues=0"],
+        reconciliationPhase: null,
+        reconciliationWarning: null,
+        readinessLines: [],
+        whyLines: why ? ["selected_issue=none"] : [],
         warning: null,
-      },
-      cadenceDiagnostics: {
-        pollIntervalSeconds: 60,
-        mergeCriticalRecheckSeconds: null,
-        mergeCriticalEffectiveSeconds: 60,
-        mergeCriticalRecheckEnabled: false,
-      },
-      candidateDiscoverySummary: null,
-      detailedStatusLines: ["tracked_issues=0"],
-      reconciliationPhase: null,
-      reconciliationWarning: null,
-      readinessLines: [],
-      whyLines: ["selected_issue=none"],
-      warning: null,
-    }),
+      };
+    },
     runRecoveryAction: async () => {
       throw new Error("unused");
     },
@@ -105,37 +112,46 @@ function createStubService(): SupervisorService {
     resetCorruptJsonState: async () => {
       throw new Error("unused");
     },
-    queryExplain: async (issueNumber) => ({
-      issueNumber,
-      title: "Explain issue",
-      state: "untracked",
-      blockedReason: "none",
-      runnable: true,
-      changeRiskLines: [],
-      externalReviewFollowUpSummary: null,
-      latestRecoverySummary: null,
-      selectionReason: "selected for execution",
-      reasons: ["selected for execution"],
-      lastError: null,
-      failureSummary: null,
-    }),
-    queryIssueLint: async (issueNumber) => ({
-      issueNumber,
-      title: "Lint issue",
-      executionReady: true,
-      missingRequired: [],
-      missingRecommended: [],
-      metadataErrors: [],
-      highRiskBlockingAmbiguity: null,
-      repairGuidance: [],
-    }),
+    queryExplain: async (issueNumber) => {
+      args?.explainCalls?.push(issueNumber);
+      return {
+        issueNumber,
+        title: "Explain issue",
+        state: "untracked",
+        blockedReason: "none",
+        runnable: true,
+        changeRiskLines: [],
+        externalReviewFollowUpSummary: null,
+        latestRecoverySummary: null,
+        selectionReason: "selected for execution",
+        reasons: ["selected for execution"],
+        lastError: null,
+        failureSummary: null,
+      };
+    },
+    queryIssueLint: async (issueNumber) => {
+      args?.issueLintCalls?.push(issueNumber);
+      return {
+        issueNumber,
+        title: "Lint issue",
+        executionReady: true,
+        missingRequired: [],
+        missingRecommended: [],
+        metadataErrors: [],
+        highRiskBlockingAmbiguity: null,
+        repairGuidance: [],
+      };
+    },
     queryDoctor: async () => doctorDiagnostics,
   };
 }
 
 test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", async (t) => {
+  const statusWhyCalls: boolean[] = [];
+  const explainCalls: number[] = [];
+  const issueLintCalls: number[] = [];
   const server = createSupervisorHttpServer({
-    service: createStubService(),
+    service: createStubService({ statusWhyCalls, explainCalls, issueLintCalls }),
   });
   t.after(async () => {
     await new Promise<void>((resolve, reject) => {
@@ -156,6 +172,7 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
 
   const statusResponse = await readJson({ server, path: "/api/status?why=true" });
   assert.equal(statusResponse.statusCode, 200);
+  assert.deepEqual(statusWhyCalls, [true]);
   assert.deepEqual(statusResponse.body, {
     gsdSummary: null,
     trustDiagnostics: {
@@ -234,4 +251,16 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
     highRiskBlockingAmbiguity: null,
     repairGuidance: [],
   });
+  assert.deepEqual(explainCalls, [42]);
+  assert.deepEqual(issueLintCalls, [42]);
+
+  const explainZeroResponse = await readJson({ server, path: "/api/issues/0/explain" });
+  assert.equal(explainZeroResponse.statusCode, 400);
+  assert.deepEqual(explainZeroResponse.body, { error: "Issue number must be a positive integer." });
+
+  const issueLintZeroResponse = await readJson({ server, path: "/api/issues/0/issue-lint" });
+  assert.equal(issueLintZeroResponse.statusCode, 400);
+  assert.deepEqual(issueLintZeroResponse.body, { error: "Issue number must be a positive integer." });
+  assert.deepEqual(explainCalls, [42]);
+  assert.deepEqual(issueLintCalls, [42]);
 });

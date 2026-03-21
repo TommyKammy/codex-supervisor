@@ -46,13 +46,13 @@ async function handleRequest(
     return;
   }
 
-  const explainMatch = pathname.match(/^\/api\/issues\/(\d+)\/explain$/u);
+  const explainMatch = pathname.match(/^\/api\/issues\/([1-9]\d*)\/explain$/u);
   if (explainMatch) {
     writeJson(response, 200, await service.queryExplain(Number.parseInt(explainMatch[1], 10)));
     return;
   }
 
-  const issueLintMatch = pathname.match(/^\/api\/issues\/(\d+)\/issue-lint$/u);
+  const issueLintMatch = pathname.match(/^\/api\/issues\/([1-9]\d*)\/issue-lint$/u);
   if (issueLintMatch) {
     writeJson(response, 200, await service.queryIssueLint(Number.parseInt(issueLintMatch[1], 10)));
     return;
