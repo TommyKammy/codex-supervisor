@@ -263,7 +263,11 @@ async function hydratePullRequestContext(
     );
   }
 
-  const resolvedPr = await args.github.resolvePullRequestForBranch(args.record.branch, args.record.pr_number);
+  const resolvedPr = await args.github.resolvePullRequestForBranch(
+    args.record.branch,
+    args.record.pr_number,
+    { purpose: "action" },
+  );
   let pr = isOpenPullRequest(resolvedPr) ? resolvedPr : null;
   let checks = pr ? await args.github.getChecks(pr.number) : [];
   let reviewThreads = pr ? await args.github.getUnresolvedReviewThreads(pr.number) : [];
