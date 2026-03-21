@@ -93,7 +93,6 @@ export async function runSupervisorCommand(
     registerStopSignals = registerProcessStopSignals,
   } = dependencies;
 
-  const pollIntervalMs = service.pollIntervalMs();
   let shouldStop = false;
   let sleepController: AbortController | null = null;
 
@@ -163,6 +162,7 @@ export async function runSupervisorCommand(
     }
 
     if (!shouldStop) {
+      const pollIntervalMs = await service.pollIntervalMs();
       sleepController = new AbortController();
       await sleep(pollIntervalMs, sleepController.signal);
       sleepController = null;

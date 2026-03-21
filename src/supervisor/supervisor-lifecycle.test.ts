@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { derivePullRequestLifecycleSnapshot, shouldRunCodex } from "./supervisor-lifecycle";
+import {
+  derivePullRequestLifecycleSnapshot,
+  selectSupervisorPollIntervalMs,
+  shouldRunCodex,
+} from "./supervisor-lifecycle";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
@@ -271,6 +275,68 @@ test("derivePullRequestLifecycleSnapshot keeps CodeRabbit repos in waiting_ci fo
     const snapshot = derivePullRequestLifecycleSnapshot(config, record, pr, checks, reviewThreads);
 
     assert.equal(snapshot.nextState, "waiting_ci");
+  });
+});
+
+test("selectSupervisorPollIntervalMs uses merge-critical cadence for waiting_ci after fresh provider progress", () => {
+  withStubbedDateNow("2026-03-13T02:04:20Z", () => {
+    const config = createConfig({
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: 30,
+    });
+
+    const intervalMs = selectSupervisorPollIntervalMs(
+      config,
+      createRecord({
+        state: "waiting_ci",
+        blocked_reason: null,
+        last_head_sha: "head123",
+        provider_success_observed_at: "2026-03-13T02:04:00Z",
+        provider_success_head_sha: "head123",
+      }),
+    );
+
+    assert.equal(intervalMs, 30_000);
+  });
+});
+
+test("selectSupervisorPollIntervalMs keeps the general cadence when waiting_ci is not blocked on fresh PR or provider progress", () => {
+  withStubbedDateNow("2026-03-13T02:04:20Z", () => {
+    const config = createConfig({
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: 30,
+    });
+
+    assert.equal(
+      selectSupervisorPollIntervalMs(
+        config,
+        createRecord({
+          state: "waiting_ci",
+          blocked_reason: null,
+          provider_success_observed_at: null,
+          provider_success_head_sha: null,
+          review_wait_started_at: null,
+          review_wait_head_sha: null,
+          copilot_review_requested_observed_at: null,
+          copilot_review_requested_head_sha: null,
+        }),
+      ),
+      120_000,
+    );
+
+    assert.equal(
+      selectSupervisorPollIntervalMs(
+        config,
+        createRecord({
+          state: "repairing_ci",
+          blocked_reason: null,
+          last_head_sha: "head123",
+          provider_success_observed_at: "2026-03-13T02:04:00Z",
+          provider_success_head_sha: "head123",
+        }),
+      ),
+      120_000,
+    );
   });
 });
 
