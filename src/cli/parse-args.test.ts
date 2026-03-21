@@ -15,6 +15,19 @@ test("parseArgs accepts doctor as a command", () => {
   });
 });
 
+test("parseArgs accepts web as a command", () => {
+  assert.deepEqual(parseArgs(["web"]), {
+    command: "web",
+    configPath: undefined,
+    dryRun: false,
+    why: false,
+    issueNumber: undefined,
+    snapshotPath: undefined,
+    caseId: undefined,
+    corpusPath: undefined,
+  });
+});
+
 test("parseArgs accepts issue-lint with an issue number", () => {
   assert.deepEqual(parseArgs(["issue-lint", "123"]), {
     command: "issue-lint",

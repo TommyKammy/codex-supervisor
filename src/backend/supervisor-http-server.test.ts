@@ -396,6 +396,56 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
   assert.deepEqual(issueLintCalls, [42]);
 });
 
+test("createSupervisorHttpServer serves a read-only dashboard shell", async (t) => {
+  const server = createSupervisorHttpServer({
+    service: createStubService(),
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Expected server to listen on an ephemeral port.");
+  }
+
+  const response = await new Promise<http.IncomingMessage>((resolve, reject) => {
+    const request = http.request(
+      {
+        host: "127.0.0.1",
+        port: address.port,
+        path: "/",
+        method: "GET",
+        agent: false,
+      },
+      resolve,
+    );
+    request.on("error", reject);
+    request.end();
+  });
+
+  let html = "";
+  response.setEncoding("utf8");
+  for await (const chunk of response) {
+    html += chunk;
+  }
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers["content-type"], "text/html; charset=utf-8");
+  assert.match(html, /<title>codex-supervisor operator dashboard<\/title>/i);
+  assert.match(html, /data-dashboard-root/u);
+  assert.match(html, /\/api\/status\?why=true/u);
+  assert.match(html, /\/api\/doctor/u);
+  assert.match(html, /\/api\/events/u);
+  assert.match(html, /load issue details/iu);
+  assert.match(html, /live events/iu);
+});
+
 test("createSupervisorHttpServer streams supervisor events over SSE with reconnect replay", async (t) => {
   let subscribeEventCalls = 0;
   const eventEmitter: { current: ((event: SupervisorEvent) => void) | null } = { current: null };

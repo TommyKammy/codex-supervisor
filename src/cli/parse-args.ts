@@ -28,6 +28,7 @@ export function parseArgs(argv: string[]): CliOptions {
       token === "explain" ||
       token === "issue-lint" ||
       token === "doctor" ||
+      token === "web" ||
       token === "replay" ||
       token === "replay-corpus" ||
       token === "replay-corpus-promote"

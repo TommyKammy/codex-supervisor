@@ -1,54 +1,59 @@
-# Issue #784: Backend adapter MVP: add SSE event streaming over existing supervisor events
+# Issue #785: WebUI MVP: ship a read-only operator dashboard backed only by HTTP and SSE
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/784
-- Branch: codex/issue-784
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/785
+- Branch: codex/issue-785
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 27706c15aaa54305b80a8b6a80b4edb492c439b6
+- Attempt count: 5 (implementation=2, repair=3)
+- Last head SHA: cbe44d77210795c20854ded21437f3b07ad0e7cb
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ8515bGn|PRRT_kwDORgvdZ8515bGs
+- Last failure signature: PRRT_kwDORgvdZ8515y3q|PRRT_kwDORgvdZ8515y3s
 - Repeated failure signature count: 1
-- Updated at: 2026-03-21T17:22:44.476Z
+- Updated at: 2026-03-21T18:46:59.046Z
 
 ## Latest Codex Summary
-Addressed the two CodeRabbit review findings on PR #794 locally. Fresh `/api/events` connections now start at the live edge instead of replaying buffered history, and supervisor event subscribers now fan out asynchronously with isolated error logging so one bad transport listener cannot block the rest. Added focused regression coverage for both behaviors.
+Updated [issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-785/.codex-supervisor/issue-journal.md) to address the two remaining review-only follow-ups: the Active Failure Context now records the live no-active-failure state instead of copying stale thread text, and the inline triple-backtick excerpt that triggered `markdownlint-cli2` MD038 is gone.
 
-Summary: Fixed the SSE replay edge case and isolated subscriber failures, with focused regression tests.
+Focused verification passed with `npx markdownlint-cli2 ".codex-supervisor/issue-journal.md" --config /tmp/md038-check.*.markdownlint-cli2.jsonc` using a temporary config that enabled only MD038. Committed as `82a19cf`, pushed to `codex/issue-785`, and resolved review threads `PRRT_kwDORgvdZ8515y3q` and `PRRT_kwDORgvdZ8515y3s`. The pre-existing untracked `.codex-supervisor/replay/` directory remains outside this fix.
+
+Summary: Fixed the remaining journal-only review follow-ups and cleared the MD038 complaint
 State hint: addressing_review
 Blocked reason: none
-Tests: `npx tsx --test src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`; `npm run build`
+Tests: `npx markdownlint-cli2 ".codex-supervisor/issue-journal.md" --config /tmp/md038-check.*.markdownlint-cli2.jsonc`
 Failure signature: none
-Next action: Commit and push the review-fix patch to `codex/issue-784`, then update PR #794.
+Next action: Return to the remaining manual browser verification gap for the read-only WebUI
 
 ## Active Failure Context
-- Category: review
-- Summary: Local fixes for the two automated review findings are implemented and verified; PR thread resolution is pending the pushed branch update.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/794#discussion_r2969829475
+- Category: none
+- Summary: none
+- Reference: none
 - Details:
-  - `src/backend/supervisor-http-server.ts`: replay now occurs only when `Last-Event-ID` is present, so a first-time `/api/events` connection starts at the live edge.
-  - `src/supervisor/supervisor-service.ts`: subscriber delivery now runs through isolated microtasks with `console.error` logging on failure, so later listeners still receive the event.
-  - Regression coverage added in `src/backend/supervisor-http-server.test.ts` and `src/supervisor/supervisor-service.test.ts`.
+  - No active local failure context remains after the journal-only review fix. The remaining issue-level gap is the previously noted manual browser verification pass for the read-only WebUI.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the right MVP is still a thin transport adapter. Keep replay buffering and heartbeat in the backend SSE layer while reusing existing `SupervisorEvent` emission from the supervisor domain.
-- What changed: applied both CodeRabbit review fixes locally. The SSE adapter no longer replays buffered events on a fresh connection, and service-level event subscribers are now isolated so a thrown listener cannot block sibling subscribers. Added focused regression tests for both paths.
+- Hypothesis: the remaining review comments were journal-only follow-ups, so the correct fix is to stop copying stale CodeRabbit text into Active Failure Context and record the live state directly.
+- What changed: replaced the stale Active Failure Context entries with a neutral no-active-failure summary so the journal no longer contradicts the resolved prior thread or embed markdown that triggers MD038.
 - Current blocker: none
-- Next exact step: commit and push the review-fix patch to PR #794, then re-check CI/review state.
-- Verification gap: none for the local review fixes; targeted tests and `npm run build` passed after the changes.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.ts`, `src/backend/supervisor-http-server.test.ts`, `src/supervisor/supervisor-service.ts`, `src/supervisor/supervisor-service.test.ts`
-- Rollback concern: moving replay state into supervisor domain objects would blur the backend transport boundary and make future WebSocket work harder; keep transport buffering local to the HTTP adapter.
-- Last focused command: `npx tsx --test src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`
+- Next exact step: return to the manual browser verification gap against a live local backend with SSE events now that the remaining review threads are resolved.
+- Verification gap: the journal-only review fix is verified; the broader issue still needs the real browser pass with a live emitted SSE event.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.ts`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard.ts`, `src/cli/entrypoint.test.ts`, `src/cli/parse-args.test.ts`, `src/cli/parse-args.ts`, `src/cli/supervisor-runtime.test.ts`, `src/cli/supervisor-runtime.ts`, `src/core/types.ts`
+- Rollback concern: keep the dashboard thin and transport-driven; avoid pulling supervisor state interpretation or mutation workflows into the browser, and avoid coupling the UI to local files outside the existing HTTP/SSE surface.
+- Last focused command: `markdownlint-cli2 .codex-supervisor/issue-journal.md`
 - Last focused failure: none
 - Last focused commands:
 ```bash
-npx tsx --test src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-execution-orchestration.test.ts
+npx tsx --test src/cli/supervisor-runtime.test.ts
 npm run build
+markdownlint-cli2 .codex-supervisor/issue-journal.md
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
 - Local dirt besides this work remains the pre-existing untracked `.codex-supervisor/replay/` directory.
-- Updated at: 2026-03-22T00:26:00Z
+- The two currently reported CodeRabbit follow-ups were valid against the previous journal revision because it carried stale review-thread state and embedded inline triple-backtick spans that markdownlint flags as MD038.
+- This turn should stay journal-only unless focused verification shows another live markdown problem.
+- Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/795
+- Review threads resolved: `PRRT_kwDORgvdZ8515vMs`, `PRRT_kwDORgvdZ8515y3q`, `PRRT_kwDORgvdZ8515y3s`
+- Updated at: 2026-03-21T18:51:07Z

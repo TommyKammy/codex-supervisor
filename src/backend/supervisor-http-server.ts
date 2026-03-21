@@ -1,6 +1,7 @@
 import http from "node:http";
 import { URL } from "node:url";
 import type { SupervisorEvent, SupervisorService } from "../supervisor";
+import { renderSupervisorDashboardHtml } from "./webui-dashboard";
 
 export interface CreateSupervisorHttpServerOptions {
   service: SupervisorService;
@@ -55,6 +56,11 @@ async function handleRequest(
 
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
   const pathname = url.pathname;
+
+  if (pathname === "/" || pathname === "/index.html") {
+    writeHtml(response, 200, renderSupervisorDashboardHtml());
+    return;
+  }
 
   if (pathname === "/api/status") {
     const why = parseBooleanQueryValue(url.searchParams.get("why"));
@@ -119,6 +125,13 @@ function writeJson(response: http.ServerResponse, statusCode: number, body: Json
   response.setHeader("Content-Type", "application/json; charset=utf-8");
   response.setHeader("Content-Length", Buffer.byteLength(payload));
   response.end(payload);
+}
+
+function writeHtml(response: http.ServerResponse, statusCode: number, body: string): void {
+  response.statusCode = statusCode;
+  response.setHeader("Content-Type", "text/html; charset=utf-8");
+  response.setHeader("Content-Length", Buffer.byteLength(body));
+  response.end(body);
 }
 
 class SupervisorSseEventStream {
