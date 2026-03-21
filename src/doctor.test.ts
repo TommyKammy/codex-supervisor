@@ -263,6 +263,7 @@ test("renderDoctorReport surfaces merge-critical recheck cadence visibility", ()
       mergeCriticalEffectiveSeconds: 30,
       mergeCriticalRecheckEnabled: true,
     },
+    candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=first_page_only",
     candidateDiscoveryWarning: null,
   };
 
@@ -290,21 +291,25 @@ test("diagnoseSupervisorHost and renderDoctorReport warn when candidate discover
       workspaceRoot,
       stateFile,
       codexBinary: process.execPath,
+      candidateDiscoveryFetchWindow: 250,
     }),
     authStatus: async () => ({ ok: true, message: null }),
     loadState: async () => ({ activeIssueNumber: null, issues: {} }),
     github: {
       getCandidateDiscoveryDiagnostics: async () => ({
-        fetchWindow: 100,
-        observedMatchingOpenIssues: 101,
+        fetchWindow: 250,
+        observedMatchingOpenIssues: 251,
         truncated: true,
       }),
     },
   });
 
+  const report = renderDoctorReport(diagnostics);
+
+  assert.match(report, /doctor_candidate_discovery fetch_window=250 strategy=first_page_only/);
   assert.match(
-    renderDoctorReport(diagnostics),
-    /doctor_warning kind=candidate_discovery detail=Candidate discovery may be truncated: more than 100 matching open issues exceed the current first-page fetch window, so runnable selection may be incomplete\./,
+    report,
+    /doctor_warning kind=candidate_discovery detail=Candidate discovery may be truncated: more than 250 matching open issues exceed the current first-page fetch window, so runnable selection may be incomplete\./,
   );
 });
 

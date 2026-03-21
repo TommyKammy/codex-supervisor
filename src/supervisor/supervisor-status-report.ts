@@ -11,6 +11,7 @@ export interface SupervisorStatusDto {
   gsdSummary: string | null;
   trustDiagnostics?: TrustDiagnosticsSummary | null;
   cadenceDiagnostics?: CadenceDiagnosticsSummary | null;
+  candidateDiscoverySummary?: string | null;
   detailedStatusLines: string[];
   reconciliationPhase: string | null;
   reconciliationWarning: string | null;
@@ -43,6 +44,7 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
       ? []
       : [`execution_safety_warning=${truncate(sanitizeStatusValue(trustDiagnostics.warning), 200)}`]),
     `merge_critical_recheck_seconds=${mergeCriticalRecheckSeconds} merge_critical_effective_seconds=${cadenceDiagnostics.mergeCriticalEffectiveSeconds} merge_critical_recheck_enabled=${cadenceDiagnostics.mergeCriticalRecheckEnabled}`,
+    ...(dto.candidateDiscoverySummary ? [dto.candidateDiscoverySummary] : []),
     ...(dto.reconciliationPhase === null ? [] : [`reconciliation_phase=${dto.reconciliationPhase}`]),
     ...(dto.reconciliationWarning === null ? [] : [dto.reconciliationWarning]),
     ...dto.readinessLines,

@@ -101,6 +101,7 @@ export interface SupervisorConfig {
   issueJournalMaxChars: number;
   issueLabel?: string;
   issueSearch?: string;
+  candidateDiscoveryFetchWindow?: number;
   skipTitlePrefixes: string[];
   branchPrefix: string;
   pollIntervalSeconds: number;

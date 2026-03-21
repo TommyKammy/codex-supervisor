@@ -1,47 +1,45 @@
-# Issue #776: Candidate discovery visibility: warn when selection may be truncated by the first-page fetch window
+# Issue #777: Candidate discovery config: add an explicit fetch-window surface for scheduler candidate discovery
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/776
-- Branch: codex/issue-776
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/777
+- Branch: codex/issue-777
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: a5da9d2f80c5897f35c340aed78a3ca4b03162af
+- Current phase: draft_pr
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: 759441b34c02da7efb720145cd3c91a42f121390
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-21T12:37:42Z
+- Updated at: 2026-03-21T13:35:42.384Z
 
 ## Latest Codex Summary
-Pushed commit `a5da9d2` to `origin/codex/issue-776` and opened draft PR `#788` (`https://github.com/TommyKammy/codex-supervisor/pull/788`). The PR body was corrected via `gh api` after `gh pr edit` hit a GraphQL project-cards deprecation error. `.codex-supervisor/replay/` remains untracked and untouched.
+Checked draft PR [#789](https://github.com/TommyKammy/codex-supervisor/pull/789) after opening it. Both CI build jobs are green, there are no human or bot review findings, and the only remaining remote signal is CodeRabbit's draft-skip comment with a still-pending `CodeRabbit` status context while the PR remains draft. The worktree is otherwise clean apart from the pre-existing untracked `.codex-supervisor/replay/` directory.
 
-Summary: Pushed the verified candidate-discovery warning checkpoint and opened draft PR `#788`
-State hint: waiting_ci
+Summary: Checked PR `#789`; CI passed and only the draft-skipped pending CodeRabbit status remains.
+State hint: draft_pr
 Blocked reason: none
-Tests: no new code verification this turn; reused previous green results from `npx tsx --test src/doctor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build`
+Tests: not run this turn; checked remote PR status after prior green `npx tsx --test src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `npm run build`
 Failure signature: none
-Next action: Monitor draft PR `#788` for CI and review feedback; address any failures if they appear
+Next action: keep watching PR `#789`; if the branch is ready for review, decide whether to move it out of draft or explicitly trigger the pending CodeRabbit review
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `status` and `doctor` need an explicit operator-facing warning when the first-page candidate fetch window can hide additional matching open issues, so operators can distinguish “no runnable issue” from incomplete discovery.
-- What changed: pushed commit `a5da9d2` to `origin/codex/issue-776`, opened draft PR `#788`, and corrected the PR body via `gh api` after `gh pr edit` failed with a GraphQL project-cards deprecation error.
+- Hypothesis: candidate discovery needs an explicit fetch-window config plus an always-visible diagnostics line so operators can see the effective first-page-only behavior even when truncation is not currently observed.
+- What changed: checked draft PR `#789` after opening it. Remote CI is now green (`build (ubuntu-latest)=SUCCESS`, `build (macos-latest)=SUCCESS`), there are no review findings, and CodeRabbit left only a draft-skip informational comment while its `CodeRabbit` status context remains `PENDING`. The branch still contains the explicit `candidateDiscoveryFetchWindow` config surface, GitHub candidate discovery honors that window, and `status`/`doctor` show `candidate_discovery fetch_window=<n> strategy=first_page_only`.
 - Current blocker: none
-- Next exact step: watch draft PR `#788` CI/review feedback and address any failures or comments.
-- Verification gap: no new code changes after the prior green targeted suite/build; this turn only pushed/opened the PR and corrected PR metadata. `.codex-supervisor/replay/` remains untracked and untouched.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/core/types.ts`, `src/doctor.test.ts`, `src/doctor.ts`, `src/github/github.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-selection-readiness-summary.ts`
-- Rollback concern: removing the probe or warning would re-hide first-page truncation and make operators misread incomplete candidate discovery as definitive scheduler state.
-- Last focused command: `gh api repos/TommyKammy/codex-supervisor/pulls/788 -X PATCH --raw-field body=...`
+- Next exact step: continue watching PR `#789`; if the branch is ready to leave draft, decide whether to mark it ready for review and/or explicitly trigger CodeRabbit so the pending status context no longer blocks remote readiness.
+- Verification gap: no new local verification was necessary this turn because there were no code changes; remote CI is green, but PR `#789` still reports `mergeStateStatus=UNSTABLE` because the `CodeRabbit` status context is pending on the draft PR. `.codex-supervisor/replay/` remains untracked and untouched.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/config.test.ts`, `src/core/config.ts`, `src/core/types.ts`, `src/doctor.test.ts`, `src/doctor.ts`, `src/github/github-pull-request-hydrator.test.ts`, `src/github/github.test.ts`, `src/github/github.ts`, `src/pull-request-state-test-helpers.ts`, `src/review-handling.test.ts`, `src/run-once-issue-preparation.test.ts`, `src/run-once-issue-selection.test.ts`, `src/supervisor/replay-corpus-config.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-selection-readiness-summary.ts`, `src/supervisor/supervisor-status-report.ts`, `src/supervisor/supervisor-test-helpers.ts`, `src/supervisor/supervisor.ts`, `src/turn-execution-test-helpers.ts`, `src/codex/codex-policy.test.ts`, `src/codex/codex-runner.test.ts`
+- Rollback concern: removing the explicit fetch-window config or the new top-level diagnostics line would return candidate discovery behavior to an implicit hard-coded detail and hide the effective first-page-only scope from operators.
+- Last focused command: `gh pr view 789 --json url,isDraft,mergeStateStatus,reviewDecision,statusCheckRollup,comments,reviews`
 - Last focused failure: `none`
 - Last focused commands:
 ```bash
-git push -u origin codex/issue-776
-gh pr create --draft --base main --head codex/issue-776 --title "Warn when candidate discovery may be truncated by the first-page fetch window" --body ...
-gh api repos/TommyKammy/codex-supervisor/pulls/788 -X PATCH --raw-field body=...
+gh pr view 789 --json url,isDraft,mergeStateStatus,reviewDecision,statusCheckRollup,comments,reviews
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
