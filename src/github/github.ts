@@ -153,7 +153,7 @@ export class GitHubClient {
       "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,headRefName,headRefOid,mergedAt",
     ]);
     const pullRequests = parseJson<GitHubPullRequest[]>(result.stdout, `gh pr list --head ${branch}`);
-    return this.hydratePullRequest(pullRequests[0] ?? null);
+    return this.hydratePullRequestForStatus(pullRequests[0] ?? null);
   }
 
   async findLatestPullRequestForBranch(branch: string): Promise<GitHubPullRequest | null> {
@@ -177,7 +177,7 @@ export class GitHubClient {
       const rightTimestamp = Date.parse(right.updatedAt ?? right.createdAt);
       return rightTimestamp - leftTimestamp;
     });
-    return this.hydratePullRequest(sorted[0] ?? null);
+    return this.hydratePullRequestForStatus(sorted[0] ?? null);
   }
 
   async getPullRequest(prNumber: number): Promise<GitHubPullRequest> {
@@ -191,7 +191,7 @@ export class GitHubClient {
       "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,headRefName,headRefOid,mergedAt",
     ]);
     const pullRequest = parseJson<GitHubPullRequest>(result.stdout, `gh pr view #${prNumber}`);
-    return (await this.hydratePullRequest(pullRequest)) as GitHubPullRequest;
+    return (await this.hydratePullRequestForAction(pullRequest)) as GitHubPullRequest;
   }
 
   async getPullRequestIfExists(prNumber: number): Promise<GitHubPullRequest | null> {
@@ -210,7 +210,7 @@ export class GitHubClient {
 
     if (result.exitCode === 0) {
       const pullRequest = parseJson<GitHubPullRequest>(result.stdout, `gh pr view #${prNumber}`);
-      return this.hydratePullRequest(pullRequest);
+      return this.hydratePullRequestForStatus(pullRequest);
     }
 
     const stderr = result.stderr.toLowerCase();
@@ -676,7 +676,11 @@ export class GitHubClient {
     };
   }
 
-  private async hydratePullRequest(pr: GitHubPullRequest | null): Promise<GitHubPullRequest | null> {
-    return this.pullRequestHydrator.hydrate(pr);
+  private async hydratePullRequestForStatus(pr: GitHubPullRequest | null): Promise<GitHubPullRequest | null> {
+    return this.pullRequestHydrator.hydrateForStatus(pr);
+  }
+
+  private async hydratePullRequestForAction(pr: GitHubPullRequest | null): Promise<GitHubPullRequest | null> {
+    return this.pullRequestHydrator.hydrateForAction(pr);
   }
 }

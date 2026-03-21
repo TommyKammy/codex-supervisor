@@ -496,3 +496,104 @@ test("GitHubClient resolvePullRequestForBranch ignores a tracked PR from another
   assert.equal(resolved?.number, 360);
   assert.equal(resolved?.headRefName, branch);
 });
+
+test("GitHubClient getPullRequest does not reuse cached hydration for action reads", async () => {
+  const config = createConfig();
+  const pullRequest = createPullRequest({
+    number: 361,
+    headRefName: "codex/issue-361",
+    headRefOid: "head-361",
+  });
+  let graphqlCalls = 0;
+
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "pr" && args[1] === "view" && args[2] === "361") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify(pullRequest),
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "graphql") {
+      graphqlCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: { nodes: [] },
+                reviews: { nodes: [] },
+                comments: { nodes: [] },
+                reviewThreads: { nodes: [] },
+                timelineItems: { nodes: [] },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const first = await client.getPullRequest(361);
+  const second = await client.getPullRequest(361);
+
+  assert.equal(first.hydrationProvenance, "fresh");
+  assert.equal(second.hydrationProvenance, "fresh");
+  assert.equal(graphqlCalls, 2);
+});
+
+test("GitHubClient resolvePullRequestForBranch reuses cached hydration for informational reads", async () => {
+  const config = createConfig();
+  const branch = "codex/issue-362";
+  const pullRequest = createPullRequest({
+    number: 362,
+    headRefName: branch,
+    headRefOid: "head-362",
+  });
+  let graphqlCalls = 0;
+
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "pr" && args[1] === "list" && args.includes("--state") && args.includes("open")) {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify([pullRequest]),
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "graphql") {
+      graphqlCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: { nodes: [] },
+                reviews: { nodes: [] },
+                comments: { nodes: [] },
+                reviewThreads: { nodes: [] },
+                timelineItems: { nodes: [] },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const first = await client.resolvePullRequestForBranch(branch, null);
+  const second = await client.resolvePullRequestForBranch(branch, null);
+
+  assert.equal(first?.hydrationProvenance, "fresh");
+  assert.equal(second?.hydrationProvenance, "cached");
+  assert.equal(graphqlCalls, 1);
+});
