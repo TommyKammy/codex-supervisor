@@ -16,14 +16,14 @@
 ## Latest Codex Summary
 Updated [issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-785/.codex-supervisor/issue-journal.md) to address the two remaining review-only follow-ups: the Active Failure Context now records the live no-active-failure state instead of copying stale thread text, and the inline triple-backtick excerpt that triggered `markdownlint-cli2` MD038 is gone.
 
-Focused verification passed with `npx markdownlint-cli2 ".codex-supervisor/issue-journal.md" --config /tmp/md038-check.*.markdownlint-cli2.jsonc` using a temporary config that enabled only MD038. The pre-existing untracked `.codex-supervisor/replay/` directory remains outside this fix.
+Focused verification passed with `npx markdownlint-cli2 ".codex-supervisor/issue-journal.md" --config /tmp/md038-check.*.markdownlint-cli2.jsonc` using a temporary config that enabled only MD038. Committed as `82a19cf`, pushed to `codex/issue-785`, and resolved review threads `PRRT_kwDORgvdZ8515y3q` and `PRRT_kwDORgvdZ8515y3s`. The pre-existing untracked `.codex-supervisor/replay/` directory remains outside this fix.
 
 Summary: Fixed the remaining journal-only review follow-ups and cleared the MD038 complaint
 State hint: addressing_review
 Blocked reason: none
 Tests: `npx markdownlint-cli2 ".codex-supervisor/issue-journal.md" --config /tmp/md038-check.*.markdownlint-cli2.jsonc`
 Failure signature: none
-Next action: Commit and push the journal-only review fix, then resolve the remaining PR review threads
+Next action: Return to the remaining manual browser verification gap for the read-only WebUI
 
 ## Active Failure Context
 - Category: none
@@ -37,7 +37,7 @@ Next action: Commit and push the journal-only review fix, then resolve the remai
 - Hypothesis: the remaining review comments were journal-only follow-ups, so the correct fix is to stop copying stale CodeRabbit text into Active Failure Context and record the live state directly.
 - What changed: replaced the stale Active Failure Context entries with a neutral no-active-failure summary so the journal no longer contradicts the resolved prior thread or embed markdown that triggers MD038.
 - Current blocker: none
-- Next exact step: commit and push the journal-only review fix, then resolve the remaining PR review threads before returning to the manual browser verification gap against a live local backend with SSE events.
+- Next exact step: return to the manual browser verification gap against a live local backend with SSE events now that the remaining review threads are resolved.
 - Verification gap: the journal-only review fix is verified; the broader issue still needs the real browser pass with a live emitted SSE event.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.ts`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard.ts`, `src/cli/entrypoint.test.ts`, `src/cli/parse-args.test.ts`, `src/cli/parse-args.ts`, `src/cli/supervisor-runtime.test.ts`, `src/cli/supervisor-runtime.ts`, `src/core/types.ts`
 - Rollback concern: keep the dashboard thin and transport-driven; avoid pulling supervisor state interpretation or mutation workflows into the browser, and avoid coupling the UI to local files outside the existing HTTP/SSE surface.
@@ -55,5 +55,5 @@ markdownlint-cli2 .codex-supervisor/issue-journal.md
 - The two currently reported CodeRabbit follow-ups were valid against the previous journal revision because it carried stale review-thread state and embedded inline triple-backtick spans that markdownlint flags as MD038.
 - This turn should stay journal-only unless focused verification shows another live markdown problem.
 - Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/795
-- Review thread resolved: `PRRT_kwDORgvdZ8515vMs`
-- Updated at: 2026-03-21T18:49:57Z
+- Review threads resolved: `PRRT_kwDORgvdZ8515vMs`, `PRRT_kwDORgvdZ8515y3q`, `PRRT_kwDORgvdZ8515y3s`
+- Updated at: 2026-03-21T18:51:07Z
