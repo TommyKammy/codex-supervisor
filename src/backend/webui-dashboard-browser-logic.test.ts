@@ -1,0 +1,158 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  buildStatusLines,
+  collectIssueShortcuts,
+  parseSelectedIssueNumber,
+} from "./webui-dashboard-browser-logic";
+
+test("buildStatusLines combines typed dashboard status sections ahead of legacy summary lines", () => {
+  const lines = buildStatusLines({
+    trackedIssues: [
+      {
+        issueNumber: 58,
+        state: "queued",
+        branch: "codex/issue-58",
+        prNumber: 58,
+        blockedReason: null,
+      },
+    ],
+    runnableIssues: [
+      {
+        issueNumber: 77,
+        title: "Ready for inspection",
+        readiness: "ready",
+      },
+    ],
+    blockedIssues: [
+      {
+        issueNumber: 93,
+        title: "Needs scope repair",
+        blockedBy: "requirements:scope, verification",
+      },
+    ],
+    detailedStatusLines: ["detail line"],
+    readinessLines: ["readiness line"],
+    whyLines: ["selected_issue=#77"],
+    candidateDiscovery: {
+      fetchWindow: 250,
+      strategy: "paginated",
+      truncated: true,
+      observedMatchingOpenIssues: 251,
+      warning: "Candidate discovery may be truncated.",
+    },
+    reconciliationWarning: "reconciliation warning",
+  });
+
+  assert.deepEqual(lines, [
+    "tracked issue #58 [queued] branch=codex/issue-58 pr=#58 blocked_reason=none",
+    "runnable issue #77 Ready for inspection ready=ready",
+    "blocked issue #93 Needs scope repair blocked_by=requirements:scope, verification",
+    "detail line",
+    "readiness line",
+    "selected_issue=#77",
+    "candidate discovery fetch_window=250 strategy=paginated truncated=yes observed_matching_open_issues=251",
+    "Candidate discovery may be truncated.",
+    "reconciliation warning",
+  ]);
+});
+
+test("collectIssueShortcuts deduplicates typed issue shortcuts in priority order", () => {
+  const shortcuts = collectIssueShortcuts({
+    activeIssue: {
+      issueNumber: 77,
+      state: "running",
+      branch: "codex/issue-77",
+    },
+    runnableIssues: [
+      {
+        issueNumber: 77,
+        title: "Ready for inspection",
+        readiness: "ready",
+      },
+      {
+        issueNumber: 81,
+        title: "Fresh runnable issue",
+        readiness: "ready",
+      },
+    ],
+    blockedIssues: [
+      {
+        issueNumber: 81,
+        title: "Still blocked elsewhere",
+        blockedBy: "requirements:verification",
+      },
+      {
+        issueNumber: 93,
+        title: "Needs scope repair",
+        blockedBy: "requirements:scope, verification",
+      },
+    ],
+    trackedIssues: [
+      {
+        issueNumber: 93,
+        state: "queued",
+        branch: "codex/issue-93",
+        prNumber: null,
+        blockedReason: "requirements:scope, verification",
+      },
+      {
+        issueNumber: 105,
+        state: "queued",
+        branch: "codex/issue-105",
+        prNumber: 412,
+        blockedReason: null,
+      },
+    ],
+  });
+
+  assert.deepEqual(shortcuts, [
+    {
+      issueNumber: 77,
+      label: "active",
+      detail: "running codex/issue-77",
+    },
+    {
+      issueNumber: 81,
+      label: "runnable ready",
+      detail: "Fresh runnable issue",
+    },
+    {
+      issueNumber: 93,
+      label: "blocked requirements:scope, verification",
+      detail: "Needs scope repair",
+    },
+    {
+      issueNumber: 105,
+      label: "tracked queued",
+      detail: "codex/issue-105 pr=#412",
+    },
+  ]);
+});
+
+test("parseSelectedIssueNumber prefers typed fields before falling back to legacy lines", () => {
+  assert.equal(
+    parseSelectedIssueNumber({
+      selectionSummary: { selectedIssueNumber: 42 },
+      whyLines: ["selected_issue=#99"],
+    }),
+    42,
+  );
+
+  assert.equal(
+    parseSelectedIssueNumber({
+      activeIssue: { issueNumber: 77 },
+      whyLines: ["selected_issue=#99"],
+    }),
+    77,
+  );
+
+  assert.equal(
+    parseSelectedIssueNumber({
+      whyLines: ["selected_issue=#88"],
+    }),
+    88,
+  );
+
+  assert.equal(parseSelectedIssueNumber({ whyLines: ["selected_issue=none"] }), null);
+});
