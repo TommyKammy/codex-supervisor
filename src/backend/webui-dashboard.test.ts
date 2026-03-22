@@ -1120,6 +1120,14 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
               valueType: "review_provider",
             },
           },
+          {
+            key: "sessionName",
+            label: "Session name",
+            state: "missing",
+            value: null,
+            message: "Session name is optional.",
+            required: false,
+          },
         ],
         blockers: [
           {
@@ -1174,7 +1182,8 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
   assert.match(harness.document.getElementById("setup-field-summary")?.textContent ?? "", /1 of 2 required setup fields configured\./u);
   assert.match(harness.document.getElementById("setup-fields")?.textContent ?? "", /Repository path \[Configured\].*Current value: \/tmp\/repo.*Type: directory path.*Repository path is configured\./u);
   assert.match(harness.document.getElementById("setup-fields")?.textContent ?? "", /Review provider \[Missing\].*Current value: Unset.*Type: review provider.*Configure at least one review provider before first-run setup is complete\./u);
-  assert.match(harness.document.getElementById("setup-host-summary")?.textContent ?? "", /Overall host readiness: Pass across 1 checks\./u);
+  assert.match(harness.document.getElementById("setup-fields")?.textContent ?? "", /Session name \[Missing\].*Current value: Unset.*Required: no \| Source: unknown \| Type: unknown.*Session name is optional\./u);
+  assert.match(harness.document.getElementById("setup-host-summary")?.textContent ?? "", /Overall host readiness: Pass across 1 check\./u);
   assert.match(harness.document.getElementById("setup-host-checks")?.textContent ?? "", /Github Auth \[Pass\].*GitHub auth ok\..*Detail: Authenticated as octocat\./u);
   assert.match(harness.document.getElementById("setup-provider-posture")?.textContent ?? "", /No review provider is configured\./u);
   assert.match(harness.document.getElementById("setup-provider-details")?.textContent ?? "", /Provider profile: None.*Signal source: none.*Configured reviewers: none.*Configured: no/u);

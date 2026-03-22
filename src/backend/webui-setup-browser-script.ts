@@ -84,14 +84,16 @@ export function renderSetupBrowserScript(): string {
 
       function summarizeFields(fields) {
         const values = Array.isArray(fields) ? fields : [];
-        const configured = values.filter((field) => field.state === "configured").length;
-        return configured + " of " + values.length + " required setup fields configured.";
+        const requiredFields = values.filter((field) => field.required);
+        const configuredRequired = requiredFields.filter((field) => field.state === "configured").length;
+        return configuredRequired + " of " + requiredFields.length + " required setup fields configured.";
       }
 
       function summarizeHostReadiness(report) {
         const checks = (report.hostReadiness && report.hostReadiness.checks) || [];
         const overall = report.hostReadiness ? formatStatus(report.hostReadiness.overallStatus) : "Not Ready";
-        return "Overall host readiness: " + overall + " across " + checks.length + " checks.";
+        const noun = checks.length === 1 ? "check" : "checks";
+        return "Overall host readiness: " + overall + " across " + checks.length + " " + noun + ".";
       }
 
       function renderSetup(report) {
@@ -146,8 +148,8 @@ export function renderSetupBrowserScript(): string {
             (field) => ({
               title: field.label + " [" + formatStatus(field.state) + "]",
               meta: [
-                "Current value: " + (field.value || "Unset"),
-                "Required: " + (field.required ? "yes" : "no") + " | Source: " + formatToken(field.metadata.source) + " | Type: " + formatToken(field.metadata.valueType),
+                "Current value: " + (field.value ?? "Unset"),
+                "Required: " + (field.required ? "yes" : "no") + " | Source: " + formatToken(field.metadata?.source || "unknown") + " | Type: " + formatToken(field.metadata?.valueType || "unknown"),
               ],
               notes: [field.message],
             }),
