@@ -455,6 +455,10 @@ export function renderSupervisorDashboardPage(): string {
             <span id="command-status" class="hint">No command run yet.</span>
           </div>
           <div class="panel-body stack">
+            <p class="hint">
+              Commands run one at a time. Confirmation rejections, in-flight progress, and refresh follow-up guidance
+              appear below.
+            </p>
             <div class="action-grid">
               <div class="action-card">
                 <strong>Run once</strong>

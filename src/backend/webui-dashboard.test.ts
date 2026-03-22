@@ -741,9 +741,71 @@ test("dashboard preserves a successful command result when the refresh step fail
   assert.equal(commandStatus.textContent, "run-once complete");
   assert.match(commandResult.textContent, /"command": "run-once"/u);
   assert.match(commandResult.textContent, /"summary": "run-once complete"/u);
+  assert.match(
+    commandResult.textContent,
+    /"guidance": "Command completed, but the dashboard refresh failed\. Use the warning above before relying on the visible state\."/u,
+  );
   assert.equal(statusWarning.textContent, "/api/status?why=true: Status refresh failed.");
   assert.equal(refreshState.textContent, "failed");
   assert.equal(freshnessState.textContent, "stale");
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard shows an in-flight safe command state until the command resolves", async () => {
+  const runOnceResponse = createDeferred<MockResponseLike>();
+  const harness = createDashboardHarness([
+    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    {
+      path: "/api/commands/run-once",
+      method: "POST",
+      body: JSON.stringify({ dryRun: false }),
+      response: runOnceResponse.promise,
+    },
+    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+  ]);
+  await harness.flush();
+
+  const runOnceButton = harness.document.getElementById("run-once-button");
+  const pruneButton = harness.document.getElementById("prune-workspaces-button");
+  const resetButton = harness.document.getElementById("reset-json-state-button");
+  const commandStatus = harness.document.getElementById("command-status");
+  const commandResult = harness.document.getElementById("command-result");
+  assert.ok(runOnceButton);
+  assert.ok(pruneButton);
+  assert.ok(resetButton);
+  assert.ok(commandStatus);
+  assert.ok(commandResult);
+
+  const clickPromise = runOnceButton.dispatch("click");
+  await harness.flush();
+
+  assert.equal(runOnceButton.disabled, true);
+  assert.equal(pruneButton.disabled, true);
+  assert.equal(resetButton.disabled, true);
+  assert.equal(commandStatus.textContent, "Running run-once...");
+  assert.match(commandResult.textContent, /"outcome": "in_progress"/u);
+  assert.match(commandResult.textContent, /"summary": "Waiting for run-once to finish\."/u);
+  assert.match(
+    commandResult.textContent,
+    /"guidance": "The dashboard will refresh automatically after the command finishes\."/u,
+  );
+
+  runOnceResponse.resolve(
+    jsonResponse({
+      command: "run-once",
+      dryRun: false,
+      summary: "run-once complete",
+    }),
+  );
+  await clickPromise;
+  await harness.flush();
+
+  assert.equal(commandStatus.textContent, "run-once complete");
+  assert.equal(runOnceButton.disabled, false);
+  assert.equal(pruneButton.disabled, false);
+  assert.equal(resetButton.disabled, false);
   assert.equal(harness.remainingFetches.length, 0);
 });
 
@@ -803,6 +865,10 @@ test("dashboard reports a rejected safe command when the operator declines confi
   assert.equal(commandStatus.textContent, "prune-orphaned-workspaces cancelled");
   assert.match(commandResult.textContent, /"outcome": "rejected"/u);
   assert.match(commandResult.textContent, /"summary": "Operator declined confirmation\."/u);
+  assert.match(
+    commandResult.textContent,
+    /"guidance": "No changes were made\. Review the confirmation or prerequisites and retry when ready\."/u,
+  );
   assert.equal(harness.fetchCalls.filter((call) => call.path === "/api/commands/prune-orphaned-workspaces").length, 0);
   assert.equal(harness.remainingFetches.length, 0);
 });
