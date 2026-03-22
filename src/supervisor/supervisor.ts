@@ -946,6 +946,7 @@ export class Supervisor {
         branch: statusRecords.activeRecord.branch,
         prNumber: statusRecords.activeRecord.pr_number,
         blockedReason: statusRecords.activeRecord.blocked_reason,
+        activityContext: activeStatus.activityContext,
       },
       selectionSummary: {
         selectedIssueNumber: null,

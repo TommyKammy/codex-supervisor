@@ -2,6 +2,7 @@ import type { CadenceDiagnosticsSummary, TrustDiagnosticsSummary } from "../core
 import { sanitizeStatusValue } from "./supervisor-status-rendering";
 import { truncate } from "../core/utils";
 import type { BlockedReason, RunState, SupervisorStateFile } from "../core/types";
+import type { SupervisorIssueActivityContextDto } from "./supervisor-operator-activity-context";
 import type {
   SupervisorBlockedIssueDto,
   SupervisorCandidateDiscoveryDto,
@@ -20,6 +21,7 @@ export interface SupervisorActiveIssueDto {
   branch: string;
   prNumber: number | null;
   blockedReason: BlockedReason | null;
+  activityContext: SupervisorIssueActivityContextDto | null;
 }
 
 export interface SupervisorTrackedIssueDto {

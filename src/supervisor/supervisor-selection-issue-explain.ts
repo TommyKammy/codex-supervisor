@@ -26,6 +26,7 @@ import {
   loadStatusChangedFiles,
 } from "./supervisor-status-rendering";
 import { formatLatestRecoveryStatusLine } from "./supervisor-detailed-status-assembly";
+import { readIssueJournal, summarizeIssueJournalHandoff } from "../core/journal";
 import {
   BlockedReason,
   GitHubIssue,
@@ -36,6 +37,7 @@ import {
   SupervisorStateFile,
 } from "../core/types";
 import type { ActiveStatusGitHub } from "./supervisor-selection-active-status";
+import { maybeBuildIssueActivityContext, type SupervisorIssueActivityContextDto } from "./supervisor-operator-activity-context";
 
 export type ExplainIssueGitHub = Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
   Partial<ActiveStatusGitHub>;
@@ -49,6 +51,7 @@ export interface SupervisorExplainDto {
   changeRiskLines: string[];
   externalReviewFollowUpSummary: string | null;
   latestRecoverySummary: string | null;
+  activityContext: SupervisorIssueActivityContextDto | null;
   selectionReason: string | null;
   reasons: string[];
   lastError: string | null;
@@ -195,6 +198,22 @@ export async function buildIssueExplainDto(
     record,
   });
   const latestRecoverySummary = record ? formatLatestRecoveryStatusLine(record) : null;
+  let pr: GitHubPullRequest | null = null;
+  if (record && github.resolvePullRequestForBranch) {
+    try {
+      pr = await github.resolvePullRequestForBranch(record.branch, record.pr_number);
+    } catch {
+      pr = null;
+    }
+  }
+  let handoffSummary: string | null = null;
+  if (record?.journal_path) {
+    try {
+      handoffSummary = summarizeIssueJournalHandoff(await readIssueJournal(record.journal_path));
+    } catch {
+      handoffSummary = null;
+    }
+  }
 
   if (matchingSkipPrefix) {
     reasons.push(`skip_title_prefix ${matchingSkipPrefix}`);
@@ -241,6 +260,16 @@ export async function buildIssueExplainDto(
     changeRiskLines,
     externalReviewFollowUpSummary,
     latestRecoverySummary,
+    activityContext: record
+      ? maybeBuildIssueActivityContext({
+        config,
+        record,
+        pr,
+        handoffSummary,
+        changeClassesSummary: changeRiskLines.length > 0 ? changeRiskLines.join(" | ") : null,
+        externalReviewFollowUpSummary,
+      })
+      : null,
     selectionReason: runnable
       ? formatSelectionReason(issue, issues, state, record, readiness.isExecutionReady, config)
       : null,

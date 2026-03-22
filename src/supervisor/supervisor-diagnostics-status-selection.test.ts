@@ -147,6 +147,7 @@ test("statusReport exposes typed active-issue and selection summary fields along
     branch: branchName(fixture.config, 58),
     prNumber: 58,
     blockedReason: null,
+    activityContext: null,
   });
   assert.deepEqual(report.selectionSummary, {
     selectedIssueNumber: null,
@@ -154,6 +155,141 @@ test("statusReport exposes typed active-issue and selection summary fields along
   });
   assert.match(report.detailedStatusLines.join("\n"), /^issue=#58$/m);
   assert.match(report.detailedStatusLines.join("\n"), /^state=queued$/m);
+});
+
+test("statusReport exposes typed operator activity context for the active issue", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 58;
+  const journalPath = path.join(fixture.workspaceRoot, "issue-58", ".codex-supervisor", "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    `# Issue #58: Typed operator activity context
+
+## Supervisor Snapshot
+- Updated at: 2026-03-22T00:20:00Z
+
+## Latest Codex Summary
+- None yet.
+
+## Active Failure Context
+- None recorded.
+
+## Codex Working Notes
+### Current Handoff
+- Hypothesis: The status DTO should carry typed operator-facing issue context.
+- What changed: Added a focused active-issue contract test.
+- Current blocker: Waiting on the status DTO to expose the handoff summary directly.
+- Next exact step: Add typed activity context fields on the active issue payload.
+- Verification gap: Focused status DTO coverage was missing.
+- Files touched: src/supervisor/supervisor.ts
+- Rollback concern:
+- Last focused command: npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts
+
+### Scratchpad
+- Keep this section short.
+`,
+    "utf8",
+  );
+
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "addressing_review",
+        branch: branchName(fixture.config, issueNumber),
+        pr_number: issueNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: journalPath,
+        blocked_reason: null,
+        last_error: null,
+        last_recovery_reason:
+          "tracked_pr_head_advanced: resumed issue #58 from blocked to addressing_review after tracked PR #58 advanced from head-old-58 to head-new-58",
+        last_recovery_at: "2026-03-22T00:15:00Z",
+        review_wait_started_at: "2099-01-01T00:00:30.000Z",
+        review_wait_head_sha: "head-new-58",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    reviewBotLogins: ["coderabbitai"],
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => ({
+      number: issueNumber,
+      title: "Typed operator activity context",
+      body: `## Summary
+Expose typed operator-facing issue detail fields.
+
+## Scope
+- extend the status DTO
+
+## Acceptance criteria
+- status includes typed operator activity context
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`,
+      createdAt: "2026-03-22T00:00:00Z",
+      updatedAt: "2026-03-22T00:00:00Z",
+      url: `https://example.test/issues/${issueNumber}`,
+      state: "OPEN",
+    }),
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    resolvePullRequestForBranch: async () => ({
+      number: issueNumber,
+      title: "Typed operator activity context",
+      url: `https://example.test/pull/${issueNumber}`,
+      state: "OPEN",
+      createdAt: "2026-03-22T00:00:00Z",
+      updatedAt: "2026-03-22T00:00:00Z",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      headRefName: branchName(fixture.config, issueNumber),
+      headRefOid: "head-new-58",
+      configuredBotDraftSkipAt: "2099-01-01T00:00:00.000Z",
+      currentHeadCiGreenAt: "2099-01-01T00:00:30.000Z",
+    }),
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+
+  assert.deepEqual(report.activeIssue?.activityContext, {
+    handoffSummary:
+      "blocker: Waiting on the status DTO to expose the handoff summary directly. | next: Add typed activity context fields on the active issue payload.",
+    localReviewRoutingSummary: null,
+    changeClassesSummary: null,
+    verificationPolicySummary: null,
+    durableGuardrailSummary: null,
+    externalReviewFollowUpSummary: null,
+    latestRecovery: {
+      issueNumber,
+      at: "2026-03-22T00:15:00Z",
+      reason: "tracked_pr_head_advanced",
+      detail: "resumed issue #58 from blocked to addressing_review after tracked PR #58 advanced from head-old-58 to head-new-58",
+    },
+    localReviewSummaryPath: null,
+    externalReviewMissesPath: null,
+    reviewWaits: [
+      {
+        kind: "configured_bot_initial_grace_wait",
+        status: "active",
+        provider: "coderabbit",
+        pauseReason: "awaiting_fresh_provider_review_after_draft_skip",
+        recentObservation: "ready_for_review_reopened_wait",
+        observedAt: "2099-01-01T00:00:30.000Z",
+        configuredWaitSeconds: 90,
+        waitUntil: "2099-01-01T00:02:00.000Z",
+      },
+    ],
+  });
 });
 
 test("status surfaces merge-critical recheck cadence and disabled fallback visibility", async (t) => {
