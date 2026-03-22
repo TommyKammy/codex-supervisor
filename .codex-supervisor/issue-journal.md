@@ -1,56 +1,47 @@
-# Issue #836: Setup UX contract follow-up: add typed remediation and field metadata for guided setup
+# Issue #837: WebUI setup shell: add a dedicated first-run setup route backed by setup-readiness
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/836
-- Branch: codex/issue-836
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/837
+- Branch: codex/issue-837
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: aa95a0f896e49ac26ed6cc9219b472238cbfa0a7
+- Current phase: implementing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 9754a8ab7ba7bee04d83267639c51420bff6427e
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ8519xq3
-- Repeated failure signature count: 1
-- Updated at: 2026-03-22T11:58:23Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-22T12:58:00Z
 
 ## Latest Codex Summary
-Applied the remaining PR review fix in [docs/getting-started.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-836/docs/getting-started.md) so the setup/readiness contract excerpt matches the live backend unions for field keys, field `valueType`, and blocker `remediation.kind`. I also tightened [src/getting-started-docs.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-836/src/getting-started-docs.test.ts) so those documented union members are pinned locally and future doc drift is caught before review.
-
-Summary: Synced the getting-started setup contract snippet with the implementation, added a focused docs regression, committed `aa95a0f`, and pushed the review fix to PR `#842`.
-State hint: waiting_ci
-Blocked reason: none
-Tests: `npx tsx --test src/getting-started-docs.test.ts`
-Failure signature: PRRT_kwDORgvdZ8519xq3
-Next action: Watch PR `#842` checks on head `aa95a0f896e49ac26ed6cc9219b472238cbfa0a7` and confirm the remaining docs review thread clears on the updated commit.
+- Added a dedicated first-run setup shell backed by `/api/setup-readiness`, routed `/` to that shell only when setup is incomplete, and kept the steady-state operator dashboard available at `/dashboard` and at `/` once setup is configured. Focused HTTP/UI tests now cover the new setup-shell routing and typed setup rendering.
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/842#discussion_r2971414677
-- Details:
-  - docs/getting-started.md:199 _⚠️ Potential issue_ | _🟡 Minor_ **Documentation type definitions are incomplete compared to implementation.** The documented types omit several valid union members from the actual implementation in `src/setup-readiness.ts`: 1. `SetupReadinessField.metadata.valueType` is missing: `"git_ref"`, `"file_path"`, `"text"` 2. `SetupReadinessBlocker.remediation.kind` is missing: `"repair_worktree_layout"` If these docs serve as an API contract reference, consider updating them to match the full implementation, or add a note indicating this is an illustrative subset. <details> <summary>📝 Suggested update to match implementation</summary> ```diff metadata: { source: "config"; editable: true; - valueType: "directory_path" | "repo_slug" | "executable_path" | "review_provider"; + valueType: "directory_path" | "repo_slug" | "git_ref" | "file_path" | "executable_path" | "text" | "review_provider"; }; } interface SetupReadinessBlocker { code: string; message: string; fieldKeys: SetupReadinessField["key"][]; remediation: { - kind: "edit_config" | "configure_review_provider" | "authenticate_github" | "verify_codex_cli"; + kind: "edit_config" | "configure_review_provider" | "authenticate_github" | "verify_codex_cli" | "repair_worktree_layout"; summary: string; fieldKeys: SetupReadinessField["key"][]; }; } ``` </details> <!-- suggestion_start --> <details> <summary>📝 Committable suggestion</summary> > ‼️ **IMPORTANT** > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements. ```suggestion metadata: { source: "config"; editable: true; valueType: "directory_path" | "repo_slug" | "git_ref" | "file_path" | "executable_path" | "text" | "review_provider"; }; } interface SetupReadinessBlocker { code: string; message: string; fieldKeys: SetupReadinessField["key"][]; remediation: { kind: "edit_config" | "configure_review_provider" | "authenticate_github" | "verify_codex_cli" | "repair_worktree_layout"; summary: string; fieldKeys: SetupReadinessField["key"][]; }; } ``` </details> <!-- suggestion_end --> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@docs/getting-started.md` around lines 184 - 199, Update the documented type unions to match the implementation: add "git_ref", "file_path", and "text" to SetupReadinessField.metadata.valueType and add "repair_worktree_layout" to SetupReadinessBlocker.remediation.kind (or explicitly note this doc is an illustrative subset if you intend to keep it smaller); locate the type defs for SetupReadinessField and SetupReadinessBlocker in the docs and extend the union literals to include those missing members so the docs reflect the actual src/setup-readiness.ts implementation. ``` </details> <!-- fingerprinting:phantom:medusa:ocelot --> <!-- This is an auto-generated comment by CodeRabbit -->
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining automated review thread is valid drift in the getting-started contract excerpt, not a backend bug; syncing the documented unions with `src/setup-readiness.ts` and pinning them in the docs test should clear it without changing runtime behavior.
-- What changed: expanded the docs snippet in `docs/getting-started.md` so the setup-specific typed excerpt now includes all current setup field keys plus the missing `git_ref`, `file_path`, `text`, and `repair_worktree_layout` union members; updated `src/getting-started-docs.test.ts` to assert those definitions explicitly.
+- Hypothesis: the WebUI gap was that `/` always rendered the operator dashboard even when typed setup readiness reported blockers, so first-run guidance needed its own shell and root-level route selection.
+- What changed: added `src/backend/webui-setup.ts`, `src/backend/webui-setup-page.ts`, and `src/backend/webui-setup-browser-script.ts` for a dedicated setup shell that renders typed setup blockers, fields, host checks, provider posture, and trust posture from `/api/setup-readiness`; updated `src/backend/supervisor-http-server.ts` so `/setup` always serves that shell, `/dashboard` always serves the steady-state dashboard, and `/` now chooses between them based on `querySetupReadiness().ready`; tightened `src/backend/supervisor-http-server.test.ts` and `src/backend/webui-dashboard.test.ts` to pin the route split and setup-shell fetch/render behavior.
 - Current blocker: none
-- Next exact step: watch PR `#842` on head `aa95a0f896e49ac26ed6cc9219b472238cbfa0a7`, then confirm the docs review thread can be resolved without further contract changes.
-- Verification gap: only the focused docs regression was rerun on this delta; the broader setup-readiness test matrix from the previous pass was not rerun because the live code path did not change.
-- Files touched: `.codex-supervisor/issue-journal.md`, `docs/getting-started.md`, `src/getting-started-docs.test.ts`
-- Rollback concern: this delta is documentation plus a docs-only regression guard; if reverted alone, runtime behavior stays the same but the PR thread and doc/implementation drift return.
-- Last focused command: `gh pr view 842 --json headRefOid,mergeStateStatus,isDraft,url`
-- Last focused failure: `AssertionError [ERR_ASSERTION]` in `src/getting-started-docs.test.ts` when the first regex tried to match both a type alias definition and its later field usage in one expression; splitting those checks fixed the false negative.
+- Next exact step: review the local diff, commit the setup-shell change on `codex/issue-837`, and open/update a draft PR if one is still absent.
+- Verification gap: browser smoke coverage for the new setup shell was not added in this pass; focused unit/HTTP coverage plus `npm run build` passed locally.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.ts`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard.test.ts`, `src/backend/webui-setup.ts`, `src/backend/webui-setup-page.ts`, `src/backend/webui-setup-browser-script.ts`
+- Rollback concern: reverting only the server routing change would strand the new `/setup` shell and tests; reverting only the new setup shell files would break `/setup` and the root first-run flow.
+- Last focused command: `npm run build`
+- Last focused failure: `sh: 1: tsc: not found` during the first build attempt before restoring dependencies with `npm ci`; a later build also caught a TypeScript narrowing error in the new server test (`TS18047`/`TS2339` on `address.port`), which was fixed by capturing `port` after the listen-address guard.
 - Last focused commands:
 ```bash
-git diff -- docs/getting-started.md src/getting-started-docs.test.ts
-npx tsx --test src/getting-started-docs.test.ts
-npx tsx --test src/getting-started-docs.test.ts
-git commit -m "Sync setup readiness docs unions"
-git push origin codex/issue-836
-gh pr view 842 --json headRefOid,mergeStateStatus,isDraft,url
+sed -n '1,260p' .codex-supervisor/issue-journal.md
+npx tsx --test src/backend/supervisor-http-server.test.ts src/backend/webui-dashboard.test.ts
+npm ci
+npm run build
 ```
 ### Scratchpad
+- 2026-03-22T12:57:00Z: reran `npx tsx --test src/backend/supervisor-http-server.test.ts src/backend/webui-dashboard.test.ts` and `npm run build`; both passed after fixing the server-test `address.port` narrowing issue.
+- 2026-03-22T12:55:00Z: `npm run build` initially failed with `sh: 1: tsc: not found`; restored local dependencies with `npm ci` and reran build.
+- 2026-03-22T12:48:00Z: added the narrow reproducer in `src/backend/supervisor-http-server.test.ts` and `src/backend/webui-dashboard.test.ts`; the first focused run failed because the legacy root-shell test still assumed `/` always served the operator dashboard after the new route selection landed.
+- 2026-03-22T12:44:00Z: implemented the dedicated setup shell and route split so `/setup` serves first-run guidance, `/dashboard` serves the steady-state dashboard, and `/` chooses based on typed setup readiness.
 - 2026-03-22T11:58:23Z: committed `aa95a0f` (`Sync setup readiness docs unions`), pushed `codex/issue-836`, and confirmed PR `#842` is on head `aa95a0f896e49ac26ed6cc9219b472238cbfa0a7` with `mergeStateStatus` `UNSTABLE` while refreshed checks start.
 - 2026-03-22T11:57:07Z: updated the getting-started setup contract excerpt to match the implementation unions and added focused docs assertions for the missing value-type/remediation/key members.
 - 2026-03-22T11:56:31Z: the first `npx tsx --test src/getting-started-docs.test.ts` run failed on an over-broad regex that tried to match the type alias definition and the later field usage in one expression; split those assertions and reran cleanly.
