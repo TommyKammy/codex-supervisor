@@ -1,56 +1,64 @@
-# Issue #824: WebUI issue details hygiene: stop defaulting typed shortcuts to historical tracked done issues
+# Issue #836: Setup UX contract follow-up: add typed remediation and field metadata for guided setup
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/824
-- Branch: codex/issue-824
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/836
+- Branch: codex/issue-836
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: waiting_ci
-- Attempt count: 7 (implementation=5, repair=2)
-- Last head SHA: aa11199ec6471b6c8f6d95b64745a12a565f5cc2
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: aa95a0f896e49ac26ed6cc9219b472238cbfa0a7
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-22T10:58:09Z
+- Last failure signature: PRRT_kwDORgvdZ8519xq3
+- Repeated failure signature count: 1
+- Updated at: 2026-03-22T11:58:23Z
 
 ## Latest Codex Summary
-Default Issue Details shortcuts still exclude tracked `done` history by default. [webui-dashboard-browser-logic.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-824/src/backend/webui-dashboard-browser-logic.ts#L191) continues to reuse the tracked-history filter when building shortcuts, so active/runnable/blocked/non-`done` tracked issues stay prioritized while completed tracked items remain available through the tracked-history panel. The focused regressions in [webui-dashboard-browser-logic.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-824/src/backend/webui-dashboard-browser-logic.test.ts#L118) and [webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-824/src/backend/webui-dashboard.test.ts#L528) stayed green after integrating `origin/main`.
+Applied the remaining PR review fix in [docs/getting-started.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-836/docs/getting-started.md) so the setup/readiness contract excerpt matches the live backend unions for field keys, field `valueType`, and blocker `remediation.kind`. I also tightened [src/getting-started-docs.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-836/src/getting-started-docs.test.ts) so those documented union members are pinned locally and future doc drift is caught before review.
 
-`origin/main` merged cleanly into `codex/issue-824` apart from `.codex-supervisor/issue-journal.md`, which conflicted because `main` carried another issue worktree's journal content. Focused merge verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts src/getting-started-docs.test.ts src/doctor.test.ts` and `npm run build`, then the merge commit `aa11199` was pushed to draft PR `#831`: https://github.com/TommyKammy/codex-supervisor/pull/831. `gh pr view 831 --json mergeStateStatus,headRefOid,isDraft,url` now reports head `aa11199ec6471b6c8f6d95b64745a12a565f5cc2` with `mergeStateStatus` `UNSTABLE`, so the dirty merge conflict is cleared and fresh CI is pending.
-
-Summary: Integrated `origin/main`, resolved the journal-only merge conflict, and pushed `aa11199` to PR #831
+Summary: Synced the getting-started setup contract snippet with the implementation, added a focused docs regression, committed `aa95a0f`, and pushed the review fix to PR `#842`.
 State hint: waiting_ci
 Blocked reason: none
-Tests: `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts src/getting-started-docs.test.ts src/doctor.test.ts` (passed); `npm run build` (passed)
-Failure signature: none
-Next action: monitor PR #831 for refreshed CI on `aa11199` and address any follow-up if the new run fails
+Tests: `npx tsx --test src/getting-started-docs.test.ts`
+Failure signature: PRRT_kwDORgvdZ8519xq3
+Next action: Watch PR `#842` checks on head `aa95a0f896e49ac26ed6cc9219b472238cbfa0a7` and confirm the remaining docs review thread clears on the updated commit.
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/842#discussion_r2971414677
+- Details:
+  - docs/getting-started.md:199 _⚠️ Potential issue_ | _🟡 Minor_ **Documentation type definitions are incomplete compared to implementation.** The documented types omit several valid union members from the actual implementation in `src/setup-readiness.ts`: 1. `SetupReadinessField.metadata.valueType` is missing: `"git_ref"`, `"file_path"`, `"text"` 2. `SetupReadinessBlocker.remediation.kind` is missing: `"repair_worktree_layout"` If these docs serve as an API contract reference, consider updating them to match the full implementation, or add a note indicating this is an illustrative subset. <details> <summary>📝 Suggested update to match implementation</summary> ```diff metadata: { source: "config"; editable: true; - valueType: "directory_path" | "repo_slug" | "executable_path" | "review_provider"; + valueType: "directory_path" | "repo_slug" | "git_ref" | "file_path" | "executable_path" | "text" | "review_provider"; }; } interface SetupReadinessBlocker { code: string; message: string; fieldKeys: SetupReadinessField["key"][]; remediation: { - kind: "edit_config" | "configure_review_provider" | "authenticate_github" | "verify_codex_cli"; + kind: "edit_config" | "configure_review_provider" | "authenticate_github" | "verify_codex_cli" | "repair_worktree_layout"; summary: string; fieldKeys: SetupReadinessField["key"][]; }; } ``` </details> <!-- suggestion_start --> <details> <summary>📝 Committable suggestion</summary> > ‼️ **IMPORTANT** > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements. ```suggestion metadata: { source: "config"; editable: true; valueType: "directory_path" | "repo_slug" | "git_ref" | "file_path" | "executable_path" | "text" | "review_provider"; }; } interface SetupReadinessBlocker { code: string; message: string; fieldKeys: SetupReadinessField["key"][]; remediation: { kind: "edit_config" | "configure_review_provider" | "authenticate_github" | "verify_codex_cli" | "repair_worktree_layout"; summary: string; fieldKeys: SetupReadinessField["key"][]; }; } ``` </details> <!-- suggestion_end --> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@docs/getting-started.md` around lines 184 - 199, Update the documented type unions to match the implementation: add "git_ref", "file_path", and "text" to SetupReadinessField.metadata.valueType and add "repair_worktree_layout" to SetupReadinessBlocker.remediation.kind (or explicitly note this doc is an illustrative subset if you intend to keep it smaller); locate the type defs for SetupReadinessField and SetupReadinessBlocker in the docs and extend the union literals to include those missing members so the docs reflect the actual src/setup-readiness.ts implementation. ``` </details> <!-- fingerprinting:phantom:medusa:ocelot --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: #824 only needed to keep filtering tracked `done` issues out of `collectIssueShortcuts()`; the base-branch conflict was limited to the per-worktree journal and did not require any behavioral change to the dashboard implementation.
-- What changed: merged `origin/main` into `codex/issue-824`, kept the issue-824 journal instead of `main`'s unrelated issue-829 journal during conflict resolution, reran the focused dashboard/browser/backend/docs verification set on the merged tree, and pushed merge commit `aa11199` to `origin/codex/issue-824`.
+- Hypothesis: the remaining automated review thread is valid drift in the getting-started contract excerpt, not a backend bug; syncing the documented unions with `src/setup-readiness.ts` and pinning them in the docs test should clear it without changing runtime behavior.
+- What changed: expanded the docs snippet in `docs/getting-started.md` so the setup-specific typed excerpt now includes all current setup field keys plus the missing `git_ref`, `file_path`, `text`, and `repair_worktree_layout` union members; updated `src/getting-started-docs.test.ts` to assert those definitions explicitly.
 - Current blocker: none
-- Next exact step: watch PR `#831` for the new CI cycle on `aa11199` and address any failing check or review follow-up.
-- Verification gap: none in the scoped merge surface; the dashboard shortcut tests, merged HTTP/setup-readiness tests, docs test, doctor test, and `npm run build` all passed locally after the base integration.
-- Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: keep the tracked-history panel behavior and the setup-readiness HTTP/docs changes from `origin/main`; only the journal conflict should be branch-local.
-- Last focused command: `gh pr view 831 --json mergeStateStatus,headRefOid,isDraft,url`
-- Last focused failure: none
+- Next exact step: watch PR `#842` on head `aa95a0f896e49ac26ed6cc9219b472238cbfa0a7`, then confirm the docs review thread can be resolved without further contract changes.
+- Verification gap: only the focused docs regression was rerun on this delta; the broader setup-readiness test matrix from the previous pass was not rerun because the live code path did not change.
+- Files touched: `.codex-supervisor/issue-journal.md`, `docs/getting-started.md`, `src/getting-started-docs.test.ts`
+- Rollback concern: this delta is documentation plus a docs-only regression guard; if reverted alone, runtime behavior stays the same but the PR thread and doc/implementation drift return.
+- Last focused command: `gh pr view 842 --json headRefOid,mergeStateStatus,isDraft,url`
+- Last focused failure: `AssertionError [ERR_ASSERTION]` in `src/getting-started-docs.test.ts` when the first regex tried to match both a type alias definition and its later field usage in one expression; splitting those checks fixed the false negative.
 - Last focused commands:
 ```bash
-git fetch origin
-git merge --no-edit origin/main
-git checkout --ours .codex-supervisor/issue-journal.md
-npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts src/getting-started-docs.test.ts src/doctor.test.ts
-npm run build
-git commit --no-edit
-git push origin codex/issue-824
-gh pr view 831 --json mergeStateStatus,headRefOid,isDraft,url
+git diff -- docs/getting-started.md src/getting-started-docs.test.ts
+npx tsx --test src/getting-started-docs.test.ts
+npx tsx --test src/getting-started-docs.test.ts
+git commit -m "Sync setup readiness docs unions"
+git push origin codex/issue-836
+gh pr view 842 --json headRefOid,mergeStateStatus,isDraft,url
 ```
 ### Scratchpad
+- 2026-03-22T11:58:23Z: committed `aa95a0f` (`Sync setup readiness docs unions`), pushed `codex/issue-836`, and confirmed PR `#842` is on head `aa95a0f896e49ac26ed6cc9219b472238cbfa0a7` with `mergeStateStatus` `UNSTABLE` while refreshed checks start.
+- 2026-03-22T11:57:07Z: updated the getting-started setup contract excerpt to match the implementation unions and added focused docs assertions for the missing value-type/remediation/key members.
+- 2026-03-22T11:56:31Z: the first `npx tsx --test src/getting-started-docs.test.ts` run failed on an over-broad regex that tried to match the type alias definition and the later field usage in one expression; split those assertions and reran cleanly.
+- 2026-03-22T11:31:39Z: pushed `codex/issue-836` to `origin` and opened draft PR `#842` at `https://github.com/TommyKammy/codex-supervisor/pull/842`.
+- 2026-03-22T11:30:47Z: committed `b1bcbba` (`Add typed setup readiness remediation metadata`) with the setup-readiness contract, fixture, docs, and journal updates.
+- 2026-03-22T11:30:09Z: focused setup-readiness verification passed with `npx tsx --test src/doctor.test.ts src/supervisor/supervisor-service.test.ts src/backend/supervisor-http-server.test.ts`; the broader scoped run including `src/getting-started-docs.test.ts` also passed.
+- 2026-03-22T11:28:15Z: added the narrow reproducer in `src/doctor.test.ts`; the first focused run failed with `TypeError: Cannot read properties of undefined (reading 'source')`, confirming the DTO lacked typed field metadata.
+- 2026-03-22T11:28:50Z: implemented `metadata` on setup fields plus typed `remediation` on blockers in `src/setup-readiness.ts`, then updated service/HTTP/docs fixtures to pin the richer contract.
 - 2026-03-22T10:58:09Z: committed merge `aa11199` (`Merge remote-tracking branch 'origin/main' into codex/issue-824`) and pushed it to `origin/codex/issue-824`.
 - 2026-03-22T10:58:09Z: `gh pr view 831 --json mergeStateStatus,headRefOid,isDraft,url` reported head `aa11199ec6471b6c8f6d95b64745a12a565f5cc2`, draft `true`, and `mergeStateStatus` `UNSTABLE`, confirming the PR is no longer dirty and is waiting on refreshed checks.
 - 2026-03-22T10:56:27Z: `git merge --no-edit origin/main` reported a single content conflict in `.codex-supervisor/issue-journal.md`; all product code and tests from `origin/main` merged without manual intervention.

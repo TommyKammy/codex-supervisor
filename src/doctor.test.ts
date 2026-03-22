@@ -279,16 +279,16 @@ test("diagnoseSetupReadiness returns typed first-run setup state distinct from d
   assert.equal(summary.ready, false);
   assert.equal(summary.overallStatus, "missing");
   assert.deepEqual(
-    summary.fields.map((field) => [field.key, field.state]),
+    summary.fields.map((field) => [field.key, field.state, field.metadata.source, field.metadata.editable, field.metadata.valueType]),
     [
-      ["repoPath", "configured"],
-      ["repoSlug", "configured"],
-      ["defaultBranch", "configured"],
-      ["workspaceRoot", "configured"],
-      ["stateFile", "configured"],
-      ["codexBinary", "configured"],
-      ["branchPrefix", "configured"],
-      ["reviewProvider", "missing"],
+      ["repoPath", "configured", "config", true, "directory_path"],
+      ["repoSlug", "configured", "config", true, "repo_slug"],
+      ["defaultBranch", "configured", "config", true, "git_ref"],
+      ["workspaceRoot", "configured", "config", true, "directory_path"],
+      ["stateFile", "configured", "config", true, "file_path"],
+      ["codexBinary", "configured", "config", true, "executable_path"],
+      ["branchPrefix", "configured", "config", true, "text"],
+      ["reviewProvider", "missing", "config", true, "review_provider"],
     ],
   );
   assert.deepEqual(summary.blockers, [
@@ -296,6 +296,11 @@ test("diagnoseSetupReadiness returns typed first-run setup state distinct from d
       code: "missing_review_provider",
       message: "Configure at least one review provider before first-run setup is complete.",
       fieldKeys: ["reviewProvider"],
+      remediation: {
+        kind: "configure_review_provider",
+        summary: "Configure at least one review provider before first-run setup is complete.",
+        fieldKeys: ["reviewProvider"],
+      },
     },
   ]);
   assert.equal(summary.hostReadiness.overallStatus, "pass");
