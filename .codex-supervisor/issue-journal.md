@@ -1,75 +1,98 @@
-# Issue #840: Setup config write API: add a narrow validated first-run config update path
+# Issue #841: WebUI guided setup flow: save through the narrow config API and revalidate in the browser
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/840
-- Branch: codex/issue-840
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/841
+- Branch: codex/issue-841
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: repairing_ci
-- Attempt count: 4 (implementation=2, repair=2)
-- Last head SHA: d3f451f0c60064b0623a7b99dd07af35e3bf6a33
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=1, repair=2)
+- Last head SHA: 38402005410687e4e10a9dec3a88515a570497a4
 - Blocked reason: none
-- Last failure signature: build (ubuntu-latest):fail|build (macos-latest):fail
+- Last failure signature: none
 - Repeated failure signature count: 1
-- Updated at: 2026-03-22T18:35:16Z
+- Updated at: 2026-03-22T19:37:43Z
 
 ## Latest Codex Summary
-Reproduced the failing PR build locally with `npm run build`, which matched CI as `TS2769` at `src/config.test.ts:883` because `result.backupPath` was typed as `string | null` and passed directly to `fs.readFile`. I fixed the test by asserting `result.backupPath` is present before reading the backup file in [src/config.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/config.test.ts), committed it as `d3f451f`, and pushed the repair to PR [#853](https://github.com/TommyKammy/codex-supervisor/pull/853).
+Cleared the stale review metadata in [issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-841/.codex-supervisor/issue-journal.md), committed it as `3840200`, pushed `codex/issue-841`, and resolved the two remaining journal-review threads on PR `#854`.
 
-Focused local verification is green again: `npm run build` now passes, and `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts` passed after the fix. The worktree is clean apart from the pre-existing untracked `.codex-supervisor/replay/` directory, and `gh pr view 853` reports `isDraft: false`, `state: OPEN`, `headRefOid: d3f451f0c60064b0623a7b99dd07af35e3bf6a33`, and `mergeStateStatus: UNSTABLE` while checks rerun.
+No product files changed in this pass. I revalidated the live smoke assertion with `rg`/`sed`, updated the snapshot to `Failure signature: none`, confirmed PR `#854` is still open on `codex/issue-841`, and left it in `UNSTABLE` while checks re-run on the latest push.
 
-Summary: Reproduced the CI TypeScript failure locally, fixed the nullability assertion in `src/config.test.ts`, and pushed repair commit `d3f451f` to PR `#853`.
-State hint: repairing_ci
+Summary: Pushed the journal-only review fix, resolved the remaining stale review threads, and left PR `#854` waiting on CI.
+State hint: waiting_ci
 Blocked reason: none
-Tests: `npm run build`; `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts`
-Failure signature: build-tsc-ts2769-config-test-backupPath-null
-Next action: monitor PR `#853` for rerun results and address any additional CI or review feedback if more failures surface
+Tests: Not run in this pass; revalidated `src/backend/webui-dashboard-browser-smoke.test.ts` via focused `rg`/`sed` inspection because only `.codex-supervisor/issue-journal.md` changed.
+Failure signature: none
+Next action: Monitor PR `#854` for any new CI or review feedback now that commit `3840200` is pushed and the stale threads are resolved.
 
 ## Active Failure Context
-- Category: checks
-- Summary: PR #853 failed the build checks, and the failure reproduces locally as a TypeScript nullability error in `src/config.test.ts`.
-- Command or source: `npm run build`
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/853
-- Details:
-  - local reproduction before the fix: `src/config.test.ts(883,55): error TS2769: No overload matches this call`
-  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23409475269/job/68094061598
-  - build (macos-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23409475269/job/68094061599
+- Category: none
+- Summary: No active failures; review threads resolved on 2026-03-22T19:21:07Z.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/854
+- Details: none
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the narrowest safe first-run mutation path is a dedicated server-owned merge that only accepts a small typed field set and maps `reviewProvider` to `reviewBotLogins`, rather than exposing arbitrary config patching.
-- What changed: reproduced the failing CI build locally, then added `assert.ok(result.backupPath, "Expected backupPath to be set when updating an existing config")` before reading the backup file in [src/config.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/config.test.ts) so the test encodes the existing-config precondition and satisfies TypeScript's `string | null` typing.
+- Hypothesis: the setup shell can stay narrow and safe by rendering editable inputs from typed readiness metadata, sending only accepted setup fields to `/api/setup-config`, and then treating a second `/api/setup-readiness` fetch as the source of truth for the refreshed UI.
+- What changed: added a guided config form to the setup page, explicit `saving` and `revalidating` status text in the browser script, a focused browser-harness regression that proves the POST plus follow-up GET sequence, and a live Playwright smoke test that completes the first-run path through the real HTTP fixture. During review follow-up, I corrected the smoke-test readiness expectation to the actual two-fetch flow, updated the journal handoff to reference existing PR `#854`, pushed commit `44e5285`, resolved the two addressed CodeRabbit threads on PR `#854`, and then cleared the stale journal-only failure metadata after confirming the smoke assertion was already correct in-tree.
 - Current blocker: none
-- Next exact step: monitor PR `#853` (`https://github.com/TommyKammy/codex-supervisor/pull/853`) for the rerun build results, then only intervene again if another CI or review signal appears.
-- Verification gap: none for this repair; both `npm run build` and `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts` passed after the assertion fix.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/config.test.ts`
-- Rollback concern: low; the change is additive and narrow, and existing configs get a `.bak` rollback point before writes.
-- Last focused command: `gh pr view 853 --json url,isDraft,mergeStateStatus,headRefOid,state`
-- Last focused failure: `npm run build` failed before the fix with `src/config.test.ts(883,55): error TS2769: No overload matches this call`; after the assertion change, the build and the issue verification command both passed locally.
+- Next exact step: monitor PR `#854` for any fresh CI or reviewer feedback and respond only if new issues appear after the journal-only cleanup lands.
+- Verification gap: none on the local diff; the issue verification command and `npm run build` both passed for the review-fix state.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-smoke.test.ts`, `src/backend/webui-dashboard.test.ts`, `src/backend/webui-setup-browser-script.ts`, `src/backend/webui-setup-page.ts`
+- Rollback concern: medium-low; the change is isolated to the setup shell and its tests, but the browser script now owns input rendering and save state so regressions would affect first-run setup UX directly.
+- Last focused command: `gh api graphql -f query='mutation { first: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851_eJT"}) { thread { id isResolved } } second: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851_eJV"}) { thread { id isResolved } } }'`
+- Last focused failure: none.
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-840/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-840/context-index.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-841/AGENTS.generated.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-841/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
 git status --short --branch
-sed -n '850,905p' src/config.test.ts
-npm run build
+rg -n "setup|revalidate|reviewProvider|reviewBotLogins|narrow" src/backend src
+sed -n '1,260p' src/backend/webui-setup-browser-script.ts
+sed -n '1,240p' src/backend/supervisor-http-server.ts
+sed -n '1,260p' src/setup-config-write.ts
+sed -n '1,260p' src/backend/webui-dashboard-browser-smoke.test.ts
+sed -n '1,260p' src/backend/webui-dashboard.test.ts
+sed -n '1,260p' src/backend/webui-setup-page.ts
+sed -n '1,240p' docs/getting-started.md
+npx tsx --test src/backend/webui-dashboard.test.ts --test-name-pattern "setup shell saves through the narrow setup config API and revalidates readiness after the write"
+npx tsx --test src/backend/webui-dashboard.test.ts --test-name-pattern "setup shell (loads|saves)"
+npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts
 npm ci
 npm run build
-npx tsx --test src/config.test.ts
-npm run build
-npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts
-git diff -- src/config.test.ts
-git diff -- .codex-supervisor/issue-journal.md
-gh pr view 853 --json url,isDraft,mergeStateStatus,headRefOid,state
-git add src/config.test.ts
-git commit -m "Fix setup config backup test typing"
-git push origin codex/issue-840
-git rev-parse HEAD
 date -u +%Y-%m-%dT%H:%M:%SZ
-gh pr view 853 --json url,isDraft,mergeStateStatus,headRefOid,state
+gh pr view --json url,isDraft,number,state,headRefName,mergeStateStatus
+rg -n "readinessCalls|setup-readiness|bootstrap|handleSetupSubmit|querySetupReadiness|refreshSetupReadiness" src/backend/webui-dashboard-browser-smoke.test.ts src/backend/webui-setup-browser-script.ts
+sed -n '500,560p' src/backend/webui-dashboard-browser-smoke.test.ts
+sed -n '1,220p' src/backend/webui-setup-browser-script.ts
+sed -n '220,460p' src/backend/webui-setup-browser-script.ts
+npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts
+npm run build
+date -u +%Y-%m-%dT%H:%M:%SZ
+git push origin codex/issue-841
+gh pr view 854 --json url,isDraft,number,state,headRefName,mergeStateStatus
+gh api graphql -f query='mutation { first: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851_aJE"}) { thread { id isResolved } } second: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851_aJG"}) { thread { id isResolved } } }'
+git diff -- .codex-supervisor/issue-journal.md
+rg -n "readinessCalls\\.length|readinessCalls" src/backend/webui-dashboard-browser-smoke.test.ts
+sed -n '520,548p' src/backend/webui-dashboard-browser-smoke.test.ts
+find .codex-supervisor/replay -maxdepth 2 -type f | sort
+date -u +%Y-%m-%dT%H:%M:%SZ
+git add .codex-supervisor/issue-journal.md
+git commit -m "docs: clear stale setup review journal state"
+git rev-parse HEAD
+git push origin codex/issue-841
+gh api graphql -f query='mutation { first: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851_eJT"}) { thread { id isResolved } } second: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851_eJV"}) { thread { id isResolved } } }'
+gh pr view 854 --json url,isDraft,number,state,headRefName,mergeStateStatus
+date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
+- 2026-03-22T19:37:43Z: committed the journal-only cleanup as `3840200`, pushed `codex/issue-841`, resolved review threads `PRRT_kwDORgvdZ851_eJT` and `PRRT_kwDORgvdZ851_eJV`, and confirmed PR `#854` remains open with merge state `UNSTABLE` while checks re-run.
+- 2026-03-22T19:35:04Z: confirmed `src/backend/webui-dashboard-browser-smoke.test.ts` already asserts `readinessCalls.length >= 2`, so the product-code CodeRabbit note was stale; the remaining valid work was clearing stale failure metadata from `.codex-supervisor/issue-journal.md`.
+- 2026-03-22T19:35:04Z: updated the journal snapshot to `Last failure signature: none` and replaced the stale active review-failure block with a resolved `Category: none` entry tied to PR `#854`.
+- 2026-03-22T19:21:07Z: pushed review-fix commit `44e5285` to `codex/issue-841`, confirmed PR `#854` is open and `CLEAN`, and resolved the two addressed CodeRabbit review threads via GraphQL.
+- 2026-03-22T19:21:07Z: validated both CodeRabbit findings against the current branch, lowered the first-run smoke assertion from `readinessCalls.length >= 3` to `>= 2` to match the browser's bootstrap-plus-post-save fetch pattern, updated the journal handoff to reference existing PR `#854`, and reran the issue verification command plus `npm run build` successfully.
+- 2026-03-22T19:07:13Z: added the setup-form browser regression, implemented the guided setup editor and save-status flow in the setup page/browser script, added a Playwright smoke test that completes first-run setup through `/api/setup-config`, restored missing `playwright-core` via `npm ci`, and reran the issue verification command plus `npm run build` successfully.
 - 2026-03-22T18:35:16Z: reproduced the PR build failure locally with `npm run build` as `TS2769` in `src/config.test.ts(883,55)`, added a non-null assertion via `assert.ok(result.backupPath, ...)`, reran `npm run build` plus the issue verification command successfully, and pushed repair commit `d3f451f` to PR `#853`.
 - 2026-03-22T10:56:27Z: `git merge --no-edit origin/main` reported a single content conflict in `.codex-supervisor/issue-journal.md`; all product code and tests from `origin/main` merged without manual intervention.
 - 2026-03-22T10:56:27Z: resolved the journal conflict by restoring the issue-824 journal content and updating it for the current merge-resolution pass instead of taking `main`'s unrelated issue-829 journal.

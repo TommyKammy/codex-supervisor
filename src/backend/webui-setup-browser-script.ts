@@ -1,6 +1,11 @@
 export function renderSetupBrowserScript(): string {
   return `
       const elements = {
+        form: document.getElementById("setup-form"),
+        formSummary: document.getElementById("setup-form-summary"),
+        editors: document.getElementById("setup-editors"),
+        saveButton: document.getElementById("setup-save-button"),
+        saveStatus: document.getElementById("setup-save-status"),
         overallStatus: document.getElementById("setup-overall-status"),
         overallCaption: document.getElementById("setup-overall-caption"),
         summary: document.getElementById("setup-summary"),
@@ -15,6 +20,24 @@ export function renderSetupBrowserScript(): string {
         trustPosture: document.getElementById("setup-trust-posture"),
         trustDetails: document.getElementById("setup-trust-details"),
       };
+      const editableFieldOrder = [
+        "repoPath",
+        "repoSlug",
+        "defaultBranch",
+        "workspaceRoot",
+        "stateFile",
+        "codexBinary",
+        "branchPrefix",
+        "reviewProvider",
+      ];
+      const reviewProviderOptions = [
+        { value: "none", label: "No provider selected yet" },
+        { value: "copilot", label: "GitHub Copilot" },
+        { value: "codex", label: "Codex Connector" },
+        { value: "coderabbit", label: "CodeRabbit" },
+      ];
+      let currentReport = null;
+      let saveInFlight = false;
 
       function setText(element, value) {
         if (!element) {
@@ -69,8 +92,8 @@ export function renderSetupBrowserScript(): string {
         }
       }
 
-      async function readJson(path) {
-        const response = await fetch(path, { headers: { Accept: "application/json" } });
+      async function readJson(path, init) {
+        const response = await fetch(path, init || { headers: { Accept: "application/json" } });
         if (!response.ok) {
           let message = "Request failed";
           try {
@@ -80,6 +103,17 @@ export function renderSetupBrowserScript(): string {
           throw new Error(path + ": " + message);
         }
         return response.json();
+      }
+
+      async function writeJson(path, body) {
+        return readJson(path, {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
       }
 
       function summarizeFields(fields) {
@@ -96,7 +130,116 @@ export function renderSetupBrowserScript(): string {
         return "Overall host readiness: " + overall + " across " + checks.length + " " + noun + ".";
       }
 
+      function editableFields(report) {
+        const values = Array.isArray(report && report.fields) ? report.fields.slice() : [];
+        const order = new Map(editableFieldOrder.map((key, index) => [key, index]));
+        return values
+          .filter((field) => field && field.metadata && field.metadata.editable)
+          .sort((left, right) => (order.get(left.key) ?? 999) - (order.get(right.key) ?? 999));
+      }
+
+      function normalizeReviewProviderValue(report) {
+        const profile = report && report.providerPosture ? report.providerPosture.profile : "none";
+        return reviewProviderOptions.some((option) => option.value === profile) ? profile : "none";
+      }
+
+      function createFieldInput(field, report) {
+        if (field.key === "reviewProvider") {
+          const select = document.createElement("select");
+          select.id = "setup-input-" + field.key;
+          select.className = "field-editor__input";
+          select.disabled = saveInFlight;
+          for (const option of reviewProviderOptions) {
+            const optionElement = document.createElement("option");
+            optionElement.value = option.value;
+            optionElement.textContent = option.label;
+            select.appendChild(optionElement);
+          }
+          select.value = normalizeReviewProviderValue(report);
+          return select;
+        }
+
+        const input = document.createElement("input");
+        input.id = "setup-input-" + field.key;
+        input.className = "field-editor__input";
+        input.type = "text";
+        input.value = typeof field.value === "string" ? field.value : "";
+        input.disabled = saveInFlight;
+        return input;
+      }
+
+      function renderEditor(field, report) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "field-editor";
+
+        const label = document.createElement("div");
+        label.className = "field-editor__label";
+        label.textContent = field.label + (field.required ? " *" : "");
+        wrapper.appendChild(label);
+
+        const hint = document.createElement("div");
+        hint.className = "field-editor__hint";
+        hint.textContent = field.message;
+        wrapper.appendChild(hint);
+
+        const meta = document.createElement("div");
+        meta.className = "field-editor__hint";
+        meta.textContent =
+          "Type: " +
+          formatToken(field.metadata && field.metadata.valueType ? field.metadata.valueType : "unknown") +
+          " | Current: " +
+          (field.value ?? "Unset");
+        wrapper.appendChild(meta);
+
+        wrapper.appendChild(createFieldInput(field, report));
+        return wrapper;
+      }
+
+      function renderForm(report) {
+        currentReport = report;
+        setText(
+          elements.formSummary,
+          report.ready
+            ? "Setup is configured. You can still update the typed setup fields here."
+            : "Edit the blocking setup fields and save only through the typed setup config API.",
+        );
+
+        if (!elements.editors) {
+          return;
+        }
+        elements.editors.innerHTML = "";
+        const fields = editableFields(report);
+        if (fields.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "field-editor";
+          empty.textContent = "No editable setup fields were reported.";
+          elements.editors.appendChild(empty);
+          return;
+        }
+        for (const field of fields) {
+          elements.editors.appendChild(renderEditor(field, report));
+        }
+      }
+
+      function setSaveStatus(message) {
+        setText(elements.saveStatus, message);
+      }
+
+      function setFormDisabled(disabled) {
+        saveInFlight = disabled;
+        if (elements.saveButton) {
+          elements.saveButton.disabled = disabled;
+        }
+        for (const field of editableFields(currentReport || {})) {
+          const input = document.getElementById("setup-input-" + field.key);
+          if (input) {
+            input.disabled = disabled;
+          }
+        }
+      }
+
       function renderSetup(report) {
+        renderForm(report);
         setText(
           elements.overallStatus,
           report.ready ? "configured" : report.overallStatus,
@@ -149,7 +292,7 @@ export function renderSetupBrowserScript(): string {
               title: field.label + " [" + formatStatus(field.state) + "]",
               meta: [
                 "Current value: " + (field.value ?? "Unset"),
-                "Required: " + (field.required ? "yes" : "no") + " | Source: " + formatToken(field.metadata?.source || "unknown") + " | Type: " + formatToken(field.metadata?.valueType || "unknown"),
+                "Required: " + (field.required ? "yes" : "no") + " | Source: " + formatToken(field.metadata && field.metadata.source ? field.metadata.source : "unknown") + " | Type: " + formatToken(field.metadata && field.metadata.valueType ? field.metadata.valueType : "unknown"),
               ],
               notes: [field.message],
             }),
@@ -202,9 +345,77 @@ export function renderSetupBrowserScript(): string {
         );
       }
 
-      async function bootstrap() {
+      function collectSetupChanges() {
+        if (!currentReport) {
+          throw new Error("Setup readiness has not loaded yet.");
+        }
+
+        const changes = {};
+        for (const field of editableFields(currentReport)) {
+          const input = document.getElementById("setup-input-" + field.key);
+          const rawValue = input && typeof input.value === "string" ? input.value.trim() : "";
+          if (field.key === "reviewProvider") {
+            if (rawValue !== "") {
+              changes.reviewProvider = rawValue;
+            }
+            continue;
+          }
+          if (rawValue !== "") {
+            changes[field.key] = rawValue;
+          }
+        }
+
+        if (Object.keys(changes).length === 0) {
+          throw new Error("Enter at least one setup value before saving.");
+        }
+        return changes;
+      }
+
+      async function refreshSetupReadiness() {
+        const report = await readJson("/api/setup-readiness");
+        renderSetup(report);
+        return report;
+      }
+
+      async function handleSetupSubmit(event) {
+        event.preventDefault();
+        if (saveInFlight) {
+          return;
+        }
+
+        let changes;
         try {
-          renderSetup(await readJson("/api/setup-readiness"));
+          changes = collectSetupChanges();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setSaveStatus(message);
+          return;
+        }
+
+        setFormDisabled(true);
+        setSaveStatus("Saving setup changes...");
+        try {
+          const result = await writeJson("/api/setup-config", { changes });
+          setSaveStatus("Revalidating setup readiness...");
+          await refreshSetupReadiness();
+          const updatedCount = Array.isArray(result.updatedFields) ? result.updatedFields.length : Object.keys(changes).length;
+          setSaveStatus("Saved " + updatedCount + " setup field" + (updatedCount === 1 ? "" : "s") + ".");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setSaveStatus("Setup save failed: " + message);
+        } finally {
+          setFormDisabled(false);
+        }
+      }
+
+      async function bootstrap() {
+        if (elements.form) {
+          elements.form.addEventListener("submit", handleSetupSubmit);
+        }
+        setSaveStatus("Loading setup readiness...");
+        try {
+          await refreshSetupReadiness();
+          setSaveStatus("Edit the setup fields and save changes to revalidate readiness.");
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           setText(elements.overallStatus, "error");
@@ -216,6 +427,7 @@ export function renderSetupBrowserScript(): string {
             [{ title: message, tone: "blocker", meta: [], notes: [] }],
             "No setup blockers reported.",
           );
+          setSaveStatus("Setup readiness failed to load.");
         }
       }
 
