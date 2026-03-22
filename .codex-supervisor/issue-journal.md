@@ -24,7 +24,7 @@
 - Hypothesis: the real gap was runtime, not docs: the repo had `doctor` and bootstrap helpers but no dedicated typed backend query for first-run setup readiness.
 - What changed: added `src/setup-readiness.ts` with a typed `SetupReadinessReport`, derived typed setup fields/blockers plus host/provider/trust posture, and wired `Supervisor.setupReadinessReport()` through `SupervisorService.querySetupReadiness()`.
 - Current blocker: none
-- Next exact step: review the diff for any scope tightening, then commit the typed setup-readiness checkpoint on `codex/issue-828`.
+- Next exact step: push `codex/issue-828` and open or update the draft PR with the typed setup-readiness implementation checkpoint.
 - Verification gap: none in the requested focused scope; `src/doctor.test.ts`, `src/config.test.ts`, `src/supervisor/supervisor-service.test.ts`, and `npm run build` passed locally.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/doctor.test.ts`, `src/setup-readiness.ts`, `src/supervisor/supervisor-service.test.ts`, `src/supervisor/supervisor-service.ts`, `src/supervisor/supervisor.ts`
 - Rollback concern: keep setup-readiness limited to first-run config/posture summary and avoid letting repair-oriented `doctor` findings become setup blockers except for hard host failures.
@@ -38,6 +38,7 @@ npm ci
 npm run build
 ```
 ### Scratchpad
+- 2026-03-22T18:47:30+09:00: committed `9988a95` (`Add typed setup readiness report`) after the focused tests and `npm run build` passed.
 - 2026-03-22T18:44:30+09:00: reproduced the runtime gap with focused tests that required a dedicated `setup-readiness` module and `SupervisorService.querySetupReadiness()`; the first failing signature was missing module/query support rather than a docs mismatch.
 - 2026-03-22T18:44:30+09:00: implemented `src/setup-readiness.ts` to report typed setup fields, typed blockers, host-readiness checks, provider posture, and trust posture without changing `doctor`.
 - 2026-03-22T18:44:30+09:00: initial `npm run build` failed because `tsc` was missing in this worktree; restored dependencies with `npm ci`, fixed one TypeScript inference error in `src/supervisor/supervisor-service.test.ts`, and reran the build successfully.
