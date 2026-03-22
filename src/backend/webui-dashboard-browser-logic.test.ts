@@ -11,6 +11,8 @@ import {
   describeTimelineEvent,
   formatTrackedIssues,
   parseSelectedIssueNumber,
+  restoreDashboardPanelOrder,
+  serializeDashboardPanelOrder,
 } from "./webui-dashboard-browser-logic";
 import {
   DASHBOARD_PANEL_IDS,
@@ -267,6 +269,35 @@ test("applyDashboardPanelDrop reorders typed panel ids without mutating the defa
   assert.deepEqual(
     applyDashboardPanelDrop(["status", "doctor"], "unknown-panel", "doctor", DASHBOARD_PANEL_IDS),
     DASHBOARD_PANEL_IDS,
+  );
+});
+
+test("restoreDashboardPanelOrder merges missing panels and safely falls back on invalid storage", () => {
+  assert.deepEqual(
+    restoreDashboardPanelOrder('{"order":["operator-actions","status","operator-actions","unknown-panel"]}', DASHBOARD_PANEL_IDS),
+    [
+      "operator-actions",
+      "status",
+      "doctor",
+      "issue-details",
+      "tracked-history",
+      "live-events",
+      "operator-timeline",
+    ],
+  );
+
+  assert.deepEqual(
+    restoreDashboardPanelOrder('{"order":"not-an-array"}', DASHBOARD_PANEL_IDS),
+    DASHBOARD_PANEL_IDS,
+  );
+
+  assert.deepEqual(restoreDashboardPanelOrder("{", DASHBOARD_PANEL_IDS), DASHBOARD_PANEL_IDS);
+});
+
+test("serializeDashboardPanelOrder writes a normalized browser-safe payload", () => {
+  assert.equal(
+    serializeDashboardPanelOrder(["operator-actions", "status", "operator-actions", "unknown-panel"], DASHBOARD_PANEL_IDS),
+    '{"order":["operator-actions","status","doctor","issue-details","tracked-history","live-events","operator-timeline"]}',
   );
 });
 

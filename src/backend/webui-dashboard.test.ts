@@ -30,6 +30,26 @@ interface Deferred<T> {
   reject(reason?: unknown): void;
 }
 
+class FakeStorage {
+  private readonly entries = new Map<string, string>();
+
+  getItem(key: string): string | null {
+    return this.entries.get(key) ?? null;
+  }
+
+  setItem(key: string, value: string): void {
+    this.entries.set(key, String(value));
+  }
+
+  removeItem(key: string): void {
+    this.entries.delete(key);
+  }
+
+  clear(): void {
+    this.entries.clear();
+  }
+}
+
 class FakeClassList {
   private readonly names = new Set<string>();
 
@@ -342,6 +362,7 @@ function createDashboardHarness(
   queue: QueuedFetchResponse[],
   options: {
     confirm?: () => boolean;
+    localStorage?: FakeStorage;
   } = {},
 ) {
   MockEventSource.instances.length = 0;
@@ -359,6 +380,7 @@ function createHtmlHarness(
   queue: QueuedFetchResponse[],
   options: {
     confirm?: () => boolean;
+    localStorage?: FakeStorage;
   } = {},
 ) {
   MockEventSource.instances.length = 0;
@@ -405,7 +427,9 @@ function createHtmlHarness(
     fetch,
     window: {
       confirm: options.confirm ?? (() => true),
+      localStorage: options.localStorage ?? new FakeStorage(),
     },
+    localStorage: options.localStorage ?? new FakeStorage(),
   };
 
   vm.runInNewContext(extractInlineScript(html), context);
@@ -528,6 +552,69 @@ test("dashboard reorders panels through drag handles without touching backend fe
     ["/api/status?why=true", "/api/doctor"],
   );
   assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard restores a reordered panel layout from browser storage after reload", async () => {
+  const localStorage = new FakeStorage();
+  const firstHarness = createDashboardHarness(
+    [
+      { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+      { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    ],
+    { localStorage },
+  );
+  await firstHarness.flush();
+
+  const operatorTimelineHandle = firstHarness.document.getElementById("panel-drag-operator-timeline");
+  const trackedHistoryPanel = firstHarness.document.getElementById("panel-tracked-history");
+  const detailsGrid = firstHarness.document.getElementById("details-grid");
+  assert.ok(operatorTimelineHandle);
+  assert.ok(trackedHistoryPanel);
+  assert.ok(detailsGrid);
+
+  const dataTransfer = {
+    effectAllowed: "",
+    dropEffect: "",
+    setData() {},
+  };
+
+  await operatorTimelineHandle.dispatch("dragstart", { dataTransfer });
+  await trackedHistoryPanel.dispatch("dragover", {
+    dataTransfer,
+    preventDefault() {},
+  });
+  await trackedHistoryPanel.dispatch("drop", {
+    dataTransfer,
+    preventDefault() {},
+  });
+  await firstHarness.flush();
+
+  assert.deepEqual(childIds(detailsGrid), [
+    "panel-issue-details",
+    "panel-operator-timeline",
+    "panel-tracked-history",
+    "panel-operator-actions",
+    "panel-live-events",
+  ]);
+
+  const secondHarness = createDashboardHarness(
+    [
+      { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+      { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    ],
+    { localStorage },
+  );
+  await secondHarness.flush();
+
+  const reloadedDetailsGrid = secondHarness.document.getElementById("details-grid");
+  assert.ok(reloadedDetailsGrid);
+  assert.deepEqual(childIds(reloadedDetailsGrid), [
+    "panel-issue-details",
+    "panel-operator-timeline",
+    "panel-tracked-history",
+    "panel-operator-actions",
+    "panel-live-events",
+  ]);
 });
 
 test("dashboard ignores cross-lane panel drops and keeps the current layout", async () => {

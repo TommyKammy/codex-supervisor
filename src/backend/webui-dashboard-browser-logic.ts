@@ -79,6 +79,36 @@ export function normalizeDashboardPanelOrder<TPanelId extends string>(
   return normalizedOrder;
 }
 
+export function restoreDashboardPanelOrder<TPanelId extends string>(
+  serializedLayout: string | null | undefined,
+  defaultOrder: readonly TPanelId[],
+): TPanelId[] {
+  if (typeof serializedLayout !== "string" || serializedLayout.trim() === "") {
+    return normalizeDashboardPanelOrder(null, defaultOrder);
+  }
+
+  try {
+    const parsed = JSON.parse(serializedLayout) as { order?: readonly string[] | null } | readonly string[] | null;
+    if (Array.isArray(parsed)) {
+      return normalizeDashboardPanelOrder(parsed, defaultOrder);
+    }
+    if (parsed && typeof parsed === "object" && "order" in parsed) {
+      return normalizeDashboardPanelOrder(parsed.order, defaultOrder);
+    }
+  } catch {}
+
+  return normalizeDashboardPanelOrder(null, defaultOrder);
+}
+
+export function serializeDashboardPanelOrder<TPanelId extends string>(
+  currentOrder: readonly string[] | null | undefined,
+  defaultOrder: readonly TPanelId[],
+): string {
+  return JSON.stringify({
+    order: normalizeDashboardPanelOrder(currentOrder, defaultOrder),
+  });
+}
+
 export function applyDashboardPanelDrop<TPanelId extends string>(
   currentOrder: readonly string[] | null | undefined,
   draggedPanelId: TPanelId | null | undefined,

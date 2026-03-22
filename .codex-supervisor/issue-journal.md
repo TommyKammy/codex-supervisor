@@ -1,68 +1,67 @@
-# Issue #848: WebUI drag-and-drop: reorder dashboard panels through typed browser layout state
+# Issue #849: WebUI layout persistence: save and safely restore panel order in the browser
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/848
-- Branch: codex/issue-848
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/849
+- Branch: codex/issue-849
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 4 (implementation=2, repair=2)
-- Last head SHA: c61e937eb26e788b52d28dccad20ce21da568f6c
+- Current phase: draft_pr
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 60684654002d8839c21aa011398efbbf76e577de
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-22T22:37:34Z
+- Updated at: 2026-03-22T23:04:46Z
 
 ## Latest Codex Summary
-Addressed both open automated review threads on PR `#858`: the browser now rejects cross-lane panel drops before mutating the typed layout order, and the issue journal no longer records workstation-local absolute paths.
+Reproduced the missing browser persistence with a new reload regression in `src/backend/webui-dashboard.test.ts`: a drag reorder survived within one runtime but reset after a fresh harness with the same `localStorage`.
 
-Added a focused runtime regression for the invalid cross-lane drop path and reran the required verification:
-`npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`
+Implemented browser-local panel layout persistence by restoring a saved order from `localStorage`, normalizing it against the current typed registry, and persisting the normalized order after layout renders. Added focused browser-logic coverage for restore, merge, and invalid-storage fallback.
 
-Summary: Addressed the drag-drop review feedback locally and passed focused verification
-State hint: addressing_review
+Summary: Added safe browser-local dashboard panel layout persistence, pushed `codex/issue-849`, and opened draft PR `#859`
+State hint: draft_pr
 Blocked reason: none
 Tests: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`
 Failure signature: none
-Next action: commit the review fix, push `codex/issue-848`, and update PR `#858`
+Next action: monitor PR `#859` for CI and review feedback
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining review risk was limited to lane validation in the browser drag handlers plus journal hygiene, so a narrow guard in the inline script and a focused dashboard regression should clear the PR without changing backend behavior.
-- What changed: added `canDropPanelOnTarget()` in `src/backend/webui-dashboard-browser-script.ts` so `dragover` and `drop` reject cross-lane targets before `applyDashboardPanelDrop()` runs; extended `src/backend/webui-dashboard.test.ts` with a regression that confirms overview/detail cross-lane drops keep the layout unchanged and clear the drag-active state; and sanitized `.codex-supervisor/issue-journal.md` so it no longer records `/home/tommy/...` paths.
+- Hypothesis: browser-local persistence only needs a typed order payload plus strict normalization on restore, so a small storage wrapper around the existing panel-order logic should satisfy reload persistence without introducing brittle state coupling.
+- What changed: added `restoreDashboardPanelOrder()` and `serializeDashboardPanelOrder()` in `src/backend/webui-dashboard-browser-logic.ts`; wired `src/backend/webui-dashboard-browser-script.ts` to read/write `window.localStorage` with guarded access and to persist the normalized order after rendering; extended `src/backend/webui-dashboard-browser-logic.test.ts` to cover restore, merge, and invalid-storage fallback; and added a runtime reload regression in `src/backend/webui-dashboard.test.ts` using a shared fake browser storage.
 - Current blocker: none
-- Next exact step: commit the local review fix, push the branch, and resolve the CodeRabbit threads on PR `#858`.
-- Verification gap: none on the focused review scope; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts` passed after the cross-lane guard and regression were added.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard.test.ts`
-- Rollback concern: low; the code change is isolated to browser-only drag validation, and the journal change is documentation-only.
+- Next exact step: monitor CI and review feedback on PR `#859`, then address any follow-up if needed.
+- Verification gap: none on the focused persistence scope; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts` passed after the storage restore/persist helpers and reload regression were added.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard.test.ts`
+- Rollback concern: low; the behavior change is browser-local only and falls back to the default typed layout if storage is missing, malformed, or outdated.
 - Last focused command: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`
 - Last focused failure: none.
 - Last focused commands:
 ```bash
-sed -n '1,220p' "$HOME/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-848/AGENTS.generated.md"
-sed -n '1,220p' "$HOME/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-848/context-index.md"
+sed -n '1,220p' "$HOME/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-849/AGENTS.generated.md"
+sed -n '1,220p' "$HOME/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-849/context-index.md"
 sed -n '1,260p' .codex-supervisor/issue-journal.md
-git diff -- .codex-supervisor/issue-journal.md
-sed -n '820,980p' src/backend/webui-dashboard-browser-script.ts
-rg -n "applyDashboardPanelDrop|dragover|drop\\)|draggedPanelId|DASHBOARD_PANEL_SECTIONS" src/backend/webui-dashboard-browser-script.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts
-sed -n '160,240p' src/backend/webui-dashboard-browser-script.ts
-sed -n '460,560p' src/backend/webui-dashboard.test.ts
-sed -n '1,120p' src/backend/webui-dashboard-browser-script.ts
-sed -n '240,290p' src/backend/webui-dashboard-browser-logic.test.ts
-sed -n '28,60p' .codex-supervisor/issue-journal.md
-sed -n '180,235p' src/backend/webui-dashboard-browser-script.ts
-sed -n '500,560p' src/backend/webui-dashboard.test.ts
-rg -n "/home/tommy" .codex-supervisor/issue-journal.md src/backend/webui-dashboard-browser-script.ts src/backend/webui-dashboard.test.ts
-git diff -- src/backend/webui-dashboard-browser-script.ts src/backend/webui-dashboard.test.ts .codex-supervisor/issue-journal.md
+git status --short --branch
+rg -n "localStorage|sessionStorage|panel layout|dashboard panel|DEFAULT_DASHBOARD_PANEL_LAYOUT|normalizeDashboardPanelLayout|applyDashboardPanelDrop|saved layout|storage" src/backend
+sed -n '1,260p' src/backend/webui-dashboard-panel-layout.ts
+sed -n '1,360p' src/backend/webui-dashboard-browser-logic.test.ts
+sed -n '1,760p' src/backend/webui-dashboard.test.ts
+sed -n '1,280p' src/backend/webui-dashboard-browser-script.ts
+sed -n '820,1040p' src/backend/webui-dashboard-browser-script.ts
+sed -n '1,240p' src/backend/webui-dashboard-browser-logic.ts
+tail -n 120 src/backend/webui-dashboard-browser-script.ts
+rg -n "renderPanelLayout\\(|wirePanelDragAndDrop\\(|refreshStatusAndDoctor\\(|wireEvents\\(" src/backend/webui-dashboard-browser-script.ts
 npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts
 date -u +%Y-%m-%dT%H:%M:%SZ
 git rev-parse HEAD
 git status --short --branch
 ```
 ### Scratchpad
+- 2026-03-22T23:04:46Z: committed the persistence checkpoint as `6068465`, pushed `codex/issue-849`, and opened draft PR `#859`.
+- 2026-03-22T23:03:27Z: reproduced the missing reload persistence with a shared-storage dashboard regression, added guarded localStorage restore/persist helpers for the typed panel order, added focused restore/fallback unit coverage, and reran `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`.
 - 2026-03-22T22:37:34Z: fixed the CodeRabbit review threads locally by rejecting cross-lane panel drops before mutating browser layout state, adding a focused cross-lane drag regression, sanitizing workstation-local paths from the issue journal, and rerunning `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`.
 - 2026-03-22T22:21:32Z: reran `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`, pushed `codex/issue-848`, and opened draft PR `#858` for the drag-reorder checkpoint.
 - 2026-03-22T22:09:23Z: reproduced the drag-reorder gap with a pure browser-logic regression, then added draggable panel handles, browser-only DOM reorder state, and a runtime dashboard drag test; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts` passed.
