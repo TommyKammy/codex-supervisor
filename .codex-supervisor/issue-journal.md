@@ -5,42 +5,49 @@
 - Branch: codex/issue-823
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
+- Current phase: draft_pr
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 3aa08e127284f5b1553c5b3a249808845c333dd7
+- Last head SHA: 6528d38c56b1d48818fc2adf65eb71e1db7ca7e8
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-22T07:10:45.083Z
+- Updated at: 2026-03-22T07:14:24Z
 
 ## Latest Codex Summary
-- None yet.
+- Reproduced the missing tracked-history surface with focused browser-logic and dashboard tests, then added a dedicated WebUI tracked-history panel that defaults to non-`done` issues and exposes a toggle to reveal completed history without polluting the main Summary panel. Focused WebUI verification and `npm run build` passed locally after restoring dependencies with `npm ci`, the branch was committed as `6528d38`, pushed to `origin/codex/issue-823`, and draft PR #830 was opened.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the Summary panel noise came from `buildStatusLines()` prepending `formatTrackedIssues(status)`, so any long-lived supervisor state dumped full tracked history into the main operator Summary instead of keeping it focused on current decisions.
-- What changed: added failing focused assertions in the browser-logic and dashboard tests, introduced `formatTrackedIssueSummary()` so the Summary panel shows `tracked issues=<count>` instead of full tracked-history rows, and left `trackedIssues` available for typed issue shortcuts and other non-summary surfaces.
+- Hypothesis: the remaining #823 gap was entirely in the browser projection layer, because typed `trackedIssues` already existed but the dashboard still lacked a dedicated history panel and a default non-`done` filter.
+- What changed: added focused failing assertions for tracked-history filtering and rendering, introduced tracked-history formatting helpers with a non-`done` default, added a dedicated `Tracked history` panel plus toggle in the dashboard page/script, and kept the main Summary panel count-only.
 - Current blocker: none
-- Next exact step: monitor draft PR #825 for CI and review feedback, and repair only if new failures or comments appear.
-- Verification gap: none for the scoped Summary behavior; focused dashboard/browser-logic tests and `npm run build` all passed locally after restoring dependencies.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard.test.ts`
-- Rollback concern: keep the tracked-history data model unchanged; only the Summary-panel projection should stay count-only so other typed UI surfaces can still consume the full tracked issue DTOs.
+- Next exact step: monitor draft PR #830 for CI and review feedback, and repair only if new failures or comments appear.
+- Verification gap: none for the scoped tracked-history behavior; focused dashboard/browser-logic tests and `npm run build` passed locally after `npm ci`.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard.test.ts`
+- Rollback concern: keep the Summary panel count-only and the tracked-history toggle browser-side; avoid moving `done` filtering into the backend so operators can still reveal full tracked history on demand.
 - Last focused command: `npm run build`
-- Last focused failure: `summary-panel-tracked-history-noise`
+- Last focused failure: `tracked-history-panel-missing`
 - Last focused commands:
 ```bash
-npx tsx --test src/backend/webui-dashboard.test.ts
 npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts
+npx tsx --test src/backend/webui-dashboard.test.ts
 npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts
 npm run build
 npm ci
 npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts
 npm run build
+git commit -m "Add dedicated tracked history panel"
+git push -u origin codex/issue-823
+gh pr create --draft --base main --head codex/issue-823 --title "WebUI tracked history: move tracked issues into dedicated panel" --body-file /tmp/issue-823-pr-body.md
 ```
 ### Scratchpad
+- 2026-03-22T07:14:24Z: reproduced #823 with focused failures in `formatTrackedIssues()` and the dashboard harness because `done` tracked issues were still shown by default and there was no dedicated tracked-history panel.
+- 2026-03-22T07:14:24Z: implemented a dedicated `Tracked history` panel with a browser-side `Show done issues` toggle, kept the Summary panel count-only, and added focused regressions for the non-`done` default plus reveal path.
+- 2026-03-22T07:14:24Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts`; `npm run build` initially failed because `tsc` was missing, `npm ci` restored dependencies, and `npm run build` then passed.
+- 2026-03-22T07:14:24Z: committed `6528d38` (`Add dedicated tracked history panel`), pushed `codex/issue-823`, and opened draft PR #830 (`https://github.com/TommyKammy/codex-supervisor/pull/830`).
 - 2026-03-22T06:48:38+00:00: implemented `formatTrackedIssueSummary()` and switched `buildStatusLines()` to use it, preserving `trackedIssues` for typed issue shortcuts while removing tracked-history rows from the main Summary panel.
 - 2026-03-22T06:48:38+00:00: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts`.
 - 2026-03-22T06:48:38+00:00: initial `npm run build` failed because `tsc` was missing in this worktree; restored dependencies with `npm ci`, reran the focused tests, and `npm run build` then passed.
