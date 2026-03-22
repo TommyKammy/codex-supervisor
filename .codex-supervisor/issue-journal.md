@@ -14,14 +14,14 @@
 - Updated at: 2026-03-22T16:35:07.368Z
 
 ## Latest Codex Summary
-`origin/main` already had the dedicated `/setup` shell, but the page was still flattening typed setup-readiness into terse pipe-delimited strings. I updated the setup shell to render a grouped first-run checklist instead: blockers now lead the page with remediation context, config fields and host checks render as readable checklist cards with current values and status, and provider/trust posture now expose typed detail sections instead of single summary lines. I also expanded the focused setup-shell test to pin the grouped rendering behavior and reran the issue’s WebUI verification after fixing a singular/plural blocker-summary copy bug.
+`origin/main` already had the dedicated `/setup` shell, but the page was still flattening typed setup-readiness into terse pipe-delimited strings. I updated the setup shell to render a grouped first-run checklist instead: blockers now lead the page with remediation context, config fields and host checks render as readable checklist cards with current values and status, and provider/trust posture now expose typed detail sections instead of single summary lines. I expanded the focused setup-shell test to pin the grouped rendering behavior, fixed the singular/plural blocker-summary copy bug that surfaced on the first rerun, committed the result as `566588e` (`Render grouped WebUI setup checklist`), pushed `codex/issue-838`, and opened draft PR [#851](https://github.com/TommyKammy/codex-supervisor/pull/851).
 
 Summary: Reworked the WebUI setup shell into a grouped, read-only first-run checklist driven by the typed setup-readiness DTO and added focused assertions for blockers, field readiness, host checks, provider posture, and trust posture.
-State hint: implementing
+State hint: draft_pr
 Blocked reason: none
 Tests: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`
 Failure signature: none
-Next action: Commit this focused setup-shell checkpoint on `codex/issue-838`, then push the branch and open a draft PR if one still does not exist.
+Next action: Monitor draft PR #851 and address any review or CI feedback against the grouped setup-shell rendering.
 
 ## Active Failure Context
 - None recorded.
@@ -29,9 +29,9 @@ Next action: Commit this focused setup-shell checkpoint on `codex/issue-838`, th
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: the setup shell landed on `main`, but it still fell short of issue #838 because the typed setup-readiness DTO was rendered as raw summary strings rather than grouped operator guidance.
-- What changed: rechecked the required memory files and live git state, confirmed `codex/issue-838` initially matched `origin/main` at `6c395a5`, then inspected the merged setup shell and found it still rendering blockers, fields, and host checks as pipe-delimited text. I updated [src/backend/webui-setup-page.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-838/src/backend/webui-setup-page.ts) and [src/backend/webui-setup-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-838/src/backend/webui-setup-browser-script.ts) to surface blockers first and render grouped checklist cards for blockers, config fields, host checks, provider posture, and trust posture. I also updated [src/backend/webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-838/src/backend/webui-dashboard.test.ts) to assert the readable grouped output, then reran the focused WebUI verification. The first run exposed a singular blocker-summary grammar bug (`1 blocking condition need attention...`), which I fixed before the second run passed.
+- What changed: rechecked the required memory files and live git state, confirmed `codex/issue-838` initially matched `origin/main` at `6c395a5`, then inspected the merged setup shell and found it still rendering blockers, fields, and host checks as pipe-delimited text. I updated [src/backend/webui-setup-page.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-838/src/backend/webui-setup-page.ts) and [src/backend/webui-setup-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-838/src/backend/webui-setup-browser-script.ts) to surface blockers first and render grouped checklist cards for blockers, config fields, host checks, provider posture, and trust posture. I also updated [src/backend/webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-838/src/backend/webui-dashboard.test.ts) to assert the readable grouped output, reran the focused WebUI verification, fixed the singular blocker-summary grammar bug that surfaced on the first rerun, committed the result as `566588e`, pushed `codex/issue-838` to `origin/codex/issue-838`, and opened draft PR #851 (`https://github.com/TommyKammy/codex-supervisor/pull/851`).
 - Current blocker: none
-- Next exact step: commit the grouped setup-shell changes and journal update on `codex/issue-838`, then push/open a draft PR if the branch still has no PR.
+- Next exact step: watch draft PR #851 for CI and review feedback, then address any follow-ups on the grouped setup-shell rendering.
 - Verification gap: `npm run build` was not rerun in this pass; the focused issue command passed after the setup-shell rendering changes.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard.test.ts`, `src/backend/webui-setup-browser-script.ts`, `src/backend/webui-setup-page.ts`
 - Rollback concern: low; the change is isolated to the `/setup` WebUI shell and its focused test coverage.
@@ -53,9 +53,15 @@ sed -n '1040,1205p' src/backend/webui-dashboard.test.ts
 sed -n '1,380p' src/backend/webui-dashboard.test.ts
 git diff --stat
 npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts
+git add .codex-supervisor/issue-journal.md src/backend/webui-dashboard.test.ts src/backend/webui-setup-browser-script.ts src/backend/webui-setup-page.ts
+git commit -m "Render grouped WebUI setup checklist"
+git push -u origin codex/issue-838
+gh pr create --draft --base main --head codex/issue-838 --title "Render grouped WebUI setup checklist" --body ...
+gh pr view 851 --json number,url,state,isDraft,headRefName,baseRefName
 date -u +"%Y-%m-%dT%H:%M:%SZ"
 ```
 ### Scratchpad
+- 2026-03-22T16:42:04Z: pushed `codex/issue-838` to `origin/codex/issue-838`, opened draft PR `#851` (`https://github.com/TommyKammy/codex-supervisor/pull/851`), and refreshed the journal handoff so the in-repo state matches the pushed checkpoint.
 - 2026-03-22T16:40:22Z: confirmed the merged `/setup` shell still flattened typed readiness into terse strings, updated the setup page/browser script to render grouped checklist cards with blockers first, expanded the focused setup-shell test coverage, hit a singular blocker-summary copy failure on the first rerun (`1 blocking condition need attention before first-run setup is complete.`), fixed that copy bug, and reran `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts` successfully.
 - 2026-03-22T16:23:50Z: revalidated the required memory/journal inputs, confirmed `codex/issue-838` still equals `origin/main` at `6c395a5` (`Add dedicated WebUI setup shell (#843)`), confirmed there is still no PR for the branch, reran `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`, and refreshed the journal-only handoff.
 - 2026-03-22T16:11:48Z: revalidated that `codex/issue-838` still equals `origin/main` at `6c395a5`, confirmed there is still no PR for the branch, reran `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`, and refreshed the journal-only handoff.
