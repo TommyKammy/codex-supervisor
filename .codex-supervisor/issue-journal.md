@@ -25,7 +25,7 @@
 - Hypothesis: the remaining gap for #829 was only backend transport; the typed setup-readiness model already existed behind `SupervisorService.querySetupReadiness()` but the HTTP server did not expose it.
 - What changed: added a focused regression in `src/backend/supervisor-http-server.test.ts` for `GET /api/setup-readiness`, then wired that route in `src/backend/supervisor-http-server.ts` as a read-only JSON endpoint that returns the existing typed `SetupReadinessReport`.
 - Current blocker: none
-- Next exact step: commit the HTTP transport checkpoint on `codex/issue-829`, push the branch, and open a draft PR if one does not already exist.
+- Next exact step: monitor draft PR #834 and address any review or CI follow-up if it appears.
 - Verification gap: none in the requested focused scope; `src/backend/supervisor-http-server.test.ts`, `src/supervisor/supervisor-service.test.ts`, and `npm run build` passed locally after `npm ci`.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/backend/supervisor-http-server.ts`
 - Rollback concern: keep the setup-readiness route read-only and continue serving the existing typed model directly instead of introducing a second transport-specific contract.
@@ -39,6 +39,7 @@ npm ci
 npm run build
 ```
 ### Scratchpad
+- 2026-03-22T19:09:58+09:00: committed `fe905d5` (`Expose setup readiness over HTTP`), pushed `codex/issue-829`, and opened draft PR #834 (`https://github.com/TommyKammy/codex-supervisor/pull/834`).
 - 2026-03-22T19:09:05+09:00: reproduced the transport gap with a focused `GET /api/setup-readiness` assertion in `src/backend/supervisor-http-server.test.ts`; the server returned 404 before implementation.
 - 2026-03-22T19:09:05+09:00: added a read-only `/api/setup-readiness` route in `src/backend/supervisor-http-server.ts` that returns `service.querySetupReadiness()` when available and otherwise preserves the existing `Not found.` behavior.
 - 2026-03-22T19:09:05+09:00: focused verification passed with `npx tsx --test src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts`; `npm run build` initially failed because `tsc` was missing in this worktree, so `npm ci` was run and `npm run build` then passed.
