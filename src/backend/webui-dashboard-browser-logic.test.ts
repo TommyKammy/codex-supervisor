@@ -11,7 +11,7 @@ import {
   parseSelectedIssueNumber,
 } from "./webui-dashboard-browser-logic";
 
-test("buildStatusLines combines typed dashboard status sections ahead of legacy summary lines", () => {
+test("buildStatusLines summarizes tracked history as a count instead of dumping each tracked issue", () => {
   const lines = buildStatusLines({
     trackedIssues: [
       {
@@ -50,7 +50,7 @@ test("buildStatusLines combines typed dashboard status sections ahead of legacy 
   });
 
   assert.deepEqual(lines, [
-    "tracked issue #58 [queued] branch=codex/issue-58 pr=#58 blocked_reason=none",
+    "tracked issues=1",
     "runnable issue #77 Ready for inspection ready=ready",
     "blocked issue #93 Needs scope repair blocked_by=requirements:scope, verification",
     "detail line",

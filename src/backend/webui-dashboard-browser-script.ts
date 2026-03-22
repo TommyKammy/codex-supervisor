@@ -6,6 +6,7 @@ import {
   formatCandidateDiscovery,
   formatIssueRef,
   formatRunnableIssues,
+  formatTrackedIssueSummary,
   formatTrackedIssues,
   describeConnectionHealth,
   describeFreshnessState,
@@ -16,6 +17,7 @@ import {
 
 const injectedBrowserLogic = [
   formatTrackedIssues,
+  formatTrackedIssueSummary,
   formatRunnableIssues,
   formatBlockedIssues,
   formatCandidateDiscovery,
