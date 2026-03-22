@@ -381,8 +381,10 @@ export function renderSupervisorDashboardPage(): string {
         </div>
         <div class="hero-bar">
           <div class="badge">connection <strong id="connection-state">connecting</strong></div>
+          <div class="badge">freshness <strong id="freshness-state">awaiting refresh</strong></div>
+          <div class="badge">refresh <strong id="refresh-state">idle</strong></div>
           <div class="badge">selected issue <strong id="selected-issue-badge">none</strong></div>
-          <div class="badge">last refresh <strong id="last-refresh-badge">pending</strong></div>
+          <div class="badge">last refresh <strong id="last-refresh-badge">never</strong></div>
         </div>
       </section>
 

@@ -148,14 +148,27 @@ class FakeDocument {
 }
 
 class MockEventSource {
+  static instances: MockEventSource[] = [];
   readonly listeners = new Map<string, Array<(event: { type: string; data: string }) => unknown>>();
 
-  constructor(readonly url: string) {}
+  constructor(readonly url: string) {
+    MockEventSource.instances.push(this);
+  }
 
   addEventListener(type: string, listener: (event: { type: string; data: string }) => unknown): void {
     const existing = this.listeners.get(type) ?? [];
     existing.push(listener);
     this.listeners.set(type, existing);
+  }
+
+  async dispatch(type: string, data: unknown = {}): Promise<void> {
+    const event = {
+      type,
+      data: typeof data === "string" ? data : JSON.stringify(data),
+    };
+    for (const listener of this.listeners.get(type) ?? []) {
+      await listener(event);
+    }
   }
 }
 
@@ -291,6 +304,7 @@ function createDashboardHarness(
     confirm?: () => boolean;
   } = {},
 ) {
+  MockEventSource.instances.length = 0;
   const html = renderSupervisorDashboardHtml();
   const ids = Array.from(html.matchAll(/id="([^"]+)"/gu), (match) => match[1]);
   const document = new FakeDocument(ids);
@@ -329,6 +343,9 @@ function createDashboardHarness(
     document,
     fetchCalls,
     remainingFetches: queue,
+    get eventSource(): MockEventSource | null {
+      return MockEventSource.instances[0] ?? null;
+    },
     async flush(): Promise<void> {
       await flushAsyncWork();
     },
@@ -709,10 +726,14 @@ test("dashboard preserves a successful command result when the refresh step fail
   const commandStatus = harness.document.getElementById("command-status");
   const commandResult = harness.document.getElementById("command-result");
   const statusWarning = harness.document.getElementById("status-warning");
+  const refreshState = harness.document.getElementById("refresh-state");
+  const freshnessState = harness.document.getElementById("freshness-state");
   assert.ok(runOnceButton);
   assert.ok(commandStatus);
   assert.ok(commandResult);
   assert.ok(statusWarning);
+  assert.ok(refreshState);
+  assert.ok(freshnessState);
 
   await runOnceButton.dispatch("click");
   await harness.flush();
@@ -721,6 +742,39 @@ test("dashboard preserves a successful command result when the refresh step fail
   assert.match(commandResult.textContent, /"command": "run-once"/u);
   assert.match(commandResult.textContent, /"summary": "run-once complete"/u);
   assert.equal(statusWarning.textContent, "/api/status?why=true: Status refresh failed.");
+  assert.equal(refreshState.textContent, "failed");
+  assert.equal(freshnessState.textContent, "stale");
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard makes live connection and freshness state explicit during SSE reconnects", async () => {
+  const harness = createDashboardHarness([
+    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+  ]);
+  await harness.flush();
+
+  const connectionState = harness.document.getElementById("connection-state");
+  const refreshState = harness.document.getElementById("refresh-state");
+  const freshnessState = harness.document.getElementById("freshness-state");
+  assert.ok(connectionState);
+  assert.ok(refreshState);
+  assert.ok(freshnessState);
+  assert.ok(harness.eventSource);
+
+  assert.equal(connectionState.textContent, "connecting");
+  assert.equal(refreshState.textContent, "idle");
+  assert.equal(freshnessState.textContent, "fresh");
+
+  await harness.eventSource.dispatch("open");
+  await harness.flush();
+  assert.equal(connectionState.textContent, "connected");
+  assert.equal(freshnessState.textContent, "fresh");
+
+  await harness.eventSource.dispatch("error");
+  await harness.flush();
+  assert.equal(connectionState.textContent, "reconnecting");
+  assert.equal(freshnessState.textContent, "stale");
   assert.equal(harness.remainingFetches.length, 0);
 });
 

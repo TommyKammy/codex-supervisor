@@ -56,6 +56,10 @@ export interface DashboardIssueShortcut {
   detail: string;
 }
 
+export type DashboardConnectionPhase = "connecting" | "open" | "reconnecting";
+
+export type DashboardRefreshPhase = "idle" | "refreshing" | "failed";
+
 export function parseSelectedIssueNumber(status: DashboardStatusLike | null | undefined): number | null {
   if (status?.selectionSummary && Number.isInteger(status.selectionSummary.selectedIssueNumber)) {
     return status.selectionSummary.selectedIssueNumber ?? null;
@@ -176,4 +180,28 @@ export function collectIssueShortcuts(status: DashboardStatusLike | null | undef
   }
 
   return shortcuts;
+}
+
+export function describeConnectionHealth(phase: DashboardConnectionPhase): string {
+  if (phase === "open") {
+    return "connected";
+  }
+  return phase;
+}
+
+export function describeFreshnessState(args: {
+  connectionPhase: DashboardConnectionPhase;
+  refreshPhase: DashboardRefreshPhase;
+  hasSuccessfulRefresh: boolean;
+}): string {
+  if (!args.hasSuccessfulRefresh) {
+    return "awaiting refresh";
+  }
+  if (args.refreshPhase === "failed" || args.connectionPhase === "reconnecting") {
+    return "stale";
+  }
+  if (args.refreshPhase === "refreshing") {
+    return "refreshing";
+  }
+  return "fresh";
 }
