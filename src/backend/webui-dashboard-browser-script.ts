@@ -1,12 +1,16 @@
 import {
   buildStatusLines,
   collectIssueShortcuts,
+  describeCommandSelectionChange,
   formatBlockedIssues,
   formatCandidateDiscovery,
+  formatIssueRef,
   formatRunnableIssues,
   formatTrackedIssues,
   describeConnectionHealth,
   describeFreshnessState,
+  describeTimelineEvent,
+  collectTimelineEventIssueNumbers,
   parseSelectedIssueNumber,
 } from "./webui-dashboard-browser-logic";
 
@@ -15,10 +19,14 @@ const injectedBrowserLogic = [
   formatRunnableIssues,
   formatBlockedIssues,
   formatCandidateDiscovery,
+  formatIssueRef,
   buildStatusLines,
   collectIssueShortcuts,
+  describeCommandSelectionChange,
   describeConnectionHealth,
   describeFreshnessState,
+  describeTimelineEvent,
+  collectTimelineEventIssueNumbers,
   parseSelectedIssueNumber,
 ]
   .map((helper) => helper.toString().replace(/__name\([^;]+;\s*/gu, ""))
@@ -38,6 +46,8 @@ export function renderDashboardBrowserScript(): string {
         commandInFlight: false,
         commandResult: null,
         events: [],
+        timelineEntries: [],
+        commandCorrelation: null,
         connectionPhase: "connecting",
         refreshPhase: "idle",
         hasSuccessfulRefresh: false,
@@ -67,6 +77,7 @@ export function renderDashboardBrowserScript(): string {
         requeueButton: document.getElementById("requeue-button"),
         pruneWorkspacesButton: document.getElementById("prune-workspaces-button"),
         resetJsonStateButton: document.getElementById("reset-json-state-button"),
+        operatorTimeline: document.getElementById("operator-timeline"),
         eventList: document.getElementById("event-list"),
       };
 
@@ -77,6 +88,8 @@ export function renderDashboardBrowserScript(): string {
         "supervisor.run_lock.blocked",
         "supervisor.review_wait.changed",
       ];
+
+      const COMMAND_CORRELATION_WINDOW_MS = 15000;
 
       function setText(element, value) {
         if (element) {
@@ -392,6 +405,42 @@ export function renderDashboardBrowserScript(): string {
         }
       }
 
+      function renderOperatorTimeline() {
+        if (!elements.operatorTimeline) {
+          return;
+        }
+        elements.operatorTimeline.innerHTML = "";
+        const entries =
+          state.timelineEntries.length > 0
+            ? state.timelineEntries
+            : [
+                {
+                  kind: "idle",
+                  at: "",
+                  summary: "Waiting for operator activity…",
+                  detail: "Run a safe command or wait for live supervisor events.",
+                  commandLabel: null,
+                },
+              ];
+        for (const entry of entries) {
+          const card = document.createElement("div");
+          card.className = "event-item";
+
+          const meta = document.createElement("div");
+          meta.className = "event-meta";
+          meta.textContent = [entry.kind, entry.commandLabel ? "after " + entry.commandLabel : "", entry.at || ""]
+            .filter(Boolean)
+            .join(" | ");
+
+          const body = document.createElement("div");
+          body.textContent = [entry.summary, entry.detail].filter(Boolean).join("\\n");
+
+          card.appendChild(meta);
+          card.appendChild(body);
+          elements.operatorTimeline.appendChild(card);
+        }
+      }
+
       function renderSelectedIssue() {
         setText(elements.selectedIssueBadge, state.selectedIssueNumber ? "#" + state.selectedIssueNumber : "none");
         if (elements.issueNumberInput) {
@@ -427,6 +476,75 @@ export function renderDashboardBrowserScript(): string {
         setCode(elements.commandResult, JSON.stringify(state.commandResult, null, 2));
       }
 
+      function pushTimeline(entry) {
+        state.timelineEntries.unshift(entry);
+        state.timelineEntries = state.timelineEntries.slice(0, 40);
+        renderOperatorTimeline();
+      }
+
+      function normalizeCommandIssueNumbers(candidates) {
+        const issueNumbers = [];
+        for (const candidate of candidates) {
+          if (typeof candidate !== "number" || !Number.isInteger(candidate) || issueNumbers.includes(candidate)) {
+            continue;
+          }
+          issueNumbers.push(candidate);
+        }
+        return issueNumbers;
+      }
+
+      function getActiveCommandCorrelation() {
+        if (!state.commandCorrelation) {
+          return null;
+        }
+        if (Date.now() >= state.commandCorrelation.expiresAt) {
+          state.commandCorrelation = null;
+          return null;
+        }
+        return state.commandCorrelation;
+      }
+
+      function setCommandCorrelation(label, issueNumbers) {
+        const normalizedIssueNumbers = normalizeCommandIssueNumbers(issueNumbers);
+        state.commandCorrelation =
+          normalizedIssueNumbers.length === 0
+            ? null
+            : {
+                label,
+                issueNumbers: normalizedIssueNumbers,
+                expiresAt: Date.now() + COMMAND_CORRELATION_WINDOW_MS,
+              };
+      }
+
+      function extendCommandCorrelation(issueNumber) {
+        const commandCorrelation = getActiveCommandCorrelation();
+        if (!commandCorrelation || typeof issueNumber !== "number" || !Number.isInteger(issueNumber)) {
+          return;
+        }
+        if (commandCorrelation.issueNumbers.includes(issueNumber)) {
+          return;
+        }
+        state.commandCorrelation = {
+          label: commandCorrelation.label,
+          issueNumbers: commandCorrelation.issueNumbers.concat(issueNumber),
+          expiresAt: commandCorrelation.expiresAt,
+        };
+      }
+
+      function correlationLabelForEvent(event) {
+        const commandCorrelation = getActiveCommandCorrelation();
+        if (!commandCorrelation) {
+          return null;
+        }
+        const eventIssueNumbers = collectTimelineEventIssueNumbers(event);
+        if (eventIssueNumbers.length === 0) {
+          return null;
+        }
+        return eventIssueNumbers.some((issueNumber) => commandCorrelation.issueNumbers.includes(issueNumber))
+          ? commandCorrelation.label
+          : null;
+      }
+
       function rejectCommand(action, summary, status) {
         state.commandResult = {
           action,
@@ -434,6 +552,14 @@ export function renderDashboardBrowserScript(): string {
           summary,
           status,
         };
+        state.commandCorrelation = null;
+        pushTimeline({
+          kind: "command",
+          at: new Date().toISOString(),
+          summary: status || summary || action,
+          detail: JSON.stringify(state.commandResult, null, 2),
+          commandLabel: null,
+        });
         renderCommandResult();
       }
 
@@ -539,13 +665,30 @@ export function renderDashboardBrowserScript(): string {
 
       async function runCommand(args) {
         const previousStatus = elements.commandStatus ? elements.commandStatus.textContent : "";
+        const previousSelectedIssueNumber = state.selectedIssueNumber;
         setText(elements.commandStatus, "Running " + args.label + "...");
         try {
           const result = await postCommand(args.path, args.body);
           state.commandResult = result;
+          setCommandCorrelation(args.label, [args.issueNumber, previousSelectedIssueNumber]);
+          pushTimeline({
+            kind: "command",
+            at: new Date().toISOString(),
+            summary: state.commandResult.status || state.commandResult.summary || args.label,
+            detail: JSON.stringify(state.commandResult, null, 2),
+            commandLabel: null,
+          });
           renderCommandResult();
           try {
             await refreshStatusAndDoctor();
+            extendCommandCorrelation(state.selectedIssueNumber);
+            pushTimeline({
+              kind: "refresh",
+              at: new Date().toISOString(),
+              summary: describeCommandSelectionChange(previousSelectedIssueNumber, state.selectedIssueNumber),
+              detail: "Refreshed /api/status and /api/doctor after " + args.label + ".",
+              commandLabel: args.label,
+            });
             const issueNumberToLoad = state.selectedIssueNumber ?? state.loadedIssueNumber;
             if (issueNumberToLoad !== null) {
               await loadIssue(issueNumberToLoad);
@@ -555,11 +698,19 @@ export function renderDashboardBrowserScript(): string {
           }
         } catch (error) {
           setText(elements.commandStatus, previousStatus || "Command failed.");
+          state.commandCorrelation = null;
           state.commandResult = {
             action: args.label,
             outcome: "rejected",
             summary: error instanceof Error ? error.message : String(error),
           };
+          pushTimeline({
+            kind: "command",
+            at: new Date().toISOString(),
+            summary: state.commandResult.summary || "Command failed.",
+            detail: JSON.stringify(state.commandResult, null, 2),
+            commandLabel: null,
+          });
           renderCommandResult();
         }
       }
@@ -606,6 +757,13 @@ export function renderDashboardBrowserScript(): string {
             parsed = JSON.parse(rawEvent.data);
           } catch {}
           pushEvent(parsed);
+          pushTimeline({
+            kind: "event",
+            at: parsed.at || new Date().toISOString(),
+            summary: describeTimelineEvent(parsed),
+            detail: JSON.stringify(parsed, null, 2),
+            commandLabel: correlationLabelForEvent(parsed),
+          });
           try {
             await refreshStatusAndDoctor();
             const issueNumberToLoad = state.selectedIssueNumber ?? state.loadedIssueNumber;
@@ -654,6 +812,7 @@ export function renderDashboardBrowserScript(): string {
         await runCommandWithLock({
           label: "requeue",
           path: "/api/commands/requeue",
+          issueNumber: state.explain.issueNumber,
           body: { issueNumber: state.explain.issueNumber },
         });
       });
@@ -707,6 +866,7 @@ export function renderDashboardBrowserScript(): string {
         renderCommandResult();
         wireEvents();
         renderEvents();
+        renderOperatorTimeline();
       }
 
       void bootstrap();

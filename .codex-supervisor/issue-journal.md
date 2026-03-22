@@ -1,62 +1,61 @@
-# Issue #812: WebUI live-state UX: make connection health, staleness, and refresh state explicit
+# Issue #813: WebUI operator timeline: correlate safe-command results with live supervisor events
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/812
-- Branch: codex/issue-812
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/813
+- Branch: codex/issue-813
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 78862c79ca57ef6387a384956901a00361d8dd79
+- Current phase: addressing_review
+- Attempt count: 5 (implementation=1, repair=4)
+- Last head SHA: c8313f1662d280859d7f896338c748cbd3caffce
 - Blocked reason: none
-- Last failure signature: stale-stabilizing-no-pr-recovery-loop
+- Last failure signature: none
 - Repeated failure signature count: 1
-- Updated at: 2026-03-22T02:58:35.160Z
+- Updated at: 2026-03-22T04:15:25Z
 
 ## Latest Codex Summary
-Implemented and pushed `78862c7` (`Make dashboard live state explicit`), opened draft PR #818 (`https://github.com/TommyKammy/codex-supervisor/pull/818`), and then pushed `5f7cf3d` to refresh the issue journal handoff.
+Updated [webui-dashboard-browser-logic.ts](src/backend/webui-dashboard-browser-logic.ts) so `describeTimelineEvent()` picks the first non-empty trimmed label from `summary`, `message`, or `type` instead of accepting `""` as a valid operator-timeline entry. Added focused regressions in [webui-dashboard-browser-logic.test.ts](src/backend/webui-dashboard-browser-logic.test.ts) that cover whitespace-only label fields and the `"event"` fallback.
 
-The dashboard hero now exposes separate live-state badges for connection, freshness, refresh phase, and last refresh time in [src/backend/webui-dashboard-page.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-page.ts#L382). The browser script tracks those states explicitly and marks the UI stale on SSE reconnects or failed refreshes without changing backend transport semantics in [src/backend/webui-dashboard-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-browser-script.ts#L31) and [src/backend/webui-dashboard-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-browser-script.ts#L128). Focused browser/state helpers and regressions cover the live-state model in [src/backend/webui-dashboard-browser-logic.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-browser-logic.ts#L185), [src/backend/webui-dashboard-browser-logic.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-browser-logic.test.ts), and [src/backend/webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard.test.ts#L706).
+Committed `c8313f1` (`Prevent blank dashboard timeline labels`) and pushed `codex/issue-813`. `gh pr view 819 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,headRefOid,baseRefName` now shows PR #819 open on head `c8313f1662d280859d7f896338c748cbd3caffce` with merge state `UNSTABLE` while checks rerun, and `gh api graphql` reports review thread `PRRT_kwDORgvdZ8518N2O` resolved/outdated.
 
-This turn reran the focused verification set and `npm run build`; both passed again before the branch was pushed. Draft PR #818 is open against `main`; after the journal follow-up push, GitHub reports merge state `UNSTABLE` while the `build (ubuntu-latest)` and `build (macos-latest)` checks are still in progress, and CodeRabbit is already `SUCCESS`.
-
-Summary: Pushed the live-state UX implementation, reran focused verification, opened draft PR #818, and left it waiting on CI
+Summary: Fixed the last open CodeRabbit review thread for blank timeline labels, verified it locally, and pushed PR #819 to head `c8313f1`
 State hint: waiting_ci
 Blocked reason: none
 Tests: `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts`; `npm run build`
 Failure signature: none
-Next action: monitor PR #818 checks and address any review or CI feedback
+Next action: monitor PR #819 for CI completion on `c8313f1` and handle any new review feedback if checks or bots surface more issues
 
 ## Active Failure Context
-- None recorded.
+- Category: none
+- Summary: No active local failure remains; the previously open CodeRabbit thread for blank timeline labels is resolved on GitHub after `c8313f1`.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/819#discussion_r2970850775
+- Details:
+  - `gh api graphql -f query='query { repository(owner:"TommyKammy", name:"codex-supervisor") { pullRequest(number:819) { reviewThreads(first:50) { nodes { id isResolved isOutdated path } } } } }'` reported `PRRT_kwDORgvdZ8518N2O` as `isResolved: true` and `isOutdated: true` after the push.
+  - `gh pr view 819 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,headRefOid,baseRefName` reports merge state `UNSTABLE` on the new head while CI reruns.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: #812 is purely a WebUI/browser-state gap; operators already have the raw HTTP+SSE transport, but the dashboard needs first-class browser-rendered live-state badges to distinguish connected, refreshing, stale, and failed-refresh states.
-- What changed: added focused live-state regressions in `src/backend/webui-dashboard.test.ts` plus pure helper coverage in `src/backend/webui-dashboard-browser-logic.test.ts`; extended the hero badge row in `src/backend/webui-dashboard-page.ts` with freshness and refresh badges; added a small live-state model and render path in `src/backend/webui-dashboard-browser-script.ts`; added browser-logic helpers for normalized connection/freshness labels in `src/backend/webui-dashboard-browser-logic.ts`; extended the dashboard harness `MockEventSource` to drive SSE open/error transitions; pushed `codex/issue-812`, opened draft PR #818, and pushed `5f7cf3d` to refresh the journal after PR creation.
+- Hypothesis: the last CodeRabbit thread was correct because `describeTimelineEvent()` treated empty strings as valid labels and could render a blank operator-timeline row.
+- What changed: switched the default event-label fallback to the first non-empty trimmed value among `summary`, `message`, and `type`, added regressions for whitespace-only labels and the `"event"` fallback, committed the fix as `c8313f1` (`Prevent blank dashboard timeline labels`), pushed `codex/issue-813`, and confirmed the GitHub thread is resolved/outdated.
 - Current blocker: none
-- Next exact step: monitor draft PR #818 while the current CI build jobs finish, then address any failures or review feedback that appear.
-- Verification gap: none beyond broader CI.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard.test.ts`
-- Rollback concern: keep the live-state model browser-only and derived from existing HTTP/SSE behavior; do not introduce backend transport semantics changes just to drive the badges.
-- Last focused command: `gh pr view 818 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,baseRefName`
+- Next exact step: monitor PR #819 (`https://github.com/TommyKammy/codex-supervisor/pull/819`) for CI/check settlement on head `c8313f1` and react only if new review feedback appears.
+- Verification gap: none locally; remaining uncertainty is limited to CI and any follow-on bot review after the new head.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`
+- Rollback concern: keep the label trimming scoped to the default fallback path so known typed supervisor-event summaries remain unchanged.
+- Last focused command: `gh api graphql -f query='query { repository(owner:"TommyKammy", name:"codex-supervisor") { pullRequest(number:819) { reviewThreads(first:50) { nodes { id isResolved isOutdated path } } } } }'`
 - Last focused failure: none
 - Last focused commands:
 ```bash
-npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts
+npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts
 npm run build
-git push -u origin codex/issue-812
-gh pr create --draft --base main --head codex/issue-812 --title "Make dashboard live state explicit" --body ...
-git add .codex-supervisor/issue-journal.md && git commit -m "Update issue 812 journal after draft PR"
-git push
-gh pr view 818 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,baseRefName
+git commit -m "Prevent blank dashboard timeline labels"
+git push origin codex/issue-813
+gh pr view 819 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,headRefOid,baseRefName
+gh api graphql -f query='query { repository(owner:"TommyKammy", name:"codex-supervisor") { pullRequest(number:819) { reviewThreads(first:50) { nodes { id isResolved isOutdated path } } } } }'
 ```
 ### Scratchpad
-- 2026-03-22T12:01:53+09:00: after pushing journal commit `5f7cf3d`, draft PR #818 moved to merge state `UNSTABLE`; GitHub shows `build (ubuntu-latest)` and `build (macos-latest)` in progress and CodeRabbit `SUCCESS`.
-- 2026-03-22T12:00:23+09:00: reran focused verification with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build`; both passed before the PR push.
-- 2026-03-22T12:00:23+09:00: pushed `codex/issue-812` to origin and opened draft PR #818 (`https://github.com/TommyKammy/codex-supervisor/pull/818`); GitHub reports merge state `CLEAN`.
-- 2026-03-22T02:21:55Z: committed `95e1fc4` (`Render typed issue detail cards in WebUI`), pushed `codex/issue-811`, and opened draft PR #817 (`https://github.com/TommyKammy/codex-supervisor/pull/817`).
-- 2026-03-22T01:56:22Z: reduced the stored CodeRabbit failure excerpt in `.codex-supervisor/issue-journal.md` to a concise MD038 summary so the journal no longer preserves malformed inline code spans verbatim; the direct backtick-boundary scan is now clean, while full markdownlint still reports unrelated long-standing journal style violations.
+- 2026-03-22T04:15:25Z: validated CodeRabbit thread `PRRT_kwDORgvdZ8518N2O`; changed `describeTimelineEvent()` to ignore empty/whitespace-only label fields, added focused regressions for trimmed fallback behavior, passed `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build`, committed `c8313f1` (`Prevent blank dashboard timeline labels`), pushed `codex/issue-813`, and confirmed via `gh api graphql` that the thread is resolved/outdated.
+- 2026-03-22T03:28:21Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build` after `npm ci` restored `tsc` in this worktree.
 - 2026-03-22T00:00:00Z: reproduced missing rejection feedback with a confirm-decline dashboard case for prune workspaces; the browser returned early without a visible command result until declined confirmations were routed through a rejected-command renderer.
 - 2026-03-22T00:00:00Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts`, `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`, `npm ci`, and `npm run build`.
 - 2026-03-21T23:43:40Z: reran the focused verification from the stabilizing checkpoint; `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build` both passed on `f677ae4`.

@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildStatusLines,
+  collectTimelineEventIssueNumbers,
   collectIssueShortcuts,
+  describeCommandSelectionChange,
   describeConnectionHealth,
   describeFreshnessState,
+  describeTimelineEvent,
   parseSelectedIssueNumber,
 } from "./webui-dashboard-browser-logic";
 
@@ -209,5 +212,73 @@ test("describeFreshnessState distinguishes fresh, refreshing, stale, and first-l
       hasSuccessfulRefresh: false,
     }),
     "awaiting refresh",
+  );
+});
+
+test("describeCommandSelectionChange highlights whether a command moved the selected issue", () => {
+  assert.equal(describeCommandSelectionChange(42, 77), "selected issue #42 -> #77");
+  assert.equal(describeCommandSelectionChange(null, 77), "selected issue none -> #77");
+  assert.equal(describeCommandSelectionChange(42, 42), "selected issue unchanged (#42)");
+  assert.equal(describeCommandSelectionChange(null, null), "selected issue unchanged (none)");
+  assert.equal(describeCommandSelectionChange(undefined, null), "selected issue unchanged (none)");
+});
+
+test("collectTimelineEventIssueNumbers deduplicates the issue ids attached to a supervisor event", () => {
+  assert.deepEqual(
+    collectTimelineEventIssueNumbers({
+      type: "supervisor.active_issue.changed",
+      issueNumbers: [77, 42, 77, null],
+      issueNumber: 77,
+      previousIssueNumber: 42,
+      nextIssueNumber: 77,
+    }),
+    [77, 42],
+  );
+
+  assert.deepEqual(
+    collectTimelineEventIssueNumbers({
+      type: "supervisor.run_lock.blocked",
+      command: "run-once",
+    }),
+    [],
+  );
+});
+
+test("describeTimelineEvent summarizes known supervisor events for the operator timeline", () => {
+  assert.equal(
+    describeTimelineEvent({
+      type: "supervisor.active_issue.changed",
+      previousIssueNumber: 42,
+      nextIssueNumber: 77,
+      reason: "reserved_for_cycle",
+    }),
+    "active issue #42 -> #77 (reserved_for_cycle)",
+  );
+
+  assert.equal(
+    describeTimelineEvent({
+      type: "supervisor.run_lock.blocked",
+      command: "run-once",
+      reason: "lock held by pid 123",
+    }),
+    "run-once blocked: lock held by pid 123",
+  );
+
+  assert.equal(
+    describeTimelineEvent({
+      type: " queued ",
+      summary: "",
+      message: "  ",
+    }),
+    "queued",
+  );
+
+  assert.equal(
+    describeTimelineEvent({
+      type: " ",
+      summary: "",
+      message: "  ",
+    }),
+    "event",
   );
 });

@@ -60,6 +60,24 @@ export type DashboardConnectionPhase = "connecting" | "open" | "reconnecting";
 
 export type DashboardRefreshPhase = "idle" | "refreshing" | "failed";
 
+interface DashboardTimelineEventLike {
+  type?: string | null;
+  summary?: string | null;
+  message?: string | null;
+  issueNumber?: number | null;
+  issueNumbers?: Array<number | null> | null;
+  previousIssueNumber?: number | null;
+  nextIssueNumber?: number | null;
+  reason?: string | null;
+  detail?: string | null;
+  command?: string | null;
+  prNumber?: number | null;
+}
+
+export function formatIssueRef(issueNumber: number | null | undefined): string {
+  return Number.isInteger(issueNumber) ? "#" + issueNumber : "none";
+}
+
 export function parseSelectedIssueNumber(status: DashboardStatusLike | null | undefined): number | null {
   if (status?.selectionSummary && Number.isInteger(status.selectionSummary.selectedIssueNumber)) {
     return status.selectionSummary.selectedIssueNumber ?? null;
@@ -204,4 +222,68 @@ export function describeFreshnessState(args: {
     return "refreshing";
   }
   return "fresh";
+}
+
+export function describeCommandSelectionChange(
+  previousIssueNumber: number | null | undefined,
+  nextIssueNumber: number | null | undefined,
+): string {
+  const previousRef = formatIssueRef(previousIssueNumber);
+  const nextRef = formatIssueRef(nextIssueNumber);
+  if (previousRef === nextRef) {
+    return "selected issue unchanged (" + nextRef + ")";
+  }
+  return "selected issue " + previousRef + " -> " + nextRef;
+}
+
+export function collectTimelineEventIssueNumbers(event: DashboardTimelineEventLike | null | undefined): number[] {
+  const issueNumbers: number[] = [];
+  for (const candidate of [
+    ...(Array.isArray(event?.issueNumbers) ? event.issueNumbers : []),
+    event?.issueNumber,
+    event?.previousIssueNumber,
+    event?.nextIssueNumber,
+  ]) {
+    if (typeof candidate !== "number" || !Number.isInteger(candidate) || issueNumbers.includes(candidate)) {
+      continue;
+    }
+    issueNumbers.push(candidate);
+  }
+  return issueNumbers;
+}
+
+export function describeTimelineEvent(event: DashboardTimelineEventLike | null | undefined): string {
+  switch (event?.type) {
+    case "supervisor.active_issue.changed":
+      return (
+        "active issue " +
+        formatIssueRef(event.previousIssueNumber) +
+        " -> " +
+        formatIssueRef(event.nextIssueNumber) +
+        " (" +
+        (event.reason ?? "changed") +
+        ")"
+      );
+    case "supervisor.recovery":
+      return "recovery for issue " + formatIssueRef(event.issueNumber) + ": " + (event.reason ?? "updated");
+    case "supervisor.loop.skipped":
+      return "loop skipped (" + (event.reason ?? "unknown") + "): " + (event.detail ?? "no detail");
+    case "supervisor.run_lock.blocked":
+      return (event.command ?? "command") + " blocked: " + (event.reason ?? "unknown reason");
+    case "supervisor.review_wait.changed":
+      return (
+        "review wait " +
+        (event.reason ?? "updated") +
+        " for issue " +
+        formatIssueRef(event.issueNumber) +
+        " PR " +
+        formatIssueRef(event.prNumber)
+      );
+    default: {
+      const label = [event?.summary, event?.message, event?.type].find(
+        (value): value is string => typeof value === "string" && value.trim().length > 0,
+      );
+      return label?.trim() ?? "event";
+    }
+  }
 }
