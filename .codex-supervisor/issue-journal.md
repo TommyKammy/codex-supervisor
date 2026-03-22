@@ -1,51 +1,52 @@
-# Issue #814: WebUI safe-command UX: improve confirmations, in-flight feedback, and post-action guidance
+# Issue #815: WebUI browser confidence: add smoke coverage for read-only and safe-command workflows
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/814
-- Branch: codex/issue-814
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/815
+- Branch: codex/issue-815
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: a3eb355e37e09562725bd736d410efb2151e36b5
+- Last head SHA: 08f9750f71edcbcadb1b531047ecf73f524bd287
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-22T04:37:32.651Z
+- Updated at: 2026-03-22T05:02:51.455Z
 
 ## Latest Codex Summary
-- Reproduced the #814 safe-command UX gap with a deferred `run-once` dashboard test: buttons locked during execution, but the command result pane stayed on its placeholder text and gave no in-flight guidance.
-- Updated the dashboard browser script to publish explicit in-progress, rejected, and refresh-failure command payloads with next-step guidance, and added a static operator-actions hint describing serialized command execution and post-action feedback.
-- Focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build` after restoring local dependencies via `npm ci` because `tsc` was initially missing in this worktree.
-- Committed the checkpoint as `9b6c060` (`Improve safe command dashboard guidance`), pushed `codex/issue-814`, and opened draft PR #820 (`https://github.com/TommyKammy/codex-supervisor/pull/820`).
+- Reproduced the #815 gap by adding a real browser smoke file and confirming it failed immediately with `Cannot find module 'playwright-core'`, which showed the repo had no browser-level harness wired yet.
+- Added `src/backend/webui-dashboard-browser-smoke.test.ts`, a `test:webui-smoke` package script, and `playwright-core` so the dashboard now has browser-level smoke coverage for read-only load and a confirmed safe-command flow against a controlled in-process HTTP fixture.
+- Documented the harness expectation in `README.md` and `docs/getting-started.md`, including the `CHROME_BIN` override for CI or nonstandard browser paths.
+- Focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`, `npm run test:webui-smoke`, and `npm run build`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: safe commands still felt ambiguous in the WebUI because the lock only disabled buttons; operators did not get explicit in-flight JSON state, rejection guidance, or refresh-failure recovery guidance in the command result area.
-- What changed: added a reproducing deferred-response dashboard test for in-flight command feedback, updated command rendering to emit `in_progress` payloads plus guidance for rejection and refresh-failure cases, and added an operator-actions hint explaining serialized command execution and where confirmations/post-action feedback appear.
+- Hypothesis: the remaining confidence gap for the WebUI was missing browser-level coverage across the actual HTTP shell, SSE connection, and safe-command button flow; existing VM-based script tests were narrower than the new acceptance criteria.
+- What changed: added a Playwright-core-backed smoke test that launches a real headless Chrome/Chromium against `createSupervisorHttpServer()`, covers read-only dashboard load, and exercises the confirmed prune-workspaces command path end to end through the browser UI.
 - Current blocker: none
-- Next exact step: monitor draft PR #820 for CI/check startup and review feedback, and react if any remote failures or comments surface.
-- Verification gap: none locally after the focused tests and build passed; remaining uncertainty is limited to remote CI and PR review on PR #820.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard.test.ts`
-- Rollback concern: keep the new guidance scoped to browser-side presentation only so the safe command set and backend command contract stay unchanged.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-814 --title "WebUI safe-command UX: improve confirmations, in-flight feedback, and post-action guidance" --body "..."`
-- Last focused failure: `safe-command in-flight result area remained on placeholder text while a command was running`
+- Next exact step: commit the browser smoke harness changes on `codex/issue-815`, then open or update the draft PR so CI can run the new `npm run test:webui-smoke` command remotely.
+- Verification gap: none locally after the focused dashboard/server tests, browser smoke command, and build all passed.
+- Files touched: `.codex-supervisor/issue-journal.md`, `README.md`, `docs/getting-started.md`, `package-lock.json`, `package.json`, `src/backend/webui-dashboard-browser-smoke.test.ts`
+- Rollback concern: keep the smoke harness fixture-only and browser-binary-driven through `CHROME_BIN` so the suite stays deterministic and does not grow into network-dependent end-to-end coverage.
+- Last focused command: `npm run test:webui-smoke`
+- Last focused failure: `Cannot find module 'playwright-core'`
 - Last focused commands:
 ```bash
-npx tsx --test src/backend/webui-dashboard.test.ts
 npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts
-npm ci
+npx tsx --test src/backend/webui-dashboard-browser-smoke.test.ts
+npm install --save-dev playwright-core
+npm run test:webui-smoke
 npm run build
-git commit -m "Improve safe command dashboard guidance"
-git push -u origin codex/issue-814
-gh pr create --draft --base main --head codex/issue-814 --title "WebUI safe-command UX: improve confirmations, in-flight feedback, and post-action guidance" --body "..."
 ```
 ### Scratchpad
-- 2026-03-22T00:00:00Z: committed `9b6c060` (`Improve safe command dashboard guidance`), pushed `codex/issue-814`, and opened draft PR #820 (`https://github.com/TommyKammy/codex-supervisor/pull/820`).
-- 2026-03-22T00:00:00Z: reproduced #814 with a deferred `run-once` dashboard test; buttons disabled correctly, but the command result pane stayed on its placeholder text until the POST resolved.
+- 2026-03-22T00:00:00Z: reproduced #815 with a new browser smoke file; the first run failed with `Cannot find module 'playwright-core'`, confirming the repo had no browser-level dashboard harness wired yet.
+- 2026-03-22T00:00:00Z: added `playwright-core`, a `test:webui-smoke` script, and `src/backend/webui-dashboard-browser-smoke.test.ts` to cover read-only dashboard load plus a confirmed prune-workspaces flow against an in-process server fixture.
+- 2026-03-22T00:00:00Z: `npm run build` initially failed on the new smoke test because the stub doctor/mutation DTOs did not fully satisfy the repository TypeScript contracts; added `candidateDiscoverySummary`, `previousRecordSnapshot`, and nullable `textContent` handling, then reran successfully.
+- 2026-03-22T00:00:00Z: documented the browser harness in `README.md` and `docs/getting-started.md`, including the `CHROME_BIN` override for CI or nonstandard local browser paths.
+- 2026-03-22T00:00:00Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`, `npm run test:webui-smoke`, and `npm run build`.
 - 2026-03-22T00:00:00Z: updated browser-side safe-command rendering to publish explicit `in_progress`, rejection, and refresh-failure guidance, and added a static operator hint describing serialized command execution.
 - 2026-03-22T00:00:00Z: `npm run build` initially failed with `sh: 1: tsc: not found`; `npm ci` restored local dependencies and the rerun passed.
 - 2026-03-22T03:28:21Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build` after `npm ci` restored `tsc` in this worktree.

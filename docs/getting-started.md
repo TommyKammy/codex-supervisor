@@ -31,6 +31,14 @@ npm install
 npm run build
 ```
 
+If you want to run the WebUI browser smoke suite locally or in CI, use:
+
+```bash
+npm run test:webui-smoke
+```
+
+That harness uses `playwright-core` with a local Chrome/Chromium executable against an in-process dashboard fixture. Set `CHROME_BIN=/path/to/browser` when the browser is not discoverable as `google-chrome`, `google-chrome-stable`, `chromium`, or `chromium-browser`.
+
 Current execution-safety rule: GitHub-authored issue bodies, review comments, and similar GitHub text are part of the supervisor trust boundary because they become execution inputs for Codex. The current runtime uses `--dangerously-bypass-approvals-and-sandbox`, so autonomous execution is safe enough to enable only in a trusted repo with trusted authors. If that trust is not present, autonomous execution is not safe for the current posture.
 
 Current state-recovery rule: missing JSON state means there is no durable state yet, so the supervisor can bootstrap from empty state. Corrupted JSON state is not the same thing. Treat corrupted JSON state as a recovery event and not a durable recovery point until an operator has inspected the problem and completed an explicit acknowledgement or reset.
