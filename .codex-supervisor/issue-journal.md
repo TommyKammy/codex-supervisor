@@ -31,7 +31,7 @@ Next action: open or update the draft PR for issue #810 with the typed `activity
 - Hypothesis: the WebUI gap is a missing typed `activityContext` contract on status/explain DTOs, so the safest fix is a shared operator-context helper that reuses existing handoff, recovery, summary, and review-wait sources without changing CLI rendering.
 - What changed: added `src/supervisor/supervisor-operator-activity-context.ts`; threaded nullable `activityContext` through `SupervisorActiveIssueDto`, `ActiveIssueStatusSnapshot`, and `SupervisorExplainDto`; populated it from existing status/explain summaries and structured review-wait/latest-recovery data; added focused contract coverage in `supervisor-diagnostics-status-selection.test.ts`, `supervisor-selection-issue-explain.test.ts`, `supervisor-http-server.test.ts`, and `supervisor-runtime.test.ts`; then updated `src/backend/webui-dashboard-browser-script.ts` and `src/backend/webui-dashboard.test.ts` so the issue detail pane renders the typed activity context with legacy-summary fallback.
 - Current blocker: none
-- Next exact step: commit the dashboard consumer follow-up, push `codex/issue-810`, and open the draft PR if none exists yet.
+- Next exact step: monitor draft PR #816, then handle review feedback or CI findings if they appear.
 - Verification gap: none locally; `npx tsx --test src/backend/webui-dashboard.test.ts` and `npm run build` passed after the dashboard follow-up.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard.test.ts`, `src/cli/supervisor-runtime.test.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-operator-activity-context.ts`, `src/supervisor/supervisor-selection-active-status.ts`, `src/supervisor/supervisor-selection-issue-explain.test.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/supervisor/supervisor-status-report.ts`, `src/supervisor/supervisor.ts`
 - Rollback concern: `activityContext` is intentionally nullable for empty cases so older tests and consumers do not have to special-case empty objects; keep that behavior if the contract is reshaped.
@@ -44,6 +44,7 @@ npm ci
 npm run build
 ```
 ### Scratchpad
+- 2026-03-22T01:16:24Z: committed `67555be` (`Render typed issue activity context in dashboard`), pushed `codex/issue-810`, and opened draft PR #816 (`https://github.com/TommyKammy/codex-supervisor/pull/816`).
 - 2026-03-22T01:16:24Z: confirmed the dashboard was still rendering only the legacy explain summaries, added a focused harness regression for typed issue activity context, and updated the browser renderer to show handoff, verification policy, durable guardrails, follow-up, latest recovery, and review waits from `activityContext` with legacy fallback.
 - 2026-03-22T01:16:24Z: focused dashboard verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts` and `npm run build`.
 - 2026-03-22T00:00:00Z: reproduced stale post-command refresh handling with a new dashboard harness case where bootstrap loaded issue #42, `run-once` refreshed status to selected issue #77, and the UI incorrectly kept `#42` selected until state was split into supervisor-selected vs loaded issue numbers.
