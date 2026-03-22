@@ -9,6 +9,7 @@ import { StateStore } from "./core/state-store";
 import { createConfig, createRecord } from "./turn-execution-test-helpers";
 import { diagnoseBootstrapReadiness, diagnoseSupervisorHost, loadStateReadonlyForDoctor, renderDoctorReport } from "./doctor";
 import { type SupervisorStateFile } from "./core/types";
+import { diagnoseSetupReadiness } from "./setup-readiness";
 
 test("diagnoseSupervisorHost reports representative auth, state, and workspace failures without mutating state", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
@@ -219,6 +220,7 @@ test("diagnoseBootstrapReadiness returns structured ready config and host summar
       stateFile: path.join(root, "state.json"),
       codexBinary: process.execPath,
       branchPrefix: "codex/issue-",
+      reviewBotLogins: [],
     }),
     "utf8",
   );
@@ -239,6 +241,84 @@ test("diagnoseBootstrapReadiness returns structured ready config and host summar
     summary.readiness.checks.map((check) => check.status),
     ["pass", "pass", "pass", "pass"],
   );
+});
+
+test("diagnoseSetupReadiness returns typed first-run setup state distinct from doctor", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath,
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot,
+      stateFile: path.join(root, "state.json"),
+      codexBinary: process.execPath,
+      branchPrefix: "codex/issue-",
+      reviewBotLogins: [],
+    }),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.kind, "setup_readiness");
+  assert.equal(summary.ready, false);
+  assert.equal(summary.overallStatus, "missing");
+  assert.deepEqual(
+    summary.fields.map((field) => [field.key, field.state]),
+    [
+      ["repoPath", "configured"],
+      ["repoSlug", "configured"],
+      ["defaultBranch", "configured"],
+      ["workspaceRoot", "configured"],
+      ["stateFile", "configured"],
+      ["codexBinary", "configured"],
+      ["branchPrefix", "configured"],
+      ["reviewProvider", "missing"],
+    ],
+  );
+  assert.deepEqual(summary.blockers, [
+    {
+      code: "missing_review_provider",
+      message: "Configure at least one review provider before first-run setup is complete.",
+      fieldKeys: ["reviewProvider"],
+    },
+  ]);
+  assert.equal(summary.hostReadiness.overallStatus, "pass");
+  assert.deepEqual(summary.hostReadiness.checks.map((check) => check.name), [
+    "github_auth",
+    "codex_cli",
+    "state_file",
+    "worktrees",
+  ]);
+  assert.deepEqual(summary.providerPosture, {
+    profile: "none",
+    provider: "none",
+    reviewers: [],
+    signalSource: "none",
+    configured: false,
+    summary: "No review provider is configured.",
+  });
+  assert.deepEqual(summary.trustPosture, {
+    trustMode: "trusted_repo_and_authors",
+    executionSafetyMode: "unsandboxed_autonomous",
+    warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+    summary: "Trusted inputs with unsandboxed autonomous execution.",
+  });
 });
 
 test("renderDoctorReport surfaces merge-critical recheck cadence visibility", () => {
