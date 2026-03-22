@@ -279,7 +279,11 @@ export function describeTimelineEvent(event: DashboardTimelineEventLike | null |
         " PR " +
         formatIssueRef(event.prNumber)
       );
-    default:
-      return event?.summary ?? event?.message ?? event?.type ?? "event";
+    default: {
+      const label = [event?.summary, event?.message, event?.type].find(
+        (value): value is string => typeof value === "string" && value.trim().length > 0,
+      );
+      return label?.trim() ?? "event";
+    }
   }
 }

@@ -263,4 +263,22 @@ test("describeTimelineEvent summarizes known supervisor events for the operator 
     }),
     "run-once blocked: lock held by pid 123",
   );
+
+  assert.equal(
+    describeTimelineEvent({
+      type: " queued ",
+      summary: "",
+      message: "  ",
+    }),
+    "queued",
+  );
+
+  assert.equal(
+    describeTimelineEvent({
+      type: " ",
+      summary: "",
+      message: "  ",
+    }),
+    "event",
+  );
 });
