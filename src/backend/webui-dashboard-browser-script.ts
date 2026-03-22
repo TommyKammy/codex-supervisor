@@ -476,6 +476,28 @@ export function renderDashboardBrowserScript(): string {
         setCode(elements.commandResult, JSON.stringify(state.commandResult, null, 2));
       }
 
+      function buildInFlightCommandResult(label) {
+        return {
+          action: label,
+          outcome: "in_progress",
+          status: "Running " + label + "...",
+          summary: "Waiting for " + label + " to finish.",
+          guidance: "The dashboard will refresh automatically after the command finishes.",
+        };
+      }
+
+      function addCommandGuidance(commandResult, guidance) {
+        if (!commandResult || typeof commandResult !== "object") {
+          return {
+            guidance,
+          };
+        }
+        return {
+          ...commandResult,
+          guidance,
+        };
+      }
+
       function pushTimeline(entry) {
         state.timelineEntries.unshift(entry);
         state.timelineEntries = state.timelineEntries.slice(0, 40);
@@ -551,6 +573,7 @@ export function renderDashboardBrowserScript(): string {
           outcome: "rejected",
           summary,
           status,
+          guidance: "No changes were made. Review the confirmation or prerequisites and retry when ready.",
         };
         state.commandCorrelation = null;
         pushTimeline({
@@ -666,10 +689,14 @@ export function renderDashboardBrowserScript(): string {
       async function runCommand(args) {
         const previousStatus = elements.commandStatus ? elements.commandStatus.textContent : "";
         const previousSelectedIssueNumber = state.selectedIssueNumber;
-        setText(elements.commandStatus, "Running " + args.label + "...");
+        state.commandResult = buildInFlightCommandResult(args.label);
+        renderCommandResult();
         try {
           const result = await postCommand(args.path, args.body);
-          state.commandResult = result;
+          state.commandResult = addCommandGuidance(
+            result,
+            "Status refreshed automatically after completion. Review the operator timeline for follow-up context.",
+          );
           setCommandCorrelation(args.label, [args.issueNumber, previousSelectedIssueNumber]);
           pushTimeline({
             kind: "command",
@@ -694,6 +721,11 @@ export function renderDashboardBrowserScript(): string {
               await loadIssue(issueNumberToLoad);
             }
           } catch (error) {
+            state.commandResult = addCommandGuidance(
+              state.commandResult,
+              "Command completed, but the dashboard refresh failed. Use the warning above before relying on the visible state.",
+            );
+            renderCommandResult();
             reportRefreshError(error);
           }
         } catch (error) {
@@ -703,6 +735,7 @@ export function renderDashboardBrowserScript(): string {
             action: args.label,
             outcome: "rejected",
             summary: error instanceof Error ? error.message : String(error),
+            guidance: "No dashboard refresh was attempted because the command request failed.",
           };
           pushTimeline({
             kind: "command",

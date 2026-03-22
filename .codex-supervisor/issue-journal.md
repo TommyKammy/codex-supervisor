@@ -1,60 +1,48 @@
-# Issue #813: WebUI operator timeline: correlate safe-command results with live supervisor events
+# Issue #814: WebUI safe-command UX: improve confirmations, in-flight feedback, and post-action guidance
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/813
-- Branch: codex/issue-813
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/814
+- Branch: codex/issue-814
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 5 (implementation=1, repair=4)
-- Last head SHA: c8313f1662d280859d7f896338c748cbd3caffce
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: a3eb355e37e09562725bd736d410efb2151e36b5
 - Blocked reason: none
 - Last failure signature: none
-- Repeated failure signature count: 1
-- Updated at: 2026-03-22T04:15:25Z
+- Repeated failure signature count: 0
+- Updated at: 2026-03-22T04:37:32.651Z
 
 ## Latest Codex Summary
-Updated [webui-dashboard-browser-logic.ts](src/backend/webui-dashboard-browser-logic.ts) so `describeTimelineEvent()` picks the first non-empty trimmed label from `summary`, `message`, or `type` instead of accepting `""` as a valid operator-timeline entry. Added focused regressions in [webui-dashboard-browser-logic.test.ts](src/backend/webui-dashboard-browser-logic.test.ts) that cover whitespace-only label fields and the `"event"` fallback.
-
-Committed `c8313f1` (`Prevent blank dashboard timeline labels`) and pushed `codex/issue-813`. `gh pr view 819 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,headRefOid,baseRefName` now shows PR #819 open on head `c8313f1662d280859d7f896338c748cbd3caffce` with merge state `UNSTABLE` while checks rerun, and `gh api graphql` reports review thread `PRRT_kwDORgvdZ8518N2O` resolved/outdated.
-
-Summary: Fixed the last open CodeRabbit review thread for blank timeline labels, verified it locally, and pushed PR #819 to head `c8313f1`
-State hint: waiting_ci
-Blocked reason: none
-Tests: `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts`; `npm run build`
-Failure signature: none
-Next action: monitor PR #819 for CI completion on `c8313f1` and handle any new review feedback if checks or bots surface more issues
+- Reproduced the #814 safe-command UX gap with a deferred `run-once` dashboard test: buttons locked during execution, but the command result pane stayed on its placeholder text and gave no in-flight guidance.
+- Updated the dashboard browser script to publish explicit in-progress, rejected, and refresh-failure command payloads with next-step guidance, and added a static operator-actions hint describing serialized command execution and post-action feedback.
+- Focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build` after restoring local dependencies via `npm ci` because `tsc` was initially missing in this worktree.
 
 ## Active Failure Context
-- Category: none
-- Summary: No active local failure remains; the previously open CodeRabbit thread for blank timeline labels is resolved on GitHub after `c8313f1`.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/819#discussion_r2970850775
-- Details:
-  - `gh api graphql -f query='query { repository(owner:"TommyKammy", name:"codex-supervisor") { pullRequest(number:819) { reviewThreads(first:50) { nodes { id isResolved isOutdated path } } } } }'` reported `PRRT_kwDORgvdZ8518N2O` as `isResolved: true` and `isOutdated: true` after the push.
-  - `gh pr view 819 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,headRefOid,baseRefName` reports merge state `UNSTABLE` on the new head while CI reruns.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the last CodeRabbit thread was correct because `describeTimelineEvent()` treated empty strings as valid labels and could render a blank operator-timeline row.
-- What changed: switched the default event-label fallback to the first non-empty trimmed value among `summary`, `message`, and `type`, added regressions for whitespace-only labels and the `"event"` fallback, committed the fix as `c8313f1` (`Prevent blank dashboard timeline labels`), pushed `codex/issue-813`, and confirmed the GitHub thread is resolved/outdated.
+- Hypothesis: safe commands still felt ambiguous in the WebUI because the lock only disabled buttons; operators did not get explicit in-flight JSON state, rejection guidance, or refresh-failure recovery guidance in the command result area.
+- What changed: added a reproducing deferred-response dashboard test for in-flight command feedback, updated command rendering to emit `in_progress` payloads plus guidance for rejection and refresh-failure cases, and added an operator-actions hint explaining serialized command execution and where confirmations/post-action feedback appear.
 - Current blocker: none
-- Next exact step: monitor PR #819 (`https://github.com/TommyKammy/codex-supervisor/pull/819`) for CI/check settlement on head `c8313f1` and react only if new review feedback appears.
-- Verification gap: none locally; remaining uncertainty is limited to CI and any follow-on bot review after the new head.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`
-- Rollback concern: keep the label trimming scoped to the default fallback path so known typed supervisor-event summaries remain unchanged.
-- Last focused command: `gh api graphql -f query='query { repository(owner:"TommyKammy", name:"codex-supervisor") { pullRequest(number:819) { reviewThreads(first:50) { nodes { id isResolved isOutdated path } } } } }'`
-- Last focused failure: none
+- Next exact step: commit the #814 dashboard UX checkpoint, push `codex/issue-814`, and open or update the draft PR if one is not already present.
+- Verification gap: none locally after the focused tests and build passed; remaining uncertainty is limited to remote CI and PR review once the checkpoint is pushed.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard.test.ts`
+- Rollback concern: keep the new guidance scoped to browser-side presentation only so the safe command set and backend command contract stay unchanged.
+- Last focused command: `npm run build`
+- Last focused failure: `safe-command in-flight result area remained on placeholder text while a command was running`
 - Last focused commands:
 ```bash
-npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts
+npx tsx --test src/backend/webui-dashboard.test.ts
+npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts
+npm ci
 npm run build
-git commit -m "Prevent blank dashboard timeline labels"
-git push origin codex/issue-813
-gh pr view 819 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,headRefOid,baseRefName
-gh api graphql -f query='query { repository(owner:"TommyKammy", name:"codex-supervisor") { pullRequest(number:819) { reviewThreads(first:50) { nodes { id isResolved isOutdated path } } } } }'
 ```
 ### Scratchpad
-- 2026-03-22T04:15:25Z: validated CodeRabbit thread `PRRT_kwDORgvdZ8518N2O`; changed `describeTimelineEvent()` to ignore empty/whitespace-only label fields, added focused regressions for trimmed fallback behavior, passed `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build`, committed `c8313f1` (`Prevent blank dashboard timeline labels`), pushed `codex/issue-813`, and confirmed via `gh api graphql` that the thread is resolved/outdated.
+- 2026-03-22T00:00:00Z: reproduced #814 with a deferred `run-once` dashboard test; buttons disabled correctly, but the command result pane stayed on its placeholder text until the POST resolved.
+- 2026-03-22T00:00:00Z: updated browser-side safe-command rendering to publish explicit `in_progress`, rejection, and refresh-failure guidance, and added a static operator hint describing serialized command execution.
+- 2026-03-22T00:00:00Z: `npm run build` initially failed with `sh: 1: tsc: not found`; `npm ci` restored local dependencies and the rerun passed.
 - 2026-03-22T03:28:21Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build` after `npm ci` restored `tsc` in this worktree.
 - 2026-03-22T00:00:00Z: reproduced missing rejection feedback with a confirm-decline dashboard case for prune workspaces; the browser returned early without a visible command result until declined confirmations were routed through a rejected-command renderer.
 - 2026-03-22T00:00:00Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts`, `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`, `npm ci`, and `npm run build`.
