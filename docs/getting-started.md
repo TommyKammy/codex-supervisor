@@ -164,10 +164,33 @@ If `status` or `doctor` reports corrupted JSON state, stop treating that file as
 
 A first-run setup flow needs a narrower backend surface than `doctor`. The setup/readiness contract should answer what is configured, what is missing, what is invalid, and what still blocks first-run operation. Doctor is not that setup/readiness contract: `doctor` remains the broader operator diagnostic view for host checks, state-file recovery, workspace findings, and ongoing environment triage.
 
-The intended typed surface for setup/readiness is:
+The core setup-specific portion of that typed surface is:
 
 ```ts
 type SetupFieldState = "configured" | "missing" | "invalid";
+type SetupReadinessFieldKey =
+  | "repoPath"
+  | "repoSlug"
+  | "defaultBranch"
+  | "workspaceRoot"
+  | "stateFile"
+  | "codexBinary"
+  | "branchPrefix"
+  | "reviewProvider";
+type SetupReadinessFieldValueType =
+  | "directory_path"
+  | "repo_slug"
+  | "git_ref"
+  | "file_path"
+  | "executable_path"
+  | "text"
+  | "review_provider";
+type SetupReadinessRemediationKind =
+  | "edit_config"
+  | "configure_review_provider"
+  | "authenticate_github"
+  | "verify_codex_cli"
+  | "repair_worktree_layout";
 
 interface SetupReadinessReport {
   kind: "setup_readiness";
@@ -178,13 +201,16 @@ interface SetupReadinessReport {
 }
 
 interface SetupReadinessField {
-  key: "repoPath" | "repoSlug" | "workspaceRoot" | "codexBinary" | "reviewProvider";
+  key: SetupReadinessFieldKey;
+  label: string;
   state: SetupFieldState;
+  value: string | null;
   message: string;
+  required: boolean;
   metadata: {
     source: "config";
     editable: true;
-    valueType: "directory_path" | "repo_slug" | "executable_path" | "review_provider";
+    valueType: SetupReadinessFieldValueType;
   };
 }
 
@@ -193,7 +219,7 @@ interface SetupReadinessBlocker {
   message: string;
   fieldKeys: SetupReadinessField["key"][];
   remediation: {
-    kind: "edit_config" | "configure_review_provider" | "authenticate_github" | "verify_codex_cli";
+    kind: SetupReadinessRemediationKind;
     summary: string;
     fieldKeys: SetupReadinessField["key"][];
   };

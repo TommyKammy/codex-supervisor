@@ -76,6 +76,20 @@ test("getting-started defines setup readiness as a typed first-run contract dist
   assert.match(content, /editable setup inputs without inferring from labels/i);
   assert.match(content, /typed remediation guidance/i);
   assert.match(content, /what is configured, what is missing, what is invalid, and what still blocks first-run operation/i);
+  assert.match(content, /valueType:\s+SetupReadinessFieldValueType/);
+  assert.match(
+    content,
+    /type SetupReadinessFieldValueType =[\s\S]*"directory_path"[\s\S]*"repo_slug"[\s\S]*"git_ref"[\s\S]*"file_path"[\s\S]*"executable_path"[\s\S]*"text"[\s\S]*"review_provider"/,
+  );
+  assert.match(content, /kind:\s+SetupReadinessRemediationKind/);
+  assert.match(
+    content,
+    /type SetupReadinessRemediationKind =[\s\S]*"edit_config"[\s\S]*"configure_review_provider"[\s\S]*"authenticate_github"[\s\S]*"verify_codex_cli"[\s\S]*"repair_worktree_layout"/,
+  );
+  assert.match(
+    content,
+    /type SetupReadinessFieldKey =[\s\S]*"repoPath"[\s\S]*"repoSlug"[\s\S]*"defaultBranch"[\s\S]*"workspaceRoot"[\s\S]*"stateFile"[\s\S]*"codexBinary"[\s\S]*"branchPrefix"[\s\S]*"reviewProvider"/,
+  );
 });
 
 test("japanese docs keep overview and getting-started responsibilities separate", async () => {
