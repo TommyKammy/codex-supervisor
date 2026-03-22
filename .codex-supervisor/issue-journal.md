@@ -5,66 +5,72 @@
 - Branch: codex/issue-840
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: waiting_ci
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 55d96bf5c7aa0ccaaa247890113f26ce6101e665
+- Current phase: repairing_ci
+- Attempt count: 4 (implementation=2, repair=2)
+- Last head SHA: d3f451f0c60064b0623a7b99dd07af35e3bf6a33
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-22T18:21:29Z
+- Last failure signature: build (ubuntu-latest):fail|build (macos-latest):fail
+- Repeated failure signature count: 1
+- Updated at: 2026-03-22T18:35:16Z
 
 ## Latest Codex Summary
-Implemented a narrow first-run config write path in [src/setup-config-write.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/setup-config-write.ts), wired it through [src/supervisor/supervisor.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/supervisor/supervisor.ts), [src/supervisor/supervisor-service.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/supervisor/supervisor-service.ts), and [src/backend/supervisor-http-server.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/backend/supervisor-http-server.ts). The new `POST /api/setup-config` path only accepts the supported first-run fields, validates them before mutation, preserves unrelated config keys, writes a `.bak` rollback copy for existing configs, updates the file atomically, and returns refreshed setup readiness.
+Reproduced the failing PR build locally with `npm run build`, which matched CI as `TS2769` at `src/config.test.ts:883` because `result.backupPath` was typed as `string | null` and passed directly to `fs.readFile`. I fixed the test by asserting `result.backupPath` is present before reading the backup file in [src/config.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/config.test.ts), committed it as `d3f451f`, and pushed the repair to PR [#853](https://github.com/TommyKammy/codex-supervisor/pull/853).
 
-Focused coverage was added in [src/backend/supervisor-http-server.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/backend/supervisor-http-server.test.ts) and [src/config.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/config.test.ts) for accepted writes, malformed request rejection, invalid-value rejection, and preservation behavior. I updated [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/.codex-supervisor/issue-journal.md), pushed `codex/issue-840`, and opened draft PR [#853](https://github.com/TommyKammy/codex-supervisor/pull/853). The only remaining workspace noise is the pre-existing untracked `.codex-supervisor/replay/` directory, which I left alone.
+Focused local verification is green again: `npm run build` now passes, and `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts` passed after the fix. The worktree is clean apart from the pre-existing untracked `.codex-supervisor/replay/` directory, and `gh pr view 853` reports `isDraft: false`, `state: OPEN`, `headRefOid: d3f451f0c60064b0623a7b99dd07af35e3bf6a33`, and `mergeStateStatus: UNSTABLE` while checks rerun.
 
-Summary: Added a validated `/api/setup-config` write path with backup/preservation behavior and focused tests; committed as `55d96bf`.
-State hint: waiting_ci
+Summary: Reproduced the CI TypeScript failure locally, fixed the nullability assertion in `src/config.test.ts`, and pushed repair commit `d3f451f` to PR `#853`.
+State hint: repairing_ci
 Blocked reason: none
-Tests: `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts`; `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts`
-Failure signature: none
-Next action: monitor draft PR `#853` for CI and review feedback, then address any regressions if checks fail
+Tests: `npm run build`; `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts`
+Failure signature: build-tsc-ts2769-config-test-backupPath-null
+Next action: monitor PR `#853` for rerun results and address any additional CI or review feedback if more failures surface
 
 ## Active Failure Context
-- None recorded.
+- Category: checks
+- Summary: PR #853 failed the build checks, and the failure reproduces locally as a TypeScript nullability error in `src/config.test.ts`.
+- Command or source: `npm run build`
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/853
+- Details:
+  - local reproduction before the fix: `src/config.test.ts(883,55): error TS2769: No overload matches this call`
+  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23409475269/job/68094061598
+  - build (macos-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23409475269/job/68094061599
 
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: the narrowest safe first-run mutation path is a dedicated server-owned merge that only accepts a small typed field set and maps `reviewProvider` to `reviewBotLogins`, rather than exposing arbitrary config patching.
-- What changed: added a focused failing HTTP regression for `POST /api/setup-config` and a config-layer regression for backup/preservation, reproduced the gap as `405` plus a missing `setup-config-write` module, then implemented [src/setup-config-write.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/setup-config-write.ts) to validate supported first-run fields, reject invalid writes before disk mutation, preserve unrelated fields, write a `.bak` rollback copy for existing configs, atomically rewrite the config, and recompute setup readiness. Wired the new path through [src/supervisor/supervisor.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/supervisor/supervisor.ts), [src/supervisor/supervisor-service.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/supervisor/supervisor-service.ts), and [src/backend/supervisor-http-server.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/backend/supervisor-http-server.ts), then added rejection coverage in [src/backend/supervisor-http-server.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/backend/supervisor-http-server.test.ts) and [src/config.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/config.test.ts).
+- What changed: reproduced the failing CI build locally, then added `assert.ok(result.backupPath, "Expected backupPath to be set when updating an existing config")` before reading the backup file in [src/config.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/config.test.ts) so the test encodes the existing-config precondition and satisfies TypeScript's `string | null` typing.
 - Current blocker: none
-- Next exact step: monitor draft PR `#853` (`https://github.com/TommyKammy/codex-supervisor/pull/853`) and address any CI or review feedback that appears.
-- Verification gap: none on the issue command; `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts` passed on the local diff.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/backend/supervisor-http-server.ts`, `src/config.test.ts`, `src/setup-config-write.ts`, `src/supervisor/supervisor-service.ts`, `src/supervisor/supervisor.ts`
+- Next exact step: monitor PR `#853` (`https://github.com/TommyKammy/codex-supervisor/pull/853`) for the rerun build results, then only intervene again if another CI or review signal appears.
+- Verification gap: none for this repair; both `npm run build` and `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts` passed after the assertion fix.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/config.test.ts`
 - Rollback concern: low; the change is additive and narrow, and existing configs get a `.bak` rollback point before writes.
-- Last focused command: `gh pr view 853 --json url,isDraft,mergeStateStatus,headRefName,headRefOid,baseRefName,state`
-- Last focused failure: none; draft PR `https://github.com/TommyKammy/codex-supervisor/pull/853` is open on head `5fb741579fbe1482339ff73ebcd53c1a77be059e` with `mergeStateStatus` `UNSTABLE`, which is expected while checks settle.
+- Last focused command: `gh pr view 853 --json url,isDraft,mergeStateStatus,headRefOid,state`
+- Last focused failure: `npm run build` failed before the fix with `src/config.test.ts(883,55): error TS2769: No overload matches this call`; after the assertion change, the build and the issue verification command both passed locally.
 - Last focused commands:
 ```bash
 sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-840/AGENTS.generated.md
 sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-840/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
 git status --short --branch
-rg -n "setup-config|setup readiness|setup-readiness|preview|first-run|config write|reviewProviderProfile|supervisor config" src
-sed -n '1,220p' src/backend/supervisor-http-server.ts
-sed -n '1,220p' src/supervisor/supervisor-service.ts
-sed -n '1040,1135p' src/supervisor/supervisor.ts
-sed -n '1,340p' src/setup-config-preview.ts
-sed -n '780,900p' src/config.test.ts
-sed -n '780,980p' src/backend/supervisor-http-server.test.ts
-sed -n '1,220p' supervisor.config.example.json
-npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts
-npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts
+sed -n '850,905p' src/config.test.ts
+npm run build
+npm ci
+npm run build
+npx tsx --test src/config.test.ts
+npm run build
 npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts
-git diff -- src/backend/supervisor-http-server.ts src/backend/supervisor-http-server.test.ts src/config.test.ts src/setup-config-write.ts src/supervisor/supervisor-service.ts src/supervisor/supervisor.ts .codex-supervisor/issue-journal.md
-git commit -m "Update issue 840 journal handoff"
-git push -u origin codex/issue-840
-gh pr create --draft --base main --head codex/issue-840 --title "Add setup config write path for first-run setup" --body ...
-gh pr view 853 --json url,isDraft,mergeStateStatus,headRefName,headRefOid,baseRefName,state
+git diff -- src/config.test.ts
+git diff -- .codex-supervisor/issue-journal.md
+gh pr view 853 --json url,isDraft,mergeStateStatus,headRefOid,state
+git add src/config.test.ts
+git commit -m "Fix setup config backup test typing"
+git push origin codex/issue-840
+git rev-parse HEAD
+date -u +%Y-%m-%dT%H:%M:%SZ
+gh pr view 853 --json url,isDraft,mergeStateStatus,headRefOid,state
 ```
 ### Scratchpad
-- 2026-03-22T18:21:29Z: pushed `codex/issue-840` to origin and opened draft PR `#853`; `gh pr view 853` reports head `5fb741579fbe1482339ff73ebcd53c1a77be059e`, draft `true`, and `mergeStateStatus` `UNSTABLE`.
-- 2026-03-22T18:09:02Z: reproduced the issue with a focused failing HTTP regression (`POST /api/setup-config` returned `405`) and a missing-module failure for `./setup-config-write`, then implemented the write path and reran the focused issue command successfully.
+- 2026-03-22T18:35:16Z: reproduced the PR build failure locally with `npm run build` as `TS2769` in `src/config.test.ts(883,55)`, added a non-null assertion via `assert.ok(result.backupPath, ...)`, reran `npm run build` plus the issue verification command successfully, and pushed repair commit `d3f451f` to PR `#853`.
 - 2026-03-22T10:56:27Z: `git merge --no-edit origin/main` reported a single content conflict in `.codex-supervisor/issue-journal.md`; all product code and tests from `origin/main` merged without manual intervention.
 - 2026-03-22T10:56:27Z: resolved the journal conflict by restoring the issue-824 journal content and updating it for the current merge-resolution pass instead of taking `main`'s unrelated issue-829 journal.
 - 2026-03-22T10:56:27Z: focused merge verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts src/getting-started-docs.test.ts src/doctor.test.ts` and `npm run build`.
