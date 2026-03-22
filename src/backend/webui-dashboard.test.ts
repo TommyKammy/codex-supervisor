@@ -269,7 +269,12 @@ async function flushAsyncWork(turns = 4): Promise<void> {
   }
 }
 
-function createDashboardHarness(queue: QueuedFetchResponse[]) {
+function createDashboardHarness(
+  queue: QueuedFetchResponse[],
+  options: {
+    confirm?: () => boolean;
+  } = {},
+) {
   const html = renderSupervisorDashboardHtml();
   const ids = Array.from(html.matchAll(/id="([^"]+)"/gu), (match) => match[1]);
   const document = new FakeDocument(ids);
@@ -298,7 +303,7 @@ function createDashboardHarness(queue: QueuedFetchResponse[]) {
     EventSource: MockEventSource,
     fetch,
     window: {
-      confirm: () => true,
+      confirm: options.confirm ?? (() => true),
     },
   };
 
@@ -538,6 +543,104 @@ test("dashboard preserves a successful command result when the refresh step fail
   assert.match(commandResult.textContent, /"command": "run-once"/u);
   assert.match(commandResult.textContent, /"summary": "run-once complete"/u);
   assert.equal(statusWarning.textContent, "/api/status?why=true: Status refresh failed.");
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard reports a rejected safe command when the operator declines confirmation", async () => {
+  const harness = createDashboardHarness(
+    [
+      { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+      { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    ],
+    {
+      confirm: () => false,
+    },
+  );
+  await harness.flush();
+
+  const pruneButton = harness.document.getElementById("prune-workspaces-button");
+  const commandStatus = harness.document.getElementById("command-status");
+  const commandResult = harness.document.getElementById("command-result");
+  assert.ok(pruneButton);
+  assert.ok(commandStatus);
+  assert.ok(commandResult);
+
+  await pruneButton.dispatch("click");
+  await harness.flush();
+
+  assert.equal(commandStatus.textContent, "prune-orphaned-workspaces cancelled");
+  assert.match(commandResult.textContent, /"outcome": "rejected"/u);
+  assert.match(commandResult.textContent, /"summary": "Operator declined confirmation\."/u);
+  assert.equal(harness.fetchCalls.filter((call) => call.path === "/api/commands/prune-orphaned-workspaces").length, 0);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard reports a rejected requeue command before issue details load", async () => {
+  const harness = createDashboardHarness([
+    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+  ]);
+  await harness.flush();
+
+  const requeueButton = harness.document.getElementById("requeue-button");
+  const commandStatus = harness.document.getElementById("command-status");
+  const commandResult = harness.document.getElementById("command-result");
+  assert.ok(requeueButton);
+  assert.ok(commandStatus);
+  assert.ok(commandResult);
+
+  await requeueButton.dispatch("click");
+  await harness.flush();
+
+  assert.equal(commandStatus.textContent, "requeue cancelled");
+  assert.match(commandResult.textContent, /"outcome": "rejected"/u);
+  assert.match(commandResult.textContent, /"summary": "Load an issue successfully before requeueing\."/u);
+  assert.equal(harness.fetchCalls.filter((call) => call.path === "/api/commands/requeue").length, 0);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard adopts the refreshed selected issue after a command-triggered status change", async () => {
+  const harness = createDashboardHarness([
+    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 42 })) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    { path: "/api/issues/42/explain", response: jsonResponse(createExplain(42)) },
+    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
+    {
+      path: "/api/commands/run-once",
+      method: "POST",
+      body: JSON.stringify({ dryRun: false }),
+      response: jsonResponse({
+        command: "run-once",
+        dryRun: false,
+        summary: "run-once complete",
+      }),
+    },
+    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 77 })) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    { path: "/api/issues/77/explain", response: jsonResponse(createExplain(77)) },
+    { path: "/api/issues/77/issue-lint", response: jsonResponse(createIssueLint(77)) },
+  ]);
+  await harness.flush();
+
+  const runOnceButton = harness.document.getElementById("run-once-button");
+  const selectedIssueBadge = harness.document.getElementById("selected-issue-badge");
+  const issueNumberInput = harness.document.getElementById("issue-number-input");
+  const issueSummary = harness.document.getElementById("issue-summary");
+  assert.ok(runOnceButton);
+  assert.ok(selectedIssueBadge);
+  assert.ok(issueNumberInput);
+  assert.ok(issueSummary);
+
+  assert.equal(selectedIssueBadge.textContent, "#42");
+  assert.equal(issueNumberInput.value, "42");
+  assert.match(issueSummary.textContent, /#42 Issue 42/u);
+
+  await runOnceButton.dispatch("click");
+  await harness.flush();
+
+  assert.equal(selectedIssueBadge.textContent, "#77");
+  assert.equal(issueNumberInput.value, "77");
+  assert.match(issueSummary.textContent, /#77 Issue 77/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 
