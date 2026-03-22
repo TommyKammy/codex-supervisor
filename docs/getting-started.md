@@ -181,20 +181,31 @@ interface SetupReadinessField {
   key: "repoPath" | "repoSlug" | "workspaceRoot" | "codexBinary" | "reviewProvider";
   state: SetupFieldState;
   message: string;
+  metadata: {
+    source: "config";
+    editable: true;
+    valueType: "directory_path" | "repo_slug" | "executable_path" | "review_provider";
+  };
 }
 
 interface SetupReadinessBlocker {
   code: string;
   message: string;
   fieldKeys: SetupReadinessField["key"][];
+  remediation: {
+    kind: "edit_config" | "configure_review_provider" | "authenticate_github" | "verify_codex_cli";
+    summary: string;
+    fieldKeys: SetupReadinessField["key"][];
+  };
 }
 ```
 
 Minimum rules for that contract:
 
 - `fields` is the setup inventory a future UI needs for first-run guidance, not a dump of every doctor diagnostic
-- each field reports a typed state of `configured | missing | invalid`
+- each field reports a typed state of `configured | missing | invalid` plus typed metadata the UI can use to render editable setup inputs without inferring from labels
 - `blockers` lists only the conditions that still prevent a safe first run
+- each blocker carries typed remediation guidance so the browser does not have to reverse-engineer next actions from free-form text
 - `ready` becomes `true` only when no first-run blockers remain
 - ongoing diagnostics such as GitHub auth details, corrupted state-file findings, orphaned worktree candidates, and other repair-oriented host checks stay in `doctor`
 

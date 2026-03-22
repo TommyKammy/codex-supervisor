@@ -231,6 +231,11 @@ function createStubService(args?: {
         value: "owner/repo",
         message: "Repository slug is configured.",
         required: true,
+        metadata: {
+          source: "config",
+          editable: true,
+          valueType: "repo_slug",
+        },
       },
       {
         key: "reviewProvider",
@@ -239,6 +244,11 @@ function createStubService(args?: {
         value: null,
         message: "Configure at least one review provider before first-run setup is complete.",
         required: true,
+        metadata: {
+          source: "config",
+          editable: true,
+          valueType: "review_provider",
+        },
       },
     ],
     blockers: [
@@ -246,6 +256,11 @@ function createStubService(args?: {
         code: "missing_review_provider",
         message: "Configure at least one review provider before first-run setup is complete.",
         fieldKeys: ["reviewProvider"],
+        remediation: {
+          kind: "configure_review_provider",
+          summary: "Configure at least one review provider before first-run setup is complete.",
+          fieldKeys: ["reviewProvider"],
+        },
       },
     ],
     hostReadiness: {
@@ -526,6 +541,11 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
         value: "owner/repo",
         message: "Repository slug is configured.",
         required: true,
+        metadata: {
+          source: "config",
+          editable: true,
+          valueType: "repo_slug",
+        },
       },
       {
         key: "reviewProvider",
@@ -534,6 +554,11 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
         value: null,
         message: "Configure at least one review provider before first-run setup is complete.",
         required: true,
+        metadata: {
+          source: "config",
+          editable: true,
+          valueType: "review_provider",
+        },
       },
     ],
     blockers: [
@@ -541,6 +566,11 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
         code: "missing_review_provider",
         message: "Configure at least one review provider before first-run setup is complete.",
         fieldKeys: ["reviewProvider"],
+        remediation: {
+          kind: "configure_review_provider",
+          summary: "Configure at least one review provider before first-run setup is complete.",
+          fieldKeys: ["reviewProvider"],
+        },
       },
     ],
     hostReadiness: {

@@ -16,6 +16,21 @@ export type SetupReadinessFieldKey =
   | "branchPrefix"
   | "reviewProvider";
 
+export type SetupReadinessFieldValueType =
+  | "directory_path"
+  | "repo_slug"
+  | "git_ref"
+  | "file_path"
+  | "executable_path"
+  | "text"
+  | "review_provider";
+
+export interface SetupReadinessFieldMetadata {
+  source: "config";
+  editable: true;
+  valueType: SetupReadinessFieldValueType;
+}
+
 export interface SetupReadinessField {
   key: SetupReadinessFieldKey;
   label: string;
@@ -23,12 +38,27 @@ export interface SetupReadinessField {
   value: string | null;
   message: string;
   required: boolean;
+  metadata: SetupReadinessFieldMetadata;
+}
+
+export type SetupReadinessRemediationKind =
+  | "edit_config"
+  | "configure_review_provider"
+  | "authenticate_github"
+  | "verify_codex_cli"
+  | "repair_worktree_layout";
+
+export interface SetupReadinessRemediation {
+  kind: SetupReadinessRemediationKind;
+  summary: string;
+  fieldKeys: SetupReadinessFieldKey[];
 }
 
 export interface SetupReadinessBlocker {
   code: string;
   message: string;
   fieldKeys: SetupReadinessFieldKey[];
+  remediation: SetupReadinessRemediation;
 }
 
 export interface SetupReadinessHostSummary {
@@ -77,6 +107,17 @@ const SETUP_FIELD_DEFINITIONS: Array<{ key: Exclude<SetupReadinessFieldKey, "rev
   { key: "codexBinary", label: "Codex binary" },
   { key: "branchPrefix", label: "Branch prefix" },
 ];
+
+const SETUP_FIELD_METADATA: Record<SetupReadinessFieldKey, SetupReadinessFieldMetadata> = {
+  repoPath: { source: "config", editable: true, valueType: "directory_path" },
+  repoSlug: { source: "config", editable: true, valueType: "repo_slug" },
+  defaultBranch: { source: "config", editable: true, valueType: "git_ref" },
+  workspaceRoot: { source: "config", editable: true, valueType: "directory_path" },
+  stateFile: { source: "config", editable: true, valueType: "file_path" },
+  codexBinary: { source: "config", editable: true, valueType: "executable_path" },
+  branchPrefix: { source: "config", editable: true, valueType: "text" },
+  reviewProvider: { source: "config", editable: true, valueType: "review_provider" },
+};
 
 function readRawConfigDocument(configPath: string): RawConfigDocument {
   if (!fs.existsSync(configPath)) {
@@ -140,6 +181,7 @@ function buildConfigFields(args: {
       value: resolvedConfig !== null ? displayValue(resolvedConfig[key]) : displayValue(rawConfig?.[key]),
       message: "",
       required: true,
+      metadata: SETUP_FIELD_METADATA[key],
     };
     return {
       ...field,
@@ -160,6 +202,7 @@ function buildConfigFields(args: {
     value: normalizedReviewers.length > 0 ? normalizedReviewers.join(", ") : null,
     message: "",
     required: true,
+    metadata: SETUP_FIELD_METADATA.reviewProvider,
   };
 
   return [
@@ -259,6 +302,18 @@ function buildBlockers(args: {
           ? "Configure at least one review provider before first-run setup is complete."
           : field.message,
       fieldKeys: [field.key],
+      remediation:
+        field.key === "reviewProvider" && field.state === "missing"
+          ? {
+            kind: "configure_review_provider",
+            summary: "Configure at least one review provider before first-run setup is complete.",
+            fieldKeys: [field.key],
+          }
+          : {
+            kind: "edit_config",
+            summary: field.message,
+            fieldKeys: [field.key],
+          },
     });
   }
 
@@ -272,6 +327,24 @@ function buildBlockers(args: {
       code: `host_${check.name}`,
       message: check.summary,
       fieldKeys: check.name === "worktrees" ? ["repoPath", "workspaceRoot"] : [],
+      remediation:
+        check.name === "github_auth"
+          ? {
+            kind: "authenticate_github",
+            summary: check.summary,
+            fieldKeys: [],
+          }
+          : check.name === "codex_cli"
+            ? {
+              kind: "verify_codex_cli",
+              summary: check.summary,
+              fieldKeys: ["codexBinary"],
+            }
+            : {
+              kind: "repair_worktree_layout",
+              summary: check.summary,
+              fieldKeys: ["repoPath", "workspaceRoot"],
+            },
     });
   }
 

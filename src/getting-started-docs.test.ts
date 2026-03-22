@@ -73,6 +73,8 @@ test("getting-started defines setup readiness as a typed first-run contract dist
   assert.match(content, /doctor is not that setup\/readiness contract/i);
   assert.match(content, /kind: "setup_readiness"/);
   assert.match(content, /configured \| missing \| invalid/);
+  assert.match(content, /editable setup inputs without inferring from labels/i);
+  assert.match(content, /typed remediation guidance/i);
   assert.match(content, /what is configured, what is missing, what is invalid, and what still blocks first-run operation/i);
 });
 
