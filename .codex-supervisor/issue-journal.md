@@ -7,23 +7,23 @@
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
 - Attempt count: 22 (implementation=20, repair=2)
-- Last head SHA: e7a0732fd2c8e7e803ed3aff3a72ab4419d84c7f
+- Last head SHA: 53e6aabdca468d2ad3b51f1814c0c49c334bffa7
 - Blocked reason: none
 - Last failure signature: PRRT_kwDORgvdZ851-1Bv|PRRT_kwDORgvdZ851-1B1|PRRT_kwDORgvdZ851-1B2
 - Repeated failure signature count: 1
-- Updated at: 2026-03-22T16:55:10Z
+- Updated at: 2026-03-22T16:58:00Z
 
 ## Latest Codex Summary
 Addressed the three remaining PR #851 review threads in the setup-shell renderer. [src/backend/webui-setup-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-838/src/backend/webui-setup-browser-script.ts) now counts only required fields in the readiness summary, pluralizes the single host-check case correctly, and falls back to `unknown` field metadata instead of throwing on older or partial setup-readiness payloads. [src/backend/webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-838/src/backend/webui-dashboard.test.ts) now proves those behaviors with an added optional field lacking metadata.
 
-Focused verification passed with `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`. I committed the review fix as `e7a0732` (`Fix setup shell review follow-ups`). The only remaining workspace delta is the untracked `.codex-supervisor/replay/` snapshot plus this journal refresh.
+Focused verification passed with `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`. I committed the review fix as `e7a0732` (`Fix setup shell review follow-ups`), refreshed the journal in `53e6aab`, pushed `codex/issue-838`, and resolved the three CodeRabbit review threads on PR #851. The only remaining workspace delta is the untracked `.codex-supervisor/replay/` snapshot.
 
-Summary: Fixed the remaining setup-shell review comments, added focused degraded-payload coverage, and prepared the branch for a PR update.
-State hint: local_review_fix
+Summary: Fixed the remaining setup-shell review comments, added focused degraded-payload coverage, pushed the branch update, and resolved the automated review threads.
+State hint: waiting_ci
 Blocked reason: none
 Tests: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`
 Failure signature: none
-Next action: Commit the journal refresh, push `codex/issue-838`, and update PR #851 with the review-fix checkpoint.
+Next action: Monitor PR #851 for refreshed checks or any follow-up review on the pushed setup-shell fixes.
 
 ## Active Failure Context
 - None recorded.
@@ -31,9 +31,9 @@ Next action: Commit the journal refresh, push `codex/issue-838`, and update PR #
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: the remaining PR feedback is limited to renderer wording and degraded-data resilience, not to the broader grouped setup checklist design.
-- What changed: re-read the required memory files and the live setup-shell sources, confirmed all three CodeRabbit review comments were valid against [src/backend/webui-setup-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-838/src/backend/webui-setup-browser-script.ts), then fixed them locally. The field summary now counts only required fields, host readiness uses singular wording for one check, and field metadata rendering now tolerates missing `metadata` by falling back to `unknown`. I extended [src/backend/webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-838/src/backend/webui-dashboard.test.ts) with an optional field lacking metadata so the test proves both the required-field denominator and the non-throwing fallback path. Focused verification passed, and I committed the code fix as `e7a0732` (`Fix setup shell review follow-ups`).
+- What changed: re-read the required memory files and the live setup-shell sources, confirmed all three CodeRabbit review comments were valid against [src/backend/webui-setup-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-838/src/backend/webui-setup-browser-script.ts), then fixed them locally. The field summary now counts only required fields, host readiness uses singular wording for one check, and field metadata rendering now tolerates missing `metadata` by falling back to `unknown`. I extended [src/backend/webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-838/src/backend/webui-dashboard.test.ts) with an optional field lacking metadata so the test proves both the required-field denominator and the non-throwing fallback path. Focused verification passed, the code fix was committed as `e7a0732` (`Fix setup shell review follow-ups`), the journal refresh was committed as `53e6aab`, the branch was pushed to `origin/codex/issue-838`, and the three CodeRabbit review threads were resolved on PR #851.
 - Current blocker: none
-- Next exact step: commit this journal refresh, push `codex/issue-838`, and resolve or respond to the three PR #851 review threads with the pushed fix.
+- Next exact step: monitor PR #851 for refreshed CI and any follow-up review after the pushed setup-shell fixes.
 - Verification gap: `npm run build` was not rerun in this pass; the focused issue command passed after the setup-shell rendering changes.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard.test.ts`, `src/backend/webui-setup-browser-script.ts`
 - Rollback concern: low; the change is isolated to the `/setup` WebUI shell and its focused test coverage.
@@ -54,9 +54,16 @@ npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/web
 git diff -- src/backend/webui-setup-browser-script.ts src/backend/webui-dashboard.test.ts
 git add src/backend/webui-setup-browser-script.ts src/backend/webui-dashboard.test.ts
 git commit -m "Fix setup shell review follow-ups"
+git add .codex-supervisor/issue-journal.md
+git commit -m "Update issue 838 journal"
+git push origin codex/issue-838
+gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { isResolved } } }' -F threadId='PRRT_kwDORgvdZ851-1Bv'
+gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { isResolved } } }' -F threadId='PRRT_kwDORgvdZ851-1B1'
+gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { isResolved } } }' -F threadId='PRRT_kwDORgvdZ851-1B2'
 date -u +"%Y-%m-%dT%H:%M:%SZ"
 ```
 ### Scratchpad
+- 2026-03-22T16:58:00Z: committed the journal refresh as `53e6aab`, pushed `codex/issue-838` to `origin`, and resolved the three CodeRabbit review threads `PRRT_kwDORgvdZ851-1Bv`, `PRRT_kwDORgvdZ851-1B1`, and `PRRT_kwDORgvdZ851-1B2` after the fix landed on the PR branch.
 - 2026-03-22T16:55:10Z: validated the three remaining PR #851 CodeRabbit findings against the live renderer, fixed all three in `src/backend/webui-setup-browser-script.ts`, extended `src/backend/webui-dashboard.test.ts` with an optional field missing metadata to prove the fallback path, reran `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`, and committed the code fix as `e7a0732` (`Fix setup shell review follow-ups`).
 - 2026-03-22T11:28:15Z: added the narrow reproducer in `src/doctor.test.ts`; the first focused run failed with `TypeError: Cannot read properties of undefined (reading 'source')`, confirming the DTO lacked typed field metadata.
 - 2026-03-22T11:28:50Z: implemented `metadata` on setup fields plus typed `remediation` on blockers in `src/setup-readiness.ts`, then updated service/HTTP/docs fixtures to pin the richer contract.
