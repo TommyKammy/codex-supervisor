@@ -228,10 +228,12 @@ export function describeCommandSelectionChange(
   previousIssueNumber: number | null | undefined,
   nextIssueNumber: number | null | undefined,
 ): string {
-  if (previousIssueNumber === nextIssueNumber) {
-    return "selected issue unchanged (" + formatIssueRef(nextIssueNumber) + ")";
+  const previousRef = formatIssueRef(previousIssueNumber);
+  const nextRef = formatIssueRef(nextIssueNumber);
+  if (previousRef === nextRef) {
+    return "selected issue unchanged (" + nextRef + ")";
   }
-  return "selected issue " + formatIssueRef(previousIssueNumber) + " -> " + formatIssueRef(nextIssueNumber);
+  return "selected issue " + previousRef + " -> " + nextRef;
 }
 
 export function collectTimelineEventIssueNumbers(event: DashboardTimelineEventLike | null | undefined): number[] {

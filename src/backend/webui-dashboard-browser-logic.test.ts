@@ -220,6 +220,7 @@ test("describeCommandSelectionChange highlights whether a command moved the sele
   assert.equal(describeCommandSelectionChange(null, 77), "selected issue none -> #77");
   assert.equal(describeCommandSelectionChange(42, 42), "selected issue unchanged (#42)");
   assert.equal(describeCommandSelectionChange(null, null), "selected issue unchanged (none)");
+  assert.equal(describeCommandSelectionChange(undefined, null), "selected issue unchanged (none)");
 });
 
 test("collectTimelineEventIssueNumbers deduplicates the issue ids attached to a supervisor event", () => {
