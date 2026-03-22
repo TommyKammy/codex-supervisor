@@ -84,6 +84,27 @@ async function handleRequest(
     return;
   }
 
+  if (pathname === "/api/setup-config") {
+    if (method !== "POST") {
+      response.setHeader("Allow", "POST");
+      writeJson(response, 405, { error: "Method not allowed." });
+      return;
+    }
+    if (!service.updateSetupConfig) {
+      writeJson(response, 404, { error: "Not found." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    const changes = readSetupConfigChanges(body);
+    try {
+      writeJson(response, 200, await service.updateSetupConfig({ changes }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new HttpRequestError(400, message);
+    }
+    return;
+  }
+
   if (method !== "GET") {
     response.setHeader("Allow", "GET");
     writeJson(response, 405, { error: "Method not allowed." });
@@ -260,6 +281,22 @@ function readPositiveInteger(body: unknown, fieldName: string): number | null {
 
   const value = body[fieldName as keyof typeof body];
   return Number.isInteger(value) && (value as number) > 0 ? (value as number) : null;
+}
+
+function readSetupConfigChanges(body: unknown): Record<string, unknown> {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new HttpRequestError(400, "Request body must be a JSON object.");
+  }
+  if (!("changes" in body)) {
+    throw new HttpRequestError(400, "Request body must include a changes object.");
+  }
+
+  const changes = (body as { changes: unknown }).changes;
+  if (!changes || typeof changes !== "object" || Array.isArray(changes)) {
+    throw new HttpRequestError(400, "changes must be an object.");
+  }
+
+  return changes as Record<string, unknown>;
 }
 
 function writeJson(response: http.ServerResponse, statusCode: number, body: JsonErrorBody | unknown): void {

@@ -1,0 +1,209 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import { resolveConfigPath } from "./core/config";
+import { isValidGitRefName, parseJson, writeJsonAtomic } from "./core/utils";
+import type { SetupConfigPreviewSelectableReviewProviderProfile } from "./setup-config-preview";
+import { diagnoseSetupReadiness, type SetupReadinessFieldKey, type SetupReadinessReport } from "./setup-readiness";
+
+export interface SetupConfigChanges {
+  repoPath?: string;
+  repoSlug?: string;
+  defaultBranch?: string;
+  workspaceRoot?: string;
+  stateFile?: string;
+  codexBinary?: string;
+  branchPrefix?: string;
+  reviewProvider?: SetupConfigPreviewSelectableReviewProviderProfile;
+}
+
+export interface UpdateSetupConfigArgs {
+  configPath?: string;
+  changes: SetupConfigChanges;
+}
+
+export interface SetupConfigUpdateResult {
+  kind: "setup_config_update";
+  configPath: string;
+  backupPath: string | null;
+  updatedFields: SetupReadinessFieldKey[];
+  document: Record<string, unknown>;
+  readiness: SetupReadinessReport;
+}
+
+const CONFIGURABLE_FIELDS: SetupReadinessFieldKey[] = [
+  "repoPath",
+  "repoSlug",
+  "defaultBranch",
+  "workspaceRoot",
+  "stateFile",
+  "codexBinary",
+  "branchPrefix",
+  "reviewProvider",
+];
+
+const REVIEW_PROVIDER_LOGIN_MAP: Record<SetupConfigPreviewSelectableReviewProviderProfile, string[]> = {
+  none: [],
+  copilot: ["copilot-pull-request-reviewer"],
+  codex: ["chatgpt-codex-connector"],
+  coderabbit: ["coderabbitai", "coderabbitai[bot]"],
+};
+
+function assertNonEmptyString(value: unknown, fieldName: string): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`${fieldName} must be a non-empty string.`);
+  }
+
+  return value.trim();
+}
+
+function assertRepoSlug(value: unknown): string {
+  const normalized = assertNonEmptyString(value, "repoSlug");
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(normalized)) {
+    throw new Error("repoSlug must use owner/repo format.");
+  }
+  return normalized;
+}
+
+function assertGitRef(value: unknown, fieldName: "defaultBranch" | "branchPrefix"): string {
+  const normalized = assertNonEmptyString(value, fieldName);
+  const candidate = fieldName === "branchPrefix" ? `${normalized}1` : normalized;
+  if (!isValidGitRefName(candidate)) {
+    throw new Error(`${fieldName} must be a valid git ref name.`);
+  }
+  return normalized;
+}
+
+function assertReviewProvider(value: unknown): SetupConfigPreviewSelectableReviewProviderProfile {
+  if (value === "none" || value === "copilot" || value === "codex" || value === "coderabbit") {
+    return value;
+  }
+
+  throw new Error("reviewProvider must be one of none, copilot, codex, or coderabbit.");
+}
+
+function normalizeSetupChanges(changes: unknown): SetupConfigChanges {
+  if (!changes || typeof changes !== "object" || Array.isArray(changes)) {
+    throw new Error("changes must be an object.");
+  }
+
+  const raw = changes as Record<string, unknown>;
+  const unknownFields = Object.keys(raw).filter((key) => !CONFIGURABLE_FIELDS.includes(key as SetupReadinessFieldKey));
+  if (unknownFields.length > 0) {
+    throw new Error(`Unsupported setup config field: ${unknownFields[0]}`);
+  }
+
+  const normalized: SetupConfigChanges = {};
+  if ("repoPath" in raw) {
+    normalized.repoPath = assertNonEmptyString(raw.repoPath, "repoPath");
+  }
+  if ("repoSlug" in raw) {
+    normalized.repoSlug = assertRepoSlug(raw.repoSlug);
+  }
+  if ("defaultBranch" in raw) {
+    normalized.defaultBranch = assertGitRef(raw.defaultBranch, "defaultBranch");
+  }
+  if ("workspaceRoot" in raw) {
+    normalized.workspaceRoot = assertNonEmptyString(raw.workspaceRoot, "workspaceRoot");
+  }
+  if ("stateFile" in raw) {
+    normalized.stateFile = assertNonEmptyString(raw.stateFile, "stateFile");
+  }
+  if ("codexBinary" in raw) {
+    normalized.codexBinary = assertNonEmptyString(raw.codexBinary, "codexBinary");
+  }
+  if ("branchPrefix" in raw) {
+    normalized.branchPrefix = assertGitRef(raw.branchPrefix, "branchPrefix");
+  }
+  if ("reviewProvider" in raw) {
+    normalized.reviewProvider = assertReviewProvider(raw.reviewProvider);
+  }
+
+  if (Object.keys(normalized).length === 0) {
+    throw new Error("changes must include at least one supported setup field.");
+  }
+
+  return normalized;
+}
+
+async function readExistingConfigDocument(configPath: string): Promise<{
+  document: Record<string, unknown>;
+  rawContents: string | null;
+}> {
+  try {
+    const rawContents = await fs.readFile(configPath, "utf8");
+    const parsed = parseJson<unknown>(rawContents, configPath);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error(`Config file must contain a JSON object: ${configPath}`);
+    }
+
+    return {
+      document: parsed as Record<string, unknown>,
+      rawContents,
+    };
+  } catch (error) {
+    const maybeErr = error as NodeJS.ErrnoException;
+    if (maybeErr.code === "ENOENT") {
+      return {
+        document: {},
+        rawContents: null,
+      };
+    }
+
+    throw error;
+  }
+}
+
+function applySetupChanges(document: Record<string, unknown>, changes: SetupConfigChanges): Record<string, unknown> {
+  const nextDocument = { ...document };
+  if (changes.repoPath !== undefined) {
+    nextDocument.repoPath = changes.repoPath;
+  }
+  if (changes.repoSlug !== undefined) {
+    nextDocument.repoSlug = changes.repoSlug;
+  }
+  if (changes.defaultBranch !== undefined) {
+    nextDocument.defaultBranch = changes.defaultBranch;
+  }
+  if (changes.workspaceRoot !== undefined) {
+    nextDocument.workspaceRoot = changes.workspaceRoot;
+  }
+  if (changes.stateFile !== undefined) {
+    nextDocument.stateFile = changes.stateFile;
+  }
+  if (changes.codexBinary !== undefined) {
+    nextDocument.codexBinary = changes.codexBinary;
+  }
+  if (changes.branchPrefix !== undefined) {
+    nextDocument.branchPrefix = changes.branchPrefix;
+  }
+  if (changes.reviewProvider !== undefined) {
+    nextDocument.reviewBotLogins = [...REVIEW_PROVIDER_LOGIN_MAP[changes.reviewProvider]];
+  }
+  return nextDocument;
+}
+
+export async function updateSetupConfig(args: UpdateSetupConfigArgs): Promise<SetupConfigUpdateResult> {
+  const configPath = resolveConfigPath(args.configPath);
+  const changes = normalizeSetupChanges(args.changes);
+  const existing = await readExistingConfigDocument(configPath);
+  const nextDocument = applySetupChanges(existing.document, changes);
+
+  let backupPath: string | null = null;
+  if (existing.rawContents !== null) {
+    backupPath = `${configPath}.bak`;
+    await fs.mkdir(path.dirname(backupPath), { recursive: true });
+    await fs.writeFile(backupPath, existing.rawContents, "utf8");
+  }
+
+  await writeJsonAtomic(configPath, nextDocument);
+  const readiness = await diagnoseSetupReadiness({ configPath });
+
+  return {
+    kind: "setup_config_update",
+    configPath,
+    backupPath,
+    updatedFields: CONFIGURABLE_FIELDS.filter((field) => field in changes),
+    document: nextDocument,
+    readiness,
+  };
+}

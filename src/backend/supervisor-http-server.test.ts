@@ -4,6 +4,7 @@ import test from "node:test";
 import type { DoctorDiagnostics } from "../doctor";
 import type { SetupReadinessReport } from "../setup-readiness";
 import type { SetupConfigPreview } from "../setup-config-preview";
+import type { SetupConfigUpdateResult } from "../setup-config-write";
 import { buildActiveIssueChangedEvent, type SupervisorEvent, type SupervisorEventSink } from "../supervisor";
 import type { SupervisorService } from "../supervisor";
 import { createSupervisorHttpServer } from "./supervisor-http-server";
@@ -192,6 +193,8 @@ function createStubService(args?: {
   setupReadinessReport?: SetupReadinessReport;
   setupConfigPreviewCalls?: Array<string | null>;
   setupConfigPreview?: SetupConfigPreview;
+  setupConfigUpdateCalls?: Array<unknown>;
+  setupConfigUpdateResult?: SetupConfigUpdateResult;
   runOnceDryRunCalls?: boolean[];
   recoveryCalls?: { action: string; issueNumber: number }[];
   pruneCalls?: number;
@@ -351,6 +354,24 @@ function createStubService(args?: {
       error: null,
     },
   };
+  const setupConfigUpdateResult: SetupConfigUpdateResult = args?.setupConfigUpdateResult ?? {
+    kind: "setup_config_update",
+    configPath: "/tmp/supervisor.config.json",
+    backupPath: "/tmp/supervisor.config.json.bak",
+    updatedFields: ["reviewProvider"],
+    document: {
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "/tmp/worktrees",
+      stateFile: "/tmp/state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      experimentalFlag: true,
+    },
+    readiness: setupReadinessReport,
+  };
 
   const eventSubscribers = new Set<SupervisorEventSink>();
 
@@ -495,6 +516,10 @@ function createStubService(args?: {
     querySetupConfigPreview: async ({ reviewProviderProfile }) => {
       args?.setupConfigPreviewCalls?.push(reviewProviderProfile ?? null);
       return setupConfigPreview;
+    },
+    updateSetupConfig: async (payload) => {
+      args?.setupConfigUpdateCalls?.push(payload);
+      return setupConfigUpdateResult;
     },
     subscribeEvents: (listener) => {
       if (args) {
@@ -898,6 +923,157 @@ test("createSupervisorHttpServer exposes only the safe supervisor mutations over
   });
   assert.equal(wrongMethodResponse.statusCode, 405);
   assert.deepEqual(wrongMethodResponse.body, { error: "Method not allowed." });
+});
+
+test("createSupervisorHttpServer accepts narrow setup config writes and returns refreshed readiness", async (t) => {
+  const setupConfigUpdateCalls: Array<unknown> = [];
+  const server = createSupervisorHttpServer({
+    service: createStubService({ setupConfigUpdateCalls }),
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const response = await readJson({
+    server,
+    path: "/api/setup-config",
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      changes: {
+        reviewProvider: "codex",
+      },
+    }),
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(setupConfigUpdateCalls, [
+    {
+      changes: {
+        reviewProvider: "codex",
+      },
+    },
+  ]);
+  assert.deepEqual(response.body, {
+    kind: "setup_config_update",
+    configPath: "/tmp/supervisor.config.json",
+    backupPath: "/tmp/supervisor.config.json.bak",
+    updatedFields: ["reviewProvider"],
+    document: {
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "/tmp/worktrees",
+      stateFile: "/tmp/state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      experimentalFlag: true,
+    },
+    readiness: {
+      kind: "setup_readiness",
+      ready: false,
+      overallStatus: "missing",
+      configPath: "/tmp/supervisor.config.json",
+      fields: [
+        {
+          key: "repoSlug",
+          label: "Repository slug",
+          state: "configured",
+          value: "owner/repo",
+          message: "Repository slug is configured.",
+          required: true,
+          metadata: {
+            source: "config",
+            editable: true,
+            valueType: "repo_slug",
+          },
+        },
+        {
+          key: "reviewProvider",
+          label: "Review provider",
+          state: "missing",
+          value: null,
+          message: "Configure at least one review provider before first-run setup is complete.",
+          required: true,
+          metadata: {
+            source: "config",
+            editable: true,
+            valueType: "review_provider",
+          },
+        },
+      ],
+      blockers: [
+        {
+          code: "missing_review_provider",
+          message: "Configure at least one review provider before first-run setup is complete.",
+          fieldKeys: ["reviewProvider"],
+          remediation: {
+            kind: "configure_review_provider",
+            summary: "Configure at least one review provider before first-run setup is complete.",
+            fieldKeys: ["reviewProvider"],
+          },
+        },
+      ],
+      hostReadiness: {
+        overallStatus: "pass",
+        checks: [
+          {
+            name: "github_auth",
+            status: "pass",
+            summary: "GitHub auth ok.",
+            details: [],
+          },
+        ],
+      },
+      providerPosture: {
+        profile: "none",
+        provider: "none",
+        reviewers: [],
+        signalSource: "none",
+        configured: false,
+        summary: "No review provider is configured.",
+      },
+      trustPosture: {
+        trustMode: "trusted_repo_and_authors",
+        executionSafetyMode: "unsandboxed_autonomous",
+        warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+        summary: "Trusted inputs with unsandboxed autonomous execution.",
+      },
+    },
+  });
+});
+
+test("createSupervisorHttpServer rejects malformed setup config write requests before calling the service", async (t) => {
+  const setupConfigUpdateCalls: Array<unknown> = [];
+  const server = createSupervisorHttpServer({
+    service: createStubService({ setupConfigUpdateCalls }),
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const response = await readJson({
+    server,
+    path: "/api/setup-config",
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reviewProvider: "codex" }),
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(response.body, { error: "Request body must include a changes object." });
+  assert.deepEqual(setupConfigUpdateCalls, []);
 });
 
 test("createSupervisorHttpServer serves a dashboard shell with only the safe operator command actions", async (t) => {

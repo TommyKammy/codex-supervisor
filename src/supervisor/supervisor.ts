@@ -105,6 +105,7 @@ import { inferFailureContext } from "./supervisor-failure-context";
 import { StateStore } from "../core/state-store";
 import { diagnoseSupervisorHost, loadStateReadonlyForDoctor, renderDoctorReport } from "../doctor";
 import { buildSetupConfigPreview, type SetupConfigPreviewSelectableReviewProviderProfile } from "../setup-config-preview";
+import { updateSetupConfig, type SetupConfigChanges } from "../setup-config-write";
 import { diagnoseSetupReadiness } from "../setup-readiness";
 import {
   blockedReasonForLifecycleState,
@@ -1088,6 +1089,13 @@ export class Supervisor {
     return buildSetupConfigPreview({
       configPath: this.configPath,
       reviewProviderProfile: options.reviewProviderProfile,
+    });
+  }
+
+  async updateSetupConfig(options: { changes: SetupConfigChanges }) {
+    return updateSetupConfig({
+      configPath: this.configPath,
+      changes: options.changes,
     });
   }
 
