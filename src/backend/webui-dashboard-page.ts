@@ -234,6 +234,11 @@ export function renderSupervisorDashboardPage(): string {
         width: 36px;
         min-width: 36px;
         height: 36px;
+      }
+
+      .panel-drag-handle {
+        width: 100%;
+        height: 100%;
         border-radius: 12px;
         border: 1px dashed rgba(40, 35, 28, 0.14);
         background:
@@ -245,6 +250,38 @@ export function renderSupervisorDashboardPage(): string {
             rgba(40, 35, 28, 0.07) 7px,
             rgba(40, 35, 28, 0.07) 10px
           );
+        color: var(--muted);
+        cursor: grab;
+        font: inherit;
+      }
+
+      .panel-drag-handle:hover {
+        border-color: rgba(15, 108, 120, 0.35);
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(236, 231, 223, 0.92)),
+          repeating-linear-gradient(
+            90deg,
+            transparent 0,
+            transparent 7px,
+            rgba(29, 106, 116, 0.1) 7px,
+            rgba(29, 106, 116, 0.1) 10px
+          );
+      }
+
+      .panel-drag-handle:active {
+        cursor: grabbing;
+      }
+
+      .panel-drag-handle span {
+        display: block;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        transform: translateY(-1px);
+      }
+
+      .panel.drag-active {
+        border-radius: 12px;
+        box-shadow: 0 0 0 2px rgba(29, 106, 116, 0.18);
       }
 
       .panel-heading {
@@ -593,7 +630,7 @@ export function renderSupervisorDashboardPage(): string {
             <p class="section-lead">Top-level supervisor state, readiness, and environment checks in a compact lane.</p>
           </div>
         </div>
-        <div class="grid" aria-label="overview">
+        <div id="overview-grid" class="grid" aria-label="overview" data-panel-grid="overview">
 ${renderDashboardPanelSection("overview")}
         </div>
       </section>
@@ -606,7 +643,7 @@ ${renderDashboardPanelSection("overview")}
             <p class="section-lead">Issue context, action controls, and event feeds remain intact with cleaner framing.</p>
           </div>
         </div>
-        <div class="grid" aria-label="details">
+        <div id="details-grid" class="grid" aria-label="details" data-panel-grid="details">
 ${renderDashboardPanelSection("details")}
         </div>
       </section>

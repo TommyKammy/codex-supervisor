@@ -49,11 +49,22 @@ function renderDashboardPanelShell(options: DashboardPanelShellOptions): Dashboa
     id: options.id,
     section: options.section,
     markup: `
-        <article class="panel" data-panel-id="${options.id}">
+        <article id="panel-${options.id}" class="panel" data-panel-id="${options.id}" data-panel-section="${options.section}">
           <div class="panel-shell">
             <div class="panel-header">
               <div class="panel-header-main">
-                <div class="panel-drag-slot" aria-hidden="true"></div>
+                <div class="panel-drag-slot">
+                  <button
+                    id="panel-drag-${options.id}"
+                    class="panel-drag-handle"
+                    type="button"
+                    draggable="true"
+                    aria-label="Reorder ${options.title} panel"
+                    title="Drag to reorder this panel"
+                  >
+                    <span aria-hidden="true">::</span>
+                  </button>
+                </div>
                 <div class="panel-heading">
                   <h2>${options.title}</h2>
                   <p class="panel-subtitle">${options.subtitle}</p>

@@ -66,6 +66,7 @@ class FakeElement {
   readonly classList = new FakeClassList(this);
   readonly listeners = new Map<string, Array<(event: unknown) => unknown>>();
 
+  parentElement: FakeElement | null = null;
   value = "";
   disabled = false;
   type = "";
@@ -132,6 +133,13 @@ class FakeElement {
   }
 
   appendChild(child: FakeElement): FakeElement {
+    if (child.parentElement) {
+      const previousIndex = child.parentElement.children.indexOf(child);
+      if (previousIndex >= 0) {
+        child.parentElement.children.splice(previousIndex, 1);
+      }
+    }
+    child.parentElement = this;
     this.children.push(child);
     return child;
   }
@@ -356,6 +364,21 @@ function createHtmlHarness(
   MockEventSource.instances.length = 0;
   const ids = Array.from(html.matchAll(/id="([^"]+)"/gu), (match) => match[1]);
   const document = new FakeDocument(ids);
+  const overviewGrid = document.getElementById("overview-grid");
+  const detailsGrid = document.getElementById("details-grid");
+  if (overviewGrid && detailsGrid) {
+    for (const panel of DASHBOARD_PANEL_REGISTRY) {
+      const panelElement = document.getElementById("panel-" + panel.id);
+      if (!panelElement) {
+        continue;
+      }
+      if (panel.section === "overview") {
+        overviewGrid.appendChild(panelElement);
+        continue;
+      }
+      detailsGrid.appendChild(panelElement);
+    }
+  }
   const fetchCalls: FetchCall[] = [];
 
   const fetch = async (path: string, init?: { method?: string; body?: string }): Promise<MockResponseLike> => {
@@ -408,6 +431,10 @@ function joinChildText(element: FakeElement): string {
   return element.children.map((child) => child.textContent).join("\n");
 }
 
+function childIds(element: FakeElement): string[] {
+  return element.children.map((child) => child.id ?? "");
+}
+
 test("dashboard shell renders panels from the typed default layout in the current order", () => {
   const html = renderSupervisorDashboardHtml();
 
@@ -424,21 +451,83 @@ test("dashboard page frames the hero and both panel groups with labeled section 
   assert.match(html, /<div class="hero-body">[\s\S]*<div class="hero-copy">[\s\S]*<div class="hero-summary">/u);
   assert.match(
     html,
-    /<section class="dashboard-section" aria-labelledby="overview-heading">[\s\S]*<p class="section-kicker">Dashboard lane<\/p>[\s\S]*<h2 id="overview-heading">Overview<\/h2>[\s\S]*<div class="grid" aria-label="overview">/u,
+    /<section class="dashboard-section" aria-labelledby="overview-heading">[\s\S]*<p class="section-kicker">Dashboard lane<\/p>[\s\S]*<h2 id="overview-heading">Overview<\/h2>[\s\S]*<div id="overview-grid" class="grid" aria-label="overview" data-panel-grid="overview">/u,
   );
   assert.match(
     html,
-    /<section class="dashboard-section" aria-labelledby="details-heading">[\s\S]*<p class="section-kicker">Dashboard lane<\/p>[\s\S]*<h2 id="details-heading">Operator details<\/h2>[\s\S]*<div class="grid" aria-label="details">/u,
+    /<section class="dashboard-section" aria-labelledby="details-heading">[\s\S]*<p class="section-kicker">Dashboard lane<\/p>[\s\S]*<h2 id="details-heading">Operator details<\/h2>[\s\S]*<div id="details-grid" class="grid" aria-label="details" data-panel-grid="details">/u,
   );
 });
 
 test("dashboard panel registry exposes a shared shell structure for every panel", () => {
   for (const panel of DASHBOARD_PANEL_REGISTRY) {
-    assert.match(panel.markup, /<article class="panel" data-panel-id="[^"]+">[\s\S]*<div class="panel-shell">/u);
-    assert.match(panel.markup, /<div class="panel-header">[\s\S]*<div class="panel-drag-slot" aria-hidden="true"><\/div>/u);
+    assert.match(panel.markup, /<article id="panel-[^"]+" class="panel" data-panel-id="[^"]+" data-panel-section="[^"]+">[\s\S]*<div class="panel-shell">/u);
+    assert.match(
+      panel.markup,
+      /<div class="panel-header">[\s\S]*<div class="panel-drag-slot">[\s\S]*<button[\s\S]*id="panel-drag-[^"]+"[\s\S]*class="panel-drag-handle"[\s\S]*draggable="true"[\s\S]*aria-label="Reorder [^"]+ panel"/u,
+    );
     assert.match(panel.markup, /<div class="panel-heading">[\s\S]*<h2>[\s\S]+<\/h2>[\s\S]*<p class="panel-subtitle">[\s\S]+<\/p>/u);
     assert.match(panel.markup, /<div class="panel-body/u);
   }
+});
+
+test("dashboard reorders panels through drag handles without touching backend fetch flow", async () => {
+  const harness = createDashboardHarness([
+    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+  ]);
+  await harness.flush();
+
+  const overviewGrid = harness.document.getElementById("overview-grid");
+  const detailsGrid = harness.document.getElementById("details-grid");
+  const operatorTimelineHandle = harness.document.getElementById("panel-drag-operator-timeline");
+  const trackedHistoryPanel = harness.document.getElementById("panel-tracked-history");
+  const operatorTimelinePanel = harness.document.getElementById("panel-operator-timeline");
+  assert.ok(overviewGrid);
+  assert.ok(detailsGrid);
+  assert.ok(operatorTimelineHandle);
+  assert.ok(trackedHistoryPanel);
+  assert.ok(operatorTimelinePanel);
+
+  assert.deepEqual(childIds(overviewGrid), ["panel-status", "panel-doctor"]);
+  assert.deepEqual(childIds(detailsGrid), [
+    "panel-issue-details",
+    "panel-tracked-history",
+    "panel-operator-actions",
+    "panel-live-events",
+    "panel-operator-timeline",
+  ]);
+
+  const dataTransfer = {
+    effectAllowed: "",
+    dropEffect: "",
+    setData() {},
+  };
+
+  await operatorTimelineHandle.dispatch("dragstart", { dataTransfer });
+  await trackedHistoryPanel.dispatch("dragover", {
+    dataTransfer,
+    preventDefault() {},
+  });
+  await trackedHistoryPanel.dispatch("drop", {
+    dataTransfer,
+    preventDefault() {},
+  });
+  await harness.flush();
+
+  assert.deepEqual(childIds(detailsGrid), [
+    "panel-issue-details",
+    "panel-operator-timeline",
+    "panel-tracked-history",
+    "panel-operator-actions",
+    "panel-live-events",
+  ]);
+  assert.equal(operatorTimelinePanel.classList.contains("drag-active"), false);
+  assert.deepEqual(
+    harness.fetchCalls.map((call) => call.path),
+    ["/api/status?why=true", "/api/doctor"],
+  );
+  assert.equal(harness.remainingFetches.length, 0);
 });
 
 test("dashboard keeps requeue disabled until the selected issue finishes loading", async () => {
