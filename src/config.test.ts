@@ -880,6 +880,7 @@ test("updateSetupConfig preserves unrelated fields, writes a backup, and refresh
   });
 
   const updatedDocument = JSON.parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown>;
+  assert.ok(result.backupPath, "Expected backupPath to be set when updating an existing config");
   const backupDocument = JSON.parse(await fs.readFile(result.backupPath, "utf8")) as Record<string, unknown>;
 
   assert.deepEqual(result.updatedFields, ["reviewProvider"]);
