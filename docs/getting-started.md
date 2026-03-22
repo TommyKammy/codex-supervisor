@@ -160,6 +160,44 @@ What to check after `run-once`:
 If the first pass picks the wrong issue, inspect `status` or `doctor` for the effective candidate discovery settings and then fix the issue metadata before running again. Do not treat issue creation time as the source of truth.
 If `status` or `doctor` reports corrupted JSON state, stop treating that file as a safe checkpoint. Inspect the file and recent operator actions first, then explicitly acknowledge the corruption or reset the state before trusting future runs.
 
+### Setup/readiness contract for first-run UX
+
+A first-run setup flow needs a narrower backend surface than `doctor`. The setup/readiness contract should answer what is configured, what is missing, what is invalid, and what still blocks first-run operation. Doctor is not that setup/readiness contract: `doctor` remains the broader operator diagnostic view for host checks, state-file recovery, workspace findings, and ongoing environment triage.
+
+The intended typed surface for setup/readiness is:
+
+```ts
+type SetupFieldState = "configured" | "missing" | "invalid";
+
+interface SetupReadinessReport {
+  kind: "setup_readiness";
+  ready: boolean;
+  overallStatus: "configured" | "missing" | "invalid";
+  fields: SetupReadinessField[];
+  blockers: SetupReadinessBlocker[];
+}
+
+interface SetupReadinessField {
+  key: "repoPath" | "repoSlug" | "workspaceRoot" | "codexBinary" | "reviewProvider";
+  state: SetupFieldState;
+  message: string;
+}
+
+interface SetupReadinessBlocker {
+  code: string;
+  message: string;
+  fieldKeys: SetupReadinessField["key"][];
+}
+```
+
+Minimum rules for that contract:
+
+- `fields` is the setup inventory a future UI needs for first-run guidance, not a dump of every doctor diagnostic
+- each field reports a typed state of `configured | missing | invalid`
+- `blockers` lists only the conditions that still prevent a safe first run
+- `ready` becomes `true` only when no first-run blockers remain
+- ongoing diagnostics such as GitHub auth details, corrupted state-file findings, orphaned worktree candidates, and other repair-oriented host checks stay in `doctor`
+
 ## Move from run-once to loop
 
 When one supervised pass behaves correctly, switch to the continuous loop:
