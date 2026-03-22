@@ -220,7 +220,7 @@ export function collectIssueShortcuts(status: DashboardStatusLike | null | undef
     pushShortcut(issue.issueNumber, "blocked " + (issue.blockedBy ?? ""), [issue.title].filter(Boolean).join(" "));
   }
 
-  for (const issue of Array.isArray(status?.trackedIssues) ? status.trackedIssues : []) {
+  for (const issue of collectTrackedIssues(status)) {
     pushShortcut(
       issue.issueNumber,
       "tracked " + (issue.state ?? ""),

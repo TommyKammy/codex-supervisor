@@ -1,65 +1,61 @@
-# Issue #829: Setup readiness API: expose the typed first-run backend model over HTTP
+# Issue #824: WebUI issue details hygiene: stop defaulting typed shortcuts to historical tracked done issues
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/829
-- Branch: codex/issue-829
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/824
+- Branch: codex/issue-824
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: cc67c542b99a60e072c5a3c44dfdd789130beb7d
+- Current phase: waiting_ci
+- Attempt count: 7 (implementation=5, repair=2)
+- Last head SHA: aa11199ec6471b6c8f6d95b64745a12a565f5cc2
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-22T10:06:52.527Z
+- Updated at: 2026-03-22T10:58:09Z
 
 ## Latest Codex Summary
-- Reproduced the missing setup-readiness transport with a focused HTTP server regression, then exposed the typed `SetupReadinessReport` over `GET /api/setup-readiness` using the existing JSON backend style.
-- Focused verification passed with `npx tsx --test src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts` and `npm run build` after restoring local dependencies with `npm ci`.
+Default Issue Details shortcuts still exclude tracked `done` history by default. [webui-dashboard-browser-logic.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-824/src/backend/webui-dashboard-browser-logic.ts#L191) continues to reuse the tracked-history filter when building shortcuts, so active/runnable/blocked/non-`done` tracked issues stay prioritized while completed tracked items remain available through the tracked-history panel. The focused regressions in [webui-dashboard-browser-logic.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-824/src/backend/webui-dashboard-browser-logic.test.ts#L118) and [webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-824/src/backend/webui-dashboard.test.ts#L528) stayed green after integrating `origin/main`.
+
+`origin/main` merged cleanly into `codex/issue-824` apart from `.codex-supervisor/issue-journal.md`, which conflicted because `main` carried another issue worktree's journal content. Focused merge verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts src/getting-started-docs.test.ts src/doctor.test.ts` and `npm run build`, then the merge commit `aa11199` was pushed to draft PR `#831`: https://github.com/TommyKammy/codex-supervisor/pull/831. `gh pr view 831 --json mergeStateStatus,headRefOid,isDraft,url` now reports head `aa11199ec6471b6c8f6d95b64745a12a565f5cc2` with `mergeStateStatus` `UNSTABLE`, so the dirty merge conflict is cleared and fresh CI is pending.
+
+Summary: Integrated `origin/main`, resolved the journal-only merge conflict, and pushed `aa11199` to PR #831
+State hint: waiting_ci
+Blocked reason: none
+Tests: `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts src/getting-started-docs.test.ts src/doctor.test.ts` (passed); `npm run build` (passed)
+Failure signature: none
+Next action: monitor PR #831 for refreshed CI on `aa11199` and address any follow-up if the new run fails
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining gap for #829 was only backend transport; the typed setup-readiness model already existed behind `SupervisorService.querySetupReadiness()` but the HTTP server did not expose it.
-- What changed: added a focused regression in `src/backend/supervisor-http-server.test.ts` for `GET /api/setup-readiness`, then wired that route in `src/backend/supervisor-http-server.ts` as a read-only JSON endpoint that returns the existing typed `SetupReadinessReport`.
+- Hypothesis: #824 only needed to keep filtering tracked `done` issues out of `collectIssueShortcuts()`; the base-branch conflict was limited to the per-worktree journal and did not require any behavioral change to the dashboard implementation.
+- What changed: merged `origin/main` into `codex/issue-824`, kept the issue-824 journal instead of `main`'s unrelated issue-829 journal during conflict resolution, reran the focused dashboard/browser/backend/docs verification set on the merged tree, and pushed merge commit `aa11199` to `origin/codex/issue-824`.
 - Current blocker: none
-- Next exact step: monitor draft PR #834 and address any review or CI follow-up if it appears.
-- Verification gap: none in the requested focused scope; `src/backend/supervisor-http-server.test.ts`, `src/supervisor/supervisor-service.test.ts`, and `npm run build` passed locally after `npm ci`.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/backend/supervisor-http-server.ts`
-- Rollback concern: keep the setup-readiness route read-only and continue serving the existing typed model directly instead of introducing a second transport-specific contract.
-- Last focused command: `npx tsx --test src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts`
-- Last focused failure: `missing-setup-readiness-http-endpoint`
+- Next exact step: watch PR `#831` for the new CI cycle on `aa11199` and address any failing check or review follow-up.
+- Verification gap: none in the scoped merge surface; the dashboard shortcut tests, merged HTTP/setup-readiness tests, docs test, doctor test, and `npm run build` all passed locally after the base integration.
+- Files touched: `.codex-supervisor/issue-journal.md`
+- Rollback concern: keep the tracked-history panel behavior and the setup-readiness HTTP/docs changes from `origin/main`; only the journal conflict should be branch-local.
+- Last focused command: `gh pr view 831 --json mergeStateStatus,headRefOid,isDraft,url`
+- Last focused failure: none
 - Last focused commands:
 ```bash
-npx tsx --test src/backend/supervisor-http-server.test.ts
-npx tsx --test src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts
-npm ci
+git fetch origin
+git merge --no-edit origin/main
+git checkout --ours .codex-supervisor/issue-journal.md
+npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts src/getting-started-docs.test.ts src/doctor.test.ts
 npm run build
+git commit --no-edit
+git push origin codex/issue-824
+gh pr view 831 --json mergeStateStatus,headRefOid,isDraft,url
 ```
 ### Scratchpad
-- 2026-03-22T19:09:58+09:00: committed `fe905d5` (`Expose setup readiness over HTTP`), pushed `codex/issue-829`, and opened draft PR #834 (`https://github.com/TommyKammy/codex-supervisor/pull/834`).
-- 2026-03-22T19:09:05+09:00: reproduced the transport gap with a focused `GET /api/setup-readiness` assertion in `src/backend/supervisor-http-server.test.ts`; the server returned 404 before implementation.
-- 2026-03-22T19:09:05+09:00: added a read-only `/api/setup-readiness` route in `src/backend/supervisor-http-server.ts` that returns `service.querySetupReadiness()` when available and otherwise preserves the existing `Not found.` behavior.
-- 2026-03-22T19:09:05+09:00: focused verification passed with `npx tsx --test src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts`; `npm run build` initially failed because `tsc` was missing in this worktree, so `npm ci` was run and `npm run build` then passed.
-- 2026-03-22T18:12:25+09:00: documented a typed `SetupReadinessReport` shape and first-run-only rules in `docs/getting-started.md`, then verified with `npx tsx --test src/readme-docs.test.ts src/getting-started-docs.test.ts src/agent-instructions-docs.test.ts`.
-- 2026-03-22T18:12:25+09:00: initial `npm run build` failed because `tsc` was missing in this worktree; restored dependencies with `npm ci`, then reran `npm run build` successfully.
-- 2026-03-22T18:12:25+09:00: committed `53342c7` (`Document setup readiness contract`), pushed `codex/issue-827`, and opened draft PR #832 (`https://github.com/TommyKammy/codex-supervisor/pull/832`).
-- 2026-03-22T06:48:38+00:00: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts`.
+- 2026-03-22T10:58:09Z: committed merge `aa11199` (`Merge remote-tracking branch 'origin/main' into codex/issue-824`) and pushed it to `origin/codex/issue-824`.
+- 2026-03-22T10:58:09Z: `gh pr view 831 --json mergeStateStatus,headRefOid,isDraft,url` reported head `aa11199ec6471b6c8f6d95b64745a12a565f5cc2`, draft `true`, and `mergeStateStatus` `UNSTABLE`, confirming the PR is no longer dirty and is waiting on refreshed checks.
+- 2026-03-22T10:56:27Z: `git merge --no-edit origin/main` reported a single content conflict in `.codex-supervisor/issue-journal.md`; all product code and tests from `origin/main` merged without manual intervention.
+- 2026-03-22T10:56:27Z: resolved the journal conflict by restoring the issue-824 journal content and updating it for the current merge-resolution pass instead of taking `main`'s unrelated issue-829 journal.
+- 2026-03-22T10:56:27Z: focused merge verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts src/getting-started-docs.test.ts src/doctor.test.ts` and `npm run build`.
+- 2026-03-22T08:57:53Z: fixed the remaining shortcut-strip leak by switching tracked shortcut collection to `collectTrackedIssues(status)`, which keeps tracked `done` issues out of the default Issue Details shortcuts while leaving them available behind the tracked-history toggle.
+- 2026-03-22T08:57:53Z: added focused regressions in `src/backend/webui-dashboard-browser-logic.test.ts` and `src/backend/webui-dashboard.test.ts`; `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts` and `npm run build` both passed on the local diff.
 - 2026-03-22T06:48:38+00:00: initial `npm run build` failed because `tsc` was missing in this worktree; restored dependencies with `npm ci`, reran the focused tests, and `npm run build` then passed.
-- 2026-03-22T00:00:00Z: reproduced missing rejection feedback with a confirm-decline dashboard case for prune workspaces; the browser returned early without a visible command result until declined confirmations were routed through a rejected-command renderer.
-- 2026-03-22T00:00:00Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts`, `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`, `npm ci`, and `npm run build`.
-- 2026-03-21T23:43:40Z: reran the focused verification from the stabilizing checkpoint; `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build` both passed on `f677ae4`.
-- 2026-03-21T23:44:23Z: pushed `codex/issue-802` to origin and opened draft PR #807 (`https://github.com/TommyKammy/codex-supervisor/pull/807`) after the focused verification stayed green.
-- 2026-03-21T23:07:19Z: reproduced the current #801 gap with a new dashboard test that expected typed runnable/blocked issues to expose clickable shortcuts for explain and issue-lint without using the manual number field.
-- 2026-03-21T23:07:19Z: added a read-only typed issue shortcut strip to the dashboard, deduped across active/runnable/blocked/tracked issue DTOs, and reused the existing `loadIssue()` path for inspection.
-- 2026-03-21T23:07:19Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts`, `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`, and `npm run build` after restoring local dependencies via `npm ci`.
-- 2026-03-21T23:07:19Z: committed `9921e48` (`Add typed dashboard issue shortcuts`), pushed `codex/issue-801`, and opened draft PR #806 (`https://github.com/TommyKammy/codex-supervisor/pull/806`).
-- 2026-03-22T00:00:00Z: reproduced the issue with a new dashboard harness case that supplied typed tracked/blocked/candidate-discovery data but no legacy readiness lines; the dashboard rendered `No status lines reported.`
-- 2026-03-22T00:00:00Z: refactored readiness assembly to emit typed runnable and blocked issue collections alongside the existing line-based summary, and added typed tracked issue DTOs plus typed candidate-discovery summary fields to `statusReport()`.
-- 2026-03-22T00:00:00Z: focused verification passed; `npm run build` again needed a local `npm ci` because `tsc` was missing in this worktree.
-- 2026-03-22T00:00:00Z: pushed `codex/issue-800` and opened draft PR #805 (`https://github.com/TommyKammy/codex-supervisor/pull/805`).
-- 2026-03-21T22:43:04Z: validated CodeRabbit thread `PRRT_kwDORgvdZ8517C9c`; the review comment was correct because readiness was using only `listCandidateIssues()` for blocker/predecessor checks.
-- 2026-03-21T22:43:04Z: fixed `buildReadinessSummary()` to iterate candidate issues but evaluate blockers and readiness reasons against `listAllIssues()`, and added regressions for both the summary builder and `Supervisor.statusReport()`.
-- 2026-03-21T22:43:04Z: focused verification passed with `npx tsx --test src/supervisor/supervisor-selection-readiness-summary.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/backend/supervisor-http-server.test.ts src/backend/webui-dashboard.test.ts` and `npm run build`.
