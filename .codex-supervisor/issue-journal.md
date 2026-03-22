@@ -14,7 +14,7 @@
 - Updated at: 2026-03-22T06:46:21.165Z
 
 ## Latest Codex Summary
-- Reproduced the Summary-panel noise with focused browser-logic and dashboard tests that failed because `buildStatusLines()` still rendered every typed tracked issue entry in the main Summary panel. Replaced that tracked-history dump with a stable `tracked issues=<count>` summary line, kept typed tracked issue data intact for shortcut/dedicated surfaces, and reran focused WebUI verification plus `npm run build` after restoring local dependencies with `npm ci`.
+- Reproduced the Summary-panel noise with focused browser-logic and dashboard tests that failed because `buildStatusLines()` still rendered every typed tracked issue entry in the main Summary panel. Replaced that tracked-history dump with a stable `tracked issues=<count>` summary line, kept typed tracked issue data intact for shortcut/dedicated surfaces, reran focused WebUI verification plus `npm run build` after restoring local dependencies with `npm ci`, and opened draft PR #825 (`https://github.com/TommyKammy/codex-supervisor/pull/825`).
 
 ## Active Failure Context
 - None recorded.
@@ -24,7 +24,7 @@
 - Hypothesis: the Summary panel noise came from `buildStatusLines()` prepending `formatTrackedIssues(status)`, so any long-lived supervisor state dumped full tracked history into the main operator Summary instead of keeping it focused on current decisions.
 - What changed: added failing focused assertions in the browser-logic and dashboard tests, introduced `formatTrackedIssueSummary()` so the Summary panel shows `tracked issues=<count>` instead of full tracked-history rows, and left `trackedIssues` available for typed issue shortcuts and other non-summary surfaces.
 - Current blocker: none
-- Next exact step: commit the Summary-panel hygiene change on `codex/issue-822`, then open or update a draft PR with the focused WebUI verification results.
+- Next exact step: monitor draft PR #825 for CI and review feedback, and repair only if new failures or comments appear.
 - Verification gap: none for the scoped Summary behavior; focused dashboard/browser-logic tests and `npm run build` all passed locally after restoring dependencies.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard.test.ts`
 - Rollback concern: keep the tracked-history data model unchanged; only the Summary-panel projection should stay count-only so other typed UI surfaces can still consume the full tracked issue DTOs.
@@ -41,6 +41,7 @@ npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-b
 npm run build
 ```
 ### Scratchpad
+- 2026-03-22T06:48:38+00:00: pushed `codex/issue-822` and opened draft PR #825 (`https://github.com/TommyKammy/codex-supervisor/pull/825`).
 - 2026-03-22T06:48:38+00:00: reproduced the Summary-panel noise with new focused assertions in `src/backend/webui-dashboard-browser-logic.test.ts` and `src/backend/webui-dashboard.test.ts`; both failed because `buildStatusLines()` still emitted `tracked issue #...` rows instead of a count-only tracked summary.
 - 2026-03-22T06:48:38+00:00: implemented `formatTrackedIssueSummary()` and switched `buildStatusLines()` to use it, preserving `trackedIssues` for typed issue shortcuts while removing tracked-history rows from the main Summary panel.
 - 2026-03-22T06:48:38+00:00: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts`.
