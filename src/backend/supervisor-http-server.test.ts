@@ -188,6 +188,7 @@ function createStubService(args?: {
   explainCalls?: number[];
   issueLintCalls?: number[];
   setupReadinessCalls?: number;
+  setupReadinessReport?: SetupReadinessReport;
   runOnceDryRunCalls?: boolean[];
   recoveryCalls?: { action: string; issueNumber: number }[];
   pruneCalls?: number;
@@ -218,7 +219,7 @@ function createStubService(args?: {
     candidateDiscoverySummary: "candidate_discovery fetch_window=100 strategy=paginated",
     candidateDiscoveryWarning: null,
   };
-  const setupReadinessReport: SetupReadinessReport = {
+  const setupReadinessReport: SetupReadinessReport = args?.setupReadinessReport ?? {
     kind: "setup_readiness",
     ready: false,
     overallStatus: "missing",
@@ -793,7 +794,7 @@ test("createSupervisorHttpServer serves a dashboard shell with only the safe ope
       {
         host: "127.0.0.1",
         port: address.port,
-        path: "/",
+        path: "/dashboard",
         method: "GET",
         agent: false,
       },
@@ -827,6 +828,141 @@ test("createSupervisorHttpServer serves a dashboard shell with only the safe ope
   assert.match(html, /command result/iu);
   assert.match(html, /live events/iu);
   assert.match(html, /operator timeline/iu);
+});
+
+test("createSupervisorHttpServer serves a dedicated setup shell and keeps the dashboard on its own route", async (t) => {
+  const serviceCallCounts = { setupReadinessCalls: 0 };
+  const server = createSupervisorHttpServer({
+    service: createStubService(serviceCallCounts),
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Expected server to listen on an ephemeral port.");
+  }
+  const port = address.port;
+
+  async function readHtml(path: string): Promise<string> {
+    const response = await new Promise<http.IncomingMessage>((resolve, reject) => {
+      const request = http.request(
+        {
+          host: "127.0.0.1",
+          port,
+          path,
+          method: "GET",
+          agent: false,
+        },
+        resolve,
+      );
+      request.on("error", reject);
+      request.end();
+    });
+
+    let html = "";
+    response.setEncoding("utf8");
+    for await (const chunk of response) {
+      html += chunk;
+    }
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers["content-type"], "text/html; charset=utf-8");
+    return html;
+  }
+
+  const rootHtml = await readHtml("/");
+  const setupHtml = await readHtml("/setup");
+  const dashboardHtml = await readHtml("/dashboard");
+
+  assert.equal(serviceCallCounts.setupReadinessCalls, 1);
+  assert.match(rootHtml, /<title>codex-supervisor setup<\/title>/i);
+  assert.match(rootHtml, /data-setup-root/u);
+  assert.match(rootHtml, /\/api\/setup-readiness/u);
+  assert.doesNotMatch(rootHtml, /\/api\/status\?why=true/u);
+  assert.match(setupHtml, /<title>codex-supervisor setup<\/title>/i);
+  assert.match(dashboardHtml, /<title>codex-supervisor operator dashboard<\/title>/i);
+  assert.match(dashboardHtml, /data-dashboard-root/u);
+});
+
+test("createSupervisorHttpServer keeps root on the operator dashboard after setup is configured", async (t) => {
+  const serviceArgs: { setupReadinessCalls: number; setupReadinessReport: SetupReadinessReport } = {
+    setupReadinessCalls: 0,
+    setupReadinessReport: {
+      kind: "setup_readiness",
+      ready: true,
+      overallStatus: "configured",
+      configPath: "/tmp/supervisor.config.json",
+      fields: [],
+      blockers: [],
+      hostReadiness: {
+        overallStatus: "pass",
+        checks: [],
+      },
+      providerPosture: {
+        profile: "codex",
+        provider: "codex",
+        reviewers: ["codex"],
+        signalSource: "reviewBotLogins",
+        configured: true,
+        summary: "Review provider posture uses codex via reviewBotLogins.",
+      },
+      trustPosture: {
+        trustMode: "trusted_repo_and_authors",
+        executionSafetyMode: "unsandboxed_autonomous",
+        warning: null,
+        summary: "Trusted inputs with unsandboxed autonomous execution.",
+      },
+    },
+  };
+  const server = createSupervisorHttpServer({
+    service: createStubService(serviceArgs),
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Expected server to listen on an ephemeral port.");
+  }
+
+  const response = await new Promise<http.IncomingMessage>((resolve, reject) => {
+    const request = http.request(
+      {
+        host: "127.0.0.1",
+        port: address.port,
+        path: "/",
+        method: "GET",
+        agent: false,
+      },
+      resolve,
+    );
+    request.on("error", reject);
+    request.end();
+  });
+
+  let html = "";
+  response.setEncoding("utf8");
+  for await (const chunk of response) {
+    html += chunk;
+  }
+
+  assert.equal(serviceArgs.setupReadinessCalls, 1);
+  assert.equal(response.statusCode, 200);
+  assert.match(html, /<title>codex-supervisor operator dashboard<\/title>/i);
+  assert.match(html, /data-dashboard-root/u);
+  assert.doesNotMatch(html, /data-setup-root/u);
 });
 
 test("createSupervisorHttpServer streams supervisor events over SSE with reconnect replay", async (t) => {

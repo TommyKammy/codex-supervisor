@@ -3,6 +3,7 @@ import { setImmediate as waitForTurn } from "node:timers/promises";
 import test from "node:test";
 import vm from "node:vm";
 import { renderSupervisorDashboardHtml } from "./webui-dashboard";
+import { renderSupervisorSetupHtml } from "./webui-setup";
 
 interface MockResponseLike {
   ok: boolean;
@@ -284,10 +285,10 @@ function createIssueLint(issueNumber: number) {
   };
 }
 
-function extractDashboardScript(html: string): string {
+function extractInlineScript(html: string): string {
   const match = html.match(/<script>([\s\S]+)<\/script>/u);
   if (!match) {
-    throw new Error("Expected the dashboard HTML to contain an inline script.");
+    throw new Error("Expected the HTML to contain an inline script.");
   }
   return match[1];
 }
@@ -306,6 +307,22 @@ function createDashboardHarness(
 ) {
   MockEventSource.instances.length = 0;
   const html = renderSupervisorDashboardHtml();
+  return createHtmlHarness(html, queue, options);
+}
+
+function createSetupHarness(queue: QueuedFetchResponse[]) {
+  const html = renderSupervisorSetupHtml();
+  return createHtmlHarness(html, queue);
+}
+
+function createHtmlHarness(
+  html: string,
+  queue: QueuedFetchResponse[],
+  options: {
+    confirm?: () => boolean;
+  } = {},
+) {
+  MockEventSource.instances.length = 0;
   const ids = Array.from(html.matchAll(/id="([^"]+)"/gu), (match) => match[1]);
   const document = new FakeDocument(ids);
   const fetchCalls: FetchCall[] = [];
@@ -337,7 +354,7 @@ function createDashboardHarness(
     },
   };
 
-  vm.runInNewContext(extractDashboardScript(html), context);
+  vm.runInNewContext(extractInlineScript(html), context);
 
   return {
     document,
@@ -1064,6 +1081,77 @@ test("dashboard correlates command results and subsequent supervisor events in o
   const timelineText = joinChildText(operatorTimeline);
   assert.match(timelineText, /active issue #42 -> #77 \(reserved_for_cycle\)/u);
   assert.match(timelineText, /after run-once/u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("setup shell loads typed setup readiness without mixing in dashboard status endpoints", async () => {
+  const harness = createSetupHarness([
+    {
+      path: "/api/setup-readiness",
+      response: jsonResponse({
+        kind: "setup_readiness",
+        ready: false,
+        overallStatus: "missing",
+        configPath: "/tmp/supervisor.config.json",
+        fields: [
+          {
+            key: "reviewProvider",
+            label: "Review provider",
+            state: "missing",
+            value: null,
+            message: "Configure at least one review provider before first-run setup is complete.",
+            required: true,
+            metadata: {
+              source: "config",
+              editable: true,
+              valueType: "review_provider",
+            },
+          },
+        ],
+        blockers: [
+          {
+            code: "missing_review_provider",
+            message: "Configure at least one review provider before first-run setup is complete.",
+            fieldKeys: ["reviewProvider"],
+            remediation: {
+              kind: "configure_review_provider",
+              summary: "Configure at least one review provider before first-run setup is complete.",
+              fieldKeys: ["reviewProvider"],
+            },
+          },
+        ],
+        hostReadiness: {
+          overallStatus: "pass",
+          checks: [{ name: "github_auth", status: "pass", summary: "GitHub auth ok.", details: [] }],
+        },
+        providerPosture: {
+          profile: "none",
+          provider: "none",
+          reviewers: [],
+          signalSource: "none",
+          configured: false,
+          summary: "No review provider is configured.",
+        },
+        trustPosture: {
+          trustMode: "trusted_repo_and_authors",
+          executionSafetyMode: "unsandboxed_autonomous",
+          warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+          summary: "Trusted inputs with unsandboxed autonomous execution.",
+        },
+      }),
+    },
+  ]);
+  await harness.flush();
+
+  assert.deepEqual(
+    harness.fetchCalls.map((call) => call.path),
+    ["/api/setup-readiness"],
+  );
+  assert.match(harness.document.getElementById("setup-summary")?.textContent ?? "", /config=\/tmp\/supervisor\.config\.json/u);
+  assert.match(harness.document.getElementById("setup-blockers")?.textContent ?? "", /missing_review_provider/u);
+  assert.match(harness.document.getElementById("setup-fields")?.textContent ?? "", /Review provider \[missing\] unset \| source=config \| type=review_provider/u);
+  assert.match(harness.document.getElementById("setup-host-checks")?.textContent ?? "", /github_auth \[pass\] GitHub auth ok\./u);
+  assert.match(harness.document.getElementById("setup-provider-posture")?.textContent ?? "", /No review provider is configured\./u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 

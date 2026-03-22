@@ -2,6 +2,7 @@ import http from "node:http";
 import { URL } from "node:url";
 import type { SupervisorEvent, SupervisorService } from "../supervisor";
 import { renderSupervisorDashboardHtml } from "./webui-dashboard";
+import { renderSupervisorSetupHtml } from "./webui-setup";
 
 export interface CreateSupervisorHttpServerOptions {
   service: SupervisorService;
@@ -89,6 +90,17 @@ async function handleRequest(
   }
 
   if (pathname === "/" || pathname === "/index.html") {
+    const setupReadiness = service.querySetupReadiness ? await service.querySetupReadiness() : null;
+    writeHtml(response, 200, setupReadiness && !setupReadiness.ready ? renderSupervisorSetupHtml() : renderSupervisorDashboardHtml());
+    return;
+  }
+
+  if (pathname === "/setup") {
+    writeHtml(response, 200, renderSupervisorSetupHtml());
+    return;
+  }
+
+  if (pathname === "/dashboard") {
     writeHtml(response, 200, renderSupervisorDashboardHtml());
     return;
   }
