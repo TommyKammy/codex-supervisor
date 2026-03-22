@@ -54,6 +54,12 @@ Not a fit:
 4. `repoPath`、`repoSlug`、`workspaceRoot`、`codexBinary` などを設定します。
 5. まず `run-once` と `status` で挙動を確認し、その後 `loop` に切り替えます。
 
+   local operator dashboard を使う時は同じ config で次を実行します。
+
+   ```bash
+   node dist/index.js web --config /path/to/supervisor.config.json
+   ```
+
 より詳しい初回手順、issue の書き方、運用中の判断は [docs/getting-started.ja.md](./getting-started.ja.md) を参照してください。AI agent が repo に入るときの読み順と escalation ルールは [docs/agent-instructions.ja.md](./agent-instructions.ja.md) を参照してください。
 
 ## ドキュメントマップ
@@ -62,6 +68,7 @@ Not a fit:
 - [docs/getting-started.ja.md](./getting-started.ja.md): 日本語での詳しいセットアップ、issue readiness、初回実行、運用判断
 - [docs/getting-started.md](./getting-started.md): 英語版の getting started
 - [Configuration reference](./configuration.md): config 項目、provider profile、durable memory、実行ポリシー
+- [Operator dashboard](./operator-dashboard.md): local WebUI、safe command surface、browser smoke harness
 - [Local review reference](./local-review.md): local review の role、artifact、threshold、guardrail
 - [Architecture](./architecture.md): core loop、durable state、reconciliation、安全境界
 - [Issue metadata](./issue-metadata.md): issue body の canonical fields と scheduling inputs

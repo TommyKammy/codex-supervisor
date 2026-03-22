@@ -74,6 +74,7 @@ Operator diagnostics for state:
 Codex execution policy:
 
 - `codexBinary`
+- `trustMode`, `executionSafetyMode`
 - `codexModelStrategy`, `codexModel`
 - `boundedRepairModelStrategy`, `boundedRepairModel`
 - `codexReasoningEffortByState`
@@ -89,6 +90,7 @@ Durable memory and planning:
 Issue selection and retry policy:
 
 - `issueLabel`, `issueSearch`, `skipTitlePrefixes`
+- `candidateDiscoveryFetchWindow`
 - `maxImplementationAttemptsPerIssue`, `maxRepairAttemptsPerIssue`, `maxCodexAttemptsPerIssue`
 - `timeoutRetryLimit`, `blockedVerificationRetryLimit`
 - `sameBlockerRepeatLimit`, `sameFailureSignatureRepeatLimit`
@@ -99,6 +101,7 @@ Review and merge policy:
 
 - `reviewBotLogins`
 - `humanReviewBlocksMerge`
+- `mergeCriticalRecheckSeconds`
 - `copilotReviewWaitMinutes`, `copilotReviewTimeoutAction`
 - `configuredBotRateLimitWaitMinutes`, `configuredBotInitialGraceWaitSeconds`, `configuredBotSettledWaitSeconds`
 - `localReviewEnabled`, `localReviewAutoDetect`, `localReviewRoles`
@@ -113,6 +116,27 @@ Workspace cleanup:
 - `cleanupOrphanedWorkspacesAfterHours`
 
 `maxDoneWorkspaces` and `cleanupDoneWorkspacesAfterHours` apply to tracked done workspaces. `cleanupOrphanedWorkspacesAfterHours` applies only to automatic orphaned `issue-*` worktree pruning under `workspaceRoot`, with a default 24-hour grace period. An orphaned workspace is an untracked canonical issue workspace that no longer has a live state entry. Preserve orphan workspaces that are locked, recently touched, or intentionally kept for manual recovery. If you want to prune abandoned orphan workspaces more aggressively, treat that as an explicit operator cleanup action rather than an implicit side effect of the done-workspace settings.
+
+## Operator Dashboard
+
+The local WebUI uses the same supervisor config and `SupervisorService` boundary as the CLI.
+
+Start it with:
+
+```bash
+node dist/index.js web --config /path/to/supervisor.config.json
+```
+
+The current dashboard is local-only and reads typed JSON endpoints plus the live SSE stream. It does not read the state file directly, and it does not call `gh` or `codex` from the browser.
+
+Current safe command surface:
+
+- `run-once`
+- `requeue`
+- `prune-orphaned-workspaces`
+- `reset-corrupt-json-state`
+
+Use the dashboard when you want the same operator state through a browser view, not a different execution model.
 
 ## Model and Reasoning Guidance
 
@@ -133,6 +157,7 @@ Practical guidance:
 ## Related Docs
 
 - [Getting started](./getting-started.md)
+- [Operator dashboard](./operator-dashboard.md)
 - [Architecture](./architecture.md)
 - [Issue metadata](./issue-metadata.md)
 - [Atlas example](./examples/atlaspm.md)

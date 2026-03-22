@@ -21,6 +21,8 @@
 - 管理対象 repo がローカルに clone 済み
 - 対象 repo に branch protection と CI がある
 - supervisor が issue ごとの worktree を作れる場所がある
+- autonomous execution を使うなら、その repo を trusted repo として扱える
+- issue body、review comment、関連する GitHub-authored execution text を書ける GitHub author を trusted author として扱える
 
 supervisor repo では一度ビルドしておきます。
 
@@ -28,6 +30,20 @@ supervisor repo では一度ビルドしておきます。
 npm install
 npm run build
 ```
+
+WebUI の browser smoke suite をローカルや CI で回したい時は次を使います。
+
+```bash
+npm run test:webui-smoke
+```
+
+この harness は `playwright-core` とローカルの Chrome/Chromium を使って、in-process の dashboard fixture を開きます。標準の `google-chrome`、`google-chrome-stable`、`chromium`、`chromium-browser` で browser が見つからない時は `CHROME_BIN=/path/to/browser` を設定してください。
+
+現在の実行安全ルール: GitHub-authored issue body や review comment は Codex への execution input なので trust boundary の一部です。現在の runtime は `--dangerously-bypass-approvals-and-sandbox` を使うため、trusted repo / trusted author が前提でない限り autonomous execution を有効にすべきではありません。
+
+現在の state recovery ルール: missing JSON state は empty bootstrap として扱えますが、corrupted JSON state は同じではありません。corrupted JSON state は recovery event として扱い、operator が inspect して acknowledge または reset するまで durable recovery point だと見なしてはいけません。
+
+現在の workspace recovery ルール: `ensureWorkspace()` は local issue branch、remote issue branch、`origin/<defaultBranch>` からの fresh bootstrap の順で復元を試みます。missing local branch だけを理由に、既存の remote issue branch を無視して fresh bootstrap してはいけません。
 
 ## どの運用モードを使うか
 
@@ -134,10 +150,13 @@ node dist/index.js status --config /path/to/supervisor.config.json
 
 - 選ばれた issue が想定どおりか
 - issue worktree が `workspaceRoot` 配下に作られたか
+- restore された issue workspace が、期待した local branch、または remote branch を使っていて、不要に fresh bootstrap していないか
 - issue journal に仮説、blocker、次の一手が残っているか
 - PR や state hint の変化が実際の GitHub 状態と一致しているか
+- orphaned `issue-*` worktree が tracked done cleanup と同一視されず、明示的な prune なしに消えていないか
 
-もし違う issue を拾うなら、まず想定 issue が matching open issues の最初に取得した 1 page に入っているか確認してください。そのうえで、コードではなく issue metadata を先に直してください。
+もし違う issue を拾うなら、`status` や `doctor` で effective な candidate discovery 設定を確認し、そのうえでコードではなく issue metadata を先に直してください。issue 作成順を source of truth だと思わないでください。
+もし `status` や `doctor` が corrupted JSON state を報告したら、その state file を safe checkpoint として扱うのをやめ、recent operator action と file を確認してから明示的な acknowledge または reset を行ってください。
 
 ## run-once から loop に移る
 
@@ -146,6 +165,14 @@ node dist/index.js status --config /path/to/supervisor.config.json
 ```bash
 node dist/index.js loop --config /path/to/supervisor.config.json
 ```
+
+同じ config を使って local operator dashboard を見たい時は次を使えます。
+
+```bash
+node dist/index.js web --config /path/to/supervisor.config.json
+```
+
+WebUI は CLI と同じ `SupervisorService` を使い、typed な `status`、`doctor`、`explain`、`issue-lint` を読みます。現在の safe command surface は `run-once`、`requeue`、`prune-orphaned-workspaces`、`reset-corrupt-json-state` です。
 
 通常運用では、supervisor は次を繰り返します。
 
@@ -178,7 +205,7 @@ local review はいつ有効にすべきか?
 merge 前の追加 gate を入れたい時、または外部 review の前にローカル advisory pass を入れたい時です。role、threshold、artifact、guardrail は [Local review reference](./local-review.md) を参照してください。
 
 backlog の順番がおかしい時は?
-GitHub issue の `Depends on` と `Execution order` を直し、想定 issue が matching open issues の最初に取得した 1 page に入っているか確認してください。scheduler は chat history ではなく metadata に従いますが、現状は backlog 全体ではなくその candidate page の範囲だけを見ています。
+GitHub issue の `Depends on` と `Execution order` を直してください。scheduler は chat history ではなく metadata に従い、matching する open backlog を candidate discovery fetch window ごとに page しながら backlog 全体を評価します。
 
 loop が blocked issue に当たり続ける時は?
 その issue は execution-ready ではありません。issue body を締めるか、分割するか、GSD で backlog を作り直してください。
@@ -197,5 +224,6 @@ loop が blocked issue に当たり続ける時は?
 - [README.ja](./README.ja.md): 日本語の軽い overview と導線
 - [Agent Bootstrap Protocol](./agent-instructions.ja.md): AI agent 向けの bootstrap 順序、初回確認、エスカレーション条件
 - [Configuration reference](./configuration.md): config 項目、provider setup、durable memory、実行ポリシー
+- [Operator dashboard](./operator-dashboard.md): local WebUI、panel の意味、safe command、browser smoke harness
 - [Local review reference](./local-review.md): review role、artifact、threshold、merge policy
 - [Issue metadata reference](./issue-metadata.md): execution-ready issue の構造と scheduling inputs

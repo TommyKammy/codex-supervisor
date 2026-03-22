@@ -78,6 +78,12 @@ Not a fit:
    node dist/index.js loop --config /path/to/supervisor.config.json
    ```
 
+   If you want the local operator dashboard, start the WebUI against the same config:
+
+   ```bash
+   node dist/index.js web --config /path/to/supervisor.config.json
+   ```
+
 Requirements: `gh auth status` must succeed, `codex` CLI must be installed, the managed repository should already have branch protection and CI in place, and the operator should only enable autonomous execution in a trusted repo with trusted GitHub authors. The current Codex runs use `--dangerously-bypass-approvals-and-sandbox`; see [Getting started](./docs/getting-started.md), [Configuration reference](./docs/configuration.md), and [Architecture](./docs/architecture.md) for the execution-safety boundary.
 
 State-file contract: missing JSON state is an empty bootstrap case, but corrupted JSON state is not. Treat corrupted JSON state as a recovery event, not a durable recovery point, until an operator has inspected it and performed an explicit acknowledgement or reset.
@@ -101,6 +107,7 @@ Each profile is a starting point. Copy the review provider profile you want, the
 - [AI agent handoff](./docs/agent-instructions.md): bootstrap read order, first-run checks, and escalation rules for repo-entering AI agents
 - [Getting started](./docs/getting-started.md): setup checklist, execution-ready issue flow, first-run commands, and common operator decisions
 - [Configuration reference](./docs/configuration.md): config setup, provider profiles, model/reasoning controls, durable memory, and execution policy
+- [Operator dashboard](./docs/operator-dashboard.md): WebUI launch, panel meanings, safe commands, and browser smoke verification
 - [Local review reference](./docs/local-review.md): local review policies, role selection, artifacts, thresholds, and committed guardrails
 - [Architecture](./docs/architecture.md): core loop, durable state, reconciliations, and safety boundaries
 - [Issue metadata](./docs/issue-metadata.md): canonical issue-body fields, sequencing rules, and execution-ready examples

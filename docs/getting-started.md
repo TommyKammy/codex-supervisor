@@ -168,6 +168,14 @@ When one supervised pass behaves correctly, switch to the continuous loop:
 node dist/index.js loop --config /path/to/supervisor.config.json
 ```
 
+If you want a local operator view over the same supervisor service, you can also run:
+
+```bash
+node dist/index.js web --config /path/to/supervisor.config.json
+```
+
+The WebUI uses the same `SupervisorService` boundary as the CLI. It reads the same typed status, doctor, explain, and issue-lint data, and it only exposes the current safe command set: `run-once`, `requeue`, `prune-orphaned-workspaces`, and `reset-corrupt-json-state`.
+
 In normal operation, the supervisor will:
 
 1. re-read GitHub and local state
@@ -178,6 +186,8 @@ In normal operation, the supervisor will:
 
 Use `status` whenever you want the current issue, PR, check, review, and mergeability summary without advancing the loop.
 Use `doctor` when you need host and state-file diagnostics, especially to distinguish a missing JSON state file from corrupted JSON state that requires operator recovery.
+Use `issue-lint` when you need to inspect whether one issue is actually execution-ready before trusting it as runnable work.
+Use the WebUI when you want the same operator state through a local dashboard rather than the CLI.
 
 If you use the CodeRabbit profile, `status` can first show `configured_bot_initial_grace_wait status=active provider=coderabbit pause_reason=awaiting_initial_provider_activity ... configured_wait_seconds=90 wait_until=...` right after required checks turn green. That indicates an intentional startup grace window for CodeRabbit and makes longer tuned waits obvious.
 
@@ -218,5 +228,6 @@ Stop treating the issue as execution-ready. Tighten the issue body, split the wo
 - [README](../README.md) for the overview, fit, and docs map
 - [Agent Bootstrap Protocol](./agent-instructions.md) for the AI-agent bootstrap order, first-run checks, and escalation points
 - [Configuration reference](./configuration.md) for config fields, provider setup, model policy, and durable memory
+- [Operator dashboard](./operator-dashboard.md) for the local WebUI, panel meanings, safe command surface, and smoke-test harness
 - [Local review reference](./local-review.md) for review roles, artifacts, thresholds, and merge policy
 - [Issue metadata reference](./issue-metadata.md) for execution-ready issue structure and scheduling inputs
