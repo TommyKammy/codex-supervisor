@@ -226,11 +226,12 @@ export function resolveDashboardPanelLayout(
     }
   }
 
-  const requestedVisibility = layout?.visibility ?? {};
+  const requestedVisibility: Partial<Record<DashboardPanelId, boolean>> = layout?.visibility ?? {};
   const visibility = DASHBOARD_PANEL_REGISTRY.reduce<Record<DashboardPanelId, boolean>>((accumulator, panel) => {
+    const requestedPanelVisibility = requestedVisibility[panel.id];
     accumulator[panel.id] =
-      typeof requestedVisibility[panel.id] === "boolean"
-        ? requestedVisibility[panel.id]
+      typeof requestedPanelVisibility === "boolean"
+        ? requestedPanelVisibility
         : DEFAULT_DASHBOARD_PANEL_LAYOUT.visibility[panel.id];
     return accumulator;
   }, {} as Record<DashboardPanelId, boolean>);
@@ -246,9 +247,17 @@ export function listDashboardPanels(
   layout: Partial<DashboardPanelLayoutState> | null | undefined = DEFAULT_DASHBOARD_PANEL_LAYOUT,
 ): DashboardPanelDefinition[] {
   const resolvedLayout = resolveDashboardPanelLayout(layout);
-  const panelsById = new Map(DASHBOARD_PANEL_REGISTRY.map((panel) => [panel.id, panel]));
-  return resolvedLayout.order
-    .filter((panelId) => resolvedLayout.visibility[panelId])
-    .map((panelId) => panelsById.get(panelId))
-    .filter((panel): panel is DashboardPanelDefinition => panel?.section === section);
+  const panelsById = DASHBOARD_PANEL_REGISTRY.reduce<Record<DashboardPanelId, DashboardPanelDefinition>>(
+    (accumulator, panel) => {
+      accumulator[panel.id] = panel;
+      return accumulator;
+    },
+    {} as Record<DashboardPanelId, DashboardPanelDefinition>,
+  );
+  return resolvedLayout.order.filter((panelId) => {
+    if (!resolvedLayout.visibility[panelId]) {
+      return false;
+    }
+    return panelsById[panelId].section === section;
+  }).map((panelId) => panelsById[panelId]);
 }
