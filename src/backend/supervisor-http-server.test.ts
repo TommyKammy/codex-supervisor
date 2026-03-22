@@ -672,6 +672,7 @@ test("createSupervisorHttpServer serves a dashboard shell with only the safe ope
   assert.match(html, /confirm/i);
   assert.match(html, /command result/iu);
   assert.match(html, /live events/iu);
+  assert.match(html, /operator timeline/iu);
 });
 
 test("createSupervisorHttpServer streams supervisor events over SSE with reconnect replay", async (t) => {

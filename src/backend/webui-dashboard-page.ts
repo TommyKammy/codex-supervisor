@@ -495,6 +495,18 @@ export function renderSupervisorDashboardPage(): string {
             </div>
           </div>
         </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h2>Operator timeline</h2>
+            <span class="hint">Recent commands, refreshes, and correlated live events</span>
+          </div>
+          <div class="panel-body">
+            <div id="operator-timeline" class="event-list">
+              <div class="event-item">Waiting for operator activity…</div>
+            </div>
+          </div>
+        </article>
       </section>
     </main>
 

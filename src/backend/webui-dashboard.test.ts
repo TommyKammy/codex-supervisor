@@ -292,7 +292,7 @@ function extractDashboardScript(html: string): string {
   return match[1];
 }
 
-async function flushAsyncWork(turns = 4): Promise<void> {
+async function flushAsyncWork(turns = 8): Promise<void> {
   for (let index = 0; index < turns; index += 1) {
     await waitForTurn();
   }
@@ -873,6 +873,62 @@ test("dashboard adopts the refreshed selected issue after a command-triggered st
   assert.equal(selectedIssueBadge.textContent, "#77");
   assert.equal(issueNumberInput.value, "77");
   assert.match(issueSummary.textContent, /#77 Issue 77/u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard correlates command results and subsequent supervisor events in one operator timeline", async () => {
+  const harness = createDashboardHarness([
+    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 42 })) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    { path: "/api/issues/42/explain", response: jsonResponse(createExplain(42)) },
+    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
+    {
+      path: "/api/commands/run-once",
+      method: "POST",
+      body: JSON.stringify({ dryRun: false }),
+      response: jsonResponse({
+        command: "run-once",
+        dryRun: false,
+        summary: "run-once complete",
+      }),
+    },
+    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 77 })) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    { path: "/api/issues/77/explain", response: jsonResponse(createExplain(77)) },
+    { path: "/api/issues/77/issue-lint", response: jsonResponse(createIssueLint(77)) },
+    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 77 })) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    { path: "/api/issues/77/explain", response: jsonResponse(createExplain(77)) },
+    { path: "/api/issues/77/issue-lint", response: jsonResponse(createIssueLint(77)) },
+  ]);
+  await harness.flush();
+
+  const runOnceButton = harness.document.getElementById("run-once-button");
+  const operatorTimeline = harness.document.getElementById("operator-timeline");
+  assert.ok(runOnceButton);
+  assert.ok(operatorTimeline);
+  assert.ok(harness.eventSource);
+
+  await runOnceButton.dispatch("click");
+  await harness.flush();
+
+  assert.match(joinChildText(operatorTimeline), /run-once complete/u);
+  assert.match(joinChildText(operatorTimeline), /selected issue #42 -> #77/u);
+
+  await harness.eventSource.dispatch("supervisor.active_issue.changed", {
+    type: "supervisor.active_issue.changed",
+    family: "active_issue",
+    issueNumber: 77,
+    previousIssueNumber: 42,
+    nextIssueNumber: 77,
+    reason: "reserved_for_cycle",
+    at: "2026-03-22T00:01:00.000Z",
+  });
+  await harness.flush();
+
+  const timelineText = joinChildText(operatorTimeline);
+  assert.match(timelineText, /active issue #42 -> #77 \(reserved_for_cycle\)/u);
+  assert.match(timelineText, /after run-once/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 

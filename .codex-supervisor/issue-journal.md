@@ -1,62 +1,49 @@
-# Issue #812: WebUI live-state UX: make connection health, staleness, and refresh state explicit
+# Issue #813: WebUI operator timeline: correlate safe-command results with live supervisor events
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/812
-- Branch: codex/issue-812
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/813
+- Branch: codex/issue-813
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 78862c79ca57ef6387a384956901a00361d8dd79
+- Current phase: implementing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 1ef78e311e4833af6963c3a3b441ceef3a541f9d
 - Blocked reason: none
-- Last failure signature: stale-stabilizing-no-pr-recovery-loop
-- Repeated failure signature count: 1
-- Updated at: 2026-03-22T02:58:35.160Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-22T03:28:21Z
 
 ## Latest Codex Summary
-Implemented and pushed `78862c7` (`Make dashboard live state explicit`), opened draft PR #818 (`https://github.com/TommyKammy/codex-supervisor/pull/818`), and then pushed `5f7cf3d` to refresh the issue journal handoff.
-
-The dashboard hero now exposes separate live-state badges for connection, freshness, refresh phase, and last refresh time in [src/backend/webui-dashboard-page.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-page.ts#L382). The browser script tracks those states explicitly and marks the UI stale on SSE reconnects or failed refreshes without changing backend transport semantics in [src/backend/webui-dashboard-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-browser-script.ts#L31) and [src/backend/webui-dashboard-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-browser-script.ts#L128). Focused browser/state helpers and regressions cover the live-state model in [src/backend/webui-dashboard-browser-logic.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-browser-logic.ts#L185), [src/backend/webui-dashboard-browser-logic.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-browser-logic.test.ts), and [src/backend/webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard.test.ts#L706).
-
-This turn reran the focused verification set and `npm run build`; both passed again before the branch was pushed. Draft PR #818 is open against `main`; after the journal follow-up push, GitHub reports merge state `UNSTABLE` while the `build (ubuntu-latest)` and `build (macos-latest)` checks are still in progress, and CodeRabbit is already `SUCCESS`.
-
-Summary: Pushed the live-state UX implementation, reran focused verification, opened draft PR #818, and left it waiting on CI
-State hint: waiting_ci
-Blocked reason: none
-Tests: `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts`; `npm run build`
-Failure signature: none
-Next action: monitor PR #818 checks and address any review or CI feedback
+- Reproduced the missing operator timeline with a focused dashboard harness regression, then added a browser-only combined timeline that records command results, command-triggered refresh deltas, and correlated SSE events in one feed.
+- Focused verification passed with `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build` after restoring local dependencies with `npm ci`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: #812 is purely a WebUI/browser-state gap; operators already have the raw HTTP+SSE transport, but the dashboard needs first-class browser-rendered live-state badges to distinguish connected, refreshing, stale, and failed-refresh states.
-- What changed: added focused live-state regressions in `src/backend/webui-dashboard.test.ts` plus pure helper coverage in `src/backend/webui-dashboard-browser-logic.test.ts`; extended the hero badge row in `src/backend/webui-dashboard-page.ts` with freshness and refresh badges; added a small live-state model and render path in `src/backend/webui-dashboard-browser-script.ts`; added browser-logic helpers for normalized connection/freshness labels in `src/backend/webui-dashboard-browser-logic.ts`; extended the dashboard harness `MockEventSource` to drive SSE open/error transitions; pushed `codex/issue-812`, opened draft PR #818, and pushed `5f7cf3d` to refresh the journal after PR creation.
+- Hypothesis: the missing operator narrative was entirely a dashboard/browser gap; the existing safe-command DTOs plus SSE event stream were already sufficient if the client rendered a bounded combined timeline and a concise post-command refresh delta.
+- What changed: added focused browser-logic coverage for selection-change and event summaries; added a focused dashboard regression that proves a `run-once` result and the following `supervisor.active_issue.changed` event appear in one operator timeline; extended the browser script with a bounded `operator-timeline` feed that records commands, refresh deltas, and correlated events; added the new panel to the dashboard shell and asserted it in the HTTP server page test.
 - Current blocker: none
-- Next exact step: monitor draft PR #818 while the current CI build jobs finish, then address any failures or review feedback that appear.
-- Verification gap: none beyond broader CI.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard.test.ts`
-- Rollback concern: keep the live-state model browser-only and derived from existing HTTP/SSE behavior; do not introduce backend transport semantics changes just to drive the badges.
-- Last focused command: `gh pr view 818 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,baseRefName`
+- Next exact step: commit the focused timeline checkpoint on `codex/issue-813`, push the branch, and open a draft PR early so later review or CI feedback lands on the real implementation branch.
+- Verification gap: none locally; broader CI has not run for this branch yet.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard.test.ts`
+- Rollback concern: keep the correlation logic thin and browser-only; do not turn the timeline into a backend persistence feature or widen the safe-command surface.
+- Last focused command: `npm run build`
 - Last focused failure: none
 - Last focused commands:
 ```bash
+npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts
+npx tsx --test src/backend/webui-dashboard.test.ts
 npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts
+npm ci
 npm run build
-git push -u origin codex/issue-812
-gh pr create --draft --base main --head codex/issue-812 --title "Make dashboard live state explicit" --body ...
-git add .codex-supervisor/issue-journal.md && git commit -m "Update issue 812 journal after draft PR"
-git push
-gh pr view 818 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,baseRefName
+gh pr view --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,baseRefName
 ```
 ### Scratchpad
-- 2026-03-22T12:01:53+09:00: after pushing journal commit `5f7cf3d`, draft PR #818 moved to merge state `UNSTABLE`; GitHub shows `build (ubuntu-latest)` and `build (macos-latest)` in progress and CodeRabbit `SUCCESS`.
-- 2026-03-22T12:00:23+09:00: reran focused verification with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build`; both passed before the PR push.
-- 2026-03-22T12:00:23+09:00: pushed `codex/issue-812` to origin and opened draft PR #818 (`https://github.com/TommyKammy/codex-supervisor/pull/818`); GitHub reports merge state `CLEAN`.
-- 2026-03-22T02:21:55Z: committed `95e1fc4` (`Render typed issue detail cards in WebUI`), pushed `codex/issue-811`, and opened draft PR #817 (`https://github.com/TommyKammy/codex-supervisor/pull/817`).
-- 2026-03-22T01:56:22Z: reduced the stored CodeRabbit failure excerpt in `.codex-supervisor/issue-journal.md` to a concise MD038 summary so the journal no longer preserves malformed inline code spans verbatim; the direct backtick-boundary scan is now clean, while full markdownlint still reports unrelated long-standing journal style violations.
+- 2026-03-22T03:28:21Z: reproduced #813 with a new dashboard harness test that expected a single `operator-timeline` feed to show `run-once`, the resulting selected-issue delta, and a subsequent `supervisor.active_issue.changed` SSE event in order.
+- 2026-03-22T03:28:21Z: implemented a browser-only operator timeline with concise event/selection summary helpers; the first pass exposed a browser injection bug because the new helpers referenced a non-injected formatter, and exporting/injecting `formatIssueRef()` fixed the broken refresh chain.
+- 2026-03-22T03:28:21Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build` after `npm ci` restored `tsc` in this worktree.
 - 2026-03-22T00:00:00Z: reproduced missing rejection feedback with a confirm-decline dashboard case for prune workspaces; the browser returned early without a visible command result until declined confirmations were routed through a rejected-command renderer.
 - 2026-03-22T00:00:00Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts`, `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`, `npm ci`, and `npm run build`.
 - 2026-03-21T23:43:40Z: reran the focused verification from the stabilizing checkpoint; `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build` both passed on `f677ae4`.

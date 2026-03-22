@@ -1,12 +1,15 @@
 import {
   buildStatusLines,
   collectIssueShortcuts,
+  describeCommandSelectionChange,
   formatBlockedIssues,
   formatCandidateDiscovery,
+  formatIssueRef,
   formatRunnableIssues,
   formatTrackedIssues,
   describeConnectionHealth,
   describeFreshnessState,
+  describeTimelineEvent,
   parseSelectedIssueNumber,
 } from "./webui-dashboard-browser-logic";
 
@@ -15,10 +18,13 @@ const injectedBrowserLogic = [
   formatRunnableIssues,
   formatBlockedIssues,
   formatCandidateDiscovery,
+  formatIssueRef,
   buildStatusLines,
   collectIssueShortcuts,
+  describeCommandSelectionChange,
   describeConnectionHealth,
   describeFreshnessState,
+  describeTimelineEvent,
   parseSelectedIssueNumber,
 ]
   .map((helper) => helper.toString().replace(/__name\([^;]+;\s*/gu, ""))
@@ -38,6 +44,8 @@ export function renderDashboardBrowserScript(): string {
         commandInFlight: false,
         commandResult: null,
         events: [],
+        timelineEntries: [],
+        lastCommandLabel: null,
         connectionPhase: "connecting",
         refreshPhase: "idle",
         hasSuccessfulRefresh: false,
@@ -67,6 +75,7 @@ export function renderDashboardBrowserScript(): string {
         requeueButton: document.getElementById("requeue-button"),
         pruneWorkspacesButton: document.getElementById("prune-workspaces-button"),
         resetJsonStateButton: document.getElementById("reset-json-state-button"),
+        operatorTimeline: document.getElementById("operator-timeline"),
         eventList: document.getElementById("event-list"),
       };
 
@@ -392,6 +401,42 @@ export function renderDashboardBrowserScript(): string {
         }
       }
 
+      function renderOperatorTimeline() {
+        if (!elements.operatorTimeline) {
+          return;
+        }
+        elements.operatorTimeline.innerHTML = "";
+        const entries =
+          state.timelineEntries.length > 0
+            ? state.timelineEntries
+            : [
+                {
+                  kind: "idle",
+                  at: "",
+                  summary: "Waiting for operator activity…",
+                  detail: "Run a safe command or wait for live supervisor events.",
+                  commandLabel: null,
+                },
+              ];
+        for (const entry of entries) {
+          const card = document.createElement("div");
+          card.className = "event-item";
+
+          const meta = document.createElement("div");
+          meta.className = "event-meta";
+          meta.textContent = [entry.kind, entry.commandLabel ? "after " + entry.commandLabel : "", entry.at || ""]
+            .filter(Boolean)
+            .join(" | ");
+
+          const body = document.createElement("div");
+          body.textContent = [entry.summary, entry.detail].filter(Boolean).join("\\n");
+
+          card.appendChild(meta);
+          card.appendChild(body);
+          elements.operatorTimeline.appendChild(card);
+        }
+      }
+
       function renderSelectedIssue() {
         setText(elements.selectedIssueBadge, state.selectedIssueNumber ? "#" + state.selectedIssueNumber : "none");
         if (elements.issueNumberInput) {
@@ -427,6 +472,12 @@ export function renderDashboardBrowserScript(): string {
         setCode(elements.commandResult, JSON.stringify(state.commandResult, null, 2));
       }
 
+      function pushTimeline(entry) {
+        state.timelineEntries.unshift(entry);
+        state.timelineEntries = state.timelineEntries.slice(0, 40);
+        renderOperatorTimeline();
+      }
+
       function rejectCommand(action, summary, status) {
         state.commandResult = {
           action,
@@ -434,6 +485,14 @@ export function renderDashboardBrowserScript(): string {
           summary,
           status,
         };
+        state.lastCommandLabel = null;
+        pushTimeline({
+          kind: "command",
+          at: new Date().toISOString(),
+          summary: status || summary || action,
+          detail: JSON.stringify(state.commandResult, null, 2),
+          commandLabel: null,
+        });
         renderCommandResult();
       }
 
@@ -539,13 +598,29 @@ export function renderDashboardBrowserScript(): string {
 
       async function runCommand(args) {
         const previousStatus = elements.commandStatus ? elements.commandStatus.textContent : "";
+        const previousSelectedIssueNumber = state.selectedIssueNumber;
         setText(elements.commandStatus, "Running " + args.label + "...");
         try {
           const result = await postCommand(args.path, args.body);
           state.commandResult = result;
+          state.lastCommandLabel = args.label;
+          pushTimeline({
+            kind: "command",
+            at: new Date().toISOString(),
+            summary: state.commandResult.status || state.commandResult.summary || args.label,
+            detail: JSON.stringify(state.commandResult, null, 2),
+            commandLabel: null,
+          });
           renderCommandResult();
           try {
             await refreshStatusAndDoctor();
+            pushTimeline({
+              kind: "refresh",
+              at: new Date().toISOString(),
+              summary: describeCommandSelectionChange(previousSelectedIssueNumber, state.selectedIssueNumber),
+              detail: "Refreshed /api/status and /api/doctor after " + args.label + ".",
+              commandLabel: args.label,
+            });
             const issueNumberToLoad = state.selectedIssueNumber ?? state.loadedIssueNumber;
             if (issueNumberToLoad !== null) {
               await loadIssue(issueNumberToLoad);
@@ -555,11 +630,19 @@ export function renderDashboardBrowserScript(): string {
           }
         } catch (error) {
           setText(elements.commandStatus, previousStatus || "Command failed.");
+          state.lastCommandLabel = null;
           state.commandResult = {
             action: args.label,
             outcome: "rejected",
             summary: error instanceof Error ? error.message : String(error),
           };
+          pushTimeline({
+            kind: "command",
+            at: new Date().toISOString(),
+            summary: state.commandResult.summary || "Command failed.",
+            detail: JSON.stringify(state.commandResult, null, 2),
+            commandLabel: null,
+          });
           renderCommandResult();
         }
       }
@@ -606,6 +689,13 @@ export function renderDashboardBrowserScript(): string {
             parsed = JSON.parse(rawEvent.data);
           } catch {}
           pushEvent(parsed);
+          pushTimeline({
+            kind: "event",
+            at: parsed.at || new Date().toISOString(),
+            summary: describeTimelineEvent(parsed),
+            detail: JSON.stringify(parsed, null, 2),
+            commandLabel: state.lastCommandLabel,
+          });
           try {
             await refreshStatusAndDoctor();
             const issueNumberToLoad = state.selectedIssueNumber ?? state.loadedIssueNumber;
@@ -707,6 +797,7 @@ export function renderDashboardBrowserScript(): string {
         renderCommandResult();
         wireEvents();
         renderEvents();
+        renderOperatorTimeline();
       }
 
       void bootstrap();
