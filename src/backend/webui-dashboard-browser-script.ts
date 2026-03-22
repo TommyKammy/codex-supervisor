@@ -113,9 +113,14 @@ export function renderDashboardBrowserScript(): string {
         }
 
         const doctor = state.doctor;
-        setText(elements.doctorOverall, doctor.overallStatus);
-        elements.doctorOverall.className = "metric " + metricClass(doctor.overallStatus);
+        if (elements.doctorOverall) {
+          setText(elements.doctorOverall, doctor.overallStatus);
+          elements.doctorOverall.className = "metric " + metricClass(doctor.overallStatus);
+        }
         const checks = doctor.checks || [];
+        if (!elements.doctorChecks) {
+          return;
+        }
         elements.doctorChecks.innerHTML = "";
         for (const check of checks) {
           const item = document.createElement("li");
@@ -200,6 +205,9 @@ export function renderDashboardBrowserScript(): string {
       }
 
       function renderEvents() {
+        if (!elements.eventList) {
+          return;
+        }
         elements.eventList.innerHTML = "";
         const events = state.events.length > 0 ? state.events : [{ type: "idle", at: "", summary: "Waiting for live events…" }];
         for (const event of events) {
