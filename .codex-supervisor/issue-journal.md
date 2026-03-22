@@ -5,25 +5,25 @@
 - Branch: codex/issue-849
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: implementing
+- Current phase: draft_pr
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 54de8003f0e2a59d1fe159db80e9edd8a43bec02
+- Last head SHA: 60684654002d8839c21aa011398efbbf76e577de
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-22T23:03:27Z
+- Updated at: 2026-03-22T23:04:46Z
 
 ## Latest Codex Summary
 Reproduced the missing browser persistence with a new reload regression in `src/backend/webui-dashboard.test.ts`: a drag reorder survived within one runtime but reset after a fresh harness with the same `localStorage`.
 
 Implemented browser-local panel layout persistence by restoring a saved order from `localStorage`, normalizing it against the current typed registry, and persisting the normalized order after layout renders. Added focused browser-logic coverage for restore, merge, and invalid-storage fallback.
 
-Summary: Added safe browser-local dashboard panel layout persistence and passed focused verification
-State hint: local_review
+Summary: Added safe browser-local dashboard panel layout persistence, pushed `codex/issue-849`, and opened draft PR `#859`
+State hint: draft_pr
 Blocked reason: none
 Tests: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`
 Failure signature: none
-Next action: commit the persistence checkpoint, push `codex/issue-849`, and open a draft PR
+Next action: monitor PR `#859` for CI and review feedback
 
 ## Active Failure Context
 - None recorded.
@@ -33,7 +33,7 @@ Next action: commit the persistence checkpoint, push `codex/issue-849`, and open
 - Hypothesis: browser-local persistence only needs a typed order payload plus strict normalization on restore, so a small storage wrapper around the existing panel-order logic should satisfy reload persistence without introducing brittle state coupling.
 - What changed: added `restoreDashboardPanelOrder()` and `serializeDashboardPanelOrder()` in `src/backend/webui-dashboard-browser-logic.ts`; wired `src/backend/webui-dashboard-browser-script.ts` to read/write `window.localStorage` with guarded access and to persist the normalized order after rendering; extended `src/backend/webui-dashboard-browser-logic.test.ts` to cover restore, merge, and invalid-storage fallback; and added a runtime reload regression in `src/backend/webui-dashboard.test.ts` using a shared fake browser storage.
 - Current blocker: none
-- Next exact step: commit the persistence checkpoint, push the branch, and open a draft PR for issue `#849`.
+- Next exact step: monitor CI and review feedback on PR `#859`, then address any follow-up if needed.
 - Verification gap: none on the focused persistence scope; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts` passed after the storage restore/persist helpers and reload regression were added.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard.test.ts`
 - Rollback concern: low; the behavior change is browser-local only and falls back to the default typed layout if storage is missing, malformed, or outdated.
@@ -60,6 +60,7 @@ git rev-parse HEAD
 git status --short --branch
 ```
 ### Scratchpad
+- 2026-03-22T23:04:46Z: committed the persistence checkpoint as `6068465`, pushed `codex/issue-849`, and opened draft PR `#859`.
 - 2026-03-22T23:03:27Z: reproduced the missing reload persistence with a shared-storage dashboard regression, added guarded localStorage restore/persist helpers for the typed panel order, added focused restore/fallback unit coverage, and reran `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`.
 - 2026-03-22T22:37:34Z: fixed the CodeRabbit review threads locally by rejecting cross-lane panel drops before mutating browser layout state, adding a focused cross-lane drag regression, sanitizing workstation-local paths from the issue journal, and rerunning `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`.
 - 2026-03-22T22:21:32Z: reran `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`, pushed `codex/issue-848`, and opened draft PR `#858` for the drag-reorder checkpoint.
