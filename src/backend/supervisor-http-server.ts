@@ -1,5 +1,6 @@
 import http from "node:http";
 import { URL } from "node:url";
+import type { SetupConfigPreviewSelectableReviewProviderProfile } from "../setup-config-preview";
 import type { SupervisorEvent, SupervisorService } from "../supervisor";
 import { renderSupervisorDashboardHtml } from "./webui-dashboard";
 import { renderSupervisorSetupHtml } from "./webui-setup";
@@ -125,6 +126,20 @@ async function handleRequest(
     return;
   }
 
+  if (pathname === "/api/setup-config-preview") {
+    if (!service.querySetupConfigPreview) {
+      writeJson(response, 404, { error: "Not found." });
+      return;
+    }
+    const reviewProviderProfile = parseReviewProviderProfileQuery(url.searchParams.get("reviewProviderProfile"));
+    if (url.searchParams.get("reviewProviderProfile") !== null && reviewProviderProfile === null) {
+      writeJson(response, 400, { error: "reviewProviderProfile must be one of none, copilot, codex, or coderabbit." });
+      return;
+    }
+    writeJson(response, 200, await service.querySetupConfigPreview({ reviewProviderProfile: reviewProviderProfile ?? undefined }));
+    return;
+  }
+
   if (pathname === "/api/events") {
     const lastEventId = parseLastEventId(request.headers["last-event-id"]);
     if (lastEventId === null && request.headers["last-event-id"] !== undefined) {
@@ -203,6 +218,10 @@ async function handleCommandRequest(
 
 function parseBooleanQueryValue(value: string | null): boolean {
   return value === "1" || value === "true";
+}
+
+function parseReviewProviderProfileQuery(value: string | null): SetupConfigPreviewSelectableReviewProviderProfile | null {
+  return value === "none" || value === "copilot" || value === "codex" || value === "coderabbit" ? value : null;
 }
 
 function parseLastEventId(value: string | string[] | undefined): number | null {

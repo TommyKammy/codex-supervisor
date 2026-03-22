@@ -3,6 +3,7 @@ import http from "node:http";
 import test from "node:test";
 import type { DoctorDiagnostics } from "../doctor";
 import type { SetupReadinessReport } from "../setup-readiness";
+import type { SetupConfigPreview } from "../setup-config-preview";
 import { buildActiveIssueChangedEvent, type SupervisorEvent, type SupervisorEventSink } from "../supervisor";
 import type { SupervisorService } from "../supervisor";
 import { createSupervisorHttpServer } from "./supervisor-http-server";
@@ -189,6 +190,8 @@ function createStubService(args?: {
   issueLintCalls?: number[];
   setupReadinessCalls?: number;
   setupReadinessReport?: SetupReadinessReport;
+  setupConfigPreviewCalls?: Array<string | null>;
+  setupConfigPreview?: SetupConfigPreview;
   runOnceDryRunCalls?: boolean[];
   recoveryCalls?: { action: string; issueNumber: number }[];
   pruneCalls?: number;
@@ -288,6 +291,64 @@ function createStubService(args?: {
       executionSafetyMode: "unsandboxed_autonomous",
       warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
       summary: "Trusted inputs with unsandboxed autonomous execution.",
+    },
+  };
+  const setupConfigPreview: SetupConfigPreview = args?.setupConfigPreview ?? {
+    kind: "setup_config_preview",
+    mode: "patch",
+    configPath: "/tmp/supervisor.config.json",
+    writesConfig: false,
+    selectedReviewProviderProfile: "codex",
+    supportedReviewProviderProfiles: [
+      {
+        id: "none",
+        label: "No provider selected yet",
+        reviewBotLogins: [],
+      },
+      {
+        id: "copilot",
+        label: "GitHub Copilot",
+        reviewBotLogins: ["copilot-pull-request-reviewer"],
+      },
+      {
+        id: "codex",
+        label: "Codex Connector",
+        reviewBotLogins: ["chatgpt-codex-connector"],
+      },
+      {
+        id: "coderabbit",
+        label: "CodeRabbit",
+        reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      },
+    ],
+    preservedUnknownFields: ["experimentalFlag"],
+    document: {
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "/tmp/worktrees",
+      stateFile: "/tmp/state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      experimentalFlag: true,
+    },
+    fieldChanges: [
+      {
+        key: "reviewProvider",
+        label: "Review provider",
+        currentValue: null,
+        previewValue: ["chatgpt-codex-connector"],
+        source: "selected_review_provider_profile",
+        state: "suggested",
+        summary: "Applies the Codex Connector review provider profile.",
+      },
+    ],
+    validation: {
+      status: "ready",
+      missingRequiredFields: [],
+      invalidFields: [],
+      error: null,
     },
   };
 
@@ -430,6 +491,10 @@ function createStubService(args?: {
         args.setupReadinessCalls = (args.setupReadinessCalls ?? 0) + 1;
       }
       return setupReadinessReport;
+    },
+    querySetupConfigPreview: async ({ reviewProviderProfile }) => {
+      args?.setupConfigPreviewCalls?.push(reviewProviderProfile ?? null);
+      return setupConfigPreview;
     },
     subscribeEvents: (listener) => {
       if (args) {
@@ -598,6 +663,70 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
       executionSafetyMode: "unsandboxed_autonomous",
       warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
       summary: "Trusted inputs with unsandboxed autonomous execution.",
+    },
+  });
+
+  const setupConfigPreviewResponse = await readJson({
+    server,
+    path: "/api/setup-config-preview?reviewProviderProfile=codex",
+  });
+  assert.equal(setupConfigPreviewResponse.statusCode, 200);
+  assert.deepEqual(setupConfigPreviewResponse.body, {
+    kind: "setup_config_preview",
+    mode: "patch",
+    configPath: "/tmp/supervisor.config.json",
+    writesConfig: false,
+    selectedReviewProviderProfile: "codex",
+    supportedReviewProviderProfiles: [
+      {
+        id: "none",
+        label: "No provider selected yet",
+        reviewBotLogins: [],
+      },
+      {
+        id: "copilot",
+        label: "GitHub Copilot",
+        reviewBotLogins: ["copilot-pull-request-reviewer"],
+      },
+      {
+        id: "codex",
+        label: "Codex Connector",
+        reviewBotLogins: ["chatgpt-codex-connector"],
+      },
+      {
+        id: "coderabbit",
+        label: "CodeRabbit",
+        reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      },
+    ],
+    preservedUnknownFields: ["experimentalFlag"],
+    document: {
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "/tmp/worktrees",
+      stateFile: "/tmp/state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      experimentalFlag: true,
+    },
+    fieldChanges: [
+      {
+        key: "reviewProvider",
+        label: "Review provider",
+        currentValue: null,
+        previewValue: ["chatgpt-codex-connector"],
+        source: "selected_review_provider_profile",
+        state: "suggested",
+        summary: "Applies the Codex Connector review provider profile.",
+      },
+    ],
+    validation: {
+      status: "ready",
+      missingRequiredFields: [],
+      invalidFields: [],
+      error: null,
     },
   });
 

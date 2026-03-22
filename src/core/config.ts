@@ -41,6 +41,34 @@ export interface ConfigLoadSummary {
   trustDiagnostics: TrustDiagnosticsSummary | null;
 }
 
+function buildConfigLoadSummaryFromDocument(raw: Record<string, unknown>, resolvedPath: string): ConfigLoadSummary {
+  const missingRequiredFields = collectMissingRequiredFields(raw);
+
+  try {
+    const config = parseSupervisorConfigDocument(raw, resolvedPath);
+    return {
+      configPath: resolvedPath,
+      status: "ready",
+      missingRequiredFields: [],
+      invalidFields: [],
+      error: null,
+      config,
+      trustDiagnostics: summarizeTrustDiagnostics(config),
+    };
+  } catch (error) {
+    const invalidField = extractInvalidFieldName(error);
+    return {
+      configPath: resolvedPath,
+      status: "invalid_config",
+      missingRequiredFields,
+      invalidFields: invalidField && !missingRequiredFields.includes(invalidField) ? [invalidField] : [],
+      error: error instanceof Error ? error.message : String(error),
+      config: null,
+      trustDiagnostics: null,
+    };
+  }
+}
+
 function resolveCommandLikeValue(baseDir: string, value: string): string {
   if (path.isAbsolute(value)) {
     return value;
@@ -265,31 +293,11 @@ export function loadConfigSummary(configPath?: string): ConfigLoadSummary {
     };
   }
 
-  const missingRequiredFields = collectMissingRequiredFields(raw);
+  return buildConfigLoadSummaryFromDocument(raw, resolvedPath);
+}
 
-  try {
-    const config = loadConfig(resolvedPath);
-    return {
-      configPath: resolvedPath,
-      status: "ready",
-      missingRequiredFields: [],
-      invalidFields: [],
-      error: null,
-      config,
-      trustDiagnostics: summarizeTrustDiagnostics(config),
-    };
-  } catch (error) {
-    const invalidField = extractInvalidFieldName(error);
-    return {
-      configPath: resolvedPath,
-      status: "invalid_config",
-      missingRequiredFields,
-      invalidFields: invalidField && !missingRequiredFields.includes(invalidField) ? [invalidField] : [],
-      error: error instanceof Error ? error.message : String(error),
-      config: null,
-      trustDiagnostics: null,
-    };
-  }
+export function loadConfigSummaryFromDocument(raw: Record<string, unknown>, configPath: string): ConfigLoadSummary {
+  return buildConfigLoadSummaryFromDocument(raw, resolveConfigPath(configPath));
 }
 
 export function loadConfig(configPath?: string): SupervisorConfig {
@@ -299,6 +307,10 @@ export function loadConfig(configPath?: string): SupervisorConfig {
   }
 
   const raw = parseJson<Record<string, unknown>>(fs.readFileSync(resolvedPath, "utf8"), resolvedPath);
+  return parseSupervisorConfigDocument(raw, resolvedPath);
+}
+
+function parseSupervisorConfigDocument(raw: Record<string, unknown>, resolvedPath: string): SupervisorConfig {
   const configDir = path.dirname(resolvedPath);
   const defaultLocalReviewConfidenceThreshold =
     typeof raw.localReviewConfidenceThreshold === "number" &&

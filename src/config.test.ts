@@ -6,6 +6,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { loadConfig, loadConfigSummary, summarizeCadenceDiagnostics } from "./core/config";
 import { SupervisorConfig } from "./core/types";
+import { buildSetupConfigPreview } from "./setup-config-preview";
 
 test("loadConfig leaves bare codexBinary values unresolved for PATH lookup", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
@@ -803,4 +804,41 @@ test("getting started links to focused configuration and local review references
   assert.match(issueMetadata, /2 of 4/m);
   assert.match(issueMetadata, /## Acceptance criteria/m);
   assert.match(issueMetadata, /## Verification/m);
+});
+
+test("buildSetupConfigPreview preserves unknown fields and leaves the config file untouched", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-preview-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  const originalDocument = {
+    repoPath: ".",
+    repoSlug: "owner/repo",
+    defaultBranch: "main",
+    experimentalFlag: {
+      keep: true,
+    },
+    reviewBotLogins: ["existing-review-bot"],
+  };
+
+  await fs.writeFile(configPath, JSON.stringify(originalDocument, null, 2), "utf8");
+  const before = await fs.readFile(configPath, "utf8");
+
+  const preview = buildSetupConfigPreview({
+    configPath,
+    reviewProviderProfile: "codex",
+  });
+
+  const after = await fs.readFile(configPath, "utf8");
+
+  assert.equal(preview.kind, "setup_config_preview");
+  assert.equal(preview.mode, "patch");
+  assert.equal(preview.writesConfig, false);
+  assert.equal(preview.selectedReviewProviderProfile, "codex");
+  assert.deepEqual(preview.preservedUnknownFields, ["experimentalFlag"]);
+  assert.deepEqual(preview.document.experimentalFlag, { keep: true });
+  assert.deepEqual(preview.document.reviewBotLogins, ["chatgpt-codex-connector"]);
+  assert.equal(preview.validation.status, "ready");
+  assert.equal(before, after);
 });
