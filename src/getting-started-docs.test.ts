@@ -66,6 +66,16 @@ test("getting-started explains paginated candidate discovery across the open bac
   assert.match(japaneseGettingStarted, /最初の page の外にあるだけで選定対象から見えなくなることはありません/i);
 });
 
+test("getting-started defines setup readiness as a typed first-run contract distinct from doctor", async () => {
+  const content = await readGettingStarted();
+
+  assert.match(content, /setup\/readiness contract/i);
+  assert.match(content, /doctor is not that setup\/readiness contract/i);
+  assert.match(content, /kind: "setup_readiness"/);
+  assert.match(content, /configured \| missing \| invalid/);
+  assert.match(content, /what is configured, what is missing, what is invalid, and what still blocks first-run operation/i);
+});
+
 test("japanese docs keep overview and getting-started responsibilities separate", async () => {
   const [overview, gettingStarted] = await Promise.all([
     readJapaneseOverview(),
