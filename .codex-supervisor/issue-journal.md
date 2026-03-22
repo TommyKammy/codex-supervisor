@@ -6,28 +6,28 @@
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 3 (implementation=1, repair=2)
-- Last head SHA: ae6065545100f918aeef99d35f10a2e1af1f6f1a
+- Attempt count: 4 (implementation=1, repair=3)
+- Last head SHA: 405288538053e4775ee6c1ceda3eb2a307ffaf79
 - Blocked reason: none
 - Last failure signature: PRRT_kwDORgvdZ8518HEe|PRRT_kwDORgvdZ8518HEj
 - Repeated failure signature count: 1
-- Updated at: 2026-03-22T03:57:50.540Z
+- Updated at: 2026-03-22T04:00:07Z
 
 ## Latest Codex Summary
-Replaced the sticky timeline label in [webui-dashboard-browser-script.ts](src/backend/webui-dashboard-browser-script.ts) with an expiring issue-scoped correlation token, so SSE timeline rows only render `after <command>` when their event issue ids match the command context. I added the event-id extraction helper in [webui-dashboard-browser-logic.ts](src/backend/webui-dashboard-browser-logic.ts), plus regressions in [webui-dashboard-browser-logic.test.ts](src/backend/webui-dashboard-browser-logic.test.ts) and [webui-dashboard.test.ts](src/backend/webui-dashboard.test.ts) that prove unrelated later events stay unlabeled.
+Normalized `describeCommandSelectionChange()` in [webui-dashboard-browser-logic.ts](src/backend/webui-dashboard-browser-logic.ts) so `null` and `undefined` both render as `none` before equality comparison, which prevents misleading `selected issue none -> none` timeline summaries. I added a focused regression in [webui-dashboard-browser-logic.test.ts](src/backend/webui-dashboard-browser-logic.test.ts) for the `undefined`/`null` case and replaced the remaining absolute worktree links in [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) with repo-relative paths.
 
-Pushed `codex/issue-813` with `738b0fd` for the code fix and `ae60655` for the journal sync. PR #819 is still open on head `ae6065545100f918aeef99d35f10a2e1af1f6f1a`; `mergeStateStatus` is still `UNSTABLE`. The issue journal was updated in [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md). Local worktree is clean apart from the pre-existing untracked `.codex-supervisor/replay/` directory.
+Committed `4052885` (`Fix dashboard selection change normalization`) and pushed `codex/issue-813`. `gh pr view 819 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,headRefOid,baseRefName` now shows PR #819 open on head `405288538053e4775ee6c1ceda3eb2a307ffaf79` with merge state `UNSTABLE`. The worktree is clean apart from the pre-existing untracked `.codex-supervisor/replay/` directory.
 
-Summary: Tightened WebUI timeline command/event correlation with an expiring issue-scoped token, added regressions, updated the journal, and pushed PR #819 on head `ae60655`
-State hint: addressing_review
+Summary: Fixed the remaining review threads by normalizing selection-change refs and removing absolute journal links, then pushed PR #819 on head `4052885`
+State hint: waiting_ci
 Blocked reason: none
-Tests: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`; `npx tsx --test src/backend/supervisor-http-server.test.ts`; `npm run build`
-Failure signature: PRRT_kwDORgvdZ8518BXw
-Next action: monitor PR #819 for refreshed review-thread state and CI/check settlement on head `ae60655`
+Tests: `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts`; `npm run build`
+Failure signature: PRRT_kwDORgvdZ8518HEe|PRRT_kwDORgvdZ8518HEj
+Next action: monitor PR #819 for refreshed review-thread state and CI/check settlement on head `4052885`
 
 ## Active Failure Context
 - Category: review
-- Summary: 2 unresolved automated review thread(s) remain.
+- Summary: 2 automated review thread(s) are still open on GitHub, but both were fixed locally and pushed in `4052885`.
 - Reference: https://github.com/TommyKammy/codex-supervisor/pull/819#discussion_r2970806332
 - Details:
   - .codex-supervisor/issue-journal.md:17 _⚠️ Potential issue_ | _🟠 Major_ **Replace absolute local paths with repo-relative paths.** Line 17 embeds `/home/tommy/...` links. This is non-portable for collaborators and leaks local workstation/user identifiers into repository history. <details> <summary>Suggested patch</summary> ```diff -Added a browser-only operator timeline that renders safe-command results, post-command refresh deltas, and correlated SSE events in one bounded feed. The main behavior lives in [webui-dashboard-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-813/src/backend/webui-dashboard-browser-script.ts) with summary helpers in [webui-dashboard-browser-logic.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-813/src/backend/webui-dashboard-browser-logic.ts) and the new panel in [webui-dashboard-page.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-813/src/backend/webui-dashboard-page.ts). Focused regressions were added in [webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-813/src/backend/webui-dashboard.test.ts), [webui-dashboard-browser-logic.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-813/src/backend/webui-dashboard-browser-logic.test.ts), and [supervisor-http-server.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-813/src/backend/supervisor-http-server.test.ts). +Added a browser-only operator timeline that renders safe-command results, post-command refresh deltas, and correlated SSE events in one bounded feed. The main behavior lives in [webui-dashboard-browser-script.ts](src/backend/webui-dashboard-browser-script.ts) with summary helpers in [webui-dashboard-browser-logic.ts](src/backend/webui-dashboard-browser-logic.ts) and the new panel in [webui-dashboard-page.ts](src/backend/webui-dashboard-page.ts). Focused regressions were added in [webui-dashboard.test.ts](src/backend/webui-dashboard.test.ts), [webui-dashboard-browser-logic.test.ts](src/backend/webui-dashboard-browser-logic.test.ts), and [supervisor-http-server.test.ts](src/backend/supervisor-http-server.test.ts). ``` </details> <!-- suggestion_start --> <details> <summary>📝 Committable suggestion</summary> > ‼️ **IMPORTANT** > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements. ```suggestion Added a browser-only operator timeline that renders safe-command results, post-command refresh deltas, and correlated SSE events in one bounded feed. The main behavior lives in [webui-dashboard-browser-script.ts](src/backend/webui-dashboard-browser-script.ts) with summary helpers in [webui-dashboard-browser-logic.ts](src/backend/webui-dashboard-browser-logic.ts) and the new panel in [webui-dashboard-page.ts](src/backend/webui-dashboard-page.ts). Focused regressions were added in [webui-dashboard.test.ts](src/backend/webui-dashboard.test.ts), [webui-dashboard-browser-logic.test.ts](src/backend/webui-dashboard-browser-logic.test.ts), and [supervisor-http-server.test.ts](src/backend/supervisor-http-server.test.ts). ``` </details> <!-- suggestion_end --> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In @.codex-supervisor/issue-journal.md at line 17, The markdown entry contains absolute local paths (/home/tommy/...) in the journal text; replace those with repo-relative paths to avoid leaking local user/workstation info. Edit the line that mentions webui-dashboard-browser-script.ts, webui-dashboard-browser-logic.ts, and webui-dashboard-page.ts so each file link uses a repo-relative path (e.g. src/backend/...) instead of the full /home/tommy/... path and update any other absolute paths on that line to the corresponding repository-relative locations. ``` </details> <!-- fingerprinting:phantom:poseidon:hawk --> <!-- This is an auto-generated comment by CodeRabbit -->
@@ -35,22 +35,24 @@ Next action: monitor PR #819 for refreshed review-thread state and CI/check sett
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining review thread was correct because the browser script kept one sticky command label in shared state and applied it to every later SSE row regardless of issue scope.
-- What changed: replaced the sticky timeline label with an expiring `commandCorrelation` token keyed to command label plus relevant issue ids; seeded it from the pre-command selected issue and explicit command issue number, extended it after the refresh picks a new selected issue, and only rendered `after <command>` on SSE entries whose event issue ids intersect the token. Added a pure browser-logic regression for event issue-id extraction plus a dashboard regression that proves an unrelated later recovery event stays unlabeled.
+- Hypothesis: both remaining CodeRabbit comments were correct because the journal summary still embedded absolute worktree paths and `describeCommandSelectionChange()` treated `null` and `undefined` as different even though both format to `none`.
+- What changed: normalized selection-change comparisons by comparing formatted refs first, added a regression that covers `undefined` -> `null`, and converted the latest summary links in the issue journal to repo-relative paths. Committed the fix as `4052885` (`Fix dashboard selection change normalization`) and pushed `codex/issue-813`.
 - Current blocker: none
-- Next exact step: monitor PR #819 (`https://github.com/TommyKammy/codex-supervisor/pull/819`) for thread resolution and merge-state changes after pushed commit `738b0fd`.
-- Verification gap: none locally for the browser correlation path; the remaining uncertainty is whether GitHub review state and checks settle cleanly on the updated head.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard.test.ts`
-- Rollback concern: keep the correlation logic thin and browser-only; do not turn the timeline into a backend persistence feature or widen the safe-command surface.
+- Next exact step: monitor PR #819 (`https://github.com/TommyKammy/codex-supervisor/pull/819`) for review-thread refresh and CI/check settlement on head `4052885`.
+- Verification gap: none locally; remaining uncertainty is limited to GitHub updating the review threads and checks for the new head.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`
+- Rollback concern: keep the fix limited to display normalization and journal portability; do not widen the timeline behavior beyond the already-shipped browser correlation change.
 - Last focused command: `gh pr view 819 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,headRefOid,baseRefName`
-- Last focused failure: `PRRT_kwDORgvdZ8518BXw`
+- Last focused failure: `PRRT_kwDORgvdZ8518HEe|PRRT_kwDORgvdZ8518HEj`
 - Last focused commands:
 ```bash
-npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts
-npx tsx --test src/backend/supervisor-http-server.test.ts
+npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts
 npm run build
+git push origin codex/issue-813
+gh pr view 819 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,headRefOid,baseRefName
 ```
 ### Scratchpad
+- 2026-03-22T04:00:07Z: validated both remaining review threads, normalized `describeCommandSelectionChange()` so `null`/`undefined` compare as `none`, replaced the remaining absolute journal links with repo-relative paths, passed `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build`, committed `4052885` (`Fix dashboard selection change normalization`), pushed `codex/issue-813`, and confirmed via `gh pr view 819 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,headRefOid,baseRefName` that PR #819 is open on head `405288538053e4775ee6c1ceda3eb2a307ffaf79` with merge state `UNSTABLE`.
 - 2026-03-22T03:28:21Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build` after `npm ci` restored `tsc` in this worktree.
 - 2026-03-22T00:00:00Z: reproduced missing rejection feedback with a confirm-decline dashboard case for prune workspaces; the browser returned early without a visible command result until declined confirmations were routed through a rejected-command renderer.
 - 2026-03-22T00:00:00Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts`, `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`, `npm ci`, and `npm run build`.
