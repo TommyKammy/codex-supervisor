@@ -198,6 +198,21 @@ export function renderDashboardBrowserScript(): string {
         state.draggedPanelId = null;
       }
 
+      function canDropPanelOnTarget(draggedPanelId, targetPanelId) {
+        if (draggedPanelId === null || draggedPanelId === targetPanelId) {
+          return false;
+        }
+
+        const normalizedOrder = normalizeDashboardPanelOrder(state.panelLayout.order, DASHBOARD_PANEL_IDS);
+        const draggedIndex = normalizedOrder.indexOf(draggedPanelId);
+        const targetIndex = normalizedOrder.indexOf(targetPanelId);
+        if (draggedIndex === -1 || targetIndex === -1) {
+          return false;
+        }
+
+        return DASHBOARD_PANEL_SECTIONS[normalizedOrder[draggedIndex]] === DASHBOARD_PANEL_SECTIONS[normalizedOrder[targetIndex]];
+      }
+
       function renderPanelLayout() {
         state.panelLayout.order = normalizeDashboardPanelOrder(state.panelLayout.order, DASHBOARD_PANEL_IDS);
 
@@ -883,7 +898,7 @@ export function renderDashboardBrowserScript(): string {
           });
 
           panel.addEventListener("dragover", (event) => {
-            if (state.draggedPanelId === null || state.draggedPanelId === panelId) {
+            if (!canDropPanelOnTarget(state.draggedPanelId, panelId)) {
               return;
             }
             event.preventDefault();
@@ -894,6 +909,10 @@ export function renderDashboardBrowserScript(): string {
 
           panel.addEventListener("drop", (event) => {
             if (state.draggedPanelId === null) {
+              return;
+            }
+            if (!canDropPanelOnTarget(state.draggedPanelId, panelId)) {
+              clearDragState();
               return;
             }
             event.preventDefault();

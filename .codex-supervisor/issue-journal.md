@@ -5,55 +5,65 @@
 - Branch: codex/issue-848
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: a4083dbff6a57f957d947a7c7f0fd11af594beaf
+- Current phase: addressing_review
+- Attempt count: 4 (implementation=2, repair=2)
+- Last head SHA: c61e937eb26e788b52d28dccad20ce21da568f6c
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-22T22:21:03.733Z
+- Updated at: 2026-03-22T22:37:34Z
 
 ## Latest Codex Summary
-Implemented browser-side panel drag reorder on [`src/backend/webui-dashboard-browser-script.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-848/src/backend/webui-dashboard-browser-script.ts), backed by new pure reorder helpers in [`src/backend/webui-dashboard-browser-logic.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-848/src/backend/webui-dashboard-browser-logic.ts). The page renders explicit draggable handles from [`src/backend/webui-dashboard-panel-layout.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-848/src/backend/webui-dashboard-panel-layout.ts), and the browser updates only in-page layout order while leaving existing fetch and safe-command behavior untouched.
+Addressed both open automated review threads on PR `#858`: the browser now rejects cross-lane panel drops before mutating the typed layout order, and the issue journal no longer records workstation-local absolute paths.
 
-This turn re-ran the focused verification, pushed `codex/issue-848`, and opened draft PR `#858` at https://github.com/TommyKammy/codex-supervisor/pull/858 for CI and review.
+Added a focused runtime regression for the invalid cross-lane drop path and reran the required verification:
+`npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`
 
-Summary: Verified the drag-reorder checkpoint, pushed `codex/issue-848`, and opened draft PR `#858`.
-State hint: draft_pr
+Summary: Addressed the drag-drop review feedback locally and passed focused verification
+State hint: addressing_review
 Blocked reason: none
 Tests: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`
 Failure signature: none
-Next action: monitor PR `#858` for CI or review feedback and address any failures
+Next action: commit the review fix, push `codex/issue-848`, and update PR `#858`
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the typed panel order model is already sufficient for drag reorder if the browser gets a narrow reorder helper plus explicit handle markup and only mutates in-page DOM order inside the existing overview/details lanes.
-- What changed: added a focused failing regression in `src/backend/webui-dashboard-browser-logic.test.ts` for typed panel drops; implemented `normalizeDashboardPanelOrder` and `applyDashboardPanelDrop`; updated panel shells to render draggable handle buttons with stable ids; wired the inline browser script to keep browser-local panel order state and reorder DOM nodes on drop; and extended `src/backend/webui-dashboard.test.ts` with handle markup coverage plus a runtime drag-reorder regression.
+- Hypothesis: the remaining review risk was limited to lane validation in the browser drag handlers plus journal hygiene, so a narrow guard in the inline script and a focused dashboard regression should clear the PR without changing backend behavior.
+- What changed: added `canDropPanelOnTarget()` in `src/backend/webui-dashboard-browser-script.ts` so `dragover` and `drop` reject cross-lane targets before `applyDashboardPanelDrop()` runs; extended `src/backend/webui-dashboard.test.ts` with a regression that confirms overview/detail cross-lane drops keep the layout unchanged and clear the drag-active state; and sanitized `.codex-supervisor/issue-journal.md` so it no longer records `/home/tommy/...` paths.
 - Current blocker: none
-- Next exact step: inspect PR `#858` check runs and fix any CI or review feedback that appears.
-- Verification gap: none on the focused issue scope; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts` passed locally after the drag-reorder wiring.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard-panel-layout.ts`, `src/backend/webui-dashboard.test.ts`
-- Rollback concern: low; the change is isolated to browser helper logic, panel shell markup/CSS, and client-side DOM ordering while leaving existing dashboard data fetches and safe command endpoints unchanged.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-848 --title "feat: add dashboard panel drag reorder" --body ...`
+- Next exact step: commit the local review fix, push the branch, and resolve the CodeRabbit threads on PR `#858`.
+- Verification gap: none on the focused review scope; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts` passed after the cross-lane guard and regression were added.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard.test.ts`
+- Rollback concern: low; the code change is isolated to browser-only drag validation, and the journal change is documentation-only.
+- Last focused command: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`
 - Last focused failure: none.
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-848/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-848/context-index.md
-sed -n '1,320p' .codex-supervisor/issue-journal.md
-git status --short --branch
-git log --oneline --decorate -5
-gh pr list --head codex/issue-848 --json number,title,state,isDraft,url,headRefName,baseRefName
-find .codex-supervisor/replay -maxdepth 2 -type f | sort
+sed -n '1,220p' "$HOME/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-848/AGENTS.generated.md"
+sed -n '1,220p' "$HOME/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-848/context-index.md"
+sed -n '1,260p' .codex-supervisor/issue-journal.md
+git diff -- .codex-supervisor/issue-journal.md
+sed -n '820,980p' src/backend/webui-dashboard-browser-script.ts
+rg -n "applyDashboardPanelDrop|dragover|drop\\)|draggedPanelId|DASHBOARD_PANEL_SECTIONS" src/backend/webui-dashboard-browser-script.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts
+sed -n '160,240p' src/backend/webui-dashboard-browser-script.ts
+sed -n '460,560p' src/backend/webui-dashboard.test.ts
+sed -n '1,120p' src/backend/webui-dashboard-browser-script.ts
+sed -n '240,290p' src/backend/webui-dashboard-browser-logic.test.ts
+sed -n '28,60p' .codex-supervisor/issue-journal.md
+sed -n '180,235p' src/backend/webui-dashboard-browser-script.ts
+sed -n '500,560p' src/backend/webui-dashboard.test.ts
+rg -n "/home/tommy" .codex-supervisor/issue-journal.md src/backend/webui-dashboard-browser-script.ts src/backend/webui-dashboard.test.ts
+git diff -- src/backend/webui-dashboard-browser-script.ts src/backend/webui-dashboard.test.ts .codex-supervisor/issue-journal.md
 npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts
-git push -u origin codex/issue-848
 date -u +%Y-%m-%dT%H:%M:%SZ
-gh pr create --draft --base main --head codex/issue-848 --title "feat: add dashboard panel drag reorder" --body ...
+git rev-parse HEAD
+git status --short --branch
 ```
 ### Scratchpad
+- 2026-03-22T22:37:34Z: fixed the CodeRabbit review threads locally by rejecting cross-lane panel drops before mutating browser layout state, adding a focused cross-lane drag regression, sanitizing workstation-local paths from the issue journal, and rerunning `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`.
 - 2026-03-22T22:21:32Z: reran `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`, pushed `codex/issue-848`, and opened draft PR `#858` for the drag-reorder checkpoint.
 - 2026-03-22T22:09:23Z: reproduced the drag-reorder gap with a pure browser-logic regression, then added draggable panel handles, browser-only DOM reorder state, and a runtime dashboard drag test; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts` passed.
 - 2026-03-22T21:40:05Z: pushed `codex/issue-847` and opened draft PR `#857` for the verified dashboard refresh checkpoint.

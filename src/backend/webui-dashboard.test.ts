@@ -530,6 +530,57 @@ test("dashboard reorders panels through drag handles without touching backend fe
   assert.equal(harness.remainingFetches.length, 0);
 });
 
+test("dashboard ignores cross-lane panel drops and keeps the current layout", async () => {
+  const harness = createDashboardHarness([
+    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+  ]);
+  await harness.flush();
+
+  const overviewGrid = harness.document.getElementById("overview-grid");
+  const detailsGrid = harness.document.getElementById("details-grid");
+  const statusPanel = harness.document.getElementById("panel-status");
+  const operatorTimelineHandle = harness.document.getElementById("panel-drag-operator-timeline");
+  const operatorTimelinePanel = harness.document.getElementById("panel-operator-timeline");
+  assert.ok(overviewGrid);
+  assert.ok(detailsGrid);
+  assert.ok(statusPanel);
+  assert.ok(operatorTimelineHandle);
+  assert.ok(operatorTimelinePanel);
+
+  const dataTransfer = {
+    effectAllowed: "",
+    dropEffect: "",
+    setData() {},
+  };
+
+  await operatorTimelineHandle.dispatch("dragstart", { dataTransfer });
+  await statusPanel.dispatch("dragover", {
+    dataTransfer,
+    preventDefault() {},
+  });
+  await statusPanel.dispatch("drop", {
+    dataTransfer,
+    preventDefault() {},
+  });
+  await harness.flush();
+
+  assert.deepEqual(childIds(overviewGrid), ["panel-status", "panel-doctor"]);
+  assert.deepEqual(childIds(detailsGrid), [
+    "panel-issue-details",
+    "panel-tracked-history",
+    "panel-operator-actions",
+    "panel-live-events",
+    "panel-operator-timeline",
+  ]);
+  assert.equal(operatorTimelinePanel.classList.contains("drag-active"), false);
+  assert.deepEqual(
+    harness.fetchCalls.map((call) => call.path),
+    ["/api/status?why=true", "/api/doctor"],
+  );
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
 test("dashboard keeps requeue disabled until the selected issue finishes loading", async () => {
   const explainResponse = createDeferred<MockResponseLike>();
   const issueLintResponse = createDeferred<MockResponseLike>();
