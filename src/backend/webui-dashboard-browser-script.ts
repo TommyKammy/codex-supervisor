@@ -17,6 +17,8 @@ import {
   collectTimelineEventIssueNumbers,
   normalizeDashboardPanelOrder,
   parseSelectedIssueNumber,
+  restoreDashboardPanelOrder,
+  serializeDashboardPanelOrder,
 } from "./webui-dashboard-browser-logic";
 import { DASHBOARD_PANEL_REGISTRY } from "./webui-dashboard-panel-layout";
 
@@ -39,6 +41,8 @@ const injectedBrowserLogic = [
   describeTimelineEvent,
   collectTimelineEventIssueNumbers,
   parseSelectedIssueNumber,
+  restoreDashboardPanelOrder,
+  serializeDashboardPanelOrder,
 ]
   .map((helper) => helper.toString().replace(/__name\([^;]+;\s*/gu, ""))
   .join("\n\n");
@@ -51,6 +55,7 @@ export function renderDashboardBrowserScript(): string {
 
       const DASHBOARD_PANEL_IDS = ${JSON.stringify(dashboardPanelIds)};
       const DASHBOARD_PANEL_SECTIONS = ${JSON.stringify(dashboardPanelSections)};
+      const DASHBOARD_PANEL_LAYOUT_STORAGE_KEY = "codex-supervisor.dashboard.panel-layout";
 
       const state = {
         selectedIssueNumber: null,
@@ -70,7 +75,7 @@ export function renderDashboardBrowserScript(): string {
         lastRefreshAt: null,
         showDoneTrackedIssues: false,
         panelLayout: {
-          order: normalizeDashboardPanelOrder(null, DASHBOARD_PANEL_IDS),
+          order: restoreDashboardPanelOrder(readDashboardPanelLayoutStorage(), DASHBOARD_PANEL_IDS),
         },
         draggedPanelId: null,
       };
@@ -122,6 +127,23 @@ export function renderDashboardBrowserScript(): string {
       ];
 
       const COMMAND_CORRELATION_WINDOW_MS = 15000;
+
+      function readDashboardPanelLayoutStorage() {
+        try {
+          return window.localStorage?.getItem(DASHBOARD_PANEL_LAYOUT_STORAGE_KEY) ?? null;
+        } catch {
+          return null;
+        }
+      }
+
+      function persistDashboardPanelLayout() {
+        try {
+          window.localStorage?.setItem(
+            DASHBOARD_PANEL_LAYOUT_STORAGE_KEY,
+            serializeDashboardPanelOrder(state.panelLayout.order, DASHBOARD_PANEL_IDS),
+          );
+        } catch {}
+      }
 
       function setText(element, value) {
         if (element) {
@@ -215,6 +237,7 @@ export function renderDashboardBrowserScript(): string {
 
       function renderPanelLayout() {
         state.panelLayout.order = normalizeDashboardPanelOrder(state.panelLayout.order, DASHBOARD_PANEL_IDS);
+        persistDashboardPanelLayout();
 
         const overviewPanels = [];
         const detailPanels = [];
