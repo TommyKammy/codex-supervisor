@@ -475,6 +475,10 @@ test("dashboard page frames the hero and both panel groups with labeled section 
   assert.match(html, /<div class="hero-body">[\s\S]*<div class="hero-copy">[\s\S]*<div class="hero-summary">/u);
   assert.match(
     html,
+    /id="dashboard-panel-reorder-hint" class="visually-hidden"[\s\S]*Space to pick up a panel[\s\S]*id="dashboard-panel-reorder-status" class="visually-hidden" role="status" aria-live="polite"/u,
+  );
+  assert.match(
+    html,
     /<section class="dashboard-section" aria-labelledby="overview-heading">[\s\S]*<p class="section-kicker">Dashboard lane<\/p>[\s\S]*<h2 id="overview-heading">Overview<\/h2>[\s\S]*<div id="overview-grid" class="grid" aria-label="overview" data-panel-grid="overview">/u,
   );
   assert.match(
@@ -488,11 +492,19 @@ test("dashboard panel registry exposes a shared shell structure for every panel"
     assert.match(panel.markup, /<article id="panel-[^"]+" class="panel" data-panel-id="[^"]+" data-panel-section="[^"]+">[\s\S]*<div class="panel-shell">/u);
     assert.match(
       panel.markup,
-      /<div class="panel-header">[\s\S]*<div class="panel-drag-slot">[\s\S]*<button[\s\S]*id="panel-drag-[^"]+"[\s\S]*class="panel-drag-handle"[\s\S]*draggable="true"[\s\S]*aria-label="Reorder [^"]+ panel"/u,
+      /<div class="panel-header">[\s\S]*<div class="panel-drag-slot">[\s\S]*<button[\s\S]*id="panel-drag-[^"]+"[\s\S]*class="panel-drag-handle"[\s\S]*draggable="true"[\s\S]*aria-label="Reorder [^"]+ panel"[\s\S]*aria-describedby="dashboard-panel-reorder-hint dashboard-panel-reorder-status"[\s\S]*aria-keyshortcuts="Space Enter ArrowUp ArrowDown Escape"/u,
     );
     assert.match(panel.markup, /<div class="panel-heading">[\s\S]*<h2>[\s\S]+<\/h2>[\s\S]*<p class="panel-subtitle">[\s\S]+<\/p>/u);
     assert.match(panel.markup, /<div class="panel-body/u);
   }
+});
+
+test("dashboard page includes reduced-motion-safe drag polish styles", () => {
+  const html = renderSupervisorDashboardHtml();
+
+  assert.match(html, /\.panel\.drop-target \{/u);
+  assert.match(html, /\.panel-drag-handle:focus-visible \{/u);
+  assert.match(html, /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*transition-duration: 0\.01ms/u);
 });
 
 test("dashboard reorders panels through drag handles without touching backend fetch flow", async () => {
@@ -666,6 +678,55 @@ test("dashboard ignores cross-lane panel drops and keeps the current layout", as
     ["/api/status?why=true", "/api/doctor"],
   );
   assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard supports keyboard panel reordering with visible drop-target feedback", async () => {
+  const harness = createDashboardHarness([
+    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+  ]);
+  await harness.flush();
+
+  const detailsGrid = harness.document.getElementById("details-grid");
+  const operatorActionsHandle = harness.document.getElementById("panel-drag-operator-actions");
+  const operatorActionsPanel = harness.document.getElementById("panel-operator-actions");
+  const trackedHistoryPanel = harness.document.getElementById("panel-tracked-history");
+  assert.ok(detailsGrid);
+  assert.ok(operatorActionsHandle);
+  assert.ok(operatorActionsPanel);
+  assert.ok(trackedHistoryPanel);
+
+  await operatorActionsHandle.dispatch("keydown", {
+    key: " ",
+    preventDefault() {},
+  });
+  await operatorActionsHandle.dispatch("keydown", {
+    key: "ArrowUp",
+    preventDefault() {},
+  });
+
+  assert.equal(operatorActionsPanel.classList.contains("drag-active"), true);
+  assert.equal(trackedHistoryPanel.classList.contains("drop-target"), true);
+
+  await operatorActionsHandle.dispatch("keydown", {
+    key: "Enter",
+    preventDefault() {},
+  });
+  await harness.flush();
+
+  assert.deepEqual(childIds(detailsGrid), [
+    "panel-issue-details",
+    "panel-operator-actions",
+    "panel-tracked-history",
+    "panel-live-events",
+    "panel-operator-timeline",
+  ]);
+  assert.equal(operatorActionsPanel.classList.contains("drag-active"), false);
+  assert.equal(trackedHistoryPanel.classList.contains("drop-target"), false);
+  assert.deepEqual(
+    harness.fetchCalls.map((call) => call.path),
+    ["/api/status?why=true", "/api/doctor"],
+  );
 });
 
 test("dashboard keeps requeue disabled until the selected issue finishes loading", async () => {

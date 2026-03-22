@@ -208,6 +208,58 @@ test("browser smoke loads the read-only dashboard against the live HTTP fixture"
   assert.match((await page.textContent("#event-list")) ?? "", /Waiting for live events/u);
 });
 
+test("browser smoke reorders the dashboard with keyboard controls in reduced motion mode", async (t) => {
+  const server = createSupervisorHttpServer({
+    service: createStubService(),
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  const browser = await launchBrowser();
+  t.after(async () => {
+    await browser.close();
+  });
+
+  const port = await listen(server);
+  const context = await browser.newContext({ reducedMotion: "reduce" });
+  t.after(async () => {
+    await context.close();
+  });
+
+  const page = await context.newPage();
+  await page.goto(`http://127.0.0.1:${port}/`);
+
+  await page.waitForSelector("[data-dashboard-root]");
+  await page.waitForFunction(() => document.getElementById("doctor-overall")?.textContent === "pass");
+  await page.focus("#panel-drag-operator-actions");
+  await page.keyboard.press("Space");
+  await page.waitForFunction(() => document.getElementById("panel-operator-actions")?.classList.contains("drag-active"));
+  await page.keyboard.press("ArrowUp");
+  await page.waitForFunction(() => document.getElementById("panel-tracked-history")?.classList.contains("drop-target"));
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(
+    () =>
+      Array.from(document.querySelectorAll("#details-grid > article"))
+        .map((element) => element.id)
+        .join(",") ===
+      "panel-issue-details,panel-operator-actions,panel-tracked-history,panel-live-events,panel-operator-timeline",
+  );
+
+  assert.deepEqual(
+    await page.locator("#details-grid > article").evaluateAll((elements) => elements.map((element) => element.id)),
+    [
+      "panel-issue-details",
+      "panel-operator-actions",
+      "panel-tracked-history",
+      "panel-live-events",
+      "panel-operator-timeline",
+    ],
+  );
+  assert.equal(await page.textContent("#connection-state"), "connected");
+  assert.equal(await page.textContent("#dashboard-panel-reorder-status"), "Moved operator actions panel before tracked history.");
+});
+
 test("browser smoke runs a confirmed safe command through the dashboard", async (t) => {
   const pruneCalls: number[] = [];
   const server = createSupervisorHttpServer({
