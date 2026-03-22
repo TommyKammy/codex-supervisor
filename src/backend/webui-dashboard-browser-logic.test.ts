@@ -11,6 +11,11 @@ import {
   formatTrackedIssues,
   parseSelectedIssueNumber,
 } from "./webui-dashboard-browser-logic";
+import {
+  DASHBOARD_PANEL_IDS,
+  DEFAULT_DASHBOARD_PANEL_LAYOUT,
+  resolveDashboardPanelLayout,
+} from "./webui-dashboard-panel-layout";
 
 test("buildStatusLines summarizes tracked history as a count instead of dumping each tracked issue", () => {
   const lines = buildStatusLines({
@@ -193,6 +198,53 @@ test("collectIssueShortcuts deduplicates typed issue shortcuts in priority order
       detail: "codex/issue-105 pr=#412",
     },
   ]);
+});
+
+test("resolveDashboardPanelLayout keeps stable typed panel ids and falls back missing entries to the default layout", () => {
+  assert.deepEqual(DASHBOARD_PANEL_IDS, [
+    "status",
+    "doctor",
+    "issue-details",
+    "tracked-history",
+    "operator-actions",
+    "live-events",
+    "operator-timeline",
+  ]);
+
+  assert.deepEqual(DEFAULT_DASHBOARD_PANEL_LAYOUT.order, DASHBOARD_PANEL_IDS);
+  assert.equal(Object.isFrozen(DEFAULT_DASHBOARD_PANEL_LAYOUT), true);
+  assert.equal(Object.isFrozen(DEFAULT_DASHBOARD_PANEL_LAYOUT.order), true);
+  assert.equal(Object.isFrozen(DEFAULT_DASHBOARD_PANEL_LAYOUT.visibility), true);
+
+  assert.deepEqual(
+    resolveDashboardPanelLayout({
+      order: ["operator-actions", "status", "operator-actions", "unknown-panel"],
+      visibility: {
+        status: false,
+        doctor: true,
+      },
+    }),
+    {
+      order: [
+        "operator-actions",
+        "status",
+        "doctor",
+        "issue-details",
+        "tracked-history",
+        "live-events",
+        "operator-timeline",
+      ],
+      visibility: {
+        status: false,
+        doctor: true,
+        "issue-details": true,
+        "tracked-history": true,
+        "operator-actions": true,
+        "live-events": true,
+        "operator-timeline": true,
+      },
+    },
+  );
 });
 
 test("parseSelectedIssueNumber prefers typed fields before falling back to legacy lines", () => {
