@@ -111,6 +111,11 @@ export function formatTrackedIssues(status: DashboardStatusLike | null | undefin
   );
 }
 
+export function formatTrackedIssueSummary(status: DashboardStatusLike | null | undefined): string[] {
+  const trackedIssues = Array.isArray(status?.trackedIssues) ? status.trackedIssues : [];
+  return ["tracked issues=" + trackedIssues.length];
+}
+
 export function formatRunnableIssues(status: DashboardStatusLike | null | undefined): string[] {
   const runnableIssues = Array.isArray(status?.runnableIssues) ? status.runnableIssues : [];
   return runnableIssues.map((issue) =>
@@ -146,7 +151,7 @@ export function formatCandidateDiscovery(status: DashboardStatusLike | null | un
 
 export function buildStatusLines(status: DashboardStatusLike | null | undefined): string[] {
   return [
-    ...formatTrackedIssues(status),
+    ...formatTrackedIssueSummary(status),
     ...formatRunnableIssues(status),
     ...formatBlockedIssues(status),
     ...(status?.detailedStatusLines ?? []),

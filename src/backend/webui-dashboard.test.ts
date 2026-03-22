@@ -411,7 +411,7 @@ test("dashboard derives the selected issue from typed status fields without pars
   assert.equal(harness.remainingFetches.length, 0);
 });
 
-test("dashboard renders typed tracked and blocked issue context without relying on flat status lines", async () => {
+test("dashboard keeps Summary focused on current state and only shows tracked issue count", async () => {
   const harness = createDashboardHarness([
     {
       path: "/api/status?why=true",
@@ -451,7 +451,8 @@ test("dashboard renders typed tracked and blocked issue context without relying 
   const statusLines = harness.document.getElementById("status-lines");
   assert.ok(statusLines);
 
-  assert.match(statusLines.textContent, /tracked issue #58 \[queued\] branch=codex\/issue-58 pr=#58/u);
+  assert.match(statusLines.textContent, /tracked issues=1/u);
+  assert.doesNotMatch(statusLines.textContent, /tracked issue #58 \[queued\] branch=codex\/issue-58 pr=#58/u);
   assert.match(
     statusLines.textContent,
     /blocked issue #93 Underspecified issue blocked_by=requirements:scope, acceptance criteria, verification/u,
