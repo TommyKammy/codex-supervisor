@@ -1095,6 +1095,19 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
         configPath: "/tmp/supervisor.config.json",
         fields: [
           {
+            key: "repoPath",
+            label: "Repository path",
+            state: "configured",
+            value: "/tmp/repo",
+            message: "Repository path is configured.",
+            required: true,
+            metadata: {
+              source: "config",
+              editable: true,
+              valueType: "directory_path",
+            },
+          },
+          {
             key: "reviewProvider",
             label: "Review provider",
             state: "missing",
@@ -1122,7 +1135,12 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
         ],
         hostReadiness: {
           overallStatus: "pass",
-          checks: [{ name: "github_auth", status: "pass", summary: "GitHub auth ok.", details: [] }],
+          checks: [{
+            name: "github_auth",
+            status: "pass",
+            summary: "GitHub auth ok.",
+            details: ["Authenticated as octocat."],
+          }],
         },
         providerPosture: {
           profile: "none",
@@ -1147,11 +1165,20 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
     harness.fetchCalls.map((call) => call.path),
     ["/api/setup-readiness"],
   );
-  assert.match(harness.document.getElementById("setup-summary")?.textContent ?? "", /config=\/tmp\/supervisor\.config\.json/u);
-  assert.match(harness.document.getElementById("setup-blockers")?.textContent ?? "", /missing_review_provider/u);
-  assert.match(harness.document.getElementById("setup-fields")?.textContent ?? "", /Review provider \[missing\] unset \| source=config \| type=review_provider/u);
-  assert.match(harness.document.getElementById("setup-host-checks")?.textContent ?? "", /github_auth \[pass\] GitHub auth ok\./u);
+  assert.match(harness.document.getElementById("setup-overall-caption")?.textContent ?? "", /Resolve blockers before relying on steady-state dashboard actions\./u);
+  assert.match(harness.document.getElementById("setup-summary")?.textContent ?? "", /Config path: \/tmp\/supervisor\.config\.json/u);
+  assert.match(harness.document.getElementById("setup-blocker-summary")?.textContent ?? "", /1 blocking condition needs attention before first-run setup is complete\./u);
+  assert.match(harness.document.getElementById("setup-blockers")?.textContent ?? "", /Configure at least one review provider before first-run setup is complete\./u);
+  assert.match(harness.document.getElementById("setup-blockers")?.textContent ?? "", /Blocker code: missing review provider/u);
+  assert.match(harness.document.getElementById("setup-blockers")?.textContent ?? "", /Suggested remediation: Configure at least one review provider before first-run setup is complete\./u);
+  assert.match(harness.document.getElementById("setup-field-summary")?.textContent ?? "", /1 of 2 required setup fields configured\./u);
+  assert.match(harness.document.getElementById("setup-fields")?.textContent ?? "", /Repository path \[Configured\].*Current value: \/tmp\/repo.*Type: directory path.*Repository path is configured\./u);
+  assert.match(harness.document.getElementById("setup-fields")?.textContent ?? "", /Review provider \[Missing\].*Current value: Unset.*Type: review provider.*Configure at least one review provider before first-run setup is complete\./u);
+  assert.match(harness.document.getElementById("setup-host-summary")?.textContent ?? "", /Overall host readiness: Pass across 1 checks\./u);
+  assert.match(harness.document.getElementById("setup-host-checks")?.textContent ?? "", /Github Auth \[Pass\].*GitHub auth ok\..*Detail: Authenticated as octocat\./u);
   assert.match(harness.document.getElementById("setup-provider-posture")?.textContent ?? "", /No review provider is configured\./u);
+  assert.match(harness.document.getElementById("setup-provider-details")?.textContent ?? "", /Provider profile: None.*Signal source: none.*Configured reviewers: none.*Configured: no/u);
+  assert.match(harness.document.getElementById("setup-trust-details")?.textContent ?? "", /Trust mode: Trusted Repo And Authors.*Execution safety: Unsandboxed Autonomous.*Warning: Unsandboxed autonomous execution assumes trusted GitHub-authored inputs\./u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 

@@ -72,15 +72,29 @@ export function renderSupervisorSetupPage(): string {
         color: var(--accent-strong);
       }
 
+      .stack {
+        display: grid;
+        gap: 18px;
+        margin-top: 18px;
+      }
+
       .grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
         gap: 16px;
-        margin-top: 18px;
+      }
+
+      .grid--details {
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
       }
 
       .panel {
         overflow: hidden;
+      }
+
+      .panel--critical {
+        border-color: rgba(140, 48, 18, 0.2);
+        background: linear-gradient(180deg, rgba(255, 246, 240, 0.98), rgba(255, 251, 247, 0.98));
       }
 
       .panel-header {
@@ -101,6 +115,12 @@ export function renderSupervisorSetupPage(): string {
       .metric {
         font-size: 1.8rem;
         font-weight: 700;
+      }
+
+      .metric-caption {
+        margin-top: 6px;
+        font-size: 0.95rem;
+        color: var(--muted);
       }
 
       .row {
@@ -124,8 +144,39 @@ export function renderSupervisorSetupPage(): string {
         padding-left: 18px;
       }
 
+      .list--plain {
+        list-style: none;
+        padding-left: 0;
+      }
+
       .list li + li {
         margin-top: 6px;
+      }
+
+      .checklist-item {
+        border: 1px solid rgba(61, 45, 29, 0.1);
+        border-radius: 16px;
+        padding: 12px 14px;
+        background: rgba(255, 255, 255, 0.65);
+      }
+
+      .checklist-item + .checklist-item {
+        margin-top: 10px;
+      }
+
+      .checklist-item--blocker {
+        border-color: rgba(140, 48, 18, 0.2);
+        background: rgba(255, 244, 239, 0.92);
+      }
+
+      .checklist-item__title {
+        font-weight: 700;
+      }
+
+      .checklist-item__meta,
+      .checklist-item__note {
+        margin-top: 4px;
+        color: var(--muted);
       }
 
       @media (max-width: 720px) {
@@ -156,72 +207,84 @@ export function renderSupervisorSetupPage(): string {
         <p class="hint">When setup is complete, continue to <a href="/dashboard">/dashboard</a>.</p>
       </section>
 
-      <section class="grid" aria-label="setup-overview">
-        <article class="panel">
+      <section class="stack" aria-label="setup-checklist">
+        <article class="panel panel--critical">
           <div class="panel-header">
-            <h2>Readiness</h2>
+            <h2>Blocking setup actions</h2>
           </div>
           <div class="panel-body">
-            <div id="setup-overall-status" class="metric">loading</div>
-            <div class="row">
-              <div class="row-label">Summary</div>
-              <p id="setup-summary" class="hint">Loading /api/setup-readiness…</p>
-            </div>
-          </div>
-        </article>
-
-        <article class="panel">
-          <div class="panel-header">
-            <h2>Provider posture</h2>
-          </div>
-          <div class="panel-body">
-            <p id="setup-provider-posture" class="hint">Loading typed provider posture…</p>
-          </div>
-        </article>
-
-        <article class="panel">
-          <div class="panel-header">
-            <h2>Trust posture</h2>
-          </div>
-          <div class="panel-body">
-            <p id="setup-trust-posture" class="hint">Loading typed trust posture…</p>
-          </div>
-        </article>
-      </section>
-
-      <section class="grid" aria-label="setup-details">
-        <article class="panel">
-          <div class="panel-header">
-            <h2>Blockers</h2>
-          </div>
-          <div class="panel-body">
-            <ul id="setup-blockers" class="list">
+            <p id="setup-blocker-summary" class="hint">Loading typed blocker summary…</p>
+            <ul id="setup-blockers" class="list list--plain">
               <li>Loading typed blockers…</li>
             </ul>
           </div>
         </article>
 
-        <article class="panel">
-          <div class="panel-header">
-            <h2>Config fields</h2>
-          </div>
-          <div class="panel-body">
-            <ul id="setup-fields" class="list">
-              <li>Loading typed field readiness…</li>
-            </ul>
-          </div>
-        </article>
+        <section class="grid" aria-label="setup-overview">
+          <article class="panel">
+            <div class="panel-header">
+              <h2>Readiness</h2>
+            </div>
+            <div class="panel-body">
+              <div id="setup-overall-status" class="metric">loading</div>
+              <p id="setup-overall-caption" class="metric-caption">Loading typed readiness state…</p>
+              <div class="row">
+                <div class="row-label">Summary</div>
+                <p id="setup-summary" class="hint">Loading /api/setup-readiness…</p>
+              </div>
+            </div>
+          </article>
 
-        <article class="panel">
-          <div class="panel-header">
-            <h2>Host checks</h2>
-          </div>
-          <div class="panel-body">
-            <ul id="setup-host-checks" class="list">
-              <li>Loading typed host checks…</li>
-            </ul>
-          </div>
-        </article>
+          <article class="panel">
+            <div class="panel-header">
+              <h2>Provider posture</h2>
+            </div>
+            <div class="panel-body">
+              <p id="setup-provider-posture" class="hint">Loading typed provider posture…</p>
+              <ul id="setup-provider-details" class="list list--plain">
+                <li>Loading provider posture details…</li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-header">
+              <h2>Trust posture</h2>
+            </div>
+            <div class="panel-body">
+              <p id="setup-trust-posture" class="hint">Loading typed trust posture…</p>
+              <ul id="setup-trust-details" class="list list--plain">
+                <li>Loading trust posture details…</li>
+              </ul>
+            </div>
+          </article>
+        </section>
+
+        <section class="grid grid--details" aria-label="setup-details">
+          <article class="panel">
+            <div class="panel-header">
+              <h2>Config fields</h2>
+            </div>
+            <div class="panel-body">
+              <p id="setup-field-summary" class="hint">Loading typed field readiness…</p>
+              <ul id="setup-fields" class="list list--plain">
+                <li>Loading typed field readiness…</li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-header">
+              <h2>Host checks</h2>
+            </div>
+            <div class="panel-body">
+              <p id="setup-host-summary" class="hint">Loading typed host readiness…</p>
+              <ul id="setup-host-checks" class="list list--plain">
+                <li>Loading typed host checks…</li>
+              </ul>
+            </div>
+          </article>
+        </section>
       </section>
     </main>
     <script>${renderSetupBrowserScript()}</script>
