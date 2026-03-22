@@ -36,13 +36,13 @@ Next action: Monitor draft PR #854 CI and address any review or stabilization fe
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: the setup shell can stay narrow and safe by rendering editable inputs from typed readiness metadata, sending only accepted setup fields to `/api/setup-config`, and then treating a second `/api/setup-readiness` fetch as the source of truth for the refreshed UI.
-- What changed: added a guided config form to the setup page, explicit `saving` and `revalidating` status text in the browser script, a focused browser-harness regression that proves the POST plus follow-up GET sequence, and a live Playwright smoke test that completes the first-run path through the real HTTP fixture. During review follow-up, I corrected the smoke-test readiness expectation to the actual two-fetch flow and updated the journal handoff to reference existing PR `#854`.
+- What changed: added a guided config form to the setup page, explicit `saving` and `revalidating` status text in the browser script, a focused browser-harness regression that proves the POST plus follow-up GET sequence, and a live Playwright smoke test that completes the first-run path through the real HTTP fixture. During review follow-up, I corrected the smoke-test readiness expectation to the actual two-fetch flow, updated the journal handoff to reference existing PR `#854`, pushed commit `44e5285`, and resolved the two addressed CodeRabbit threads on PR `#854`.
 - Current blocker: none
-- Next exact step: commit the local review fixes, push the updated `codex/issue-841` branch to refresh PR `#854`, and resolve the addressed review threads.
+- Next exact step: monitor PR `#854` for any fresh CI or reviewer feedback and respond only if new issues appear.
 - Verification gap: none on the local diff; the issue verification command and `npm run build` both passed for the review-fix state.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-smoke.test.ts`, `src/backend/webui-dashboard.test.ts`, `src/backend/webui-setup-browser-script.ts`, `src/backend/webui-setup-page.ts`
 - Rollback concern: medium-low; the change is isolated to the setup shell and its tests, but the browser script now owns input rendering and save state so regressions would affect first-run setup UX directly.
-- Last focused command: `npm run build`
+- Last focused command: `gh api graphql -f query='mutation { first: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851_aJE"}) { thread { id isResolved } } second: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851_aJG"}) { thread { id isResolved } } }'`
 - Last focused failure: none.
 - Last focused commands:
 ```bash
@@ -72,8 +72,12 @@ sed -n '220,460p' src/backend/webui-setup-browser-script.ts
 npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts
 npm run build
 date -u +%Y-%m-%dT%H:%M:%SZ
+git push origin codex/issue-841
+gh pr view 854 --json url,isDraft,number,state,headRefName,mergeStateStatus
+gh api graphql -f query='mutation { first: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851_aJE"}) { thread { id isResolved } } second: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851_aJG"}) { thread { id isResolved } } }'
 ```
 ### Scratchpad
+- 2026-03-22T19:21:07Z: pushed review-fix commit `44e5285` to `codex/issue-841`, confirmed PR `#854` is open and `CLEAN`, and resolved the two addressed CodeRabbit review threads via GraphQL.
 - 2026-03-22T19:21:07Z: validated both CodeRabbit findings against the current branch, lowered the first-run smoke assertion from `readinessCalls.length >= 3` to `>= 2` to match the browser's bootstrap-plus-post-save fetch pattern, updated the journal handoff to reference existing PR `#854`, and reran the issue verification command plus `npm run build` successfully.
 - 2026-03-22T19:07:13Z: added the setup-form browser regression, implemented the guided setup editor and save-status flow in the setup page/browser script, added a Playwright smoke test that completes first-run setup through `/api/setup-config`, restored missing `playwright-core` via `npm ci`, and reran the issue verification command plus `npm run build` successfully.
 - 2026-03-22T18:35:16Z: reproduced the PR build failure locally with `npm run build` as `TS2769` in `src/config.test.ts(883,55)`, added a non-null assertion via `assert.ok(result.backupPath, ...)`, reran `npm run build` plus the issue verification command successfully, and pushed repair commit `d3f451f` to PR `#853`.
