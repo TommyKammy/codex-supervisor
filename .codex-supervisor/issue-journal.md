@@ -5,13 +5,13 @@
 - Branch: codex/issue-837
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: implementing
+- Current phase: draft_pr
 - Attempt count: 1 (implementation=1, repair=0)
 - Last head SHA: 9754a8ab7ba7bee04d83267639c51420bff6427e
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-22T12:58:00Z
+- Updated at: 2026-03-22T13:06:00Z
 
 ## Latest Codex Summary
 - Added a dedicated first-run setup shell backed by `/api/setup-readiness`, routed `/` to that shell only when setup is incomplete, and kept the steady-state operator dashboard available at `/dashboard` and at `/` once setup is configured. Focused HTTP/UI tests now cover the new setup-shell routing and typed setup rendering.
@@ -24,11 +24,11 @@
 - Hypothesis: the WebUI gap was that `/` always rendered the operator dashboard even when typed setup readiness reported blockers, so first-run guidance needed its own shell and root-level route selection.
 - What changed: added `src/backend/webui-setup.ts`, `src/backend/webui-setup-page.ts`, and `src/backend/webui-setup-browser-script.ts` for a dedicated setup shell that renders typed setup blockers, fields, host checks, provider posture, and trust posture from `/api/setup-readiness`; updated `src/backend/supervisor-http-server.ts` so `/setup` always serves that shell, `/dashboard` always serves the steady-state dashboard, and `/` now chooses between them based on `querySetupReadiness().ready`; tightened `src/backend/supervisor-http-server.test.ts` and `src/backend/webui-dashboard.test.ts` to pin the route split and setup-shell fetch/render behavior.
 - Current blocker: none
-- Next exact step: review the local diff, commit the setup-shell change on `codex/issue-837`, and open/update a draft PR if one is still absent.
+- Next exact step: watch draft PR `#843` on head `954ee6ea7360d767c4e574216e37dc70aa8cd8ce` and address any CI or review follow-up.
 - Verification gap: browser smoke coverage for the new setup shell was not added in this pass; focused unit/HTTP coverage plus `npm run build` passed locally.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.ts`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard.test.ts`, `src/backend/webui-setup.ts`, `src/backend/webui-setup-page.ts`, `src/backend/webui-setup-browser-script.ts`
 - Rollback concern: reverting only the server routing change would strand the new `/setup` shell and tests; reverting only the new setup shell files would break `/setup` and the root first-run flow.
-- Last focused command: `npm run build`
+- Last focused command: `gh pr create --draft --base main --head codex/issue-837 --title "Add dedicated WebUI setup shell" --body "..."`
 - Last focused failure: `sh: 1: tsc: not found` during the first build attempt before restoring dependencies with `npm ci`; a later build also caught a TypeScript narrowing error in the new server test (`TS18047`/`TS2339` on `address.port`), which was fixed by capturing `port` after the listen-address guard.
 - Last focused commands:
 ```bash
@@ -36,8 +36,12 @@ sed -n '1,260p' .codex-supervisor/issue-journal.md
 npx tsx --test src/backend/supervisor-http-server.test.ts src/backend/webui-dashboard.test.ts
 npm ci
 npm run build
+git commit -m "Add dedicated WebUI setup shell"
+git push -u origin codex/issue-837
+gh pr create --draft --base main --head codex/issue-837 --title "Add dedicated WebUI setup shell" --body "..."
 ```
 ### Scratchpad
+- 2026-03-22T13:05:00Z: committed `954ee6e` (`Add dedicated WebUI setup shell`), pushed `codex/issue-837`, and opened draft PR `#843` at `https://github.com/TommyKammy/codex-supervisor/pull/843`.
 - 2026-03-22T12:57:00Z: reran `npx tsx --test src/backend/supervisor-http-server.test.ts src/backend/webui-dashboard.test.ts` and `npm run build`; both passed after fixing the server-test `address.port` narrowing issue.
 - 2026-03-22T12:55:00Z: `npm run build` initially failed with `sh: 1: tsc: not found`; restored local dependencies with `npm ci` and reran build.
 - 2026-03-22T12:48:00Z: added the narrow reproducer in `src/backend/supervisor-http-server.test.ts` and `src/backend/webui-dashboard.test.ts`; the first focused run failed because the legacy root-shell test still assumed `/` always served the operator dashboard after the new route selection landed.
