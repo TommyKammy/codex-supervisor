@@ -1,4 +1,5 @@
 import {
+  applyDashboardPanelDrop,
   buildStatusLines,
   collectTrackedIssues,
   collectIssueShortcuts,
@@ -14,10 +15,14 @@ import {
   describeFreshnessState,
   describeTimelineEvent,
   collectTimelineEventIssueNumbers,
+  normalizeDashboardPanelOrder,
   parseSelectedIssueNumber,
 } from "./webui-dashboard-browser-logic";
+import { DASHBOARD_PANEL_REGISTRY } from "./webui-dashboard-panel-layout";
 
 const injectedBrowserLogic = [
+  normalizeDashboardPanelOrder,
+  applyDashboardPanelDrop,
   collectTrackedIssues,
   formatTrackedIssues,
   formatTrackedHistorySummary,
@@ -39,8 +44,13 @@ const injectedBrowserLogic = [
   .join("\n\n");
 
 export function renderDashboardBrowserScript(): string {
+  const dashboardPanelIds = DASHBOARD_PANEL_REGISTRY.map((panel) => panel.id);
+  const dashboardPanelSections = Object.fromEntries(DASHBOARD_PANEL_REGISTRY.map((panel) => [panel.id, panel.section]));
   return `
       ${injectedBrowserLogic}
+
+      const DASHBOARD_PANEL_IDS = ${JSON.stringify(dashboardPanelIds)};
+      const DASHBOARD_PANEL_SECTIONS = ${JSON.stringify(dashboardPanelSections)};
 
       const state = {
         selectedIssueNumber: null,
@@ -59,6 +69,10 @@ export function renderDashboardBrowserScript(): string {
         hasSuccessfulRefresh: false,
         lastRefreshAt: null,
         showDoneTrackedIssues: false,
+        panelLayout: {
+          order: normalizeDashboardPanelOrder(null, DASHBOARD_PANEL_IDS),
+        },
+        draggedPanelId: null,
       };
 
       const elements = {
@@ -89,6 +103,14 @@ export function renderDashboardBrowserScript(): string {
         resetJsonStateButton: document.getElementById("reset-json-state-button"),
         operatorTimeline: document.getElementById("operator-timeline"),
         eventList: document.getElementById("event-list"),
+        overviewGrid: document.getElementById("overview-grid"),
+        detailsGrid: document.getElementById("details-grid"),
+        panels: Object.fromEntries(
+          DASHBOARD_PANEL_IDS.map((panelId) => [panelId, document.getElementById("panel-" + panelId)]),
+        ),
+        dragHandles: Object.fromEntries(
+          DASHBOARD_PANEL_IDS.map((panelId) => [panelId, document.getElementById("panel-drag-" + panelId)]),
+        ),
       };
 
       const knownEventTypes = [
@@ -165,6 +187,55 @@ export function renderDashboardBrowserScript(): string {
         setLiveBadgeState(elements.freshnessState, freshnessLabel, freshnessTone);
         setLiveBadgeState(elements.refreshState, state.refreshPhase, refreshTone);
         setText(elements.lastRefreshBadge, formatRefreshTime(state.lastRefreshAt));
+      }
+
+      function clearDragState() {
+        if (state.draggedPanelId === null) {
+          return;
+        }
+        const draggedPanel = elements.panels[state.draggedPanelId];
+        draggedPanel?.classList.remove("drag-active");
+        state.draggedPanelId = null;
+      }
+
+      function canDropPanelOnTarget(draggedPanelId, targetPanelId) {
+        if (draggedPanelId === null || draggedPanelId === targetPanelId) {
+          return false;
+        }
+
+        const normalizedOrder = normalizeDashboardPanelOrder(state.panelLayout.order, DASHBOARD_PANEL_IDS);
+        const draggedIndex = normalizedOrder.indexOf(draggedPanelId);
+        const targetIndex = normalizedOrder.indexOf(targetPanelId);
+        if (draggedIndex === -1 || targetIndex === -1) {
+          return false;
+        }
+
+        return DASHBOARD_PANEL_SECTIONS[normalizedOrder[draggedIndex]] === DASHBOARD_PANEL_SECTIONS[normalizedOrder[targetIndex]];
+      }
+
+      function renderPanelLayout() {
+        state.panelLayout.order = normalizeDashboardPanelOrder(state.panelLayout.order, DASHBOARD_PANEL_IDS);
+
+        const overviewPanels = [];
+        const detailPanels = [];
+        for (const panelId of state.panelLayout.order) {
+          const panel = elements.panels[panelId];
+          if (!panel) {
+            continue;
+          }
+          if (DASHBOARD_PANEL_SECTIONS[panelId] === "overview") {
+            overviewPanels.push(panel);
+            continue;
+          }
+          detailPanels.push(panel);
+        }
+
+        for (const panel of overviewPanels) {
+          elements.overviewGrid?.appendChild(panel);
+        }
+        for (const panel of detailPanels) {
+          elements.detailsGrid?.appendChild(panel);
+        }
       }
 
       function formatLatestRecovery(activityContext, fallbackSummary) {
@@ -805,6 +876,58 @@ export function renderDashboardBrowserScript(): string {
         }
       }
 
+      function wirePanelDragAndDrop() {
+        for (const panelId of DASHBOARD_PANEL_IDS) {
+          const panel = elements.panels[panelId];
+          const dragHandle = elements.dragHandles[panelId];
+          if (!panel || !dragHandle) {
+            continue;
+          }
+
+          dragHandle.addEventListener("dragstart", (event) => {
+            state.draggedPanelId = panelId;
+            panel.classList.add("drag-active");
+            if (event.dataTransfer) {
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("text/plain", panelId);
+            }
+          });
+
+          dragHandle.addEventListener("dragend", () => {
+            clearDragState();
+          });
+
+          panel.addEventListener("dragover", (event) => {
+            if (!canDropPanelOnTarget(state.draggedPanelId, panelId)) {
+              return;
+            }
+            event.preventDefault();
+            if (event.dataTransfer) {
+              event.dataTransfer.dropEffect = "move";
+            }
+          });
+
+          panel.addEventListener("drop", (event) => {
+            if (state.draggedPanelId === null) {
+              return;
+            }
+            if (!canDropPanelOnTarget(state.draggedPanelId, panelId)) {
+              clearDragState();
+              return;
+            }
+            event.preventDefault();
+            state.panelLayout.order = applyDashboardPanelDrop(
+              state.panelLayout.order,
+              state.draggedPanelId,
+              panelId,
+              DASHBOARD_PANEL_IDS,
+            );
+            renderPanelLayout();
+            clearDragState();
+          });
+        }
+      }
+
       function wireEvents() {
         const source = new EventSource("/api/events");
         state.connectionPhase = "connecting";
@@ -926,6 +1049,7 @@ export function renderDashboardBrowserScript(): string {
       });
 
       async function bootstrap() {
+        renderPanelLayout();
         renderLiveState();
         try {
           await refreshStatusAndDoctor();
@@ -938,6 +1062,7 @@ export function renderDashboardBrowserScript(): string {
         }
 
         renderCommandResult();
+        wirePanelDragAndDrop();
         wireEvents();
         renderEvents();
         renderOperatorTimeline();

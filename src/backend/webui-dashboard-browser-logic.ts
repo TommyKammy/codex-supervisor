@@ -56,6 +56,52 @@ export interface DashboardIssueShortcut {
   detail: string;
 }
 
+export function normalizeDashboardPanelOrder<TPanelId extends string>(
+  requestedOrder: readonly string[] | null | undefined,
+  defaultOrder: readonly TPanelId[],
+): TPanelId[] {
+  const knownPanelIds = new Set(defaultOrder);
+  const normalizedOrder: TPanelId[] = [];
+
+  for (const candidate of Array.isArray(requestedOrder) ? requestedOrder : []) {
+    if (!knownPanelIds.has(candidate as TPanelId) || normalizedOrder.includes(candidate as TPanelId)) {
+      continue;
+    }
+    normalizedOrder.push(candidate as TPanelId);
+  }
+
+  for (const panelId of defaultOrder) {
+    if (!normalizedOrder.includes(panelId)) {
+      normalizedOrder.push(panelId);
+    }
+  }
+
+  return normalizedOrder;
+}
+
+export function applyDashboardPanelDrop<TPanelId extends string>(
+  currentOrder: readonly string[] | null | undefined,
+  draggedPanelId: TPanelId | null | undefined,
+  targetPanelId: TPanelId | null | undefined,
+  defaultOrder: readonly TPanelId[],
+): TPanelId[] {
+  const normalizedOrder = normalizeDashboardPanelOrder(currentOrder, defaultOrder);
+  if (!draggedPanelId || !targetPanelId || draggedPanelId === targetPanelId) {
+    return normalizedOrder;
+  }
+  if (!normalizedOrder.includes(draggedPanelId) || !normalizedOrder.includes(targetPanelId)) {
+    return normalizedOrder;
+  }
+
+  const nextOrder = normalizedOrder.filter((panelId) => panelId !== draggedPanelId);
+  const targetIndex = nextOrder.indexOf(targetPanelId);
+  if (targetIndex < 0) {
+    return normalizedOrder;
+  }
+  nextOrder.splice(targetIndex, 0, draggedPanelId);
+  return nextOrder;
+}
+
 export interface DashboardTrackedIssueFormatOptions {
   includeDone?: boolean;
 }
