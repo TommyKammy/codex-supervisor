@@ -7,23 +7,23 @@
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
 - Attempt count: 3 (implementation=1, repair=2)
-- Last head SHA: 69a6634dbbab6882a62ba05e7e4f7f2c34de3d56
+- Last head SHA: 38402005410687e4e10a9dec3a88515a570497a4
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 1
-- Updated at: 2026-03-22T19:35:04Z
+- Updated at: 2026-03-22T19:37:43Z
 
 ## Latest Codex Summary
-Cleared the stale review metadata in [issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-841/.codex-supervisor/issue-journal.md) after confirming the product-code review note was already fixed in [webui-dashboard-browser-smoke.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-841/src/backend/webui-dashboard-browser-smoke.test.ts) and the remaining open comments were only journal drift.
+Cleared the stale review metadata in [issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-841/.codex-supervisor/issue-journal.md), committed it as `3840200`, pushed `codex/issue-841`, and resolved the two remaining journal-review threads on PR `#854`.
 
-No product files changed in this pass, so I revalidated the live smoke assertion with `rg`/`sed`, updated the snapshot to `Failure signature: none`, and marked the active failure context as resolved.
+No product files changed in this pass. I revalidated the live smoke assertion with `rg`/`sed`, updated the snapshot to `Failure signature: none`, confirmed PR `#854` is still open on `codex/issue-841`, and left it in `UNSTABLE` while checks re-run on the latest push.
 
-Summary: Cleared the stale journal-only review findings after confirming the smoke-test assertion was already correct.
+Summary: Pushed the journal-only review fix, resolved the remaining stale review threads, and left PR `#854` waiting on CI.
 State hint: waiting_ci
 Blocked reason: none
 Tests: Not run in this pass; revalidated `src/backend/webui-dashboard-browser-smoke.test.ts` via focused `rg`/`sed` inspection because only `.codex-supervisor/issue-journal.md` changed.
 Failure signature: none
-Next action: Monitor PR `#854` for any new CI or review feedback after the journal-only review fix is pushed.
+Next action: Monitor PR `#854` for any new CI or review feedback now that commit `3840200` is pushed and the stale threads are resolved.
 
 ## Active Failure Context
 - Category: none
@@ -40,7 +40,7 @@ Next action: Monitor PR `#854` for any new CI or review feedback after the journ
 - Verification gap: none on the local diff; the issue verification command and `npm run build` both passed for the review-fix state.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-smoke.test.ts`, `src/backend/webui-dashboard.test.ts`, `src/backend/webui-setup-browser-script.ts`, `src/backend/webui-setup-page.ts`
 - Rollback concern: medium-low; the change is isolated to the setup shell and its tests, but the browser script now owns input rendering and save state so regressions would affect first-run setup UX directly.
-- Last focused command: `gh api graphql -f query='mutation { first: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851_aJE"}) { thread { id isResolved } } second: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851_aJG"}) { thread { id isResolved } } }'`
+- Last focused command: `gh api graphql -f query='mutation { first: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851_eJT"}) { thread { id isResolved } } second: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851_eJV"}) { thread { id isResolved } } }'`
 - Last focused failure: none.
 - Last focused commands:
 ```bash
@@ -78,8 +78,16 @@ rg -n "readinessCalls\\.length|readinessCalls" src/backend/webui-dashboard-brows
 sed -n '520,548p' src/backend/webui-dashboard-browser-smoke.test.ts
 find .codex-supervisor/replay -maxdepth 2 -type f | sort
 date -u +%Y-%m-%dT%H:%M:%SZ
+git add .codex-supervisor/issue-journal.md
+git commit -m "docs: clear stale setup review journal state"
+git rev-parse HEAD
+git push origin codex/issue-841
+gh api graphql -f query='mutation { first: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851_eJT"}) { thread { id isResolved } } second: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ851_eJV"}) { thread { id isResolved } } }'
+gh pr view 854 --json url,isDraft,number,state,headRefName,mergeStateStatus
+date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
+- 2026-03-22T19:37:43Z: committed the journal-only cleanup as `3840200`, pushed `codex/issue-841`, resolved review threads `PRRT_kwDORgvdZ851_eJT` and `PRRT_kwDORgvdZ851_eJV`, and confirmed PR `#854` remains open with merge state `UNSTABLE` while checks re-run.
 - 2026-03-22T19:35:04Z: confirmed `src/backend/webui-dashboard-browser-smoke.test.ts` already asserts `readinessCalls.length >= 2`, so the product-code CodeRabbit note was stale; the remaining valid work was clearing stale failure metadata from `.codex-supervisor/issue-journal.md`.
 - 2026-03-22T19:35:04Z: updated the journal snapshot to `Last failure signature: none` and replaced the stale active review-failure block with a resolved `Category: none` entry tied to PR `#854`.
 - 2026-03-22T19:21:07Z: pushed review-fix commit `44e5285` to `codex/issue-841`, confirmed PR `#854` is open and `CLEAN`, and resolved the two addressed CodeRabbit review threads via GraphQL.
