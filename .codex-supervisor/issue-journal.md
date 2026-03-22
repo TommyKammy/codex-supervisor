@@ -5,20 +5,25 @@
 - Branch: codex/issue-840
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: implementing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 757f57ddab58f8495b75a962f745fd863fb27d6c
+- Current phase: stabilizing
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: 55d96bf5c7aa0ccaaa247890113f26ce6101e665
 - Blocked reason: none
-- Last failure signature: setup-config-write-route-missing
+- Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-22T18:09:02Z
+- Updated at: 2026-03-22T18:20:46.080Z
 
 ## Latest Codex Summary
-Implemented a narrow first-run setup config write path and verified it with focused HTTP, config, and doctor coverage.
+Implemented a narrow first-run config write path in [src/setup-config-write.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/setup-config-write.ts), wired it through [src/supervisor/supervisor.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/supervisor/supervisor.ts), [src/supervisor/supervisor-service.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/supervisor/supervisor-service.ts), and [src/backend/supervisor-http-server.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/backend/supervisor-http-server.ts). The new `POST /api/setup-config` path only accepts the supported first-run fields, validates them before mutation, preserves unrelated config keys, writes a `.bak` rollback copy for existing configs, updates the file atomically, and returns refreshed setup readiness.
 
-The backend now accepts `POST /api/setup-config` and forwards only a `changes` object through the supervisor service into [src/setup-config-write.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/setup-config-write.ts). That writer validates only the supported first-run fields, preserves unrelated top-level config keys, writes an on-disk backup before mutating an existing config, atomically updates `supervisor.config.json`, and re-runs setup readiness from disk so the caller gets the refreshed typed readiness report immediately.
+Focused coverage was added in [src/backend/supervisor-http-server.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/backend/supervisor-http-server.test.ts) and [src/config.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/config.test.ts) for accepted writes, malformed request rejection, invalid-value rejection, and preservation behavior. I updated [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/.codex-supervisor/issue-journal.md) and committed the checkpoint as `55d96bf` (`Add setup config write path`). The only remaining workspace noise is the pre-existing untracked `.codex-supervisor/replay/` directory, which I left alone.
 
-Focused regressions cover the missing route, malformed request rejection, preservation/backup behavior, and invalid-value rejection in [src/backend/supervisor-http-server.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/backend/supervisor-http-server.test.ts) and [src/config.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/config.test.ts). Verification passed with `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts`.
+Summary: Added a validated `/api/setup-config` write path with backup/preservation behavior and focused tests; committed as `55d96bf`.
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts`; `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts`
+Failure signature: none
+Next action: open or update the draft PR for issue #840 from branch `codex/issue-840` and let CI run on commit `55d96bf`
 
 ## Active Failure Context
 - None recorded.
