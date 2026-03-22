@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { loadConfig, loadConfigSummary, summarizeCadenceDiagnostics } from "./core/config";
 import { SupervisorConfig } from "./core/types";
 import { buildSetupConfigPreview } from "./setup-config-preview";
+import { updateSetupConfig } from "./setup-config-write";
 
 test("loadConfig leaves bare codexBinary values unresolved for PATH lookup", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
@@ -841,4 +842,88 @@ test("buildSetupConfigPreview preserves unknown fields and leaves the config fil
   assert.deepEqual(preview.document.reviewBotLogins, ["chatgpt-codex-connector"]);
   assert.equal(preview.validation.status, "ready");
   assert.equal(before, after);
+});
+
+test("updateSetupConfig preserves unrelated fields, writes a backup, and refreshes readiness", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-update-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      {
+        repoPath: ".",
+        repoSlug: "owner/repo",
+        defaultBranch: "main",
+        workspaceRoot: "./worktrees",
+        stateFile: "./state.json",
+        codexBinary: "codex",
+        branchPrefix: "codex/issue-",
+        reviewBotLogins: [],
+        experimentalFlag: {
+          keep: true,
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  const result = await updateSetupConfig({
+    configPath,
+    changes: {
+      reviewProvider: "codex",
+    },
+  });
+
+  const updatedDocument = JSON.parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown>;
+  assert.ok(result.backupPath, "Expected backupPath to be set when updating an existing config");
+  const backupDocument = JSON.parse(await fs.readFile(result.backupPath, "utf8")) as Record<string, unknown>;
+
+  assert.deepEqual(result.updatedFields, ["reviewProvider"]);
+  assert.deepEqual(updatedDocument.reviewBotLogins, ["chatgpt-codex-connector"]);
+  assert.deepEqual(updatedDocument.experimentalFlag, { keep: true });
+  assert.deepEqual(backupDocument.reviewBotLogins, []);
+  assert.deepEqual(backupDocument.experimentalFlag, { keep: true });
+  assert.equal(result.readiness.kind, "setup_readiness");
+  assert.equal(result.readiness.providerPosture.profile, "codex");
+});
+
+test("updateSetupConfig rejects invalid setup field values before touching the config file", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-update-invalid-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  const originalDocument = {
+    repoPath: ".",
+    repoSlug: "owner/repo",
+    defaultBranch: "main",
+    workspaceRoot: "./worktrees",
+    stateFile: "./state.json",
+    codexBinary: "codex",
+    branchPrefix: "codex/issue-",
+    reviewBotLogins: [],
+    experimentalFlag: true,
+  };
+  await fs.writeFile(configPath, JSON.stringify(originalDocument, null, 2), "utf8");
+  const before = await fs.readFile(configPath, "utf8");
+
+  await assert.rejects(
+    () =>
+      updateSetupConfig({
+        configPath,
+        changes: {
+          repoSlug: "not-a-slug",
+        },
+      }),
+    /repoSlug must use owner\/repo format\./u,
+  );
+
+  const after = await fs.readFile(configPath, "utf8");
+  assert.equal(after, before);
+  await assert.rejects(fs.access(`${configPath}.bak`));
 });
