@@ -95,22 +95,22 @@ export function renderDashboardBrowserScript(): string {
       }
 
       function formatLatestRecovery(activityContext, fallbackSummary) {
+        const latestRecovery = activityContext && activityContext.latestRecovery;
+        if (latestRecovery) {
+          return (
+            "issue=#" +
+            latestRecovery.issueNumber +
+            " at=" +
+            latestRecovery.at +
+            " reason=" +
+            latestRecovery.reason +
+            (latestRecovery.detail ? " detail=" + latestRecovery.detail : "")
+          );
+        }
         if (fallbackSummary) {
           return fallbackSummary;
         }
-        const latestRecovery = activityContext && activityContext.latestRecovery;
-        if (!latestRecovery) {
-          return "none";
-        }
-        return (
-          "issue=#" +
-          latestRecovery.issueNumber +
-          " at=" +
-          latestRecovery.at +
-          " reason=" +
-          latestRecovery.reason +
-          (latestRecovery.detail ? " detail=" + latestRecovery.detail : "")
-        );
+        return "none";
       }
 
       function formatReviewWaits(activityContext) {

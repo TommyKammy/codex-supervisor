@@ -242,3 +242,101 @@ test("buildIssueExplainDto exposes typed operator activity context", async () =>
     ],
   });
 });
+
+test("buildIssueExplainDto degrades when PR resolution fails", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 606;
+  const journalPath = path.join(fixture.workspaceRoot, "issue-606", ".codex-supervisor", "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    `# Issue #606: Explain PR lookup fallback
+
+## Supervisor Snapshot
+- Updated at: 2026-03-22T01:45:00Z
+
+## Latest Codex Summary
+- None yet.
+
+## Active Failure Context
+- None recorded.
+
+## Codex Working Notes
+### Current Handoff
+- Hypothesis: Explain should still return typed activity context when PR lookup fails.
+- What changed: Added a focused explain DTO regression.
+- Current blocker: PR lookup is still fragile in explain.
+- Next exact step: Degrade PR lookup failures to null.
+- Verification gap: Missing explain coverage for PR lookup failures.
+- Files touched: src/supervisor/supervisor-selection-issue-explain.ts
+- Rollback concern:
+- Last focused command: npx tsx --test src/supervisor/supervisor-selection-issue-explain.test.ts
+
+### Scratchpad
+- Keep this section short.
+`,
+    "utf8",
+  );
+
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Explain PR lookup fallback",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "addressing_review",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: journalPath,
+        pr_number: 606,
+        last_recovery_reason: "tracked_pr_head_advanced: resumed explain issue after PR metadata refresh failed",
+        last_recovery_at: "2026-03-22T01:40:00Z",
+        blocked_reason: null,
+        last_error: null,
+      }),
+    },
+  };
+  const config = createConfig({
+    workspaceRoot: fixture.workspaceRoot,
+    stateFile: fixture.stateFile,
+    repoPath: fixture.repoPath,
+  });
+
+  const dto = await buildIssueExplainDto(
+    {
+      getIssue: async () => issue,
+      listAllIssues: async () => [issue],
+      listCandidateIssues: async () => [issue],
+      resolvePullRequestForBranch: async () => {
+        throw new Error("lookup failed");
+      },
+    },
+    config,
+    state,
+    issueNumber,
+  );
+
+  assert.equal(dto.issueNumber, issueNumber);
+  assert.equal(dto.runnable, true);
+  assert.equal(dto.latestRecoverySummary, "latest_recovery issue=#606 at=2026-03-22T01:40:00Z reason=tracked_pr_head_advanced detail=resumed explain issue after PR metadata refresh failed");
+  assert.deepEqual(dto.activityContext, {
+    handoffSummary: "blocker: PR lookup is still fragile in explain. | next: Degrade PR lookup failures to null.",
+    localReviewRoutingSummary: null,
+    changeClassesSummary: null,
+    verificationPolicySummary: null,
+    durableGuardrailSummary: null,
+    externalReviewFollowUpSummary: null,
+    latestRecovery: {
+      issueNumber,
+      at: "2026-03-22T01:40:00Z",
+      reason: "tracked_pr_head_advanced",
+      detail: "resumed explain issue after PR metadata refresh failed",
+    },
+    localReviewSummaryPath: null,
+    externalReviewMissesPath: null,
+    reviewWaits: [],
+  });
+});

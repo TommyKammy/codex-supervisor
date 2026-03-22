@@ -198,9 +198,14 @@ export async function buildIssueExplainDto(
     record,
   });
   const latestRecoverySummary = record ? formatLatestRecoveryStatusLine(record) : null;
-  const pr = record && github.resolvePullRequestForBranch
-    ? await github.resolvePullRequestForBranch(record.branch, record.pr_number)
-    : null;
+  let pr: GitHubPullRequest | null = null;
+  if (record && github.resolvePullRequestForBranch) {
+    try {
+      pr = await github.resolvePullRequestForBranch(record.branch, record.pr_number);
+    } catch {
+      pr = null;
+    }
+  }
   let handoffSummary: string | null = null;
   if (record?.journal_path) {
     try {

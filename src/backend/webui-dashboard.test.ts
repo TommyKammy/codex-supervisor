@@ -519,7 +519,7 @@ test("dashboard renders typed issue activity context without scraping legacy sum
       response: jsonResponse(
         createExplain(42, {
           externalReviewFollowUpSummary: null,
-          latestRecoverySummary: null,
+          latestRecoverySummary: "legacy recovery line that should only be used as fallback",
           activityContext: {
             handoffSummary: "blocker: wait for typed dashboard issue detail rendering",
             localReviewRoutingSummary: null,
@@ -573,6 +573,7 @@ test("dashboard renders typed issue activity context without scraping legacy sum
   assert.match(issueExplain.textContent, /durable_guardrails: durable_guardrails verifier=committed:.codex\/verifier-guardrails\.json#1 external_review=none/u);
   assert.match(issueExplain.textContent, /follow_up: external_review_follow_up unresolved=2 actions=durable_guardrail:1\|regression_test:1/u);
   assert.match(issueExplain.textContent, /latest_recovery: issue=#42 at=2026-03-22T00:00:00Z reason=tracked_pr_head_advanced detail=resumed issue #42 after tracked PR #42 advanced/u);
+  assert.doesNotMatch(issueExplain.textContent, /legacy recovery line that should only be used as fallback/u);
   assert.match(issueExplain.textContent, /review_waits: configured_bot_initial_grace_wait status=active provider=coderabbit/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
