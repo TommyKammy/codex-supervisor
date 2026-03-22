@@ -462,6 +462,7 @@ test("runSupervisorCommand routes query commands through the supervisor service 
               branch: "codex/issue-58",
               prNumber: 58,
               blockedReason: null,
+              activityContext: null,
             },
             selectionSummary: {
               selectedIssueNumber: 58,

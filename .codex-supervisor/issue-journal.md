@@ -1,50 +1,45 @@
-# Issue #803: WebUI maintainability: split dashboard internals after the typed operator contract stabilizes
+# Issue #810: WebUI contract follow-up: expose typed operator activity context for richer issue detail views
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/803
-- Branch: codex/issue-803
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/810
+- Branch: codex/issue-810
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 74632060cb7eeb0f234527f75863249df36de5b0
+- Last head SHA: deaa3fa8a89a93f2721b6e339635510bbfa35a32
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-22T00:17:40.578Z
+- Updated at: 2026-03-22T01:09:36.776Z
 
 ## Latest Codex Summary
-- Reproduced the maintainability gap with a focused browser-logic unit test, split the dashboard into page/script/browser-logic modules, and kept the inline WebUI contract stable with focused verification green.
+- None yet.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: issue #803 is a maintainability-only refactor, so the safest proof is an extracted browser-logic unit seam that preserves the existing inline dashboard behavior while shrinking the monolithic module.
-- What changed: split `src/backend/webui-dashboard.ts` into a small entry wrapper plus dedicated page, browser-script, and browser-logic modules; added a focused `webui-dashboard-browser-logic.test.ts` unit test for typed status-line assembly, typed issue shortcut collection, and selected-issue parsing.
+- Hypothesis: the WebUI gap is a missing typed `activityContext` contract on status/explain DTOs, so the safest fix is a shared operator-context helper that reuses existing handoff, recovery, summary, and review-wait sources without changing CLI rendering.
+- What changed: added `src/supervisor/supervisor-operator-activity-context.ts`; threaded nullable `activityContext` through `SupervisorActiveIssueDto`, `ActiveIssueStatusSnapshot`, and `SupervisorExplainDto`; populated it from existing status/explain summaries and structured review-wait/latest-recovery data; added focused contract coverage in `supervisor-diagnostics-status-selection.test.ts`, `supervisor-selection-issue-explain.test.ts`, `supervisor-http-server.test.ts`, and updated `supervisor-runtime.test.ts` for the new typed field.
 - Current blocker: none
-- Next exact step: commit the refactor checkpoint on `codex/issue-803`, then decide whether to open a draft PR immediately or continue with a local review pass over the split browser modules.
-- Verification gap: none locally after `npm ci`; focused tests and `npm run build` passed.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-logic.test.ts`
-- Rollback concern: the inline browser script now injects stringified helper functions, so keep the sanitization step for compiler-added helper annotations or the VM harness will stop rendering selected-issue and shortcut state.
+- Next exact step: review the DTO shape against the dashboard consumer and open/update the draft PR once the contract looks coherent.
+- Verification gap: none locally after `npm ci`; the focused issue verification and `npm run build` passed.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/cli/supervisor-runtime.test.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-operator-activity-context.ts`, `src/supervisor/supervisor-selection-active-status.ts`, `src/supervisor/supervisor-selection-issue-explain.test.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/supervisor/supervisor-status-report.ts`, `src/supervisor/supervisor.ts`
+- Rollback concern: `activityContext` is intentionally nullable for empty cases so older tests and consumers do not have to special-case empty objects; keep that behavior if the contract is reshaped.
 - Last focused command: `npm run build`
-- Last focused failure: `webui-dashboard-browser-logic-missing-module`; the new focused test failed until the typed status/shortcut logic was extracted into a dedicated browser helper module.
+- Last focused failure: `typed-operator-activity-context-missing`; the new focused tests failed until status/explain started returning shared typed operator activity context.
 - Last focused commands:
 ```bash
-npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts
-npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts
+npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/backend/supervisor-http-server.test.ts
 npm ci
 npm run build
 ```
 ### Scratchpad
-- Keep this section short. The supervisor may compact older notes automatically.
-- Local dirt besides this work remains the pre-existing untracked `.codex-supervisor/replay/` directory.
-- 2026-03-22T00:24:19Z: reproduced the maintainability seam with a new `webui-dashboard-browser-logic.test.ts`; initial focused run failed with `MODULE_NOT_FOUND` for `./webui-dashboard-browser-logic`.
-- 2026-03-22T00:24:19Z: split the dashboard into entry/page/browser-script/browser-logic modules and added helper injection for the inline script so the backend contract stayed unchanged.
-- 2026-03-22T00:24:19Z: caught an injected-runtime regression where compiler-added `__name(...)` annotations leaked into the stringified helper source and prevented selected-issue/shortcut rendering in the VM harness; sanitized helper source before embedding and reran focused tests.
-- 2026-03-22T00:24:19Z: restored local dependencies with `npm ci`; focused verification passed with `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts` and `npm run build`.
-- 2026-03-21T23:56:04Z: validated CodeRabbit thread `PRRT_kwDORgvdZ8517YKs`; the review comment was correct because the requeue click handler still called `rejectCommand()` without the explicit status argument.
+- 2026-03-22T01:16:24Z: reproduced the contract gap with focused status/explain tests expecting a typed nullable `activityContext` surface for handoff summaries, latest recovery, and active configured-bot wait windows.
+- 2026-03-22T01:16:24Z: added shared operator activity DTO helpers and threaded them through active status plus explain without changing CLI string rendering; HTTP and runtime tests were updated for the new typed field.
+- 2026-03-22T01:16:24Z: focused verification passed with `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/backend/supervisor-http-server.test.ts`; `npm run build` initially failed because `tsc` was missing, then passed after `npm ci`.
 - 2026-03-21T23:56:04Z: fixed the requeue no-loaded-issue rejection path to emit `requeue cancelled` and added a focused dashboard harness regression asserting the concise status plus zero POST attempts.
 - 2026-03-21T23:56:04Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build`.
 - 2026-03-22T00:00:00Z: reproduced stale post-command refresh handling with a new dashboard harness case where bootstrap loaded issue #42, `run-once` refreshed status to selected issue #77, and the UI incorrectly kept `#42` selected until state was split into supervisor-selected vs loaded issue numbers.

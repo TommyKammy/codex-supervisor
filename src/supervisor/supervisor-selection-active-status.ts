@@ -16,6 +16,7 @@ import {
   buildVerificationPolicyStatusLine,
   loadStatusChangedFiles,
 } from "./supervisor-status-rendering";
+import { maybeBuildIssueActivityContext, type SupervisorIssueActivityContextDto } from "./supervisor-operator-activity-context";
 
 export interface ActiveStatusGitHub {
   resolvePullRequestForBranch(branchName: string, pullRequestNumber?: number | null): Promise<GitHubPullRequest | null>;
@@ -31,6 +32,7 @@ export interface ActiveIssueStatusSnapshot {
   pr: GitHubPullRequest | null;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
+  activityContext: SupervisorIssueActivityContextDto | null;
   handoffSummary: string | null;
   localReviewRoutingSummary: string | null;
   changeClassesSummary: string | null;
@@ -101,6 +103,17 @@ export async function loadActiveIssueStatusSnapshot(args: {
     pr,
     checks,
     reviewThreads,
+    activityContext: maybeBuildIssueActivityContext({
+      config: args.config,
+      record: args.activeRecord,
+      pr,
+      handoffSummary,
+      localReviewRoutingSummary,
+      changeClassesSummary,
+      verificationPolicySummary,
+      durableGuardrailSummary,
+      externalReviewFollowUpSummary,
+    }),
     handoffSummary,
     localReviewRoutingSummary,
     changeClassesSummary,

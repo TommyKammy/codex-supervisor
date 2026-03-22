@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
 import {
   GitHubIssue,
   SupervisorStateFile,
 } from "../core/types";
 import {
+  buildIssueExplainDto,
   buildIssueExplainSummary,
   buildNonRunnableLocalStateReasons,
 } from "./supervisor-selection-issue-explain";
-import { createConfig, createRecord } from "./supervisor-test-helpers";
+import { branchName, createConfig, createRecord, createSupervisorFixture } from "./supervisor-test-helpers";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return {
@@ -115,4 +118,127 @@ test("buildNonRunnableLocalStateReasons keeps retry-budget ordering stable", () 
     `retry_budget repeated_failure_signature_count=${config.sameFailureSignatureRepeatLimit}/${config.sameFailureSignatureRepeatLimit}`,
     "local_state blocked",
   ]);
+});
+
+test("buildIssueExplainDto exposes typed operator activity context", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 605;
+  const journalPath = path.join(fixture.workspaceRoot, "issue-605", ".codex-supervisor", "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    `# Issue #605: Typed explain context
+
+## Supervisor Snapshot
+- Updated at: 2026-03-22T00:20:00Z
+
+## Latest Codex Summary
+- None yet.
+
+## Active Failure Context
+- None recorded.
+
+## Codex Working Notes
+### Current Handoff
+- Hypothesis: Explain should return typed operator-facing issue activity context.
+- What changed: Added a focused explain DTO test.
+- Current blocker: Waiting on the explain DTO to expose the handoff summary directly.
+- Next exact step: Add typed activity context fields on the explain payload.
+- Verification gap: Focused explain DTO coverage was missing.
+- Files touched: src/supervisor/supervisor-selection-issue-explain.ts
+- Rollback concern:
+- Last focused command: npx tsx --test src/supervisor/supervisor-selection-issue-explain.test.ts
+
+### Scratchpad
+- Keep this section short.
+`,
+    "utf8",
+  );
+
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Typed explain context",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "addressing_review",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: journalPath,
+        pr_number: 605,
+        review_wait_started_at: "2099-01-01T00:00:30.000Z",
+        review_wait_head_sha: "head-new-605",
+        last_recovery_reason:
+          "tracked_pr_head_advanced: resumed issue #605 from blocked to addressing_review after tracked PR #605 advanced from head-old-605 to head-new-605",
+        last_recovery_at: "2026-03-22T00:15:00Z",
+        blocked_reason: null,
+        last_error: null,
+      }),
+    },
+  };
+  const config = createConfig({
+    reviewBotLogins: ["coderabbitai"],
+    workspaceRoot: fixture.workspaceRoot,
+    stateFile: fixture.stateFile,
+    repoPath: fixture.repoPath,
+  });
+
+  const dto = await buildIssueExplainDto(
+    {
+      getIssue: async () => issue,
+      listAllIssues: async () => [issue],
+      listCandidateIssues: async () => [issue],
+      resolvePullRequestForBranch: async () => ({
+        number: 605,
+        title: "Typed explain context",
+        url: "https://example.test/pull/605",
+        state: "OPEN",
+        createdAt: "2026-03-22T00:00:00Z",
+        updatedAt: "2026-03-22T00:00:00Z",
+        isDraft: false,
+        reviewDecision: null,
+        mergeStateStatus: "CLEAN",
+        headRefName: branchName(fixture.config, issueNumber),
+        headRefOid: "head-new-605",
+        configuredBotDraftSkipAt: "2099-01-01T00:00:00.000Z",
+        currentHeadCiGreenAt: "2099-01-01T00:00:30.000Z",
+      }),
+    },
+    config,
+    state,
+    issueNumber,
+  );
+
+  assert.deepEqual(dto.activityContext, {
+    handoffSummary:
+      "blocker: Waiting on the explain DTO to expose the handoff summary directly. | next: Add typed activity context fields on the explain payload.",
+    localReviewRoutingSummary: null,
+    changeClassesSummary: null,
+    verificationPolicySummary: null,
+    durableGuardrailSummary: null,
+    externalReviewFollowUpSummary: null,
+    latestRecovery: {
+      issueNumber,
+      at: "2026-03-22T00:15:00Z",
+      reason: "tracked_pr_head_advanced",
+      detail: "resumed issue #605 from blocked to addressing_review after tracked PR #605 advanced from head-old-605 to head-new-605",
+    },
+    localReviewSummaryPath: null,
+    externalReviewMissesPath: null,
+    reviewWaits: [
+      {
+        kind: "configured_bot_initial_grace_wait",
+        status: "active",
+        provider: "coderabbit",
+        pauseReason: "awaiting_fresh_provider_review_after_draft_skip",
+        recentObservation: "ready_for_review_reopened_wait",
+        observedAt: "2099-01-01T00:00:30.000Z",
+        configuredWaitSeconds: 90,
+        waitUntil: "2099-01-01T00:02:00.000Z",
+      },
+    ],
+  });
 });
