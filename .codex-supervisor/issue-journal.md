@@ -7,21 +7,21 @@
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
 - Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 829120e1b1457174e1bc3b7d1456fc9e57778057
+- Last head SHA: aa95a0f896e49ac26ed6cc9219b472238cbfa0a7
 - Blocked reason: none
 - Last failure signature: PRRT_kwDORgvdZ8519xq3
 - Repeated failure signature count: 1
-- Updated at: 2026-03-22T11:57:07Z
+- Updated at: 2026-03-22T11:58:23Z
 
 ## Latest Codex Summary
 Applied the remaining PR review fix in [docs/getting-started.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-836/docs/getting-started.md) so the setup/readiness contract excerpt matches the live backend unions for field keys, field `valueType`, and blocker `remediation.kind`. I also tightened [src/getting-started-docs.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-836/src/getting-started-docs.test.ts) so those documented union members are pinned locally and future doc drift is caught before review.
 
-Summary: Synced the getting-started setup contract snippet with the implementation and added a focused docs regression for the missing union members.
-State hint: addressing_review
+Summary: Synced the getting-started setup contract snippet with the implementation, added a focused docs regression, committed `aa95a0f`, and pushed the review fix to PR `#842`.
+State hint: waiting_ci
 Blocked reason: none
 Tests: `npx tsx --test src/getting-started-docs.test.ts`
 Failure signature: PRRT_kwDORgvdZ8519xq3
-Next action: Commit and push the docs/test review fix to `codex/issue-836`, then re-check PR `#842` for refreshed checks and thread state.
+Next action: Watch PR `#842` checks on head `aa95a0f896e49ac26ed6cc9219b472238cbfa0a7` and confirm the remaining docs review thread clears on the updated commit.
 
 ## Active Failure Context
 - Category: review
@@ -35,19 +35,23 @@ Next action: Commit and push the docs/test review fix to `codex/issue-836`, then
 - Hypothesis: the remaining automated review thread is valid drift in the getting-started contract excerpt, not a backend bug; syncing the documented unions with `src/setup-readiness.ts` and pinning them in the docs test should clear it without changing runtime behavior.
 - What changed: expanded the docs snippet in `docs/getting-started.md` so the setup-specific typed excerpt now includes all current setup field keys plus the missing `git_ref`, `file_path`, `text`, and `repair_worktree_layout` union members; updated `src/getting-started-docs.test.ts` to assert those definitions explicitly.
 - Current blocker: none
-- Next exact step: commit and push the doc/test fix, then re-check PR `#842` and resolve the remaining docs review thread if no additional drift remains.
+- Next exact step: watch PR `#842` on head `aa95a0f896e49ac26ed6cc9219b472238cbfa0a7`, then confirm the docs review thread can be resolved without further contract changes.
 - Verification gap: only the focused docs regression was rerun on this delta; the broader setup-readiness test matrix from the previous pass was not rerun because the live code path did not change.
 - Files touched: `.codex-supervisor/issue-journal.md`, `docs/getting-started.md`, `src/getting-started-docs.test.ts`
 - Rollback concern: this delta is documentation plus a docs-only regression guard; if reverted alone, runtime behavior stays the same but the PR thread and doc/implementation drift return.
-- Last focused command: `npx tsx --test src/getting-started-docs.test.ts`
+- Last focused command: `gh pr view 842 --json headRefOid,mergeStateStatus,isDraft,url`
 - Last focused failure: `AssertionError [ERR_ASSERTION]` in `src/getting-started-docs.test.ts` when the first regex tried to match both a type alias definition and its later field usage in one expression; splitting those checks fixed the false negative.
 - Last focused commands:
 ```bash
 git diff -- docs/getting-started.md src/getting-started-docs.test.ts
 npx tsx --test src/getting-started-docs.test.ts
 npx tsx --test src/getting-started-docs.test.ts
+git commit -m "Sync setup readiness docs unions"
+git push origin codex/issue-836
+gh pr view 842 --json headRefOid,mergeStateStatus,isDraft,url
 ```
 ### Scratchpad
+- 2026-03-22T11:58:23Z: committed `aa95a0f` (`Sync setup readiness docs unions`), pushed `codex/issue-836`, and confirmed PR `#842` is on head `aa95a0f896e49ac26ed6cc9219b472238cbfa0a7` with `mergeStateStatus` `UNSTABLE` while refreshed checks start.
 - 2026-03-22T11:57:07Z: updated the getting-started setup contract excerpt to match the implementation unions and added focused docs assertions for the missing value-type/remediation/key members.
 - 2026-03-22T11:56:31Z: the first `npx tsx --test src/getting-started-docs.test.ts` run failed on an over-broad regex that tried to match the type alias definition and the later field usage in one expression; split those assertions and reran cleanly.
 - 2026-03-22T11:31:39Z: pushed `codex/issue-836` to `origin` and opened draft PR `#842` at `https://github.com/TommyKammy/codex-supervisor/pull/842`.
