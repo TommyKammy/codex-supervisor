@@ -18,6 +18,7 @@
 - Added `src/backend/webui-dashboard-browser-smoke.test.ts`, a `test:webui-smoke` package script, and `playwright-core` so the dashboard now has browser-level smoke coverage for read-only load and a confirmed safe-command flow against a controlled in-process HTTP fixture.
 - Documented the harness expectation in `README.md` and `docs/getting-started.md`, including the `CHROME_BIN` override for CI or nonstandard browser paths.
 - Focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`, `npm run test:webui-smoke`, and `npm run build`.
+- Committed the checkpoint as `9bbf2c5` (`Add WebUI browser smoke coverage`), pushed `codex/issue-815`, and opened draft PR #821 (`https://github.com/TommyKammy/codex-supervisor/pull/821`).
 
 ## Active Failure Context
 - None recorded.
@@ -27,7 +28,7 @@
 - Hypothesis: the remaining confidence gap for the WebUI was missing browser-level coverage across the actual HTTP shell, SSE connection, and safe-command button flow; existing VM-based script tests were narrower than the new acceptance criteria.
 - What changed: added a Playwright-core-backed smoke test that launches a real headless Chrome/Chromium against `createSupervisorHttpServer()`, covers read-only dashboard load, and exercises the confirmed prune-workspaces command path end to end through the browser UI.
 - Current blocker: none
-- Next exact step: commit the browser smoke harness changes on `codex/issue-815`, then open or update the draft PR so CI can run the new `npm run test:webui-smoke` command remotely.
+- Next exact step: monitor draft PR #821 for CI/check startup and review feedback, and repair any remote failures on the new smoke command quickly if they appear.
 - Verification gap: none locally after the focused dashboard/server tests, browser smoke command, and build all passed.
 - Files touched: `.codex-supervisor/issue-journal.md`, `README.md`, `docs/getting-started.md`, `package-lock.json`, `package.json`, `src/backend/webui-dashboard-browser-smoke.test.ts`
 - Rollback concern: keep the smoke harness fixture-only and browser-binary-driven through `CHROME_BIN` so the suite stays deterministic and does not grow into network-dependent end-to-end coverage.
@@ -42,6 +43,7 @@ npm run test:webui-smoke
 npm run build
 ```
 ### Scratchpad
+- 2026-03-22T00:00:00Z: committed `9bbf2c5` (`Add WebUI browser smoke coverage`), pushed `codex/issue-815`, and opened draft PR #821 (`https://github.com/TommyKammy/codex-supervisor/pull/821`).
 - 2026-03-22T00:00:00Z: reproduced #815 with a new browser smoke file; the first run failed with `Cannot find module 'playwright-core'`, confirming the repo had no browser-level dashboard harness wired yet.
 - 2026-03-22T00:00:00Z: added `playwright-core`, a `test:webui-smoke` script, and `src/backend/webui-dashboard-browser-smoke.test.ts` to cover read-only dashboard load plus a confirmed prune-workspaces flow against an in-process server fixture.
 - 2026-03-22T00:00:00Z: `npm run build` initially failed on the new smoke test because the stub doctor/mutation DTOs did not fully satisfy the repository TypeScript contracts; added `candidateDiscoverySummary`, `previousRecordSnapshot`, and nullable `textContent` handling, then reran successfully.
