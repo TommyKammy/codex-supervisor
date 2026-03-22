@@ -1,70 +1,63 @@
-# Issue #846: WebUI panel shell: standardize dashboard blocks before drag-and-drop
+# Issue #847: WebUI visual refresh: apply a cleaner Asana-inspired dashboard presentation
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/846
-- Branch: codex/issue-846
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/847
+- Branch: codex/issue-847
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: c4e2a04cb243153b2e6437fa139ed5f253863dc4
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 7d437698de92c694798d5dc2de299fb9f2cc1f06
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-22T21:15:08Z
+- Updated at: 2026-03-22T21:40:05Z
 
 ## Latest Codex Summary
-- Standardized the dashboard panels around a shared shell helper, preserving existing browser-script ids and command semantics while adding a reserved drag-slot lane, panel subtitles, and shared empty-state treatment.
-- Added a focused dashboard regression that proves each registered panel uses the common shell structure.
-- Committed the implementation as `c4e2a04` (`feat: standardize dashboard panel shell`).
-- Pushed `codex/issue-846` and opened draft PR `#856`: https://github.com/TommyKammy/codex-supervisor/pull/856
+- Reproduced the visual-refresh gap with a focused dashboard HTML regression that expected labeled hero and section framing, then refreshed the page chrome and flatter panel styling without changing browser-side behavior or backend contracts.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining issue-846 gap is structural rather than behavioral, so a shared panel shell helper can standardize dashboard headers, subtitles, body framing, reserved drag-handle space, and initial empty states while keeping all existing DOM ids and backend/browser command semantics intact.
-- What changed: added a focused failing regression in `src/backend/webui-dashboard.test.ts` that proved each panel lacked a common shell; replaced duplicated panel HTML in `src/backend/webui-dashboard-panel-layout.ts` with a `renderDashboardPanelShell(...)` helper; added shared subtitle, header-meta/action lanes, and a reserved `panel-drag-slot`; updated `src/backend/webui-dashboard-page.ts` styles for the new shell and common empty-state treatment.
+- Hypothesis: the remaining issue-847 gap is page-level framing rather than data behavior, so a focused hero-and-section regression can drive a cleaner dashboard hierarchy while keeping all existing panel ids, command hooks, and SSE/status rendering intact.
+- What changed: added a focused failing regression in `src/backend/webui-dashboard.test.ts` that expected a labeled hero shell plus overview/details section chrome; refreshed `src/backend/webui-dashboard-page.ts` with flatter Asana-inspired surfaces, a structured hero body/summary, section headers, cleaner badge cards, and lighter panel/action/event treatments without changing any browser-script ids or backend endpoints.
 - Current blocker: none
-- Next exact step: monitor PR `#856` for CI and review feedback, then address any follow-up needed on the shared dashboard shell.
-- Verification gap: none on the focused issue scope; the requested dashboard test command passed after the shell refactor.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-panel-layout.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard.test.ts`
-- Rollback concern: low; the change is isolated to WebUI dashboard markup/CSS and preserves existing browser-script ids plus command endpoints.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-846 --title "feat: standardize dashboard panel shell" --body ...`
+- Next exact step: monitor draft PR `#857` for CI and review feedback, then address any follow-up needed on the dashboard refresh.
+- Verification gap: none on the focused issue scope; `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts` passed after the refresh.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard.test.ts`
+- Rollback concern: low; the change is isolated to WebUI dashboard markup/CSS plus one rendering regression and preserves existing browser-script ids plus command endpoints.
+- Last focused command: `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts`
 - Last focused failure: none.
 - Last focused commands:
 ```bash
-gh pr status
 date -u +%Y-%m-%dT%H:%M:%SZ
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-846/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-846/context-index.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-847/AGENTS.generated.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-847/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
 git status --short --branch
 rg --files src/backend | rg 'webui-dashboard|dashboard'
-rg -n "panel shell|panel-shell|drag handle|empty state|dashboard panel|data-panel|panel-header|dashboard-block|panel-subtitle" src/backend
-sed -n '1,260p' src/backend/webui-dashboard-panel-layout.ts
-sed -n '1,260p' src/backend/webui-dashboard.test.ts
-sed -n '1,260p' src/backend/webui-dashboard-page.ts
-sed -n '260,520p' src/backend/webui-dashboard-panel-layout.ts
-sed -n '260,520p' src/backend/webui-dashboard-page.ts
-sed -n '260,520p' src/backend/webui-dashboard.test.ts
-rg -n "status-warning|doctor-overall|issue-summary|tracked-history-toggle|command-status|event-list|operator-timeline|tracked-history-summary|tracked-history-lines|issue-shortcuts|issue-form|issue-explain|issue-lint|run-once-button|requeue-button|prune-workspaces-button|reset-json-state-button" src/backend/webui-dashboard-browser-script.ts src/backend/webui-dashboard-browser-logic.ts
-sed -n '1,320p' src/backend/webui-dashboard-browser-script.ts
+sed -n '1,340p' src/backend/webui-dashboard-page.ts
+sed -n '1,340p' src/backend/webui-dashboard-panel-layout.ts
+sed -n '1,280p' src/backend/webui-dashboard.test.ts
+sed -n '1,260p' src/backend/webui-dashboard-browser-logic.test.ts
+rg -n "panel-shell|hero|badge|detail-card|action-grid|renderSupervisorDashboardPage|Asana|panel-header|panel-subtitle|shortcut-button|action-card" src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-page.ts src/backend/webui-dashboard-panel-layout.ts
+sed -n '280,620p' src/backend/webui-dashboard.test.ts
+sed -n '340,760p' src/backend/webui-dashboard-page.ts
+sed -n '1,220p' src/backend/webui-dashboard.ts
+rg -n "renderSupervisorDashboardPage|hero-bar|section-label|overview-grid|details-grid|data-dashboard-root|aria-label=\"overview\"|aria-label=\"details\"" src/backend
 npx tsx --test src/backend/webui-dashboard.test.ts
+npx tsx --test src/backend/webui-dashboard.test.ts
+npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts
 npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts
 date -u +%Y-%m-%dT%H:%M:%SZ
-git status --short
-git diff -- src/backend/webui-dashboard-panel-layout.ts src/backend/webui-dashboard-page.ts src/backend/webui-dashboard.test.ts
-git add .codex-supervisor/issue-journal.md
-git commit -m "docs: update issue 846 journal handoff"
-git push -u origin codex/issue-846
-gh pr create --draft --base main --head codex/issue-846 --title "feat: standardize dashboard panel shell" --body ...
 git status --short --branch
-gh pr view 856 --json number,url,isDraft,mergeStateStatus,headRefName,baseRefName
-date -u +%Y-%m-%dT%H:%M:%SZ
+git diff -- src/backend/webui-dashboard-page.ts src/backend/webui-dashboard.test.ts
 ```
 ### Scratchpad
+- 2026-03-22T21:40:05Z: pushed `codex/issue-847` and opened draft PR `#857` for the verified dashboard refresh checkpoint.
+- 2026-03-22T21:40:05Z: reproduced the visual-refresh gap with a new hero-and-section framing regression, refreshed the dashboard page chrome/CSS to add labeled lanes and flatter surfaces, and passed `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts`.
 - 2026-03-22T21:15:08Z: pushed `codex/issue-846` and opened draft PR `#856`; GitHub currently reports `mergeStateStatus=UNSTABLE`, so the next turn should inspect CI/check runs and address any failures or review feedback.
 - 2026-03-22T21:14:15Z: confirmed there was no existing PR for `codex/issue-846`; next step is to push the branch and open a draft PR with commit `c4e2a04`.
 - 2026-03-22T21:02:11Z: reproduced the issue with a new shell-structure regression, then passed the focused verification command after moving all dashboard panels onto a shared shell helper with a reserved drag slot and shared subtitle/meta/action lanes.
