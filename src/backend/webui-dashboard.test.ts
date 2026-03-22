@@ -67,12 +67,30 @@ class FakeElement {
 
   value = "";
   disabled = false;
+  type = "";
 
   private classNameValue = "";
+  private idValue: string | null;
   private innerHtmlValue = "";
   private textContentValue = "";
 
-  constructor(readonly tagName: string, readonly id: string | null = null) {}
+  constructor(
+    readonly tagName: string,
+    id: string | null = null,
+    private readonly ownerDocument: FakeDocument | null = null,
+  ) {
+    this.idValue = id;
+  }
+
+  get id(): string | null {
+    return this.idValue;
+  }
+
+  set id(value: string | null) {
+    this.ownerDocument?.unregisterElement(this);
+    this.idValue = value;
+    this.ownerDocument?.registerElement(this);
+  }
 
   get className(): string {
     return this.classNameValue;
@@ -135,7 +153,19 @@ class FakeDocument {
 
   constructor(ids: string[]) {
     for (const id of ids) {
-      this.elements.set(id, new FakeElement("div", id));
+      this.elements.set(id, new FakeElement("div", id, this));
+    }
+  }
+
+  registerElement(element: FakeElement): void {
+    if (element.id) {
+      this.elements.set(element.id, element);
+    }
+  }
+
+  unregisterElement(element: FakeElement): void {
+    if (element.id && this.elements.get(element.id) === element) {
+      this.elements.delete(element.id);
     }
   }
 
@@ -144,7 +174,7 @@ class FakeDocument {
   }
 
   createElement(tagName: string): FakeElement {
-    return new FakeElement(tagName);
+    return new FakeElement(tagName, null, this);
   }
 }
 
@@ -1188,6 +1218,245 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
   assert.match(harness.document.getElementById("setup-provider-posture")?.textContent ?? "", /No review provider is configured\./u);
   assert.match(harness.document.getElementById("setup-provider-details")?.textContent ?? "", /Provider profile: None.*Signal source: none.*Configured reviewers: none.*Configured: no/u);
   assert.match(harness.document.getElementById("setup-trust-details")?.textContent ?? "", /Trust mode: Trusted Repo And Authors.*Execution safety: Unsandboxed Autonomous.*Warning: Unsandboxed autonomous execution assumes trusted GitHub-authored inputs\./u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("setup shell saves through the narrow setup config API and revalidates readiness after the write", async () => {
+  const setupConfigResponse = createDeferred<MockResponseLike>();
+  const setupReadinessRefreshResponse = createDeferred<MockResponseLike>();
+  const harness = createSetupHarness([
+    {
+      path: "/api/setup-readiness",
+      response: jsonResponse({
+        kind: "setup_readiness",
+        ready: false,
+        overallStatus: "missing",
+        configPath: "/tmp/supervisor.config.json",
+        fields: [
+          {
+            key: "repoPath",
+            label: "Repository path",
+            state: "missing",
+            value: null,
+            message: "Repository path is required before first-run setup is complete.",
+            required: true,
+            metadata: {
+              source: "config",
+              editable: true,
+              valueType: "directory_path",
+            },
+          },
+          {
+            key: "reviewProvider",
+            label: "Review provider",
+            state: "missing",
+            value: null,
+            message: "Configure at least one review provider before first-run setup is complete.",
+            required: true,
+            metadata: {
+              source: "config",
+              editable: true,
+              valueType: "review_provider",
+            },
+          },
+        ],
+        blockers: [
+          {
+            code: "missing_repo_path",
+            message: "Repository path is required before first-run setup is complete.",
+            fieldKeys: ["repoPath"],
+            remediation: {
+              kind: "edit_config",
+              summary: "Set repoPath in the supervisor config.",
+              fieldKeys: ["repoPath"],
+            },
+          },
+          {
+            code: "missing_review_provider",
+            message: "Configure at least one review provider before first-run setup is complete.",
+            fieldKeys: ["reviewProvider"],
+            remediation: {
+              kind: "configure_review_provider",
+              summary: "Configure at least one review provider before first-run setup is complete.",
+              fieldKeys: ["reviewProvider"],
+            },
+          },
+        ],
+        hostReadiness: {
+          overallStatus: "pass",
+          checks: [],
+        },
+        providerPosture: {
+          profile: "none",
+          provider: "none",
+          reviewers: [],
+          signalSource: "none",
+          configured: false,
+          summary: "No review provider is configured.",
+        },
+        trustPosture: {
+          trustMode: "trusted_repo_and_authors",
+          executionSafetyMode: "unsandboxed_autonomous",
+          warning: null,
+          summary: "Trusted inputs with unsandboxed autonomous execution.",
+        },
+      }),
+    },
+    {
+      path: "/api/setup-config",
+      method: "POST",
+      body: JSON.stringify({
+        changes: {
+          repoPath: "/tmp/repo",
+          reviewProvider: "codex",
+        },
+      }),
+      response: setupConfigResponse.promise,
+    },
+    {
+      path: "/api/setup-readiness",
+      response: setupReadinessRefreshResponse.promise,
+    },
+  ]);
+  await harness.flush();
+
+  const repoPathInput = harness.document.getElementById("setup-input-repoPath");
+  const reviewProviderInput = harness.document.getElementById("setup-input-reviewProvider");
+  const setupForm = harness.document.getElementById("setup-form");
+  const saveButton = harness.document.getElementById("setup-save-button");
+  const saveStatus = harness.document.getElementById("setup-save-status");
+  assert.ok(repoPathInput);
+  assert.ok(reviewProviderInput);
+  assert.ok(setupForm);
+  assert.ok(saveButton);
+  assert.ok(saveStatus);
+
+  repoPathInput.value = "/tmp/repo";
+  reviewProviderInput.value = "codex";
+  const submitPromise = setupForm.dispatch("submit", {
+    preventDefault() {},
+  });
+  await harness.flush();
+
+  assert.equal(saveButton.disabled, true);
+  assert.match(saveStatus.textContent, /Saving setup changes\.\.\./u);
+
+  setupConfigResponse.resolve(jsonResponse({
+    kind: "setup_config_update",
+    configPath: "/tmp/supervisor.config.json",
+    backupPath: null,
+    updatedFields: ["repoPath", "reviewProvider"],
+    document: {
+      repoPath: "/tmp/repo",
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    },
+    readiness: {
+      kind: "setup_readiness",
+      ready: false,
+      overallStatus: "missing",
+      configPath: "/tmp/supervisor.config.json",
+      fields: [],
+      blockers: [],
+      hostReadiness: { overallStatus: "pass", checks: [] },
+      providerPosture: {
+        profile: "codex",
+        provider: "codex",
+        reviewers: ["chatgpt-codex-connector"],
+        signalSource: "review_bot_logins",
+        configured: true,
+        summary: "Codex Connector is configured.",
+      },
+      trustPosture: {
+        trustMode: "trusted_repo_and_authors",
+        executionSafetyMode: "unsandboxed_autonomous",
+        warning: null,
+        summary: "Trusted inputs with unsandboxed autonomous execution.",
+      },
+    },
+  }));
+  await harness.flush();
+
+  assert.equal(saveButton.disabled, true);
+  assert.match(saveStatus.textContent, /Revalidating setup readiness\.\.\./u);
+
+  setupReadinessRefreshResponse.resolve(jsonResponse({
+    kind: "setup_readiness",
+    ready: true,
+    overallStatus: "configured",
+    configPath: "/tmp/supervisor.config.json",
+    fields: [
+      {
+        key: "repoPath",
+        label: "Repository path",
+        state: "configured",
+        value: "/tmp/repo",
+        message: "Repository path is configured.",
+        required: true,
+        metadata: {
+          source: "config",
+          editable: true,
+          valueType: "directory_path",
+        },
+      },
+      {
+        key: "reviewProvider",
+        label: "Review provider",
+        state: "configured",
+        value: "chatgpt-codex-connector",
+        message: "Review provider posture is configured.",
+        required: true,
+        metadata: {
+          source: "config",
+          editable: true,
+          valueType: "review_provider",
+        },
+      },
+    ],
+    blockers: [],
+    hostReadiness: {
+      overallStatus: "pass",
+      checks: [],
+    },
+    providerPosture: {
+      profile: "codex",
+      provider: "codex",
+      reviewers: ["chatgpt-codex-connector"],
+      signalSource: "review_bot_logins",
+      configured: true,
+      summary: "Codex Connector is configured.",
+    },
+    trustPosture: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: null,
+      summary: "Trusted inputs with unsandboxed autonomous execution.",
+    },
+  }));
+
+  await submitPromise;
+  await harness.flush();
+
+  assert.deepEqual(
+    harness.fetchCalls.map((call) => ({ path: call.path, method: call.method, body: call.body })),
+    [
+      { path: "/api/setup-readiness", method: "GET", body: null },
+      {
+        path: "/api/setup-config",
+        method: "POST",
+        body: JSON.stringify({
+          changes: {
+            repoPath: "/tmp/repo",
+            reviewProvider: "codex",
+          },
+        }),
+      },
+      { path: "/api/setup-readiness", method: "GET", body: null },
+    ],
+  );
+  assert.equal(saveButton.disabled, false);
+  assert.match(saveStatus.textContent, /Saved 2 setup fields\./u);
+  assert.match(harness.document.getElementById("setup-overall-status")?.textContent ?? "", /configured/u);
+  assert.match(harness.document.getElementById("setup-blocker-summary")?.textContent ?? "", /No blocking setup conditions remain\./u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 

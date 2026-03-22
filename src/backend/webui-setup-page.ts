@@ -132,6 +132,71 @@ export function renderSupervisorSetupPage(): string {
         margin-top: 14px;
       }
 
+      .form-grid {
+        display: grid;
+        gap: 12px;
+      }
+
+      .field-editor {
+        display: grid;
+        gap: 6px;
+        border: 1px solid rgba(61, 45, 29, 0.1);
+        border-radius: 16px;
+        padding: 14px;
+        background: rgba(255, 255, 255, 0.7);
+      }
+
+      .field-editor__label {
+        font-weight: 700;
+      }
+
+      .field-editor__hint {
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .field-editor__input {
+        width: 100%;
+        border: 1px solid rgba(61, 45, 29, 0.18);
+        border-radius: 12px;
+        padding: 10px 12px;
+        font: inherit;
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.92);
+      }
+
+      .field-editor__input:disabled {
+        opacity: 0.7;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        margin-top: 16px;
+      }
+
+      .button {
+        border: 0;
+        border-radius: 999px;
+        padding: 11px 18px;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+        color: #fffaf4;
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+      }
+
+      .button:disabled {
+        cursor: progress;
+        opacity: 0.72;
+      }
+
+      .status-note {
+        color: var(--muted);
+      }
+
       .row-label {
         color: var(--muted);
         font-size: 0.85rem;
@@ -221,6 +286,26 @@ export function renderSupervisorSetupPage(): string {
         </article>
 
         <section class="grid" aria-label="setup-overview">
+          <article class="panel">
+            <div class="panel-header">
+              <h2>Guided config</h2>
+            </div>
+            <div class="panel-body">
+              <p id="setup-form-summary" class="hint">Loading typed setup fields…</p>
+              <form id="setup-form">
+                <div id="setup-editors" class="form-grid">
+                  <div class="field-editor">
+                    <div class="field-editor__label">Loading setup editor…</div>
+                  </div>
+                </div>
+                <div class="actions">
+                  <button id="setup-save-button" class="button" type="submit">Save setup changes</button>
+                  <p id="setup-save-status" class="status-note">Waiting for setup readiness…</p>
+                </div>
+              </form>
+            </div>
+          </article>
+
           <article class="panel">
             <div class="panel-header">
               <h2>Readiness</h2>

@@ -1,75 +1,59 @@
-# Issue #840: Setup config write API: add a narrow validated first-run config update path
+# Issue #841: WebUI guided setup flow: save through the narrow config API and revalidate in the browser
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/840
-- Branch: codex/issue-840
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/841
+- Branch: codex/issue-841
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: repairing_ci
-- Attempt count: 4 (implementation=2, repair=2)
-- Last head SHA: d3f451f0c60064b0623a7b99dd07af35e3bf6a33
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: daf039a6a8fd53658c858295133ce1689862f226
 - Blocked reason: none
-- Last failure signature: build (ubuntu-latest):fail|build (macos-latest):fail
-- Repeated failure signature count: 1
-- Updated at: 2026-03-22T18:35:16Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-22T19:07:13Z
 
 ## Latest Codex Summary
-Reproduced the failing PR build locally with `npm run build`, which matched CI as `TS2769` at `src/config.test.ts:883` because `result.backupPath` was typed as `string | null` and passed directly to `fs.readFile`. I fixed the test by asserting `result.backupPath` is present before reading the backup file in [src/config.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/config.test.ts), committed it as `d3f451f`, and pushed the repair to PR [#853](https://github.com/TommyKammy/codex-supervisor/pull/853).
-
-Focused local verification is green again: `npm run build` now passes, and `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts` passed after the fix. The worktree is clean apart from the pre-existing untracked `.codex-supervisor/replay/` directory, and `gh pr view 853` reports `isDraft: false`, `state: OPEN`, `headRefOid: d3f451f0c60064b0623a7b99dd07af35e3bf6a33`, and `mergeStateStatus: UNSTABLE` while checks rerun.
-
-Summary: Reproduced the CI TypeScript failure locally, fixed the nullability assertion in `src/config.test.ts`, and pushed repair commit `d3f451f` to PR `#853`.
-State hint: repairing_ci
-Blocked reason: none
-Tests: `npm run build`; `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts`
-Failure signature: build-tsc-ts2769-config-test-backupPath-null
-Next action: monitor PR `#853` for rerun results and address any additional CI or review feedback if more failures surface
+- Added a guided first-run setup editor to the setup page, posting typed changes only to `/api/setup-config` and then re-fetching `/api/setup-readiness` so the browser shows save and revalidation state explicitly.
 
 ## Active Failure Context
-- Category: checks
-- Summary: PR #853 failed the build checks, and the failure reproduces locally as a TypeScript nullability error in `src/config.test.ts`.
-- Command or source: `npm run build`
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/853
-- Details:
-  - local reproduction before the fix: `src/config.test.ts(883,55): error TS2769: No overload matches this call`
-  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23409475269/job/68094061598
-  - build (macos-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23409475269/job/68094061599
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the narrowest safe first-run mutation path is a dedicated server-owned merge that only accepts a small typed field set and maps `reviewProvider` to `reviewBotLogins`, rather than exposing arbitrary config patching.
-- What changed: reproduced the failing CI build locally, then added `assert.ok(result.backupPath, "Expected backupPath to be set when updating an existing config")` before reading the backup file in [src/config.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/config.test.ts) so the test encodes the existing-config precondition and satisfies TypeScript's `string | null` typing.
+- Hypothesis: the setup shell can stay narrow and safe by rendering editable inputs from typed readiness metadata, sending only accepted setup fields to `/api/setup-config`, and then treating a second `/api/setup-readiness` fetch as the source of truth for the refreshed UI.
+- What changed: added a guided config form to the setup page, explicit `saving` and `revalidating` status text in the browser script, a focused browser-harness regression that proves the POST plus follow-up GET sequence, and a live Playwright smoke test that completes the first-run path through the real HTTP fixture.
 - Current blocker: none
-- Next exact step: monitor PR `#853` (`https://github.com/TommyKammy/codex-supervisor/pull/853`) for the rerun build results, then only intervene again if another CI or review signal appears.
-- Verification gap: none for this repair; both `npm run build` and `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts` passed after the assertion fix.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/config.test.ts`
-- Rollback concern: low; the change is additive and narrow, and existing configs get a `.bak` rollback point before writes.
-- Last focused command: `gh pr view 853 --json url,isDraft,mergeStateStatus,headRefOid,state`
-- Last focused failure: `npm run build` failed before the fix with `src/config.test.ts(883,55): error TS2769: No overload matches this call`; after the assertion change, the build and the issue verification command both passed locally.
+- Next exact step: commit the guided setup-flow checkpoint, push `codex/issue-841`, and open a draft PR because no PR exists for this branch yet.
+- Verification gap: none on the local diff; the issue verification command and `npm run build` both passed after restoring dependencies with `npm ci`.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-smoke.test.ts`, `src/backend/webui-dashboard.test.ts`, `src/backend/webui-setup-browser-script.ts`, `src/backend/webui-setup-page.ts`
+- Rollback concern: medium-low; the change is isolated to the setup shell and its tests, but the browser script now owns input rendering and save state so regressions would affect first-run setup UX directly.
+- Last focused command: `npm run build`
+- Last focused failure: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts` initially failed with `Error: Cannot find module 'playwright-core'`; running `npm ci` restored the missing dependency and the focused verification then passed.
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-840/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-840/context-index.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-841/AGENTS.generated.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-841/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
 git status --short --branch
-sed -n '850,905p' src/config.test.ts
-npm run build
+rg -n "setup|revalidate|reviewProvider|reviewBotLogins|narrow" src/backend src
+sed -n '1,260p' src/backend/webui-setup-browser-script.ts
+sed -n '1,240p' src/backend/supervisor-http-server.ts
+sed -n '1,260p' src/setup-config-write.ts
+sed -n '1,260p' src/backend/webui-dashboard-browser-smoke.test.ts
+sed -n '1,260p' src/backend/webui-dashboard.test.ts
+sed -n '1,260p' src/backend/webui-setup-page.ts
+sed -n '1,240p' docs/getting-started.md
+npx tsx --test src/backend/webui-dashboard.test.ts --test-name-pattern "setup shell saves through the narrow setup config API and revalidates readiness after the write"
+npx tsx --test src/backend/webui-dashboard.test.ts --test-name-pattern "setup shell (loads|saves)"
+npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts
 npm ci
 npm run build
-npx tsx --test src/config.test.ts
-npm run build
-npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts
-git diff -- src/config.test.ts
-git diff -- .codex-supervisor/issue-journal.md
-gh pr view 853 --json url,isDraft,mergeStateStatus,headRefOid,state
-git add src/config.test.ts
-git commit -m "Fix setup config backup test typing"
-git push origin codex/issue-840
-git rev-parse HEAD
 date -u +%Y-%m-%dT%H:%M:%SZ
-gh pr view 853 --json url,isDraft,mergeStateStatus,headRefOid,state
+gh pr view --json url,isDraft,number,state,headRefName,mergeStateStatus
 ```
 ### Scratchpad
+- 2026-03-22T19:07:13Z: added the setup-form browser regression, implemented the guided setup editor and save-status flow in the setup page/browser script, added a Playwright smoke test that completes first-run setup through `/api/setup-config`, restored missing `playwright-core` via `npm ci`, and reran the issue verification command plus `npm run build` successfully.
 - 2026-03-22T18:35:16Z: reproduced the PR build failure locally with `npm run build` as `TS2769` in `src/config.test.ts(883,55)`, added a non-null assertion via `assert.ok(result.backupPath, ...)`, reran `npm run build` plus the issue verification command successfully, and pushed repair commit `d3f451f` to PR `#853`.
 - 2026-03-22T10:56:27Z: `git merge --no-edit origin/main` reported a single content conflict in `.codex-supervisor/issue-journal.md`; all product code and tests from `origin/main` merged without manual intervention.
 - 2026-03-22T10:56:27Z: resolved the journal conflict by restoring the issue-824 journal content and updating it for the current merge-resolution pass instead of taking `main`'s unrelated issue-829 journal.
