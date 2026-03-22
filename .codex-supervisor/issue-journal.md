@@ -5,25 +5,25 @@
 - Branch: codex/issue-840
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
+- Current phase: waiting_ci
 - Attempt count: 2 (implementation=2, repair=0)
 - Last head SHA: 55d96bf5c7aa0ccaaa247890113f26ce6101e665
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-22T18:20:46.080Z
+- Updated at: 2026-03-22T18:21:29Z
 
 ## Latest Codex Summary
 Implemented a narrow first-run config write path in [src/setup-config-write.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/setup-config-write.ts), wired it through [src/supervisor/supervisor.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/supervisor/supervisor.ts), [src/supervisor/supervisor-service.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/supervisor/supervisor-service.ts), and [src/backend/supervisor-http-server.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/backend/supervisor-http-server.ts). The new `POST /api/setup-config` path only accepts the supported first-run fields, validates them before mutation, preserves unrelated config keys, writes a `.bak` rollback copy for existing configs, updates the file atomically, and returns refreshed setup readiness.
 
-Focused coverage was added in [src/backend/supervisor-http-server.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/backend/supervisor-http-server.test.ts) and [src/config.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/config.test.ts) for accepted writes, malformed request rejection, invalid-value rejection, and preservation behavior. I updated [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/.codex-supervisor/issue-journal.md) and committed the checkpoint as `55d96bf` (`Add setup config write path`). The only remaining workspace noise is the pre-existing untracked `.codex-supervisor/replay/` directory, which I left alone.
+Focused coverage was added in [src/backend/supervisor-http-server.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/backend/supervisor-http-server.test.ts) and [src/config.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/config.test.ts) for accepted writes, malformed request rejection, invalid-value rejection, and preservation behavior. I updated [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/.codex-supervisor/issue-journal.md), pushed `codex/issue-840`, and opened draft PR [#853](https://github.com/TommyKammy/codex-supervisor/pull/853). The only remaining workspace noise is the pre-existing untracked `.codex-supervisor/replay/` directory, which I left alone.
 
 Summary: Added a validated `/api/setup-config` write path with backup/preservation behavior and focused tests; committed as `55d96bf`.
-State hint: draft_pr
+State hint: waiting_ci
 Blocked reason: none
 Tests: `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts`; `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts`
 Failure signature: none
-Next action: open or update the draft PR for issue #840 from branch `codex/issue-840` and let CI run on commit `55d96bf`
+Next action: monitor draft PR `#853` for CI and review feedback, then address any regressions if checks fail
 
 ## Active Failure Context
 - None recorded.
@@ -33,12 +33,12 @@ Next action: open or update the draft PR for issue #840 from branch `codex/issue
 - Hypothesis: the narrowest safe first-run mutation path is a dedicated server-owned merge that only accepts a small typed field set and maps `reviewProvider` to `reviewBotLogins`, rather than exposing arbitrary config patching.
 - What changed: added a focused failing HTTP regression for `POST /api/setup-config` and a config-layer regression for backup/preservation, reproduced the gap as `405` plus a missing `setup-config-write` module, then implemented [src/setup-config-write.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/setup-config-write.ts) to validate supported first-run fields, reject invalid writes before disk mutation, preserve unrelated fields, write a `.bak` rollback copy for existing configs, atomically rewrite the config, and recompute setup readiness. Wired the new path through [src/supervisor/supervisor.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/supervisor/supervisor.ts), [src/supervisor/supervisor-service.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/supervisor/supervisor-service.ts), and [src/backend/supervisor-http-server.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/backend/supervisor-http-server.ts), then added rejection coverage in [src/backend/supervisor-http-server.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/backend/supervisor-http-server.test.ts) and [src/config.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-840/src/config.test.ts).
 - Current blocker: none
-- Next exact step: review the new write-path diff once, commit it on `codex/issue-840`, and open or update a draft PR if none exists yet.
+- Next exact step: monitor draft PR `#853` (`https://github.com/TommyKammy/codex-supervisor/pull/853`) and address any CI or review feedback that appears.
 - Verification gap: none on the issue command; `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts` passed on the local diff.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/backend/supervisor-http-server.ts`, `src/config.test.ts`, `src/setup-config-write.ts`, `src/supervisor/supervisor-service.ts`, `src/supervisor/supervisor.ts`
 - Rollback concern: low; the change is additive and narrow, and existing configs get a `.bak` rollback point before writes.
-- Last focused command: `npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts`
-- Last focused failure: reproduced before implementation as `setup-config-write-route-missing`; `POST /api/setup-config` returned `405` and `src/config.test.ts` failed with `Cannot find module './setup-config-write'`.
+- Last focused command: `gh pr view 853 --json url,isDraft,mergeStateStatus,headRefName,headRefOid,baseRefName,state`
+- Last focused failure: none; draft PR `https://github.com/TommyKammy/codex-supervisor/pull/853` is open on head `5fb741579fbe1482339ff73ebcd53c1a77be059e` with `mergeStateStatus` `UNSTABLE`, which is expected while checks settle.
 - Last focused commands:
 ```bash
 sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-840/AGENTS.generated.md
@@ -57,8 +57,13 @@ npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts
 npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts
 npx tsx --test src/backend/supervisor-http-server.test.ts src/config.test.ts src/doctor.test.ts
 git diff -- src/backend/supervisor-http-server.ts src/backend/supervisor-http-server.test.ts src/config.test.ts src/setup-config-write.ts src/supervisor/supervisor-service.ts src/supervisor/supervisor.ts .codex-supervisor/issue-journal.md
+git commit -m "Update issue 840 journal handoff"
+git push -u origin codex/issue-840
+gh pr create --draft --base main --head codex/issue-840 --title "Add setup config write path for first-run setup" --body ...
+gh pr view 853 --json url,isDraft,mergeStateStatus,headRefName,headRefOid,baseRefName,state
 ```
 ### Scratchpad
+- 2026-03-22T18:21:29Z: pushed `codex/issue-840` to origin and opened draft PR `#853`; `gh pr view 853` reports head `5fb741579fbe1482339ff73ebcd53c1a77be059e`, draft `true`, and `mergeStateStatus` `UNSTABLE`.
 - 2026-03-22T18:09:02Z: reproduced the issue with a focused failing HTTP regression (`POST /api/setup-config` returned `405`) and a missing-module failure for `./setup-config-write`, then implemented the write path and reran the focused issue command successfully.
 - 2026-03-22T10:56:27Z: `git merge --no-edit origin/main` reported a single content conflict in `.codex-supervisor/issue-journal.md`; all product code and tests from `origin/main` merged without manual intervention.
 - 2026-03-22T10:56:27Z: resolved the journal conflict by restoring the issue-824 journal content and updating it for the current merge-resolution pass instead of taking `main`'s unrelated issue-829 journal.
