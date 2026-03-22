@@ -35,14 +35,14 @@ Next action: Monitor PR #821 for CI startup and fix any remote failures, especia
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: the remaining confidence gap for the WebUI was missing browser-level coverage across the actual HTTP shell, SSE connection, and safe-command button flow; existing VM-based script tests were narrower than the new acceptance criteria.
-- What changed: added a Playwright-core-backed smoke test that launches a real headless Chrome/Chromium against `createSupervisorHttpServer()`, covers read-only dashboard load, and exercises the confirmed prune-workspaces command path end to end through the browser UI.
-- Current blocker: CodeRabbit review thread `PRRT_kwDORgvdZ8518nWI` identified a README wording mismatch with the smoke harness executable resolver list.
-- Next exact step: land the README wording fix, push `codex/issue-815`, and resolve the automated review thread if no other review feedback appears.
-- Verification gap: no runtime verification gap from the earlier green focused test/build pass; this review turn changes docs only and needs the README text checked against the resolver implementation.
+- What changed: added a Playwright-core-backed smoke test that launches a real headless Chrome/Chromium against `createSupervisorHttpServer()`, covers read-only dashboard load, and exercises the confirmed prune-workspaces command path end to end through the browser UI. The follow-up review fix aligned the top-level README wording with the actual smoke harness executable resolver list.
+- Current blocker: none
+- Next exact step: monitor PR #821 for any fresh CI or review activity after commit `dc39ff5`, and repair only if new feedback appears.
+- Verification gap: none; this review turn changed docs only and the README wording now matches `resolveChromeExecutable()`.
 - Files touched: `.codex-supervisor/issue-journal.md`, `README.md`, `docs/getting-started.md`, `package-lock.json`, `package.json`, `src/backend/webui-dashboard-browser-smoke.test.ts`
 - Rollback concern: keep the smoke harness fixture-only and browser-binary-driven through `CHROME_BIN` so the suite stays deterministic and does not grow into network-dependent end-to-end coverage.
-- Last focused command: `git diff -- README.md`
-- Last focused failure: `PRRT_kwDORgvdZ8518nWI`
+- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}' -F threadId=PRRT_kwDORgvdZ8518nWI`
+- Last focused failure: none
 - Last focused commands:
 ```bash
 npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts
@@ -52,10 +52,15 @@ npm run test:webui-smoke
 npm run build
 rg -n "google-chrome|chromium-browser|google-chrome-stable|CHROME_BIN|playwright-core" README.md docs/getting-started.md src package.json
 git diff -- README.md
+git commit -m "Align smoke harness README executable list"
+git push origin codex/issue-815
+gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:20){nodes{id isResolved comments(first:10){nodes{url path body}}}}}}}' -F owner=TommyKammy -F repo=codex-supervisor -F number=821
+gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}' -F threadId=PRRT_kwDORgvdZ8518nWI
 ```
 ### Scratchpad
 - 2026-03-22T00:00:00Z: validated CodeRabbit thread `PRRT_kwDORgvdZ8518nWI`; the review was correct because `README.md` mentioned only `google-chrome` and `chromium` while `resolveChromeExecutable()` also checks `google-chrome-stable` and `chromium-browser`.
 - 2026-03-22T00:00:00Z: updated the README smoke-harness note to list all resolver candidates; `docs/getting-started.md` already matched the implementation, so no shared-doc follow-up was needed there.
+- 2026-03-22T00:00:00Z: committed the README review fix as `dc39ff5` (`Align smoke harness README executable list`), pushed `codex/issue-815`, and resolved the CodeRabbit review thread on PR #821.
 - 2026-03-22T00:00:00Z: documented the browser harness in `README.md` and `docs/getting-started.md`, including the `CHROME_BIN` override for CI or nonstandard local browser paths.
 - 2026-03-22T00:00:00Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`, `npm run test:webui-smoke`, and `npm run build`.
 - 2026-03-22T00:00:00Z: updated browser-side safe-command rendering to publish explicit `in_progress`, rejection, and refresh-failure guidance, and added a static operator hint describing serialized command execution.
