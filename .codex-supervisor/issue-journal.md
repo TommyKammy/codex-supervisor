@@ -1,56 +1,73 @@
-# Issue #845: WebUI panel layout model: add typed panel registry and default layout state
+# Issue #846: WebUI panel shell: standardize dashboard blocks before drag-and-drop
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/845
-- Branch: codex/issue-845
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/846
+- Branch: codex/issue-846
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: draft_pr
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: a6f6ea09d33e6179597771e00532902503ce1481
+- Current phase: stabilizing
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: c4e2a04cb243153b2e6437fa139ed5f253863dc4
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-22T20:06:27Z
+- Updated at: 2026-03-22T21:15:08Z
 
 ## Latest Codex Summary
-- Added a typed WebUI dashboard panel registry plus a local layout-state model, switched the dashboard shell to render panel sections from that registry, locked the current default panel order in focused tests, committed the checkpoint as `a6f6ea0`, pushed `codex/issue-845`, and opened draft PR `#855`.
+- Standardized the dashboard panels around a shared shell helper, preserving existing browser-script ids and command semantics while adding a reserved drag-slot lane, panel subtitles, and shared empty-state treatment.
+- Added a focused dashboard regression that proves each registered panel uses the common shell structure.
+- Committed the implementation as `c4e2a04` (`feat: standardize dashboard panel shell`).
+- Pushed `codex/issue-846` and opened draft PR `#856`: https://github.com/TommyKammy/codex-supervisor/pull/856
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: a small WebUI-only panel layout module can define stable panel identifiers, preserve the current dashboard arrangement as default state, and provide a safe fallback path for future browser-managed ordering or visibility without affecting supervisor or CLI behavior.
-- What changed: added `src/backend/webui-dashboard-panel-layout.ts` with typed panel ids, registry entries, default layout state, and layout normalization; updated `src/backend/webui-dashboard-page.ts` to render overview/details sections from that registry instead of hard-coded panel markup order; added focused tests for registry/layout fallback and for the rendered default panel sequence.
+- Hypothesis: the remaining issue-846 gap is structural rather than behavioral, so a shared panel shell helper can standardize dashboard headers, subtitles, body framing, reserved drag-handle space, and initial empty states while keeping all existing DOM ids and backend/browser command semantics intact.
+- What changed: added a focused failing regression in `src/backend/webui-dashboard.test.ts` that proved each panel lacked a common shell; replaced duplicated panel HTML in `src/backend/webui-dashboard-panel-layout.ts` with a `renderDashboardPanelShell(...)` helper; added shared subtitle, header-meta/action lanes, and a reserved `panel-drag-slot`; updated `src/backend/webui-dashboard-page.ts` styles for the new shell and common empty-state treatment.
 - Current blocker: none
-- Next exact step: monitor draft PR `#855` for CI and review feedback, then address any follow-up needed on the typed panel layout slice.
-- Verification gap: none on the focused scope; the issue verification command passed after the layout refactor.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-panel-layout.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard.test.ts`
-- Rollback concern: low; the change is isolated to dashboard shell rendering and typed browser-side layout metadata, with no supervisor API or CLI behavior changes.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-845 --title "feat: add typed dashboard panel layout model" --body ...`
+- Next exact step: monitor PR `#856` for CI and review feedback, then address any follow-up needed on the shared dashboard shell.
+- Verification gap: none on the focused issue scope; the requested dashboard test command passed after the shell refactor.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-panel-layout.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard.test.ts`
+- Rollback concern: low; the change is isolated to WebUI dashboard markup/CSS and preserves existing browser-script ids plus command endpoints.
+- Last focused command: `gh pr create --draft --base main --head codex/issue-846 --title "feat: standardize dashboard panel shell" --body ...`
 - Last focused failure: none.
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-845/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-845/context-index.md
+gh pr status
+date -u +%Y-%m-%dT%H:%M:%SZ
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-846/AGENTS.generated.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-846/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
 git status --short --branch
-rg -n "panel|dashboard|layout|registry" src/backend
+rg --files src/backend | rg 'webui-dashboard|dashboard'
+rg -n "panel shell|panel-shell|drag handle|empty state|dashboard panel|data-panel|panel-header|dashboard-block|panel-subtitle" src/backend
+sed -n '1,260p' src/backend/webui-dashboard-panel-layout.ts
 sed -n '1,260p' src/backend/webui-dashboard.test.ts
-sed -n '1,260p' src/backend/webui-dashboard-browser-logic.test.ts
-rg --files src/backend | rg 'webui-dashboard|webui-.*dashboard|dashboard-browser|dashboard-page'
-sed -n '388,580p' src/backend/webui-dashboard-page.ts
-sed -n '1,220p' src/backend/webui-dashboard-browser-script.ts
-sed -n '1,260p' src/backend/webui-dashboard-browser-logic.ts
-rg -n "renderSupervisorDashboardHtml|Operator dashboard|Tracked history|Issue details|Operator actions|Live events|Status|Doctor" src/backend/webui-dashboard.test.ts
-sed -n '260,420p' src/backend/webui-dashboard.test.ts
-npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts
+sed -n '1,260p' src/backend/webui-dashboard-page.ts
+sed -n '260,520p' src/backend/webui-dashboard-panel-layout.ts
+sed -n '260,520p' src/backend/webui-dashboard-page.ts
+sed -n '260,520p' src/backend/webui-dashboard.test.ts
+rg -n "status-warning|doctor-overall|issue-summary|tracked-history-toggle|command-status|event-list|operator-timeline|tracked-history-summary|tracked-history-lines|issue-shortcuts|issue-form|issue-explain|issue-lint|run-once-button|requeue-button|prune-workspaces-button|reset-json-state-button" src/backend/webui-dashboard-browser-script.ts src/backend/webui-dashboard-browser-logic.ts
+sed -n '1,320p' src/backend/webui-dashboard-browser-script.ts
+npx tsx --test src/backend/webui-dashboard.test.ts
+npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts
 date -u +%Y-%m-%dT%H:%M:%SZ
 git status --short
-git diff -- src/backend/webui-dashboard-panel-layout.ts src/backend/webui-dashboard-page.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts .codex-supervisor/issue-journal.md
+git diff -- src/backend/webui-dashboard-panel-layout.ts src/backend/webui-dashboard-page.ts src/backend/webui-dashboard.test.ts
+git add .codex-supervisor/issue-journal.md
+git commit -m "docs: update issue 846 journal handoff"
+git push -u origin codex/issue-846
+gh pr create --draft --base main --head codex/issue-846 --title "feat: standardize dashboard panel shell" --body ...
+git status --short --branch
+gh pr view 856 --json number,url,isDraft,mergeStateStatus,headRefName,baseRefName
+date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
+- 2026-03-22T21:15:08Z: pushed `codex/issue-846` and opened draft PR `#856`; GitHub currently reports `mergeStateStatus=UNSTABLE`, so the next turn should inspect CI/check runs and address any failures or review feedback.
+- 2026-03-22T21:14:15Z: confirmed there was no existing PR for `codex/issue-846`; next step is to push the branch and open a draft PR with commit `c4e2a04`.
+- 2026-03-22T21:02:11Z: reproduced the issue with a new shell-structure regression, then passed the focused verification command after moving all dashboard panels onto a shared shell helper with a reserved drag slot and shared subtitle/meta/action lanes.
 - 2026-03-22T20:06:27Z: committed the typed dashboard panel layout work as `a6f6ea0`, pushed `codex/issue-845`, and opened draft PR `#855` at https://github.com/TommyKammy/codex-supervisor/pull/855.
 - 2026-03-22T20:04:56Z: added typed dashboard panel ids, registry, default layout state, and normalization in `src/backend/webui-dashboard-panel-layout.ts`, then switched `src/backend/webui-dashboard-page.ts` to render from the registry so DOM order is driven by typed layout data rather than duplicated markup order.
 - 2026-03-22T20:04:56Z: added focused regressions in `src/backend/webui-dashboard-browser-logic.test.ts` and `src/backend/webui-dashboard.test.ts`; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts` passed twice on the local diff.
