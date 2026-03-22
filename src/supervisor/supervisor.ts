@@ -104,6 +104,7 @@ import { summarizeSupervisorStatusRecords } from "./supervisor-selection-status-
 import { inferFailureContext } from "./supervisor-failure-context";
 import { StateStore } from "../core/state-store";
 import { diagnoseSupervisorHost, loadStateReadonlyForDoctor, renderDoctorReport } from "../doctor";
+import { buildSetupConfigPreview, type SetupConfigPreviewSelectableReviewProviderProfile } from "../setup-config-preview";
 import { diagnoseSetupReadiness } from "../setup-readiness";
 import {
   blockedReasonForLifecycleState,
@@ -1078,6 +1079,15 @@ export class Supervisor {
     return diagnoseSetupReadiness({
       configPath: this.configPath,
       authStatus: () => this.github.authStatus(),
+    });
+  }
+
+  async setupConfigPreview(options: {
+    reviewProviderProfile?: SetupConfigPreviewSelectableReviewProviderProfile;
+  } = {}) {
+    return buildSetupConfigPreview({
+      configPath: this.configPath,
+      reviewProviderProfile: options.reviewProviderProfile,
     });
   }
 

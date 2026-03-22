@@ -1,5 +1,6 @@
 import type { CliOptions, JsonCorruptStateResetResult, SupervisorConfig } from "../core/types";
 import type { DoctorDiagnostics } from "../doctor";
+import type { SetupConfigPreview, SetupConfigPreviewSelectableReviewProviderProfile } from "../setup-config-preview";
 import type { SetupReadinessReport } from "../setup-readiness";
 import type {
   SupervisorMutationResultDto,
@@ -26,6 +27,7 @@ export interface SupervisorService {
   queryIssueLint: (issueNumber: number) => Promise<SupervisorIssueLintDto>;
   queryDoctor: () => Promise<DoctorDiagnostics>;
   querySetupReadiness?: () => Promise<SetupReadinessReport>;
+  querySetupConfigPreview?: (options: { reviewProviderProfile?: SetupConfigPreviewSelectableReviewProviderProfile }) => Promise<SetupConfigPreview>;
   subscribeEvents?: (listener: SupervisorEventSink) => SupervisorEventUnsubscribe;
 }
 
@@ -102,6 +104,12 @@ class SupervisorApplicationService implements SupervisorService {
 
   querySetupReadiness(): Promise<SetupReadinessReport> {
     return this.supervisor.setupReadinessReport();
+  }
+
+  querySetupConfigPreview(options: {
+    reviewProviderProfile?: SetupConfigPreviewSelectableReviewProviderProfile;
+  }): Promise<SetupConfigPreview> {
+    return this.supervisor.setupConfigPreview(options);
   }
 
   subscribeEvents(listener: SupervisorEventSink): SupervisorEventUnsubscribe {
