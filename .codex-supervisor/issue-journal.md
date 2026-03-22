@@ -1,54 +1,58 @@
-# Issue #823: WebUI tracked history: move tracked issues into a dedicated panel with non-done default
+# Issue #824: WebUI issue details hygiene: stop defaulting typed shortcuts to historical tracked done issues
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/823
-- Branch: codex/issue-823
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/824
+- Branch: codex/issue-824
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: draft_pr
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 6528d38c56b1d48818fc2adf65eb71e1db7ca7e8
+- Current phase: stabilizing
+- Attempt count: 5 (implementation=5, repair=0)
+- Last head SHA: 580d6b37dfe8b10c4f349d7a99ea864e389c2ea4
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-22T07:14:24Z
+- Last failure signature: stale-stabilizing-no-pr-recovery-loop
+- Repeated failure signature count: 1
+- Updated at: 2026-03-22T08:55:48.068Z
 
 ## Latest Codex Summary
-- Reproduced the missing tracked-history surface with focused browser-logic and dashboard tests, then added a dedicated WebUI tracked-history panel that defaults to non-`done` issues and exposes a toggle to reveal completed history without polluting the main Summary panel. Focused WebUI verification and `npm run build` passed locally after restoring dependencies with `npm ci`, the branch was committed as `6528d38`, pushed to `origin/codex/issue-823`, and draft PR #830 was opened.
+There was still one browser-side hygiene gap after the tracked-history panel changes landed on `main`: [webui-dashboard-browser-logic.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-824/src/backend/webui-dashboard-browser-logic.ts) was still feeding tracked `done` issues into the default typed shortcut strip. I fixed that by reusing the existing non-`done` tracked filter for shortcut collection and added regressions in [webui-dashboard-browser-logic.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-824/src/backend/webui-dashboard-browser-logic.test.ts) and [webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-824/src/backend/webui-dashboard.test.ts).
+
+Focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts` and `npm run build`. `gh pr list --head codex/issue-824` is still empty, so this branch now has a real local checkpoint that should be committed, pushed, and opened as a draft PR.
+
+Summary: Filtered tracked `done` issues out of the default Issue Details shortcut strip and added focused browser-logic/dashboard regressions.
+State hint: stabilizing
+Blocked reason: none
+Tests: `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts` (passed); `npm run build` (passed)
+Failure signature: none
+Next action: commit the focused dashboard shortcut fix, push `codex/issue-824`, and open a draft PR
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining #823 gap was entirely in the browser projection layer, because typed `trackedIssues` already existed but the dashboard still lacked a dedicated history panel and a default non-`done` filter.
-- What changed: added focused failing assertions for tracked-history filtering and rendering, introduced tracked-history formatting helpers with a non-`done` default, added a dedicated `Tracked history` panel plus toggle in the dashboard page/script, and kept the main Summary panel count-only.
+- Hypothesis: #824 still had a narrow browser-side shortcut leak even after the tracked-history panel work merged; filtering tracked `done` issues out of `collectIssueShortcuts()` closes the remaining default-noise gap without changing backend selection semantics.
+- What changed: updated the Issue Details shortcut collector to reuse the existing non-`done` tracked filter, added a browser-logic regression that includes a tracked `done` issue but expects it to stay out of the shortcut list, and added a dashboard harness regression proving the rendered shortcut strip still shows only the current runnable/blocked issues when tracked history contains a completed item.
 - Current blocker: none
-- Next exact step: monitor draft PR #830 for CI and review feedback, and repair only if new failures or comments appear.
-- Verification gap: none for the scoped tracked-history behavior; focused dashboard/browser-logic tests and `npm run build` passed locally after `npm ci`.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard.test.ts`
-- Rollback concern: keep the Summary panel count-only and the tracked-history toggle browser-side; avoid moving `done` filtering into the backend so operators can still reveal full tracked history on demand.
+- Next exact step: commit this focused browser/dashboard change, push `codex/issue-824`, and open a draft PR so review can happen against the actual shortcut-strip fix.
+- Verification gap: none for the scoped shortcut-history hygiene behavior; focused dashboard/browser-logic tests and `npm run build` passed on the local source diff.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard.test.ts`
+- Rollback concern: keep the tracked-history panel behavior and only remove tracked `done` issues from the default shortcut strip; broader history should remain available through the dedicated tracked-history section and its reveal toggle.
 - Last focused command: `npm run build`
-- Last focused failure: `tracked-history-panel-missing`
+- Last focused failure: none
 - Last focused commands:
 ```bash
-npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts
-npx tsx --test src/backend/webui-dashboard.test.ts
+git diff --stat -- src/backend/webui-dashboard-browser-logic.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts
 npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts
 npm run build
-npm ci
-npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts
-npm run build
-git commit -m "Add dedicated tracked history panel"
-git push -u origin codex/issue-823
-gh pr create --draft --base main --head codex/issue-823 --title "WebUI tracked history: move tracked issues into dedicated panel" --body-file /tmp/issue-823-pr-body.md
+gh pr list --state all --head codex/issue-824 --json number,title,state,isDraft,headRefName,baseRefName,url
+git status --short
 ```
 ### Scratchpad
-- 2026-03-22T07:14:24Z: reproduced #823 with focused failures in `formatTrackedIssues()` and the dashboard harness because `done` tracked issues were still shown by default and there was no dedicated tracked-history panel.
-- 2026-03-22T07:14:24Z: implemented a dedicated `Tracked history` panel with a browser-side `Show done issues` toggle, kept the Summary panel count-only, and added focused regressions for the non-`done` default plus reveal path.
-- 2026-03-22T07:14:24Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts`; `npm run build` initially failed because `tsc` was missing, `npm ci` restored dependencies, and `npm run build` then passed.
-- 2026-03-22T07:14:24Z: committed `6528d38` (`Add dedicated tracked history panel`), pushed `codex/issue-823`, and opened draft PR #830 (`https://github.com/TommyKammy/codex-supervisor/pull/830`).
-- 2026-03-22T06:48:38+00:00: implemented `formatTrackedIssueSummary()` and switched `buildStatusLines()` to use it, preserving `trackedIssues` for typed issue shortcuts while removing tracked-history rows from the main Summary panel.
+- 2026-03-22T08:57:53Z: fixed the remaining shortcut-strip leak by switching tracked shortcut collection to `collectTrackedIssues(status)`, which keeps tracked `done` issues out of the default Issue Details shortcuts while leaving them available behind the tracked-history toggle.
+- 2026-03-22T08:57:53Z: added focused regressions in `src/backend/webui-dashboard-browser-logic.test.ts` and `src/backend/webui-dashboard.test.ts`; `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts` and `npm run build` both passed on the local diff.
+- 2026-03-22T08:57:53Z: confirmed `gh pr list --head codex/issue-824` is still empty, so the next branch action is a fresh checkpoint commit plus draft PR creation rather than supervisor-state reconciliation.
+- 2026-03-22T08:05:32Z: confirmed `gh pr view 830` reports `MERGED` at `2026-03-22T07:42:57Z` from head branch `codex/issue-823` into `main`.
+- 2026-03-22T08:05:32Z: confirmed `gh pr list --head codex/issue-824` returns no PRs, and `git diff --stat origin/main...HEAD` is empty because `codex/issue-824` currently points at `origin/main` (`580d6b3`).
 - 2026-03-22T06:48:38+00:00: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts`.
 - 2026-03-22T06:48:38+00:00: initial `npm run build` failed because `tsc` was missing in this worktree; restored dependencies with `npm ci`, reran the focused tests, and `npm run build` then passed.
 - 2026-03-22T00:00:00Z: reproduced missing rejection feedback with a confirm-decline dashboard case for prune workspaces; the browser returned early without a visible command result until declined confirmations were routed through a rejected-command renderer.

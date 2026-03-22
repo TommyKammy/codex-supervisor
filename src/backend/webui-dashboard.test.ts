@@ -529,6 +529,15 @@ test("dashboard lets operators inspect typed runnable and blocked issues without
       response: jsonResponse(
         createStatus({
           includeWhyLines: false,
+          trackedIssues: [
+            {
+              issueNumber: 12,
+              state: "done",
+              branch: "codex/issue-12",
+              prNumber: 12,
+              blockedReason: null,
+            },
+          ],
           runnableIssues: [
             {
               issueNumber: 77,
@@ -560,6 +569,7 @@ test("dashboard lets operators inspect typed runnable and blocked issues without
   assert.equal(issueShortcuts.children.length, 2);
   assert.match(joinChildText(issueShortcuts), /#77 runnable ready Ready for inspection/u);
   assert.match(joinChildText(issueShortcuts), /#93 blocked requirements:scope, verification Needs scope repair/u);
+  assert.doesNotMatch(joinChildText(issueShortcuts), /#12 tracked done codex\/issue-12 pr=#12/u);
 
   const blockedIssueButton = findChildByText(issueShortcuts, /#93 blocked/u);
   assert.ok(blockedIssueButton);

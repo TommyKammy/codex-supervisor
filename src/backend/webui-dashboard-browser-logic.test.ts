@@ -115,7 +115,7 @@ test("formatTrackedIssues defaults to non-done history and can reveal done issue
   );
 });
 
-test("collectIssueShortcuts deduplicates typed issue shortcuts in priority order", () => {
+test("collectIssueShortcuts deduplicates typed issue shortcuts in priority order and skips tracked done history", () => {
   const shortcuts = collectIssueShortcuts({
     activeIssue: {
       issueNumber: 77,
@@ -159,6 +159,13 @@ test("collectIssueShortcuts deduplicates typed issue shortcuts in priority order
         state: "queued",
         branch: "codex/issue-105",
         prNumber: 412,
+        blockedReason: null,
+      },
+      {
+        issueNumber: 12,
+        state: "done",
+        branch: "codex/issue-12",
+        prNumber: 12,
         blockedReason: null,
       },
     ],
