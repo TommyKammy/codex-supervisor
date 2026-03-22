@@ -24,7 +24,7 @@
 - Hypothesis: the remaining issue-847 gap is page-level framing rather than data behavior, so a focused hero-and-section regression can drive a cleaner dashboard hierarchy while keeping all existing panel ids, command hooks, and SSE/status rendering intact.
 - What changed: added a focused failing regression in `src/backend/webui-dashboard.test.ts` that expected a labeled hero shell plus overview/details section chrome; refreshed `src/backend/webui-dashboard-page.ts` with flatter Asana-inspired surfaces, a structured hero body/summary, section headers, cleaner badge cards, and lighter panel/action/event treatments without changing any browser-script ids or backend endpoints.
 - Current blocker: none
-- Next exact step: commit the focused dashboard refresh checkpoint on `codex/issue-847`, then open or update the draft PR for issue #847.
+- Next exact step: monitor draft PR `#857` for CI and review feedback, then address any follow-up needed on the dashboard refresh.
 - Verification gap: none on the focused issue scope; `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts` passed after the refresh.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard.test.ts`
 - Rollback concern: low; the change is isolated to WebUI dashboard markup/CSS plus one rendering regression and preserves existing browser-script ids plus command endpoints.
@@ -56,6 +56,7 @@ git status --short --branch
 git diff -- src/backend/webui-dashboard-page.ts src/backend/webui-dashboard.test.ts
 ```
 ### Scratchpad
+- 2026-03-22T21:40:05Z: pushed `codex/issue-847` and opened draft PR `#857` for the verified dashboard refresh checkpoint.
 - 2026-03-22T21:40:05Z: reproduced the visual-refresh gap with a new hero-and-section framing regression, refreshed the dashboard page chrome/CSS to add labeled lanes and flatter surfaces, and passed `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts`.
 - 2026-03-22T21:15:08Z: pushed `codex/issue-846` and opened draft PR `#856`; GitHub currently reports `mergeStateStatus=UNSTABLE`, so the next turn should inspect CI/check runs and address any failures or review feedback.
 - 2026-03-22T21:14:15Z: confirmed there was no existing PR for `codex/issue-846`; next step is to push the branch and open a draft PR with commit `c4e2a04`.
