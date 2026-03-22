@@ -104,6 +104,7 @@ import { summarizeSupervisorStatusRecords } from "./supervisor-selection-status-
 import { inferFailureContext } from "./supervisor-failure-context";
 import { StateStore } from "../core/state-store";
 import { diagnoseSupervisorHost, loadStateReadonlyForDoctor, renderDoctorReport } from "../doctor";
+import { diagnoseSetupReadiness } from "../setup-readiness";
 import {
   blockedReasonForLifecycleState,
   derivePullRequestLifecycleSnapshot,
@@ -359,10 +360,11 @@ export class Supervisor {
   private readonly stateStore: StateStore;
   private readonly agentRunner: AgentRunner;
   private readonly onEvent?: SupervisorEventSink;
+  private readonly configPath?: string;
 
   constructor(
     public readonly config: SupervisorConfig,
-    options: { agentRunner?: AgentRunner; onEvent?: SupervisorEventSink } = {},
+    options: { agentRunner?: AgentRunner; onEvent?: SupervisorEventSink; configPath?: string } = {},
   ) {
     this.github = new GitHubClient(config);
     this.stateStore = new StateStore(config.stateFile, {
@@ -371,13 +373,14 @@ export class Supervisor {
     });
     this.agentRunner = options.agentRunner ?? createCodexAgentRunner({ config });
     this.onEvent = options.onEvent;
+    this.configPath = options.configPath;
   }
 
   static fromConfig(
     configPath?: string,
     options: { agentRunner?: AgentRunner; onEvent?: SupervisorEventSink } = {},
   ): Supervisor {
-    return new Supervisor(loadConfig(configPath), options);
+    return new Supervisor(loadConfig(configPath), { ...options, configPath });
   }
 
   async pollIntervalMs(): Promise<number> {
@@ -1068,6 +1071,13 @@ export class Supervisor {
       config: this.config,
       authStatus: () => this.github.authStatus(),
       loadState: () => loadStateReadonlyForDoctor(this.config),
+    });
+  }
+
+  async setupReadinessReport() {
+    return diagnoseSetupReadiness({
+      configPath: this.configPath,
+      authStatus: () => this.github.authStatus(),
     });
   }
 
