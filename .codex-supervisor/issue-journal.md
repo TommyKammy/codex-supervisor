@@ -17,6 +17,7 @@
 - Reproduced the #814 safe-command UX gap with a deferred `run-once` dashboard test: buttons locked during execution, but the command result pane stayed on its placeholder text and gave no in-flight guidance.
 - Updated the dashboard browser script to publish explicit in-progress, rejected, and refresh-failure command payloads with next-step guidance, and added a static operator-actions hint describing serialized command execution and post-action feedback.
 - Focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build` after restoring local dependencies via `npm ci` because `tsc` was initially missing in this worktree.
+- Committed the checkpoint as `9b6c060` (`Improve safe command dashboard guidance`), pushed `codex/issue-814`, and opened draft PR #820 (`https://github.com/TommyKammy/codex-supervisor/pull/820`).
 
 ## Active Failure Context
 - None recorded.
@@ -26,11 +27,11 @@
 - Hypothesis: safe commands still felt ambiguous in the WebUI because the lock only disabled buttons; operators did not get explicit in-flight JSON state, rejection guidance, or refresh-failure recovery guidance in the command result area.
 - What changed: added a reproducing deferred-response dashboard test for in-flight command feedback, updated command rendering to emit `in_progress` payloads plus guidance for rejection and refresh-failure cases, and added an operator-actions hint explaining serialized command execution and where confirmations/post-action feedback appear.
 - Current blocker: none
-- Next exact step: commit the #814 dashboard UX checkpoint, push `codex/issue-814`, and open or update the draft PR if one is not already present.
-- Verification gap: none locally after the focused tests and build passed; remaining uncertainty is limited to remote CI and PR review once the checkpoint is pushed.
+- Next exact step: monitor draft PR #820 for CI/check startup and review feedback, and react if any remote failures or comments surface.
+- Verification gap: none locally after the focused tests and build passed; remaining uncertainty is limited to remote CI and PR review on PR #820.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard.test.ts`
 - Rollback concern: keep the new guidance scoped to browser-side presentation only so the safe command set and backend command contract stay unchanged.
-- Last focused command: `npm run build`
+- Last focused command: `gh pr create --draft --base main --head codex/issue-814 --title "WebUI safe-command UX: improve confirmations, in-flight feedback, and post-action guidance" --body "..."`
 - Last focused failure: `safe-command in-flight result area remained on placeholder text while a command was running`
 - Last focused commands:
 ```bash
@@ -38,8 +39,12 @@ npx tsx --test src/backend/webui-dashboard.test.ts
 npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts
 npm ci
 npm run build
+git commit -m "Improve safe command dashboard guidance"
+git push -u origin codex/issue-814
+gh pr create --draft --base main --head codex/issue-814 --title "WebUI safe-command UX: improve confirmations, in-flight feedback, and post-action guidance" --body "..."
 ```
 ### Scratchpad
+- 2026-03-22T00:00:00Z: committed `9b6c060` (`Improve safe command dashboard guidance`), pushed `codex/issue-814`, and opened draft PR #820 (`https://github.com/TommyKammy/codex-supervisor/pull/820`).
 - 2026-03-22T00:00:00Z: reproduced #814 with a deferred `run-once` dashboard test; buttons disabled correctly, but the command result pane stayed on its placeholder text until the POST resolved.
 - 2026-03-22T00:00:00Z: updated browser-side safe-command rendering to publish explicit `in_progress`, rejection, and refresh-failure guidance, and added a static operator hint describing serialized command execution.
 - 2026-03-22T00:00:00Z: `npm run build` initially failed with `sh: 1: tsc: not found`; `npm ci` restored local dependencies and the rerun passed.
