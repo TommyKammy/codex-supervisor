@@ -16,6 +16,7 @@
 ## Latest Codex Summary
 - Added accessible dashboard drag polish in commit `f61e6f5`: keyboard reorder, drop-target feedback, focus-visible affordances, reduced-motion-safe styling, and a reduced-motion browser smoke.
 - Local verification passed with `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts` and `npm run build`.
+- Pushed `codex/issue-850`, committed the journal cleanup as `f9f35ca`, and opened draft PR `#865` (`mergeStateStatus=CLEAN` at open time).
 
 ## Active Failure Context
 - None recorded.
@@ -25,7 +26,7 @@
 - Hypothesis: the remaining drag polish fits cleanly in the browser layer by treating keyboard reorder as the same typed panel-order mutation used by pointer drag, then exposing the active drop target through CSS classes and an aria-live status so reduced-motion and non-pointer flows stay aligned.
 - What changed: added keyboard panel pickup/move/drop/cancel handling plus shared drop-target state in `src/backend/webui-dashboard-browser-script.ts`; expanded `src/backend/webui-dashboard-panel-layout.ts` and `src/backend/webui-dashboard-page.ts` with drag instructions, live status, focus-visible affordances, explicit drop-target styling, and a `prefers-reduced-motion` guard; tightened `src/backend/webui-dashboard.test.ts` with focused keyboard/drop-feedback and static accessibility regressions; and added a reduced-motion real-browser reorder smoke in `src/backend/webui-dashboard-browser-smoke.test.ts`.
 - Current blocker: none
-- Next exact step: push `codex/issue-850`, open or update the draft PR, and monitor CI/review feedback.
+- Next exact step: monitor CI and review feedback on draft PR `#865`, then address any follow-up.
 - Verification gap: none locally after restoring the repo's declared npm dependencies in this worktree; the focused dashboard tests, browser smoke coverage, and `npm run build` all passed.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-browser-smoke.test.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard-panel-layout.ts`, `src/backend/webui-dashboard.test.ts`
 - Rollback concern: low; the change is confined to WebUI markup/CSS/browser behavior and keeps the CLI, HTTP API, and safe-command transport untouched.
@@ -53,6 +54,7 @@ git rev-parse HEAD
 git status --short --branch
 ```
 ### Scratchpad
+- 2026-03-22T23:45:26Z: pushed `codex/issue-850`, opened draft PR `#865` at https://github.com/TommyKammy/codex-supervisor/pull/865, and confirmed GitHub reports `mergeStateStatus=CLEAN` with CodeRabbit green at open time.
 - 2026-03-22T22:37:34Z: fixed the CodeRabbit review threads locally by rejecting cross-lane panel drops before mutating browser layout state, adding a focused cross-lane drag regression, sanitizing workstation-local paths from the issue journal, and rerunning `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`.
 - 2026-03-22T22:21:32Z: reran `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`, pushed `codex/issue-848`, and opened draft PR `#858` for the drag-reorder checkpoint.
 - 2026-03-22T22:09:23Z: reproduced the drag-reorder gap with a pure browser-logic regression, then added draggable panel handles, browser-only DOM reorder state, and a runtime dashboard drag test; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts` passed.
