@@ -14,14 +14,14 @@
 - Updated at: 2026-03-22T02:58:35.160Z
 
 ## Latest Codex Summary
-Implemented and pushed `78862c7` (`Make dashboard live state explicit`), then opened draft PR #818 (`https://github.com/TommyKammy/codex-supervisor/pull/818`).
+Implemented and pushed `78862c7` (`Make dashboard live state explicit`), opened draft PR #818 (`https://github.com/TommyKammy/codex-supervisor/pull/818`), and then pushed `5f7cf3d` to refresh the issue journal handoff.
 
 The dashboard hero now exposes separate live-state badges for connection, freshness, refresh phase, and last refresh time in [src/backend/webui-dashboard-page.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-page.ts#L382). The browser script tracks those states explicitly and marks the UI stale on SSE reconnects or failed refreshes without changing backend transport semantics in [src/backend/webui-dashboard-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-browser-script.ts#L31) and [src/backend/webui-dashboard-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-browser-script.ts#L128). Focused browser/state helpers and regressions cover the live-state model in [src/backend/webui-dashboard-browser-logic.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-browser-logic.ts#L185), [src/backend/webui-dashboard-browser-logic.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-browser-logic.test.ts), and [src/backend/webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard.test.ts#L706).
 
-This turn reran the focused verification set and `npm run build`; both passed again before the branch was pushed. Draft PR #818 is open against `main` with merge state `CLEAN`.
+This turn reran the focused verification set and `npm run build`; both passed again before the branch was pushed. Draft PR #818 is open against `main`; after the journal follow-up push, GitHub reports merge state `UNSTABLE` while the `build (ubuntu-latest)` and `build (macos-latest)` checks are still in progress, and CodeRabbit is already `SUCCESS`.
 
-Summary: Pushed the live-state UX implementation, reran focused verification, and opened draft PR #818
-State hint: draft_pr
+Summary: Pushed the live-state UX implementation, reran focused verification, opened draft PR #818, and left it waiting on CI
+State hint: waiting_ci
 Blocked reason: none
 Tests: `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts`; `npm run build`
 Failure signature: none
@@ -33,9 +33,9 @@ Next action: monitor PR #818 checks and address any review or CI feedback
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: #812 is purely a WebUI/browser-state gap; operators already have the raw HTTP+SSE transport, but the dashboard needs first-class browser-rendered live-state badges to distinguish connected, refreshing, stale, and failed-refresh states.
-- What changed: added focused live-state regressions in `src/backend/webui-dashboard.test.ts` plus pure helper coverage in `src/backend/webui-dashboard-browser-logic.test.ts`; extended the hero badge row in `src/backend/webui-dashboard-page.ts` with freshness and refresh badges; added a small live-state model and render path in `src/backend/webui-dashboard-browser-script.ts`; added browser-logic helpers for normalized connection/freshness labels in `src/backend/webui-dashboard-browser-logic.ts`; extended the dashboard harness `MockEventSource` to drive SSE open/error transitions; pushed `codex/issue-812` and opened draft PR #818.
+- What changed: added focused live-state regressions in `src/backend/webui-dashboard.test.ts` plus pure helper coverage in `src/backend/webui-dashboard-browser-logic.test.ts`; extended the hero badge row in `src/backend/webui-dashboard-page.ts` with freshness and refresh badges; added a small live-state model and render path in `src/backend/webui-dashboard-browser-script.ts`; added browser-logic helpers for normalized connection/freshness labels in `src/backend/webui-dashboard-browser-logic.ts`; extended the dashboard harness `MockEventSource` to drive SSE open/error transitions; pushed `codex/issue-812`, opened draft PR #818, and pushed `5f7cf3d` to refresh the journal after PR creation.
 - Current blocker: none
-- Next exact step: monitor draft PR #818 and address any CI or review feedback that appears.
+- Next exact step: monitor draft PR #818 while the current CI build jobs finish, then address any failures or review feedback that appear.
 - Verification gap: none beyond broader CI.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard.test.ts`
 - Rollback concern: keep the live-state model browser-only and derived from existing HTTP/SSE behavior; do not introduce backend transport semantics changes just to drive the badges.
@@ -47,9 +47,12 @@ npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/web
 npm run build
 git push -u origin codex/issue-812
 gh pr create --draft --base main --head codex/issue-812 --title "Make dashboard live state explicit" --body ...
+git add .codex-supervisor/issue-journal.md && git commit -m "Update issue 812 journal after draft PR"
+git push
 gh pr view 818 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,baseRefName
 ```
 ### Scratchpad
+- 2026-03-22T12:01:53+09:00: after pushing journal commit `5f7cf3d`, draft PR #818 moved to merge state `UNSTABLE`; GitHub shows `build (ubuntu-latest)` and `build (macos-latest)` in progress and CodeRabbit `SUCCESS`.
 - 2026-03-22T12:00:23+09:00: reran focused verification with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build`; both passed before the PR push.
 - 2026-03-22T12:00:23+09:00: pushed `codex/issue-812` to origin and opened draft PR #818 (`https://github.com/TommyKammy/codex-supervisor/pull/818`); GitHub reports merge state `CLEAN`.
 - 2026-03-22T02:21:55Z: committed `95e1fc4` (`Render typed issue detail cards in WebUI`), pushed `codex/issue-811`, and opened draft PR #817 (`https://github.com/TommyKammy/codex-supervisor/pull/817`).
