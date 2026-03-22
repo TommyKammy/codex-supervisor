@@ -407,6 +407,15 @@ function joinChildText(element: FakeElement): string {
   return element.children.map((child) => child.textContent).join("\n");
 }
 
+test("dashboard shell renders panels from the typed default layout in the current order", () => {
+  const html = renderSupervisorDashboardHtml();
+
+  assert.match(
+    html,
+    /data-panel-id="status"[\s\S]*data-panel-id="doctor"[\s\S]*data-panel-id="issue-details"[\s\S]*data-panel-id="tracked-history"[\s\S]*data-panel-id="operator-actions"[\s\S]*data-panel-id="live-events"[\s\S]*data-panel-id="operator-timeline"/u,
+  );
+});
+
 test("dashboard keeps requeue disabled until the selected issue finishes loading", async () => {
   const explainResponse = createDeferred<MockResponseLike>();
   const issueLintResponse = createDeferred<MockResponseLike>();
