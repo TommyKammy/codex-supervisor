@@ -48,6 +48,14 @@ Not a fit:
    npm run build
    ```
 
+   For the operator dashboard browser smoke suite, run:
+
+   ```bash
+   npm run test:webui-smoke
+   ```
+
+   The smoke harness launches a local Chrome/Chromium binary through `playwright-core` against an in-process HTTP fixture. If your browser executable is not on a standard `google-chrome`, `google-chrome-stable`, `chromium`, or `chromium-browser` path, set `CHROME_BIN=/path/to/browser`.
+
 2. Create your active config from the base example.
 
    ```bash
