@@ -212,14 +212,17 @@ test("resolveDashboardPanelLayout keeps stable typed panel ids and falls back mi
   ]);
 
   assert.deepEqual(DEFAULT_DASHBOARD_PANEL_LAYOUT.order, DASHBOARD_PANEL_IDS);
+  assert.equal(Object.isFrozen(DEFAULT_DASHBOARD_PANEL_LAYOUT), true);
+  assert.equal(Object.isFrozen(DEFAULT_DASHBOARD_PANEL_LAYOUT.order), true);
+  assert.equal(Object.isFrozen(DEFAULT_DASHBOARD_PANEL_LAYOUT.visibility), true);
 
   assert.deepEqual(
     resolveDashboardPanelLayout({
-      order: ["operator-actions", "status", "operator-actions", "unknown-panel" as never],
+      order: ["operator-actions", "status", "operator-actions", "unknown-panel"],
       visibility: {
         status: false,
         doctor: true,
-      } as typeof DEFAULT_DASHBOARD_PANEL_LAYOUT.visibility,
+      },
     }),
     {
       order: [

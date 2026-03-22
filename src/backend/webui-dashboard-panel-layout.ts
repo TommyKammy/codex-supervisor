@@ -20,6 +20,11 @@ export interface DashboardPanelLayoutState {
   visibility: Record<DashboardPanelId, boolean>;
 }
 
+export interface DashboardPanelLayoutInput {
+  order?: readonly string[] | null;
+  visibility?: Readonly<Record<string, unknown>> | null;
+}
+
 export const DASHBOARD_PANEL_REGISTRY = [
   {
     id: "status",
@@ -191,22 +196,26 @@ export const DASHBOARD_PANEL_REGISTRY = [
 
 export const DASHBOARD_PANEL_IDS = DASHBOARD_PANEL_REGISTRY.map((panel) => panel.id);
 
-const defaultVisibility = DASHBOARD_PANEL_REGISTRY.reduce<Record<DashboardPanelId, boolean>>((accumulator, panel) => {
-  accumulator[panel.id] = true;
-  return accumulator;
-}, {} as Record<DashboardPanelId, boolean>);
+const defaultOrder = Object.freeze([...DASHBOARD_PANEL_IDS] as DashboardPanelId[]);
 
-export const DEFAULT_DASHBOARD_PANEL_LAYOUT: DashboardPanelLayoutState = {
-  order: [...DASHBOARD_PANEL_IDS],
+const defaultVisibility = Object.freeze(
+  DASHBOARD_PANEL_REGISTRY.reduce<Record<DashboardPanelId, boolean>>((accumulator, panel) => {
+    accumulator[panel.id] = true;
+    return accumulator;
+  }, {} as Record<DashboardPanelId, boolean>),
+);
+
+export const DEFAULT_DASHBOARD_PANEL_LAYOUT = Object.freeze({
+  order: defaultOrder,
   visibility: defaultVisibility,
-};
+});
 
 function isDashboardPanelId(value: string): value is DashboardPanelId {
   return DASHBOARD_PANEL_IDS.includes(value as DashboardPanelId);
 }
 
 export function resolveDashboardPanelLayout(
-  layout: Partial<DashboardPanelLayoutState> | null | undefined,
+  layout: DashboardPanelLayoutInput | null | undefined,
 ): DashboardPanelLayoutState {
   const requestedOrder = Array.isArray(layout?.order) ? layout.order.filter(isDashboardPanelId) : [];
   const seen = new Set<DashboardPanelId>();
@@ -226,7 +235,7 @@ export function resolveDashboardPanelLayout(
     }
   }
 
-  const requestedVisibility: Partial<Record<DashboardPanelId, boolean>> = layout?.visibility ?? {};
+  const requestedVisibility = layout?.visibility ?? {};
   const visibility = DASHBOARD_PANEL_REGISTRY.reduce<Record<DashboardPanelId, boolean>>((accumulator, panel) => {
     const requestedPanelVisibility = requestedVisibility[panel.id];
     accumulator[panel.id] =
@@ -244,7 +253,7 @@ export function resolveDashboardPanelLayout(
 
 export function listDashboardPanels(
   section: DashboardPanelSection,
-  layout: Partial<DashboardPanelLayoutState> | null | undefined = DEFAULT_DASHBOARD_PANEL_LAYOUT,
+  layout: DashboardPanelLayoutInput | null | undefined = DEFAULT_DASHBOARD_PANEL_LAYOUT,
 ): DashboardPanelDefinition[] {
   const resolvedLayout = resolveDashboardPanelLayout(layout);
   const panelsById = DASHBOARD_PANEL_REGISTRY.reduce<Record<DashboardPanelId, DashboardPanelDefinition>>(
