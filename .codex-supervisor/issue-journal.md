@@ -1,20 +1,20 @@
-# Issue #822: WebUI summary hygiene: remove tracked history from the main Summary panel
+# Issue #823: WebUI tracked history: move tracked issues into a dedicated panel with non-done default
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/822
-- Branch: codex/issue-822
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/823
+- Branch: codex/issue-823
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 3a4f6b4e5acd109b229298181fa7ce88522c35f2
+- Last head SHA: 3aa08e127284f5b1553c5b3a249808845c333dd7
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-22T06:46:21.165Z
+- Updated at: 2026-03-22T07:10:45.083Z
 
 ## Latest Codex Summary
-- Reproduced the Summary-panel noise with focused browser-logic and dashboard tests that failed because `buildStatusLines()` still rendered every typed tracked issue entry in the main Summary panel. Replaced that tracked-history dump with a stable `tracked issues=<count>` summary line, kept typed tracked issue data intact for shortcut/dedicated surfaces, reran focused WebUI verification plus `npm run build` after restoring local dependencies with `npm ci`, and opened draft PR #825 (`https://github.com/TommyKammy/codex-supervisor/pull/825`).
+- None yet.
 
 ## Active Failure Context
 - None recorded.
@@ -41,8 +41,6 @@ npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-b
 npm run build
 ```
 ### Scratchpad
-- 2026-03-22T06:48:38+00:00: pushed `codex/issue-822` and opened draft PR #825 (`https://github.com/TommyKammy/codex-supervisor/pull/825`).
-- 2026-03-22T06:48:38+00:00: reproduced the Summary-panel noise with new focused assertions in `src/backend/webui-dashboard-browser-logic.test.ts` and `src/backend/webui-dashboard.test.ts`; both failed because `buildStatusLines()` still emitted `tracked issue #...` rows instead of a count-only tracked summary.
 - 2026-03-22T06:48:38+00:00: implemented `formatTrackedIssueSummary()` and switched `buildStatusLines()` to use it, preserving `trackedIssues` for typed issue shortcuts while removing tracked-history rows from the main Summary panel.
 - 2026-03-22T06:48:38+00:00: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts`.
 - 2026-03-22T06:48:38+00:00: initial `npm run build` failed because `tsc` was missing in this worktree; restored dependencies with `npm ci`, reran the focused tests, and `npm run build` then passed.

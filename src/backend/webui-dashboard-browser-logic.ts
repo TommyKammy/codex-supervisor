@@ -56,6 +56,10 @@ export interface DashboardIssueShortcut {
   detail: string;
 }
 
+export interface DashboardTrackedIssueFormatOptions {
+  includeDone?: boolean;
+}
+
 export type DashboardConnectionPhase = "connecting" | "open" | "reconnecting";
 
 export type DashboardRefreshPhase = "idle" | "refreshing" | "failed";
@@ -95,9 +99,22 @@ export function parseSelectedIssueNumber(status: DashboardStatusLike | null | un
   return null;
 }
 
-export function formatTrackedIssues(status: DashboardStatusLike | null | undefined): string[] {
+export function collectTrackedIssues(
+  status: DashboardStatusLike | null | undefined,
+  options: DashboardTrackedIssueFormatOptions = {},
+): DashboardTrackedIssueLike[] {
   const trackedIssues = Array.isArray(status?.trackedIssues) ? status.trackedIssues : [];
-  return trackedIssues.map((issue) =>
+  if (options.includeDone) {
+    return trackedIssues;
+  }
+  return trackedIssues.filter((issue) => issue.state?.toLowerCase() !== "done");
+}
+
+export function formatTrackedIssues(
+  status: DashboardStatusLike | null | undefined,
+  options: DashboardTrackedIssueFormatOptions = {},
+): string[] {
+  return collectTrackedIssues(status, options).map((issue) =>
     "tracked issue #" +
     issue.issueNumber +
     " [" +
@@ -114,6 +131,15 @@ export function formatTrackedIssues(status: DashboardStatusLike | null | undefin
 export function formatTrackedIssueSummary(status: DashboardStatusLike | null | undefined): string[] {
   const trackedIssues = Array.isArray(status?.trackedIssues) ? status.trackedIssues : [];
   return ["tracked issues=" + trackedIssues.length];
+}
+
+export function formatTrackedHistorySummary(
+  status: DashboardStatusLike | null | undefined,
+  options: DashboardTrackedIssueFormatOptions = {},
+): string {
+  const totalTrackedIssues = Array.isArray(status?.trackedIssues) ? status.trackedIssues.length : 0;
+  const visibleTrackedIssues = collectTrackedIssues(status, options).length;
+  return "showing " + visibleTrackedIssues + " of " + totalTrackedIssues + " tracked issues";
 }
 
 export function formatRunnableIssues(status: DashboardStatusLike | null | undefined): string[] {

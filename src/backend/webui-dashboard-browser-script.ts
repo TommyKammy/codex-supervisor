@@ -1,11 +1,13 @@
 import {
   buildStatusLines,
+  collectTrackedIssues,
   collectIssueShortcuts,
   describeCommandSelectionChange,
   formatBlockedIssues,
   formatCandidateDiscovery,
   formatIssueRef,
   formatRunnableIssues,
+  formatTrackedHistorySummary,
   formatTrackedIssueSummary,
   formatTrackedIssues,
   describeConnectionHealth,
@@ -16,7 +18,9 @@ import {
 } from "./webui-dashboard-browser-logic";
 
 const injectedBrowserLogic = [
+  collectTrackedIssues,
   formatTrackedIssues,
+  formatTrackedHistorySummary,
   formatTrackedIssueSummary,
   formatRunnableIssues,
   formatBlockedIssues,
@@ -54,6 +58,7 @@ export function renderDashboardBrowserScript(): string {
         refreshPhase: "idle",
         hasSuccessfulRefresh: false,
         lastRefreshAt: null,
+        showDoneTrackedIssues: false,
       };
 
       const elements = {
@@ -65,6 +70,9 @@ export function renderDashboardBrowserScript(): string {
         statusReconciliation: document.getElementById("status-reconciliation"),
         statusLines: document.getElementById("status-lines"),
         statusWarning: document.getElementById("status-warning"),
+        trackedHistorySummary: document.getElementById("tracked-history-summary"),
+        trackedHistoryLines: document.getElementById("tracked-history-lines"),
+        trackedHistoryToggle: document.getElementById("tracked-history-toggle"),
         doctorOverall: document.getElementById("doctor-overall"),
         doctorChecks: document.getElementById("doctor-checks"),
         issueSummary: document.getElementById("issue-summary"),
@@ -299,6 +307,32 @@ export function renderDashboardBrowserScript(): string {
         elements.statusWarning?.classList.remove("danger");
         const lines = buildStatusLines(status);
         setCode(elements.statusLines, lines.length > 0 ? lines : ["No status lines reported."]);
+        renderTrackedHistory();
+      }
+
+      function renderTrackedHistory() {
+        const trackedHistoryLines = formatTrackedIssues(state.status, {
+          includeDone: state.showDoneTrackedIssues,
+        });
+        setText(
+          elements.trackedHistorySummary,
+          formatTrackedHistorySummary(state.status, {
+            includeDone: state.showDoneTrackedIssues,
+          }),
+        );
+        setCode(
+          elements.trackedHistoryLines,
+          trackedHistoryLines.length > 0
+            ? trackedHistoryLines
+            : [
+                state.showDoneTrackedIssues
+                  ? "No tracked issues reported."
+                  : "No non-done tracked issues. Show done issues to inspect older history.",
+              ],
+        );
+        if (elements.trackedHistoryToggle) {
+          elements.trackedHistoryToggle.textContent = state.showDoneTrackedIssues ? "Hide done issues" : "Show done issues";
+        }
       }
 
       function renderDoctor() {
@@ -828,6 +862,11 @@ export function renderDashboardBrowserScript(): string {
         } catch (error) {
           setText(elements.issueSummary, error instanceof Error ? error.message : String(error));
         }
+      });
+
+      elements.trackedHistoryToggle?.addEventListener("click", () => {
+        state.showDoneTrackedIssues = !state.showDoneTrackedIssues;
+        renderTrackedHistory();
       });
 
       elements.runOnceButton?.addEventListener("click", async () => {
