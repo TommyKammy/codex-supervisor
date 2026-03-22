@@ -64,12 +64,12 @@ class FakeElement {
   readonly classList = new FakeClassList(this);
   readonly listeners = new Map<string, Array<(event: unknown) => unknown>>();
 
-  textContent = "";
   value = "";
   disabled = false;
 
   private classNameValue = "";
   private innerHtmlValue = "";
+  private textContentValue = "";
 
   constructor(readonly tagName: string, readonly id: string | null = null) {}
 
@@ -88,9 +88,23 @@ class FakeElement {
 
   set innerHTML(value: string) {
     this.innerHtmlValue = value;
+    this.textContentValue = "";
     if (value === "") {
       this.children.length = 0;
     }
+  }
+
+  get textContent(): string {
+    if (this.children.length === 0) {
+      return this.textContentValue;
+    }
+    return [this.textContentValue, ...this.children.map((child) => child.textContent)].join("");
+  }
+
+  set textContent(value: string) {
+    this.textContentValue = value;
+    this.innerHtmlValue = "";
+    this.children.length = 0;
   }
 
   syncClassName(value: string): void {
@@ -574,7 +588,101 @@ test("dashboard renders typed issue activity context without scraping legacy sum
   assert.match(issueExplain.textContent, /follow_up: external_review_follow_up unresolved=2 actions=durable_guardrail:1\|regression_test:1/u);
   assert.match(issueExplain.textContent, /latest_recovery: issue=#42 at=2026-03-22T00:00:00Z reason=tracked_pr_head_advanced detail=resumed issue #42 after tracked PR #42 advanced/u);
   assert.doesNotMatch(issueExplain.textContent, /legacy recovery line that should only be used as fallback/u);
-  assert.match(issueExplain.textContent, /review_waits: configured_bot_initial_grace_wait status=active provider=coderabbit/u);
+  assert.match(issueExplain.textContent, /Review waitswaits: configured_bot_initial_grace_wait status=active provider=coderabbit/u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard renders typed issue detail sections for operator context", async () => {
+  const harness = createDashboardHarness([
+    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    {
+      path: "/api/issues/42/explain",
+      response: jsonResponse(
+        createExplain(42, {
+          state: "blocked",
+          blockedReason: "manual_review",
+          runnable: false,
+          selectionReason: null,
+          reasons: [
+            "manual_block manual_review",
+            "local_state blocked",
+          ],
+          failureSummary: "Latest verification failed while waiting for review feedback.",
+          lastError: "review status remained unresolved after retry window",
+          changeRiskLines: [
+            "change_classes backend|tests",
+            "verification_policy intensity=standard driver=changed_files:backend",
+          ],
+          externalReviewFollowUpSummary: null,
+          latestRecoverySummary: "legacy recovery line that should only be used as fallback",
+          activityContext: {
+            handoffSummary: "blocker: wait for typed dashboard issue detail rendering",
+            localReviewRoutingSummary: "local_review_routing path=.codex/reviews/issue-42.md follow_up=required",
+            changeClassesSummary: "change_classes backend|tests",
+            verificationPolicySummary: "verification_policy intensity=standard driver=changed_files:backend",
+            durableGuardrailSummary:
+              "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=none",
+            externalReviewFollowUpSummary:
+              "external_review_follow_up unresolved=2 actions=durable_guardrail:1|regression_test:1",
+            latestRecovery: {
+              issueNumber: 42,
+              at: "2026-03-22T00:00:00Z",
+              reason: "tracked_pr_head_advanced",
+              detail: "resumed issue #42 after tracked PR #42 advanced",
+            },
+            localReviewSummaryPath: ".codex/reviews/issue-42.md",
+            externalReviewMissesPath: ".codex/reviews/issue-42-misses.json",
+            reviewWaits: [
+              {
+                kind: "configured_bot_initial_grace_wait",
+                status: "active",
+                provider: "coderabbit",
+                pauseReason: "awaiting_initial_provider_activity",
+                recentObservation: "required_checks_green",
+                observedAt: "2099-01-01T00:00:30.000Z",
+                configuredWaitSeconds: 90,
+                waitUntil: "2099-01-01T00:02:00.000Z",
+              },
+            ],
+          },
+        }),
+      ),
+    },
+    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
+  ]);
+  await harness.flush();
+
+  const issueNumberInput = harness.document.getElementById("issue-number-input");
+  const issueForm = harness.document.getElementById("issue-form");
+  const issueExplain = harness.document.getElementById("issue-explain");
+  assert.ok(issueNumberInput);
+  assert.ok(issueForm);
+  assert.ok(issueExplain);
+
+  issueNumberInput.value = "42";
+  await issueForm.dispatch("submit", {
+    preventDefault() {},
+  });
+  await harness.flush();
+
+  assert.equal(issueExplain.children.length >= 4, true);
+  assert.match(joinChildText(issueExplain), /Selection context/i);
+  assert.match(joinChildText(issueExplain), /Review waits/i);
+  assert.match(joinChildText(issueExplain), /Latest recovery/i);
+  assert.match(joinChildText(issueExplain), /Recent failure/i);
+
+  const reviewWaitSection = findChildByText(issueExplain, /Review waits/i);
+  const latestRecoverySection = findChildByText(issueExplain, /Latest recovery/i);
+  const selectionContextSection = findChildByText(issueExplain, /Selection context/i);
+  assert.ok(reviewWaitSection);
+  assert.ok(latestRecoverySection);
+  assert.ok(selectionContextSection);
+  assert.match(reviewWaitSection.textContent, /coderabbit/u);
+  assert.match(latestRecoverySection.textContent, /tracked_pr_head_advanced/u);
+  assert.doesNotMatch(latestRecoverySection.textContent, /legacy recovery line that should only be used as fallback/u);
+  assert.match(selectionContextSection.textContent, /manual_review/u);
+  assert.match(selectionContextSection.textContent, /local_state blocked/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 
