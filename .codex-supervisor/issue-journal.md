@@ -24,19 +24,23 @@
 - Hypothesis: the current setup-readiness contract already separated first-run setup from `doctor`, but it still lacked typed field metadata and blocker remediation guidance, forcing a future setup UI to infer editability and next actions from labels and free-form messages.
 - What changed: added a focused reproducer in `src/doctor.test.ts`, extended `src/setup-readiness.ts` with typed field metadata and typed blocker remediation, and updated the service/HTTP/docs fixtures so the richer contract is pinned end-to-end.
 - Current blocker: none
-- Next exact step: commit the typed setup-readiness contract change on `codex/issue-836`, then open or update a draft PR if one does not already exist.
+- Next exact step: watch draft PR `#842` for CI and address any contract or review follow-up if the broader suite surfaces compatibility issues.
 - Verification gap: `npm run build` has not been rerun on this diff; the scoped setup-readiness generator/service/HTTP/docs tests passed locally.
 - Files touched: `.codex-supervisor/issue-journal.md`, `docs/getting-started.md`, `src/backend/supervisor-http-server.test.ts`, `src/doctor.test.ts`, `src/getting-started-docs.test.ts`, `src/setup-readiness.ts`, `src/supervisor/supervisor-service.test.ts`
 - Rollback concern: the new field `metadata` and blocker `remediation` properties are part of the HTTP contract now, so any rollback has to revert the generator and fixture/docs updates together.
-- Last focused command: `npx tsx --test src/doctor.test.ts src/supervisor/supervisor-service.test.ts src/backend/supervisor-http-server.test.ts`
+- Last focused command: `gh pr create --draft --base main --head codex/issue-836 --title "Setup UX contract follow-up: add typed remediation and field metadata for guided setup" ...`
 - Last focused failure: `TypeError: Cannot read properties of undefined (reading 'source')` from `src/doctor.test.ts` before the new field metadata was implemented.
 - Last focused commands:
 ```bash
 npx tsx --test src/doctor.test.ts
 npx tsx --test src/doctor.test.ts src/supervisor/supervisor-service.test.ts src/backend/supervisor-http-server.test.ts src/getting-started-docs.test.ts
 npx tsx --test src/doctor.test.ts src/supervisor/supervisor-service.test.ts src/backend/supervisor-http-server.test.ts
+git push origin codex/issue-836
+gh pr create --draft --base main --head codex/issue-836 --title "Setup UX contract follow-up: add typed remediation and field metadata for guided setup" ...
 ```
 ### Scratchpad
+- 2026-03-22T11:31:39Z: pushed `codex/issue-836` to `origin` and opened draft PR `#842` at `https://github.com/TommyKammy/codex-supervisor/pull/842`.
+- 2026-03-22T11:30:47Z: committed `b1bcbba` (`Add typed setup readiness remediation metadata`) with the setup-readiness contract, fixture, docs, and journal updates.
 - 2026-03-22T11:30:09Z: focused setup-readiness verification passed with `npx tsx --test src/doctor.test.ts src/supervisor/supervisor-service.test.ts src/backend/supervisor-http-server.test.ts`; the broader scoped run including `src/getting-started-docs.test.ts` also passed.
 - 2026-03-22T11:28:15Z: added the narrow reproducer in `src/doctor.test.ts`; the first focused run failed with `TypeError: Cannot read properties of undefined (reading 'source')`, confirming the DTO lacked typed field metadata.
 - 2026-03-22T11:28:50Z: implemented `metadata` on setup fields plus typed `remediation` on blockers in `src/setup-readiness.ts`, then updated service/HTTP/docs fixtures to pin the richer contract.
