@@ -5,48 +5,54 @@
 - Branch: codex/issue-813
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: draft_pr
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 96f3858651e8bd127992c3f57e2e1acc2980abac
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 5f09f14682b747e5311d95bf6f7bfe2609f4ab54
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-22T03:29:25Z
+- Last failure signature: PRRT_kwDORgvdZ8518BXw
+- Repeated failure signature count: 1
+- Updated at: 2026-03-22T12:44:20+09:00
 
 ## Latest Codex Summary
-- Reproduced the missing operator timeline with a focused dashboard harness regression, then added a browser-only combined timeline that records command results, command-triggered refresh deltas, and correlated SSE events in one feed.
-- Focused verification passed with `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build` after restoring local dependencies with `npm ci`; the implementation is committed as `96f3858` (`Add dashboard operator timeline`) and draft PR #819 is open.
+Added a browser-only operator timeline that renders safe-command results, post-command refresh deltas, and correlated SSE events in one bounded feed. The main behavior lives in [webui-dashboard-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-813/src/backend/webui-dashboard-browser-script.ts) with summary helpers in [webui-dashboard-browser-logic.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-813/src/backend/webui-dashboard-browser-logic.ts) and the new panel in [webui-dashboard-page.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-813/src/backend/webui-dashboard-page.ts). Focused regressions were added in [webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-813/src/backend/webui-dashboard.test.ts), [webui-dashboard-browser-logic.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-813/src/backend/webui-dashboard-browser-logic.test.ts), and [supervisor-http-server.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-813/src/backend/supervisor-http-server.test.ts).
+
+Committed `96f3858` and the journal follow-up `5f09f14`, pushed `codex/issue-813`, and opened draft PR #819: https://github.com/TommyKammy/codex-supervisor/pull/819. Local verification passed after `npm ci` restored `tsc`; the worktree still has an unrelated untracked `.codex-supervisor/replay/` directory.
+
+Addressed CodeRabbit thread `PRRT_kwDORgvdZ8518BXw` locally by replacing the sticky browser-only `lastCommandLabel` state with an expiring issue-scoped correlation token, extending the token with the refreshed selected issue, and only annotating SSE timeline rows whose event issue ids intersect that token. Added a regression that proves an unrelated later recovery event does not keep rendering as `after run-once`.
+
+Summary: Scoped operator timeline correlation to matching issue ids with an expiring browser token and added a regression for unrelated later events
+State hint: addressing_review
+Blocked reason: none
+Tests: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`; `npx tsx --test src/backend/supervisor-http-server.test.ts`; `npm run build`
+Failure signature: PRRT_kwDORgvdZ8518BXw
+Next action: commit and push the review fix to PR #819, then recheck the remaining review thread state on GitHub
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/819#discussion_r2970770041
+- Details:
+  - src/backend/webui-dashboard-browser-script.ts:48 _⚠️ Potential issue_ | _🟠 Major_ **Scope command/event correlation more tightly.** Line 606 stores `args.label` in shared state, and Lines 692-698 reuse it for every later SSE row until something else overwrites it. After one `run-once`, unrelated background events can keep rendering as `after run-once`, which makes the new timeline misleading instead of correlated. Please replace the sticky string with a bounded correlation token — e.g. affected issue number(s) plus an expiry window — and only attach it to matching events. Also applies to: 606-607, 692-698 <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/backend/webui-dashboard-browser-script.ts` around lines 47 - 48, Replace the sticky shared string lastCommandLabel with a bounded correlation token: when the run-once handler (where args.label is set) creates the timeline context, generate and store a token object (e.g., {label: args.label, issues: <affectedIssueIds>, expiresAt: Date.now()+WINDOW_MS}) instead of a plain string in state; when processing incoming SSE rows (the SSE row handling / timelineEntries append code), only attach the label to an event if the event’s issue id(s) intersect the token.issues and Date.now() < token.expiresAt; otherwise leave the event unlabeled. Also ensure the token is cleared/expired after WINDOW_MS and that timelineEntries consumers check the token object (not the old lastCommandLabel string). ``` </details> <!-- fingerprinting:phantom:medusa:grasshopper --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the missing operator narrative was entirely a dashboard/browser gap; the existing safe-command DTOs plus SSE event stream were already sufficient if the client rendered a bounded combined timeline and a concise post-command refresh delta.
-- What changed: added focused browser-logic coverage for selection-change and event summaries; added a focused dashboard regression that proves a `run-once` result and the following `supervisor.active_issue.changed` event appear in one operator timeline; extended the browser script with a bounded `operator-timeline` feed that records commands, refresh deltas, and correlated events; added the new panel to the dashboard shell and asserted it in the HTTP server page test.
+- Hypothesis: the remaining review thread was correct because the browser script kept one sticky command label in shared state and applied it to every later SSE row regardless of issue scope.
+- What changed: replaced the sticky timeline label with an expiring `commandCorrelation` token keyed to command label plus relevant issue ids; seeded it from the pre-command selected issue and explicit command issue number, extended it after the refresh picks a new selected issue, and only rendered `after <command>` on SSE entries whose event issue ids intersect the token. Added a pure browser-logic regression for event issue-id extraction plus a dashboard regression that proves an unrelated later recovery event stays unlabeled.
 - Current blocker: none
-- Next exact step: monitor draft PR #819 (`https://github.com/TommyKammy/codex-supervisor/pull/819`) and address any CI or review feedback; GitHub currently reports merge state `UNSTABLE` while checks have not settled.
-- Verification gap: none locally; broader CI is still pending on the draft PR.
+- Next exact step: commit and push the local review fix to `codex/issue-813`, then re-check PR #819 (`https://github.com/TommyKammy/codex-supervisor/pull/819`) for thread resolution and merge-state changes.
+- Verification gap: none locally for the browser correlation path; GitHub still needs the updated commit before the review thread can clear.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard.test.ts`
 - Rollback concern: keep the correlation logic thin and browser-only; do not turn the timeline into a backend persistence feature or widen the safe-command surface.
-- Last focused command: `gh pr view 819 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,baseRefName`
-- Last focused failure: none
+- Last focused command: `npx tsx --test src/backend/supervisor-http-server.test.ts`
+- Last focused failure: `PRRT_kwDORgvdZ8518BXw`
 - Last focused commands:
 ```bash
-npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts
-npx tsx --test src/backend/webui-dashboard.test.ts
-npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts
-npm ci
+npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts
+npx tsx --test src/backend/supervisor-http-server.test.ts
 npm run build
-gh pr view --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,baseRefName
-git push -u origin codex/issue-813
-gh pr create --draft --base main --head codex/issue-813 --title "Add WebUI operator timeline" --body ...
-gh pr view 819 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,baseRefName
 ```
 ### Scratchpad
-- 2026-03-22T03:29:25Z: committed `96f3858` (`Add dashboard operator timeline`), pushed `codex/issue-813`, opened draft PR #819 (`https://github.com/TommyKammy/codex-supervisor/pull/819`), and confirmed GitHub currently reports merge state `UNSTABLE`.
-- 2026-03-22T03:28:21Z: reproduced #813 with a new dashboard harness test that expected a single `operator-timeline` feed to show `run-once`, the resulting selected-issue delta, and a subsequent `supervisor.active_issue.changed` SSE event in order.
-- 2026-03-22T03:28:21Z: implemented a browser-only operator timeline with concise event/selection summary helpers; the first pass exposed a browser injection bug because the new helpers referenced a non-injected formatter, and exporting/injecting `formatIssueRef()` fixed the broken refresh chain.
+- 2026-03-22T12:44:20+09:00: validated CodeRabbit thread `PRRT_kwDORgvdZ8518BXw`; the review comment was correct because SSE rows still reused a sticky `lastCommandLabel`. Replaced it with an expiring issue-scoped correlation token in the browser script, added a browser-logic helper for extracting event issue ids, and passed `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`, `npx tsx --test src/backend/supervisor-http-server.test.ts`, and `npm run build`.
 - 2026-03-22T03:28:21Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build` after `npm ci` restored `tsc` in this worktree.
 - 2026-03-22T00:00:00Z: reproduced missing rejection feedback with a confirm-decline dashboard case for prune workspaces; the browser returned early without a visible command result until declined confirmations were routed through a rejected-command renderer.
 - 2026-03-22T00:00:00Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts`, `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`, `npm ci`, and `npm run build`.

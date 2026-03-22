@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildStatusLines,
+  collectTimelineEventIssueNumbers,
   collectIssueShortcuts,
   describeCommandSelectionChange,
   describeConnectionHealth,
@@ -219,6 +220,27 @@ test("describeCommandSelectionChange highlights whether a command moved the sele
   assert.equal(describeCommandSelectionChange(null, 77), "selected issue none -> #77");
   assert.equal(describeCommandSelectionChange(42, 42), "selected issue unchanged (#42)");
   assert.equal(describeCommandSelectionChange(null, null), "selected issue unchanged (none)");
+});
+
+test("collectTimelineEventIssueNumbers deduplicates the issue ids attached to a supervisor event", () => {
+  assert.deepEqual(
+    collectTimelineEventIssueNumbers({
+      type: "supervisor.active_issue.changed",
+      issueNumbers: [77, 42, 77, null],
+      issueNumber: 77,
+      previousIssueNumber: 42,
+      nextIssueNumber: 77,
+    }),
+    [77, 42],
+  );
+
+  assert.deepEqual(
+    collectTimelineEventIssueNumbers({
+      type: "supervisor.run_lock.blocked",
+      command: "run-once",
+    }),
+    [],
+  );
 });
 
 test("describeTimelineEvent summarizes known supervisor events for the operator timeline", () => {

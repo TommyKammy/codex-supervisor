@@ -932,6 +932,57 @@ test("dashboard correlates command results and subsequent supervisor events in o
   assert.equal(harness.remainingFetches.length, 0);
 });
 
+test("dashboard leaves unrelated later supervisor events unlabeled in the operator timeline", async () => {
+  const harness = createDashboardHarness([
+    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 42 })) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    { path: "/api/issues/42/explain", response: jsonResponse(createExplain(42)) },
+    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
+    {
+      path: "/api/commands/run-once",
+      method: "POST",
+      body: JSON.stringify({ dryRun: false }),
+      response: jsonResponse({
+        command: "run-once",
+        dryRun: false,
+        summary: "run-once complete",
+      }),
+    },
+    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 77 })) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    { path: "/api/issues/77/explain", response: jsonResponse(createExplain(77)) },
+    { path: "/api/issues/77/issue-lint", response: jsonResponse(createIssueLint(77)) },
+    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 77 })) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    { path: "/api/issues/77/explain", response: jsonResponse(createExplain(77)) },
+    { path: "/api/issues/77/issue-lint", response: jsonResponse(createIssueLint(77)) },
+  ]);
+  await harness.flush();
+
+  const runOnceButton = harness.document.getElementById("run-once-button");
+  const operatorTimeline = harness.document.getElementById("operator-timeline");
+  assert.ok(runOnceButton);
+  assert.ok(operatorTimeline);
+  assert.ok(harness.eventSource);
+
+  await runOnceButton.dispatch("click");
+  await harness.flush();
+
+  await harness.eventSource.dispatch("supervisor.recovery", {
+    type: "supervisor.recovery",
+    family: "recovery",
+    issueNumber: 99,
+    reason: "operator_requeue",
+    at: "2026-03-22T00:02:00.000Z",
+  });
+  await harness.flush();
+
+  const recoveryEntry = findChildByText(operatorTimeline, /recovery for issue #99/u);
+  assert.ok(recoveryEntry);
+  assert.doesNotMatch(recoveryEntry.textContent, /after run-once/u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
 test("dashboard prevents duplicate command posts while a command is already in flight", async () => {
   const commandResponse = createDeferred<MockResponseLike>();
   const harness = createDashboardHarness([

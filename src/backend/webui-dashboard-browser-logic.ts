@@ -65,6 +65,7 @@ interface DashboardTimelineEventLike {
   summary?: string | null;
   message?: string | null;
   issueNumber?: number | null;
+  issueNumbers?: Array<number | null> | null;
   previousIssueNumber?: number | null;
   nextIssueNumber?: number | null;
   reason?: string | null;
@@ -231,6 +232,22 @@ export function describeCommandSelectionChange(
     return "selected issue unchanged (" + formatIssueRef(nextIssueNumber) + ")";
   }
   return "selected issue " + formatIssueRef(previousIssueNumber) + " -> " + formatIssueRef(nextIssueNumber);
+}
+
+export function collectTimelineEventIssueNumbers(event: DashboardTimelineEventLike | null | undefined): number[] {
+  const issueNumbers: number[] = [];
+  for (const candidate of [
+    ...(Array.isArray(event?.issueNumbers) ? event.issueNumbers : []),
+    event?.issueNumber,
+    event?.previousIssueNumber,
+    event?.nextIssueNumber,
+  ]) {
+    if (typeof candidate !== "number" || !Number.isInteger(candidate) || issueNumbers.includes(candidate)) {
+      continue;
+    }
+    issueNumbers.push(candidate);
+  }
+  return issueNumbers;
 }
 
 export function describeTimelineEvent(event: DashboardTimelineEventLike | null | undefined): string {

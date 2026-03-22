@@ -10,6 +10,7 @@ import {
   describeConnectionHealth,
   describeFreshnessState,
   describeTimelineEvent,
+  collectTimelineEventIssueNumbers,
   parseSelectedIssueNumber,
 } from "./webui-dashboard-browser-logic";
 
@@ -25,6 +26,7 @@ const injectedBrowserLogic = [
   describeConnectionHealth,
   describeFreshnessState,
   describeTimelineEvent,
+  collectTimelineEventIssueNumbers,
   parseSelectedIssueNumber,
 ]
   .map((helper) => helper.toString().replace(/__name\([^;]+;\s*/gu, ""))
@@ -45,7 +47,7 @@ export function renderDashboardBrowserScript(): string {
         commandResult: null,
         events: [],
         timelineEntries: [],
-        lastCommandLabel: null,
+        commandCorrelation: null,
         connectionPhase: "connecting",
         refreshPhase: "idle",
         hasSuccessfulRefresh: false,
@@ -86,6 +88,8 @@ export function renderDashboardBrowserScript(): string {
         "supervisor.run_lock.blocked",
         "supervisor.review_wait.changed",
       ];
+
+      const COMMAND_CORRELATION_WINDOW_MS = 15000;
 
       function setText(element, value) {
         if (element) {
@@ -478,6 +482,69 @@ export function renderDashboardBrowserScript(): string {
         renderOperatorTimeline();
       }
 
+      function normalizeCommandIssueNumbers(candidates) {
+        const issueNumbers = [];
+        for (const candidate of candidates) {
+          if (typeof candidate !== "number" || !Number.isInteger(candidate) || issueNumbers.includes(candidate)) {
+            continue;
+          }
+          issueNumbers.push(candidate);
+        }
+        return issueNumbers;
+      }
+
+      function getActiveCommandCorrelation() {
+        if (!state.commandCorrelation) {
+          return null;
+        }
+        if (Date.now() >= state.commandCorrelation.expiresAt) {
+          state.commandCorrelation = null;
+          return null;
+        }
+        return state.commandCorrelation;
+      }
+
+      function setCommandCorrelation(label, issueNumbers) {
+        const normalizedIssueNumbers = normalizeCommandIssueNumbers(issueNumbers);
+        state.commandCorrelation =
+          normalizedIssueNumbers.length === 0
+            ? null
+            : {
+                label,
+                issueNumbers: normalizedIssueNumbers,
+                expiresAt: Date.now() + COMMAND_CORRELATION_WINDOW_MS,
+              };
+      }
+
+      function extendCommandCorrelation(issueNumber) {
+        const commandCorrelation = getActiveCommandCorrelation();
+        if (!commandCorrelation || typeof issueNumber !== "number" || !Number.isInteger(issueNumber)) {
+          return;
+        }
+        if (commandCorrelation.issueNumbers.includes(issueNumber)) {
+          return;
+        }
+        state.commandCorrelation = {
+          label: commandCorrelation.label,
+          issueNumbers: commandCorrelation.issueNumbers.concat(issueNumber),
+          expiresAt: commandCorrelation.expiresAt,
+        };
+      }
+
+      function correlationLabelForEvent(event) {
+        const commandCorrelation = getActiveCommandCorrelation();
+        if (!commandCorrelation) {
+          return null;
+        }
+        const eventIssueNumbers = collectTimelineEventIssueNumbers(event);
+        if (eventIssueNumbers.length === 0) {
+          return null;
+        }
+        return eventIssueNumbers.some((issueNumber) => commandCorrelation.issueNumbers.includes(issueNumber))
+          ? commandCorrelation.label
+          : null;
+      }
+
       function rejectCommand(action, summary, status) {
         state.commandResult = {
           action,
@@ -485,7 +552,7 @@ export function renderDashboardBrowserScript(): string {
           summary,
           status,
         };
-        state.lastCommandLabel = null;
+        state.commandCorrelation = null;
         pushTimeline({
           kind: "command",
           at: new Date().toISOString(),
@@ -603,7 +670,7 @@ export function renderDashboardBrowserScript(): string {
         try {
           const result = await postCommand(args.path, args.body);
           state.commandResult = result;
-          state.lastCommandLabel = args.label;
+          setCommandCorrelation(args.label, [args.issueNumber, previousSelectedIssueNumber]);
           pushTimeline({
             kind: "command",
             at: new Date().toISOString(),
@@ -614,6 +681,7 @@ export function renderDashboardBrowserScript(): string {
           renderCommandResult();
           try {
             await refreshStatusAndDoctor();
+            extendCommandCorrelation(state.selectedIssueNumber);
             pushTimeline({
               kind: "refresh",
               at: new Date().toISOString(),
@@ -630,7 +698,7 @@ export function renderDashboardBrowserScript(): string {
           }
         } catch (error) {
           setText(elements.commandStatus, previousStatus || "Command failed.");
-          state.lastCommandLabel = null;
+          state.commandCorrelation = null;
           state.commandResult = {
             action: args.label,
             outcome: "rejected",
@@ -694,7 +762,7 @@ export function renderDashboardBrowserScript(): string {
             at: parsed.at || new Date().toISOString(),
             summary: describeTimelineEvent(parsed),
             detail: JSON.stringify(parsed, null, 2),
-            commandLabel: state.lastCommandLabel,
+            commandLabel: correlationLabelForEvent(parsed),
           });
           try {
             await refreshStatusAndDoctor();
@@ -744,6 +812,7 @@ export function renderDashboardBrowserScript(): string {
         await runCommandWithLock({
           label: "requeue",
           path: "/api/commands/requeue",
+          issueNumber: state.explain.issueNumber,
           body: { issueNumber: state.explain.issueNumber },
         });
       });
