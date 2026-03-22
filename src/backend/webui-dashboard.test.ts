@@ -3,6 +3,7 @@ import { setImmediate as waitForTurn } from "node:timers/promises";
 import test from "node:test";
 import vm from "node:vm";
 import { renderSupervisorDashboardHtml } from "./webui-dashboard";
+import { DASHBOARD_PANEL_REGISTRY } from "./webui-dashboard-panel-layout";
 import { renderSupervisorSetupHtml } from "./webui-setup";
 
 interface MockResponseLike {
@@ -414,6 +415,15 @@ test("dashboard shell renders panels from the typed default layout in the curren
     html,
     /data-panel-id="status"[\s\S]*data-panel-id="doctor"[\s\S]*data-panel-id="issue-details"[\s\S]*data-panel-id="tracked-history"[\s\S]*data-panel-id="operator-actions"[\s\S]*data-panel-id="live-events"[\s\S]*data-panel-id="operator-timeline"/u,
   );
+});
+
+test("dashboard panel registry exposes a shared shell structure for every panel", () => {
+  for (const panel of DASHBOARD_PANEL_REGISTRY) {
+    assert.match(panel.markup, /<article class="panel" data-panel-id="[^"]+">[\s\S]*<div class="panel-shell">/u);
+    assert.match(panel.markup, /<div class="panel-header">[\s\S]*<div class="panel-drag-slot" aria-hidden="true"><\/div>/u);
+    assert.match(panel.markup, /<div class="panel-heading">[\s\S]*<h2>[\s\S]+<\/h2>[\s\S]*<p class="panel-subtitle">[\s\S]+<\/p>/u);
+    assert.match(panel.markup, /<div class="panel-body/u);
+  }
 });
 
 test("dashboard keeps requeue disabled until the selected issue finishes loading", async () => {

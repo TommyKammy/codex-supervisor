@@ -118,12 +118,73 @@ export function renderSupervisorDashboardPage(): string {
         overflow: hidden;
       }
 
+      .panel-shell {
+        display: grid;
+        gap: 0;
+      }
+
       .panel-header {
         display: flex;
+        flex-wrap: wrap;
         justify-content: space-between;
         gap: 12px;
-        align-items: center;
+        align-items: flex-start;
         padding: 18px 20px 10px;
+        border-bottom: 1px solid rgba(48, 41, 30, 0.08);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0));
+      }
+
+      .panel-header-main {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        min-width: min(320px, 100%);
+        flex: 1 1 320px;
+      }
+
+      .panel-drag-slot {
+        width: 36px;
+        min-width: 36px;
+        height: 36px;
+        border-radius: 12px;
+        border: 1px dashed rgba(48, 41, 30, 0.18);
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.75), rgba(231, 220, 200, 0.4)),
+          repeating-linear-gradient(
+            90deg,
+            transparent 0,
+            transparent 7px,
+            rgba(48, 41, 30, 0.08) 7px,
+            rgba(48, 41, 30, 0.08) 10px
+          );
+      }
+
+      .panel-heading {
+        display: grid;
+        gap: 4px;
+      }
+
+      .panel-subtitle {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.92rem;
+        line-height: 1.45;
+      }
+
+      .panel-header-aside {
+        display: grid;
+        gap: 10px;
+        justify-items: end;
+        flex: 0 1 auto;
+        min-width: 0;
+      }
+
+      .panel-header-meta,
+      .panel-header-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: flex-end;
       }
 
       .panel-header h2 {
@@ -135,6 +196,10 @@ export function renderSupervisorDashboardPage(): string {
 
       .panel-body {
         padding: 0 20px 20px;
+      }
+
+      .panel-empty-state {
+        color: var(--muted);
       }
 
       .metric {
@@ -387,6 +452,13 @@ export function renderSupervisorDashboardPage(): string {
         .panel-body {
           padding-left: 16px;
           padding-right: 16px;
+        }
+
+        .panel-header-aside,
+        .panel-header-meta,
+        .panel-header-actions {
+          justify-items: start;
+          justify-content: flex-start;
         }
       }
     </style>
