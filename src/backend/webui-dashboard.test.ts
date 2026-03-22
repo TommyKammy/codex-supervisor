@@ -225,7 +225,7 @@ function createDoctor() {
   };
 }
 
-function createExplain(issueNumber: number) {
+function createExplain(issueNumber: number, overrides: Record<string, unknown> = {}) {
   return {
     issueNumber,
     title: "Issue " + issueNumber,
@@ -238,7 +238,9 @@ function createExplain(issueNumber: number) {
     changeRiskLines: [],
     externalReviewFollowUpSummary: null,
     latestRecoverySummary: null,
+    activityContext: null,
     reasons: ["selected"],
+    ...overrides,
   };
 }
 
@@ -505,6 +507,73 @@ test("dashboard keeps requeue disabled after an issue load fails", async () => {
 
   assert.equal(requeueButton.disabled, true);
   assert.match(issueSummary.textContent, /Explain failed/u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard renders typed issue activity context without scraping legacy summary lines", async () => {
+  const harness = createDashboardHarness([
+    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    {
+      path: "/api/issues/42/explain",
+      response: jsonResponse(
+        createExplain(42, {
+          externalReviewFollowUpSummary: null,
+          latestRecoverySummary: null,
+          activityContext: {
+            handoffSummary: "blocker: wait for typed dashboard issue detail rendering",
+            localReviewRoutingSummary: null,
+            changeClassesSummary: null,
+            verificationPolicySummary: "verification_policy intensity=standard driver=changed_files:backend",
+            durableGuardrailSummary: "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=none",
+            externalReviewFollowUpSummary: "external_review_follow_up unresolved=2 actions=durable_guardrail:1|regression_test:1",
+            latestRecovery: {
+              issueNumber: 42,
+              at: "2026-03-22T00:00:00Z",
+              reason: "tracked_pr_head_advanced",
+              detail: "resumed issue #42 after tracked PR #42 advanced",
+            },
+            localReviewSummaryPath: null,
+            externalReviewMissesPath: null,
+            reviewWaits: [
+              {
+                kind: "configured_bot_initial_grace_wait",
+                status: "active",
+                provider: "coderabbit",
+                pauseReason: "awaiting_initial_provider_activity",
+                recentObservation: "required_checks_green",
+                observedAt: "2099-01-01T00:00:30.000Z",
+                configuredWaitSeconds: 90,
+                waitUntil: "2099-01-01T00:02:00.000Z",
+              },
+            ],
+          },
+        }),
+      ),
+    },
+    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
+  ]);
+  await harness.flush();
+
+  const issueNumberInput = harness.document.getElementById("issue-number-input");
+  const issueForm = harness.document.getElementById("issue-form");
+  const issueExplain = harness.document.getElementById("issue-explain");
+  assert.ok(issueNumberInput);
+  assert.ok(issueForm);
+  assert.ok(issueExplain);
+
+  issueNumberInput.value = "42";
+  await issueForm.dispatch("submit", {
+    preventDefault() {},
+  });
+  await harness.flush();
+
+  assert.match(issueExplain.textContent, /handoff_summary: blocker: wait for typed dashboard issue detail rendering/u);
+  assert.match(issueExplain.textContent, /verification_policy: verification_policy intensity=standard driver=changed_files:backend/u);
+  assert.match(issueExplain.textContent, /durable_guardrails: durable_guardrails verifier=committed:.codex\/verifier-guardrails\.json#1 external_review=none/u);
+  assert.match(issueExplain.textContent, /follow_up: external_review_follow_up unresolved=2 actions=durable_guardrail:1\|regression_test:1/u);
+  assert.match(issueExplain.textContent, /latest_recovery: issue=#42 at=2026-03-22T00:00:00Z reason=tracked_pr_head_advanced detail=resumed issue #42 after tracked PR #42 advanced/u);
+  assert.match(issueExplain.textContent, /review_waits: configured_bot_initial_grace_wait status=active provider=coderabbit/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 

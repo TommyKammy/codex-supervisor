@@ -94,6 +94,51 @@ export function renderDashboardBrowserScript(): string {
           .join("\\n");
       }
 
+      function formatLatestRecovery(activityContext, fallbackSummary) {
+        if (fallbackSummary) {
+          return fallbackSummary;
+        }
+        const latestRecovery = activityContext && activityContext.latestRecovery;
+        if (!latestRecovery) {
+          return "none";
+        }
+        return (
+          "issue=#" +
+          latestRecovery.issueNumber +
+          " at=" +
+          latestRecovery.at +
+          " reason=" +
+          latestRecovery.reason +
+          (latestRecovery.detail ? " detail=" + latestRecovery.detail : "")
+        );
+      }
+
+      function formatReviewWaits(activityContext) {
+        const reviewWaits = activityContext && Array.isArray(activityContext.reviewWaits) ? activityContext.reviewWaits : [];
+        if (reviewWaits.length === 0) {
+          return "none";
+        }
+        return reviewWaits
+          .map((reviewWait) =>
+            reviewWait.kind +
+            " status=" +
+            reviewWait.status +
+            " provider=" +
+            reviewWait.provider +
+            " pause_reason=" +
+            reviewWait.pauseReason +
+            " recent_observation=" +
+            reviewWait.recentObservation +
+            " observed_at=" +
+            (reviewWait.observedAt || "none") +
+            " configured_wait_seconds=" +
+            (reviewWait.configuredWaitSeconds === null ? "none" : reviewWait.configuredWaitSeconds) +
+            " wait_until=" +
+            (reviewWait.waitUntil || "none")
+          )
+          .join(" | ");
+      }
+
       function renderStatus() {
         if (!state.status) {
           return;
@@ -136,6 +181,7 @@ export function renderDashboardBrowserScript(): string {
         }
 
         const explain = state.explain;
+        const activityContext = explain.activityContext || null;
         setText(
           elements.issueSummary,
           "#" + explain.issueNumber + " " + explain.title + " | runnable=" + (explain.runnable ? "yes" : "no"),
@@ -150,8 +196,17 @@ export function renderDashboardBrowserScript(): string {
             ["failure_summary", explain.failureSummary || "none"],
             ["last_error", explain.lastError || "none"],
             ["change_risk", (explain.changeRiskLines || []).join(" | ") || "none"],
-            ["follow_up", explain.externalReviewFollowUpSummary || "none"],
-            ["latest_recovery", explain.latestRecoverySummary || "none"],
+            ["handoff_summary", activityContext ? activityContext.handoffSummary || "none" : "none"],
+            ["local_review_routing", activityContext ? activityContext.localReviewRoutingSummary || "none" : "none"],
+            ["verification_policy", activityContext ? activityContext.verificationPolicySummary || "none" : "none"],
+            ["durable_guardrails", activityContext ? activityContext.durableGuardrailSummary || "none" : "none"],
+            [
+              "follow_up",
+              explain.externalReviewFollowUpSummary ||
+                (activityContext ? activityContext.externalReviewFollowUpSummary || "none" : "none"),
+            ],
+            ["latest_recovery", formatLatestRecovery(activityContext, explain.latestRecoverySummary)],
+            ["review_waits", formatReviewWaits(activityContext)],
             ["reasons", (explain.reasons || []).join(" | ") || "none"],
           ]),
         );

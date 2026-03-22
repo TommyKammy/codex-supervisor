@@ -5,16 +5,23 @@
 - Branch: codex/issue-810
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: deaa3fa8a89a93f2721b6e339635510bbfa35a32
+- Current phase: stabilizing
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: 9c51fd5b952b67a22788f6213c566b84fd3a5b36
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-22T01:09:36.776Z
+- Updated at: 2026-03-22T01:27:07.560Z
 
 ## Latest Codex Summary
-- None yet.
+Added a shared typed `activityContext` contract for active-status and explain DTOs, backed by existing handoff/recovery/summary sources and structured review-wait data, without changing CLI text rendering. I also tightened the focused contract tests, fixed the runtime test stub for the new field, restored local deps with `npm ci`, and checkpointed the work as `9c51fd5` (`Expose typed operator activity context`).
+
+Summary: Added nullable typed operator activity context to status/explain DTOs, covered it with focused tests, and committed the checkpoint as `9c51fd5`.
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/backend/supervisor-http-server.test.ts`; `npm ci`; `npm run build`
+Failure signature: none
+Next action: open or update the draft PR for issue #810 with the typed `activityContext` contract change and focused verification results
 
 ## Active Failure Context
 - None recorded.
@@ -22,11 +29,11 @@
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: the WebUI gap is a missing typed `activityContext` contract on status/explain DTOs, so the safest fix is a shared operator-context helper that reuses existing handoff, recovery, summary, and review-wait sources without changing CLI rendering.
-- What changed: added `src/supervisor/supervisor-operator-activity-context.ts`; threaded nullable `activityContext` through `SupervisorActiveIssueDto`, `ActiveIssueStatusSnapshot`, and `SupervisorExplainDto`; populated it from existing status/explain summaries and structured review-wait/latest-recovery data; added focused contract coverage in `supervisor-diagnostics-status-selection.test.ts`, `supervisor-selection-issue-explain.test.ts`, `supervisor-http-server.test.ts`, and updated `supervisor-runtime.test.ts` for the new typed field.
+- What changed: added `src/supervisor/supervisor-operator-activity-context.ts`; threaded nullable `activityContext` through `SupervisorActiveIssueDto`, `ActiveIssueStatusSnapshot`, and `SupervisorExplainDto`; populated it from existing status/explain summaries and structured review-wait/latest-recovery data; added focused contract coverage in `supervisor-diagnostics-status-selection.test.ts`, `supervisor-selection-issue-explain.test.ts`, `supervisor-http-server.test.ts`, and `supervisor-runtime.test.ts`; then updated `src/backend/webui-dashboard-browser-script.ts` and `src/backend/webui-dashboard.test.ts` so the issue detail pane renders the typed activity context with legacy-summary fallback.
 - Current blocker: none
-- Next exact step: review the DTO shape against the dashboard consumer and open/update the draft PR once the contract looks coherent.
-- Verification gap: none locally after `npm ci`; the focused issue verification and `npm run build` passed.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/cli/supervisor-runtime.test.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-operator-activity-context.ts`, `src/supervisor/supervisor-selection-active-status.ts`, `src/supervisor/supervisor-selection-issue-explain.test.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/supervisor/supervisor-status-report.ts`, `src/supervisor/supervisor.ts`
+- Next exact step: commit the dashboard consumer follow-up, push `codex/issue-810`, and open the draft PR if none exists yet.
+- Verification gap: none locally; `npx tsx --test src/backend/webui-dashboard.test.ts` and `npm run build` passed after the dashboard follow-up.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard.test.ts`, `src/cli/supervisor-runtime.test.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-operator-activity-context.ts`, `src/supervisor/supervisor-selection-active-status.ts`, `src/supervisor/supervisor-selection-issue-explain.test.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/supervisor/supervisor-status-report.ts`, `src/supervisor/supervisor.ts`
 - Rollback concern: `activityContext` is intentionally nullable for empty cases so older tests and consumers do not have to special-case empty objects; keep that behavior if the contract is reshaped.
 - Last focused command: `npm run build`
 - Last focused failure: `typed-operator-activity-context-missing`; the new focused tests failed until status/explain started returning shared typed operator activity context.
@@ -37,11 +44,8 @@ npm ci
 npm run build
 ```
 ### Scratchpad
-- 2026-03-22T01:16:24Z: reproduced the contract gap with focused status/explain tests expecting a typed nullable `activityContext` surface for handoff summaries, latest recovery, and active configured-bot wait windows.
-- 2026-03-22T01:16:24Z: added shared operator activity DTO helpers and threaded them through active status plus explain without changing CLI string rendering; HTTP and runtime tests were updated for the new typed field.
-- 2026-03-22T01:16:24Z: focused verification passed with `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/backend/supervisor-http-server.test.ts`; `npm run build` initially failed because `tsc` was missing, then passed after `npm ci`.
-- 2026-03-21T23:56:04Z: fixed the requeue no-loaded-issue rejection path to emit `requeue cancelled` and added a focused dashboard harness regression asserting the concise status plus zero POST attempts.
-- 2026-03-21T23:56:04Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build`.
+- 2026-03-22T01:16:24Z: confirmed the dashboard was still rendering only the legacy explain summaries, added a focused harness regression for typed issue activity context, and updated the browser renderer to show handoff, verification policy, durable guardrails, follow-up, latest recovery, and review waits from `activityContext` with legacy fallback.
+- 2026-03-22T01:16:24Z: focused dashboard verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts` and `npm run build`.
 - 2026-03-22T00:00:00Z: reproduced stale post-command refresh handling with a new dashboard harness case where bootstrap loaded issue #42, `run-once` refreshed status to selected issue #77, and the UI incorrectly kept `#42` selected until state was split into supervisor-selected vs loaded issue numbers.
 - 2026-03-22T00:00:00Z: reproduced missing rejection feedback with a confirm-decline dashboard case for prune workspaces; the browser returned early without a visible command result until declined confirmations were routed through a rejected-command renderer.
 - 2026-03-22T00:00:00Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts`, `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`, `npm ci`, and `npm run build`.
