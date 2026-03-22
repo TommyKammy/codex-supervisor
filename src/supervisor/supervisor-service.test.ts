@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test, { mock } from "node:test";
 import type { SupervisorConfig } from "../core/types";
+import type { SetupReadinessReport } from "../setup-readiness";
 import { buildActiveIssueChangedEvent, type SupervisorEventSink } from "./supervisor-events";
-import { createSupervisorService } from "./supervisor-service";
+import { createSupervisorService, createSupervisorServiceFromSupervisor } from "./supervisor-service";
 import { Supervisor } from "./supervisor";
 
 function createStubSupervisor() {
@@ -29,6 +30,9 @@ function createStubSupervisor() {
       throw new Error("unused");
     },
     doctorReport: async () => {
+      throw new Error("unused");
+    },
+    setupReadinessReport: async (): Promise<SetupReadinessReport> => {
       throw new Error("unused");
     },
   };
@@ -90,3 +94,78 @@ test("createSupervisorService isolates subscriber failures from the supervisor e
     fromConfigMock.mock.restore();
   }
 });
+
+test("createSupervisorService exposes a dedicated typed setup readiness query", async () => {
+  const report: SetupReadinessReport = {
+    kind: "setup_readiness",
+    ready: false,
+    overallStatus: "missing",
+    configPath: "/tmp/supervisor.config.json",
+    fields: [
+      {
+        key: "repoSlug",
+        label: "Repository slug",
+        state: "configured",
+        value: "owner/repo",
+        message: "Repository slug is configured.",
+        required: true,
+      },
+      {
+        key: "reviewProvider",
+        label: "Review provider",
+        state: "missing",
+        value: null,
+        message: "Configure at least one review provider login for automated review posture.",
+        required: true,
+      },
+    ],
+    blockers: [
+      {
+        code: "missing_review_provider",
+        message: "A review provider must be configured before first-run setup is complete.",
+        fieldKeys: ["reviewProvider"],
+      },
+    ],
+    hostReadiness: {
+      overallStatus: "pass",
+      checks: [
+        {
+          name: "github_auth",
+          status: "pass",
+          summary: "GitHub auth ok.",
+          details: [],
+        },
+      ],
+    },
+    providerPosture: {
+      profile: "none",
+      provider: "none",
+      reviewers: [],
+      signalSource: "none",
+      configured: false,
+      summary: "No review provider is configured.",
+    },
+    trustPosture: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+      summary: "Trusted inputs with unsandboxed autonomous execution.",
+    },
+  };
+
+  const service = createSupervisorServiceFromStub({
+    setupReadinessReport: async () => report,
+  });
+
+  assert.ok(service.querySetupReadiness);
+  assert.deepEqual(await service.querySetupReadiness(), report);
+});
+
+function createSupervisorServiceFromStub(
+  overrides: Partial<ReturnType<typeof createStubSupervisor>>,
+) {
+  return createSupervisorServiceFromSupervisor({
+    ...createStubSupervisor(),
+    ...overrides,
+  } as unknown as Supervisor);
+}

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import test from "node:test";
 import type { DoctorDiagnostics } from "../doctor";
+import type { SetupReadinessReport } from "../setup-readiness";
 import { buildActiveIssueChangedEvent, type SupervisorEvent, type SupervisorEventSink } from "../supervisor";
 import type { SupervisorService } from "../supervisor";
 import { createSupervisorHttpServer } from "./supervisor-http-server";
@@ -186,6 +187,7 @@ function createStubService(args?: {
   statusWhyCalls?: boolean[];
   explainCalls?: number[];
   issueLintCalls?: number[];
+  setupReadinessCalls?: number;
   runOnceDryRunCalls?: boolean[];
   recoveryCalls?: { action: string; issueNumber: number }[];
   pruneCalls?: number;
@@ -215,6 +217,62 @@ function createStubService(args?: {
     },
     candidateDiscoverySummary: "candidate_discovery fetch_window=100 strategy=paginated",
     candidateDiscoveryWarning: null,
+  };
+  const setupReadinessReport: SetupReadinessReport = {
+    kind: "setup_readiness",
+    ready: false,
+    overallStatus: "missing",
+    configPath: "/tmp/supervisor.config.json",
+    fields: [
+      {
+        key: "repoSlug",
+        label: "Repository slug",
+        state: "configured",
+        value: "owner/repo",
+        message: "Repository slug is configured.",
+        required: true,
+      },
+      {
+        key: "reviewProvider",
+        label: "Review provider",
+        state: "missing",
+        value: null,
+        message: "Configure at least one review provider before first-run setup is complete.",
+        required: true,
+      },
+    ],
+    blockers: [
+      {
+        code: "missing_review_provider",
+        message: "Configure at least one review provider before first-run setup is complete.",
+        fieldKeys: ["reviewProvider"],
+      },
+    ],
+    hostReadiness: {
+      overallStatus: "pass",
+      checks: [
+        {
+          name: "github_auth",
+          status: "pass",
+          summary: "GitHub auth ok.",
+          details: [],
+        },
+      ],
+    },
+    providerPosture: {
+      profile: "none",
+      provider: "none",
+      reviewers: [],
+      signalSource: "none",
+      configured: false,
+      summary: "No review provider is configured.",
+    },
+    trustPosture: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+      summary: "Trusted inputs with unsandboxed autonomous execution.",
+    },
   };
 
   const eventSubscribers = new Set<SupervisorEventSink>();
@@ -351,6 +409,12 @@ function createStubService(args?: {
       };
     },
     queryDoctor: async () => doctorDiagnostics,
+    querySetupReadiness: async () => {
+      if (args) {
+        args.setupReadinessCalls = (args.setupReadinessCalls ?? 0) + 1;
+      }
+      return setupReadinessReport;
+    },
     subscribeEvents: (listener) => {
       if (args) {
         args.subscribeEventCalls = (args.subscribeEventCalls ?? 0) + 1;
@@ -367,8 +431,9 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
   const statusWhyCalls: boolean[] = [];
   const explainCalls: number[] = [];
   const issueLintCalls: number[] = [];
+  const serviceCallCounts = { setupReadinessCalls: 0 };
   const server = createSupervisorHttpServer({
-    service: createStubService({ statusWhyCalls, explainCalls, issueLintCalls }),
+    service: createStubService({ statusWhyCalls, explainCalls, issueLintCalls, setupReadinessCalls: 0 }),
   });
   t.after(async () => {
     await closeServer(server);
@@ -444,6 +509,65 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
     },
     candidateDiscoverySummary: "candidate_discovery fetch_window=100 strategy=paginated",
     candidateDiscoveryWarning: null,
+  });
+
+  const setupReadinessResponse = await readJson({ server, path: "/api/setup-readiness" });
+  assert.equal(setupReadinessResponse.statusCode, 200);
+  assert.deepEqual(setupReadinessResponse.body, {
+    kind: "setup_readiness",
+    ready: false,
+    overallStatus: "missing",
+    configPath: "/tmp/supervisor.config.json",
+    fields: [
+      {
+        key: "repoSlug",
+        label: "Repository slug",
+        state: "configured",
+        value: "owner/repo",
+        message: "Repository slug is configured.",
+        required: true,
+      },
+      {
+        key: "reviewProvider",
+        label: "Review provider",
+        state: "missing",
+        value: null,
+        message: "Configure at least one review provider before first-run setup is complete.",
+        required: true,
+      },
+    ],
+    blockers: [
+      {
+        code: "missing_review_provider",
+        message: "Configure at least one review provider before first-run setup is complete.",
+        fieldKeys: ["reviewProvider"],
+      },
+    ],
+    hostReadiness: {
+      overallStatus: "pass",
+      checks: [
+        {
+          name: "github_auth",
+          status: "pass",
+          summary: "GitHub auth ok.",
+          details: [],
+        },
+      ],
+    },
+    providerPosture: {
+      profile: "none",
+      provider: "none",
+      reviewers: [],
+      signalSource: "none",
+      configured: false,
+      summary: "No review provider is configured.",
+    },
+    trustPosture: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+      summary: "Trusted inputs with unsandboxed autonomous execution.",
+    },
   });
 
   const explainResponse = await readJson({ server, path: "/api/issues/42/explain" });
