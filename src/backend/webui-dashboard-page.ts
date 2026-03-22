@@ -197,6 +197,55 @@ export function renderSupervisorDashboardPage(): string {
         gap: 10px;
       }
 
+      .detail-stack {
+        display: grid;
+        gap: 10px;
+      }
+
+      .detail-empty {
+        margin: 0;
+        border-radius: 14px;
+        padding: 14px;
+        background: rgba(31, 26, 20, 0.94);
+        color: #f5ede1;
+        font: 0.87rem/1.55 "Iosevka Term", "SFMono-Regular", monospace;
+      }
+
+      .detail-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 10px;
+      }
+
+      .detail-card {
+        display: grid;
+        gap: 8px;
+        padding: 14px;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.76);
+      }
+
+      .detail-card h3 {
+        margin: 0;
+        font-size: 0.95rem;
+      }
+
+      .detail-list {
+        display: grid;
+        gap: 6px;
+      }
+
+      .detail-item {
+        color: var(--muted);
+        font-size: 0.9rem;
+        line-height: 1.45;
+      }
+
+      .detail-item strong {
+        color: var(--text);
+      }
+
       .shortcut-button {
         width: 100%;
         padding: 12px 14px;
@@ -387,7 +436,9 @@ export function renderSupervisorDashboardPage(): string {
             </form>
             <div class="row">
               <div class="row-label">Explain</div>
-              <pre id="issue-explain" class="code">Choose an issue number to load /api/issues/:issueNumber/explain.</pre>
+              <div id="issue-explain" class="detail-stack">
+                <div class="detail-empty">Choose an issue number to load /api/issues/:issueNumber/explain.</div>
+              </div>
             </div>
             <div class="row">
               <div class="row-label">Issue lint</div>

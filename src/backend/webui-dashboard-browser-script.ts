@@ -70,12 +70,14 @@ export function renderDashboardBrowserScript(): string {
 
       function setText(element, value) {
         if (element) {
+          element.innerHTML = "";
           element.textContent = value;
         }
       }
 
       function setCode(element, lines) {
         if (element) {
+          element.innerHTML = "";
           element.textContent = Array.isArray(lines) ? lines.join("\\n") : String(lines);
         }
       }
@@ -139,6 +141,90 @@ export function renderDashboardBrowserScript(): string {
           .join(" | ");
       }
 
+      function buildDetailItems(pairs) {
+        return pairs.filter((pair) => pair[1] !== null && pair[1] !== undefined && pair[1] !== "" && pair[1] !== "none");
+      }
+
+      function appendDetailSection(container, title, pairs) {
+        const items = buildDetailItems(pairs);
+        if (!container || items.length === 0) {
+          return;
+        }
+
+        const card = document.createElement("section");
+        card.className = "detail-card";
+
+        const heading = document.createElement("h3");
+        heading.textContent = title;
+        card.appendChild(heading);
+
+        const list = document.createElement("div");
+        list.className = "detail-list";
+        for (const pair of items) {
+          const row = document.createElement("div");
+          row.className = "detail-item";
+          row.textContent = pair[0] + ": " + pair[1];
+          list.appendChild(row);
+        }
+
+        card.appendChild(list);
+        container.appendChild(card);
+      }
+
+      function renderIssueExplainDetails(explain) {
+        if (!elements.issueExplain) {
+          return;
+        }
+
+        const activityContext = explain.activityContext || null;
+        elements.issueExplain.innerHTML = "";
+        elements.issueExplain.className = "detail-grid";
+
+        appendDetailSection(elements.issueExplain, "Selection context", [
+          ["state", explain.state],
+          ["blocked_reason", explain.blockedReason],
+          ["runnable", explain.runnable ? "yes" : "no"],
+          ["selection_reason", explain.selectionReason || "none"],
+          ["reasons", (explain.reasons || []).join(" | ") || "none"],
+        ]);
+
+        appendDetailSection(elements.issueExplain, "Operator activity", [
+          ["handoff_summary", activityContext ? activityContext.handoffSummary || "none" : "none"],
+          ["local_review_routing", activityContext ? activityContext.localReviewRoutingSummary || "none" : "none"],
+          ["verification_policy", activityContext ? activityContext.verificationPolicySummary || "none" : "none"],
+          ["durable_guardrails", activityContext ? activityContext.durableGuardrailSummary || "none" : "none"],
+          [
+            "follow_up",
+            explain.externalReviewFollowUpSummary ||
+              (activityContext ? activityContext.externalReviewFollowUpSummary || "none" : "none"),
+          ],
+          ["change_risk", (explain.changeRiskLines || []).join(" | ") || "none"],
+        ]);
+
+        appendDetailSection(elements.issueExplain, "Review waits", [
+          ["waits", formatReviewWaits(activityContext)],
+          ["local_review_summary_path", activityContext ? activityContext.localReviewSummaryPath || "none" : "none"],
+          ["external_review_misses_path", activityContext ? activityContext.externalReviewMissesPath || "none" : "none"],
+        ]);
+
+        appendDetailSection(elements.issueExplain, "Latest recovery", [
+          ["latest_recovery", formatLatestRecovery(activityContext, explain.latestRecoverySummary)],
+        ]);
+
+        appendDetailSection(elements.issueExplain, "Recent failure", [
+          ["failure_summary", explain.failureSummary || "none"],
+          ["last_error", explain.lastError || "none"],
+        ]);
+
+        if (elements.issueExplain.children.length === 0) {
+          elements.issueExplain.className = "detail-stack";
+          const emptyState = document.createElement("div");
+          emptyState.className = "detail-empty";
+          emptyState.textContent = "No typed issue detail context reported.";
+          elements.issueExplain.appendChild(emptyState);
+        }
+      }
+
       function renderStatus() {
         if (!state.status) {
           return;
@@ -181,35 +267,11 @@ export function renderDashboardBrowserScript(): string {
         }
 
         const explain = state.explain;
-        const activityContext = explain.activityContext || null;
         setText(
           elements.issueSummary,
           "#" + explain.issueNumber + " " + explain.title + " | runnable=" + (explain.runnable ? "yes" : "no"),
         );
-        setCode(
-          elements.issueExplain,
-          formatKeyValueBlock([
-            ["title", explain.title],
-            ["state", explain.state],
-            ["blocked_reason", explain.blockedReason],
-            ["selection_reason", explain.selectionReason || "none"],
-            ["failure_summary", explain.failureSummary || "none"],
-            ["last_error", explain.lastError || "none"],
-            ["change_risk", (explain.changeRiskLines || []).join(" | ") || "none"],
-            ["handoff_summary", activityContext ? activityContext.handoffSummary || "none" : "none"],
-            ["local_review_routing", activityContext ? activityContext.localReviewRoutingSummary || "none" : "none"],
-            ["verification_policy", activityContext ? activityContext.verificationPolicySummary || "none" : "none"],
-            ["durable_guardrails", activityContext ? activityContext.durableGuardrailSummary || "none" : "none"],
-            [
-              "follow_up",
-              explain.externalReviewFollowUpSummary ||
-                (activityContext ? activityContext.externalReviewFollowUpSummary || "none" : "none"),
-            ],
-            ["latest_recovery", formatLatestRecovery(activityContext, explain.latestRecoverySummary)],
-            ["review_waits", formatReviewWaits(activityContext)],
-            ["reasons", (explain.reasons || []).join(" | ") || "none"],
-          ]),
-        );
+        renderIssueExplainDetails(explain);
 
         if (state.issueLint) {
           const lint = state.issueLint;
@@ -378,7 +440,7 @@ export function renderDashboardBrowserScript(): string {
         state.issueLint = null;
         renderSelectedIssue();
         setText(elements.issueSummary, "Loading issue...");
-        setCode(elements.issueExplain, "Loading /api/issues/" + requestedIssueNumber + "/explain...");
+        setText(elements.issueExplain, "Loading /api/issues/" + requestedIssueNumber + "/explain...");
         setCode(elements.issueLint, "Loading /api/issues/" + requestedIssueNumber + "/issue-lint...");
         try {
           const [explain, issueLint] = await Promise.all([
