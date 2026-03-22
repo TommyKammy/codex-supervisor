@@ -8,6 +8,7 @@ import {
   describeConnectionHealth,
   describeFreshnessState,
   describeTimelineEvent,
+  formatTrackedIssues,
   parseSelectedIssueNumber,
 } from "./webui-dashboard-browser-logic";
 
@@ -60,6 +61,58 @@ test("buildStatusLines summarizes tracked history as a count instead of dumping 
     "Candidate discovery may be truncated.",
     "reconciliation warning",
   ]);
+});
+
+test("formatTrackedIssues defaults to non-done history and can reveal done issues when requested", () => {
+  assert.deepEqual(
+    formatTrackedIssues({
+      trackedIssues: [
+        {
+          issueNumber: 41,
+          state: "queued",
+          branch: "codex/issue-41",
+          prNumber: null,
+          blockedReason: "requirements:verification",
+        },
+        {
+          issueNumber: 42,
+          state: "done",
+          branch: "codex/issue-42",
+          prNumber: 512,
+          blockedReason: null,
+        },
+      ],
+    }),
+    ["tracked issue #41 [queued] branch=codex/issue-41 pr=none blocked_reason=requirements:verification"],
+  );
+
+  assert.deepEqual(
+    formatTrackedIssues(
+      {
+        trackedIssues: [
+          {
+            issueNumber: 41,
+            state: "queued",
+            branch: "codex/issue-41",
+            prNumber: null,
+            blockedReason: "requirements:verification",
+          },
+          {
+            issueNumber: 42,
+            state: "done",
+            branch: "codex/issue-42",
+            prNumber: 512,
+            blockedReason: null,
+          },
+        ],
+      },
+      { includeDone: true },
+    ),
+    [
+      "tracked issue #41 [queued] branch=codex/issue-41 pr=none blocked_reason=requirements:verification",
+      "tracked issue #42 [done] branch=codex/issue-42 pr=#512 blocked_reason=none",
+    ],
+  );
 });
 
 test("collectIssueShortcuts deduplicates typed issue shortcuts in priority order", () => {

@@ -293,6 +293,21 @@ export function renderSupervisorDashboardPage(): string {
         opacity: 0.6;
       }
 
+      .panel-header button {
+        padding: 10px 14px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.82);
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .panel-header button:hover {
+        border-color: rgba(15, 108, 120, 0.35);
+        background: rgba(255, 255, 255, 0.94);
+      }
+
       .action-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -445,6 +460,23 @@ export function renderSupervisorDashboardPage(): string {
             <div class="row">
               <div class="row-label">Issue lint</div>
               <pre id="issue-lint" class="code">Issue lint appears here after a selection.</pre>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h2>Tracked history</h2>
+            <button type="button" id="tracked-history-toggle">Show done issues</button>
+          </div>
+          <div class="panel-body stack">
+            <div class="row">
+              <div class="row-label">History summary</div>
+              <span id="tracked-history-summary" class="hint">Waiting for tracked history…</span>
+            </div>
+            <div class="row">
+              <div class="row-label">Tracked issues</div>
+              <pre id="tracked-history-lines" class="code">Loading tracked history…</pre>
             </div>
           </div>
         </article>

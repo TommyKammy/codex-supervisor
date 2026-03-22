@@ -464,6 +464,64 @@ test("dashboard keeps Summary focused on current state and only shows tracked is
   assert.equal(harness.remainingFetches.length, 0);
 });
 
+test("dashboard moves tracked history into a dedicated panel with non-done default and reveal toggle", async () => {
+  const harness = createDashboardHarness([
+    {
+      path: "/api/status?why=true",
+      response: jsonResponse(
+        createStatus({
+          includeWhyLines: false,
+          trackedIssues: [
+            {
+              issueNumber: 58,
+              state: "queued",
+              branch: "codex/issue-58",
+              prNumber: 58,
+              blockedReason: "requirements:verification",
+            },
+            {
+              issueNumber: 12,
+              state: "done",
+              branch: "codex/issue-12",
+              prNumber: 12,
+              blockedReason: null,
+            },
+          ],
+        }),
+      ),
+    },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+  ]);
+  await harness.flush();
+
+  const statusLines = harness.document.getElementById("status-lines");
+  const trackedHistoryLines = harness.document.getElementById("tracked-history-lines");
+  const trackedHistorySummary = harness.document.getElementById("tracked-history-summary");
+  const trackedHistoryToggle = harness.document.getElementById("tracked-history-toggle");
+  assert.ok(statusLines);
+  assert.ok(trackedHistoryLines);
+  assert.ok(trackedHistorySummary);
+  assert.ok(trackedHistoryToggle);
+
+  assert.match(statusLines.textContent, /tracked issues=2/u);
+  assert.doesNotMatch(statusLines.textContent, /tracked issue #58/u);
+  assert.match(trackedHistorySummary.textContent, /showing 1 of 2 tracked issues/u);
+  assert.match(
+    trackedHistoryLines.textContent,
+    /tracked issue #58 \[queued\] branch=codex\/issue-58 pr=#58 blocked_reason=requirements:verification/u,
+  );
+  assert.doesNotMatch(trackedHistoryLines.textContent, /tracked issue #12 \[done\]/u);
+  assert.match(trackedHistoryToggle.textContent, /Show done issues/u);
+
+  await trackedHistoryToggle.dispatch("click");
+  await harness.flush();
+
+  assert.match(trackedHistorySummary.textContent, /showing 2 of 2 tracked issues/u);
+  assert.match(trackedHistoryLines.textContent, /tracked issue #12 \[done\] branch=codex\/issue-12 pr=#12/u);
+  assert.match(trackedHistoryToggle.textContent, /Hide done issues/u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
 test("dashboard lets operators inspect typed runnable and blocked issues without manual number entry", async () => {
   const harness = createDashboardHarness([
     {
