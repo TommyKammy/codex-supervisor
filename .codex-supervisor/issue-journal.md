@@ -14,7 +14,7 @@
 - Updated at: 2026-03-22T09:10:29.500Z
 
 ## Latest Codex Summary
-- Added a focused docs assertion for the missing first-run setup/readiness contract, documented the typed contract in `docs/getting-started.md`, and verified the scoped docs suite plus `npm run build` after restoring local dependencies with `npm ci`.
+- Added a focused docs assertion for the missing first-run setup/readiness contract, documented the typed contract in `docs/getting-started.md`, verified the scoped docs suite plus `npm run build` after restoring local dependencies with `npm ci`, committed `53342c7`, pushed `codex/issue-827`, and opened draft PR #832.
 
 ## Active Failure Context
 - None recorded.
@@ -24,7 +24,7 @@
 - Hypothesis: the issue was a docs-contract gap rather than a runtime bug, because the repo already exposed `doctor` and bootstrap helpers but did not document a separate typed first-run setup/readiness surface.
 - What changed: added a focused failing assertion in `src/getting-started-docs.test.ts`, documented a dedicated `SetupReadinessReport` contract in `docs/getting-started.md`, and explicitly separated first-run setup/readiness from `doctor`.
 - Current blocker: none
-- Next exact step: commit the docs/test checkpoint on `codex/issue-827`, then open or update the draft PR for review.
+- Next exact step: monitor draft PR #832 for CI and review feedback, and repair only if new failures or comments appear.
 - Verification gap: none for the scoped docs contract; the targeted docs tests and `npm run build` passed locally after `npm ci`.
 - Files touched: `.codex-supervisor/issue-journal.md`, `docs/getting-started.md`, `src/getting-started-docs.test.ts`
 - Rollback concern: keep the setup/readiness contract limited to first-run guidance and do not collapse repair-oriented `doctor` diagnostics back into that typed surface.
@@ -42,6 +42,7 @@ npm run build
 - 2026-03-22T18:12:25+09:00: reproduced the issue with a new docs assertion that required a setup/readiness contract distinct from `doctor`; `npx tsx --test src/getting-started-docs.test.ts` initially failed on missing contract text.
 - 2026-03-22T18:12:25+09:00: documented a typed `SetupReadinessReport` shape and first-run-only rules in `docs/getting-started.md`, then verified with `npx tsx --test src/readme-docs.test.ts src/getting-started-docs.test.ts src/agent-instructions-docs.test.ts`.
 - 2026-03-22T18:12:25+09:00: initial `npm run build` failed because `tsc` was missing in this worktree; restored dependencies with `npm ci`, then reran `npm run build` successfully.
+- 2026-03-22T18:12:25+09:00: committed `53342c7` (`Document setup readiness contract`), pushed `codex/issue-827`, and opened draft PR #832 (`https://github.com/TommyKammy/codex-supervisor/pull/832`).
 - 2026-03-22T06:48:38+00:00: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts`.
 - 2026-03-22T06:48:38+00:00: initial `npm run build` failed because `tsc` was missing in this worktree; restored dependencies with `npm ci`, reran the focused tests, and `npm run build` then passed.
 - 2026-03-22T00:00:00Z: reproduced missing rejection feedback with a confirm-decline dashboard case for prune workspaces; the browser returned early without a visible command result until declined confirmations were routed through a rejected-command renderer.
