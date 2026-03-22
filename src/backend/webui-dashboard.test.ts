@@ -417,6 +417,21 @@ test("dashboard shell renders panels from the typed default layout in the curren
   );
 });
 
+test("dashboard page frames the hero and both panel groups with labeled section chrome", () => {
+  const html = renderSupervisorDashboardHtml();
+
+  assert.match(html, /<section class="hero"[\s\S]*<p class="hero-eyebrow">Supervisor workspace<\/p>/u);
+  assert.match(html, /<div class="hero-body">[\s\S]*<div class="hero-copy">[\s\S]*<div class="hero-summary">/u);
+  assert.match(
+    html,
+    /<section class="dashboard-section" aria-labelledby="overview-heading">[\s\S]*<p class="section-kicker">Dashboard lane<\/p>[\s\S]*<h2 id="overview-heading">Overview<\/h2>[\s\S]*<div class="grid" aria-label="overview">/u,
+  );
+  assert.match(
+    html,
+    /<section class="dashboard-section" aria-labelledby="details-heading">[\s\S]*<p class="section-kicker">Dashboard lane<\/p>[\s\S]*<h2 id="details-heading">Operator details<\/h2>[\s\S]*<div class="grid" aria-label="details">/u,
+  );
+});
+
 test("dashboard panel registry exposes a shared shell structure for every panel", () => {
   for (const panel of DASHBOARD_PANEL_REGISTRY) {
     assert.match(panel.markup, /<article class="panel" data-panel-id="[^"]+">[\s\S]*<div class="panel-shell">/u);
