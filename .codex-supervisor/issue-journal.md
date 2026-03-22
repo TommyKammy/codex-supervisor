@@ -1,57 +1,70 @@
-# Issue #837: WebUI setup shell: add a dedicated first-run setup route backed by setup-readiness
+# Issue #838: WebUI setup checklist: render grouped first-run guidance from typed setup-readiness
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/837
-- Branch: codex/issue-837
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/838
+- Branch: codex/issue-838
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: draft_pr
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 9754a8ab7ba7bee04d83267639c51420bff6427e
+- Current phase: addressing_review
+- Attempt count: 22 (implementation=20, repair=2)
+- Last head SHA: 53e6aabdca468d2ad3b51f1814c0c49c334bffa7
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-22T13:06:00Z
+- Last failure signature: PRRT_kwDORgvdZ851-1Bv|PRRT_kwDORgvdZ851-1B1|PRRT_kwDORgvdZ851-1B2
+- Repeated failure signature count: 1
+- Updated at: 2026-03-22T16:58:00Z
 
 ## Latest Codex Summary
-- Added a dedicated first-run setup shell backed by `/api/setup-readiness`, routed `/` to that shell only when setup is incomplete, and kept the steady-state operator dashboard available at `/dashboard` and at `/` once setup is configured. Focused HTTP/UI tests now cover the new setup-shell routing and typed setup rendering.
+Addressed the three remaining PR #851 review threads in the setup-shell renderer. [src/backend/webui-setup-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-838/src/backend/webui-setup-browser-script.ts) now counts only required fields in the readiness summary, pluralizes the single host-check case correctly, and falls back to `unknown` field metadata instead of throwing on older or partial setup-readiness payloads. [src/backend/webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-838/src/backend/webui-dashboard.test.ts) now proves those behaviors with an added optional field lacking metadata.
+
+Focused verification passed with `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`. I committed the review fix as `e7a0732` (`Fix setup shell review follow-ups`), refreshed the journal in `53e6aab`, pushed `codex/issue-838`, and resolved the three CodeRabbit review threads on PR #851. The only remaining workspace delta is the untracked `.codex-supervisor/replay/` snapshot.
+
+Summary: Fixed the remaining setup-shell review comments, added focused degraded-payload coverage, pushed the branch update, and resolved the automated review threads.
+State hint: waiting_ci
+Blocked reason: none
+Tests: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`
+Failure signature: none
+Next action: Monitor PR #851 for refreshed checks or any follow-up review on the pushed setup-shell fixes.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the WebUI gap was that `/` always rendered the operator dashboard even when typed setup readiness reported blockers, so first-run guidance needed its own shell and root-level route selection.
-- What changed: added `src/backend/webui-setup.ts`, `src/backend/webui-setup-page.ts`, and `src/backend/webui-setup-browser-script.ts` for a dedicated setup shell that renders typed setup blockers, fields, host checks, provider posture, and trust posture from `/api/setup-readiness`; updated `src/backend/supervisor-http-server.ts` so `/setup` always serves that shell, `/dashboard` always serves the steady-state dashboard, and `/` now chooses between them based on `querySetupReadiness().ready`; tightened `src/backend/supervisor-http-server.test.ts` and `src/backend/webui-dashboard.test.ts` to pin the route split and setup-shell fetch/render behavior.
+- Hypothesis: the remaining PR feedback is limited to renderer wording and degraded-data resilience, not to the broader grouped setup checklist design.
+- What changed: re-read the required memory files and the live setup-shell sources, confirmed all three CodeRabbit review comments were valid against [src/backend/webui-setup-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-838/src/backend/webui-setup-browser-script.ts), then fixed them locally. The field summary now counts only required fields, host readiness uses singular wording for one check, and field metadata rendering now tolerates missing `metadata` by falling back to `unknown`. I extended [src/backend/webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-838/src/backend/webui-dashboard.test.ts) with an optional field lacking metadata so the test proves both the required-field denominator and the non-throwing fallback path. Focused verification passed, the code fix was committed as `e7a0732` (`Fix setup shell review follow-ups`), the journal refresh was committed as `53e6aab`, the branch was pushed to `origin/codex/issue-838`, and the three CodeRabbit review threads were resolved on PR #851.
 - Current blocker: none
-- Next exact step: watch draft PR `#843` on head `954ee6ea7360d767c4e574216e37dc70aa8cd8ce` and address any CI or review follow-up.
-- Verification gap: browser smoke coverage for the new setup shell was not added in this pass; focused unit/HTTP coverage plus `npm run build` passed locally.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.ts`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard.test.ts`, `src/backend/webui-setup.ts`, `src/backend/webui-setup-page.ts`, `src/backend/webui-setup-browser-script.ts`
-- Rollback concern: reverting only the server routing change would strand the new `/setup` shell and tests; reverting only the new setup shell files would break `/setup` and the root first-run flow.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-837 --title "Add dedicated WebUI setup shell" --body "..."`
-- Last focused failure: `sh: 1: tsc: not found` during the first build attempt before restoring dependencies with `npm ci`; a later build also caught a TypeScript narrowing error in the new server test (`TS18047`/`TS2339` on `address.port`), which was fixed by capturing `port` after the listen-address guard.
+- Next exact step: monitor PR #851 for refreshed CI and any follow-up review after the pushed setup-shell fixes.
+- Verification gap: `npm run build` was not rerun in this pass; the focused issue command passed after the setup-shell rendering changes.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard.test.ts`, `src/backend/webui-setup-browser-script.ts`
+- Rollback concern: low; the change is isolated to the `/setup` WebUI shell and its focused test coverage.
+- Last focused command: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`
+- Last focused failure: none; the focused WebUI verification command passed.
 - Last focused commands:
 ```bash
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-838/AGENTS.generated.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-838/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
-npx tsx --test src/backend/supervisor-http-server.test.ts src/backend/webui-dashboard.test.ts
-npm ci
-npm run build
-git commit -m "Add dedicated WebUI setup shell"
-git push -u origin codex/issue-837
-gh pr create --draft --base main --head codex/issue-837 --title "Add dedicated WebUI setup shell" --body "..."
+git status --short
+sed -n '1,260p' src/backend/webui-setup-browser-script.ts
+rg -n "required setup fields|Overall host readiness|Source:" src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts
+git diff -- .codex-supervisor/issue-journal.md
+sed -n '1120,1205p' src/backend/webui-dashboard.test.ts
+sed -n '1070,1188p' src/backend/webui-dashboard.test.ts
+npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts
+git diff -- src/backend/webui-setup-browser-script.ts src/backend/webui-dashboard.test.ts
+git add src/backend/webui-setup-browser-script.ts src/backend/webui-dashboard.test.ts
+git commit -m "Fix setup shell review follow-ups"
+git add .codex-supervisor/issue-journal.md
+git commit -m "Update issue 838 journal"
+git push origin codex/issue-838
+gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { isResolved } } }' -F threadId='PRRT_kwDORgvdZ851-1Bv'
+gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { isResolved } } }' -F threadId='PRRT_kwDORgvdZ851-1B1'
+gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { isResolved } } }' -F threadId='PRRT_kwDORgvdZ851-1B2'
+date -u +"%Y-%m-%dT%H:%M:%SZ"
 ```
 ### Scratchpad
-- 2026-03-22T13:05:00Z: committed `954ee6e` (`Add dedicated WebUI setup shell`), pushed `codex/issue-837`, and opened draft PR `#843` at `https://github.com/TommyKammy/codex-supervisor/pull/843`.
-- 2026-03-22T12:57:00Z: reran `npx tsx --test src/backend/supervisor-http-server.test.ts src/backend/webui-dashboard.test.ts` and `npm run build`; both passed after fixing the server-test `address.port` narrowing issue.
-- 2026-03-22T12:55:00Z: `npm run build` initially failed with `sh: 1: tsc: not found`; restored local dependencies with `npm ci` and reran build.
-- 2026-03-22T12:48:00Z: added the narrow reproducer in `src/backend/supervisor-http-server.test.ts` and `src/backend/webui-dashboard.test.ts`; the first focused run failed because the legacy root-shell test still assumed `/` always served the operator dashboard after the new route selection landed.
-- 2026-03-22T12:44:00Z: implemented the dedicated setup shell and route split so `/setup` serves first-run guidance, `/dashboard` serves the steady-state dashboard, and `/` chooses based on typed setup readiness.
-- 2026-03-22T11:58:23Z: committed `aa95a0f` (`Sync setup readiness docs unions`), pushed `codex/issue-836`, and confirmed PR `#842` is on head `aa95a0f896e49ac26ed6cc9219b472238cbfa0a7` with `mergeStateStatus` `UNSTABLE` while refreshed checks start.
-- 2026-03-22T11:57:07Z: updated the getting-started setup contract excerpt to match the implementation unions and added focused docs assertions for the missing value-type/remediation/key members.
-- 2026-03-22T11:56:31Z: the first `npx tsx --test src/getting-started-docs.test.ts` run failed on an over-broad regex that tried to match the type alias definition and the later field usage in one expression; split those assertions and reran cleanly.
-- 2026-03-22T11:31:39Z: pushed `codex/issue-836` to `origin` and opened draft PR `#842` at `https://github.com/TommyKammy/codex-supervisor/pull/842`.
-- 2026-03-22T11:30:47Z: committed `b1bcbba` (`Add typed setup readiness remediation metadata`) with the setup-readiness contract, fixture, docs, and journal updates.
-- 2026-03-22T11:30:09Z: focused setup-readiness verification passed with `npx tsx --test src/doctor.test.ts src/supervisor/supervisor-service.test.ts src/backend/supervisor-http-server.test.ts`; the broader scoped run including `src/getting-started-docs.test.ts` also passed.
+- 2026-03-22T16:58:00Z: committed the journal refresh as `53e6aab`, pushed `codex/issue-838` to `origin`, and resolved the three CodeRabbit review threads `PRRT_kwDORgvdZ851-1Bv`, `PRRT_kwDORgvdZ851-1B1`, and `PRRT_kwDORgvdZ851-1B2` after the fix landed on the PR branch.
+- 2026-03-22T16:55:10Z: validated the three remaining PR #851 CodeRabbit findings against the live renderer, fixed all three in `src/backend/webui-setup-browser-script.ts`, extended `src/backend/webui-dashboard.test.ts` with an optional field missing metadata to prove the fallback path, reran `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`, and committed the code fix as `e7a0732` (`Fix setup shell review follow-ups`).
 - 2026-03-22T11:28:15Z: added the narrow reproducer in `src/doctor.test.ts`; the first focused run failed with `TypeError: Cannot read properties of undefined (reading 'source')`, confirming the DTO lacked typed field metadata.
 - 2026-03-22T11:28:50Z: implemented `metadata` on setup fields plus typed `remediation` on blockers in `src/setup-readiness.ts`, then updated service/HTTP/docs fixtures to pin the richer contract.
 - 2026-03-22T10:58:09Z: committed merge `aa11199` (`Merge remote-tracking branch 'origin/main' into codex/issue-824`) and pushed it to `origin/codex/issue-824`.
