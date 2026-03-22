@@ -1,56 +1,49 @@
-# Issue #802: WebUI operator UX: improve safe-command feedback and refresh behavior
+# Issue #803: WebUI maintainability: split dashboard internals after the typed operator contract stabilizes
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/802
-- Branch: codex/issue-802
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/803
+- Branch: codex/issue-803
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: a64185a85af840f5d5e2fbdca0c9e209ecef97f3
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 74632060cb7eeb0f234527f75863249df36de5b0
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ8517YKs
-- Repeated failure signature count: 1
-- Updated at: 2026-03-21T23:54:52.187Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-22T00:17:40.578Z
 
 ## Latest Codex Summary
-Draft PR [#807](https://github.com/TommyKammy/codex-supervisor/pull/807) is open from `codex/issue-802`. I reran the focused verification on the current checkpoint, then pushed the branch and committed the journal handoff updates so the PR tip reflects the current state.
-
-Worktree is clean except for the pre-existing untracked [`.codex-supervisor/replay/`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-802/.codex-supervisor/replay/) directory. Focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build`.
-
-Summary: Verified the #802 checkpoint locally, pushed `codex/issue-802`, opened draft PR #807, and updated the issue journal with the current PR state
-State hint: draft_pr
-Blocked reason: none
-Tests: `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`; `npm run build`
-Failure signature: none
-Next action: monitor draft PR #807 and address any CI or review feedback
+- Reproduced the maintainability gap with a focused browser-logic unit test, split the dashboard into page/script/browser-logic modules, and kept the inline WebUI contract stable with focused verification green.
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/807#discussion_r2970553908
-- Details:
-  - src/backend/webui-dashboard.ts:1011 _⚠️ Potential issue_ | _🟡 Minor_ **Missing `status` parameter for consistent feedback.** The `rejectCommand` call here passes only 2 arguments while the function expects 3. Due to the fallback in `renderCommandResult()`, the full summary text will be displayed as the status, which is verbose compared to the concise "cancelled" status used in other rejection paths. <details> <summary>🔧 Proposed fix for consistency</summary> ```diff if (state.explain === null) { - rejectCommand("requeue", "Load an issue successfully before requeueing."); + rejectCommand("requeue", "Load an issue successfully before requeueing.", "requeue cancelled"); return; } ``` </details> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/backend/webui-dashboard.ts` around lines 1007 - 1011, The rejectCommand call inside the elements.requeueButton click handler is missing the required third status argument; update the call in the event listener (where it checks if state.explain === null) to pass a concise status (e.g., "cancelled") as the third parameter so rejectCommand and renderCommandResult produce the same short status text as other rejection paths; locate the handler attached to elements.requeueButton and add the status argument to the rejectCommand invocation. ``` </details> <!-- fingerprinting:phantom:medusa:ocelot --> <!-- This is an auto-generated comment by CodeRabbit -->
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the only remaining #802 review gap is a browser-side requeue precondition rejection that still falls back to a verbose summary string instead of the concise cancelled status used by the other safe-command rejection paths.
-- What changed: added the missing explicit `requeue cancelled` status for the dashboard's no-loaded-issue rejection path and covered it with a focused harness regression.
+- Hypothesis: issue #803 is a maintainability-only refactor, so the safest proof is an extracted browser-logic unit seam that preserves the existing inline dashboard behavior while shrinking the monolithic module.
+- What changed: split `src/backend/webui-dashboard.ts` into a small entry wrapper plus dedicated page, browser-script, and browser-logic modules; added a focused `webui-dashboard-browser-logic.test.ts` unit test for typed status-line assembly, typed issue shortcut collection, and selected-issue parsing.
 - Current blocker: none
-- Next exact step: push the review-fix checkpoint to `codex/issue-802`, then monitor PR #807 for refreshed CI and review state.
-- Verification gap: none locally after restoring dependencies with `npm ci`; remote CI has not run on this checkpoint yet.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard.test.ts`, `src/backend/webui-dashboard.ts`
-- Rollback concern: keep supervisor-selected issue state separate from manually loaded issue details so refreshes follow backend selection without breaking explicit issue inspection or widening the command surface.
+- Next exact step: commit the refactor checkpoint on `codex/issue-803`, then decide whether to open a draft PR immediately or continue with a local review pass over the split browser modules.
+- Verification gap: none locally after `npm ci`; focused tests and `npm run build` passed.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-logic.test.ts`
+- Rollback concern: the inline browser script now injects stringified helper functions, so keep the sanitization step for compiler-added helper annotations or the VM harness will stop rendering selected-issue and shortcut state.
 - Last focused command: `npm run build`
-- Last focused failure: `PRRT_kwDORgvdZ8517YKs`; the requeue button's browser-side rejection path omitted the explicit status text and rendered the full summary as the visible command status.
+- Last focused failure: `webui-dashboard-browser-logic-missing-module`; the new focused test failed until the typed status/shortcut logic was extracted into a dedicated browser helper module.
 - Last focused commands:
 ```bash
-npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts
+npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts
+npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts
+npm ci
 npm run build
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
 - Local dirt besides this work remains the pre-existing untracked `.codex-supervisor/replay/` directory.
+- 2026-03-22T00:24:19Z: reproduced the maintainability seam with a new `webui-dashboard-browser-logic.test.ts`; initial focused run failed with `MODULE_NOT_FOUND` for `./webui-dashboard-browser-logic`.
+- 2026-03-22T00:24:19Z: split the dashboard into entry/page/browser-script/browser-logic modules and added helper injection for the inline script so the backend contract stayed unchanged.
+- 2026-03-22T00:24:19Z: caught an injected-runtime regression where compiler-added `__name(...)` annotations leaked into the stringified helper source and prevented selected-issue/shortcut rendering in the VM harness; sanitized helper source before embedding and reran focused tests.
+- 2026-03-22T00:24:19Z: restored local dependencies with `npm ci`; focused verification passed with `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts` and `npm run build`.
 - 2026-03-21T23:56:04Z: validated CodeRabbit thread `PRRT_kwDORgvdZ8517YKs`; the review comment was correct because the requeue click handler still called `rejectCommand()` without the explicit status argument.
 - 2026-03-21T23:56:04Z: fixed the requeue no-loaded-issue rejection path to emit `requeue cancelled` and added a focused dashboard harness regression asserting the concise status plus zero POST attempts.
 - 2026-03-21T23:56:04Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build`.
