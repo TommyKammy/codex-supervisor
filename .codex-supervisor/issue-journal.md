@@ -1,48 +1,60 @@
-# Issue #811: WebUI issue detail UX: render richer operator-facing issue context from typed backend models
+# Issue #812: WebUI live-state UX: make connection health, staleness, and refresh state explicit
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/811
-- Branch: codex/issue-811
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/812
+- Branch: codex/issue-812
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: draft_pr
+- Current phase: stabilizing
 - Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 95e1fc4cf16611f1e9511d0422719141e1a1b7d6
+- Last head SHA: 78862c79ca57ef6387a384956901a00361d8dd79
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-22T02:21:55Z
+- Last failure signature: stale-stabilizing-no-pr-recovery-loop
+- Repeated failure signature count: 1
+- Updated at: 2026-03-22T02:58:35.160Z
 
 ## Latest Codex Summary
-Added a narrow dashboard reproducer that proved the issue detail view still rendered typed explain data as a flat text block. Reworked the browser-only issue detail renderer to build typed operator-facing sections for selection context, operator activity, review waits, latest recovery, and recent failure, and swapped the issue detail container from a `<pre>` to a structured card grid. Committed the checkpoint as `95e1fc4` (`Render typed issue detail cards in WebUI`), pushed `codex/issue-811`, and opened draft PR #817 (`https://github.com/TommyKammy/codex-supervisor/pull/817`).
+Implemented and pushed `78862c7` (`Make dashboard live state explicit`), opened draft PR #818 (`https://github.com/TommyKammy/codex-supervisor/pull/818`), and then pushed `5f7cf3d` to refresh the issue journal handoff.
 
-Focused verification passed with `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build` after restoring local dependencies with `npm ci`.
+The dashboard hero now exposes separate live-state badges for connection, freshness, refresh phase, and last refresh time in [src/backend/webui-dashboard-page.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-page.ts#L382). The browser script tracks those states explicitly and marks the UI stale on SSE reconnects or failed refreshes without changing backend transport semantics in [src/backend/webui-dashboard-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-browser-script.ts#L31) and [src/backend/webui-dashboard-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-browser-script.ts#L128). Focused browser/state helpers and regressions cover the live-state model in [src/backend/webui-dashboard-browser-logic.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-browser-logic.ts#L185), [src/backend/webui-dashboard-browser-logic.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard-browser-logic.test.ts), and [src/backend/webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-812/src/backend/webui-dashboard.test.ts#L706).
+
+This turn reran the focused verification set and `npm run build`; both passed again before the branch was pushed. Draft PR #818 is open against `main`; after the journal follow-up push, GitHub reports merge state `UNSTABLE` while the `build (ubuntu-latest)` and `build (macos-latest)` checks are still in progress, and CodeRabbit is already `SUCCESS`.
+
+Summary: Pushed the live-state UX implementation, reran focused verification, opened draft PR #818, and left it waiting on CI
+State hint: waiting_ci
+Blocked reason: none
+Tests: `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts`; `npm run build`
+Failure signature: none
+Next action: monitor PR #818 checks and address any review or CI feedback
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining UX gap for #811 was entirely in the browser renderer; the typed backend explain DTO already carried enough operator context, but the dashboard was still collapsing it into a flat key-value dump.
-- What changed: added a focused failing dashboard test for structured issue-detail sections; replaced the issue-detail `<pre>` with a card-grid container in `src/backend/webui-dashboard-page.ts`; updated `src/backend/webui-dashboard-browser-script.ts` to render typed sections for selection context, operator activity, review waits, latest recovery, and recent failure; updated the dashboard test harness fake DOM so parent `textContent` reflects rendered children.
+- Hypothesis: #812 is purely a WebUI/browser-state gap; operators already have the raw HTTP+SSE transport, but the dashboard needs first-class browser-rendered live-state badges to distinguish connected, refreshing, stale, and failed-refresh states.
+- What changed: added focused live-state regressions in `src/backend/webui-dashboard.test.ts` plus pure helper coverage in `src/backend/webui-dashboard-browser-logic.test.ts`; extended the hero badge row in `src/backend/webui-dashboard-page.ts` with freshness and refresh badges; added a small live-state model and render path in `src/backend/webui-dashboard-browser-script.ts`; added browser-logic helpers for normalized connection/freshness labels in `src/backend/webui-dashboard-browser-logic.ts`; extended the dashboard harness `MockEventSource` to drive SSE open/error transitions; pushed `codex/issue-812`, opened draft PR #818, and pushed `5f7cf3d` to refresh the journal after PR creation.
 - Current blocker: none
-- Next exact step: monitor draft PR #817 for CI and review feedback, then address any follow-up issues.
+- Next exact step: monitor draft PR #818 while the current CI build jobs finish, then address any failures or review feedback that appear.
 - Verification gap: none beyond broader CI.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard.test.ts`
-- Rollback concern: keep `latestRecoverySummary` as a fallback-only source; the richer UI should continue preferring typed `activityContext` when it is present rather than reintroducing summary scraping.
-- Last focused command: `npm run build`
-- Last focused failure: `flat_issue_detail_dump`; the issue detail panel rendered typed operator context as a flat text block instead of structured sections.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard.test.ts`
+- Rollback concern: keep the live-state model browser-only and derived from existing HTTP/SSE behavior; do not introduce backend transport semantics changes just to drive the badges.
+- Last focused command: `gh pr view 818 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,baseRefName`
+- Last focused failure: none
 - Last focused commands:
 ```bash
-npx tsx --test src/backend/webui-dashboard.test.ts
 npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts
-npm ci
 npm run build
+git push -u origin codex/issue-812
+gh pr create --draft --base main --head codex/issue-812 --title "Make dashboard live state explicit" --body ...
+git add .codex-supervisor/issue-journal.md && git commit -m "Update issue 812 journal after draft PR"
+git push
+gh pr view 818 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,baseRefName
 ```
 ### Scratchpad
-- 2026-03-22T02:21:55Z: reproduced #811 with a new dashboard harness case that expected typed explain data to render as structured issue-detail sections instead of a flat text block; the initial failure was `issueExplain.children.length >= 4` because the dashboard still wrote a monolithic string into the issue detail container.
-- 2026-03-22T02:21:55Z: implemented the browser-only issue detail card grid using typed explain DTO fields, preserving legacy `latestRecoverySummary` as a fallback-only source and keeping all selection/blocking logic server-driven.
-- 2026-03-22T02:21:55Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build` after restoring local dependencies with `npm ci`.
+- 2026-03-22T12:01:53+09:00: after pushing journal commit `5f7cf3d`, draft PR #818 moved to merge state `UNSTABLE`; GitHub shows `build (ubuntu-latest)` and `build (macos-latest)` in progress and CodeRabbit `SUCCESS`.
+- 2026-03-22T12:00:23+09:00: reran focused verification with `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build`; both passed before the PR push.
+- 2026-03-22T12:00:23+09:00: pushed `codex/issue-812` to origin and opened draft PR #818 (`https://github.com/TommyKammy/codex-supervisor/pull/818`); GitHub reports merge state `CLEAN`.
 - 2026-03-22T02:21:55Z: committed `95e1fc4` (`Render typed issue detail cards in WebUI`), pushed `codex/issue-811`, and opened draft PR #817 (`https://github.com/TommyKammy/codex-supervisor/pull/817`).
 - 2026-03-22T01:56:22Z: reduced the stored CodeRabbit failure excerpt in `.codex-supervisor/issue-journal.md` to a concise MD038 summary so the journal no longer preserves malformed inline code spans verbatim; the direct backtick-boundary scan is now clean, while full markdownlint still reports unrelated long-standing journal style violations.
 - 2026-03-22T00:00:00Z: reproduced missing rejection feedback with a confirm-decline dashboard case for prune workspaces; the browser returned early without a visible command result until declined confirmations were routed through a rejected-command renderer.

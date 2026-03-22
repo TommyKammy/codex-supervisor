@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   buildStatusLines,
   collectIssueShortcuts,
+  describeConnectionHealth,
+  describeFreshnessState,
   parseSelectedIssueNumber,
 } from "./webui-dashboard-browser-logic";
 
@@ -155,4 +157,57 @@ test("parseSelectedIssueNumber prefers typed fields before falling back to legac
   );
 
   assert.equal(parseSelectedIssueNumber({ whyLines: ["selected_issue=none"] }), null);
+});
+
+test("describeConnectionHealth normalizes the connected SSE state for operators", () => {
+  assert.equal(describeConnectionHealth("connecting"), "connecting");
+  assert.equal(describeConnectionHealth("open"), "connected");
+  assert.equal(describeConnectionHealth("reconnecting"), "reconnecting");
+});
+
+test("describeFreshnessState distinguishes fresh, refreshing, stale, and first-load states", () => {
+  assert.equal(
+    describeFreshnessState({
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    "fresh",
+  );
+
+  assert.equal(
+    describeFreshnessState({
+      connectionPhase: "open",
+      refreshPhase: "refreshing",
+      hasSuccessfulRefresh: true,
+    }),
+    "refreshing",
+  );
+
+  assert.equal(
+    describeFreshnessState({
+      connectionPhase: "reconnecting",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    "stale",
+  );
+
+  assert.equal(
+    describeFreshnessState({
+      connectionPhase: "open",
+      refreshPhase: "failed",
+      hasSuccessfulRefresh: true,
+    }),
+    "stale",
+  );
+
+  assert.equal(
+    describeFreshnessState({
+      connectionPhase: "connecting",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: false,
+    }),
+    "awaiting refresh",
+  );
 });

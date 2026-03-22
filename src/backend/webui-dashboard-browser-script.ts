@@ -5,6 +5,8 @@ import {
   formatCandidateDiscovery,
   formatRunnableIssues,
   formatTrackedIssues,
+  describeConnectionHealth,
+  describeFreshnessState,
   parseSelectedIssueNumber,
 } from "./webui-dashboard-browser-logic";
 
@@ -15,6 +17,8 @@ const injectedBrowserLogic = [
   formatCandidateDiscovery,
   buildStatusLines,
   collectIssueShortcuts,
+  describeConnectionHealth,
+  describeFreshnessState,
   parseSelectedIssueNumber,
 ]
   .map((helper) => helper.toString().replace(/__name\([^;]+;\s*/gu, ""))
@@ -34,10 +38,16 @@ export function renderDashboardBrowserScript(): string {
         commandInFlight: false,
         commandResult: null,
         events: [],
+        connectionPhase: "connecting",
+        refreshPhase: "idle",
+        hasSuccessfulRefresh: false,
+        lastRefreshAt: null,
       };
 
       const elements = {
         connectionState: document.getElementById("connection-state"),
+        freshnessState: document.getElementById("freshness-state"),
+        refreshState: document.getElementById("refresh-state"),
         selectedIssueBadge: document.getElementById("selected-issue-badge"),
         lastRefreshBadge: document.getElementById("last-refresh-badge"),
         statusReconciliation: document.getElementById("status-reconciliation"),
@@ -94,6 +104,44 @@ export function renderDashboardBrowserScript(): string {
           .filter((entry) => entry[1] !== null && entry[1] !== undefined && entry[1] !== "")
           .map(([label, value]) => label + ": " + value)
           .join("\\n");
+      }
+
+      function liveBadgeClass(tone) {
+        if (tone === "ok") return "ok";
+        if (tone === "warn") return "warn";
+        if (tone === "fail") return "fail";
+        return "";
+      }
+
+      function setLiveBadgeState(element, label, tone) {
+        if (!element) {
+          return;
+        }
+        setText(element, label);
+        element.className = liveBadgeClass(tone);
+      }
+
+      function formatRefreshTime(timestamp) {
+        return timestamp === null ? "never" : new Date(timestamp).toLocaleTimeString();
+      }
+
+      function renderLiveState() {
+        const connectionLabel = describeConnectionHealth(state.connectionPhase);
+        const connectionTone =
+          state.connectionPhase === "open" ? "ok" : state.connectionPhase === "reconnecting" ? "warn" : "";
+        const freshnessLabel = describeFreshnessState({
+          connectionPhase: state.connectionPhase,
+          refreshPhase: state.refreshPhase,
+          hasSuccessfulRefresh: state.hasSuccessfulRefresh,
+        });
+        const freshnessTone = freshnessLabel === "fresh" ? "ok" : freshnessLabel === "stale" ? "warn" : "";
+        const refreshTone =
+          state.refreshPhase === "failed" ? "fail" : state.refreshPhase === "refreshing" ? "warn" : "";
+
+        setLiveBadgeState(elements.connectionState, connectionLabel, connectionTone);
+        setLiveBadgeState(elements.freshnessState, freshnessLabel, freshnessTone);
+        setLiveBadgeState(elements.refreshState, state.refreshPhase, refreshTone);
+        setText(elements.lastRefreshBadge, formatRefreshTime(state.lastRefreshAt));
       }
 
       function formatLatestRecovery(activityContext, fallbackSummary) {
@@ -389,10 +437,6 @@ export function renderDashboardBrowserScript(): string {
         renderCommandResult();
       }
 
-      function markRefresh() {
-        setText(elements.lastRefreshBadge, new Date().toLocaleTimeString());
-      }
-
       function reportRefreshError(error) {
         const message = error instanceof Error ? error.message : String(error);
         setText(elements.statusWarning, message);
@@ -419,18 +463,29 @@ export function renderDashboardBrowserScript(): string {
       }
 
       async function refreshStatusAndDoctor() {
-        const [status, doctor] = await Promise.all([
-          readJson("/api/status?why=true"),
-          readJson("/api/doctor"),
-        ]);
-        state.status = status;
-        state.doctor = doctor;
-        state.selectedIssueNumber = parseSelectedIssueNumber(status);
-        renderStatus();
-        renderDoctor();
-        renderIssueShortcuts();
-        renderSelectedIssue();
-        markRefresh();
+        state.refreshPhase = "refreshing";
+        renderLiveState();
+        try {
+          const [status, doctor] = await Promise.all([
+            readJson("/api/status?why=true"),
+            readJson("/api/doctor"),
+          ]);
+          state.status = status;
+          state.doctor = doctor;
+          state.selectedIssueNumber = parseSelectedIssueNumber(status);
+          state.refreshPhase = "idle";
+          state.hasSuccessfulRefresh = true;
+          state.lastRefreshAt = Date.now();
+          renderStatus();
+          renderDoctor();
+          renderIssueShortcuts();
+          renderSelectedIssue();
+          renderLiveState();
+        } catch (error) {
+          state.refreshPhase = "failed";
+          renderLiveState();
+          throw error;
+        }
       }
 
       async function loadIssue(issueNumber) {
@@ -454,7 +509,6 @@ export function renderDashboardBrowserScript(): string {
           state.issueLint = issueLint;
           renderSelectedIssue();
           renderIssue();
-          markRefresh();
         } catch (error) {
           if (state.loadedIssueNumber !== requestedIssueNumber) {
             return;
@@ -533,14 +587,17 @@ export function renderDashboardBrowserScript(): string {
 
       function wireEvents() {
         const source = new EventSource("/api/events");
-        setText(elements.connectionState, "connecting");
+        state.connectionPhase = "connecting";
+        renderLiveState();
 
         source.addEventListener("open", () => {
-          setText(elements.connectionState, "open");
+          state.connectionPhase = "open";
+          renderLiveState();
         });
 
         source.addEventListener("error", () => {
-          setText(elements.connectionState, "reconnecting");
+          state.connectionPhase = "reconnecting";
+          renderLiveState();
         });
 
         const onEvent = async (rawEvent) => {
@@ -636,6 +693,7 @@ export function renderDashboardBrowserScript(): string {
       });
 
       async function bootstrap() {
+        renderLiveState();
         try {
           await refreshStatusAndDoctor();
           const issueNumberToLoad = state.selectedIssueNumber ?? state.loadedIssueNumber;
@@ -643,8 +701,7 @@ export function renderDashboardBrowserScript(): string {
             await loadIssue(issueNumberToLoad);
           }
         } catch (error) {
-          setText(elements.statusWarning, error instanceof Error ? error.message : String(error));
-          elements.statusWarning?.classList.add("danger");
+          reportRefreshError(error);
         }
 
         renderCommandResult();
