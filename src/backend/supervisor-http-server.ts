@@ -104,6 +104,15 @@ async function handleRequest(
     return;
   }
 
+  if (pathname === "/api/setup-readiness") {
+    if (!service.querySetupReadiness) {
+      writeJson(response, 404, { error: "Not found." });
+      return;
+    }
+    writeJson(response, 200, await service.querySetupReadiness());
+    return;
+  }
+
   if (pathname === "/api/events") {
     const lastEventId = parseLastEventId(request.headers["last-event-id"]);
     if (lastEventId === null && request.headers["last-event-id"] !== undefined) {
