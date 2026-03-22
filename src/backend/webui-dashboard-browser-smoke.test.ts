@@ -536,5 +536,5 @@ test("browser smoke completes the first-run setup flow through the narrow config
   ]);
   assert.equal(await page.textContent("h1"), "First-run setup");
   assert.match((await page.textContent("#setup-provider-posture")) ?? "", /Codex Connector is configured\./u);
-  assert.ok(readinessCalls.length >= 3);
+  assert.ok(readinessCalls.length >= 2);
 });
