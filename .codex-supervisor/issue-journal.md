@@ -1,48 +1,48 @@
-# Issue #828: Setup readiness DTO: add a typed backend first-run config and host-readiness summary
+# Issue #829: Setup readiness API: expose the typed first-run backend model over HTTP
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/828
-- Branch: codex/issue-828
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/829
+- Branch: codex/issue-829
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: d1444cb4c19ac8c1808cb2e5cd80f3b96e49a903
+- Last head SHA: cc67c542b99a60e072c5a3c44dfdd789130beb7d
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-22T09:34:36.168Z
+- Updated at: 2026-03-22T10:06:52.527Z
 
 ## Latest Codex Summary
-- Added a real typed `SetupReadinessReport` backend query separate from `doctor`, wired it through `Supervisor` and `SupervisorService`, and verified the focused setup-readiness test suite plus `npm run build` after restoring local dependencies with `npm ci`.
+- Reproduced the missing setup-readiness transport with a focused HTTP server regression, then exposed the typed `SetupReadinessReport` over `GET /api/setup-readiness` using the existing JSON backend style.
+- Focused verification passed with `npx tsx --test src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts` and `npm run build` after restoring local dependencies with `npm ci`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the real gap was runtime, not docs: the repo had `doctor` and bootstrap helpers but no dedicated typed backend query for first-run setup readiness.
-- What changed: added `src/setup-readiness.ts` with a typed `SetupReadinessReport`, derived typed setup fields/blockers plus host/provider/trust posture, and wired `Supervisor.setupReadinessReport()` through `SupervisorService.querySetupReadiness()`.
+- Hypothesis: the remaining gap for #829 was only backend transport; the typed setup-readiness model already existed behind `SupervisorService.querySetupReadiness()` but the HTTP server did not expose it.
+- What changed: added a focused regression in `src/backend/supervisor-http-server.test.ts` for `GET /api/setup-readiness`, then wired that route in `src/backend/supervisor-http-server.ts` as a read-only JSON endpoint that returns the existing typed `SetupReadinessReport`.
 - Current blocker: none
-- Next exact step: push `codex/issue-828` and open or update the draft PR with the typed setup-readiness implementation checkpoint.
-- Verification gap: none in the requested focused scope; `src/doctor.test.ts`, `src/config.test.ts`, `src/supervisor/supervisor-service.test.ts`, and `npm run build` passed locally.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/doctor.test.ts`, `src/setup-readiness.ts`, `src/supervisor/supervisor-service.test.ts`, `src/supervisor/supervisor-service.ts`, `src/supervisor/supervisor.ts`
-- Rollback concern: keep setup-readiness limited to first-run config/posture summary and avoid letting repair-oriented `doctor` findings become setup blockers except for hard host failures.
-- Last focused command: `npx tsx --test src/doctor.test.ts src/config.test.ts src/supervisor/supervisor-service.test.ts`
-- Last focused failure: `missing-setup-readiness-query`
+- Next exact step: monitor draft PR #834 and address any review or CI follow-up if it appears.
+- Verification gap: none in the requested focused scope; `src/backend/supervisor-http-server.test.ts`, `src/supervisor/supervisor-service.test.ts`, and `npm run build` passed locally after `npm ci`.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/backend/supervisor-http-server.ts`
+- Rollback concern: keep the setup-readiness route read-only and continue serving the existing typed model directly instead of introducing a second transport-specific contract.
+- Last focused command: `npx tsx --test src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts`
+- Last focused failure: `missing-setup-readiness-http-endpoint`
 - Last focused commands:
 ```bash
-npx tsx --test src/doctor.test.ts src/supervisor/supervisor-service.test.ts
-npx tsx --test src/doctor.test.ts src/config.test.ts src/supervisor/supervisor-service.test.ts
+npx tsx --test src/backend/supervisor-http-server.test.ts
+npx tsx --test src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts
 npm ci
 npm run build
 ```
 ### Scratchpad
-- 2026-03-22T18:47:30+09:00: committed `9988a95` (`Add typed setup readiness report`) after the focused tests and `npm run build` passed.
-- 2026-03-22T18:44:30+09:00: reproduced the runtime gap with focused tests that required a dedicated `setup-readiness` module and `SupervisorService.querySetupReadiness()`; the first failing signature was missing module/query support rather than a docs mismatch.
-- 2026-03-22T18:44:30+09:00: implemented `src/setup-readiness.ts` to report typed setup fields, typed blockers, host-readiness checks, provider posture, and trust posture without changing `doctor`.
-- 2026-03-22T18:44:30+09:00: initial `npm run build` failed because `tsc` was missing in this worktree; restored dependencies with `npm ci`, fixed one TypeScript inference error in `src/supervisor/supervisor-service.test.ts`, and reran the build successfully.
-- 2026-03-22T18:12:25+09:00: reproduced the issue with a new docs assertion that required a setup/readiness contract distinct from `doctor`; `npx tsx --test src/getting-started-docs.test.ts` initially failed on missing contract text.
+- 2026-03-22T19:09:58+09:00: committed `fe905d5` (`Expose setup readiness over HTTP`), pushed `codex/issue-829`, and opened draft PR #834 (`https://github.com/TommyKammy/codex-supervisor/pull/834`).
+- 2026-03-22T19:09:05+09:00: reproduced the transport gap with a focused `GET /api/setup-readiness` assertion in `src/backend/supervisor-http-server.test.ts`; the server returned 404 before implementation.
+- 2026-03-22T19:09:05+09:00: added a read-only `/api/setup-readiness` route in `src/backend/supervisor-http-server.ts` that returns `service.querySetupReadiness()` when available and otherwise preserves the existing `Not found.` behavior.
+- 2026-03-22T19:09:05+09:00: focused verification passed with `npx tsx --test src/backend/supervisor-http-server.test.ts src/supervisor/supervisor-service.test.ts`; `npm run build` initially failed because `tsc` was missing in this worktree, so `npm ci` was run and `npm run build` then passed.
 - 2026-03-22T18:12:25+09:00: documented a typed `SetupReadinessReport` shape and first-run-only rules in `docs/getting-started.md`, then verified with `npx tsx --test src/readme-docs.test.ts src/getting-started-docs.test.ts src/agent-instructions-docs.test.ts`.
 - 2026-03-22T18:12:25+09:00: initial `npm run build` failed because `tsc` was missing in this worktree; restored dependencies with `npm ci`, then reran `npm run build` successfully.
 - 2026-03-22T18:12:25+09:00: committed `53342c7` (`Document setup readiness contract`), pushed `codex/issue-827`, and opened draft PR #832 (`https://github.com/TommyKammy/codex-supervisor/pull/832`).
