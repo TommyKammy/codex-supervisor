@@ -7,25 +7,25 @@
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
 - Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 5f09f14682b747e5311d95bf6f7bfe2609f4ab54
+- Last head SHA: 738b0fd2bdcea010c5f59d0ca822299c36636417
 - Blocked reason: none
 - Last failure signature: PRRT_kwDORgvdZ8518BXw
 - Repeated failure signature count: 1
-- Updated at: 2026-03-22T12:44:20+09:00
+- Updated at: 2026-03-22T12:46:24+09:00
 
 ## Latest Codex Summary
 Added a browser-only operator timeline that renders safe-command results, post-command refresh deltas, and correlated SSE events in one bounded feed. The main behavior lives in [webui-dashboard-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-813/src/backend/webui-dashboard-browser-script.ts) with summary helpers in [webui-dashboard-browser-logic.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-813/src/backend/webui-dashboard-browser-logic.ts) and the new panel in [webui-dashboard-page.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-813/src/backend/webui-dashboard-page.ts). Focused regressions were added in [webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-813/src/backend/webui-dashboard.test.ts), [webui-dashboard-browser-logic.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-813/src/backend/webui-dashboard-browser-logic.test.ts), and [supervisor-http-server.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-813/src/backend/supervisor-http-server.test.ts).
 
 Committed `96f3858` and the journal follow-up `5f09f14`, pushed `codex/issue-813`, and opened draft PR #819: https://github.com/TommyKammy/codex-supervisor/pull/819. Local verification passed after `npm ci` restored `tsc`; the worktree still has an unrelated untracked `.codex-supervisor/replay/` directory.
 
-Addressed CodeRabbit thread `PRRT_kwDORgvdZ8518BXw` locally by replacing the sticky browser-only `lastCommandLabel` state with an expiring issue-scoped correlation token, extending the token with the refreshed selected issue, and only annotating SSE timeline rows whose event issue ids intersect that token. Added a regression that proves an unrelated later recovery event does not keep rendering as `after run-once`.
+Addressed CodeRabbit thread `PRRT_kwDORgvdZ8518BXw` by replacing the sticky browser-only `lastCommandLabel` state with an expiring issue-scoped correlation token, extending the token with the refreshed selected issue, and only annotating SSE timeline rows whose event issue ids intersect that token. Added a regression that proves an unrelated later recovery event does not keep rendering as `after run-once`, committed it as `738b0fd` (`Tighten dashboard timeline event correlation`), and pushed `codex/issue-813`. `gh pr view 819 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,headRefOid,baseRefName` now shows PR #819 open on head `738b0fd2bdcea010c5f59d0ca822299c36636417` with merge state `UNSTABLE`.
 
 Summary: Scoped operator timeline correlation to matching issue ids with an expiring browser token and added a regression for unrelated later events
 State hint: addressing_review
 Blocked reason: none
 Tests: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`; `npx tsx --test src/backend/supervisor-http-server.test.ts`; `npm run build`
 Failure signature: PRRT_kwDORgvdZ8518BXw
-Next action: commit and push the review fix to PR #819, then recheck the remaining review thread state on GitHub
+Next action: monitor PR #819 for refreshed review-thread status and CI after commit `738b0fd` landed on `codex/issue-813`
 
 ## Active Failure Context
 - Category: review
@@ -39,11 +39,11 @@ Next action: commit and push the review fix to PR #819, then recheck the remaini
 - Hypothesis: the remaining review thread was correct because the browser script kept one sticky command label in shared state and applied it to every later SSE row regardless of issue scope.
 - What changed: replaced the sticky timeline label with an expiring `commandCorrelation` token keyed to command label plus relevant issue ids; seeded it from the pre-command selected issue and explicit command issue number, extended it after the refresh picks a new selected issue, and only rendered `after <command>` on SSE entries whose event issue ids intersect the token. Added a pure browser-logic regression for event issue-id extraction plus a dashboard regression that proves an unrelated later recovery event stays unlabeled.
 - Current blocker: none
-- Next exact step: commit and push the local review fix to `codex/issue-813`, then re-check PR #819 (`https://github.com/TommyKammy/codex-supervisor/pull/819`) for thread resolution and merge-state changes.
-- Verification gap: none locally for the browser correlation path; GitHub still needs the updated commit before the review thread can clear.
+- Next exact step: monitor PR #819 (`https://github.com/TommyKammy/codex-supervisor/pull/819`) for thread resolution and merge-state changes after pushed commit `738b0fd`.
+- Verification gap: none locally for the browser correlation path; the remaining uncertainty is whether GitHub review state and checks settle cleanly on the updated head.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard.test.ts`
 - Rollback concern: keep the correlation logic thin and browser-only; do not turn the timeline into a backend persistence feature or widen the safe-command surface.
-- Last focused command: `npx tsx --test src/backend/supervisor-http-server.test.ts`
+- Last focused command: `gh pr view 819 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,headRefOid,baseRefName`
 - Last focused failure: `PRRT_kwDORgvdZ8518BXw`
 - Last focused commands:
 ```bash
@@ -52,6 +52,7 @@ npx tsx --test src/backend/supervisor-http-server.test.ts
 npm run build
 ```
 ### Scratchpad
+- 2026-03-22T12:46:24+09:00: committed the review fix as `738b0fd` (`Tighten dashboard timeline event correlation`), pushed `codex/issue-813`, and confirmed via `gh pr view 819 --json number,state,isDraft,url,mergeStateStatus,reviewDecision,headRefName,headRefOid,baseRefName` that PR #819 is open on head `738b0fd2bdcea010c5f59d0ca822299c36636417` with merge state `UNSTABLE`.
 - 2026-03-22T12:44:20+09:00: validated CodeRabbit thread `PRRT_kwDORgvdZ8518BXw`; the review comment was correct because SSE rows still reused a sticky `lastCommandLabel`. Replaced it with an expiring issue-scoped correlation token in the browser script, added a browser-logic helper for extracting event issue ids, and passed `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`, `npx tsx --test src/backend/supervisor-http-server.test.ts`, and `npm run build`.
 - 2026-03-22T03:28:21Z: focused verification passed with `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build` after `npm ci` restored `tsc` in this worktree.
 - 2026-03-22T00:00:00Z: reproduced missing rejection feedback with a confirm-decline dashboard case for prune workspaces; the browser returned early without a visible command result until declined confirmations were routed through a rejected-command renderer.
