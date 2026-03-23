@@ -7,38 +7,38 @@
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
 - Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 5586c7b357b6ac92e6695a109ebbbc3042003ed7
+- Last head SHA: 22723a4804d7e97fff285fb66db2d74ea7c05c8a
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-23T06:31:25Z
+- Updated at: 2026-03-23T06:32:50Z
 
 ## Latest Codex Summary
-Pushed commit `5586c7b` (`Fix journal links for review follow-up`) after converting the remaining workstation-specific markdown links in [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) to repo-relative targets. GitHub now shows the CodeRabbit review thread as resolved/outdated on PR [#878](https://github.com/TommyKammy/codex-supervisor/pull/878); the only live remote state is a pending `CodeRabbit` check, which leaves the PR merge state temporarily `UNSTABLE`.
+Pushed follow-up commit `22723a4` (`Update journal after review fix push`) so the durable handoff matches the branch after the journal-link review fix. PR [#878](https://github.com/TommyKammy/codex-supervisor/pull/878) now points at `22723a4`; the CodeRabbit review thread remains resolved/outdated, and the current `UNSTABLE` merge state is explained by freshly re-queued `build (ubuntu-latest)` and `build (macos-latest)` checks.
 
 Repo state is clean on the tracked files; the only remaining local noise is the untracked `.codex-supervisor/replay/` directory.
 
-Summary: Pushed the journal-only review fix and confirmed the CodeRabbit thread is resolved on PR #878
+Summary: Pushed the review-fix commits and synced the journal; PR #878 is now waiting on re-queued build checks
 State hint: waiting_ci
 Blocked reason: none
 Tests: `rg -n '\\]\\(/home' .codex-supervisor/issue-journal.md`; `gh pr view 878 --json number,url,headRefOid,isDraft,mergeStateStatus,reviewDecision`; `gh api graphql -f query='query($id: ID!) { node(id: $id) { ... on PullRequestReviewThread { id isResolved isOutdated path comments(first: 10) { nodes { url body author { login } } } } } }' -F id=PRRT_kwDORgvdZ852CwlZ`; `gh pr checks 878`
 Failure signature: none
-Next action: wait for the pending `CodeRabbit` check to finish, then recheck PR #878 merge state and checks
+Next action: wait for the re-queued `build (ubuntu-latest)` and `build (macos-latest)` checks to finish, then recheck PR #878 merge state
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the review fix is complete; the remaining `UNSTABLE` PR state is transient and comes from the pending `CodeRabbit` status rather than a code or documentation regression.
-- What changed: replaced the remaining absolute local filesystem markdown targets in `.codex-supervisor/issue-journal.md`, committed the journal-only fix as `5586c7b`, pushed `codex/issue-870`, and confirmed via GitHub API that the CodeRabbit thread is resolved/outdated on the pushed head.
+- Hypothesis: the review fix is complete; the remaining `UNSTABLE` PR state is transient and comes from the re-queued build checks after the metadata-only journal sync, not from a new regression.
+- What changed: replaced the remaining absolute local filesystem markdown targets in `.codex-supervisor/issue-journal.md`, pushed the review-fix commit `5586c7b`, then pushed the journal-sync commit `22723a4` and confirmed via GitHub API that the CodeRabbit thread remains resolved/outdated on the updated head.
 - Current blocker: none
-- Next exact step: wait for the pending `CodeRabbit` check to settle, then recheck PR #878 merge state/checks and only intervene again if a real failing status appears.
+- Next exact step: wait for the re-queued build checks to settle on head `22723a4`, then recheck PR #878 and only intervene if a real failing status appears.
 - Verification gap: none for this follow-up; the change is confined to journal markdown and can be validated by inspecting the updated links directly.
 - Files touched: `.codex-supervisor/issue-journal.md`
 - Rollback concern: low; the change is documentation-only and does not touch dashboard runtime behavior.
 - Last focused command: `gh pr checks 878`
-- Last focused failure: none; GitHub reports `CodeRabbit` pending and the review thread resolved/outdated on head `5586c7b`
+- Last focused failure: none; GitHub reports `build (ubuntu-latest)` and `build (macos-latest)` pending on head `22723a4`
 - Last focused commands:
 ```bash
 sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-870/AGENTS.generated.md
@@ -59,6 +59,13 @@ gh api graphql -f query='query($id: ID!) { node(id: $id) { ... on PullRequestRev
 gh pr checks 878
 date -u +%Y-%m-%dT%H:%M:%SZ
 gh pr view 878 --json headRefOid,mergeStateStatus
+apply_patch
+git add .codex-supervisor/issue-journal.md
+git commit -m "Update journal after review fix push"
+git push origin codex/issue-870
+gh pr view 878 --json headRefOid,mergeStateStatus
+gh pr checks 878
+date -u +%Y-%m-%dT%H:%M:%SZ
 apply_patch
 ```
 ### Scratchpad
