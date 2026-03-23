@@ -7,11 +7,11 @@
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: repairing_ci
 - Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: b2eb1f1b77f3af439e2aa9340d07f9bd3b6d321c
+- Last head SHA: 82e6b50f2c782f681daaa76e6e8290f30489878c
 - Blocked reason: none
 - Last failure signature: build (ubuntu-latest):fail|build (macos-latest):fail
 - Repeated failure signature count: 1
-- Updated at: 2026-03-23T10:57:04.380Z
+- Updated at: 2026-03-23T10:59:32Z
 
 ## Latest Codex Summary
 Implemented the operator-timeline follow-up on [src/backend/webui-dashboard-browser-logic.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-875/src/backend/webui-dashboard-browser-logic.ts), [src/backend/webui-dashboard-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-875/src/backend/webui-dashboard-browser-script.ts), and the focused regressions in [src/backend/webui-dashboard-browser-logic.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-875/src/backend/webui-dashboard-browser-logic.test.ts) and [src/backend/webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-875/src/backend/webui-dashboard.test.ts). The timeline now surfaces typed requeue state transitions like `blocked -> queued`, humanizes recovery/active-issue event reasons, and keeps refresh follow-up correlated in the same compact feed.
@@ -27,23 +27,25 @@ Next action: Monitor draft PR `#888` and address any CI or review feedback.
 
 ## Active Failure Context
 - Category: checks
-- Summary: PR #888 has failing checks.
+- Summary: PR #888 reran CI after the TS18049 repair; the fresh build checks are pending.
 - Command or source: gh pr checks
 - Reference: https://github.com/TommyKammy/codex-supervisor/pull/888
 - Details:
-  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23433409449/job/68165302265
-  - build (macos-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23433409449/job/68165302267
+  - Previous failed run: build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23433409449/job/68165302265
+  - Previous failed run: build (macos-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23433409449/job/68165302267
+  - Current rerun: build (ubuntu-latest) (pending) https://github.com/TommyKammy/codex-supervisor/actions/runs/23433971857/job/68167212178
+  - Current rerun: build (macos-latest) (pending) https://github.com/TommyKammy/codex-supervisor/actions/runs/23433971857/job/68167212185
 
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: PR `#888` is failing only because `describeTimelineCommandResult` accesses `result.issueNumber` after an optional-chain guard that TypeScript does not treat as a stable narrowing, so the repair should be a local variable binding rather than a behavior change.
 - What changed: inspected the failed GitHub Actions logs for run `23433409449`, confirmed both `build` jobs stop at `src/backend/webui-dashboard-browser-logic.ts(452,46): error TS18049: 'result' is possibly 'null' or 'undefined'`, then bound `const issueNumber = result?.issueNumber` before the `requeue` branch in `src/backend/webui-dashboard-browser-logic.ts` so the formatter keeps the same output while satisfying `tsc`.
 - Current blocker: none
-- Next exact step: commit the TypeScript narrowing fix, push `codex/issue-875`, and confirm PR `#888` reruns with passing `build` checks.
+- Next exact step: monitor PR `#888` run `23433971857` until the rerun `build` checks finish, then react only if GitHub reports a new failure.
 - Verification gap: none on the scoped repair path; `npm run build` and `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` both pass locally after the fix.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.ts`
 - Rollback concern: low; the repair is a one-line local narrowing change in the browser-side timeline formatter with no user-visible text change.
-- Last focused command: `npm run build`
+- Last focused command: `gh pr checks 888`
 - Last focused failure: GitHub Actions run `23433409449` failed on both Ubuntu and macOS with `src/backend/webui-dashboard-browser-logic.ts(452,46): error TS18049: 'result' is possibly 'null' or 'undefined'`; the local build now passes after binding `issueNumber` before formatting the requeue summary.
 - Last focused commands:
 ```bash
@@ -65,9 +67,14 @@ git diff -- src/backend/webui-dashboard-browser-logic.ts
 npm run build
 npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts
 git diff -- .codex-supervisor/issue-journal.md src/backend/webui-dashboard-browser-logic.ts
+git add .codex-supervisor/issue-journal.md src/backend/webui-dashboard-browser-logic.ts
+git commit -m "Fix timeline command result narrowing"
+git push origin codex/issue-875
+gh pr checks 888
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
+- 2026-03-23T10:59:32Z: committed `82e6b50` for the TS18049 narrowing fix, pushed `codex/issue-875`, and confirmed PR `#888` reran as GitHub Actions run `23433971857` with both `build` jobs pending.
 - 2026-03-23T10:58:18Z: reproduced the failing CI build from GitHub Actions run `23433409449`, fixed TS18049 in `describeTimelineCommandResult` by binding `issueNumber = result?.issueNumber`, then passed `npm run build` and `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`.
 - 2026-03-23T10:45:19Z: committed `4ee38a6`, pushed `codex/issue-875`, and opened draft PR `#888` after the focused operator timeline verification passed.
 - 2026-03-23T10:43:22Z: reproduced the WebUI timeline gap with a new requeue/active-issue wording regression, then passed `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` after switching timeline cards to typed command summaries and humanized follow-up event summaries.
