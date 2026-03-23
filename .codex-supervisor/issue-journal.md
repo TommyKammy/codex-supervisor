@@ -39,8 +39,8 @@ Next action: monitor draft PR #869 for CI and review feedback, then address any 
 - Hypothesis: PR #869's build failure came from follow-on test fixtures, not the stale-recovery feature itself; `SupervisorExplainDto` added a required `staleRecoveryWarningSummary` field, and backend/browser smoke test doubles plus one HTTP JSON expectation still encoded the old DTO shape.
 - What changed: added `staleRecoveryWarningSummary: null` to the affected `queryExplain` test doubles in `src/backend/supervisor-http-server.test.ts` and `src/backend/webui-dashboard-browser-smoke.test.ts`, and updated the read-only HTTP response expectation to match the expanded DTO.
 - Current blocker: none
-- Next exact step: commit the CI repair on `codex/issue-864`, push the branch, and watch PR #869 for a green rerun.
-- Verification gap: local `npm run build` and a focused mixed backend/supervisor test suite are green; GitHub Actions has not rerun on the repair commit yet.
+- Next exact step: watch PR #869's rerun to completion and only investigate further if `build (ubuntu-latest)` regresses after commit `79d1b21`.
+- Verification gap: local `npm run build` and a focused mixed backend/supervisor test suite are green; the rerun has only partially completed on GitHub so far (`macos-latest` passed, `ubuntu-latest` pending).
 - Files touched: `src/no-pull-request-state.ts`, `src/supervisor/supervisor-status-model.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/supervisor/supervisor-cycle-snapshot.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-selection-issue-explain.test.ts`, `src/supervisor/supervisor-cycle-snapshot.test.ts`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard-browser-smoke.test.ts`
 - Rollback concern: low; the repair is limited to test fixtures and one test expectation so runtime behavior is unchanged, but future `SupervisorExplainDto` additions could trigger similar fixture drift if test doubles stay handwritten.
 - Last focused command: `npx tsx --test src/backend/supervisor-http-server.test.ts src/backend/webui-dashboard-browser-smoke.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts`
@@ -78,6 +78,7 @@ gh pr view --json number,isDraft,state,url --head codex/issue-864
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
+- 2026-03-23T03:26:13Z: committed the CI repair as `79d1b21` (`Fix explain DTO test fixtures`) and pushed `codex/issue-864`; PR #869 reran immediately, with `build (macos-latest)` passing and `build (ubuntu-latest)` still pending at the time of this note.
 - 2026-03-23T03:25:00Z: reproduced PR #869's `npm run build` failure from Actions via `gh run view 23419803218 --log-failed`; TypeScript reported `TS2322` in `src/backend/supervisor-http-server.test.ts` and `src/backend/webui-dashboard-browser-smoke.test.ts` because `SupervisorExplainDto` now requires `staleRecoveryWarningSummary`.
 - 2026-03-23T03:25:00Z: repaired the failing backend test doubles/expectation, then passed `npm run build` and `npx tsx --test src/backend/supervisor-http-server.test.ts src/backend/webui-dashboard-browser-smoke.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts`.
 - 2026-03-22T21:40:05Z: pushed `codex/issue-847` and opened draft PR `#857` for the verified dashboard refresh checkpoint.
