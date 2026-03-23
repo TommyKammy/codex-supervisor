@@ -68,6 +68,78 @@ export interface SupervisorIssueActivityContextDto {
   reviewWaits: SupervisorReviewWaitDto[];
 }
 
+function retrySummaryHasLoopRisk(context: Pick<SupervisorIssueActivityContextDto, "retryContext" | "repeatedRecovery">): boolean {
+  return (
+    context.repeatedRecovery !== null ||
+    context.retryContext.repeatedBlockerCount > 1 ||
+    context.retryContext.repeatedFailureSignatureCount > 1
+  );
+}
+
+export function formatRetrySummaryLine(
+  context: SupervisorIssueActivityContextDto | null,
+): string | null {
+  if (!context) {
+    return null;
+  }
+
+  const parts: string[] = [];
+  if (context.retryContext.timeoutRetryCount > 0) {
+    parts.push(`timeout=${context.retryContext.timeoutRetryCount}`);
+  }
+  if (context.retryContext.blockedVerificationRetryCount > 0) {
+    parts.push(`verification=${context.retryContext.blockedVerificationRetryCount}`);
+  }
+  if (context.retryContext.repeatedBlockerCount > 1) {
+    parts.push(`same_blocker=${context.retryContext.repeatedBlockerCount}`);
+  }
+  if (context.retryContext.repeatedFailureSignatureCount > 1) {
+    parts.push(`same_failure_signature=${context.retryContext.repeatedFailureSignatureCount}`);
+  }
+
+  if (parts.length === 0) {
+    return null;
+  }
+
+  if (context.retryContext.lastFailureSignature) {
+    parts.push(`last_failure_signature=${context.retryContext.lastFailureSignature}`);
+  }
+  parts.push(`apparent_no_progress=${retrySummaryHasLoopRisk(context) ? "yes" : "watch"}`);
+  return `retry_summary ${parts.join(" ")}`;
+}
+
+export function formatRecoveryLoopSummaryLine(
+  context: SupervisorIssueActivityContextDto | null,
+): string | null {
+  if (!context) {
+    return null;
+  }
+
+  if (context.repeatedRecovery) {
+    return [
+      "recovery_loop_summary",
+      `kind=${context.repeatedRecovery.kind}`,
+      `status=${context.repeatedRecovery.status}`,
+      `repeat_count=${context.repeatedRecovery.repeatCount}/${context.repeatedRecovery.repeatLimit}`,
+      `action=${context.repeatedRecovery.action}`,
+      "apparent_no_progress=yes",
+    ].join(" ");
+  }
+
+  const latestReason = context.latestRecovery?.reason ?? null;
+  const phaseChange = context.recentPhaseChanges[0] ?? null;
+  if (!latestReason || !phaseChange || !retrySummaryHasLoopRisk(context)) {
+    return null;
+  }
+
+  return [
+    "recovery_loop_summary",
+    `latest_reason=${latestReason}`,
+    `phase_change=${phaseChange.from}->${phaseChange.to}`,
+    "apparent_no_progress=yes",
+  ].join(" ");
+}
+
 type ActivityRecord = Pick<
   IssueRunRecord,
   | "issue_number"

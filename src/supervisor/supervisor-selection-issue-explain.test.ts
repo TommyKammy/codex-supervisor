@@ -10,6 +10,7 @@ import {
   buildIssueExplainDto,
   buildIssueExplainSummary,
   buildNonRunnableLocalStateReasons,
+  renderIssueExplainDto,
 } from "./supervisor-selection-issue-explain";
 import { branchName, createConfig, createRecord, createSupervisorFixture } from "./supervisor-test-helpers";
 
@@ -84,6 +85,7 @@ test("buildIssueExplainSummary keeps non-runnable explain output stable", async 
     "state=blocked",
     "blocked_reason=verification",
     "runnable=no",
+    "retry_summary verification=3 same_blocker=2 same_failure_signature=3 last_failure_signature=verification-failure apparent_no_progress=yes",
     "reason_1=retry_budget implementation_attempt_count=5/5",
     "reason_2=retry_budget blocked_verification_retry_count=3/3",
     "reason_3=retry_budget repeated_blocker_count=2/2",
@@ -262,6 +264,15 @@ test("buildIssueExplainDto exposes typed operator activity context", async () =>
       },
     ],
   });
+  const rendered = renderIssueExplainDto(dto);
+  assert.match(
+    rendered,
+    /^retry_summary timeout=2 verification=1 same_failure_signature=4 last_failure_signature=tracked-pr-refresh-loop apparent_no_progress=yes$/m,
+  );
+  assert.match(
+    rendered,
+    /^recovery_loop_summary latest_reason=tracked_pr_head_advanced phase_change=blocked->addressing_review apparent_no_progress=yes$/m,
+  );
 });
 
 test("buildIssueExplainDto degrades when PR resolution fails", async () => {
@@ -425,6 +436,11 @@ test("buildIssueExplainSummary surfaces repeated stale cleanup risk for no-PR re
   assert.ok(
     lines.includes(
       "stale_recovery_warning issue=#608 status=retrying state=queued repeat_count=1/3 tracked_pr=none action=confirm_whether_the_change_already_landed_or_retarget_the_issue_manually",
+    ),
+  );
+  assert.ok(
+    lines.includes(
+      "recovery_loop_summary kind=stale_stabilizing_no_pr status=retrying repeat_count=1/3 action=confirm_whether_the_change_already_landed_or_retarget_the_issue_manually apparent_no_progress=yes",
     ),
   );
 });

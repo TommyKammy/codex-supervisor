@@ -38,7 +38,12 @@ import {
   SupervisorStateFile,
 } from "../core/types";
 import type { ActiveStatusGitHub } from "./supervisor-selection-active-status";
-import { maybeBuildIssueActivityContext, type SupervisorIssueActivityContextDto } from "./supervisor-operator-activity-context";
+import {
+  formatRecoveryLoopSummaryLine,
+  formatRetrySummaryLine,
+  maybeBuildIssueActivityContext,
+  type SupervisorIssueActivityContextDto,
+} from "./supervisor-operator-activity-context";
 
 export type ExplainIssueGitHub = Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
   Partial<ActiveStatusGitHub>;
@@ -284,6 +289,8 @@ export async function buildIssueExplainDto(
 }
 
 export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
+  const retrySummaryLine = formatRetrySummaryLine(dto.activityContext);
+  const recoveryLoopSummaryLine = formatRecoveryLoopSummaryLine(dto.activityContext);
   const lines = [
     `issue=#${dto.issueNumber}`,
     `title=${dto.title}`,
@@ -292,6 +299,8 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     `runnable=${dto.runnable ? "yes" : "no"}`,
     ...dto.changeRiskLines,
     ...(dto.externalReviewFollowUpSummary ? [dto.externalReviewFollowUpSummary] : []),
+    ...(retrySummaryLine ? [retrySummaryLine] : []),
+    ...(recoveryLoopSummaryLine ? [recoveryLoopSummaryLine] : []),
     ...(dto.latestRecoverySummary ? [dto.latestRecoverySummary] : []),
     ...(dto.staleRecoveryWarningSummary ? [dto.staleRecoveryWarningSummary] : []),
   ];
