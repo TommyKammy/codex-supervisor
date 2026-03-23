@@ -73,6 +73,12 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
   };
 }
 
+function extractLatestCodexSummary(content: string): string {
+  const match = content.match(/## Latest Codex Summary\n([\s\S]*?)\n\n## Active Failure Context/);
+  assert.ok(match, "expected latest Codex summary section");
+  return match[1];
+}
+
 test("syncIssueJournal writes the structured handoff schema for new journals", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-schema-"));
   const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
@@ -263,4 +269,50 @@ test("syncIssueJournal keeps the rendered summary failure signature aligned with
   assert.match(content, /- Repeated failure signature count: 1/);
   assert.match(content, /Failure signature: PRRT_kwDORgvdZ852EV-a/);
   assert.doesNotMatch(content, /Failure signature: none/);
+});
+
+test("syncIssueJournal preserves an appended failure signature when the summary is truncated", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-truncated-appended-signature-"));
+  const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
+
+  await syncIssueJournal({
+    issue,
+    record: createRecord({
+      workspace: tempDir,
+      journal_path: journalPath,
+      last_failure_signature: "retry-budget",
+      last_codex_summary: `Summary: ${"detail ".repeat(700).trim()}`,
+    }),
+    journalPath,
+  });
+
+  const content = await fs.readFile(journalPath, "utf8");
+  const renderedSummary = extractLatestCodexSummary(content);
+  assert.ok(renderedSummary.length <= 4000);
+  assert.match(renderedSummary, /Failure signature: retry-budget$/);
+});
+
+test("syncIssueJournal preserves a replaced failure signature when the summary is truncated", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-truncated-replaced-signature-"));
+  const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
+
+  await syncIssueJournal({
+    issue,
+    record: createRecord({
+      workspace: tempDir,
+      journal_path: journalPath,
+      last_failure_signature: "PRRT_kwDORgvdZ852E4Jy",
+      last_codex_summary: [
+        `Summary: ${"detail ".repeat(700).trim()}`,
+        "Failure signature: stale-footer",
+      ].join("\n"),
+    }),
+    journalPath,
+  });
+
+  const content = await fs.readFile(journalPath, "utf8");
+  const renderedSummary = extractLatestCodexSummary(content);
+  assert.ok(renderedSummary.length <= 4000);
+  assert.match(renderedSummary, /Failure signature: PRRT_kwDORgvdZ852E4Jy$/);
+  assert.doesNotMatch(renderedSummary, /Failure signature: stale-footer/);
 });
