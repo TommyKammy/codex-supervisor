@@ -17,21 +17,21 @@ export function renderSupervisorDashboardPage(): string {
     <style>
       :root {
         color-scheme: light;
-        --bg: #f7f5f2;
-        --bg-accent: #ece7df;
-        --surface: rgba(255, 255, 255, 0.94);
-        --surface-muted: #fbfaf8;
-        --surface-strong: #ffffff;
-        --border: rgba(40, 35, 28, 0.1);
-        --border-strong: rgba(40, 35, 28, 0.16);
-        --text: #1f1a17;
-        --muted: #6a6156;
+        --bg: #f4f7fb;
+        --bg-accent: #e3ebf5;
+        --surface: rgba(252, 253, 255, 0.94);
+        --surface-muted: #f6f9fc;
+        --surface-strong: #fcfdff;
+        --border: rgba(31, 46, 68, 0.1);
+        --border-strong: rgba(31, 46, 68, 0.16);
+        --text: #182132;
+        --muted: #5f6b81;
         --danger: #a33a2b;
-        --warn: #a06712;
-        --ok: #24613d;
-        --accent: #1d6a74;
-        --accent-strong: #154c53;
-        --shadow: 0 18px 40px rgba(58, 49, 39, 0.06);
+        --warn: #8f6118;
+        --ok: #1d6b54;
+        --accent: #4a5fb4;
+        --accent-strong: #37498e;
+        --shadow: 0 18px 40px rgba(40, 58, 92, 0.08);
         font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
       }
 
@@ -44,9 +44,9 @@ export function renderSupervisorDashboardPage(): string {
         min-height: 100vh;
         color: var(--text);
         background:
-          radial-gradient(circle at top left, rgba(29, 106, 116, 0.08), transparent 34%),
-          radial-gradient(circle at top right, rgba(160, 103, 18, 0.08), transparent 28%),
-          linear-gradient(180deg, var(--bg) 0%, #f3efea 100%);
+          radial-gradient(circle at top left, rgba(74, 95, 180, 0.09), transparent 34%),
+          radial-gradient(circle at top right, rgba(42, 122, 140, 0.08), transparent 28%),
+          linear-gradient(180deg, var(--bg) 0%, #edf3f9 100%);
       }
 
       .shell {
@@ -62,8 +62,8 @@ export function renderSupervisorDashboardPage(): string {
         border: 1px solid var(--border);
         border-radius: 28px;
         background:
-          linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 244, 238, 0.98)),
-          linear-gradient(135deg, rgba(29, 106, 116, 0.04), rgba(160, 103, 18, 0.04));
+          linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(244, 248, 253, 0.98)),
+          linear-gradient(135deg, rgba(74, 95, 180, 0.05), rgba(42, 122, 140, 0.04));
         box-shadow: var(--shadow);
       }
 
@@ -110,7 +110,7 @@ export function renderSupervisorDashboardPage(): string {
         border: 1px solid var(--border);
         border-radius: 22px;
         background:
-          linear-gradient(180deg, rgba(252, 250, 247, 0.98), rgba(247, 243, 237, 0.96));
+          linear-gradient(180deg, rgba(249, 251, 255, 0.98), rgba(242, 247, 252, 0.96));
       }
 
       .hero-summary-label {
@@ -214,7 +214,7 @@ export function renderSupervisorDashboardPage(): string {
         border: 1px solid var(--border);
         border-radius: 20px;
         background: var(--surface);
-        box-shadow: 0 8px 20px rgba(58, 49, 39, 0.04);
+        box-shadow: 0 10px 24px rgba(40, 58, 92, 0.05);
         overflow: hidden;
         transition:
           box-shadow 140ms ease,
@@ -234,8 +234,8 @@ export function renderSupervisorDashboardPage(): string {
         gap: 12px;
         align-items: flex-start;
         padding: 18px 20px 12px;
-        border-bottom: 1px solid rgba(40, 35, 28, 0.08);
-        background: linear-gradient(180deg, rgba(250, 247, 242, 0.88), rgba(250, 247, 242, 0.4));
+        border-bottom: 1px solid rgba(31, 46, 68, 0.08);
+        background: linear-gradient(180deg, rgba(249, 251, 255, 0.94), rgba(244, 248, 252, 0.82));
       }
 
       .panel-header-main {
@@ -256,15 +256,15 @@ export function renderSupervisorDashboardPage(): string {
         width: 100%;
         height: 100%;
         border-radius: 12px;
-        border: 1px dashed rgba(40, 35, 28, 0.14);
+        border: 1px dashed rgba(31, 46, 68, 0.14);
         background:
-          linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(236, 231, 223, 0.8)),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(232, 239, 248, 0.86)),
           repeating-linear-gradient(
             90deg,
             transparent 0,
             transparent 7px,
-            rgba(40, 35, 28, 0.07) 7px,
-            rgba(40, 35, 28, 0.07) 10px
+            rgba(31, 46, 68, 0.07) 7px,
+            rgba(31, 46, 68, 0.07) 10px
           );
         color: var(--muted);
         cursor: grab;
@@ -277,15 +277,15 @@ export function renderSupervisorDashboardPage(): string {
       }
 
       .panel-drag-handle:hover {
-        border-color: rgba(15, 108, 120, 0.35);
+        border-color: rgba(74, 95, 180, 0.35);
         background:
-          linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(236, 231, 223, 0.92)),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(232, 239, 248, 0.94)),
           repeating-linear-gradient(
             90deg,
             transparent 0,
             transparent 7px,
-            rgba(29, 106, 116, 0.1) 7px,
-            rgba(29, 106, 116, 0.1) 10px
+            rgba(74, 95, 180, 0.11) 7px,
+            rgba(74, 95, 180, 0.11) 10px
           );
       }
 
@@ -295,8 +295,8 @@ export function renderSupervisorDashboardPage(): string {
 
       .panel-drag-handle:focus-visible {
         outline: none;
-        border-color: rgba(29, 106, 116, 0.44);
-        box-shadow: 0 0 0 3px rgba(29, 106, 116, 0.16);
+        border-color: rgba(74, 95, 180, 0.44);
+        box-shadow: 0 0 0 3px rgba(74, 95, 180, 0.16);
       }
 
       .panel-drag-handle span {
@@ -308,21 +308,21 @@ export function renderSupervisorDashboardPage(): string {
 
       .panel.drag-active {
         border-radius: 12px;
-        border-color: rgba(29, 106, 116, 0.28);
-        box-shadow: 0 0 0 2px rgba(29, 106, 116, 0.18);
+        border-color: rgba(74, 95, 180, 0.28);
+        box-shadow: 0 0 0 2px rgba(74, 95, 180, 0.18);
         transform: translateY(-2px);
       }
 
       .panel.drop-target {
-        border-color: rgba(29, 106, 116, 0.34);
+        border-color: rgba(74, 95, 180, 0.34);
         box-shadow:
-          0 0 0 2px rgba(29, 106, 116, 0.22),
-          0 14px 24px rgba(29, 106, 116, 0.08);
+          0 0 0 2px rgba(74, 95, 180, 0.2),
+          0 14px 24px rgba(74, 95, 180, 0.08);
       }
 
       .panel.drop-target .panel-drag-handle {
-        border-color: rgba(29, 106, 116, 0.4);
-        box-shadow: 0 0 0 2px rgba(29, 106, 116, 0.12);
+        border-color: rgba(74, 95, 180, 0.4);
+        box-shadow: 0 0 0 2px rgba(74, 95, 180, 0.12);
       }
 
       .panel-heading {
@@ -498,8 +498,8 @@ export function renderSupervisorDashboardPage(): string {
       }
 
       .shortcut-button:hover {
-        border-color: rgba(15, 108, 120, 0.35);
-        background: rgba(255, 255, 255, 0.92);
+        border-color: rgba(74, 95, 180, 0.35);
+        background: rgba(247, 250, 255, 0.96);
       }
 
       .toolbar input {
@@ -543,8 +543,8 @@ export function renderSupervisorDashboardPage(): string {
       }
 
       .panel-header button:hover {
-        border-color: rgba(15, 108, 120, 0.35);
-        background: rgba(255, 255, 255, 0.94);
+        border-color: rgba(74, 95, 180, 0.35);
+        background: rgba(247, 250, 255, 0.96);
       }
 
       .action-grid {
@@ -585,7 +585,7 @@ export function renderSupervisorDashboardPage(): string {
         padding: 12px 14px;
         border-radius: 14px;
         background: var(--surface-muted);
-        border: 1px solid rgba(40, 35, 28, 0.08);
+        border: 1px solid rgba(31, 46, 68, 0.08);
       }
 
       .event-meta {

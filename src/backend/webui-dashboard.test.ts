@@ -507,6 +507,24 @@ test("dashboard page includes reduced-motion-safe drag polish styles", () => {
   assert.match(html, /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*transition-duration: 0\.01ms/u);
 });
 
+test("dashboard page uses a neutral shell palette instead of the earlier warm dashboard treatment", () => {
+  const html = renderSupervisorDashboardHtml();
+
+  assert.match(html, /--bg: #f4f7fb;/u);
+  assert.match(html, /--bg-accent: #e3ebf5;/u);
+  assert.match(html, /--surface-muted: #f6f9fc;/u);
+  assert.match(html, /--accent: #4a5fb4;/u);
+  assert.match(
+    html,
+    /body \{[\s\S]*radial-gradient\(circle at top left, rgba\(74, 95, 180, 0\.09\), transparent 34%\),[\s\S]*radial-gradient\(circle at top right, rgba\(42, 122, 140, 0\.08\), transparent 28%\),[\s\S]*linear-gradient\(180deg, var\(--bg\) 0%, #edf3f9 100%\);/u,
+  );
+  assert.match(
+    html,
+    /\.panel-header \{[\s\S]*background: linear-gradient\(180deg, rgba\(249, 251, 255, 0\.94\), rgba\(244, 248, 252, 0\.82\)\);/u,
+  );
+  assert.doesNotMatch(html, /rgba\(160, 103, 18, 0\.08\)|236, 231, 223|250, 247, 242/u);
+});
+
 test("dashboard reorders panels through drag handles without touching backend fetch flow", async () => {
   const harness = createDashboardHarness([
     { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
