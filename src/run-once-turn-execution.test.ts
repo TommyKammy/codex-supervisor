@@ -304,6 +304,180 @@ test("executeCodexTurnPhase skips prompt preparation side effects when the sessi
   assert.equal(state.issues["102"]?.external_review_head_sha, null);
 });
 
+test("executeCodexTurnPhase blocks draft PR creation when configured local CI fails", async () => {
+  const issue = createIssue({ title: "Gate PR creation on local CI" });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "stabilizing",
+        pr_number: null,
+        implementation_attempt_count: 1,
+      }),
+    },
+  };
+  let createPullRequestCalls = 0;
+  let syncJournalCalls = 0;
+
+  const result = await executeCodexTurnPhase({
+    config: createConfig({ localCiCommand: "npm run ci:local" }),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      createPullRequest: async () => {
+        createPullRequestCalls += 1;
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      previousCodexSummary: null,
+      previousError: null,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      journalPath: path.join("/tmp/workspaces/issue-102", ".codex-supervisor", "issue-journal.md"),
+      syncJournal: async () => {
+        syncJournalCalls += 1;
+      },
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      workspaceStatus: {
+        branch: "codex/issue-102",
+        headSha: "head-b",
+        hasUncommittedChanges: false,
+        baseAhead: 1,
+        baseBehind: 0,
+        remoteBranchExists: true,
+        remoteAhead: 0,
+        remoteBehind: 0,
+      },
+      pr: null,
+      checks: [],
+      reviewThreads: [],
+      options: { dryRun: false },
+    },
+    acquireSessionLock: async () => null,
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-03-13T06:20:00Z",
+    }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    normalizeBlockerSignature: () => null,
+    isVerificationBlockedMessage: () => false,
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "stabilizing",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    inferStateWithoutPullRequest: () => "stabilizing",
+    blockedReasonFromReviewState: () => null,
+    recoverUnexpectedCodexTurnFailure: async () => {
+      throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+    },
+    getWorkspaceStatus: async () => ({
+      branch: "codex/issue-102",
+      headSha: "head-b",
+      hasUncommittedChanges: false,
+      baseAhead: 1,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    }),
+    pushBranch: async () => undefined,
+    readIssueJournal: (() => {
+      let readCount = 0;
+      return async () => {
+        readCount += 1;
+        return readCount === 1
+          ? [
+              "## Codex Working Notes",
+              "### Current Handoff",
+              "- Hypothesis: finish the implementation and publish a PR.",
+            ].join("\n")
+          : [
+              "## Codex Working Notes",
+              "### Current Handoff",
+              "- Hypothesis: finish the implementation and publish a PR.",
+              "- What changed: completed the implementation turn.",
+            ].join("\n");
+      };
+    })(),
+    runLocalCiCommand: async () => {
+      throw new Error("Command failed: sh -lc +1 args\nexitCode=1\nlocal ci failed");
+    },
+    agentRunner: createSuccessfulAgentRunner(async () => ({
+      exitCode: 0,
+      sessionId: "session-102",
+      supervisorMessage: [
+        "Summary: implementation complete",
+        "State hint: stabilizing",
+        "Blocked reason: none",
+        "Tests: not run",
+        "Failure signature: none",
+        "Next action: publish the PR",
+      ].join("\n"),
+      stderr: "",
+      stdout: "",
+      structuredResult: {
+        summary: "implementation complete",
+        stateHint: "stabilizing",
+        blockedReason: null,
+        failureSignature: null,
+        nextAction: "publish the PR",
+        tests: "not run",
+      },
+      failureKind: null,
+      failureContext: null,
+    })),
+  });
+
+  assert.deepEqual(result, {
+    kind: "returned",
+    message: "Local CI gate blocked pull request creation for issue #102.",
+  });
+  assert.equal(createPullRequestCalls, 0);
+  assert.equal(syncJournalCalls, 1);
+  assert.equal(state.issues["102"]?.state, "blocked");
+  assert.equal(state.issues["102"]?.blocked_reason, "verification");
+  assert.equal(state.issues["102"]?.last_failure_signature, "local-ci-gate-failed");
+  assert.match(state.issues["102"]?.last_error ?? "", /Configured local CI command failed before opening a pull request\./);
+});
+
 test("executeCodexTurnPhase routes start and resume turns through the shared agent runner contract", async () => {
   const requests: AgentTurnRequest[] = [];
   const agentRunner = createSuccessfulAgentRunner(async (request) => {

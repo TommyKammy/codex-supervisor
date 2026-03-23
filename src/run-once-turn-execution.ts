@@ -17,6 +17,7 @@ import {
   PullRequestLifecycleSnapshot,
 } from "./post-turn-pull-request";
 import { IssueJournalSync, MemoryArtifacts } from "./run-once-issue-preparation";
+import { runLocalCiGate, type LocalCiCommandRunner } from "./local-ci";
 import { StateStore } from "./core/state-store";
 import {
   getStaleStabilizingNoPrRecoveryCount,
@@ -213,6 +214,7 @@ interface ExecuteCodexTurnPhaseArgs {
   pushBranch?: typeof pushBranch;
   readIssueJournal?: typeof readIssueJournal;
   agentRunner?: AgentRunner;
+  runLocalCiCommand?: LocalCiCommandRunner;
 }
 
 export async function executeCodexTurnPhase(
@@ -416,6 +418,30 @@ export async function executeCodexTurnPhase(
         !workspaceStatus.hasUncommittedChanges &&
         record.implementation_attempt_count >= config.draftPrAfterAttempt
       ) {
+        const localCiGate = await runLocalCiGate({
+          config,
+          workspacePath,
+          gateLabel: "before opening a pull request",
+          runLocalCiCommand: args.runLocalCiCommand,
+        });
+        if (!localCiGate.ok) {
+          const failureContext = localCiGate.failureContext;
+          record = stateStore.touch(record, {
+            state: "blocked",
+            last_error: truncate(failureContext?.summary, 1000),
+            last_failure_kind: null,
+            last_failure_context: failureContext,
+            ...args.applyFailureSignature(record, failureContext),
+            blocked_reason: "verification",
+          });
+          state.issues[String(record.issue_number)] = record;
+          await stateStore.save(state);
+          await syncJournal(record);
+          return {
+            kind: "returned",
+            message: `Local CI gate blocked pull request creation for issue #${record.issue_number}.`,
+          };
+        }
         pr = await github.createPullRequest(issue, record, { draft: true });
       }
 

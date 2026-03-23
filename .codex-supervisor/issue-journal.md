@@ -1,93 +1,75 @@
-# Issue #883: Local CI config surface: add an optional repo-owned pre-PR verification command
+# Issue #884: Local CI execution gate: run configured pre-PR verification before PR publication
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/883
-- Branch: codex/issue-883
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/884
+- Branch: codex/issue-884
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 1e0d274797c06cfc82af609375fb9521286ce0fa
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: 1fc7138056bf61c8ea73906623bcabfe205bf543
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-23T13:35:46Z
+- Last failure signature: PRRT_kwDORgvdZ852JnTS|PRRT_kwDORgvdZ852JnTY|PRRT_kwDORgvdZ852JnTZ
+- Repeated failure signature count: 1
+- Updated at: 2026-03-23T14:40:35.535Z
 
 ## Latest Codex Summary
-- Added optional `localCiCommand` config support plus typed local CI contract summaries for setup-readiness, doctor, and status surfaces; focused verification and requested verification now pass after restoring local npm dependencies in this worktree, and draft PR `#900` is open.
+Pushed `codex/issue-884` and opened draft PR `#901`: https://github.com/TommyKammy/codex-supervisor/pull/901
+
+I also updated the issue journal handoff so the durable state now points at PR `#901` and the next step is to monitor its checks/review. No additional code changes or verification were needed in this turn beyond the already-passing local verification from the prior step. The worktree is still dirty only because of the updated journal and untracked `.codex-supervisor/replay/`.
+
+Summary: Pushed `codex/issue-884`, opened draft PR `#901`, and updated the journal handoff to monitor PR checks
+State hint: draft_pr
+Blocked reason: none
+Tests: not run in this turn; prior verified state already passed `npm run build`, `npx tsx --test src/run-once-turn-execution.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`, and `npx tsx --test src/post-turn-pull-request.test.ts`
+Failure signature: none
+Next action: monitor draft PR `#901` checks and address any CI or review feedback
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: this issue is a narrow typed-surface gap; supervisor config needs an optional repo-owned `localCiCommand`, and setup-readiness/doctor/status should report whether that contract exists without making it a required setup blocker.
-- What changed: added `localCiCommand` to `SupervisorConfig` parsing, introduced a shared typed local CI contract summary helper, surfaced that summary through `diagnoseSetupReadiness`, `diagnoseSupervisorHost`, and `Supervisor.statusReport`, rendered `doctor_local_ci` and `local_ci` lines, added focused regressions in `src/config.test.ts`, `src/doctor.test.ts`, and `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, extended `src/supervisor/supervisor-service.test.ts`, and exposed the optional field in `supervisor.config.example.json`.
+- Hypothesis: the addressed review fixes are now on `codex/issue-884` head `a5aa5f1`, the three automated threads are resolved on PR `#901`, and the remaining work is to monitor for any follow-up CI or review signal on the refreshed head.
+- What changed: added `CommandExecutionError` in `src/core/command.ts` so failed commands retain `stdout`, `stderr`, `exitCode`, and timeout metadata; updated `src/local-ci.ts` to enforce a 5-minute timeout and include `stdout`/`stderr` sections in blocked failure details; cleared stale `last_failure_kind` when the draft-to-ready local-CI gate blocks in `src/post-turn-pull-request.ts`; added focused regressions in `src/core/command.test.ts`, `src/local-ci.test.ts`, and `src/post-turn-pull-request.test.ts`; redacted machine-specific paths in this journal entry; committed the review fixes as `a5aa5f1`; pushed `codex/issue-884`; and resolved the three addressed CodeRabbit threads on PR `#901`.
 - Current blocker: none
-- Next exact step: monitor draft PR `#900` checks and respond if CI or review surfaces a regression.
+- Next exact step: monitor PR `#901` for refreshed checks or any new review feedback on head `a5aa5f1`.
 - Verification gap: none on the requested issue verification surface.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/config.test.ts`, `src/core/config.ts`, `src/core/types.ts`, `src/doctor.test.ts`, `src/doctor.ts`, `src/setup-readiness.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-service.test.ts`, `src/supervisor/supervisor-status-report.ts`, `src/supervisor/supervisor.ts`, `supervisor.config.example.json`
-- Rollback concern: low; the change is additive and optional, but removing it would require backing out the new typed status/setup/doctor surface and the config parser field together.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-883 --title "Local CI config surface: add an optional repo-owned pre-PR verification command" --body "..."`
-- Last focused failure: the initial focused reproducer failed because `localCiCommand` was not parsed and the setup-readiness/doctor local CI summaries were missing; later `npm run build` failed with `sh: 1: tsc: not found` until `npm install` restored local dependencies in this worktree.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/core/command.test.ts`, `src/core/command.ts`, `src/local-ci.test.ts`, `src/local-ci.ts`, `src/post-turn-pull-request.test.ts`, `src/post-turn-pull-request.ts`
+- Rollback concern: low; the production behavior change is limited to bounding local-CI runtime and improving blocked diagnostics, but reverting only one half of the `command`/`local-ci` pair would reintroduce missing stdout diagnostics.
+- Last focused command: `gh api graphql -f query='mutation($id1:ID!,$id2:ID!,$id3:ID!){ r1: resolveReviewThread(input:{threadId:$id1}) { thread { isResolved } } r2: resolveReviewThread(input:{threadId:$id2}) { thread { isResolved } } r3: resolveReviewThread(input:{threadId:$id3}) { thread { isResolved } } }' -F id1=PRRT_kwDORgvdZ852JnTS -F id2=PRRT_kwDORgvdZ852JnTY -F id3=PRRT_kwDORgvdZ852JnTZ`
+- Last focused failure: none current; the first GraphQL attempt using an array variable failed with `Expected NAME, actual: LBRACKET ("[")`, then the explicit `id1`/`id2`/`id3` retry resolved all three threads.
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-883/AGENTS.generated.md
-sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-883/context-index.md
-sed -n '1,360p' .codex-supervisor/issue-journal.md
+sed -n '1,220p' <LOCAL_MEMORY_ROOT>/TommyKammy-codex-supervisor/issue-884/AGENTS.generated.md
+sed -n '1,240p' <LOCAL_MEMORY_ROOT>/TommyKammy-codex-supervisor/issue-884/context-index.md
+sed -n '1,260p' .codex-supervisor/issue-journal.md
 git status --short --branch
-rg -n "localCi|local CI|pre-PR|pre-pr|verification entrypoint|doctor|setup readiness|setup-readiness|supervisor status|SupervisorStatus|readiness" src supervisor.config.example.json docs -g '*.ts' -g '*.json' -g '*.md'
-rg --files src | rg 'config|doctor|supervisor-service|status|setup|readiness'
-sed -n '1,260p' src/core/config.ts
-sed -n '1,260p' src/config.test.ts
-sed -n '1,260p' src/setup-readiness.ts
-sed -n '1,320p' src/doctor.ts
-sed -n '1,360p' src/supervisor/supervisor-service.ts
-sed -n '1,420p' src/supervisor/supervisor-service.test.ts
-sed -n '1,260p' src/supervisor/supervisor-status-model.ts
-rg -n "interface SupervisorConfig|type SupervisorConfig|SetupReadinessReport|DoctorDiagnostics|SupervisorStatusDto|localReviewSummaryPath|verificationPolicySummary" src/core/types.ts src/supervisor/supervisor-status-report.ts src/supervisor/supervisor.ts src/doctor.test.ts
-sed -n '1,340p' src/core/types.ts
-sed -n '1,260p' src/supervisor/supervisor-status-report.ts
-sed -n '820,980p' src/supervisor/supervisor.ts
-sed -n '230,340p' src/doctor.test.ts
-sed -n '260,620p' src/core/config.ts
-sed -n '320,520p' src/doctor.ts
-sed -n '520,660p' src/doctor.ts
+sed -n '1,220p' src/local-ci.ts
+sed -n '220,320p' src/post-turn-pull-request.ts
+rg -n "<LOCAL_HOME>|localCiGate\.ok|last_failure_kind|executeLocalCiCommand|runCommand\(" .codex-supervisor/issue-journal.md src -g '*.ts'
+sed -n '1,260p' src/core/command.ts
+sed -n '1,260p' src/post-turn-pull-request.test.ts
+sed -n '1,260p' src/run-once-turn-execution.test.ts
+rg -n "runLocalCiGate|local-ci|runLocalCiCommand|last_failure_context|last_failure_kind" src/post-turn-pull-request.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-execution-orchestration.test.ts src/local-ci.ts
+sed -n '412,450p' src/run-once-turn-execution.ts
+sed -n '1,140p' src/supervisor/supervisor-failure-helpers.ts
+nl -ba .codex-supervisor/issue-journal.md | sed -n '28,90p'
+rg --files src | rg 'command.*test\.ts$|core/command'
+sed -n '1,260p' src/core/command.test.ts
 apply_patch
-npx tsx --test src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-service.test.ts
-sed -n '300,380p' src/doctor.test.ts
-sed -n '150,240p' src/supervisor/supervisor-service.test.ts
-sed -n '240,330p' src/config.test.ts
-apply_patch
-sed -n '1,260p' src/setup-readiness.ts
-sed -n '1,120p' src/core/config.ts
-sed -n '1,120p' src/supervisor/supervisor.ts
-sed -n '260,420p' src/setup-readiness.ts
-apply_patch
-rg -n "kind: \"setup_readiness\"|overallStatus: \"pass\"|candidateDiscoverySummary:|candidateDiscovery: null,|trustPosture:" src -g '*.test.ts' -g '*.ts'
-rg -n "interface DoctorDiagnostics|DoctorDiagnostics =|renderDoctorReport\\(|statusReport: Awaited<ReturnType<StubSupervisor\\[\\\"statusReport\\\"\\]>> =|SupervisorStatusDto" src -g '*.test.ts' -g '*.ts'
-apply_patch
-rg -n "function createSupervisorFixture|createSupervisorFixture\\(" src/supervisor/supervisor-test-helpers.ts
-sed -n '196,250p' src/supervisor/supervisor-test-helpers.ts
-apply_patch
-npx tsx --test src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts
+npx tsx --test src/core/command.test.ts src/local-ci.test.ts src/post-turn-pull-request.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-execution-orchestration.test.ts
 npm run build
-npm install
-npm run build
-npx tsx --test src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-service.test.ts
-apply_patch
-npx tsx --test src/config.test.ts
-git diff -- src/core/types.ts src/core/config.ts src/setup-readiness.ts src/doctor.ts src/supervisor/supervisor-status-report.ts src/supervisor/supervisor.ts src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts supervisor.config.example.json
-git add .codex-supervisor/issue-journal.md src/config.test.ts src/core/config.ts src/core/types.ts src/doctor.test.ts src/doctor.ts src/setup-readiness.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-status-report.ts src/supervisor/supervisor.ts supervisor.config.example.json && git commit -m "feat: expose local ci contract surfaces"
-gh pr view codex/issue-883 --json number,url,isDraft,state,headRefName,baseRefName
-git push -u origin codex/issue-883
-gh pr create --draft --base main --head codex/issue-883 --title "Local CI config surface: add an optional repo-owned pre-PR verification command" --body "..."
+date -u +%Y-%m-%dT%H:%M:%SZ
+git status --short
+git diff --stat
+git add .codex-supervisor/issue-journal.md src/core/command.ts src/core/command.test.ts src/local-ci.ts src/local-ci.test.ts src/post-turn-pull-request.ts src/post-turn-pull-request.test.ts
+git commit -m "Fix local CI review follow-ups"
+git push origin codex/issue-884
+git rev-parse HEAD
+gh api graphql -f query='mutation($ids:[ID!]!){ r1: resolveReviewThread(input:{threadId:$ids[0]}) { thread { isResolved } } r2: resolveReviewThread(input:{threadId:$ids[1]}) { thread { isResolved } } r3: resolveReviewThread(input:{threadId:$ids[2]}) { thread { isResolved } } }' -F ids[]=PRRT_kwDORgvdZ852JnTS -F ids[]=PRRT_kwDORgvdZ852JnTY -F ids[]=PRRT_kwDORgvdZ852JnTZ
+gh api graphql -f query='mutation($id1:ID!,$id2:ID!,$id3:ID!){ r1: resolveReviewThread(input:{threadId:$id1}) { thread { isResolved } } r2: resolveReviewThread(input:{threadId:$id2}) { thread { isResolved } } r3: resolveReviewThread(input:{threadId:$id3}) { thread { isResolved } } }' -F id1=PRRT_kwDORgvdZ852JnTS -F id2=PRRT_kwDORgvdZ852JnTY -F id3=PRRT_kwDORgvdZ852JnTZ
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
-- 2026-03-22T21:15:08Z: pushed `codex/issue-846` and opened draft PR `#856`; GitHub currently reports `mergeStateStatus=UNSTABLE`, so the next turn should inspect CI/check runs and address any failures or review feedback.
-- 2026-03-22T21:14:15Z: confirmed there was no existing PR for `codex/issue-846`; next step is to push the branch and open a draft PR with commit `c4e2a04`.
-- 2026-03-22T21:02:11Z: reproduced the issue with a new shell-structure regression, then passed the focused verification command after moving all dashboard panels onto a shared shell helper with a reserved drag slot and shared subtitle/meta/action lanes.
-- 2026-03-22T20:06:27Z: committed the typed dashboard panel layout work as `a6f6ea0`, pushed `codex/issue-845`, and opened draft PR `#855` at https://github.com/TommyKammy/codex-supervisor/pull/855.
-- 2026-03-22T20:04:56Z: added typed dashboard panel ids, registry, default layout state, and normalization in `src/backend/webui-dashboard-panel-layout.ts`, then switched `src/backend/webui-dashboard-page.ts` to render from the registry so DOM order is driven by typed layout data rather than duplicated markup order.
-- 2026-03-22T20:04:56Z: added focused regressions in `src/backend/webui-dashboard-browser-logic.test.ts` and `src/backend/webui-dashboard.test.ts`; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts` passed twice on the local diff.
+- Keep this section short. The supervisor may compact older notes automatically.
