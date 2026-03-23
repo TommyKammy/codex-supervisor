@@ -287,7 +287,12 @@ export function renderDashboardBrowserScript(): string {
         }
 
         const nextPeer = draggedPeers.find((panelId) => normalizedOrder.indexOf(panelId) > draggedIndex);
-        return nextPeer ?? candidates[candidates.length - 1];
+        if (!nextPeer) {
+          return candidates[candidates.length - 1];
+        }
+
+        const nextPeerIndex = candidates.indexOf(nextPeer);
+        return candidates[Math.min(candidates.length - 1, nextPeerIndex + 1)] ?? candidates[candidates.length - 1];
       }
 
       function startKeyboardPanelDrag(panelId) {
@@ -993,6 +998,7 @@ export function renderDashboardBrowserScript(): string {
           }
 
           dragHandle.addEventListener("dragstart", (event) => {
+            clearDragState();
             state.draggedPanelId = panelId;
             panel.classList.add("drag-active");
             setDropTargetPanel(null);
@@ -1004,8 +1010,11 @@ export function renderDashboardBrowserScript(): string {
           });
 
           dragHandle.addEventListener("dragend", () => {
+            const shouldAnnounceFinished = state.draggedPanelId === panelId;
             clearDragState();
-            announcePanelReorderStatus("Panel reorder finished.");
+            if (shouldAnnounceFinished) {
+              announcePanelReorderStatus("Panel reorder finished.");
+            }
           });
 
           dragHandle.addEventListener("keydown", (event) => {

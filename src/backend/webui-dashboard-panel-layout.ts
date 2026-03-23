@@ -60,7 +60,7 @@ function renderDashboardPanelShell(options: DashboardPanelShellOptions): Dashboa
                     type="button"
                     draggable="true"
                     aria-label="Reorder ${options.title} panel"
-                    aria-describedby="dashboard-panel-reorder-hint dashboard-panel-reorder-status"
+                    aria-describedby="dashboard-panel-reorder-hint"
                     aria-keyshortcuts="Space Enter ArrowUp ArrowDown Escape"
                     title="Drag to reorder this panel"
                   >
