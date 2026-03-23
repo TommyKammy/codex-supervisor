@@ -1,4 +1,6 @@
-export const EXECUTION_METRICS_RUN_SUMMARY_SCHEMA_VERSION = 3;
+import type { BlockedReason, FailureContextCategory, FailureKind } from "../core/types";
+
+export const EXECUTION_METRICS_RUN_SUMMARY_SCHEMA_VERSION = 4;
 const EXECUTION_METRICS_RUN_SUMMARY_KEYS = [
   "schemaVersion",
   "issueNumber",
@@ -14,11 +16,30 @@ const EXECUTION_METRICS_RUN_SUMMARY_KEYS = [
   "issueToPrCreatedMs",
   "prOpenDurationMs",
   "reviewMetrics",
+  "failureMetrics",
+  "recoveryMetrics",
 ] as const;
 const TERMINAL_STATES = ["done", "blocked", "failed"] as const;
 const TERMINAL_OUTCOME_CATEGORIES = ["completed", "blocked", "failed"] as const;
 const REVIEW_METRICS_CLASSIFICATIONS = ["configured_bot_threads"] as const;
 const REVIEW_METRICS_TOTAL_COUNT_KINDS = ["actionable_thread_instances"] as const;
+const FAILURE_METRICS_CLASSIFICATIONS = ["latest_failure"] as const;
+const FAILURE_METRICS_CATEGORIES = ["checks", "review", "conflict", "codex", "manual", "blocked"] as const;
+const FAILURE_METRICS_KINDS = ["timeout", "command_error", "codex_exit", "codex_failed"] as const;
+const FAILURE_METRICS_BLOCKED_REASONS = [
+  "requirements",
+  "clarification",
+  "permissions",
+  "secrets",
+  "verification",
+  "review_bot_timeout",
+  "copilot_timeout",
+  "manual_review",
+  "manual_pr_closed",
+  "handoff_missing",
+  "unknown",
+] as const;
+const RECOVERY_METRICS_CLASSIFICATIONS = ["latest_recovery"] as const;
 
 export interface ExecutionMetricsTerminalOutcome {
   category: (typeof TERMINAL_OUTCOME_CATEGORIES)[number];
@@ -30,6 +51,23 @@ export interface ExecutionMetricsReviewMetrics {
   iterationCount: number;
   totalCount: number;
   totalCountKind: (typeof REVIEW_METRICS_TOTAL_COUNT_KINDS)[number];
+}
+
+export interface ExecutionMetricsFailureMetrics {
+  classification: (typeof FAILURE_METRICS_CLASSIFICATIONS)[number];
+  category: Exclude<FailureContextCategory, null>;
+  failureKind: Exclude<FailureKind, null> | null;
+  blockedReason: Exclude<BlockedReason, null> | null;
+  occurrenceCount: number;
+  lastOccurredAt: string;
+}
+
+export interface ExecutionMetricsRecoveryMetrics {
+  classification: (typeof RECOVERY_METRICS_CLASSIFICATIONS)[number];
+  reason: string;
+  occurrenceCount: number;
+  lastRecoveredAt: string;
+  timeToLatestRecoveryMs: number | null;
 }
 
 export interface ExecutionMetricsRunSummaryArtifact {
@@ -47,6 +85,8 @@ export interface ExecutionMetricsRunSummaryArtifact {
   issueToPrCreatedMs: number | null;
   prOpenDurationMs: number | null;
   reviewMetrics: ExecutionMetricsReviewMetrics | null;
+  failureMetrics: ExecutionMetricsFailureMetrics | null;
+  recoveryMetrics: ExecutionMetricsRecoveryMetrics | null;
 }
 
 function failValidation(message: string): never {
@@ -171,6 +211,116 @@ function expectReviewMetrics(value: unknown): ExecutionMetricsReviewMetrics | nu
   };
 }
 
+function expectFailureMetrics(value: unknown): ExecutionMetricsFailureMetrics | null {
+  if (value === null) {
+    return null;
+  }
+
+  const failureMetrics = expectObject(value);
+  const keys = Object.keys(failureMetrics);
+  if (
+    keys.length !== 6 ||
+    !keys.includes("classification") ||
+    !keys.includes("category") ||
+    !keys.includes("failureKind") ||
+    !keys.includes("blockedReason") ||
+    !keys.includes("occurrenceCount") ||
+    !keys.includes("lastOccurredAt")
+  ) {
+    failValidation(
+      "failureMetrics must contain classification, category, failureKind, blockedReason, occurrenceCount, and lastOccurredAt.",
+    );
+  }
+
+  if (
+    typeof failureMetrics.classification !== "string" ||
+    !FAILURE_METRICS_CLASSIFICATIONS.includes(
+      failureMetrics.classification as ExecutionMetricsFailureMetrics["classification"],
+    )
+  ) {
+    failValidation(
+      `failureMetrics.classification must be one of: ${FAILURE_METRICS_CLASSIFICATIONS.join(", ")}.`,
+    );
+  }
+  if (
+    typeof failureMetrics.category !== "string" ||
+    !FAILURE_METRICS_CATEGORIES.includes(failureMetrics.category as ExecutionMetricsFailureMetrics["category"])
+  ) {
+    failValidation(`failureMetrics.category must be one of: ${FAILURE_METRICS_CATEGORIES.join(", ")}.`);
+  }
+  if (
+    failureMetrics.failureKind !== null &&
+    (typeof failureMetrics.failureKind !== "string" ||
+      !FAILURE_METRICS_KINDS.includes(failureMetrics.failureKind as Exclude<FailureKind, null>))
+  ) {
+    failValidation(`failureMetrics.failureKind must be one of: ${FAILURE_METRICS_KINDS.join(", ")} or null.`);
+  }
+  if (
+    failureMetrics.blockedReason !== null &&
+    (typeof failureMetrics.blockedReason !== "string" ||
+      !FAILURE_METRICS_BLOCKED_REASONS.includes(failureMetrics.blockedReason as Exclude<BlockedReason, null>))
+  ) {
+    failValidation(
+      `failureMetrics.blockedReason must be one of: ${FAILURE_METRICS_BLOCKED_REASONS.join(", ")} or null.`,
+    );
+  }
+
+  return {
+    classification: failureMetrics.classification as ExecutionMetricsFailureMetrics["classification"],
+    category: failureMetrics.category as ExecutionMetricsFailureMetrics["category"],
+    failureKind: failureMetrics.failureKind as ExecutionMetricsFailureMetrics["failureKind"],
+    blockedReason: failureMetrics.blockedReason as ExecutionMetricsFailureMetrics["blockedReason"],
+    occurrenceCount: expectNonNegativeInteger(failureMetrics.occurrenceCount, "failureMetrics.occurrenceCount"),
+    lastOccurredAt: expectIsoTimestamp(failureMetrics.lastOccurredAt, "failureMetrics.lastOccurredAt"),
+  };
+}
+
+function expectRecoveryMetrics(value: unknown): ExecutionMetricsRecoveryMetrics | null {
+  if (value === null) {
+    return null;
+  }
+
+  const recoveryMetrics = expectObject(value);
+  const keys = Object.keys(recoveryMetrics);
+  if (
+    keys.length !== 5 ||
+    !keys.includes("classification") ||
+    !keys.includes("reason") ||
+    !keys.includes("occurrenceCount") ||
+    !keys.includes("lastRecoveredAt") ||
+    !keys.includes("timeToLatestRecoveryMs")
+  ) {
+    failValidation(
+      "recoveryMetrics must contain classification, reason, occurrenceCount, lastRecoveredAt, and timeToLatestRecoveryMs.",
+    );
+  }
+
+  if (
+    typeof recoveryMetrics.classification !== "string" ||
+    !RECOVERY_METRICS_CLASSIFICATIONS.includes(
+      recoveryMetrics.classification as ExecutionMetricsRecoveryMetrics["classification"],
+    )
+  ) {
+    failValidation(
+      `recoveryMetrics.classification must be one of: ${RECOVERY_METRICS_CLASSIFICATIONS.join(", ")}.`,
+    );
+  }
+  if (typeof recoveryMetrics.reason !== "string" || recoveryMetrics.reason.trim().length === 0) {
+    failValidation("recoveryMetrics.reason must be a non-empty string.");
+  }
+
+  return {
+    classification: recoveryMetrics.classification as ExecutionMetricsRecoveryMetrics["classification"],
+    reason: recoveryMetrics.reason,
+    occurrenceCount: expectNonNegativeInteger(recoveryMetrics.occurrenceCount, "recoveryMetrics.occurrenceCount"),
+    lastRecoveredAt: expectIsoTimestamp(recoveryMetrics.lastRecoveredAt, "recoveryMetrics.lastRecoveredAt"),
+    timeToLatestRecoveryMs: expectNullableNonNegativeInteger(
+      recoveryMetrics.timeToLatestRecoveryMs,
+      "recoveryMetrics.timeToLatestRecoveryMs",
+    ),
+  };
+}
+
 function expectDerivedDuration(
   value: number | null,
   start: string | null,
@@ -221,11 +371,31 @@ export function validateExecutionMetricsRunSummary(raw: unknown): ExecutionMetri
   const issueToPrCreatedMs = expectNullableNonNegativeInteger(summary.issueToPrCreatedMs, "issueToPrCreatedMs");
   const prOpenDurationMs = expectNullableNonNegativeInteger(summary.prOpenDurationMs, "prOpenDurationMs");
   const reviewMetrics = expectReviewMetrics(summary.reviewMetrics);
+  const failureMetrics = expectFailureMetrics(summary.failureMetrics);
+  const recoveryMetrics = expectRecoveryMetrics(summary.recoveryMetrics);
 
   expectDerivedDuration(runDurationMs, startedAt, finishedAt, "runDurationMs");
   expectDerivedDuration(issueLeadTimeMs, issueCreatedAt, finishedAt, "issueLeadTimeMs");
   expectDerivedDuration(issueToPrCreatedMs, issueCreatedAt, prCreatedAt, "issueToPrCreatedMs");
   expectDerivedDuration(prOpenDurationMs, prCreatedAt, prMergedAt, "prOpenDurationMs");
+
+  if (failureMetrics && Date.parse(failureMetrics.lastOccurredAt) > Date.parse(finishedAt)) {
+    failValidation("failureMetrics.lastOccurredAt must not be after finishedAt.");
+  }
+  if (recoveryMetrics && Date.parse(recoveryMetrics.lastRecoveredAt) > Date.parse(finishedAt)) {
+    failValidation("recoveryMetrics.lastRecoveredAt must not be after finishedAt.");
+  }
+  if (
+    recoveryMetrics &&
+    failureMetrics &&
+    recoveryMetrics.timeToLatestRecoveryMs !== null &&
+    recoveryMetrics.timeToLatestRecoveryMs !== Date.parse(recoveryMetrics.lastRecoveredAt) - Date.parse(failureMetrics.lastOccurredAt)
+  ) {
+    failValidation("recoveryMetrics.timeToLatestRecoveryMs must equal the derived duration from the latest failure to the latest recovery.");
+  }
+  if (!failureMetrics && recoveryMetrics && recoveryMetrics.timeToLatestRecoveryMs !== null) {
+    failValidation("recoveryMetrics.timeToLatestRecoveryMs must be null when failureMetrics is absent.");
+  }
 
   return {
     schemaVersion: EXECUTION_METRICS_RUN_SUMMARY_SCHEMA_VERSION,
@@ -242,5 +412,7 @@ export function validateExecutionMetricsRunSummary(raw: unknown): ExecutionMetri
     issueToPrCreatedMs,
     prOpenDurationMs,
     reviewMetrics,
+    failureMetrics,
+    recoveryMetrics,
   };
 }
