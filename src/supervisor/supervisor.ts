@@ -659,9 +659,10 @@ export class Supervisor {
         );
       }
     } else {
+      const nextState = inferStateWithoutPullRequest(record, workspaceStatus);
       record = this.stateStore.touch(record, {
-        state: inferStateWithoutPullRequest(record, workspaceStatus),
-        ...resetNoPrLifecycleFailureTracking(record),
+        state: nextState,
+        ...resetNoPrLifecycleFailureTracking(record, nextState),
       });
     }
     const shouldExecuteCodex = shouldRunCodex(record, pr, checks, reviewThreads, this.config);

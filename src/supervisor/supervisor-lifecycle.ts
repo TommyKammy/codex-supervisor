@@ -195,6 +195,7 @@ export function isOpenPullRequest(pr: GitHubPullRequest | null): pr is GitHubPul
 
 export function resetNoPrLifecycleFailureTracking(
   record: IssueRunRecord,
+  nextState: RunState = record.state,
 ): Pick<
   IssueRunRecord,
   | "copilot_review_requested_observed_at"
@@ -217,7 +218,7 @@ export function resetNoPrLifecycleFailureTracking(
     record.last_failure_context?.category === "blocked" &&
     record.last_failure_signature !== null &&
     record.repeated_failure_signature_count > 0;
-  const preserveStaleNoPrRecoveryCount = shouldPreserveStaleStabilizingNoPrRecoveryTracking(record, record.state);
+  const preserveStaleNoPrRecoveryCount = shouldPreserveStaleStabilizingNoPrRecoveryTracking(record, nextState);
   return {
     copilot_review_requested_observed_at: null,
     copilot_review_requested_head_sha: null,

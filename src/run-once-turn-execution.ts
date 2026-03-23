@@ -18,7 +18,10 @@ import {
 } from "./post-turn-pull-request";
 import { IssueJournalSync, MemoryArtifacts } from "./run-once-issue-preparation";
 import { StateStore } from "./core/state-store";
-import { shouldPreserveStaleStabilizingNoPrRecoveryTracking } from "./no-pull-request-state";
+import {
+  getStaleStabilizingNoPrRecoveryCount,
+  shouldPreserveStaleStabilizingNoPrRecoveryTracking,
+} from "./no-pull-request-state";
 import {
   nextProcessedReviewThreadPatch,
   prepareCodexTurnPrompt,
@@ -289,6 +292,9 @@ export async function executeCodexTurnPhase(
       const hintedState = structuredResult?.stateHint ?? null;
       const hintedBlockedReason = structuredResult?.blockedReason ?? null;
       const hintedFailureSignature = structuredResult?.failureSignature ?? null;
+      const preTurnFailureContext = record.last_failure_context;
+      const preTurnFailureSignature = record.last_failure_signature;
+      const preTurnStaleNoPrRecoveryCount = getStaleStabilizingNoPrRecoveryCount(record);
       const preTurnLastError = record.last_error;
       const journalAfterRun = await readIssueJournalImpl(journalPath);
       record = stateStore.touch(record, {
@@ -446,7 +452,7 @@ export async function executeCodexTurnPhase(
         repeated_blocker_count: 0,
         last_blocker_signature: null,
         stale_stabilizing_no_pr_recovery_count: preserveStaleNoPrRecoveryTracking
-          ? record.stale_stabilizing_no_pr_recovery_count ?? record.repeated_failure_signature_count
+          ? preTurnStaleNoPrRecoveryCount
           : 0,
         last_error:
           preserveStaleNoPrRecoveryTracking
@@ -455,11 +461,11 @@ export async function executeCodexTurnPhase(
             ? truncate(postRunSnapshot.failureContext.summary, 1000)
             : record.last_error,
         last_failure_context:
-          preserveStaleNoPrRecoveryTracking ? record.last_failure_context : postRunSnapshot?.failureContext ?? null,
+          preserveStaleNoPrRecoveryTracking ? preTurnFailureContext : postRunSnapshot?.failureContext ?? null,
         ...(
           preserveStaleNoPrRecoveryTracking
             ? {
-                last_failure_signature: record.last_failure_signature,
+                last_failure_signature: preTurnFailureSignature,
                 repeated_failure_signature_count: 0,
               }
             : args.applyFailureSignature(record, postRunSnapshot?.failureContext ?? null)

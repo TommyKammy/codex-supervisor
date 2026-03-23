@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   derivePullRequestLifecycleSnapshot,
+  resetNoPrLifecycleFailureTracking,
   selectSupervisorPollIntervalMs,
   shouldRunCodex,
 } from "./supervisor-lifecycle";
@@ -440,4 +441,45 @@ test("shouldRunCodex only returns true for actionable supervisor states", () => 
     ),
     true,
   );
+});
+
+test("resetNoPrLifecycleFailureTracking preserves stale no-PR recovery tracking across queued-to-stabilizing cycles", () => {
+  const record = createRecord({
+    state: "queued",
+    pr_number: null,
+    last_failure_context: {
+      category: "blocked",
+      summary:
+        "Issue #366 re-entered stale stabilizing recovery without a tracked PR; the supervisor will retry while the repeat count remains below 3.",
+      signature: "stale-stabilizing-no-pr-recovery-loop",
+      command: null,
+      details: [
+        "state=stabilizing",
+        "tracked_pr=none",
+        "branch_state=recoverable",
+        "repeat_count=2/3",
+      ],
+      url: null,
+      updated_at: "2026-03-13T00:00:00.000Z",
+    },
+    last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
+    repeated_failure_signature_count: 0,
+    stale_stabilizing_no_pr_recovery_count: 2,
+  });
+
+  assert.deepEqual(resetNoPrLifecycleFailureTracking(record, "stabilizing"), {
+    copilot_review_requested_observed_at: null,
+    copilot_review_requested_head_sha: null,
+    copilot_review_timed_out_at: null,
+    copilot_review_timeout_action: null,
+    copilot_review_timeout_reason: null,
+    provider_success_observed_at: null,
+    provider_success_head_sha: null,
+    merge_readiness_last_evaluated_at: null,
+    last_failure_context: record.last_failure_context,
+    last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
+    repeated_failure_signature_count: 0,
+    stale_stabilizing_no_pr_recovery_count: 2,
+    blocked_reason: null,
+  });
 });

@@ -454,12 +454,8 @@ test("runOnce preserves stale no-PR recovery tracking across a successful no-PR 
   assert.equal(firstRecord.state, "stabilizing");
   assert.equal(firstRecord.pr_number, null);
   assert.equal(firstRecord.codex_session_id, "thread-stale-no-pr");
-  assert.equal(
-    firstRecord.last_error,
-    "Issue #91 re-entered stale stabilizing recovery without a tracked PR; the supervisor will retry while the repeat count remains below 3.",
-  );
-  assert.equal(firstRecord.last_failure_signature, "stale-stabilizing-no-pr-recovery-loop");
-  assert.equal(firstRecord.repeated_failure_signature_count, 2);
+  assert.equal(firstRecord.repeated_failure_signature_count, 0);
+  assert.equal(firstRecord.stale_stabilizing_no_pr_recovery_count, 2);
 
   const secondMessage = await supervisor.runOnce({ dryRun: false });
   assert.match(
@@ -474,8 +470,17 @@ test("runOnce preserves stale no-PR recovery tracking across a successful no-PR 
   assert.equal(secondRecord.pr_number, null);
   assert.equal(secondRecord.codex_session_id, null);
   assert.equal(secondRecord.blocked_reason, "manual_review");
+  assert.match(secondRecord.last_error ?? "", /manual intervention is required/i);
+  assert.match(
+    secondRecord.last_failure_context?.summary ?? "",
+    /re-entered stale stabilizing recovery without a tracked PR 3 times; manual intervention is required/i,
+  );
   assert.equal(secondRecord.last_failure_signature, "stale-stabilizing-no-pr-recovery-loop");
-  assert.equal(secondRecord.repeated_failure_signature_count, fixture.config.sameFailureSignatureRepeatLimit);
+  assert.equal(secondRecord.repeated_failure_signature_count, 0);
+  assert.equal(
+    secondRecord.stale_stabilizing_no_pr_recovery_count,
+    fixture.config.sameFailureSignatureRepeatLimit,
+  );
 });
 
 test("runOnce returns no matching issue when no runnable candidate is available", async () => {
