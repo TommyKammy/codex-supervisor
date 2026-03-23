@@ -22,9 +22,9 @@
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: concise CLI anomaly lines should be derived from the typed operator activity DTO so `status` and `explain` can highlight retry pressure and recovery-loop risk without adding separate loop-tracking logic in the CLI layer.
-- What changed: added shared `retry_summary` and `recovery_loop_summary` formatters in `src/supervisor/supervisor-operator-activity-context.ts`, threaded `activityContext` into status summary rendering, rendered the same summaries in explain output, and added focused coverage in `src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `src/supervisor/supervisor-selection-issue-explain.test.ts`.
+- What changed: added shared `retry_summary` and `recovery_loop_summary` formatters in `src/supervisor/supervisor-operator-activity-context.ts`, threaded `activityContext` into status summary rendering, rendered the same summaries in explain output, added focused coverage in `src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `src/supervisor/supervisor-selection-issue-explain.test.ts`, committed the patch as `13c0060`, pushed `codex/issue-874`, and opened draft PR `#887`.
 - Current blocker: none
-- Next exact step: stage the focused CLI observability patch, commit it on `codex/issue-874`, and then open or update the draft PR with this checkpoint.
+- Next exact step: monitor draft PR `#887` and address CI or review feedback if GitHub reports any failures.
 - Verification gap: none on the scoped CLI path; `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts` passes on the local diff.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-operator-activity-context.ts`, `src/supervisor/supervisor-selection-issue-explain.test.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/supervisor/supervisor-status-model.ts`, `src/supervisor/supervisor.ts`
 - Rollback concern: low; the change only adds compact CLI summary lines derived from existing typed observability data plus focused render-path tests.
@@ -51,6 +51,10 @@ apply_patch
 npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts
 date -u +%Y-%m-%dT%H:%M:%SZ
 git diff -- src/supervisor/supervisor-operator-activity-context.ts src/supervisor/supervisor-status-model.ts src/supervisor/supervisor-selection-issue-explain.ts src/supervisor/supervisor.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts
+git add .codex-supervisor/issue-journal.md src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-operator-activity-context.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-selection-issue-explain.ts src/supervisor/supervisor-status-model.ts src/supervisor/supervisor.ts
+git commit -m "Surface retry and recovery loop CLI summaries"
+git push origin codex/issue-874
+gh pr create --draft --base main --head codex/issue-874 --title "Surface concise retry and recovery loop summaries in CLI" --body ...
 ```
 ### Scratchpad
 - 2026-03-22T21:40:05Z: pushed `codex/issue-847` and opened draft PR `#857` for the verified dashboard refresh checkpoint.
