@@ -23,6 +23,7 @@ interface PersistTurnExecutionFailureArgs {
     record: IssueRunRecord,
     failureContext: FailureContext | null,
   ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
+  retentionRootPath?: string;
 }
 
 interface PersistCodexExitFailureArgs {
@@ -43,6 +44,7 @@ interface PersistCodexExitFailureArgs {
     record: IssueRunRecord,
     failureContext: FailureContext | null,
   ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
+  retentionRootPath?: string;
 }
 
 interface PersistMissingJournalHandoffArgs {
@@ -61,6 +63,7 @@ interface PersistMissingJournalHandoffArgs {
     record: IssueRunRecord,
     failureContext: FailureContext | null,
   ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
+  retentionRootPath?: string;
 }
 
 interface PersistHintedCodexTurnStateArgs {
@@ -85,6 +88,7 @@ interface PersistHintedCodexTurnStateArgs {
   ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
   normalizeBlockerSignature: (message: string | null | undefined) => string | null;
   isVerificationBlockedMessage: (message: string | null | undefined) => boolean;
+  retentionRootPath?: string;
 }
 
 function timeoutRetryPatch(
@@ -122,6 +126,7 @@ async function persistTurnFailurePatch(args: {
   issue: Pick<GitHubIssue, "createdAt">;
   syncJournal: (record: IssueRunRecord) => Promise<void>;
   patch: Partial<IssueRunRecord>;
+  retentionRootPath?: string;
 }): Promise<IssueRunRecord> {
   const updated = args.stateStore.touch(args.record, args.patch);
   args.state.issues[String(args.record.issue_number)] = updated;
@@ -131,6 +136,7 @@ async function persistTurnFailurePatch(args: {
       previousRecord: args.record,
       nextRecord: updated,
       issue: args.issue,
+      retentionRootPath: args.retentionRootPath,
     });
   } catch (metricsError) {
     console.warn(
@@ -162,6 +168,7 @@ export async function persistCodexTurnExecutionFailure(args: PersistTurnExecutio
     record: args.record,
     issue: args.issue,
     syncJournal: args.syncJournal,
+    retentionRootPath: args.retentionRootPath,
     patch: {
       state: "failed",
       last_error: truncate(message),
@@ -191,6 +198,7 @@ export async function persistCodexTurnExitFailure(args: PersistCodexExitFailureA
     record: args.record,
     issue: args.issue,
     syncJournal: args.syncJournal,
+    retentionRootPath: args.retentionRootPath,
     patch: {
       state: "failed",
       last_error: truncate(failureOutput),
@@ -218,6 +226,7 @@ export async function persistMissingCodexJournalHandoff(
     record: args.record,
     issue: args.issue,
     syncJournal: args.syncJournal,
+    retentionRootPath: args.retentionRootPath,
     patch: {
       state: "blocked",
       last_error: truncate(failureContext.summary),
@@ -245,6 +254,7 @@ export async function persistHintedCodexTurnState(args: PersistHintedCodexTurnSt
     record: args.record,
     issue: args.issue,
     syncJournal: args.syncJournal,
+    retentionRootPath: args.retentionRootPath,
     patch: {
       state: args.hintedState,
       last_error: truncate(args.lastMessage),

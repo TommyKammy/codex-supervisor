@@ -4,6 +4,7 @@ import { sleep as defaultSleep } from "../core/utils";
 import { ensureGsdInstalled as defaultEnsureGsdInstalled } from "../gsd";
 import { renderDoctorReport } from "../doctor";
 import { renderJsonCorruptStateResetResultDto } from "../supervisor/supervisor-mutation-report";
+import { renderSupervisorExecutionMetricsRollupResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderSupervisorMutationResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderSupervisorOrphanPruneResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderIssueExplainDto } from "../supervisor/supervisor-selection-status";
@@ -19,6 +20,7 @@ type SupervisorRuntimeCommand = Extract<
   | "loop"
   | "status"
   | "requeue"
+  | "rollup-execution-metrics"
   | "prune-orphaned-workspaces"
   | "reset-corrupt-json-state"
   | "explain"
@@ -50,6 +52,7 @@ export function isSupervisorRuntimeCommand(command: CliOptions["command"]): comm
     command === "loop" ||
     command === "status" ||
     command === "requeue" ||
+    command === "rollup-execution-metrics" ||
     command === "prune-orphaned-workspaces" ||
     command === "reset-corrupt-json-state" ||
     command === "explain" ||
@@ -63,6 +66,7 @@ function requiresGsdInstall(command: SupervisorRuntimeCommand): boolean {
   return (
     command !== "status" &&
     command !== "requeue" &&
+    command !== "rollup-execution-metrics" &&
     command !== "prune-orphaned-workspaces" &&
     command !== "reset-corrupt-json-state" &&
     command !== "explain" &&
@@ -146,6 +150,14 @@ export async function runSupervisorCommand(
 
   if (options.command === "requeue") {
     writeStdout(renderSupervisorMutationResultDto(await service.runRecoveryAction("requeue", options.issueNumber!)));
+    return;
+  }
+
+  if (options.command === "rollup-execution-metrics") {
+    if (!service.rollupExecutionMetrics) {
+      throw new Error("Missing supervisor execution metrics rollup support.");
+    }
+    writeStdout(renderSupervisorExecutionMetricsRollupResultDto(await service.rollupExecutionMetrics()));
     return;
   }
 

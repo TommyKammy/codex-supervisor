@@ -694,6 +694,63 @@ test("runSupervisorCommand renders a structured requeue result", async () => {
   });
 });
 
+test("runSupervisorCommand renders a structured execution metrics rollup result", async () => {
+  const stdout: string[] = [];
+
+  await runSupervisorCommand(
+    { command: "rollup-execution-metrics", dryRun: false, why: false, issueNumber: undefined },
+    {
+      service: {
+        config: {} as SupervisorConfig,
+        pollIntervalMs: async () => 50,
+        runOnce: async () => {
+          throw new Error("unexpected runOnce");
+        },
+        queryStatus: async () => {
+          throw new Error("unexpected queryStatus");
+        },
+        queryExplain: async () => {
+          throw new Error("unexpected queryExplain");
+        },
+        queryIssueLint: async () => {
+          throw new Error("unexpected queryIssueLint");
+        },
+        queryDoctor: async () => {
+          throw new Error("unexpected queryDoctor");
+        },
+        runRecoveryAction: async () => {
+          throw new Error("unexpected runRecoveryAction");
+        },
+        pruneOrphanedWorkspaces: async () => {
+          throw new Error("unexpected pruneOrphanedWorkspaces");
+        },
+        rollupExecutionMetrics: async () => ({
+          action: "rollup-execution-metrics",
+          outcome: "completed",
+          summary: "Wrote daily execution metrics rollups from 2 retained run summaries.",
+          artifactPath: "/tmp/.local/execution-metrics/daily-rollups.json",
+          runSummaryCount: 2,
+        }),
+        resetCorruptJsonState: async () => {
+          throw new Error("unexpected resetCorruptJsonState");
+        },
+      },
+      writeStdout: (line) => {
+        stdout.push(line);
+      },
+    },
+  );
+
+  assert.equal(stdout.length, 1);
+  assert.deepEqual(JSON.parse(stdout[0] ?? ""), {
+    action: "rollup-execution-metrics",
+    outcome: "completed",
+    summary: "Wrote daily execution metrics rollups from 2 retained run summaries.",
+    artifactPath: "/tmp/.local/execution-metrics/daily-rollups.json",
+    runSummaryCount: 2,
+  });
+});
+
 test("runSupervisorCommand renders a structured orphan prune result", async () => {
   const stdout: string[] = [];
 

@@ -406,6 +406,7 @@ export interface CliOptions {
     | "loop"
     | "status"
     | "requeue"
+    | "rollup-execution-metrics"
     | "prune-orphaned-workspaces"
     | "reset-corrupt-json-state"
     | "explain"

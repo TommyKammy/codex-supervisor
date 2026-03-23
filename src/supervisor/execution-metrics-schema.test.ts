@@ -7,7 +7,12 @@ import {
   EXECUTION_METRICS_RUN_SUMMARY_SCHEMA_VERSION,
   validateExecutionMetricsRunSummary,
 } from "./execution-metrics-schema";
-import { executionMetricsRunSummaryPath, syncExecutionMetricsRunSummary } from "./execution-metrics-run-summary";
+import {
+  executionMetricsRetentionRootPath,
+  executionMetricsRunSummaryPath,
+  retainedExecutionMetricsRunSummaryPath,
+  syncExecutionMetricsRunSummary,
+} from "./execution-metrics-run-summary";
 
 test("validateExecutionMetricsRunSummary accepts the versioned contract and rejects unsupported schema versions", () => {
   assert.deepEqual(
@@ -234,4 +239,44 @@ test("syncExecutionMetricsRunSummary records coarse review metrics from processe
       recoveryMetrics: null,
     },
   );
+});
+
+test("syncExecutionMetricsRunSummary retains a durable copy outside the workspace lifecycle", async () => {
+  const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "execution-metrics-retained-"));
+  const workspacePath = path.join(rootPath, "workspaces", "issue-895");
+  const stateFilePath = path.join(rootPath, ".local", "state.json");
+  const retentionRootPath = executionMetricsRetentionRootPath(stateFilePath);
+  await fs.mkdir(workspacePath, { recursive: true });
+
+  await syncExecutionMetricsRunSummary({
+    previousRecord: {
+      issue_number: 895,
+      updated_at: "2026-03-24T04:00:00Z",
+    },
+    nextRecord: {
+      state: "done",
+      workspace: workspacePath,
+      updated_at: "2026-03-24T04:05:00Z",
+      blocked_reason: null,
+      last_failure_kind: null,
+      last_failure_context: null,
+      repeated_failure_signature_count: 0,
+      processed_review_thread_ids: [],
+      last_recovery_reason: null,
+      last_recovery_at: null,
+      stale_stabilizing_no_pr_recovery_count: 0,
+    },
+    retentionRootPath,
+  });
+
+  const retainedPath = retainedExecutionMetricsRunSummaryPath(retentionRootPath, 895);
+  assert.deepEqual(
+    JSON.parse(await fs.readFile(retainedPath, "utf8")),
+    JSON.parse(await fs.readFile(executionMetricsRunSummaryPath(workspacePath), "utf8")),
+  );
+
+  await fs.rm(workspacePath, { recursive: true, force: true });
+
+  await assert.rejects(fs.stat(executionMetricsRunSummaryPath(workspacePath)), { code: "ENOENT" });
+  assert.equal(JSON.parse(await fs.readFile(retainedPath, "utf8")).issueNumber, 895);
 });

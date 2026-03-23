@@ -132,6 +132,7 @@ test("recoverUnexpectedCodexTurnFailure preserves dirty recovery context and tim
   };
 
   const updated = await recoverUnexpectedCodexTurnFailure({
+    config: { stateFile: "/tmp/state.json" },
     stateStore: stateStore as unknown as Parameters<typeof recoverUnexpectedCodexTurnFailure>[0]["stateStore"],
     state,
     record,
@@ -202,6 +203,7 @@ test("recoverUnexpectedCodexTurnFailure records unavailable workspace inspection
   };
 
   const updated = await recoverUnexpectedCodexTurnFailure({
+    config: { stateFile: "/tmp/state.json" },
     stateStore: stateStore as unknown as Parameters<typeof recoverUnexpectedCodexTurnFailure>[0]["stateStore"],
     state,
     record,
@@ -259,6 +261,7 @@ test("recoverUnexpectedCodexTurnFailure continues journal sync when run summary 
 
   try {
     const updated = await recoverUnexpectedCodexTurnFailure({
+      config: { stateFile: "/tmp/state.json" },
       stateStore: {
         touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
           return { ...current, ...patch, updated_at: "2026-03-24T04:00:00.000Z" };

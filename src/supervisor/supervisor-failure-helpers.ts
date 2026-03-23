@@ -10,7 +10,10 @@ import {
   WorkspaceStatus,
 } from "../core/types";
 import { nowIso, truncate } from "../core/utils";
-import { syncExecutionMetricsRunSummary } from "./execution-metrics-run-summary";
+import {
+  executionMetricsRetentionRootPath,
+  syncExecutionMetricsRunSummary,
+} from "./execution-metrics-run-summary";
 
 type AuthFailureGitHub = Pick<GitHubClient, "authStatus">;
 type FailureHelperStateStore = Pick<StateStore, "save" | "touch">;
@@ -120,6 +123,7 @@ export async function handleAuthFailure(
 }
 
 export async function recoverUnexpectedCodexTurnFailure(args: {
+  config: Pick<SupervisorConfig, "stateFile">;
   stateStore: FailureHelperStateStore;
   state: SupervisorStateFile;
   record: IssueRunRecord;
@@ -129,7 +133,7 @@ export async function recoverUnexpectedCodexTurnFailure(args: {
   workspaceStatus: Pick<WorkspaceStatus, "hasUncommittedChanges" | "headSha"> | null;
   pr: Pick<GitHubPullRequest, "number" | "headRefOid" | "createdAt" | "mergedAt"> | null;
 }): Promise<IssueRunRecord> {
-  const { stateStore, state, record, issue, journalSync, error, workspaceStatus, pr } = args;
+  const { config, stateStore, state, record, issue, journalSync, error, workspaceStatus, pr } = args;
   const message = error instanceof Error ? error.stack ?? error.message : String(error);
   const failureKind = classifyFailure(message);
   const failureContext = buildCodexFailureContext(
@@ -169,6 +173,7 @@ export async function recoverUnexpectedCodexTurnFailure(args: {
       nextRecord: updated,
       issue,
       pullRequest: pr,
+      retentionRootPath: executionMetricsRetentionRootPath(config.stateFile),
     });
   } catch (metricsError) {
     console.warn(

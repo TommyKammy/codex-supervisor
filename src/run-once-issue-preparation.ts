@@ -28,7 +28,10 @@ import {
 import { shouldPreserveNoPrFailureTracking } from "./no-pull-request-state";
 import { runLocalCiGate, type LocalCiCommandRunner } from "./local-ci";
 import { writeSupervisorCycleDecisionSnapshot as writeSupervisorCycleDecisionSnapshotImpl } from "./supervisor/supervisor-cycle-snapshot";
-import { syncExecutionMetricsRunSummary } from "./supervisor/execution-metrics-run-summary";
+import {
+  executionMetricsRetentionRootPath,
+  syncExecutionMetricsRunSummary,
+} from "./supervisor/execution-metrics-run-summary";
 
 export type IssueJournalSync = (record: IssueRunRecord) => Promise<void>;
 export type MemoryArtifacts = Awaited<ReturnType<typeof syncMemoryArtifactsImpl>>;
@@ -320,6 +323,7 @@ async function hydratePullRequestContext(
         issue: args.issue,
         pullRequest: resolvedPr,
         recoveryEvents: [recoveryEvent],
+        retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
       });
       return { kind: "restart", recoveryEvents: [recoveryEvent] };
     } else if (resolvedPr.state === "CLOSED") {
@@ -358,6 +362,7 @@ async function hydratePullRequestContext(
         nextRecord: blockedRecord,
         issue: args.issue,
         pullRequest: resolvedPr,
+        retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
       });
       await args.syncJournal(blockedRecord);
       return `Issue #${blockedRecord.issue_number} blocked because PR #${resolvedPr.number} was closed without merge.`;
@@ -398,6 +403,7 @@ async function hydratePullRequestContext(
         previousRecord: record,
         nextRecord: blockedRecord,
         issue: args.issue,
+        retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
       });
       await args.syncJournal(blockedRecord);
       return `Issue #${blockedRecord.issue_number} blocked: ${blockedRecord.last_error}`;

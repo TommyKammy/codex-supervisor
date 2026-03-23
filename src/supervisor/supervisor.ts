@@ -76,7 +76,11 @@ import {
   shouldAutoRetryTimeout,
 } from "./supervisor-failure-helpers";
 import { AgentRunner, createCodexAgentRunner } from "./agent-runner";
-import { syncExecutionMetricsRunSummary } from "./execution-metrics-run-summary";
+import { syncRetainedExecutionMetricsDailyRollups } from "./execution-metrics-aggregation";
+import {
+  executionMetricsRetentionRootPath,
+  syncExecutionMetricsRunSummary,
+} from "./execution-metrics-run-summary";
 import {
   attemptBudgetForLane,
   attemptLane,
@@ -124,6 +128,7 @@ import {
 } from "./supervisor-status-rendering";
 import { buildDetailedStatusModel, buildDetailedStatusSummaryLines } from "./supervisor-status-model";
 import {
+  type SupervisorExecutionMetricsRollupResultDto,
   type SupervisorMutationResultDto,
   type SupervisorOrphanPruneResultDto,
   type SupervisorRecoveryAction,
@@ -586,6 +591,7 @@ export class Supervisor {
         recoverUnexpectedCodexTurnFailure: (args) =>
           recoverUnexpectedCodexTurnFailure({
             ...args,
+            config: this.config,
             stateStore: this.stateStore,
           }),
         agentRunner: this.agentRunner,
@@ -661,6 +667,7 @@ export class Supervisor {
           issue,
           pullRequest: pr,
           recoveryEvents,
+          retentionRootPath: executionMetricsRetentionRootPath(this.config.stateFile),
         });
         await syncJournal(record);
         return prependRecoveryLog(
@@ -793,6 +800,7 @@ export class Supervisor {
       issue,
       pullRequest: pr,
       recoveryEvents,
+      retentionRootPath: executionMetricsRetentionRootPath(this.config.stateFile),
     });
     return nextRecord;
   }
@@ -1061,6 +1069,43 @@ export class Supervisor {
         };
       }
       return pruneOrphanedWorkspacesForOperator(this.config, state);
+    } finally {
+      await lock.release();
+    }
+  }
+
+  async rollupExecutionMetrics(): Promise<SupervisorExecutionMetricsRollupResultDto> {
+    const lock = await acquireFileLock(this.lockPath("supervisor", "run"), "supervisor-recovery-rollup-execution-metrics", {
+      allowAmbiguousOwnerCleanup: true,
+    });
+    if (!lock.acquired) {
+      throw new Error(`Cannot run recovery action while supervisor is active: ${lock.reason ?? "lock unavailable"}`);
+    }
+
+    try {
+      const state = await this.stateStore.load();
+      const quarantine = readJsonParseErrorQuarantine(this.config, state);
+      if (quarantine) {
+        return {
+          action: "rollup-execution-metrics",
+          outcome: "rejected",
+          summary: buildCorruptJsonFailClosedMessage(this.config, quarantine),
+          artifactPath: null,
+          runSummaryCount: 0,
+        };
+      }
+      const result = await syncRetainedExecutionMetricsDailyRollups({
+        stateFilePath: this.config.stateFile,
+      });
+      return {
+        action: "rollup-execution-metrics",
+        outcome: "completed",
+        summary:
+          `Wrote daily execution metrics rollups from ${result.runSummaryCount} retained run summar` +
+          `${result.runSummaryCount === 1 ? "y" : "ies"}.`,
+        artifactPath: result.artifactPath,
+        runSummaryCount: result.runSummaryCount,
+      };
     } finally {
       await lock.release();
     }

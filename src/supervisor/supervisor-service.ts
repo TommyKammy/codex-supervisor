@@ -4,6 +4,7 @@ import type { SetupConfigPreview, SetupConfigPreviewSelectableReviewProviderProf
 import type { SetupConfigChanges, SetupConfigUpdateResult } from "../setup-config-write";
 import type { SetupReadinessReport } from "../setup-readiness";
 import type {
+  SupervisorExecutionMetricsRollupResultDto,
   SupervisorMutationResultDto,
   SupervisorOrphanPruneResultDto,
   SupervisorRecoveryAction,
@@ -23,6 +24,7 @@ export interface SupervisorService {
   queryStatus: (options: Pick<CliOptions, "why">) => Promise<SupervisorStatusDto>;
   runRecoveryAction: (action: SupervisorRecoveryAction, issueNumber: number) => Promise<SupervisorMutationResultDto>;
   pruneOrphanedWorkspaces: () => Promise<SupervisorOrphanPruneResultDto>;
+  rollupExecutionMetrics?: () => Promise<SupervisorExecutionMetricsRollupResultDto>;
   resetCorruptJsonState: () => Promise<JsonCorruptStateResetResult>;
   queryExplain: (issueNumber: number) => Promise<SupervisorExplainDto>;
   queryIssueLint: (issueNumber: number) => Promise<SupervisorIssueLintDto>;
@@ -86,6 +88,10 @@ class SupervisorApplicationService implements SupervisorService {
 
   pruneOrphanedWorkspaces(): Promise<SupervisorOrphanPruneResultDto> {
     return this.supervisor.pruneOrphanedWorkspaces();
+  }
+
+  rollupExecutionMetrics(): Promise<SupervisorExecutionMetricsRollupResultDto> {
+    return this.supervisor.rollupExecutionMetrics();
   }
 
   resetCorruptJsonState(): Promise<JsonCorruptStateResetResult> {
