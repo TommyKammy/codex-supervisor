@@ -11,7 +11,7 @@
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-23T20:58:47.000Z
+- Updated at: 2026-03-23T21:00:10.000Z
 
 ## Latest Codex Summary
 - None yet.
@@ -22,14 +22,14 @@
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: execution metrics were already being persisted per workspace, but replay and active debugging surfaces never summarized them; loading the existing run summary artifact should expose bottlenecks without affecting replay decisions.
-- What changed: added `src/supervisor/execution-metrics-debugging.ts` to validate and summarize `.codex-supervisor/execution-metrics/run-summary.json`, wired those lines into `handleReplayCommand()` output and active issue status summary lines, and added focused coverage in `src/supervisor/execution-metrics-replay.test.ts` plus status-loading assertions in `src/supervisor/supervisor-selection-status-active-status.test.ts`.
+- What changed: added `src/supervisor/execution-metrics-debugging.ts` to validate and summarize `.codex-supervisor/execution-metrics/run-summary.json`, wired those lines into `handleReplayCommand()` output and active issue status summary lines, added focused coverage in `src/supervisor/execution-metrics-replay.test.ts` plus status-loading assertions in `src/supervisor/supervisor-selection-status-active-status.test.ts`, committed the change as `916ff6e`, pushed `codex/issue-897`, and opened draft PR #910.
 - Current blocker: none
-- Next exact step: review the diff once more, commit the replay/debugging metrics exposure changes on `codex/issue-897`, and open or update the draft PR if one does not already exist.
+- Next exact step: monitor draft PR #910 for CI and review feedback, then address any follow-up findings on top of `916ff6ea59f1603860d02839a37fd4dfc981ab3f`.
 - Verification gap: no known functional gap in the replay/status surfaces covered here; broader supervisor status and explain workflows still rely on existing coverage outside this focused slice.
 - Files touched: `src/cli/replay-command.ts`, `src/supervisor/execution-metrics-debugging.ts`, `src/supervisor/execution-metrics-replay.test.ts`, `src/supervisor/supervisor-cycle-replay.ts`, `src/supervisor/supervisor-selection-active-status.ts`, `src/supervisor/supervisor-selection-status-active-status.test.ts`, `src/supervisor/supervisor-status-model.ts`, `src/supervisor/supervisor.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: low; the change is observational-only and reads the existing execution metrics artifact without changing execution state transitions or replay decision inputs.
-- Last focused command: `npm run build`
-- Last focused failure: `npm run build` initially failed with `sh: 1: tsc: not found` because `node_modules/` was absent in this worktree; `npm ci` restored dependencies and the build then passed.
+- Last focused command: `gh pr create --draft --base main --head codex/issue-897 --title "Surface execution metrics in replay/debugging workflows" --body ...`
+- Last focused failure: `npm run build` initially failed with `sh: 1: tsc: not found` because `node_modules/` was absent in this worktree; `npm ci` restored dependencies and the build then passed before the branch was pushed and PR #910 was opened.
 - Last focused commands:
 ```bash
 sed -n '1,220p' '<memory>/AGENTS.generated.md'
@@ -65,6 +65,11 @@ sed -n '1,220p' package.json
 ls | rg 'package-lock.json|pnpm-lock.yaml|yarn.lock'
 npm ci
 npm run build
+git add .codex-supervisor/issue-journal.md src/cli/replay-command.ts src/supervisor/execution-metrics-debugging.ts src/supervisor/execution-metrics-replay.test.ts src/supervisor/supervisor-cycle-replay.ts src/supervisor/supervisor-selection-active-status.ts src/supervisor/supervisor-selection-status-active-status.test.ts src/supervisor/supervisor-status-model.ts src/supervisor/supervisor.ts
+git commit -m "Surface execution metrics in replay debugging"
+git rev-parse HEAD
+git push -u origin codex/issue-897
+gh pr create --draft --base main --head codex/issue-897 --title "Surface execution metrics in replay/debugging workflows" --body ...
 git diff -- src/cli/replay-command.ts src/supervisor/execution-metrics-debugging.ts src/supervisor/execution-metrics-replay.test.ts src/supervisor/supervisor-cycle-replay.ts src/supervisor/supervisor-selection-active-status.ts src/supervisor/supervisor-selection-status-active-status.test.ts src/supervisor/supervisor-status-model.ts src/supervisor/supervisor.ts
 date -u +"%Y-%m-%dT%H:%M:%S.000Z"
 ```
