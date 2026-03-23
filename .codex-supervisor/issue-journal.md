@@ -14,7 +14,7 @@
 - Updated at: 2026-03-23T12:58:17.042Z
 
 ## Latest Codex Summary
-- Documented a repo-owned local CI contract for pre-PR verification in the canonical getting-started/configuration docs, added a focused docs regression to lock the contract language, reproduced the gap with that new test, and passed the requested docs verification plus `npm run build` after restoring missing local npm dependencies with `npm install`.
+- Documented a repo-owned local CI contract for pre-PR verification in the canonical getting-started/configuration docs, added a focused docs regression to lock the contract language, reproduced the gap with that new test, passed the requested docs verification plus `npm run build` after restoring missing local npm dependencies with `npm install`, committed the checkpoint as `03493ea`, pushed `codex/issue-882`, and opened draft PR `#899`.
 
 ## Active Failure Context
 - None recorded.
@@ -24,11 +24,11 @@
 - Hypothesis: issue #882 was a docs-contract gap rather than a runtime bug; the repo needed an explicit written contract stating that pre-PR local verification is repo-owned, supervisor-invoked, backward-compatible when absent, and not derived from workflow YAML.
 - What changed: added a focused docs regression in `src/getting-started-docs.test.ts`, documented the repo-owned local CI contract in `docs/getting-started.md`, and added a matching policy note in `docs/configuration.md`.
 - Current blocker: none
-- Next exact step: commit the docs/test checkpoint on `codex/issue-882`, then open or update the draft PR if needed.
+- Next exact step: monitor draft PR `#899` checks and respond only if CI reports a regression or review feedback lands.
 - Verification gap: none on the requested issue verification surface.
 - Files touched: `.codex-supervisor/issue-journal.md`, `docs/configuration.md`, `docs/getting-started.md`, `src/getting-started-docs.test.ts`
 - Rollback concern: low; the change is documentation plus a focused docs regression and does not alter supervisor runtime behavior.
-- Last focused command: `npm run build`
+- Last focused command: `gh pr create --draft --base main --head codex/issue-882 --title "Local CI contract: define the repo-owned pre-PR verification model" --body "..."`
 - Last focused failure: `npm run build` initially failed with `sh: 1: tsc: not found` because this worktree was missing local npm dependencies; `npm install` restored the toolchain and the rerun passed.
 - Last focused commands:
 ```bash
@@ -53,6 +53,10 @@ npx tsx --test src/readme-docs.test.ts src/getting-started-docs.test.ts
 npm run build
 npm install
 npm run build
+git add .codex-supervisor/issue-journal.md docs/configuration.md docs/getting-started.md src/getting-started-docs.test.ts && git commit -m "docs: define local ci contract"
+git push -u origin codex/issue-882
+gh pr view codex/issue-882 --json number,url,isDraft,state,headRefName,baseRefName
+gh pr create --draft --base main --head codex/issue-882 --title "Local CI contract: define the repo-owned pre-PR verification model" --body "..."
 git diff -- src/getting-started-docs.test.ts docs/getting-started.md docs/configuration.md .codex-supervisor/issue-journal.md
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
