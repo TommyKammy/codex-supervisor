@@ -1,14 +1,11 @@
 import path from "node:path";
 import type { IssueRunRecord } from "../core/types";
 import { isTerminalState, writeJsonAtomic } from "../core/utils";
-
-export interface ExecutionMetricsRunSummaryArtifact {
-  schemaVersion: 1;
-  issueNumber: number;
-  terminalState: "done" | "blocked" | "failed";
-  startedAt: string;
-  finishedAt: string;
-}
+import {
+  EXECUTION_METRICS_RUN_SUMMARY_SCHEMA_VERSION,
+  type ExecutionMetricsRunSummaryArtifact,
+  validateExecutionMetricsRunSummary,
+} from "./execution-metrics-schema";
 
 export function executionMetricsRunSummaryPath(workspacePath: string): string {
   return path.join(workspacePath, ".codex-supervisor", "execution-metrics", "run-summary.json");
@@ -30,7 +27,7 @@ export async function syncExecutionMetricsRunSummary(args: {
         })();
 
   const artifact: ExecutionMetricsRunSummaryArtifact = {
-    schemaVersion: 1,
+    schemaVersion: EXECUTION_METRICS_RUN_SUMMARY_SCHEMA_VERSION,
     issueNumber: args.previousRecord.issue_number,
     terminalState,
     startedAt: args.previousRecord.updated_at,
@@ -38,6 +35,6 @@ export async function syncExecutionMetricsRunSummary(args: {
   };
 
   const artifactPath = executionMetricsRunSummaryPath(args.nextRecord.workspace);
-  await writeJsonAtomic(artifactPath, artifact);
+  await writeJsonAtomic(artifactPath, validateExecutionMetricsRunSummary(artifact));
   return artifactPath;
 }

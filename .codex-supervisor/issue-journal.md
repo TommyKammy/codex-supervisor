@@ -1,70 +1,60 @@
-# Issue #891: Execution metrics foundation: persist structured terminal run summaries
+# Issue #892: Execution metrics schema: define and validate a versioned run-summary contract
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/891
-- Branch: codex/issue-891
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/892
+- Branch: codex/issue-892
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 4 (implementation=1, repair=3)
-- Last head SHA: a9cde066b6f5898ad176135ca62db8146c4dd3dc
+- Current phase: stabilizing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 31b0d794d5b93585cc77a0e6e87d9ee7a73d6966
 - Blocked reason: none
 - Last failure signature: none
-- Repeated failure signature count: 1
-- Updated at: 2026-03-23T17:07:17Z
+- Repeated failure signature count: 0
+- Updated at: 2026-03-23T17:36:49Z
 
 ## Latest Codex Summary
-Replaced the local absolute markdown links in the durable handoff with repository-relative targets and trimmed the copied inline code spans that were triggering MD038 in [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md). The review fix is journal-only and does not change runtime behavior.
-
-Pushed commit `a9cde06` to PR #904 and resolved both remaining CodeRabbit threads. The pre-existing untracked replay artifact at [.codex-supervisor/replay/](.codex-supervisor/replay/) remains untouched.
-
-Summary: Addressed the remaining journal-only review comments, pushed commit `a9cde06`, and resolved both CodeRabbit threads on PR #904
-State hint: addressing_review
-Blocked reason: none
-Tests: `rg -n '\\]\\(/home/tommy/Dev' .codex-supervisor/issue-journal.md`; `rg -n '` syncExecutionMetricsRunSummary|` args\\.syncJournal\\(updated\\)' .codex-supervisor/issue-journal.md`; `bash -lc "npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg 'MD038'"`; `git diff --check`
-Failure signature: none
-Next action: monitor PR #904 for any follow-up review or CI regressions after pushed head `a9cde06`
+- Added a checked-in execution metrics run-summary contract and now validate artifacts before persistence. Reproduced the gap with a focused failing test for malformed timestamps, then passed `npx tsx --test src/supervisor/execution-metrics-schema.test.ts`, `npx tsx --test src/supervisor/execution-metrics-run-summary.test.ts`, and `npm run build` after installing local dev dependencies with `npm ci`.
 
 ## Active Failure Context
-- Category: none
-- Summary: none; both remaining journal-only CodeRabbit threads were fixed in commit `a9cde06` and resolved on PR #904.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/904
-- Details:
-  - Resolved thread `PRRT_kwDORgvdZ852MDBR` by converting the journal summary links from local absolute targets to repository-relative markdown paths.
-  - Resolved thread `PRRT_kwDORgvdZ852MDBU` by trimming the copied inline code spans so the cited MD038 warning no longer reproduces.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: no further implementation changes are needed unless PR #904 receives new review feedback or CI regressions after the journal-only review fix.
-- What changed: updated the markdown link targets in `.codex-supervisor/issue-journal.md` to repository-relative paths, removed the MD038-triggering spaces inside the copied inline code spans, pushed commit `a9cde06`, and resolved both remaining CodeRabbit threads.
+- Hypothesis: the issue is satisfied by a versioned typed contract plus write-time validation for persisted execution metrics run summaries; no aggregation consumers were added.
+- What changed: added `src/supervisor/execution-metrics-schema.ts` as the checked-in contract for run summaries, updated `src/supervisor/execution-metrics-run-summary.ts` to validate artifacts before writing, and added `src/supervisor/execution-metrics-schema.test.ts` to pin the schema version and malformed-timestamp rejection path.
 - Current blocker: none
-- Next exact step: monitor PR #904 for follow-up review or CI regressions after pushed head `a9cde06`.
-- Verification gap: full `markdownlint-cli2` still reports unrelated baseline journal formatting findings (`MD013`, `MD022`, `MD032`, `MD033`, `MD034`), but no `MD038` findings remain on the addressed review surface.
-- Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: low; the change only affects durable handoff text and GitHub-rendered markdown link targets.
-- Last focused command: `gh api graphql -f query='mutation { first: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ852MDBR"}) { thread { isResolved } } second: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ852MDBU"}) { thread { isResolved } } }'`
-- Last focused failure: full `markdownlint-cli2` on `.codex-supervisor/issue-journal.md` still reports unrelated baseline formatting violations, but no `MD038` findings remain after this review fix.
+- Next exact step: stage the schema changes, commit them on `codex/issue-892`, and open or update the draft PR if one is needed for the supervisor flow.
+- Verification gap: none in the requested scope; full build and focused execution-metrics tests passed after `npm ci`.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/execution-metrics-run-summary.ts`, `src/supervisor/execution-metrics-schema.ts`, `src/supervisor/execution-metrics-schema.test.ts`
+- Rollback concern: low; the change is isolated to execution metrics summary validation and should only reject malformed summary artifacts that were previously written unchecked.
+- Last focused command: `npm run build`
+- Last focused failure: `npx tsx --test src/supervisor/execution-metrics-schema.test.ts` initially failed with `AssertionError [ERR_ASSERTION]: Missing expected rejection` because `syncExecutionMetricsRunSummary` wrote malformed timestamps without validation.
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-891/AGENTS.generated.md
-sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-891/context-index.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-892/AGENTS.generated.md
+sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-892/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
-nl -ba .codex-supervisor/issue-journal.md | sed -n '1,120p'
 git status --short
-git diff -- .codex-supervisor/issue-journal.md
-git ls-files --others --exclude-standard .codex-supervisor/replay
-rg -n '/home/tommy/Dev|` [^`]|[^`] `' .codex-supervisor/issue-journal.md
-date -u +%Y-%m-%dT%H:%M:%SZ
+git branch --show-current && git rev-parse HEAD
+rg -n "execution metrics|run summary|run-summary|schema version|schemaVersion|summary" src test . --glob '!node_modules'
+rg --files src | rg 'execution|metrics|summary'
+sed -n '1,260p' src/supervisor/execution-metrics-run-summary.ts
+sed -n '1,520p' src/supervisor/execution-metrics-run-summary.test.ts
+sed -n '1,260p' src/supervisor/replay-corpus-validation.ts
+sed -n '1,220p' src/core/utils.ts
+ls src/supervisor | sed -n '1,200p'
+rg -n "validate.*schema|schema contract|versioned schema|validate.*summary" src/supervisor src
+sed -n '1,220p' src/committed-guardrails.ts
+sed -n '140,240p' src/committed-guardrails.test.ts
 apply_patch
-rg -n '\]\(/home/tommy/Dev' .codex-supervisor/issue-journal.md
-rg -n '` syncExecutionMetricsRunSummary|` args\.syncJournal\(updated\)' .codex-supervisor/issue-journal.md
-bash -lc "npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg 'MD038'"
-git diff --check
-git add .codex-supervisor/issue-journal.md
-git commit -m "Fix issue journal review links"
-git rev-parse HEAD
-git push origin codex/issue-891
-gh api graphql -f query='mutation { first: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ852MDBR"}) { thread { isResolved } } second: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ852MDBU"}) { thread { isResolved } } }'
+npx tsx --test src/supervisor/execution-metrics-schema.test.ts
+apply_patch
+npx tsx --test src/supervisor/execution-metrics-schema.test.ts
+npx tsx --test src/supervisor/execution-metrics-run-summary.test.ts
+npm ci
+npm run build
+git diff -- src/supervisor/execution-metrics-run-summary.ts src/supervisor/execution-metrics-schema.ts src/supervisor/execution-metrics-schema.test.ts
 date -u +%Y-%m-%dT%H:%M:%SZ
 apply_patch
 ```
