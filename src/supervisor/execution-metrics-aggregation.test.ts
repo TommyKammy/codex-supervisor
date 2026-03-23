@@ -111,6 +111,31 @@ test("daily rollups aggregate persisted run summaries by finished-at day", async
         lastOccurredAt: "2026-03-25T03:00:00Z",
       },
     }),
+    createRunSummary(104, {
+      terminalState: "failed",
+      terminalOutcome: {
+        category: "failed",
+        reason: "command_error",
+      },
+      issueCreatedAt: null,
+      startedAt: "2026-03-25T04:00:00Z",
+      prCreatedAt: null,
+      prMergedAt: null,
+      finishedAt: "2026-03-25T05:00:00Z",
+      runDurationMs: 3_600_000,
+      issueLeadTimeMs: null,
+      issueToPrCreatedMs: null,
+      prOpenDurationMs: null,
+      reviewMetrics: null,
+      failureMetrics: {
+        classification: "latest_failure",
+        category: "codex",
+        failureKind: "command_error",
+        blockedReason: null,
+        occurrenceCount: 3,
+        lastOccurredAt: "2026-03-25T05:00:00Z",
+      },
+    }),
   ];
   const runSummaryPaths = await Promise.all([
     writeRunSummary(rootPath, "issue-101", summaries[0]),
@@ -123,6 +148,11 @@ test("daily rollups aggregate persisted run summaries by finished-at day", async
       rootPath,
       "issue-103",
       summaries[2],
+    ),
+    writeRunSummary(
+      rootPath,
+      "issue-104",
+      summaries[3],
     ),
   ]);
 
@@ -172,11 +202,11 @@ test("daily rollups aggregate persisted run summaries by finished-at day", async
       },
       {
         day: "2026-03-25",
-        runCount: 1,
+        runCount: 2,
         terminalStates: {
           done: 0,
           blocked: 0,
-          failed: 1,
+          failed: 2,
         },
         leadTimeMs: {
           average: 14_400_000,
@@ -198,7 +228,7 @@ test("daily rollups aggregate persisted run summaries by finished-at day", async
             category: "codex",
             failureKind: "command_error",
             blockedReason: null,
-            count: 1,
+            count: 5,
           },
         ],
       },

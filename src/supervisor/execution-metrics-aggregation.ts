@@ -130,10 +130,11 @@ function addFailurePattern(
     return;
   }
 
+  const occurrenceCount = failureMetrics.occurrenceCount ?? 1;
   const key = failurePatternKey(failureMetrics);
   const existing = accumulator.failurePatterns.get(key);
   if (existing) {
-    existing.count += 1;
+    existing.count += occurrenceCount;
     return;
   }
 
@@ -141,7 +142,7 @@ function addFailurePattern(
     category: failureMetrics.category,
     failureKind: failureMetrics.failureKind,
     blockedReason: failureMetrics.blockedReason,
-    count: 1,
+    count: occurrenceCount,
   });
 }
 
