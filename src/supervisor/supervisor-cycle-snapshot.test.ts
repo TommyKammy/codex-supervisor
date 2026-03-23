@@ -265,6 +265,9 @@ test("buildSupervisorCycleDecisionSnapshot retains stale no-PR recovery loop sig
       state: "queued",
       pr_number: null,
       blocked_reason: null,
+      last_recovery_reason:
+        "stale_state_cleanup: resumed issue #407 from stabilizing to queued after issue lock and session lock were missing",
+      last_recovery_at: "2026-03-16T10:06:00Z",
       last_error:
         "Issue #407 re-entered stale stabilizing recovery without a tracked PR; the supervisor will retry while the repeat count remains below 3.",
       last_failure_context: {
@@ -283,7 +286,7 @@ test("buildSupervisorCycleDecisionSnapshot retains stale no-PR recovery loop sig
         updated_at: "2026-03-16T10:06:30Z",
       },
       last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
-      repeated_failure_signature_count: 0,
+      repeated_failure_signature_count: 2,
       stale_stabilizing_no_pr_recovery_count: 2,
     }),
     workspaceStatus: createWorkspaceStatus(),
@@ -299,5 +302,26 @@ test("buildSupervisorCycleDecisionSnapshot retains stale no-PR recovery loop sig
     "tracked_pr=none",
     "branch_state=recoverable",
     "repeat_count=2/3",
+  ]);
+  assert.equal(
+    snapshot.operatorSummary?.latestRecoverySummary,
+    "latest_recovery issue=#407 at=2026-03-16T10:06:00Z reason=stale_state_cleanup detail=resumed issue #407 from stabilizing to queued after issue lock and session lock were missing",
+  );
+  assert.equal(
+    snapshot.operatorSummary?.retrySummary,
+    "retry_summary same_failure_signature=2 last_failure_signature=stale-stabilizing-no-pr-recovery-loop apparent_no_progress=yes",
+  );
+  assert.equal(
+    snapshot.operatorSummary?.recoveryLoopSummary,
+    "recovery_loop_summary kind=stale_stabilizing_no_pr status=retrying repeat_count=2/3 action=confirm_whether_the_change_already_landed_or_retarget_the_issue_manually apparent_no_progress=yes",
+  );
+  assert.deepEqual(snapshot.operatorSummary?.activityContext?.recentPhaseChanges, [
+    {
+      at: "2026-03-16T10:06:00Z",
+      from: "stabilizing",
+      to: "queued",
+      reason: "stale_state_cleanup",
+      source: "recovery",
+    },
   ]);
 });

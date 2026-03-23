@@ -224,6 +224,11 @@ export function formatSupervisorCycleReplay(args: {
   snapshot: SupervisorCycleDecisionSnapshot;
 }): string {
   const { snapshotPath, replayResult, snapshot } = args;
+  const operatorSummaryLines = [
+    snapshot.operatorSummary?.latestRecoverySummary ?? null,
+    snapshot.operatorSummary?.retrySummary ?? null,
+    snapshot.operatorSummary?.recoveryLoopSummary ?? null,
+  ].filter((line): line is string => Boolean(line));
   return [
     `snapshot_path=${snapshotPath}`,
     `captured_at=${snapshot.capturedAt}`,
@@ -237,6 +242,7 @@ export function formatSupervisorCycleReplay(args: {
     `replayed_blocked_reason=${replayResult.replayedDecision.blockedReason ?? "none"}`,
     `captured_failure_signature=${snapshot.decision.failureContext?.signature ?? "none"}`,
     `replayed_failure_signature=${replayResult.replayedDecision.failureContext?.signature ?? "none"}`,
+    ...operatorSummaryLines,
     `decision_match=${replayResult.matchesCapturedDecision ? "yes" : "no"}`,
   ].join("\n");
 }
