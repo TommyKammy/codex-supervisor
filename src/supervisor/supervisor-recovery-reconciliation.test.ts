@@ -553,6 +553,7 @@ test("reconcileStaleActiveIssueReservation clears stale no-PR failure tracking a
         },
         last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
         repeated_failure_signature_count: 1,
+        stale_stabilizing_no_pr_recovery_count: 1,
       }),
     },
   };
@@ -609,6 +610,7 @@ test("reconcileStaleActiveIssueReservation clears stale no-PR failure tracking a
   assert.equal(state.issues["366"]?.last_failure_context, null);
   assert.equal(state.issues["366"]?.last_failure_signature, null);
   assert.equal(state.issues["366"]?.repeated_failure_signature_count, 0);
+  assert.equal(state.issues["366"]?.stale_stabilizing_no_pr_recovery_count, 0);
   assert.equal(saveCalls, 1);
   assert.equal(recoveryEvents.length, 1);
   assert.match(
@@ -631,6 +633,7 @@ test("reconcileStaleActiveIssueReservation blocks a repeated stale stabilizing n
         implementation_attempt_count: 2,
         last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
         repeated_failure_signature_count: config.sameFailureSignatureRepeatLimit - 1,
+        stale_stabilizing_no_pr_recovery_count: config.sameFailureSignatureRepeatLimit - 1,
       }),
     },
   };
@@ -668,6 +671,10 @@ test("reconcileStaleActiveIssueReservation blocks a repeated stale stabilizing n
   );
   assert.equal(
     state.issues["366"]?.repeated_failure_signature_count,
+    0,
+  );
+  assert.equal(
+    state.issues["366"]?.stale_stabilizing_no_pr_recovery_count,
     config.sameFailureSignatureRepeatLimit,
   );
   assert.match(
@@ -696,6 +703,7 @@ test("reconcileStaleActiveIssueReservation converges already-satisfied-on-main s
         implementation_attempt_count: 2,
         last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
         repeated_failure_signature_count: 1,
+        stale_stabilizing_no_pr_recovery_count: 1,
       }),
     },
   };
@@ -737,6 +745,10 @@ test("reconcileStaleActiveIssueReservation converges already-satisfied-on-main s
   );
   assert.equal(
     state.issues["366"]?.repeated_failure_signature_count,
+    0,
+  );
+  assert.equal(
+    state.issues["366"]?.stale_stabilizing_no_pr_recovery_count,
     config.sameFailureSignatureRepeatLimit,
   );
   assert.match(

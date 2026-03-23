@@ -73,6 +73,7 @@ function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
     blocked_verification_retry_count: value.blocked_verification_retry_count ?? 0,
     repeated_blocker_count: value.repeated_blocker_count ?? 0,
     repeated_failure_signature_count: value.repeated_failure_signature_count ?? 0,
+    stale_stabilizing_no_pr_recovery_count: value.stale_stabilizing_no_pr_recovery_count ?? 0,
     last_recovery_reason: value.last_recovery_reason ?? null,
     last_recovery_at: value.last_recovery_at ?? null,
     last_failure_kind: value.last_failure_kind ?? null,
@@ -450,6 +451,8 @@ export class StateStore {
       repeated_blocker_count: patch.repeated_blocker_count ?? record.repeated_blocker_count ?? 0,
       repeated_failure_signature_count:
         patch.repeated_failure_signature_count ?? record.repeated_failure_signature_count ?? 0,
+      stale_stabilizing_no_pr_recovery_count:
+        patch.stale_stabilizing_no_pr_recovery_count ?? record.stale_stabilizing_no_pr_recovery_count ?? 0,
       last_recovery_reason:
         hasOwn(patch, "last_recovery_reason") ? patch.last_recovery_reason ?? null : record.last_recovery_reason ?? null,
       last_recovery_at:

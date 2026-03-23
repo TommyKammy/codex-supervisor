@@ -20,7 +20,10 @@ import {
   type SupervisorMutationResultDto,
   type SupervisorOrphanPruneResultDto,
 } from "./supervisor/supervisor-mutation-report";
-import { STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE } from "./no-pull-request-state";
+import {
+  getStaleStabilizingNoPrRecoveryCount,
+  STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
+} from "./no-pull-request-state";
 
 const OWNER_GUARDED_ACTIVE_STATES = new Set<RunState>([
   "planning",
@@ -1104,22 +1107,19 @@ export async function reconcileStaleActiveIssueReservation(args: {
   const shouldRequeueStabilizing = record.state === "stabilizing" && matchedPullRequest === null;
   const staleNoPrRepeatLimit = Math.max(args.sameFailureSignatureRepeatLimit ?? Number.POSITIVE_INFINITY, 1);
   const shouldForceStaleNoPrManualStop = shouldRequeueStabilizing && staleNoPrBranchState === "already_satisfied_on_main";
+  const previousStaleNoPrRecoveryCount = getStaleStabilizingNoPrRecoveryCount(record);
   const staleNoPrRepeatedCount = shouldRequeueStabilizing
     ? shouldForceStaleNoPrManualStop
       ? Math.max(
-          record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE
-            ? record.repeated_failure_signature_count + 1
-            : 1,
+          previousStaleNoPrRecoveryCount + 1,
           staleNoPrRepeatLimit,
         )
-      : record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE
-        ? record.repeated_failure_signature_count + 1
-        : 1
-    : record.repeated_failure_signature_count;
+      : previousStaleNoPrRecoveryCount + 1
+    : previousStaleNoPrRecoveryCount;
   const shouldClearStaleNoPrFailureTracking =
     record.state === "stabilizing" &&
     matchedPullRequest !== null &&
-    record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE;
+    (record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE || previousStaleNoPrRecoveryCount > 0);
   const shouldStopRepeatedStaleNoPrLoop =
     shouldRequeueStabilizing && (shouldForceStaleNoPrManualStop || staleNoPrRepeatedCount >= staleNoPrRepeatLimit);
 
@@ -1166,10 +1166,15 @@ export async function reconcileStaleActiveIssueReservation(args: {
       staleNoPrFailureContext?.signature ??
       (shouldClearStaleNoPrFailureTracking ? null : record.last_failure_signature),
     repeated_failure_signature_count: shouldRequeueStabilizing
-      ? staleNoPrRepeatedCount
+      ? 0
       : shouldClearStaleNoPrFailureTracking
         ? 0
         : record.repeated_failure_signature_count,
+    stale_stabilizing_no_pr_recovery_count: shouldRequeueStabilizing
+      ? staleNoPrRepeatedCount
+      : shouldClearStaleNoPrFailureTracking
+        ? 0
+        : previousStaleNoPrRecoveryCount,
     blocked_reason: shouldStopRepeatedStaleNoPrLoop ? "manual_review" : null,
     ...applyRecoveryEvent({}, recoveryEvent),
   });

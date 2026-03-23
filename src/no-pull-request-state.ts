@@ -2,24 +2,49 @@ import { IssueRunRecord, RunState, WorkspaceStatus } from "./core/types";
 
 export const STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE = "stale-stabilizing-no-pr-recovery-loop";
 
+export function getStaleStabilizingNoPrRecoveryCount(
+  record: Pick<
+    IssueRunRecord,
+    "last_failure_signature" | "repeated_failure_signature_count" | "stale_stabilizing_no_pr_recovery_count"
+  >,
+): number {
+  if (record.last_failure_signature !== STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE) {
+    return 0;
+  }
+
+  if ((record.stale_stabilizing_no_pr_recovery_count ?? 0) > 0) {
+    return record.stale_stabilizing_no_pr_recovery_count ?? 0;
+  }
+
+  return record.repeated_failure_signature_count;
+}
+
 export function shouldPreserveNoPrFailureTracking(
   record: Pick<
     IssueRunRecord,
-    "pr_number" | "last_failure_context" | "last_failure_signature" | "repeated_failure_signature_count"
+    | "pr_number"
+    | "last_failure_context"
+    | "last_failure_signature"
+    | "repeated_failure_signature_count"
+    | "stale_stabilizing_no_pr_recovery_count"
   >,
 ): boolean {
   return (
     record.pr_number === null &&
     record.last_failure_context?.category === "blocked" &&
     record.last_failure_signature !== null &&
-    record.repeated_failure_signature_count > 0
+    (record.repeated_failure_signature_count > 0 || getStaleStabilizingNoPrRecoveryCount(record) > 0)
   );
 }
 
 export function shouldPreserveStaleStabilizingNoPrRecoveryTracking(
   record: Pick<
     IssueRunRecord,
-    "pr_number" | "state" | "last_failure_signature" | "repeated_failure_signature_count"
+    | "pr_number"
+    | "state"
+    | "last_failure_signature"
+    | "repeated_failure_signature_count"
+    | "stale_stabilizing_no_pr_recovery_count"
   >,
   nextState: RunState,
 ): boolean {
@@ -28,7 +53,7 @@ export function shouldPreserveStaleStabilizingNoPrRecoveryTracking(
     record.state === "stabilizing" &&
     nextState === "stabilizing" &&
     record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE &&
-    record.repeated_failure_signature_count > 0
+    getStaleStabilizingNoPrRecoveryCount(record) > 0
   );
 }
 

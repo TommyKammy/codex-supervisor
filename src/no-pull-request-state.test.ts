@@ -48,6 +48,7 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     blocked_verification_retry_count: 0,
     repeated_blocker_count: 0,
     repeated_failure_signature_count: 1,
+    stale_stabilizing_no_pr_recovery_count: 0,
     last_head_sha: "abcdef1",
     last_codex_summary: null,
     last_recovery_reason: null,
@@ -151,6 +152,16 @@ test("shouldPreserveNoPrFailureTracking only keeps repeated blocked no-PR failur
     false,
   );
   assert.equal(shouldPreserveNoPrFailureTracking(createRecord({ pr_number: 123 })), false);
+  assert.equal(
+    shouldPreserveNoPrFailureTracking(
+      createRecord({
+        repeated_failure_signature_count: 0,
+        stale_stabilizing_no_pr_recovery_count: 2,
+        last_failure_signature: "handoff-missing",
+      }),
+    ),
+    false,
+  );
 });
 
 test("shouldPreserveStaleStabilizingNoPrRecoveryTracking only keeps stale stabilizing no-PR retries", () => {
