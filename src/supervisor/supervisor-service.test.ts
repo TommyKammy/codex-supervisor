@@ -176,6 +176,90 @@ test("createSupervisorService exposes a dedicated typed setup readiness query", 
   assert.deepEqual(await service.querySetupReadiness(), report);
 });
 
+test("createSupervisorService preserves typed operator observability fields on status and explain queries", async () => {
+  const statusReport = {
+    gsdSummary: null,
+    candidateDiscovery: null,
+    activeIssue: {
+      issueNumber: 42,
+      state: "stabilizing",
+      branch: "codex/issue-42",
+      prNumber: 42,
+      blockedReason: null,
+      activityContext: {
+        handoffSummary: null,
+        localReviewRoutingSummary: null,
+        changeClassesSummary: null,
+        verificationPolicySummary: null,
+        durableGuardrailSummary: null,
+        externalReviewFollowUpSummary: null,
+        latestRecovery: null,
+        retryContext: {
+          timeoutRetryCount: 1,
+          blockedVerificationRetryCount: 2,
+          repeatedBlockerCount: 0,
+          repeatedFailureSignatureCount: 3,
+          lastFailureSignature: "verification-loop",
+        },
+        repeatedRecovery: {
+          kind: "stale_stabilizing_no_pr",
+          repeatCount: 2,
+          repeatLimit: 3,
+          status: "retrying",
+          action: "confirm_whether_the_change_already_landed_or_retarget_the_issue_manually",
+          lastFailureSignature: "stale-stabilizing-no-pr-recovery-loop",
+        },
+        recentPhaseChanges: [
+          {
+            at: "2026-03-22T00:15:00Z",
+            from: "blocked",
+            to: "addressing_review",
+            reason: "tracked_pr_head_advanced",
+            source: "recovery",
+          },
+        ],
+        localReviewSummaryPath: null,
+        externalReviewMissesPath: null,
+        reviewWaits: [],
+      },
+    },
+    selectionSummary: null,
+    trackedIssues: [],
+    runnableIssues: [],
+    blockedIssues: [],
+    detailedStatusLines: [],
+    reconciliationPhase: null,
+    reconciliationWarning: null,
+    readinessLines: [],
+    whyLines: [],
+    warning: null,
+  };
+  const explainReport = {
+    issueNumber: 42,
+    title: "Typed operator observability",
+    state: "stabilizing",
+    blockedReason: "none",
+    runnable: true,
+    changeRiskLines: [],
+    externalReviewFollowUpSummary: null,
+    latestRecoverySummary: null,
+    staleRecoveryWarningSummary: null,
+    activityContext: statusReport.activeIssue.activityContext,
+    selectionReason: "candidate selected",
+    reasons: [],
+    lastError: null,
+    failureSummary: null,
+  };
+
+  const service = createSupervisorServiceFromStub({
+    statusReport: async () => statusReport,
+    explainReport: async () => explainReport,
+  });
+
+  assert.deepEqual(await service.queryStatus({ why: true }), statusReport);
+  assert.deepEqual(await service.queryExplain(42), explainReport);
+});
+
 function createSupervisorServiceFromStub(
   overrides: Partial<ReturnType<typeof createStubSupervisor>>,
 ) {

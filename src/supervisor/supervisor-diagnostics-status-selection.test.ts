@@ -147,7 +147,27 @@ test("statusReport exposes typed active-issue and selection summary fields along
     branch: branchName(fixture.config, 58),
     prNumber: 58,
     blockedReason: null,
-    activityContext: null,
+    activityContext: {
+      handoffSummary: null,
+      localReviewRoutingSummary: null,
+      changeClassesSummary: null,
+      verificationPolicySummary: null,
+      durableGuardrailSummary: null,
+      externalReviewFollowUpSummary: null,
+      latestRecovery: null,
+      retryContext: {
+        timeoutRetryCount: 0,
+        blockedVerificationRetryCount: 0,
+        repeatedBlockerCount: 0,
+        repeatedFailureSignatureCount: 1,
+        lastFailureSignature: "handoff-missing",
+      },
+      repeatedRecovery: null,
+      recentPhaseChanges: [],
+      localReviewSummaryPath: null,
+      externalReviewMissesPath: null,
+      reviewWaits: [],
+    },
   });
   assert.deepEqual(report.selectionSummary, {
     selectedIssueNumber: null,
@@ -207,6 +227,10 @@ test("statusReport exposes typed operator activity context for the active issue"
         last_recovery_reason:
           "tracked_pr_head_advanced: resumed issue #58 from blocked to addressing_review after tracked PR #58 advanced from head-old-58 to head-new-58",
         last_recovery_at: "2026-03-22T00:15:00Z",
+        timeout_retry_count: 2,
+        blocked_verification_retry_count: 1,
+        repeated_failure_signature_count: 4,
+        last_failure_signature: "tracked-pr-refresh-loop",
         review_wait_started_at: "2099-01-01T00:00:30.000Z",
         review_wait_head_sha: "head-new-58",
       }),
@@ -275,6 +299,23 @@ Expose typed operator-facing issue detail fields.
       reason: "tracked_pr_head_advanced",
       detail: "resumed issue #58 from blocked to addressing_review after tracked PR #58 advanced from head-old-58 to head-new-58",
     },
+    retryContext: {
+      timeoutRetryCount: 2,
+      blockedVerificationRetryCount: 1,
+      repeatedBlockerCount: 0,
+      repeatedFailureSignatureCount: 4,
+      lastFailureSignature: "tracked-pr-refresh-loop",
+    },
+    repeatedRecovery: null,
+    recentPhaseChanges: [
+      {
+        at: "2026-03-22T00:15:00Z",
+        from: "blocked",
+        to: "addressing_review",
+        reason: "tracked_pr_head_advanced",
+        source: "recovery",
+      },
+    ],
     localReviewSummaryPath: null,
     externalReviewMissesPath: null,
     reviewWaits: [
@@ -343,6 +384,36 @@ test("status surfaces repeated stale cleanup risk before the stale recovery loop
   };
 
   const status = await supervisor.status();
+  const report = await supervisor.statusReport();
+
+  assert.deepEqual(report.activeIssue?.activityContext, {
+    handoffSummary: null,
+    localReviewRoutingSummary: null,
+    changeClassesSummary: null,
+    verificationPolicySummary: null,
+    durableGuardrailSummary: null,
+    externalReviewFollowUpSummary: null,
+    latestRecovery: null,
+    retryContext: {
+      timeoutRetryCount: 0,
+      blockedVerificationRetryCount: 0,
+      repeatedBlockerCount: 0,
+      repeatedFailureSignatureCount: 0,
+      lastFailureSignature: "stale-stabilizing-no-pr-recovery-loop",
+    },
+    repeatedRecovery: {
+      kind: "stale_stabilizing_no_pr",
+      repeatCount: 1,
+      repeatLimit: 3,
+      status: "retrying",
+      action: "confirm_whether_the_change_already_landed_or_retarget_the_issue_manually",
+      lastFailureSignature: "stale-stabilizing-no-pr-recovery-loop",
+    },
+    recentPhaseChanges: [],
+    localReviewSummaryPath: null,
+    externalReviewMissesPath: null,
+    reviewWaits: [],
+  });
   assert.match(
     status,
     /stale_recovery_warning issue=#366 status=retrying state=queued repeat_count=1\/3 tracked_pr=none action=confirm_whether_the_change_already_landed_or_retarget_the_issue_manually/,
