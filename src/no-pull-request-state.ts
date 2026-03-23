@@ -1,4 +1,4 @@
-import { IssueRunRecord, RunState, WorkspaceStatus } from "./core/types";
+import { IssueRunRecord, RunState, SupervisorConfig, WorkspaceStatus } from "./core/types";
 
 export const STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE = "stale-stabilizing-no-pr-recovery-loop";
 
@@ -55,6 +55,40 @@ export function shouldPreserveStaleStabilizingNoPrRecoveryTracking(
     record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE &&
     getStaleStabilizingNoPrRecoveryCount(record) > 0
   );
+}
+
+export function buildStaleStabilizingNoPrRecoveryWarningLine(
+  record: Pick<
+    IssueRunRecord,
+    | "issue_number"
+    | "state"
+    | "blocked_reason"
+    | "last_failure_signature"
+    | "repeated_failure_signature_count"
+    | "stale_stabilizing_no_pr_recovery_count"
+  >,
+  config: Pick<SupervisorConfig, "sameFailureSignatureRepeatLimit">,
+): string | null {
+  const repeatedCount = getStaleStabilizingNoPrRecoveryCount(record);
+  if (repeatedCount <= 0) {
+    return null;
+  }
+
+  const repeatLimit = Math.max(config.sameFailureSignatureRepeatLimit, 1);
+  const status =
+    record.blocked_reason === "manual_review" || repeatedCount >= repeatLimit
+      ? "manual_review_required"
+      : "retrying";
+
+  return [
+    "stale_recovery_warning",
+    `issue=#${record.issue_number}`,
+    `status=${status}`,
+    `state=${record.state}`,
+    `repeat_count=${repeatedCount}/${repeatLimit}`,
+    "tracked_pr=none",
+    "action=confirm_whether_the_change_already_landed_or_retarget_the_issue_manually",
+  ].join(" ");
 }
 
 export function inferStateWithoutPullRequest(

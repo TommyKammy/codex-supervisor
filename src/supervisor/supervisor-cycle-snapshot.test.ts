@@ -107,6 +107,7 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     blocked_verification_retry_count: 0,
     repeated_blocker_count: 0,
     repeated_failure_signature_count: 0,
+    stale_stabilizing_no_pr_recovery_count: 0,
     last_head_sha: "head-407",
     last_codex_summary: null,
     last_recovery_reason: null,
@@ -253,4 +254,50 @@ test("writeSupervisorCycleDecisionSnapshot serializes one cycle into the workspa
   assert.equal(persisted.local.record.last_failure_context, null);
   assert.equal(persisted.github.pullRequest?.number, 88);
   assert.equal(persisted.decision.nextState, "addressing_review");
+});
+
+test("buildSupervisorCycleDecisionSnapshot retains stale no-PR recovery loop signal for replay artifacts", () => {
+  const snapshot = buildSupervisorCycleDecisionSnapshot({
+    config: createConfig(),
+    capturedAt: "2026-03-16T10:07:00Z",
+    issue: createIssue(),
+    record: createRecord({
+      state: "queued",
+      pr_number: null,
+      blocked_reason: null,
+      last_error:
+        "Issue #407 re-entered stale stabilizing recovery without a tracked PR; the supervisor will retry while the repeat count remains below 3.",
+      last_failure_context: {
+        category: "blocked",
+        summary:
+          "Issue #407 re-entered stale stabilizing recovery without a tracked PR; the supervisor will retry while the repeat count remains below 3.",
+        signature: "stale-stabilizing-no-pr-recovery-loop",
+        command: null,
+        details: [
+          "state=stabilizing",
+          "tracked_pr=none",
+          "branch_state=recoverable",
+          "repeat_count=2/3",
+        ],
+        url: null,
+        updated_at: "2026-03-16T10:06:30Z",
+      },
+      last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
+      repeated_failure_signature_count: 0,
+      stale_stabilizing_no_pr_recovery_count: 2,
+    }),
+    workspaceStatus: createWorkspaceStatus(),
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.equal(snapshot.local.record.stale_stabilizing_no_pr_recovery_count, 2);
+  assert.equal(snapshot.local.record.last_failure_signature, "stale-stabilizing-no-pr-recovery-loop");
+  assert.deepEqual(snapshot.local.record.last_failure_context?.details, [
+    "state=stabilizing",
+    "tracked_pr=none",
+    "branch_state=recoverable",
+    "repeat_count=2/3",
+  ]);
 });

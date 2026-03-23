@@ -33,6 +33,7 @@ export interface SupervisorCycleDecisionSnapshot {
       | "blocked_verification_retry_count"
       | "repeated_blocker_count"
       | "repeated_failure_signature_count"
+      | "stale_stabilizing_no_pr_recovery_count"
       | "blocked_reason"
       | "last_error"
       | "last_failure_kind"
@@ -121,6 +122,7 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
         blocked_verification_retry_count: record.blocked_verification_retry_count,
         repeated_blocker_count: record.repeated_blocker_count,
         repeated_failure_signature_count: record.repeated_failure_signature_count,
+        stale_stabilizing_no_pr_recovery_count: record.stale_stabilizing_no_pr_recovery_count ?? 0,
         blocked_reason: record.blocked_reason,
         last_error: record.last_error,
         last_failure_kind: record.last_failure_kind,
@@ -194,6 +196,7 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
         blocked_verification_retry_count: record.blocked_verification_retry_count,
         repeated_blocker_count: record.repeated_blocker_count,
         repeated_failure_signature_count: record.repeated_failure_signature_count,
+        stale_stabilizing_no_pr_recovery_count: record.stale_stabilizing_no_pr_recovery_count ?? 0,
         blocked_reason: record.blocked_reason,
         last_error: record.last_error,
         last_failure_kind: record.last_failure_kind,
