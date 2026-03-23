@@ -38,11 +38,11 @@ Next action: open or update the draft PR for `codex/issue-891` with commit `6c1a
 - Hypothesis: the remaining review threads are valid because the new run-summary artifact is observational, so a filesystem write failure must not prevent later journal sync or other cleanup.
 - What changed: wrapped `syncExecutionMetricsRunSummary` in defensive `try/catch` blocks in `src/supervisor/supervisor-failure-helpers.ts` and `src/turn-execution-failure-helpers.ts`, logging contextual metadata plus the original error object while allowing execution to continue to `journalSync`/`syncJournal`.
 - Current blocker: none
-- Next exact step: commit the review fix, push `codex/issue-891`, and resolve the two automated review threads on PR #904.
+- Next exact step: monitor PR #904 for any follow-up review or CI regressions after commit `ff0d5af` and the resolved CodeRabbit threads.
 - Verification gap: none on the requested review-fix surface after focused helper regressions and a clean build.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-failure-helpers.ts`, `src/supervisor/supervisor-recovery-failure-flows.test.ts`, `src/turn-execution-failure-helpers.test.ts`, `src/turn-execution-failure-helpers.ts`
 - Rollback concern: low; the change is write-only and observational, and reverting it would remove the terminal run summary artifact without affecting scheduling or PR flow.
-- Last focused command: `npm run build`
+- Last focused command: `gh api graphql -f query='mutation { first: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ852LxY6"}) { thread { isResolved } } second: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ852LxZF"}) { thread { isResolved } } }'`
 - Last focused failure: first pass of the new helper regressions failed because `mock.method(...)` could not patch the re-exported `syncExecutionMetricsRunSummary` binding (`ERR_INVALID_ARG_VALUE`), so the tests were updated to inject the failure at `node:fs/promises.writeFile` instead.
 - Last focused commands:
 ```bash
@@ -71,6 +71,10 @@ apply_patch
 npx tsx --test src/supervisor/execution-metrics-run-summary.test.ts src/turn-execution-failure-helpers.test.ts src/supervisor/supervisor-recovery-failure-flows.test.ts
 npm run build
 date -u +%Y-%m-%dT%H:%M:%SZ
+git add .codex-supervisor/issue-journal.md src/supervisor/supervisor-failure-helpers.ts src/supervisor/supervisor-recovery-failure-flows.test.ts src/turn-execution-failure-helpers.test.ts src/turn-execution-failure-helpers.ts
+git commit -m "Handle observational run summary write failures"
+git push origin codex/issue-891
+gh api graphql -f query='mutation { first: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ852LxY6"}) { thread { isResolved } } second: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ852LxZF"}) { thread { isResolved } } }'
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
