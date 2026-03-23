@@ -14,7 +14,7 @@
 - Updated at: 2026-03-23T03:07:44.065Z
 
 ## Latest Codex Summary
-- None yet.
+- Surfaced repeated stale no-PR recovery risk in status and explain output, persisted the dedicated stale recovery count in replay snapshots, and opened draft PR #869 after focused verification passed.
 
 ## Active Failure Context
 - None recorded.
@@ -63,6 +63,7 @@ gh pr view --json number,isDraft,state,url --head codex/issue-864
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
+- 2026-03-23T03:10:29Z: committed the stale recovery visibility slice as `15f07e6` (`Surface repeated stale recovery risk`), pushed `codex/issue-864`, and opened draft PR `#869` at https://github.com/TommyKammy/codex-supervisor/pull/869.
 - 2026-03-23T03:10:29Z: reproduced the remaining issue-864 gap as missing operator visibility instead of missing stale-loop state, then added `stale_recovery_warning` coverage to status/explain plus replay snapshot persistence for `stale_stabilizing_no_pr_recovery_count`; `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts` passed.
 - 2026-03-23T02:12:08Z: committed the journal markdown cleanup as `b45d12b`, pushed `codex/issue-862`, and resolved GitHub review thread `PRRT_kwDORgvdZ852BDOu`.
 - 2026-03-23T02:11:10Z: rewrote the unresolved `.codex-supervisor/issue-journal.md` review blob into multi-line Markdown, then confirmed `npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg -n "MD038|no-space-in-code"` returned no matches even though full-file markdownlint still reports pre-existing non-MD038 journal warnings.
