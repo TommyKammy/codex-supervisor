@@ -90,6 +90,8 @@ test("getting-started defines setup readiness as a typed first-run contract dist
     content,
     /type SetupReadinessFieldKey =[\s\S]*"repoPath"[\s\S]*"repoSlug"[\s\S]*"defaultBranch"[\s\S]*"workspaceRoot"[\s\S]*"stateFile"[\s\S]*"codexBinary"[\s\S]*"branchPrefix"[\s\S]*"reviewProvider"/,
   );
+  assert.match(content, /localCiContract\?: LocalCiContractSummary/);
+  assert.match(content, /setup flow and WebUI should surface whether the repo-owned local CI contract is configured/i);
 });
 
 test("getting-started defines the repo-owned local CI contract for pre-PR verification", async () => {
@@ -104,6 +106,8 @@ test("getting-started defines the repo-owned local CI contract for pre-PR verifi
   assert.match(content, /any non-zero exit code/i);
   assert.match(content, /if no local CI contract is configured/i);
   assert.match(content, /does not infer or reconstruct workflow logic from GitHub Actions YAML/i);
+  assert.match(content, /when configured local CI fails, PR publication stays blocked/i);
+  assert.match(content, /ready-for-review promotion stays blocked/i);
 });
 
 test("japanese docs keep overview and getting-started responsibilities separate", async () => {

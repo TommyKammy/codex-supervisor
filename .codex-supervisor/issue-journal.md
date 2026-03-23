@@ -1,56 +1,63 @@
-# Issue #885: Local CI visibility: persist and surface the latest pre-PR verification result
+# Issue #886: Local CI setup guidance: show how repos adopt the pre-PR verification contract
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/885
-- Branch: codex/issue-885
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/886
+- Branch: codex/issue-886
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 0028afa11b61b958d6167df67d63e68f4e3f8685
+- Last head SHA: 34806d2dfbd15b8b8006b28715333ab788c5d74d
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-23T15:23:48Z
+- Updated at: 2026-03-23T15:54:52Z
 
 ## Latest Codex Summary
-- Persisted concise latest local-CI results on issue records, surfaced typed `localCiStatus` in status/explain activity context and replay snapshots, and added readable `local_ci_result` lines to status/explain output.
+- Added local-CI adoption guidance to setup/docs surfaces so operators can see whether the repo-owned pre-PR verification contract is configured and why that affects PR publication behavior.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: issue `#885` was missing a durable, operator-visible latest local-CI result because the supervisor only persisted the configured contract and transient failure context, not the latest pass/fail summary tied to the issue record.
-- What changed: added optional `latest_local_ci_result` metadata to `IssueRunRecord`; updated `runLocalCiGate` to return concise pass/fail result summaries; persisted the latest result on all three local-CI gate paths in `src/run-once-issue-preparation.ts`, `src/run-once-turn-execution.ts`, and `src/post-turn-pull-request.ts`; projected that state into typed `localCiStatus` activity context in `src/supervisor/supervisor-operator-activity-context.ts`; surfaced it through status/explain text rendering and replay snapshots in `src/supervisor/supervisor-detailed-status-assembly.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, and `src/supervisor/supervisor-cycle-snapshot.ts`; and added focused regressions plus fixture updates in the supervisor status/explain/replay tests and supporting service/http tests.
+- Hypothesis: the missing acceptance surface for `#886` was not backend data but operator guidance. `SetupReadinessReport` already carried `localCiContract`, yet the setup shell did not render it and `docs/getting-started.md` did not connect setup/readiness guidance to the local-CI contract's PR-blocking behavior.
+- What changed: added focused setup-shell regressions in `src/backend/webui-dashboard.test.ts` to prove the missing local-CI guidance; rendered a dedicated "Local CI contract" panel in `src/backend/webui-setup-page.ts` and `src/backend/webui-setup-browser-script.ts`; and tightened `docs/getting-started.md` plus `src/getting-started-docs.test.ts` so the typed setup/readiness contract includes `localCiContract`, explains that setup/WebUI should surface configured-vs-missing status, and states that failing configured local CI blocks PR publication and ready-for-review promotion.
 - Current blocker: none
-- Next exact step: review the diff, then commit the local-CI visibility change on `codex/issue-885` and open or update the draft PR if needed.
-- Verification gap: none on the requested issue verification surface.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/core/types.ts`, `src/local-ci.ts`, `src/post-turn-pull-request.test.ts`, `src/post-turn-pull-request.ts`, `src/run-once-issue-preparation.ts`, `src/run-once-turn-execution.ts`, `src/supervisor/supervisor-cycle-snapshot.test.ts`, `src/supervisor/supervisor-cycle-snapshot.ts`, `src/supervisor/supervisor-detailed-status-assembly.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-operator-activity-context.ts`, `src/supervisor/supervisor-selection-issue-explain.test.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/supervisor/supervisor-service.test.ts`
-- Rollback concern: low; the behavior change is additive and concise, but partially reverting the persistence without the typed status projection would leave stale or missing operator visibility.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts`
-- Last focused failure: `npm run build` initially failed with `sh: 1: tsc: not found` because this worktree had no installed `node_modules`; running `npm install` restored the declared dev dependency and the build then passed.
+- Next exact step: review the diff, commit the setup/docs local-CI guidance update on `codex/issue-886`, and open or update the draft PR if needed.
+- Verification gap: none on the requested issue verification surface after restoring `node_modules` in this worktree.
+- Files touched: `.codex-supervisor/issue-journal.md`, `docs/getting-started.md`, `src/backend/webui-dashboard.test.ts`, `src/backend/webui-setup-browser-script.ts`, `src/backend/webui-setup-page.ts`, `src/getting-started-docs.test.ts`
+- Rollback concern: low; the behavior is additive doc/UI guidance, and reverting it would mainly remove operator visibility into when repo-owned local CI affects PR publication.
+- Last focused command: `npx tsx --test src/getting-started-docs.test.ts src/readme-docs.test.ts src/backend/supervisor-http-server.test.ts`
+- Last focused failure: `npm run build` failed with `sh: 1: tsc: not found` before verification because this worktree had no installed `node_modules`; `npm install` restored the declared dev dependencies and the build then passed.
 - Last focused commands:
 ```bash
-sed -n '1,220p' <LOCAL_MEMORY_ROOT>/TommyKammy-codex-supervisor/issue-885/AGENTS.generated.md
-sed -n '1,260p' <LOCAL_MEMORY_ROOT>/TommyKammy-codex-supervisor/issue-885/context-index.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-886/AGENTS.generated.md
+sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-886/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
 git status --short --branch
-rg -n "local-ci|localCi|verification" src .codex-supervisor -g '*.ts' -g '*.md'
-sed -n '1,220p' src/local-ci.ts
-sed -n '330,390p' src/run-once-issue-preparation.ts
-sed -n '418,455p' src/run-once-turn-execution.ts
-sed -n '245,285p' src/post-turn-pull-request.ts
-sed -n '1,320p' src/supervisor/supervisor-operator-activity-context.ts
-sed -n '1,320p' src/supervisor/supervisor-selection-issue-explain.ts
-sed -n '1,320p' src/supervisor/supervisor-cycle-snapshot.ts
+rg -n "local CI|local-ci|local_ci|pre-PR|verification contract|GitHub Actions|workflow" README.md docs/getting-started.md src/getting-started-docs.test.ts src/readme-docs.test.ts src/backend/supervisor-http-server.test.ts src -g '*.md' -g '*.ts'
+sed -n '1,260p' README.md
+sed -n '1,320p' docs/getting-started.md
+sed -n '1,260p' src/getting-started-docs.test.ts
+sed -n '1,260p' src/readme-docs.test.ts
+sed -n '1,320p' src/backend/supervisor-http-server.test.ts
+rg -n "setup readiness|SetupReadiness|local CI contract|local_ci|localCi|reviewProvider|hostReadiness|providerPosture" src docs -g '*.ts' -g '*.md'
+sed -n '1,320p' src/setup-readiness.ts
+sed -n '1,320p' src/backend/supervisor-http-server.ts
+sed -n '1,320p' src/supervisor/supervisor-service.ts
+sed -n '240,420p' src/backend/webui-setup-browser-script.ts
+sed -n '1660,2055p' src/backend/webui-dashboard.test.ts
+sed -n '246,390p' src/doctor.test.ts
+sed -n '430,760p' src/backend/webui-dashboard-browser-smoke.test.ts
+sed -n '1,320p' src/backend/webui-setup-page.ts
 apply_patch
-npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts
-npx tsx --test src/local-ci.test.ts src/run-once-issue-preparation.test.ts src/run-once-turn-execution.test.ts src/post-turn-pull-request.test.ts
+npx tsx --test src/getting-started-docs.test.ts src/backend/webui-dashboard.test.ts
 cat package.json
 npm ls typescript --depth=0
 npm install
 npm run build
+npx tsx --test src/getting-started-docs.test.ts src/readme-docs.test.ts src/backend/supervisor-http-server.test.ts
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
