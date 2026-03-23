@@ -17,7 +17,7 @@ import { createConfig as createTurnConfig, createIssue, createPullRequest, creat
 import type { AgentRunner, AgentTurnRequest } from "./agent-runner";
 
 interface ExecutionMetricsRunSummary {
-  schemaVersion: 2;
+  schemaVersion: 3;
   issueNumber: number;
   terminalState: "done" | "blocked" | "failed";
   terminalOutcome: {
@@ -33,6 +33,12 @@ interface ExecutionMetricsRunSummary {
   issueLeadTimeMs: number | null;
   issueToPrCreatedMs: number | null;
   prOpenDurationMs: number | null;
+  reviewMetrics: {
+    classification: "configured_bot_threads";
+    iterationCount: number;
+    totalCount: number;
+    totalCountKind: "actionable_thread_instances";
+  } | null;
 }
 
 function executionMetricsRunSummaryPath(workspacePath: string): string {
@@ -271,7 +277,7 @@ test("prepareIssueExecutionContext writes a run summary artifact for done outcom
 
   const artifact = await readExecutionMetricsRunSummary(workspacePath);
   assert.deepEqual(artifact, {
-    schemaVersion: 2,
+    schemaVersion: 3,
     issueNumber: 240,
     terminalState: "done",
     terminalOutcome: {
@@ -287,6 +293,7 @@ test("prepareIssueExecutionContext writes a run summary artifact for done outcom
     issueLeadTimeMs: 360000,
     issueToPrCreatedMs: 180000,
     prOpenDurationMs: 120000,
+    reviewMetrics: null,
   });
 });
 
@@ -298,6 +305,7 @@ test("executeCodexTurnPhase writes a run summary artifact for blocked outcomes",
     pr_number: null,
     workspace: workspacePath,
     journal_path: path.join(workspacePath, ".codex-supervisor", "issue-journal.md"),
+    processed_review_thread_ids: ["thread-1@head-a", "thread-2@head-a", "thread-2@head-b"],
     updated_at: "2026-03-24T01:00:00Z",
   });
   const state: SupervisorStateFile = {
@@ -438,7 +446,7 @@ test("executeCodexTurnPhase writes a run summary artifact for blocked outcomes",
   });
   const artifact = await readExecutionMetricsRunSummary(workspacePath);
   assert.deepEqual(artifact, {
-    schemaVersion: 2,
+    schemaVersion: 3,
     issueNumber: 102,
     terminalState: "blocked",
     terminalOutcome: {
@@ -454,6 +462,12 @@ test("executeCodexTurnPhase writes a run summary artifact for blocked outcomes",
     issueLeadTimeMs: 360000,
     issueToPrCreatedMs: null,
     prOpenDurationMs: null,
+    reviewMetrics: {
+      classification: "configured_bot_threads",
+      iterationCount: 2,
+      totalCount: 3,
+      totalCountKind: "actionable_thread_instances",
+    },
   });
 });
 
@@ -597,7 +611,7 @@ test("executeCodexTurnPhase writes a run summary artifact for failed outcomes", 
   });
   const artifact = await readExecutionMetricsRunSummary(workspacePath);
   assert.deepEqual(artifact, {
-    schemaVersion: 2,
+    schemaVersion: 3,
     issueNumber: 103,
     terminalState: "failed",
     terminalOutcome: {
@@ -613,5 +627,6 @@ test("executeCodexTurnPhase writes a run summary artifact for failed outcomes", 
     issueLeadTimeMs: 360000,
     issueToPrCreatedMs: null,
     prOpenDurationMs: null,
+    reviewMetrics: null,
   });
 });

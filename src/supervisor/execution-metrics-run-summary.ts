@@ -13,7 +13,10 @@ export function executionMetricsRunSummaryPath(workspacePath: string): string {
 
 export async function syncExecutionMetricsRunSummary(args: {
   previousRecord: Pick<IssueRunRecord, "issue_number" | "updated_at">;
-  nextRecord: Pick<IssueRunRecord, "state" | "workspace" | "updated_at" | "blocked_reason" | "last_failure_kind">;
+  nextRecord: Pick<
+    IssueRunRecord,
+    "state" | "workspace" | "updated_at" | "blocked_reason" | "last_failure_kind" | "processed_review_thread_ids"
+  >;
   issue?: Pick<GitHubIssue, "createdAt"> | null;
   pullRequest?: Pick<GitHubPullRequest, "createdAt" | "mergedAt"> | null;
 }): Promise<string | null> {
@@ -38,6 +41,7 @@ export async function syncExecutionMetricsRunSummary(args: {
     finishedAt: args.nextRecord.updated_at,
     blockedReason: args.nextRecord.blocked_reason,
     failureKind: args.nextRecord.last_failure_kind,
+    processedReviewThreadIds: args.nextRecord.processed_review_thread_ids,
   });
 
   const artifactPath = executionMetricsRunSummaryPath(args.nextRecord.workspace);

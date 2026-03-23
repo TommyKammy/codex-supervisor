@@ -12,9 +12,10 @@ test("buildExecutionMetricsRunSummaryArtifact derives lead-time and PR milestone
       prCreatedAt: "2026-03-24T00:03:00Z",
       prMergedAt: "2026-03-24T00:05:00Z",
       finishedAt: "2026-03-24T00:06:00Z",
+      processedReviewThreadIds: ["thread-1@head-a", "thread-2@head-a", "thread-2@head-b"],
     }),
     {
-      schemaVersion: 2,
+      schemaVersion: 3,
       issueNumber: 893,
       terminalState: "done",
       terminalOutcome: {
@@ -30,6 +31,12 @@ test("buildExecutionMetricsRunSummaryArtifact derives lead-time and PR milestone
       issueLeadTimeMs: 360000,
       issueToPrCreatedMs: 180000,
       prOpenDurationMs: 120000,
+      reviewMetrics: {
+        classification: "configured_bot_threads",
+        iterationCount: 2,
+        totalCount: 3,
+        totalCountKind: "actionable_thread_instances",
+      },
     },
   );
 });
