@@ -28,6 +28,7 @@ import {
 import { shouldPreserveNoPrFailureTracking } from "./no-pull-request-state";
 import { runLocalCiGate, type LocalCiCommandRunner } from "./local-ci";
 import { writeSupervisorCycleDecisionSnapshot as writeSupervisorCycleDecisionSnapshotImpl } from "./supervisor/supervisor-cycle-snapshot";
+import { syncExecutionMetricsRunSummary } from "./supervisor/execution-metrics-run-summary";
 
 export type IssueJournalSync = (record: IssueRunRecord) => Promise<void>;
 export type MemoryArtifacts = Awaited<ReturnType<typeof syncMemoryArtifactsImpl>>;
@@ -313,6 +314,10 @@ async function hydratePullRequestContext(
       args.state.issues[String(doneRecord.issue_number)] = doneRecord;
       args.state.activeIssueNumber = null;
       await args.stateStore.save(args.state);
+      await syncExecutionMetricsRunSummary({
+        previousRecord: record,
+        nextRecord: doneRecord,
+      });
       return { kind: "restart", recoveryEvents: [recoveryEvent] };
     } else if (resolvedPr.state === "CLOSED") {
       await writeSupervisorCycleDecisionSnapshot({
@@ -345,6 +350,10 @@ async function hydratePullRequestContext(
       args.state.issues[String(blockedRecord.issue_number)] = blockedRecord;
       args.state.activeIssueNumber = null;
       await args.stateStore.save(args.state);
+      await syncExecutionMetricsRunSummary({
+        previousRecord: record,
+        nextRecord: blockedRecord,
+      });
       await args.syncJournal(blockedRecord);
       return `Issue #${blockedRecord.issue_number} blocked because PR #${resolvedPr.number} was closed without merge.`;
     }
@@ -380,6 +389,10 @@ async function hydratePullRequestContext(
       });
       args.state.issues[String(blockedRecord.issue_number)] = blockedRecord;
       await args.stateStore.save(args.state);
+      await syncExecutionMetricsRunSummary({
+        previousRecord: record,
+        nextRecord: blockedRecord,
+      });
       await args.syncJournal(blockedRecord);
       return `Issue #${blockedRecord.issue_number} blocked: ${blockedRecord.last_error}`;
     }

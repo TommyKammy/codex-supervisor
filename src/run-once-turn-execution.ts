@@ -43,6 +43,7 @@ import {
 import { truncate } from "./core/utils";
 import { getWorkspaceStatus, pushBranch } from "./core/workspace";
 import { AgentRunner, createCodexAgentRunner } from "./supervisor/agent-runner";
+import { syncExecutionMetricsRunSummary } from "./supervisor/execution-metrics-run-summary";
 
 export {
   handlePostTurnPullRequestTransitionsPhase,
@@ -442,6 +443,10 @@ export async function executeCodexTurnPhase(
           });
           state.issues[String(record.issue_number)] = record;
           await stateStore.save(state);
+          await syncExecutionMetricsRunSummary({
+            previousRecord: args.context.record,
+            nextRecord: record,
+          });
           await syncJournal(record);
           return {
             kind: "returned",
@@ -521,6 +526,10 @@ export async function executeCodexTurnPhase(
       });
       state.issues[String(record.issue_number)] = record;
       await stateStore.save(state);
+      await syncExecutionMetricsRunSummary({
+        previousRecord: args.context.record,
+        nextRecord: record,
+      });
       await syncJournal(record);
 
       return {

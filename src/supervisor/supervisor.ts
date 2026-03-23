@@ -76,6 +76,7 @@ import {
   shouldAutoRetryTimeout,
 } from "./supervisor-failure-helpers";
 import { AgentRunner, createCodexAgentRunner } from "./agent-runner";
+import { syncExecutionMetricsRunSummary } from "./execution-metrics-run-summary";
 import {
   attemptBudgetForLane,
   attemptLane,
@@ -652,6 +653,10 @@ export class Supervisor {
         state.issues[String(record.issue_number)] = record;
         state.activeIssueNumber = null;
         await this.stateStore.save(state);
+        await syncExecutionMetricsRunSummary({
+          previousRecord: lifecycle.recordForState,
+          nextRecord: record,
+        });
         await syncJournal(record);
         return prependRecoveryLog(
           `Issue #${record.issue_number} stopped after repeated identical failure signatures.`,
@@ -775,6 +780,10 @@ export class Supervisor {
 
     state.issues[String(nextRecord.issue_number)] = nextRecord;
     await this.stateStore.save(state);
+    await syncExecutionMetricsRunSummary({
+      previousRecord: record,
+      nextRecord,
+    });
     return nextRecord;
   }
 
