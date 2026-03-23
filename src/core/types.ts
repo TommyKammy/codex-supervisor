@@ -229,6 +229,7 @@ export interface IssueRunRecord {
   blocked_verification_retry_count: number;
   repeated_blocker_count: number;
   repeated_failure_signature_count: number;
+  stale_stabilizing_no_pr_recovery_count?: number;
   last_head_sha: string | null;
   workspace_restore_source?: WorkspaceRestoreSource | null;
   workspace_restore_ref?: string | null;

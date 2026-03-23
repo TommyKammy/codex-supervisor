@@ -1,4 +1,8 @@
-import { shouldPreserveNoPrFailureTracking } from "../no-pull-request-state";
+import {
+  getStaleStabilizingNoPrRecoveryCount,
+  shouldPreserveNoPrFailureTracking,
+  shouldPreserveStaleStabilizingNoPrRecoveryTracking,
+} from "../no-pull-request-state";
 import type { PullRequestLifecycleSnapshot } from "../post-turn-pull-request";
 import {
   blockedReasonFromReviewState,
@@ -204,9 +208,16 @@ export function resetNoPrLifecycleFailureTracking(
   | "last_failure_context"
   | "last_failure_signature"
   | "repeated_failure_signature_count"
+  | "stale_stabilizing_no_pr_recovery_count"
   | "blocked_reason"
 > {
   const preserveFailureTracking = shouldPreserveNoPrFailureTracking(record);
+  const preserveGenericFailureCount =
+    record.pr_number === null &&
+    record.last_failure_context?.category === "blocked" &&
+    record.last_failure_signature !== null &&
+    record.repeated_failure_signature_count > 0;
+  const preserveStaleNoPrRecoveryCount = shouldPreserveStaleStabilizingNoPrRecoveryTracking(record, record.state);
   return {
     copilot_review_requested_observed_at: null,
     copilot_review_requested_head_sha: null,
@@ -218,7 +229,10 @@ export function resetNoPrLifecycleFailureTracking(
     merge_readiness_last_evaluated_at: null,
     last_failure_context: preserveFailureTracking ? record.last_failure_context : null,
     last_failure_signature: preserveFailureTracking ? record.last_failure_signature : null,
-    repeated_failure_signature_count: preserveFailureTracking ? record.repeated_failure_signature_count : 0,
+    repeated_failure_signature_count: preserveGenericFailureCount ? record.repeated_failure_signature_count : 0,
+    stale_stabilizing_no_pr_recovery_count: preserveStaleNoPrRecoveryCount
+      ? getStaleStabilizingNoPrRecoveryCount(record)
+      : 0,
     blocked_reason: null,
   };
 }

@@ -868,6 +868,7 @@ test("executeCodexTurnPhase preserves stale stabilizing no-PR recovery tracking 
         last_failure_context: staleNoPrFailureContext,
         last_failure_signature: staleNoPrFailureContext.signature,
         repeated_failure_signature_count: 1,
+        stale_stabilizing_no_pr_recovery_count: 1,
       }),
     },
   };
@@ -1023,5 +1024,6 @@ test("executeCodexTurnPhase preserves stale stabilizing no-PR recovery tracking 
   assert.equal(state.issues["102"]?.last_error, staleNoPrFailureContext.summary);
   assert.equal(state.issues["102"]?.last_failure_context, staleNoPrFailureContext);
   assert.equal(state.issues["102"]?.last_failure_signature, staleNoPrFailureContext.signature);
-  assert.equal(state.issues["102"]?.repeated_failure_signature_count, 1);
+  assert.equal(state.issues["102"]?.repeated_failure_signature_count, 0);
+  assert.equal(state.issues["102"]?.stale_stabilizing_no_pr_recovery_count, 1);
 });

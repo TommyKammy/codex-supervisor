@@ -445,6 +445,9 @@ export async function executeCodexTurnPhase(
         blocked_verification_retry_count: pr ? 0 : record.blocked_verification_retry_count,
         repeated_blocker_count: 0,
         last_blocker_signature: null,
+        stale_stabilizing_no_pr_recovery_count: preserveStaleNoPrRecoveryTracking
+          ? record.stale_stabilizing_no_pr_recovery_count ?? record.repeated_failure_signature_count
+          : 0,
         last_error:
           preserveStaleNoPrRecoveryTracking
             ? preTurnLastError
@@ -457,7 +460,7 @@ export async function executeCodexTurnPhase(
           preserveStaleNoPrRecoveryTracking
             ? {
                 last_failure_signature: record.last_failure_signature,
-                repeated_failure_signature_count: record.repeated_failure_signature_count,
+                repeated_failure_signature_count: 0,
               }
             : args.applyFailureSignature(record, postRunSnapshot?.failureContext ?? null)
         ),
