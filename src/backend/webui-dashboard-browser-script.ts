@@ -7,6 +7,9 @@ import {
   formatBlockedIssues,
   formatCandidateDiscovery,
   formatIssueRef,
+  formatRecentPhaseChanges,
+  formatRecoveryLoopSummary,
+  formatRetryContextSummary,
   formatRunnableIssues,
   formatTrackedHistorySummary,
   formatTrackedIssueSummary,
@@ -35,6 +38,9 @@ const injectedBrowserLogic = [
   formatBlockedIssues,
   formatCandidateDiscovery,
   formatIssueRef,
+  formatRetryContextSummary,
+  formatRecoveryLoopSummary,
+  formatRecentPhaseChanges,
   buildStatusLines,
   collectIssueShortcuts,
   describeCommandSelectionChange,
@@ -527,6 +533,12 @@ export function renderDashboardBrowserScript(): string {
 
         appendDetailSection(elements.issueExplain, "Latest recovery", [
           ["latest_recovery", formatLatestRecovery(activityContext, explain.latestRecoverySummary)],
+        ]);
+
+        appendDetailSection(elements.issueExplain, "Retry and recovery", [
+          ["retry_summary", formatRetryContextSummary(activityContext) || "none"],
+          ["recovery_loop", formatRecoveryLoopSummary(activityContext) || "none"],
+          ["recent_phase_changes", formatRecentPhaseChanges(activityContext) || "none"],
         ]);
 
         appendDetailSection(elements.issueExplain, "Recent failure", [
