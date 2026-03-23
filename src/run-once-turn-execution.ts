@@ -43,7 +43,10 @@ import {
 import { truncate } from "./core/utils";
 import { getWorkspaceStatus, pushBranch } from "./core/workspace";
 import { AgentRunner, createCodexAgentRunner } from "./supervisor/agent-runner";
-import { syncExecutionMetricsRunSummary } from "./supervisor/execution-metrics-run-summary";
+import {
+  executionMetricsRetentionRootPath,
+  syncExecutionMetricsRunSummary,
+} from "./supervisor/execution-metrics-run-summary";
 
 export {
   handlePostTurnPullRequestTransitionsPhase,
@@ -89,6 +92,7 @@ export interface CodexTurnShortCircuit {
 }
 
 interface RecoverUnexpectedCodexTurnFailureArgs {
+  config: Pick<SupervisorConfig, "stateFile">;
   stateStore: Pick<StateStore, "touch" | "save">;
   state: SupervisorStateFile;
   record: IssueRunRecord;
@@ -155,6 +159,7 @@ interface ExecuteCodexTurnPhaseArgs {
       record: IssueRunRecord,
       failureContext: FailureContext | null,
     ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
+    retentionRootPath?: string;
   }) => Promise<IssueRunRecord>;
   persistCodexTurnExitFailure?: (args: {
     stateStore: Pick<StateStore, "touch" | "save">;
@@ -174,6 +179,7 @@ interface ExecuteCodexTurnPhaseArgs {
       record: IssueRunRecord,
       failureContext: FailureContext | null,
     ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
+    retentionRootPath?: string;
   }) => Promise<IssueRunRecord>;
   persistMissingCodexJournalHandoff?: (args: {
     stateStore: Pick<StateStore, "touch" | "save">;
@@ -191,6 +197,7 @@ interface ExecuteCodexTurnPhaseArgs {
       record: IssueRunRecord,
       failureContext: FailureContext | null,
     ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
+    retentionRootPath?: string;
   }) => Promise<IssueRunRecord>;
   persistHintedCodexTurnState?: (args: {
     stateStore: Pick<StateStore, "touch" | "save">;
@@ -214,6 +221,7 @@ interface ExecuteCodexTurnPhaseArgs {
     ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
     normalizeBlockerSignature: (message: string | null | undefined) => string | null;
     isVerificationBlockedMessage: (message: string | null | undefined) => boolean;
+    retentionRootPath?: string;
   }) => Promise<IssueRunRecord>;
   getWorkspaceStatus?: typeof getWorkspaceStatus;
   pushBranch?: typeof pushBranch;
@@ -329,6 +337,7 @@ export async function executeCodexTurnPhase(
           issueNumber: record.issue_number,
           buildCodexFailureContext: args.buildCodexFailureContext,
           applyFailureSignature: args.applyFailureSignature,
+          retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
         });
         return {
           kind: "returned",
@@ -353,6 +362,7 @@ export async function executeCodexTurnPhase(
           classifyFailure: args.classifyFailure,
           buildCodexFailureContext: args.buildCodexFailureContext,
           applyFailureSignature: args.applyFailureSignature,
+          retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
         });
         return {
           kind: "returned",
@@ -376,6 +386,7 @@ export async function executeCodexTurnPhase(
           classifyFailure: args.classifyFailure,
           buildCodexFailureContext: args.buildCodexFailureContext,
           applyFailureSignature: args.applyFailureSignature,
+          retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
         });
         return {
           kind: "returned",
@@ -399,6 +410,7 @@ export async function executeCodexTurnPhase(
           applyFailureSignature: args.applyFailureSignature,
           normalizeBlockerSignature: args.normalizeBlockerSignature,
           isVerificationBlockedMessage: args.isVerificationBlockedMessage,
+          retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
         });
         return {
           kind: "returned",
@@ -455,6 +467,7 @@ export async function executeCodexTurnPhase(
             previousRecord: args.context.record,
             nextRecord: record,
             issue,
+            retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
           });
           await syncJournal(record);
           return {
@@ -540,6 +553,7 @@ export async function executeCodexTurnPhase(
         nextRecord: record,
         issue,
         pullRequest: pr,
+        retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
       });
       await syncJournal(record);
 
@@ -556,6 +570,7 @@ export async function executeCodexTurnPhase(
     }
   } catch (error) {
     record = await args.recoverUnexpectedCodexTurnFailure({
+      config,
       stateStore,
       state,
       record,

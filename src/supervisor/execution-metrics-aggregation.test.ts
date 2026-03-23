@@ -5,9 +5,13 @@ import path from "node:path";
 import test from "node:test";
 import {
   buildExecutionMetricsDailyRollupsArtifact,
+  executionMetricsDailyRollupsPath,
+  listRetainedExecutionMetricsRunSummaryPaths,
+  syncRetainedExecutionMetricsDailyRollups,
   syncExecutionMetricsDailyRollups,
 } from "./execution-metrics-aggregation";
 import type { ExecutionMetricsRunSummaryArtifact } from "./execution-metrics-schema";
+import { executionMetricsRetentionRootPath, retainedExecutionMetricsRunSummaryPath } from "./execution-metrics-run-summary";
 
 function createRunSummary(
   issueNumber: number,
@@ -244,4 +248,125 @@ test("daily rollups aggregate persisted run summaries by finished-at day", async
 
   assert.equal(context.artifactPath, outputPath);
   assert.deepEqual(JSON.parse(await fs.readFile(outputPath, "utf8")), artifact);
+});
+
+test("retained daily rollups load summaries from the durable retention root", async () => {
+  const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "execution-metrics-retained-rollups-"));
+  const stateFilePath = path.join(rootPath, ".local", "state.json");
+  const retentionRootPath = executionMetricsRetentionRootPath(stateFilePath);
+  const summaryA = createRunSummary(201);
+  const summaryB = createRunSummary(202, {
+    terminalState: "failed",
+    terminalOutcome: {
+      category: "failed",
+      reason: "command_error",
+    },
+    issueCreatedAt: "2026-03-25T00:00:00Z",
+    startedAt: "2026-03-25T02:00:00Z",
+    prCreatedAt: null,
+    prMergedAt: null,
+    finishedAt: "2026-03-25T03:00:00Z",
+    runDurationMs: 3_600_000,
+    issueLeadTimeMs: 10_800_000,
+    issueToPrCreatedMs: null,
+    prOpenDurationMs: null,
+    reviewMetrics: null,
+    failureMetrics: {
+      classification: "latest_failure",
+      category: "codex",
+      failureKind: "command_error",
+      blockedReason: null,
+      occurrenceCount: 1,
+      lastOccurredAt: "2026-03-25T03:00:00Z",
+    },
+  });
+  await fs.mkdir(path.dirname(retainedExecutionMetricsRunSummaryPath(retentionRootPath, 201)), { recursive: true });
+  await fs.writeFile(
+    retainedExecutionMetricsRunSummaryPath(retentionRootPath, 201),
+    `${JSON.stringify(summaryA, null, 2)}\n`,
+    "utf8",
+  );
+  await fs.writeFile(
+    retainedExecutionMetricsRunSummaryPath(retentionRootPath, 202),
+    `${JSON.stringify(summaryB, null, 2)}\n`,
+    "utf8",
+  );
+
+  assert.deepEqual(await listRetainedExecutionMetricsRunSummaryPaths(retentionRootPath), [
+    retainedExecutionMetricsRunSummaryPath(retentionRootPath, 201),
+    retainedExecutionMetricsRunSummaryPath(retentionRootPath, 202),
+  ]);
+
+  const result = await syncRetainedExecutionMetricsDailyRollups({
+    stateFilePath,
+    generatedAt: "2026-03-26T00:00:00Z",
+  });
+
+  assert.deepEqual(result, {
+    artifactPath: executionMetricsDailyRollupsPath(retentionRootPath),
+    runSummaryCount: 2,
+  });
+  assert.deepEqual(JSON.parse(await fs.readFile(result.artifactPath, "utf8")), {
+    schemaVersion: 1,
+    generatedAt: "2026-03-26T00:00:00Z",
+    days: [
+      {
+        day: "2026-03-24",
+        runCount: 1,
+        terminalStates: {
+          done: 1,
+          blocked: 0,
+          failed: 0,
+        },
+        leadTimeMs: {
+          average: 10_800_000,
+          total: 10_800_000,
+          count: 1,
+        },
+        reviewIterations: {
+          average: 2,
+          total: 2,
+          count: 1,
+        },
+        reviewThreadInstances: {
+          average: 4,
+          total: 4,
+          count: 1,
+        },
+        failurePatterns: [],
+      },
+      {
+        day: "2026-03-25",
+        runCount: 1,
+        terminalStates: {
+          done: 0,
+          blocked: 0,
+          failed: 1,
+        },
+        leadTimeMs: {
+          average: 10_800_000,
+          total: 10_800_000,
+          count: 1,
+        },
+        reviewIterations: {
+          average: null,
+          total: 0,
+          count: 0,
+        },
+        reviewThreadInstances: {
+          average: null,
+          total: 0,
+          count: 0,
+        },
+        failurePatterns: [
+          {
+            category: "codex",
+            failureKind: "command_error",
+            blockedReason: null,
+            count: 1,
+          },
+        ],
+      },
+    ],
+  });
 });

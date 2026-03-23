@@ -1,9 +1,12 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { nowIso, readJsonIfExists, writeJsonAtomic } from "../core/utils";
 import {
   type ExecutionMetricsFailureMetrics,
   type ExecutionMetricsRunSummaryArtifact,
   validateExecutionMetricsRunSummary,
 } from "./execution-metrics-schema";
+import { executionMetricsRetentionRootPath } from "./execution-metrics-run-summary";
 
 export const EXECUTION_METRICS_DAILY_ROLLUPS_SCHEMA_VERSION = 1;
 
@@ -40,6 +43,28 @@ export interface ExecutionMetricsDailyRollupsArtifact {
   schemaVersion: typeof EXECUTION_METRICS_DAILY_ROLLUPS_SCHEMA_VERSION;
   generatedAt: string;
   days: ExecutionMetricsDailyRollup[];
+}
+
+export function executionMetricsDailyRollupsPath(retentionRootPath: string): string {
+  return path.join(retentionRootPath, "daily-rollups.json");
+}
+
+export async function listRetainedExecutionMetricsRunSummaryPaths(retentionRootPath: string): Promise<string[]> {
+  const summariesRoot = path.join(retentionRootPath, "run-summaries");
+  let entries: string[];
+  try {
+    entries = await fs.readdir(summariesRoot);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+
+  return entries
+    .filter((entry) => entry.endsWith(".json"))
+    .sort((left, right) => left.localeCompare(right))
+    .map((entry) => path.join(summariesRoot, entry));
 }
 
 interface ExecutionMetricsDailyRollupInput {
@@ -217,4 +242,21 @@ export async function syncExecutionMetricsDailyRollups(args: {
   });
   await writeJsonAtomic(args.outputPath, artifact);
   return { artifactPath: args.outputPath };
+}
+
+export async function syncRetainedExecutionMetricsDailyRollups(args: {
+  stateFilePath: string;
+  generatedAt?: string;
+}): Promise<{ artifactPath: string; runSummaryCount: number }> {
+  const retentionRootPath = executionMetricsRetentionRootPath(args.stateFilePath);
+  const runSummaryPaths = await listRetainedExecutionMetricsRunSummaryPaths(retentionRootPath);
+  const context = await syncExecutionMetricsDailyRollups({
+    outputPath: executionMetricsDailyRollupsPath(retentionRootPath),
+    runSummaryPaths,
+    generatedAt: args.generatedAt,
+  });
+  return {
+    artifactPath: context.artifactPath,
+    runSummaryCount: runSummaryPaths.length,
+  };
 }

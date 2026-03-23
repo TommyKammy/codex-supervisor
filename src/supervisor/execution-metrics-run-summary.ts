@@ -12,6 +12,14 @@ export function executionMetricsRunSummaryPath(workspacePath: string): string {
   return path.join(workspacePath, ".codex-supervisor", "execution-metrics", "run-summary.json");
 }
 
+export function executionMetricsRetentionRootPath(stateFilePath: string): string {
+  return path.join(path.dirname(stateFilePath), "execution-metrics");
+}
+
+export function retainedExecutionMetricsRunSummaryPath(retentionRootPath: string, issueNumber: number): string {
+  return path.join(retentionRootPath, "run-summaries", `issue-${issueNumber}.json`);
+}
+
 export async function syncExecutionMetricsRunSummary(args: {
   previousRecord: Pick<IssueRunRecord, "issue_number" | "updated_at">;
   nextRecord: Pick<
@@ -31,6 +39,7 @@ export async function syncExecutionMetricsRunSummary(args: {
   issue?: Pick<GitHubIssue, "createdAt"> | null;
   pullRequest?: Pick<GitHubPullRequest, "createdAt" | "mergedAt"> | null;
   recoveryEvents?: RecoveryEvent[];
+  retentionRootPath?: string;
 }): Promise<string | null> {
   const { state } = args.nextRecord;
   if (!isTerminalState(state) || !args.nextRecord.workspace) {
@@ -63,6 +72,13 @@ export async function syncExecutionMetricsRunSummary(args: {
   });
 
   const artifactPath = executionMetricsRunSummaryPath(args.nextRecord.workspace);
-  await writeJsonAtomic(artifactPath, validateExecutionMetricsRunSummary(artifact));
+  const validatedArtifact = validateExecutionMetricsRunSummary(artifact);
+  await writeJsonAtomic(artifactPath, validatedArtifact);
+  if (args.retentionRootPath) {
+    await writeJsonAtomic(
+      retainedExecutionMetricsRunSummaryPath(args.retentionRootPath, args.previousRecord.issue_number),
+      validatedArtifact,
+    );
+  }
   return artifactPath;
 }

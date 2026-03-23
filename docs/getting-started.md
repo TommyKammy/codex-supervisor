@@ -146,6 +146,7 @@ Start with a single supervised pass so you can inspect the repo selection, workt
 ```bash
 node dist/index.js run-once --config /path/to/supervisor.config.json
 node dist/index.js status --config /path/to/supervisor.config.json
+node dist/index.js rollup-execution-metrics --config /path/to/supervisor.config.json
 ```
 
 What to check after `run-once`:
@@ -159,6 +160,8 @@ What to check after `run-once`:
 
 If the first pass picks the wrong issue, inspect `status` or `doctor` for the effective candidate discovery settings and then fix the issue metadata before running again. Do not treat issue creation time as the source of truth.
 If `status` or `doctor` reports corrupted JSON state, stop treating that file as a safe checkpoint. Inspect the file and recent operator actions first, then explicitly acknowledge the corruption or reset the state before trusting future runs.
+
+Execution metrics are retained independently of issue worktree cleanup. Terminal run summaries live under `<dirname(stateFile)>/execution-metrics/run-summaries/`, and `node dist/index.js rollup-execution-metrics --config /path/to/supervisor.config.json` writes `<dirname(stateFile)>/execution-metrics/daily-rollups.json` from those retained summaries.
 
 ### Setup/readiness contract for first-run UX
 

@@ -2,6 +2,7 @@ import type { IssueRunRecord, JsonCorruptStateResetResult, RunState } from "../c
 
 export type SupervisorRecoveryAction = "requeue";
 export type SupervisorOrphanPruneAction = "prune-orphaned-workspaces";
+export type SupervisorExecutionMetricsRollupAction = "rollup-execution-metrics";
 
 export type SupervisorMutationRecordSnapshotDto = Pick<
   IssueRunRecord,
@@ -66,6 +67,14 @@ export interface SupervisorOrphanPruneResultDto {
   skipped: SkippedOrphanedWorkspaceResultDto[];
 }
 
+export interface SupervisorExecutionMetricsRollupResultDto {
+  action: SupervisorExecutionMetricsRollupAction;
+  outcome: "completed" | "rejected";
+  summary: string;
+  artifactPath: string | null;
+  runSummaryCount: number;
+}
+
 export function buildSupervisorMutationRecordSnapshot(
   record: IssueRunRecord,
 ): SupervisorMutationRecordSnapshotDto {
@@ -104,6 +113,10 @@ export function renderSupervisorMutationResultDto(dto: SupervisorMutationResultD
 }
 
 export function renderSupervisorOrphanPruneResultDto(dto: SupervisorOrphanPruneResultDto): string {
+  return JSON.stringify(dto);
+}
+
+export function renderSupervisorExecutionMetricsRollupResultDto(dto: SupervisorExecutionMetricsRollupResultDto): string {
   return JSON.stringify(dto);
 }
 
