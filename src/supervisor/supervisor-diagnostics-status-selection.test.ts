@@ -284,6 +284,7 @@ Expose typed operator-facing issue detail fields.
   };
 
   const report = await supervisor.statusReport();
+  const status = await supervisor.status();
 
   assert.deepEqual(report.activeIssue?.activityContext, {
     handoffSummary:
@@ -331,6 +332,14 @@ Expose typed operator-facing issue detail fields.
       },
     ],
   });
+  assert.match(
+    status,
+    /^retry_summary timeout=2 verification=1 same_failure_signature=4 last_failure_signature=tracked-pr-refresh-loop apparent_no_progress=yes$/m,
+  );
+  assert.match(
+    status,
+    /^recovery_loop_summary latest_reason=tracked_pr_head_advanced phase_change=blocked->addressing_review apparent_no_progress=yes$/m,
+  );
 });
 
 test("status surfaces repeated stale cleanup risk before the stale recovery loop exhausts retries", async (t) => {
@@ -417,6 +426,10 @@ test("status surfaces repeated stale cleanup risk before the stale recovery loop
   assert.match(
     status,
     /stale_recovery_warning issue=#366 status=retrying state=queued repeat_count=1\/3 tracked_pr=none action=confirm_whether_the_change_already_landed_or_retarget_the_issue_manually/,
+  );
+  assert.match(
+    status,
+    /^recovery_loop_summary kind=stale_stabilizing_no_pr status=retrying repeat_count=1\/3 action=confirm_whether_the_change_already_landed_or_retarget_the_issue_manually apparent_no_progress=yes$/m,
   );
 });
 

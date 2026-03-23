@@ -932,6 +932,7 @@ export class Supervisor {
       config: this.config,
       activeRecord: statusRecords.activeRecord,
       latestRecoveryRecord: statusRecords.latestRecoveryRecord,
+      activityContext: activeStatus.activityContext,
       handoffSummary: activeStatus.handoffSummary,
       localReviewRoutingSummary: activeStatus.localReviewRoutingSummary,
       changeClassesSummary: activeStatus.changeClassesSummary,

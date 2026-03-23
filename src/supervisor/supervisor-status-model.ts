@@ -10,6 +10,11 @@ import {
 } from "./supervisor-status-summary-helpers";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
 import { truncate } from "../core/utils";
+import {
+  formatRecoveryLoopSummaryLine,
+  formatRetrySummaryLine,
+  type SupervisorIssueActivityContextDto,
+} from "./supervisor-operator-activity-context";
 
 type ReviewThreadClassifier = (config: SupervisorConfig, reviewThreads: ReviewThread[]) => ReviewThread[];
 type PendingReviewThreadClassifier = (
@@ -46,6 +51,7 @@ export interface BuildDetailedStatusSummaryLinesArgs {
   config: SupervisorConfig;
   activeRecord: IssueRunRecord | null;
   latestRecoveryRecord?: IssueRunRecord | null;
+  activityContext?: SupervisorIssueActivityContextDto | null;
   handoffSummary?: string | null;
   localReviewRoutingSummary?: string | null;
   changeClassesSummary?: string | null;
@@ -69,6 +75,7 @@ export function buildDetailedStatusSummaryLines(args: BuildDetailedStatusSummary
     config,
     activeRecord,
     latestRecoveryRecord = null,
+    activityContext = null,
     handoffSummary = null,
     localReviewRoutingSummary = null,
     changeClassesSummary = null,
@@ -100,6 +107,16 @@ export function buildDetailedStatusSummaryLines(args: BuildDetailedStatusSummary
 
   if (externalReviewFollowUpSummary) {
     lines.push(truncate(sanitizeStatusValue(externalReviewFollowUpSummary), 200) ?? "");
+  }
+
+  const retrySummaryLine = formatRetrySummaryLine(activityContext);
+  if (retrySummaryLine) {
+    lines.push(retrySummaryLine);
+  }
+
+  const recoveryLoopSummaryLine = formatRecoveryLoopSummaryLine(activityContext);
+  if (recoveryLoopSummaryLine) {
+    lines.push(recoveryLoopSummaryLine);
   }
 
   if (activeRecord && latestRecoveryRecord?.last_recovery_reason && latestRecoveryRecord.last_recovery_at) {
