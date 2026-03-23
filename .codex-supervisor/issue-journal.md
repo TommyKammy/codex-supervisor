@@ -5,65 +5,63 @@
 - Branch: codex/issue-871
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 62e8d495a6efdee617117dbf18ce6e229a91d6e3
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: e264997db17fd7d7cbae26bb05157363cee9dc73
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-23T06:56:21.776Z
+- Last failure signature: PRRT_kwDORgvdZ852DQTW
+- Repeated failure signature count: 1
+- Updated at: 2026-03-23T07:22:06.671Z
 
 ## Latest Codex Summary
-- Added a real-browser smoke regression for dashboard pointer reordering in both horizontal directions, then fixed the WebUI drag handling by tracking pointer-hover targets with `elementFromPoint()` and ignoring bubbled descendant `dragleave` churn.
-- Verified that pointer reordering, keyboard reordering, and the existing dashboard/browser suites all pass locally along with `npm run build`.
+Implemented and pushed the dashboard fix for pointer reordering. The change is on `codex/issue-871` as commit `e264997` and draft PR [#879](https://github.com/TommyKammy/codex-supervisor/pull/879).
+
+The fix keeps keyboard reordering intact while adding a pointer-driven reorder path in [`src/backend/webui-dashboard-browser-script.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-871/src/backend/webui-dashboard-browser-script.ts) that tracks hovered panels via `elementFromPoint()` and avoids losing targets on bubbled child `dragleave` events. I also added a real-browser regression in [`src/backend/webui-dashboard-browser-smoke.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-871/src/backend/webui-dashboard-browser-smoke.test.ts) that exercises pointer reordering in both horizontal directions.
+
+Verification passed:
+- `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts`
+- `npm run build`
+
+GitHub currently shows PR `#879` as `UNSTABLE` only because `build (ubuntu-latest)` and `build (macos-latest)` are still pending. I also updated the issue journal locally, but that journal-only sync is not committed so the worktree still has [` .codex-supervisor/issue-journal.md`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-871/.codex-supervisor/issue-journal.md) modified plus the existing untracked replay directory.
+
+Summary: Fixed WebUI pointer panel reordering, added a real-browser regression for both horizontal directions, pushed commit `e264997`, and opened draft PR `#879`.
+State hint: waiting_ci
+Blocked reason: none
+Tests: `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts`; `npm run build`
+Failure signature: none
+Next action: Wait for PR `#879` CI checks to finish and only intervene if `build (ubuntu-latest)` or `build (macos-latest)` fails.
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/879#discussion_r2973268865
+- Details:
+  - src/backend/webui-dashboard-browser-smoke.test.ts:361 _⚠️ Potential issue_ | _🟡 Minor_ **Potential test flakiness: missing wait after first drag operation.** The first drag asserts panel order immediately after `dragPanelHandle` returns (lines 352-361), while the second drag correctly uses `waitForFunction` to wait for the DOM to stabilize (lines 363-369). If the panel reorder involves any async DOM updates, the first assertion could intermittently fail. Consider adding a similar `waitForFunction` before the first assertion for consistency: <details> <summary>🛡️ Proposed fix for consistency</summary> ```diff await dragPanelHandle(page, "#panel-drag-operator-actions", "#panel-drag-operator-timeline"); + await page.waitForFunction( + () => + Array.from(document.querySelectorAll("#details-grid > article")) + .map((element) => element.id) + .join(",") === + "panel-issue-details,panel-tracked-history,panel-live-events,panel-operator-actions,panel-operator-timeline", + ); assert.equal(await page.textContent("#dashboard-panel-reorder-status"), "Moved operator actions panel before operator timeline."); ``` </details> <!-- suggestion_start --> <details> <summary>📝 Committable suggestion</summary> > ‼️ **IMPORTANT** > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements. ```suggestion await dragPanelHandle(page, "#panel-drag-operator-actions", "#panel-drag-operator-timeline"); await page.waitForFunction( () => Array.from(document.querySelectorAll("#details-grid > article")) .map((element) => element.id) .join(",") === "panel-issue-details,panel-tracked-history,panel-live-events,panel-operator-actions,panel-operator-timeline", ); assert.equal(await page.textContent("#dashboard-panel-reorder-status"), "Moved operator actions panel before operator timeline."); assert.deepEqual( await page.locator("#details-grid > article").evaluateAll((elements) => elements.map((element) => element.id)), [ "panel-issue-details", "panel-tracked-history", "panel-live-events", "panel-operator-actions", "panel-operator-timeline", ], ); ``` </details> <!-- suggestion_end --> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/backend/webui-dashboard-browser-smoke.test.ts` around lines 350 - 361, The first drag's assertions are prone to race conditions; after calling dragPanelHandle for "#panel-drag-operator-actions" -> "#panel-drag-operator-timeline" you should await a waitForFunction that checks the DOM/order has updated (for example, poll the locator "#details-grid > article" and confirm the element ids equal the expected array and/or that "#dashboard-panel-reorder-status" text equals "Moved operator actions panel before operator timeline.") before running the assert.equal and assert.deepEqual; add this waitForFunction (similar to the second drag's implementation) to stabilize the DOM after dragPanelHandle. ``` </details> <!-- fingerprinting:phantom:medusa:ocelot --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the asymmetric pointer reorder bug came from relying on native `dragover`/`dragleave` target state alone; a local pointer-tracking path plus descendant-safe `dragleave` handling fixes the dashboard reorder behavior without touching backend semantics.
-- What changed: added `browser smoke reorders the dashboard with pointer dragging in both horizontal directions` in `src/backend/webui-dashboard-browser-smoke.test.ts`, then updated `src/backend/webui-dashboard-browser-script.ts` so pointer drags track hover targets with `document.elementFromPoint()`, commit on `pointerup`, suppress conflicting native drags for that path, and ignore bubbled child `dragleave` events.
+- Hypothesis: the remaining review feedback is valid and limited to smoke-test stability; the first pointer-drag assertion should wait for the reordered DOM state just like the second drag already does, without changing product behavior.
+- What changed: added a `page.waitForFunction(...)` after the first `dragPanelHandle(page, "#panel-drag-operator-actions", "#panel-drag-operator-timeline")` call in `src/backend/webui-dashboard-browser-smoke.test.ts` so the test waits for the expected `#details-grid > article` order before asserting the reorder status text and panel ids.
 - Current blocker: none
-- Next exact step: stage the dashboard/browser files plus this journal update, commit the verified checkpoint, and then decide whether to push/open the draft PR for `codex/issue-871`.
-- Verification gap: none on the local fix; the focused browser/UI tests and full build passed.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-browser-smoke.test.ts`
-- Rollback concern: moderate-low; the change is local to WebUI drag behavior, but pointer handling now has a custom path that should stay aligned with the existing keyboard/native drag semantics.
+- Next exact step: commit and push this review fix on `codex/issue-871`, then resolve the automated PR thread on `#879`.
+- Verification gap: none locally for this review fix; the focused dashboard/browser suite passed after the test change.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-smoke.test.ts`
+- Rollback concern: low; the change only makes an existing browser smoke assertion wait for the DOM reorder it already expects.
 - Last focused command: `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts`
-- Last focused failure: `pointer-drag-cancelled-before-target` during early smoke-test reproduction; resolved after scrolling targets into view in the browser test and adding the custom pointer drag path in the dashboard script.
+- Last focused failure: `PRRT_kwDORgvdZ852DQTW` review thread about a potentially flaky immediate assertion after the first pointer drag; resolved locally by waiting for the reordered DOM state before asserting.
 - Last focused commands:
 ```bash
 sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-871/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-871/context-index.md
+sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-871/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
-git status --short --branch
-rg -n "drag|pointer|reorder|dashboard" src/backend -g '*test.ts'
-sed -n '1,220p' src/backend/webui-dashboard-browser-smoke.test.ts
-sed -n '1,260p' src/backend/webui-dashboard-browser-script.ts
-sed -n '1,260p' src/backend/webui-dashboard-browser-logic.ts
-sed -n '260,520p' src/backend/webui-dashboard-browser-script.ts
-sed -n '520,920p' src/backend/webui-dashboard.test.ts
-sed -n '1,220p' src/backend/webui-dashboard-browser-smoke.test.ts
-sed -n '960,1095p' src/backend/webui-dashboard-browser-script.ts
-npm ci
-npx tsx --test src/backend/webui-dashboard-browser-smoke.test.ts
-apply_patch
-apply_patch
-npx tsx --test src/backend/webui-dashboard-browser-smoke.test.ts --test-name-pattern "pointer dragging"
-sed -n '1,260p' src/backend/webui-dashboard-page.ts
-sed -n '260,340p' src/backend/webui-dashboard-page.ts
-rg -n "asymmetric|right to left|left to right|drag-and-drop|pointer reordering|dragleave" -S .
-apply_patch
-npx tsx --test src/backend/webui-dashboard.test.ts
+sed -n '320,410p' src/backend/webui-dashboard-browser-smoke.test.ts
 apply_patch
 npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts
-npm run build
 git status --short --branch
-git diff -- src/backend/webui-dashboard-browser-script.ts src/backend/webui-dashboard-browser-smoke.test.ts
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
-- 2026-03-23T07:08:26Z: reproduced the missing real-browser pointer coverage with a new smoke test, then fixed the dashboard by adding a pointer-driven reorder path backed by `elementFromPoint()` and descendant-safe `dragleave` handling; `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts` and `npm run build` both passed.
+- 2026-03-23T07:22:48Z: validated the CodeRabbit flake note, added a DOM-order `waitForFunction` after the first pointer drag in `src/backend/webui-dashboard-browser-smoke.test.ts`, and re-passed `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts`.
 - 2026-03-22T21:40:05Z: pushed `codex/issue-847` and opened draft PR `#857` for the verified dashboard refresh checkpoint.
 - 2026-03-22T21:40:05Z: reproduced the visual-refresh gap with a new hero-and-section framing regression, refreshed the dashboard page chrome/CSS to add labeled lanes and flatter surfaces, and passed `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts`.
 - 2026-03-22T21:15:08Z: pushed `codex/issue-846` and opened draft PR `#856`; GitHub currently reports `mergeStateStatus=UNSTABLE`, so the next turn should inspect CI/check runs and address any failures or review feedback.

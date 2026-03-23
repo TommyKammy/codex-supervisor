@@ -348,6 +348,13 @@ test("browser smoke reorders the dashboard with pointer dragging in both horizon
   await page.waitForFunction(() => document.getElementById("doctor-overall")?.textContent === "pass");
 
   await dragPanelHandle(page, "#panel-drag-operator-actions", "#panel-drag-operator-timeline");
+  await page.waitForFunction(
+    () =>
+      Array.from(document.querySelectorAll("#details-grid > article"))
+        .map((element) => element.id)
+        .join(",") ===
+      "panel-issue-details,panel-tracked-history,panel-live-events,panel-operator-actions,panel-operator-timeline",
+  );
   assert.equal(await page.textContent("#dashboard-panel-reorder-status"), "Moved operator actions panel before operator timeline.");
   assert.deepEqual(
     await page.locator("#details-grid > article").evaluateAll((elements) => elements.map((element) => element.id)),
