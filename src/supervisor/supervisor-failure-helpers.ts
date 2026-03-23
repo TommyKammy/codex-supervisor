@@ -127,7 +127,7 @@ export async function recoverUnexpectedCodexTurnFailure(args: {
   journalSync: (record: IssueRunRecord) => Promise<void>;
   error: unknown;
   workspaceStatus: Pick<WorkspaceStatus, "hasUncommittedChanges" | "headSha"> | null;
-  pr: Pick<GitHubPullRequest, "number" | "headRefOid"> | null;
+  pr: Pick<GitHubPullRequest, "number" | "headRefOid" | "createdAt" | "mergedAt"> | null;
 }): Promise<IssueRunRecord> {
   const { stateStore, state, record, issue, journalSync, error, workspaceStatus, pr } = args;
   const message = error instanceof Error ? error.stack ?? error.message : String(error);
@@ -167,6 +167,8 @@ export async function recoverUnexpectedCodexTurnFailure(args: {
     await syncExecutionMetricsRunSummary({
       previousRecord: record,
       nextRecord: updated,
+      issue,
+      pullRequest: pr,
     });
   } catch (metricsError) {
     console.warn(

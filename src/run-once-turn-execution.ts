@@ -96,7 +96,7 @@ interface RecoverUnexpectedCodexTurnFailureArgs {
   journalSync: (record: IssueRunRecord) => Promise<void>;
   error: unknown;
   workspaceStatus: Pick<WorkspaceStatus, "hasUncommittedChanges" | "headSha"> | null;
-  pr: Pick<GitHubPullRequest, "number" | "headRefOid"> | null;
+  pr: Pick<GitHubPullRequest, "number" | "headRefOid" | "createdAt" | "mergedAt"> | null;
 }
 
 interface ExecuteCodexTurnPhaseArgs {
@@ -141,6 +141,7 @@ interface ExecuteCodexTurnPhaseArgs {
     stateStore: Pick<StateStore, "touch" | "save">;
     state: SupervisorStateFile;
     record: IssueRunRecord;
+    issue: Pick<GitHubIssue, "createdAt">;
     syncJournal: (record: IssueRunRecord) => Promise<void>;
     issueNumber: number;
     error: unknown;
@@ -159,6 +160,7 @@ interface ExecuteCodexTurnPhaseArgs {
     stateStore: Pick<StateStore, "touch" | "save">;
     state: SupervisorStateFile;
     record: IssueRunRecord;
+    issue: Pick<GitHubIssue, "createdAt">;
     syncJournal: (record: IssueRunRecord) => Promise<void>;
     issueNumber: number;
     codexResult: Pick<import("./core/types").CodexTurnResult, "lastMessage" | "stderr" | "stdout">;
@@ -177,6 +179,7 @@ interface ExecuteCodexTurnPhaseArgs {
     stateStore: Pick<StateStore, "touch" | "save">;
     state: SupervisorStateFile;
     record: IssueRunRecord;
+    issue: Pick<GitHubIssue, "createdAt">;
     syncJournal: (record: IssueRunRecord) => Promise<void>;
     issueNumber: number;
     buildCodexFailureContext: (
@@ -193,6 +196,7 @@ interface ExecuteCodexTurnPhaseArgs {
     stateStore: Pick<StateStore, "touch" | "save">;
     state: SupervisorStateFile;
     record: IssueRunRecord;
+    issue: Pick<GitHubIssue, "createdAt">;
     syncJournal: (record: IssueRunRecord) => Promise<void>;
     issueNumber: number;
     lastMessage: string;
@@ -320,6 +324,7 @@ export async function executeCodexTurnPhase(
           stateStore,
           state,
           record,
+          issue,
           syncJournal,
           issueNumber: record.issue_number,
           buildCodexFailureContext: args.buildCodexFailureContext,
@@ -341,6 +346,7 @@ export async function executeCodexTurnPhase(
           stateStore,
           state,
           record,
+          issue,
           syncJournal,
           issueNumber: record.issue_number,
           error: new Error(message),
@@ -359,6 +365,7 @@ export async function executeCodexTurnPhase(
           stateStore,
           state,
           record,
+          issue,
           syncJournal,
           issueNumber: record.issue_number,
           codexResult: {
@@ -381,6 +388,7 @@ export async function executeCodexTurnPhase(
           stateStore,
           state,
           record,
+          issue,
           syncJournal,
           issueNumber: record.issue_number,
           lastMessage: turnResult.supervisorMessage,
@@ -446,6 +454,7 @@ export async function executeCodexTurnPhase(
           await syncExecutionMetricsRunSummary({
             previousRecord: args.context.record,
             nextRecord: record,
+            issue,
           });
           await syncJournal(record);
           return {
@@ -529,6 +538,8 @@ export async function executeCodexTurnPhase(
       await syncExecutionMetricsRunSummary({
         previousRecord: args.context.record,
         nextRecord: record,
+        issue,
+        pullRequest: pr,
       });
       await syncJournal(record);
 
