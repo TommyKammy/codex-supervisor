@@ -77,6 +77,7 @@ export interface SupervisorCycleDecisionSnapshot {
       | "local_review_degraded"
       | "last_local_review_signature"
       | "repeated_local_review_signature_count"
+      | "latest_local_ci_result"
       | "processed_review_thread_ids"
       | "processed_review_thread_fingerprints"
       | "updated_at"
@@ -172,6 +173,7 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
         local_review_degraded: record.local_review_degraded,
         last_local_review_signature: record.last_local_review_signature,
         repeated_local_review_signature_count: record.repeated_local_review_signature_count,
+        latest_local_ci_result: record.latest_local_ci_result ?? null,
         processed_review_thread_ids: [...record.processed_review_thread_ids],
         processed_review_thread_fingerprints: [...record.processed_review_thread_fingerprints],
         updated_at: record.updated_at,
@@ -247,6 +249,7 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
         local_review_degraded: record.local_review_degraded,
         last_local_review_signature: record.last_local_review_signature,
         repeated_local_review_signature_count: record.repeated_local_review_signature_count,
+        latest_local_ci_result: record.latest_local_ci_result ?? null,
         processed_review_thread_ids: [...record.processed_review_thread_ids],
         processed_review_thread_fingerprints: [...record.processed_review_thread_fingerprints],
         updated_at: record.updated_at,

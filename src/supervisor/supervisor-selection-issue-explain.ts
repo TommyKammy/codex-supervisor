@@ -39,6 +39,7 @@ import {
 } from "../core/types";
 import type { ActiveStatusGitHub } from "./supervisor-selection-active-status";
 import {
+  formatLocalCiStatusLine,
   formatRecoveryLoopSummaryLine,
   formatRetrySummaryLine,
   maybeBuildIssueActivityContext,
@@ -289,6 +290,7 @@ export async function buildIssueExplainDto(
 }
 
 export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
+  const localCiStatusLine = formatLocalCiStatusLine(dto.activityContext);
   const retrySummaryLine = formatRetrySummaryLine(dto.activityContext);
   const recoveryLoopSummaryLine = formatRecoveryLoopSummaryLine(dto.activityContext);
   const lines = [
@@ -299,6 +301,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     `runnable=${dto.runnable ? "yes" : "no"}`,
     ...dto.changeRiskLines,
     ...(dto.externalReviewFollowUpSummary ? [dto.externalReviewFollowUpSummary] : []),
+    ...(localCiStatusLine ? [localCiStatusLine] : []),
     ...(retrySummaryLine ? [retrySummaryLine] : []),
     ...(recoveryLoopSummaryLine ? [recoveryLoopSummaryLine] : []),
     ...(dto.latestRecoverySummary ? [dto.latestRecoverySummary] : []),

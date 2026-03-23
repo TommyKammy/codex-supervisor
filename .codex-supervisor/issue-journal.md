@@ -1,74 +1,56 @@
-# Issue #884: Local CI execution gate: run configured pre-PR verification before PR publication
+# Issue #885: Local CI visibility: persist and surface the latest pre-PR verification result
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/884
-- Branch: codex/issue-884
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/885
+- Branch: codex/issue-885
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 1fc7138056bf61c8ea73906623bcabfe205bf543
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 0028afa11b61b958d6167df67d63e68f4e3f8685
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ852JnTS|PRRT_kwDORgvdZ852JnTY|PRRT_kwDORgvdZ852JnTZ
-- Repeated failure signature count: 1
-- Updated at: 2026-03-23T14:40:35.535Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-23T15:23:48Z
 
 ## Latest Codex Summary
-Pushed `codex/issue-884` and opened draft PR `#901`: https://github.com/TommyKammy/codex-supervisor/pull/901
-
-I also updated the issue journal handoff so the durable state now points at PR `#901` and the next step is to monitor its checks/review. No additional code changes or verification were needed in this turn beyond the already-passing local verification from the prior step. The worktree is still dirty only because of the updated journal and untracked `.codex-supervisor/replay/`.
-
-Summary: Pushed `codex/issue-884`, opened draft PR `#901`, and updated the journal handoff to monitor PR checks
-State hint: draft_pr
-Blocked reason: none
-Tests: not run in this turn; prior verified state already passed `npm run build`, `npx tsx --test src/run-once-turn-execution.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`, and `npx tsx --test src/post-turn-pull-request.test.ts`
-Failure signature: none
-Next action: monitor draft PR `#901` checks and address any CI or review feedback
+- Persisted concise latest local-CI results on issue records, surfaced typed `localCiStatus` in status/explain activity context and replay snapshots, and added readable `local_ci_result` lines to status/explain output.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the addressed review fixes are now on `codex/issue-884` head `a5aa5f1`, the three automated threads are resolved on PR `#901`, and the remaining work is to monitor for any follow-up CI or review signal on the refreshed head.
-- What changed: added `CommandExecutionError` in `src/core/command.ts` so failed commands retain `stdout`, `stderr`, `exitCode`, and timeout metadata; updated `src/local-ci.ts` to enforce a 5-minute timeout and include `stdout`/`stderr` sections in blocked failure details; cleared stale `last_failure_kind` when the draft-to-ready local-CI gate blocks in `src/post-turn-pull-request.ts`; added focused regressions in `src/core/command.test.ts`, `src/local-ci.test.ts`, and `src/post-turn-pull-request.test.ts`; redacted machine-specific paths in this journal entry; committed the review fixes as `a5aa5f1`; pushed `codex/issue-884`; and resolved the three addressed CodeRabbit threads on PR `#901`.
+- Hypothesis: issue `#885` was missing a durable, operator-visible latest local-CI result because the supervisor only persisted the configured contract and transient failure context, not the latest pass/fail summary tied to the issue record.
+- What changed: added optional `latest_local_ci_result` metadata to `IssueRunRecord`; updated `runLocalCiGate` to return concise pass/fail result summaries; persisted the latest result on all three local-CI gate paths in `src/run-once-issue-preparation.ts`, `src/run-once-turn-execution.ts`, and `src/post-turn-pull-request.ts`; projected that state into typed `localCiStatus` activity context in `src/supervisor/supervisor-operator-activity-context.ts`; surfaced it through status/explain text rendering and replay snapshots in `src/supervisor/supervisor-detailed-status-assembly.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, and `src/supervisor/supervisor-cycle-snapshot.ts`; and added focused regressions plus fixture updates in the supervisor status/explain/replay tests and supporting service/http tests.
 - Current blocker: none
-- Next exact step: monitor PR `#901` for refreshed checks or any new review feedback on head `a5aa5f1`.
+- Next exact step: review the diff, then commit the local-CI visibility change on `codex/issue-885` and open or update the draft PR if needed.
 - Verification gap: none on the requested issue verification surface.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/core/command.test.ts`, `src/core/command.ts`, `src/local-ci.test.ts`, `src/local-ci.ts`, `src/post-turn-pull-request.test.ts`, `src/post-turn-pull-request.ts`
-- Rollback concern: low; the production behavior change is limited to bounding local-CI runtime and improving blocked diagnostics, but reverting only one half of the `command`/`local-ci` pair would reintroduce missing stdout diagnostics.
-- Last focused command: `gh api graphql -f query='mutation($id1:ID!,$id2:ID!,$id3:ID!){ r1: resolveReviewThread(input:{threadId:$id1}) { thread { isResolved } } r2: resolveReviewThread(input:{threadId:$id2}) { thread { isResolved } } r3: resolveReviewThread(input:{threadId:$id3}) { thread { isResolved } } }' -F id1=PRRT_kwDORgvdZ852JnTS -F id2=PRRT_kwDORgvdZ852JnTY -F id3=PRRT_kwDORgvdZ852JnTZ`
-- Last focused failure: none current; the first GraphQL attempt using an array variable failed with `Expected NAME, actual: LBRACKET ("[")`, then the explicit `id1`/`id2`/`id3` retry resolved all three threads.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/core/types.ts`, `src/local-ci.ts`, `src/post-turn-pull-request.test.ts`, `src/post-turn-pull-request.ts`, `src/run-once-issue-preparation.ts`, `src/run-once-turn-execution.ts`, `src/supervisor/supervisor-cycle-snapshot.test.ts`, `src/supervisor/supervisor-cycle-snapshot.ts`, `src/supervisor/supervisor-detailed-status-assembly.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-operator-activity-context.ts`, `src/supervisor/supervisor-selection-issue-explain.test.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/supervisor/supervisor-service.test.ts`
+- Rollback concern: low; the behavior change is additive and concise, but partially reverting the persistence without the typed status projection would leave stale or missing operator visibility.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts`
+- Last focused failure: `npm run build` initially failed with `sh: 1: tsc: not found` because this worktree had no installed `node_modules`; running `npm install` restored the declared dev dependency and the build then passed.
 - Last focused commands:
 ```bash
-sed -n '1,220p' <LOCAL_MEMORY_ROOT>/TommyKammy-codex-supervisor/issue-884/AGENTS.generated.md
-sed -n '1,240p' <LOCAL_MEMORY_ROOT>/TommyKammy-codex-supervisor/issue-884/context-index.md
+sed -n '1,220p' <LOCAL_MEMORY_ROOT>/TommyKammy-codex-supervisor/issue-885/AGENTS.generated.md
+sed -n '1,260p' <LOCAL_MEMORY_ROOT>/TommyKammy-codex-supervisor/issue-885/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
 git status --short --branch
+rg -n "local-ci|localCi|verification" src .codex-supervisor -g '*.ts' -g '*.md'
 sed -n '1,220p' src/local-ci.ts
-sed -n '220,320p' src/post-turn-pull-request.ts
-rg -n "<LOCAL_HOME>|localCiGate\.ok|last_failure_kind|executeLocalCiCommand|runCommand\(" .codex-supervisor/issue-journal.md src -g '*.ts'
-sed -n '1,260p' src/core/command.ts
-sed -n '1,260p' src/post-turn-pull-request.test.ts
-sed -n '1,260p' src/run-once-turn-execution.test.ts
-rg -n "runLocalCiGate|local-ci|runLocalCiCommand|last_failure_context|last_failure_kind" src/post-turn-pull-request.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-execution-orchestration.test.ts src/local-ci.ts
-sed -n '412,450p' src/run-once-turn-execution.ts
-sed -n '1,140p' src/supervisor/supervisor-failure-helpers.ts
-nl -ba .codex-supervisor/issue-journal.md | sed -n '28,90p'
-rg --files src | rg 'command.*test\.ts$|core/command'
-sed -n '1,260p' src/core/command.test.ts
+sed -n '330,390p' src/run-once-issue-preparation.ts
+sed -n '418,455p' src/run-once-turn-execution.ts
+sed -n '245,285p' src/post-turn-pull-request.ts
+sed -n '1,320p' src/supervisor/supervisor-operator-activity-context.ts
+sed -n '1,320p' src/supervisor/supervisor-selection-issue-explain.ts
+sed -n '1,320p' src/supervisor/supervisor-cycle-snapshot.ts
 apply_patch
-npx tsx --test src/core/command.test.ts src/local-ci.test.ts src/post-turn-pull-request.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-execution-orchestration.test.ts
+npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts
+npx tsx --test src/local-ci.test.ts src/run-once-issue-preparation.test.ts src/run-once-turn-execution.test.ts src/post-turn-pull-request.test.ts
+cat package.json
+npm ls typescript --depth=0
+npm install
 npm run build
-date -u +%Y-%m-%dT%H:%M:%SZ
-git status --short
-git diff --stat
-git add .codex-supervisor/issue-journal.md src/core/command.ts src/core/command.test.ts src/local-ci.ts src/local-ci.test.ts src/post-turn-pull-request.ts src/post-turn-pull-request.test.ts
-git commit -m "Fix local CI review follow-ups"
-git push origin codex/issue-884
-git rev-parse HEAD
-gh api graphql -f query='mutation($ids:[ID!]!){ r1: resolveReviewThread(input:{threadId:$ids[0]}) { thread { isResolved } } r2: resolveReviewThread(input:{threadId:$ids[1]}) { thread { isResolved } } r3: resolveReviewThread(input:{threadId:$ids[2]}) { thread { isResolved } } }' -F ids[]=PRRT_kwDORgvdZ852JnTS -F ids[]=PRRT_kwDORgvdZ852JnTY -F ids[]=PRRT_kwDORgvdZ852JnTZ
-gh api graphql -f query='mutation($id1:ID!,$id2:ID!,$id3:ID!){ r1: resolveReviewThread(input:{threadId:$id1}) { thread { isResolved } } r2: resolveReviewThread(input:{threadId:$id2}) { thread { isResolved } } r3: resolveReviewThread(input:{threadId:$id3}) { thread { isResolved } } }' -F id1=PRRT_kwDORgvdZ852JnTS -F id2=PRRT_kwDORgvdZ852JnTY -F id3=PRRT_kwDORgvdZ852JnTZ
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad

@@ -180,6 +180,12 @@ test("buildIssueExplainDto exposes typed operator activity context", async () =>
         blocked_verification_retry_count: 1,
         repeated_failure_signature_count: 4,
         last_failure_signature: "tracked-pr-refresh-loop",
+        latest_local_ci_result: {
+          outcome: "failed",
+          summary: "Configured local CI command failed before marking PR #605 ready.",
+          ran_at: "2026-03-22T00:10:00Z",
+          head_sha: "head-new-605",
+        },
         blocked_reason: null,
         last_error: null,
       }),
@@ -226,6 +232,14 @@ test("buildIssueExplainDto exposes typed operator activity context", async () =>
     verificationPolicySummary: null,
     durableGuardrailSummary: null,
     externalReviewFollowUpSummary: null,
+    localCiStatus: {
+      outcome: "failed",
+      summary: "Configured local CI command failed before marking PR #605 ready.",
+      ranAt: "2026-03-22T00:10:00Z",
+      headSha: "head-new-605",
+      headStatus: "current",
+      context: "warning",
+    },
     latestRecovery: {
       issueNumber,
       at: "2026-03-22T00:15:00Z",
@@ -361,6 +375,7 @@ test("buildIssueExplainDto degrades when PR resolution fails", async () => {
     verificationPolicySummary: null,
     durableGuardrailSummary: null,
     externalReviewFollowUpSummary: null,
+    localCiStatus: null,
     latestRecovery: {
       issueNumber,
       at: "2026-03-22T01:40:00Z",

@@ -68,6 +68,13 @@ export interface LocalCiContractSummary {
   summary: string;
 }
 
+export interface LatestLocalCiResult {
+  outcome: "passed" | "failed";
+  summary: string;
+  ran_at: string;
+  head_sha: string | null;
+}
+
 export interface SupervisorConfig {
   repoPath: string;
   repoSlug: string;
@@ -225,6 +232,7 @@ export interface IssueRunRecord {
   local_review_degraded: boolean;
   last_local_review_signature: string | null;
   repeated_local_review_signature_count: number;
+  latest_local_ci_result?: LatestLocalCiResult | null;
   external_review_head_sha: string | null;
   external_review_misses_path: string | null;
   external_review_matched_findings_count: number;

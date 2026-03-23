@@ -183,6 +183,7 @@ test("statusReport exposes typed active-issue and selection summary fields along
       verificationPolicySummary: null,
       durableGuardrailSummary: null,
       externalReviewFollowUpSummary: null,
+      localCiStatus: null,
       latestRecovery: null,
       retryContext: {
         timeoutRetryCount: 0,
@@ -260,6 +261,12 @@ test("statusReport exposes typed operator activity context for the active issue"
         blocked_verification_retry_count: 1,
         repeated_failure_signature_count: 4,
         last_failure_signature: "tracked-pr-refresh-loop",
+        latest_local_ci_result: {
+          outcome: "failed",
+          summary: "Configured local CI command failed before marking PR #58 ready.",
+          ran_at: "2026-03-22T00:10:00Z",
+          head_sha: "head-new-58",
+        },
         review_wait_started_at: "2099-01-01T00:00:30.000Z",
         review_wait_head_sha: "head-new-58",
       }),
@@ -323,6 +330,14 @@ Expose typed operator-facing issue detail fields.
     verificationPolicySummary: null,
     durableGuardrailSummary: null,
     externalReviewFollowUpSummary: null,
+    localCiStatus: {
+      outcome: "failed",
+      summary: "Configured local CI command failed before marking PR #58 ready.",
+      ranAt: "2026-03-22T00:10:00Z",
+      headSha: "head-new-58",
+      headStatus: "current",
+      context: "warning",
+    },
     latestRecovery: {
       issueNumber,
       at: "2026-03-22T00:15:00Z",
@@ -431,6 +446,7 @@ test("status surfaces repeated stale cleanup risk before the stale recovery loop
     verificationPolicySummary: null,
     durableGuardrailSummary: null,
     externalReviewFollowUpSummary: null,
+    localCiStatus: null,
     latestRecovery: null,
     retryContext: {
       timeoutRetryCount: 0,

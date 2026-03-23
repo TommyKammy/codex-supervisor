@@ -256,6 +256,12 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       const failureContext = localCiGate.failureContext;
       record = stateStore.touch(record, {
         state: "blocked",
+        latest_local_ci_result: localCiGate.latestResult
+          ? {
+              ...localCiGate.latestResult,
+              head_sha: refreshed.pr.headRefOid,
+            }
+          : null,
         last_error: truncate(failureContext?.summary, 1000),
         last_failure_kind: null,
         last_failure_context: failureContext,
@@ -272,6 +278,17 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         reviewThreads: refreshed.reviewThreads,
       };
     }
+    record = stateStore.touch(record, {
+      latest_local_ci_result: localCiGate.latestResult
+        ? {
+            ...localCiGate.latestResult,
+            head_sha: refreshed.pr.headRefOid,
+          }
+        : null,
+    });
+    state.issues[String(record.issue_number)] = record;
+    await stateStore.save(state);
+    await syncJournal(record);
     await github.markPullRequestReady(refreshed.pr.number);
   }
 

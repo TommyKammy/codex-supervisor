@@ -478,6 +478,7 @@ function createStubService(args?: {
           verificationPolicySummary: null,
           durableGuardrailSummary: null,
           externalReviewFollowUpSummary: null,
+          localCiStatus: null,
           latestRecovery: {
             issueNumber,
             at: "2026-03-22T00:00:00Z",
@@ -784,6 +785,7 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
       verificationPolicySummary: null,
       durableGuardrailSummary: null,
       externalReviewFollowUpSummary: null,
+      localCiStatus: null,
       latestRecovery: {
         issueNumber: 42,
         at: "2026-03-22T00:00:00Z",

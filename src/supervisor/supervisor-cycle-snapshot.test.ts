@@ -95,6 +95,12 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     local_review_degraded: false,
     last_local_review_signature: "local-review:high",
     repeated_local_review_signature_count: 1,
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "Configured local CI command passed before opening a pull request.",
+      ran_at: "2026-03-16T10:02:30Z",
+      head_sha: "head-407",
+    },
     external_review_head_sha: null,
     external_review_misses_path: null,
     external_review_matched_findings_count: 0,
@@ -224,10 +230,24 @@ test("buildSupervisorCycleDecisionSnapshot keeps the decision inputs narrow and 
   assert.equal(snapshot.local.record.merge_readiness_last_evaluated_at, "2026-03-16T10:05:00Z");
   assert.equal(snapshot.local.record.last_failure_kind, null);
   assert.equal(snapshot.local.record.last_failure_context, null);
+  assert.deepEqual(snapshot.local.record.latest_local_ci_result, {
+    outcome: "passed",
+    summary: "Configured local CI command passed before opening a pull request.",
+    ran_at: "2026-03-16T10:02:30Z",
+    head_sha: "head-407",
+  });
   assert.equal(snapshot.decision.nextState, "addressing_review");
   assert.equal(snapshot.decision.shouldRunCodex, true);
   assert.equal(snapshot.decision.blockedReason, "manual_review");
   assert.match(snapshot.decision.failureContext?.summary ?? "", /review/i);
+  assert.deepEqual(snapshot.operatorSummary?.activityContext?.localCiStatus, {
+    outcome: "passed",
+    summary: "Configured local CI command passed before opening a pull request.",
+    ranAt: "2026-03-16T10:02:30Z",
+    headSha: "head-407",
+    headStatus: "current",
+    context: "notice",
+  });
 });
 
 test("writeSupervisorCycleDecisionSnapshot serializes one cycle into the workspace replay artifact", async () => {
@@ -252,6 +272,12 @@ test("writeSupervisorCycleDecisionSnapshot serializes one cycle into the workspa
   assert.equal(persisted.local.record.timeout_retry_count, 0);
   assert.equal(persisted.local.record.provider_success_head_sha, "head-407");
   assert.equal(persisted.local.record.last_failure_context, null);
+  assert.deepEqual(persisted.local.record.latest_local_ci_result, {
+    outcome: "passed",
+    summary: "Configured local CI command passed before opening a pull request.",
+    ran_at: "2026-03-16T10:02:30Z",
+    head_sha: "head-407",
+  });
   assert.equal(persisted.github.pullRequest?.number, 88);
   assert.equal(persisted.decision.nextState, "addressing_review");
 });

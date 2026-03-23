@@ -428,6 +428,12 @@ export async function executeCodexTurnPhase(
           const failureContext = localCiGate.failureContext;
           record = stateStore.touch(record, {
             state: "blocked",
+            latest_local_ci_result: localCiGate.latestResult
+              ? {
+                  ...localCiGate.latestResult,
+                  head_sha: workspaceStatus.headSha,
+                }
+              : null,
             last_error: truncate(failureContext?.summary, 1000),
             last_failure_kind: null,
             last_failure_context: failureContext,
@@ -442,6 +448,17 @@ export async function executeCodexTurnPhase(
             message: `Local CI gate blocked pull request creation for issue #${record.issue_number}.`,
           };
         }
+        record = stateStore.touch(record, {
+          latest_local_ci_result: localCiGate.latestResult
+            ? {
+                ...localCiGate.latestResult,
+                head_sha: workspaceStatus.headSha,
+              }
+            : null,
+        });
+        state.issues[String(record.issue_number)] = record;
+        await stateStore.save(state);
+        await syncJournal(record);
         pr = await github.createPullRequest(issue, record, { draft: true });
       }
 

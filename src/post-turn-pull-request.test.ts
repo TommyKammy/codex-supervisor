@@ -107,10 +107,16 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking
   assert.equal(result.record.state, "waiting_ci");
   assert.equal(result.record.review_wait_head_sha, "head-116");
   assert.equal(result.record.last_head_sha, "head-116");
+  assert.deepEqual(result.record.latest_local_ci_result, {
+    outcome: "passed",
+    summary: "Configured local CI command passed before marking PR #116 ready.",
+    ran_at: result.record.latest_local_ci_result?.ran_at ?? "",
+    head_sha: "head-116",
+  });
   assert.equal(readyCalls, 1);
   assert.equal(localCiCalls, 1);
   assert.equal(snapshotLoads, 2);
-  assert.equal(syncJournalCalls, 0);
+  assert.equal(syncJournalCalls, 1);
 });
 
 test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion when configured local CI fails", async () => {
