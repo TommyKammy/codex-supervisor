@@ -5,42 +5,38 @@
 - Branch: codex/issue-873
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
+- Current phase: waiting_ci
 - Attempt count: 3 (implementation=1, repair=2)
-- Last head SHA: bb8af4e24ae7021f419d82cc5d169a6099d88cf5
+- Last head SHA: f5f7a2b40a69b46b8e4ce45116749e84dd7856cc
 - Blocked reason: none
 - Last failure signature: PRRT_kwDORgvdZ852EV-a
 - Repeated failure signature count: 1
-- Updated at: 2026-03-23T08:54:44Z
+- Updated at: 2026-03-23T08:56:21Z
 
 ## Latest Codex Summary
-Patched the journal renderer in [journal.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-873/src/core/journal.ts) so the rendered `Latest Codex Summary` always uses the live snapshot failure signature instead of preserving a stale footer from the prior Codex turn. Added a focused regression in [journal.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-873/src/journal.test.ts) and updated this tracked journal snapshot to the active review-thread signature.
+Patched the journal renderer in [journal.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-873/src/core/journal.ts) so the rendered `Latest Codex Summary` always uses the live snapshot failure signature instead of preserving a stale footer from the prior Codex turn. Added a focused regression in [journal.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-873/src/journal.test.ts), pushed commit `f5f7a2b` to PR `#880`, resolved the CodeRabbit review thread, and triggered fresh build jobs.
 
-Summary: Aligned the issue-journal failure-signature footer with the live snapshot state, added focused regression coverage, and updated the tracked journal to the active review-thread signature
-State hint: addressing_review
+Summary: Fixed the journal failure-signature rendering drift, added focused regression coverage, pushed commit `f5f7a2b`, resolved the review thread, and kicked off fresh PR builds
+State hint: waiting_ci
 Blocked reason: none
 Tests: `npx tsx --test src/journal.test.ts`
 Failure signature: PRRT_kwDORgvdZ852EV-a
-Next action: Commit and push the journal canonicalization fix to PR `#880`, then refresh the unresolved review thread state
+Next action: Monitor PR `#880` checks for commit `f5f7a2b` and only re-enter repair if `build (ubuntu-latest)` or `build (macos-latest)` fails
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/880#discussion_r2973644268
-- Details:
-  - .codex-supervisor/issue-journal.md:25 _⚠️ Potential issue_ | _🟡 Minor_ **Resolve conflicting failure-signature state in the same snapshot.** This snapshot reports failing checks (Lines 29-35) and a non-empty last failure signature (Line 12), but also sets `Failure signature: none` (Line 25). Keep one canonical value per snapshot to avoid breaking status consumers and handoff decisions. Also applies to: 29-35 <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In @.codex-supervisor/issue-journal.md around lines 12 - 25, The snapshot has conflicting failure-signature fields: "Last failure signature", "Repeated failure signature" and the separate "Failure signature" (currently set to "none"); pick and persist a single canonical source-of-truth for failures in .codex-supervisor/issue-journal.md (either populate "Failure signature" from "Last failure signature"/"Repeated failure signature" or clear the latter two) and update all three keys consistently so consumers see one authoritative value; locate and fix the fields named "Last failure signature", "Repeated failure signature", and "Failure signature" in the file to enforce the chosen canonical representation. ``` </details> <!-- fingerprinting:phantom:triton:hawk --> <!-- This is an auto-generated comment by CodeRabbit -->
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: the journal writer preserves a stale `Failure signature:` footer from `last_codex_summary` even after supervisor state transitions update `last_failure_signature`, so the rendered snapshot needs to canonicalize that footer to the live signature.
-- What changed: updated `src/core/journal.ts` to rewrite the rendered `Latest Codex Summary` failure-signature line from `record.last_failure_signature`, added focused regression coverage in `src/journal.test.ts`, and aligned this tracked journal snapshot/footer to the active review-thread signature.
+- What changed: updated `src/core/journal.ts` to rewrite the rendered `Latest Codex Summary` failure-signature line from `record.last_failure_signature`, added focused regression coverage in `src/journal.test.ts`, pushed commit `f5f7a2b`, resolved the CodeRabbit review thread, and refreshed this journal to the new waiting-CI state.
 - Current blocker: none
-- Next exact step: commit and push the journal canonicalization fix on `codex/issue-873`, then refresh PR `#880` and resolve the remaining review thread if the diff matches the review intent.
+- Next exact step: monitor PR `#880` check run `23429106798` for commit `f5f7a2b` and only re-enter repair if either build job fails.
 - Verification gap: none for the journal-rendering path; `npx tsx --test src/journal.test.ts` passes on the updated diff.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/core/journal.ts`, `src/journal.test.ts`
 - Rollback concern: low; the patch only normalizes the rendered summary footer to the already-canonical `last_failure_signature` field and adds focused coverage.
 - Last focused command: `npx tsx --test src/journal.test.ts`
-- Last focused failure: the rendered journal snapshot kept `Failure signature: none` inside `Latest Codex Summary` while the live snapshot and active failure context had already advanced to review signature `PRRT_kwDORgvdZ852EV-a`.
+- Last focused failure: the rendered journal snapshot kept `Failure signature: none` inside `Latest Codex Summary` while the live snapshot had already advanced to review signature `PRRT_kwDORgvdZ852EV-a`; the review thread is now resolved and fresh CI is pending on commit `f5f7a2b`.
 - Last focused commands:
 ```bash
 sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-873/AGENTS.generated.md
@@ -74,8 +70,16 @@ sed -n '1,140p' src/codex/codex-output-parser.ts
 apply_patch
 npx tsx --test src/journal.test.ts
 date -u +%Y-%m-%dT%H:%M:%SZ
+git add .codex-supervisor/issue-journal.md src/core/journal.ts src/journal.test.ts
+git commit -m "Normalize journal failure signature rendering"
+git push origin codex/issue-873
+gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -f threadId='PRRT_kwDORgvdZ852EV-a'
+gh pr checks 880
+gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}}}}}' -f owner='TommyKammy' -f repo='codex-supervisor' -F number=880
+date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
+- 2026-03-23T08:56:21Z: pushed `f5f7a2b` to PR `#880`, resolved review thread `PRRT_kwDORgvdZ852EV-a`, confirmed all review threads are resolved, and observed a fresh GitHub Actions run `23429106798` with both `build` jobs pending.
 - 2026-03-23T08:54:44Z: fixed the journal-rendering drift by canonicalizing the rendered summary `Failure signature:` line to `last_failure_signature`, added focused coverage in `src/journal.test.ts`, and updated the tracked journal snapshot to the active review-thread signature.
 - 2026-03-23T08:38:54Z: reproduced the failing PR build from the GitHub Actions log, fixed the stale test doubles in `supervisor-http-server.test.ts` and `supervisor-service.test.ts`, and re-passed `npm run build` plus `npx tsx --test src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/backend/supervisor-http-server.test.ts`.
 - 2026-03-23T08:10:30Z: reproduced the missing typed observability contract by tightening the focused service/status/explain tests, then passed the requested verification after extending the shared activity-context DTO with retry counts, repeated stale no-PR recovery metadata, and recovery-derived recent phase changes.
