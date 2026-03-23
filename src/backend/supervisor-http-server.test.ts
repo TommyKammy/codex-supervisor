@@ -470,6 +470,7 @@ function createStubService(args?: {
         changeRiskLines: [],
         externalReviewFollowUpSummary: null,
         latestRecoverySummary: null,
+        staleRecoveryWarningSummary: null,
         activityContext: {
           handoffSummary: "blocker: waiting on typed explain activity context",
           localReviewRoutingSummary: null,
@@ -766,6 +767,7 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
     changeRiskLines: [],
     externalReviewFollowUpSummary: null,
     latestRecoverySummary: null,
+    staleRecoveryWarningSummary: null,
     activityContext: {
       handoffSummary: "blocker: waiting on typed explain activity context",
       localReviewRoutingSummary: null,
