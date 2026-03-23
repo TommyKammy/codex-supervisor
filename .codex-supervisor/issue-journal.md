@@ -5,44 +5,45 @@
 - Branch: codex/issue-875
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 3 (implementation=1, repair=2)
-- Last head SHA: 7e6629a4ce9c79affee78dfc299c54b15338f3cd
+- Current phase: waiting_ci
+- Attempt count: 4 (implementation=1, repair=3)
+- Last head SHA: 3e177659bd086bf3fb9fe7f8813d1df04b9feb19
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ852GYeu
+- Last failure signature: none
 - Repeated failure signature count: 1
-- Updated at: 2026-03-23T11:13:29.957Z
+- Updated at: 2026-03-23T11:17:01Z
 
 ## Latest Codex Summary
-Fixed the CI-breaking TypeScript narrowing in [src/backend/webui-dashboard-browser-logic.ts](src/backend/webui-dashboard-browser-logic.ts) by binding `result?.issueNumber` to a local before formatting the requeue summary. That preserves the timeline text and clears the `TS18049` failure from `webui-dashboard-browser-logic.ts(452,46)` seen in both GitHub build jobs. I also updated [issue-journal.md](.codex-supervisor/issue-journal.md) with the failure, repair steps, and rerun context.
+Sanitized absolute local paths out of [issue-journal.md](.codex-supervisor/issue-journal.md), committed the review-only fix as `3e17765`, pushed `codex/issue-875`, and resolved the matching CodeRabbit thread on PR `#888`.
 
-Local verification passed with `npm run build` and `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`. The branch is pushed at `7e6629a`; PR `#888` is currently on a fresh CI rerun, with both `build` jobs pending in Actions run `23434032888`.
+This edit does not affect product code, so I did not rerun the local TypeScript and test suite from the prior repair. GitHub Actions reran automatically on push as run `23434613288`; `build (ubuntu-latest)` has passed and `build (macos-latest)` is still pending.
 
-Summary: Fixed the nullable timeline formatter access that was breaking PR #888 builds, verified locally, and pushed the repair with updated journal notes.
+Summary: Fixed the remaining review feedback by sanitizing issue-journal paths, pushed the journal-only patch, and resolved the review thread while waiting on the final macOS build.
 State hint: waiting_ci
 Blocked reason: none
-Tests: `npm run build`; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`
+Tests: Not rerun for this journal-only edit; checked `gh pr checks 888`
 Failure signature: none
-Next action: Monitor PR #888 Actions run `23434032888` until the pending `build` jobs finish, then react only if GitHub reports a new failure.
+Next action: Monitor PR #888 Actions run `23434613288` until `build (macos-latest)` finishes, then react only if GitHub reports a new failure.
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/888#discussion_r2974352203
+- Category: checks
+- Summary: PR #888 reran CI after the journal-path review fix; one build job remains pending.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/888
 - Details:
-  - .codex-supervisor/issue-journal.md stores repo-hosted file links and memory-file command examples with absolute local home-directory paths. The requested review fix is to convert those entries to repo-relative links and relative filesystem paths so the journal stays portable across operators and CI.
+  - Current rerun after commit `3e17765`: build (ubuntu-latest) (pass/SUCCESS) https://github.com/TommyKammy/codex-supervisor/actions/runs/23434613288/job/68169401478
+  - Current rerun after commit `3e17765`: build (macos-latest) (pending) https://github.com/TommyKammy/codex-supervisor/actions/runs/23434613288/job/68169401452
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the only remaining blocker on PR `#888` is the automated review request to remove absolute local paths from `.codex-supervisor/issue-journal.md`; a journal-only sanitization should resolve it without changing product behavior.
-- What changed: replaced absolute worktree links in the latest summary with repo-relative links, summarized the stored review context without embedding local paths, and converted the logged memory-file commands to relative filesystem paths rooted from this worktree.
+- Hypothesis: the review fix is complete and the branch only needs the remaining `build (macos-latest)` check from Actions run `23434613288` to finish; no additional code changes should be needed unless that job reports a new failure.
+- What changed: sanitized `.codex-supervisor/issue-journal.md`, committed the review-only patch as `3e17765`, pushed `codex/issue-875`, resolved review thread `PRRT_kwDORgvdZ852GYeu`, and rechecked PR status in GitHub.
 - Current blocker: none
-- Next exact step: review the final journal diff, commit the sanitization, push `codex/issue-875`, and then resolve the open CodeRabbit thread on PR `#888`.
-- Verification gap: none for behavior because this is a journal-only documentation fix; only a focused diff/path scan is needed before commit.
+- Next exact step: monitor PR `#888` run `23434613288` until `build (macos-latest)` leaves pending, then respond only if GitHub reports a failure or new review feedback.
+- Verification gap: none for local behavior because this was a journal-only documentation fix; the only outstanding verification is the GitHub-hosted macOS build still in progress.
 - Files touched: `.codex-supervisor/issue-journal.md`
 - Rollback concern: low; the change only rewrites operator journal text and stored command examples.
-- Last focused command: `rg -n 'absolute local home-directory|codex-supervisor-self-worktrees' .codex-supervisor/issue-journal.md`
-- Last focused failure: the journal still contained absolute local paths in the latest summary, stored review context, and last-focused command log until this sanitization pass.
+- Last focused command: `gh pr checks 888`
+- Last focused failure: none; the review thread is resolved and the only open item is `build (macos-latest)` still pending in Actions run `23434613288`.
 - Last focused commands:
 ```bash
 sed -n '1,220p' ../../codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-875/AGENTS.generated.md
@@ -71,8 +72,16 @@ git status --short --branch
 git rev-parse HEAD
 gh pr checks 888
 date -u +%Y-%m-%dT%H:%M:%SZ
+git add .codex-supervisor/issue-journal.md
+git commit -m "Sanitize issue journal paths"
+git rev-parse HEAD
+git push origin codex/issue-875
+gh api graphql -f query='mutation($threadId:ID!){ resolveReviewThread(input:{threadId:$threadId}) { thread { isResolved } } }' -F threadId=PRRT_kwDORgvdZ852GYeu
+gh pr checks 888
+date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
+- 2026-03-23T11:17:01Z: pushed review-fix commit `3e17765`, resolved CodeRabbit thread `PRRT_kwDORgvdZ852GYeu`, and confirmed PR `#888` reran as Actions run `23434613288` with Ubuntu passed and macOS still pending.
 - 2026-03-23T11:00:34Z: committed `690022a` to sync the issue journal, pushed `codex/issue-875`, and observed GitHub start a newer PR `#888` rerun as Actions run `23434005312` with both `build` jobs pending.
 - 2026-03-23T10:59:32Z: committed `82e6b50` for the TS18049 narrowing fix, pushed `codex/issue-875`, and confirmed PR `#888` reran as GitHub Actions run `23433971857` with both `build` jobs pending.
 - 2026-03-23T10:58:18Z: reproduced the failing CI build from GitHub Actions run `23433409449`, fixed TS18049 in `describeTimelineCommandResult` by binding `issueNumber = result?.issueNumber`, then passed `npm run build` and `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`.
