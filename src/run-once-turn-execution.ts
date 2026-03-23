@@ -18,6 +18,7 @@ import {
 } from "./post-turn-pull-request";
 import { IssueJournalSync, MemoryArtifacts } from "./run-once-issue-preparation";
 import { StateStore } from "./core/state-store";
+import { shouldPreserveStaleStabilizingNoPrRecoveryTracking } from "./no-pull-request-state";
 import {
   nextProcessedReviewThreadPatch,
   prepareCodexTurnPrompt,
@@ -288,6 +289,7 @@ export async function executeCodexTurnPhase(
       const hintedState = structuredResult?.stateHint ?? null;
       const hintedBlockedReason = structuredResult?.blockedReason ?? null;
       const hintedFailureSignature = structuredResult?.failureSignature ?? null;
+      const preTurnLastError = record.last_error;
       const journalAfterRun = await readIssueJournalImpl(journalPath);
       record = stateStore.touch(record, {
         codex_session_id: turnResult.sessionId,
@@ -432,6 +434,8 @@ export async function executeCodexTurnPhase(
       const postRunState = postRunSnapshot
         ? postRunSnapshot.nextState
         : hintedState ?? args.inferStateWithoutPullRequest(record, workspaceStatus);
+      const preserveStaleNoPrRecoveryTracking =
+        pr === null && postRunSnapshot === null && shouldPreserveStaleStabilizingNoPrRecoveryTracking(record, postRunState);
       record = stateStore.touch(record, {
         pr_number: pr?.number ?? null,
         ...(postRunSnapshot?.reviewWaitPatch ?? {}),
@@ -442,11 +446,21 @@ export async function executeCodexTurnPhase(
         repeated_blocker_count: 0,
         last_blocker_signature: null,
         last_error:
-          postRunState === "blocked" && postRunSnapshot?.failureContext
+          preserveStaleNoPrRecoveryTracking
+            ? preTurnLastError
+            : postRunState === "blocked" && postRunSnapshot?.failureContext
             ? truncate(postRunSnapshot.failureContext.summary, 1000)
             : record.last_error,
-        last_failure_context: postRunSnapshot?.failureContext ?? null,
-        ...args.applyFailureSignature(record, postRunSnapshot?.failureContext ?? null),
+        last_failure_context:
+          preserveStaleNoPrRecoveryTracking ? record.last_failure_context : postRunSnapshot?.failureContext ?? null,
+        ...(
+          preserveStaleNoPrRecoveryTracking
+            ? {
+                last_failure_signature: record.last_failure_signature,
+                repeated_failure_signature_count: record.repeated_failure_signature_count,
+              }
+            : args.applyFailureSignature(record, postRunSnapshot?.failureContext ?? null)
+        ),
         blocked_reason:
           pr && postRunState === "blocked"
             ? args.blockedReasonFromReviewState(postRunSnapshot?.recordForState ?? record, pr, reviewThreads)

@@ -25,6 +25,7 @@ import {
   getWorkspaceStatus as getWorkspaceStatusImpl,
   pushBranch as pushBranchImpl,
 } from "./core/workspace";
+import { shouldPreserveNoPrFailureTracking } from "./no-pull-request-state";
 import { writeSupervisorCycleDecisionSnapshot as writeSupervisorCycleDecisionSnapshotImpl } from "./supervisor/supervisor-cycle-snapshot";
 
 export type IssueJournalSync = (record: IssueRunRecord) => Promise<void>;
@@ -201,7 +202,7 @@ async function prepareWorkspaceContext(
     state: args.record.implementation_attempt_count === 0 ? "planning" : args.record.state,
     workspace_restore_source: ensuredWorkspace.restore.source,
     workspace_restore_ref: ensuredWorkspace.restore.ref,
-    last_error: null,
+    last_error: shouldPreserveNoPrFailureTracking(args.record) ? args.record.last_error : null,
     last_failure_kind: null,
     blocked_reason: null,
   });

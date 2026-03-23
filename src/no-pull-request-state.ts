@@ -1,5 +1,7 @@
 import { IssueRunRecord, RunState, WorkspaceStatus } from "./core/types";
 
+export const STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE = "stale-stabilizing-no-pr-recovery-loop";
+
 export function shouldPreserveNoPrFailureTracking(
   record: Pick<
     IssueRunRecord,
@@ -10,6 +12,22 @@ export function shouldPreserveNoPrFailureTracking(
     record.pr_number === null &&
     record.last_failure_context?.category === "blocked" &&
     record.last_failure_signature !== null &&
+    record.repeated_failure_signature_count > 0
+  );
+}
+
+export function shouldPreserveStaleStabilizingNoPrRecoveryTracking(
+  record: Pick<
+    IssueRunRecord,
+    "pr_number" | "state" | "last_failure_signature" | "repeated_failure_signature_count"
+  >,
+  nextState: RunState,
+): boolean {
+  return (
+    record.pr_number === null &&
+    record.state === "stabilizing" &&
+    nextState === "stabilizing" &&
+    record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE &&
     record.repeated_failure_signature_count > 0
   );
 }
