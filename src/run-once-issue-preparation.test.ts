@@ -323,6 +323,64 @@ test("prepareIssueExecutionContext records the workspace restore source for late
   assert.equal(result.workspaceStatus.restoreRef, "codex/reopen-issue-240");
 });
 
+test("prepareIssueExecutionContext preserves last_error for repeated no-PR failure tracking", async () => {
+  const staleNoPrSummary =
+    "Issue #240 re-entered stale stabilizing recovery without a tracked PR; the supervisor will retry while the repeat count remains below 3.";
+  const record = createRecord({
+    state: "stabilizing",
+    pr_number: null,
+    last_error: staleNoPrSummary,
+    last_failure_context: {
+      category: "blocked",
+      summary: staleNoPrSummary,
+      signature: "stale-stabilizing-no-pr-recovery-loop",
+      command: null,
+      details: ["state=stabilizing", "tracked_pr=none"],
+      url: null,
+      updated_at: "2026-03-15T00:00:00Z",
+    },
+    last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
+    repeated_failure_signature_count: 1,
+  });
+  const state = createState(record);
+
+  const result = await prepareIssueExecutionContext({
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+    },
+    config: createConfig(),
+    stateStore: {
+      touch(currentRecord, patch) {
+        return { ...currentRecord, ...patch };
+      },
+      async save() {},
+    },
+    state,
+    record,
+    issue: createIssue(),
+    options: { dryRun: true },
+    ensureWorkspace: async () => "/tmp/workspaces/issue-240",
+    syncIssueJournal: async () => {},
+    syncMemoryArtifacts: async () => ({
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+      alwaysReadFiles: [],
+      onDemandFiles: [],
+    }),
+    getWorkspaceStatus: async () => createWorkspaceStatus(),
+    writeSupervisorCycleDecisionSnapshot: async () => "/tmp/workspaces/issue-240/.codex-supervisor/replay/decision-cycle-snapshot.json",
+  });
+
+  assert.ok(result && !isRestartRunOnce(result) && typeof result !== "string");
+  assert.equal(result.record.last_error, staleNoPrSummary);
+  assert.equal(state.issues["240"]?.last_error, staleNoPrSummary);
+});
+
 test("prepareIssueExecutionContext preserves restore metadata after refreshing workspace status", async () => {
   const record = createRecord();
   const state = createState(record);

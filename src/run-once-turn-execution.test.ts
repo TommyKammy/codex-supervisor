@@ -1020,6 +1020,7 @@ test("executeCodexTurnPhase preserves stale stabilizing no-PR recovery tracking 
   assert.equal(result.kind, "completed");
   assert.equal(state.issues["102"]?.state, "stabilizing");
   assert.equal(state.issues["102"]?.pr_number, null);
+  assert.equal(state.issues["102"]?.last_error, staleNoPrFailureContext.summary);
   assert.equal(state.issues["102"]?.last_failure_context, staleNoPrFailureContext);
   assert.equal(state.issues["102"]?.last_failure_signature, staleNoPrFailureContext.signature);
   assert.equal(state.issues["102"]?.repeated_failure_signature_count, 1);

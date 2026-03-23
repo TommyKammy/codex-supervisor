@@ -289,6 +289,7 @@ export async function executeCodexTurnPhase(
       const hintedState = structuredResult?.stateHint ?? null;
       const hintedBlockedReason = structuredResult?.blockedReason ?? null;
       const hintedFailureSignature = structuredResult?.failureSignature ?? null;
+      const preTurnLastError = record.last_error;
       const journalAfterRun = await readIssueJournalImpl(journalPath);
       record = stateStore.touch(record, {
         codex_session_id: turnResult.sessionId,
@@ -446,7 +447,7 @@ export async function executeCodexTurnPhase(
         last_blocker_signature: null,
         last_error:
           preserveStaleNoPrRecoveryTracking
-            ? record.last_error
+            ? preTurnLastError
             : postRunState === "blocked" && postRunSnapshot?.failureContext
             ? truncate(postRunSnapshot.failureContext.summary, 1000)
             : record.last_error,

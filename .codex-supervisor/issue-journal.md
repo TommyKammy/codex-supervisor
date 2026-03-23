@@ -5,46 +5,69 @@
 - Branch: codex/issue-861
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 2d9a696082ea37977cb1c6fc960ea2184aeaa6e0
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 79750459c67bf8164e02895aba660b7dca1de391
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-23T00:59:48Z
+- Last failure signature: PRRT_kwDORgvdZ852AyNQ
+- Repeated failure signature count: 1
+- Updated at: 2026-03-23T01:12:01.258Z
 
 ## Latest Codex Summary
-- Preserved stale stabilizing no-PR convergence tracking across successful no-PR turns so the repeat guard now survives the stale cleanup -> no-PR turn -> stale cleanup loop and converges at the existing repeat limit.
+Implemented the stale no-PR guard fix in commit `7975045` and pushed `codex/issue-861`. The successful no-PR turn path now preserves `stale-stabilizing-no-pr-recovery-loop` only when the issue still ends `stabilizing` without a PR, so unrelated successful flows still clear generic failure tracking.
+
+I added focused coverage for the regression in [`src/run-once-turn-execution.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-861/src/run-once-turn-execution.test.ts), a helper/unit check in [`src/no-pull-request-state.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-861/src/no-pull-request-state.test.ts), and an orchestration test for the full stale cleanup -> no-PR turn -> stale cleanup sequence in [`src/supervisor/supervisor-execution-orchestration.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-861/src/supervisor/supervisor-execution-orchestration.test.ts). Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/866
+
+Summary: Preserved stale stabilizing no-PR recovery tracking across successful no-PR turns, added focused regression coverage, pushed commit `7975045`, and opened draft PR #866.
+State hint: waiting_ci
+Blocked reason: none
+Tests: `npx tsx --test src/run-once-turn-execution.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts` ; `npx tsx --test src/no-pull-request-state.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`
+Failure signature: none
+Next action: Monitor PR #866 CI and address any failures or review feedback.
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/866#discussion_r2972402191
+- Details:
+  - src/run-once-turn-execution.ts:450 _⚠️ Potential issue_ | _🟡 Minor_ **`last_error` is not actually preserved in the stale no-PR success path.** Line 299 clears `last_error` on successful turns before this branch runs, so Lines 448-450 preserve `null` instead of the prior stale recovery message. <details> <summary>Proposed fix</summary> ```diff + const preTurnLastError = record.last_error; record = stateStore.touch(record, { codex_session_id: turnResult.sessionId, last_codex_summary: truncate(turnResult.supervisorMessage), last_failure_kind: turnResult.failureKind, last_error: turnResult.exitCode === 0 ? null : truncate([turnResult.stderr.trim(), turnResult.stdout.trim()].filter(Boolean).join("\n")), }); @@ last_error: preserveStaleNoPrRecoveryTracking - ? record.last_error + ? preTurnLastError : postRunState === "blocked" && postRunSnapshot?.failureContext ? truncate(postRunSnapshot.failureContext.summary, 1000) : record.last_error, ``` </details> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/run-once-turn-execution.ts` around lines 448 - 450, preserveStaleNoPrRecoveryTracking is using record.last_error here but last_error was cleared earlier on successful turns, so you need to capture the pre-clear error and use that instead; modify the code that clears last_error to store the value in a temporary (e.g., preRunLastError) before clearing, then change this branch to use preRunLastError when preserveStaleNoPrRecoveryTracking is true (falling back to postRunSnapshot?.failureContext or the existing logic when preRunLastError is undefined), referencing preserveStaleNoPrRecoveryTracking, record.last_error, postRunState, and postRunSnapshot.failureContext to locate where to plug the temporary value in. ``` </details> <!-- fingerprinting:phantom:poseidon:hawk --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the stale recovery loop was resetting in the generic successful no-PR turn path after recovery had already incremented the `stale-stabilizing-no-pr-recovery-loop` signature.
-- What changed: added a focused `executeCodexTurnPhase` regression for the successful no-PR reset, introduced a narrow stale-no-PR preservation helper in `src/no-pull-request-state.ts`, preserved that signature/context/count in `src/run-once-turn-execution.ts` only when the turn still ends `stabilizing` with no PR, and added an orchestration regression that covers stale cleanup -> successful no-PR turn -> stale cleanup convergence.
+- Hypothesis: the remaining review issue was real, but the actual record reset happened in two places: the successful turn path nulled `last_error`, and workspace preparation had already cleared the stale no-PR recovery message before the turn started on the full `runOnce` path.
+- What changed: captured `preTurnLastError` in `src/run-once-turn-execution.ts`, reused it when preserving stale no-PR recovery tracking after a successful no-PR turn, preserved `last_error` during `prepareIssueExecutionContext` when repeated no-PR failure tracking is intentionally retained, and extended the focused regressions in `src/run-once-issue-preparation.test.ts`, `src/run-once-turn-execution.test.ts`, and `src/supervisor/supervisor-execution-orchestration.test.ts`.
 - Current blocker: none
-- Next exact step: review the final diff, commit the stale no-PR guard fix on `codex/issue-861`, and open or update the draft PR if one is still missing.
-- Verification gap: none in the focused regression surface; the issue verification command passed locally after the fix.
-- Files touched: `src/no-pull-request-state.ts`, `src/no-pull-request-state.test.ts`, `src/recovery-reconciliation.ts`, `src/run-once-turn-execution.ts`, `src/run-once-turn-execution.test.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts`, `.codex-supervisor/issue-journal.md`
+- Next exact step: commit the review fix, push `codex/issue-861`, and update PR #866 so the remaining automated review thread can be re-evaluated.
+- Verification gap: none in the focused review-fix surface; the direct execution, workspace preparation, and orchestration regressions all pass locally.
+- Files touched: `src/run-once-issue-preparation.ts`, `src/run-once-issue-preparation.test.ts`, `src/run-once-turn-execution.ts`, `src/run-once-turn-execution.test.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: low; the behavior change is isolated to successful no-PR turns that remain in stale stabilizing recovery, while unrelated successful flows still clear generic failure signatures.
-- Last focused command: `npx tsx --test src/run-once-turn-execution.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`
-- Last focused failure: `stale-stabilizing-no-pr-recovery-loop-reset`
+- Last focused command: `npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`
+- Last focused failure: `PRRT_kwDORgvdZ852AyNQ`
 - Last focused commands:
 ```bash
 sed -n '1,220p' "<local-memory>/issue-861/AGENTS.generated.md"
 sed -n '1,220p' "<local-memory>/issue-861/context-index.md"
 sed -n '1,260p' .codex-supervisor/issue-journal.md
-git status --short --branch
-rg -n "stale|no-PR|stabilizing|convergence|failure signature" src
-sed -n '1088,1185p' src/recovery-reconciliation.ts
-sed -n '320,520p' src/run-once-turn-execution.ts
-npx tsx --test src/run-once-turn-execution.test.ts
-npx tsx --test src/no-pull-request-state.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts
-npx tsx --test src/run-once-turn-execution.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts
+git status --short
+sed -n '260,520p' src/run-once-turn-execution.ts
+rg -n "preserveStaleNoPrRecoveryTracking|last_error|preTurnLastError|failureContext" src/run-once-turn-execution.ts
+sed -n '820,1035p' src/run-once-turn-execution.test.ts
+sed -n '340,500p' src/supervisor/supervisor-execution-orchestration.test.ts
+rg -n "stale-stabilizing-no-pr-recovery-loop|last_error|repeated_failure_signature_count|last_failure_context|requeueIssueForOperator|stale_state_cleanup" src/recovery-reconciliation.ts src/supervisor -g '!**/*.test.ts'
+sed -n '1080,1225p' src/recovery-reconciliation.ts
+sed -n '1,260p' src/no-pull-request-state.ts
+rg -n "previousError|prepareIssueExecutionContext|runPreparedIssue\\(|PreparedIssueExecutionContext|last_error: null" src/run-once-issue-preparation.ts src/supervisor/supervisor.ts src/run-once-turn-execution.ts
+sed -n '1,220p' src/run-once-issue-preparation.ts
+sed -n '520,700p' src/supervisor/supervisor.ts
+rg -n "prepareWorkspaceContext|prepareIssueExecutionContext|previousError|last_error" src/run-once-issue-preparation.test.ts src -g 'src/*.test.ts'
+sed -n '1,240p' src/run-once-issue-preparation.test.ts
+npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts
+npx tsx --test src/no-pull-request-state.test.ts
+git diff -- src/run-once-issue-preparation.ts src/run-once-issue-preparation.test.ts src/run-once-turn-execution.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-execution-orchestration.test.ts .codex-supervisor/issue-journal.md
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
+- 2026-03-23T01:15:00Z: verified the CodeRabbit `last_error` comment, fixed the post-turn preservation path in `executeCodexTurnPhase`, found the same stale no-PR message was also being cleared in `prepareIssueExecutionContext`, preserved it only when repeated no-PR failure tracking is intentionally retained, and passed `npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts` plus `npx tsx --test src/no-pull-request-state.test.ts`.
 - 2026-03-23T00:59:48Z: reproduced the bug with a focused `executeCodexTurnPhase` regression showing a successful no-PR turn cleared `stale-stabilizing-no-pr-recovery-loop`, then fixed the post-turn no-PR success path to preserve only that stale stabilizing signature/context/count when the issue still ends `stabilizing` without a PR and verified the full stale cleanup -> no-PR turn -> stale cleanup sequence with the targeted orchestration suite.
 - 2026-03-23T00:29:58Z: confirmed the remaining CodeRabbit finding is valid because the durable journal still contained workstation-local absolute paths, then rewrote the summary/review context/command history locally to use repo-relative references and `<local-memory>` placeholders before preparing the review-only push.
 - 2026-03-22T22:21:32Z: reran `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`, pushed `codex/issue-848`, and opened draft PR `#858` for the drag-reorder checkpoint.
