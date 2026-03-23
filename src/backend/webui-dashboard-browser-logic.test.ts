@@ -10,6 +10,9 @@ import {
   describeTimelineCommandResult,
   describeFreshnessState,
   describeTimelineEvent,
+  formatRecentPhaseChanges,
+  formatRecoveryLoopSummary,
+  formatRetryContextSummary,
   formatTrackedIssues,
   parseSelectedIssueNumber,
   restoreDashboardPanelOrder,
@@ -481,5 +484,47 @@ test("describeTimelineCommandResult summarizes typed recovery and maintenance co
       skipped: [{}, {}],
     }),
     "prune orphaned workspaces: pruned 1, skipped 2",
+  );
+});
+
+test("typed observability helpers summarize retry risk, repeated recovery loops, and phase changes", () => {
+  const activityContext = {
+    retryContext: {
+      timeoutRetryCount: 2,
+      blockedVerificationRetryCount: 1,
+      repeatedBlockerCount: 3,
+      repeatedFailureSignatureCount: 4,
+      lastFailureSignature: "tracked-pr-refresh-loop",
+    },
+    repeatedRecovery: {
+      kind: "stale_stabilizing_no_pr",
+      repeatCount: 2,
+      repeatLimit: 3,
+      status: "retrying",
+      action: "confirm_whether_the_change_already_landed_or_retarget_the_issue_manually",
+      lastFailureSignature: "stale-stabilizing-no-pr-recovery-loop",
+    },
+    recentPhaseChanges: [
+      {
+        at: "2026-03-22T00:15:00Z",
+        from: "blocked",
+        to: "addressing_review",
+        reason: "tracked_pr_head_advanced",
+        source: "recovery",
+      },
+    ],
+  };
+
+  assert.equal(
+    formatRetryContextSummary(activityContext),
+    "timeout=2 verification=1 same_blocker=3 same_failure_signature=4 last_failure_signature=tracked-pr-refresh-loop",
+  );
+  assert.equal(
+    formatRecoveryLoopSummary(activityContext),
+    "kind=stale_stabilizing_no_pr repeat_count=2/3 status=retrying last_failure_signature=stale-stabilizing-no-pr-recovery-loop action=confirm_whether_the_change_already_landed_or_retarget_the_issue_manually",
+  );
+  assert.equal(
+    formatRecentPhaseChanges(activityContext),
+    "at=2026-03-22T00:15:00Z phase_change=blocked->addressing_review reason=tracked_pr_head_advanced source=recovery",
   );
 });

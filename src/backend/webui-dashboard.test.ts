@@ -1257,6 +1257,93 @@ test("dashboard renders typed issue detail sections for operator context", async
   assert.equal(harness.remainingFetches.length, 0);
 });
 
+test("dashboard surfaces typed retry risk, recovery-loop context, and phase changes in a dedicated detail section", async () => {
+  const harness = createDashboardHarness([
+    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    {
+      path: "/api/issues/42/explain",
+      response: jsonResponse(
+        createExplain(42, {
+          latestRecoverySummary: "legacy recovery line that should only be used as fallback",
+          activityContext: {
+            handoffSummary: null,
+            localReviewRoutingSummary: null,
+            changeClassesSummary: "change_classes backend|tests",
+            verificationPolicySummary: null,
+            durableGuardrailSummary: null,
+            externalReviewFollowUpSummary: null,
+            latestRecovery: {
+              issueNumber: 42,
+              at: "2026-03-22T00:00:00Z",
+              reason: "tracked_pr_head_advanced",
+              detail: "resumed issue #42 from blocked to addressing_review after tracked PR #42 advanced",
+            },
+            retryContext: {
+              timeoutRetryCount: 2,
+              blockedVerificationRetryCount: 1,
+              repeatedBlockerCount: 3,
+              repeatedFailureSignatureCount: 4,
+              lastFailureSignature: "tracked-pr-refresh-loop",
+            },
+            repeatedRecovery: {
+              kind: "stale_stabilizing_no_pr",
+              repeatCount: 2,
+              repeatLimit: 3,
+              status: "retrying",
+              action: "confirm_whether_the_change_already_landed_or_retarget_the_issue_manually",
+              lastFailureSignature: "stale-stabilizing-no-pr-recovery-loop",
+            },
+            recentPhaseChanges: [
+              {
+                at: "2026-03-22T00:00:00Z",
+                from: "blocked",
+                to: "addressing_review",
+                reason: "tracked_pr_head_advanced",
+                source: "recovery",
+              },
+            ],
+            localReviewSummaryPath: null,
+            externalReviewMissesPath: null,
+            reviewWaits: [],
+          },
+        }),
+      ),
+    },
+    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
+  ]);
+  await harness.flush();
+
+  const issueNumberInput = harness.document.getElementById("issue-number-input");
+  const issueForm = harness.document.getElementById("issue-form");
+  const issueExplain = harness.document.getElementById("issue-explain");
+  assert.ok(issueNumberInput);
+  assert.ok(issueForm);
+  assert.ok(issueExplain);
+
+  issueNumberInput.value = "42";
+  await issueForm.dispatch("submit", {
+    preventDefault() {},
+  });
+  await harness.flush();
+
+  const retryRecoverySection = findChildByText(issueExplain, /Retry and recovery/i);
+  assert.ok(retryRecoverySection);
+  assert.match(
+    retryRecoverySection.textContent,
+    /retry_summary: timeout=2 verification=1 same_blocker=3 same_failure_signature=4 last_failure_signature=tracked-pr-refresh-loop/u,
+  );
+  assert.match(
+    retryRecoverySection.textContent,
+    /recovery_loop: kind=stale_stabilizing_no_pr repeat_count=2\/3 status=retrying last_failure_signature=stale-stabilizing-no-pr-recovery-loop action=confirm_whether_the_change_already_landed_or_retarget_the_issue_manually/u,
+  );
+  assert.match(
+    retryRecoverySection.textContent,
+    /recent_phase_changes: at=2026-03-22T00:00:00Z phase_change=blocked->addressing_review reason=tracked_pr_head_advanced source=recovery/u,
+  );
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
 test("dashboard preserves a successful command result when the refresh step fails", async () => {
   const harness = createDashboardHarness([
     { path: "/api/status?why=true", response: jsonResponse(createStatus()) },

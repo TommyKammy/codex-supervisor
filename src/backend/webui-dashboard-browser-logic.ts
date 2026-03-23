@@ -174,6 +174,37 @@ export interface DashboardTimelineCommandResultLike {
   markerCleared?: boolean | null;
 }
 
+export interface DashboardIssueRetryContextLike {
+  timeoutRetryCount?: number | null;
+  blockedVerificationRetryCount?: number | null;
+  repeatedBlockerCount?: number | null;
+  repeatedFailureSignatureCount?: number | null;
+  lastFailureSignature?: string | null;
+}
+
+export interface DashboardIssueRepeatedRecoveryLike {
+  kind?: string | null;
+  repeatCount?: number | null;
+  repeatLimit?: number | null;
+  status?: string | null;
+  action?: string | null;
+  lastFailureSignature?: string | null;
+}
+
+export interface DashboardIssuePhaseChangeLike {
+  at?: string | null;
+  from?: string | null;
+  to?: string | null;
+  reason?: string | null;
+  source?: string | null;
+}
+
+export interface DashboardIssueActivityContextLike {
+  retryContext?: DashboardIssueRetryContextLike | null;
+  repeatedRecovery?: DashboardIssueRepeatedRecoveryLike | null;
+  recentPhaseChanges?: DashboardIssuePhaseChangeLike[] | null;
+}
+
 export function formatIssueRef(issueNumber: number | null | undefined): string {
   return Number.isInteger(issueNumber) ? "#" + issueNumber : "none";
 }
@@ -461,4 +492,77 @@ export function describeTimelineCommandResult(result: DashboardTimelineCommandRe
     return result?.markerCleared === false ? "reset corrupt JSON state: no marker present" : "reset corrupt JSON state";
   }
   return result?.status ?? result?.summary ?? action;
+}
+
+export function formatRetryContextSummary(activityContext: DashboardIssueActivityContextLike | null | undefined): string | null {
+  const retryContext = activityContext?.retryContext;
+  if (!retryContext) {
+    return null;
+  }
+
+  const parts: string[] = [];
+  if ((retryContext.timeoutRetryCount ?? 0) > 0) {
+    parts.push("timeout=" + retryContext.timeoutRetryCount);
+  }
+  if ((retryContext.blockedVerificationRetryCount ?? 0) > 0) {
+    parts.push("verification=" + retryContext.blockedVerificationRetryCount);
+  }
+  if ((retryContext.repeatedBlockerCount ?? 0) > 1) {
+    parts.push("same_blocker=" + retryContext.repeatedBlockerCount);
+  }
+  if ((retryContext.repeatedFailureSignatureCount ?? 0) > 1) {
+    parts.push("same_failure_signature=" + retryContext.repeatedFailureSignatureCount);
+  }
+  if (retryContext.lastFailureSignature) {
+    parts.push("last_failure_signature=" + retryContext.lastFailureSignature);
+  }
+
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+export function formatRecoveryLoopSummary(activityContext: DashboardIssueActivityContextLike | null | undefined): string | null {
+  const repeatedRecovery = activityContext?.repeatedRecovery;
+  if (!repeatedRecovery) {
+    return null;
+  }
+
+  const parts = [];
+  if (repeatedRecovery.kind) {
+    parts.push("kind=" + repeatedRecovery.kind);
+  }
+  if (Number.isInteger(repeatedRecovery.repeatCount) && Number.isInteger(repeatedRecovery.repeatLimit)) {
+    parts.push("repeat_count=" + repeatedRecovery.repeatCount + "/" + repeatedRecovery.repeatLimit);
+  }
+  if (repeatedRecovery.status) {
+    parts.push("status=" + repeatedRecovery.status);
+  }
+  if (repeatedRecovery.lastFailureSignature) {
+    parts.push("last_failure_signature=" + repeatedRecovery.lastFailureSignature);
+  }
+  if (repeatedRecovery.action) {
+    parts.push("action=" + repeatedRecovery.action);
+  }
+
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+export function formatRecentPhaseChanges(activityContext: DashboardIssueActivityContextLike | null | undefined): string | null {
+  const phaseChanges = Array.isArray(activityContext?.recentPhaseChanges) ? activityContext.recentPhaseChanges : [];
+  if (phaseChanges.length === 0) {
+    return null;
+  }
+
+  return phaseChanges
+    .map((change) =>
+      [
+        change.at ? "at=" + change.at : null,
+        change.from && change.to ? "phase_change=" + change.from + "->" + change.to : null,
+        change.reason ? "reason=" + change.reason : null,
+        change.source ? "source=" + change.source : null,
+      ]
+        .filter((part): part is string => part !== null)
+        .join(" "),
+    )
+    .filter((part) => part.length > 0)
+    .join(" | ");
 }
