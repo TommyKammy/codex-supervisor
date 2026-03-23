@@ -14,7 +14,7 @@
 - Updated at: 2026-03-23T19:47:49.325Z
 
 ## Latest Codex Summary
-- Added a focused execution-metrics aggregation test and a small daily-rollup artifact generator that reads persisted run summaries, groups by `finishedAt` day, and emits machine-readable daily metrics without touching execution decisions.
+- Added a focused execution-metrics aggregation test and a small daily-rollup artifact generator that reads persisted run summaries, groups by `finishedAt` day, and emits machine-readable daily metrics without touching execution decisions. Checkpoint commit: `216d0ab` (`Add execution metrics daily rollups`). Draft PR: #909.
 
 ## Active Failure Context
 - None recorded.
@@ -24,7 +24,7 @@
 - Hypothesis: issue #896 is satisfied by a standalone daily-rollup helper that reads persisted execution-metrics run summaries, validates each summary with the existing schema, groups them by terminal `finishedAt` day, and writes a repo-local machine-readable artifact with lead-time, review-loop, terminal-state, and failure-pattern aggregates.
 - What changed: added `src/supervisor/execution-metrics-aggregation.test.ts` as a focused reproducer for persisted-summary rollups; implemented `src/supervisor/execution-metrics-aggregation.ts` with `buildExecutionMetricsDailyRollupsArtifact` and `syncExecutionMetricsDailyRollups`; the rollup artifact groups by UTC `YYYY-MM-DD` from `finishedAt`, computes lead-time totals/averages, review iteration and actionable-thread totals/averages, terminal-state counts, and deterministic failure-pattern counts.
 - Current blocker: none
-- Next exact step: stage the new aggregation files and journal update, commit the focused issue-896 checkpoint, and then decide whether a draft PR should be opened from this branch this turn.
+- Next exact step: inspect PR #909, then decide whether to expand the aggregation helper into a discoverable CLI or supervisor-maintained artifact path if the remaining scope requires operator-facing invocation.
 - Verification gap: none in the requested scope after `npm ci`; `npx tsx --test src/supervisor/execution-metrics-aggregation.test.ts` and `npm run build` pass.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/execution-metrics-aggregation.test.ts`, `src/supervisor/execution-metrics-aggregation.ts`
 - Rollback concern: low; the aggregation helper is additive and not wired into issue execution, so rollback is isolated to the new report artifact path and test.
