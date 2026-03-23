@@ -9,6 +9,9 @@ import {
 } from "../core/types";
 
 import {
+  loadExecutionMetricsSummaryLines,
+} from "./execution-metrics-debugging";
+import {
   buildChangeClassesStatusLine,
   buildDurableGuardrailStatusLine,
   buildExternalReviewFollowUpStatusLine,
@@ -39,6 +42,7 @@ export interface ActiveIssueStatusSnapshot {
   verificationPolicySummary: string | null;
   durableGuardrailSummary: string | null;
   externalReviewFollowUpSummary: string | null;
+  executionMetricsSummaryLines: string[];
   warningMessage: string | null;
 }
 
@@ -60,6 +64,7 @@ export async function loadActiveIssueStatusSnapshot(args: {
   let verificationPolicySummary: string | null = null;
   let durableGuardrailSummary: string | null = null;
   let externalReviewFollowUpSummary: string | null = null;
+  let executionMetricsSummaryLines: string[] = [];
   let warningMessage: string | null = null;
 
   if (args.activeRecord.journal_path) {
@@ -94,6 +99,7 @@ export async function loadActiveIssueStatusSnapshot(args: {
       activeRecord: args.activeRecord,
       currentHeadSha: pr?.headRefOid ?? args.activeRecord.last_head_sha,
     });
+    executionMetricsSummaryLines = await loadExecutionMetricsSummaryLines(args.activeRecord.workspace);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     warningMessage = warningMessage ? `${warningMessage}; ${message}` : message;
@@ -120,6 +126,7 @@ export async function loadActiveIssueStatusSnapshot(args: {
     verificationPolicySummary,
     durableGuardrailSummary,
     externalReviewFollowUpSummary,
+    executionMetricsSummaryLines,
     warningMessage,
   };
 }

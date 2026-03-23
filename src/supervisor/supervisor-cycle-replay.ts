@@ -222,8 +222,9 @@ export function formatSupervisorCycleReplay(args: {
   snapshotPath: string;
   replayResult: SupervisorCycleReplayResult;
   snapshot: SupervisorCycleDecisionSnapshot;
+  executionMetricsLines?: string[];
 }): string {
-  const { snapshotPath, replayResult, snapshot } = args;
+  const { snapshotPath, replayResult, snapshot, executionMetricsLines = [] } = args;
   const operatorSummaryLines = [
     snapshot.operatorSummary?.latestRecoverySummary ?? null,
     snapshot.operatorSummary?.retrySummary ?? null,
@@ -243,6 +244,7 @@ export function formatSupervisorCycleReplay(args: {
     `captured_failure_signature=${snapshot.decision.failureContext?.signature ?? "none"}`,
     `replayed_failure_signature=${replayResult.replayedDecision.failureContext?.signature ?? "none"}`,
     ...operatorSummaryLines,
+    ...executionMetricsLines,
     `decision_match=${replayResult.matchesCapturedDecision ? "yes" : "no"}`,
   ].join("\n");
 }

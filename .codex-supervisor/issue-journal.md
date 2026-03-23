@@ -1,73 +1,72 @@
-# Issue #896: Execution metrics aggregation: generate daily rollups from persisted run summaries
+# Issue #897: Execution metrics replay exposure: surface metrics in replay and debugging workflows
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/896
-- Branch: codex/issue-896
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/897
+- Branch: codex/issue-897
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 3 (implementation=1, repair=2)
-- Last head SHA: 5802a5570007a9ee38de2a752d6be1d18495f0fb
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 0da2629ed3f70a50fbabee98a2c581f76f6b0df8
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ852PCjs|PRRT_kwDORgvdZ852PCjz
-- Repeated failure signature count: 1
-- Updated at: 2026-03-23T20:28:14.000Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-23T20:58:47.000Z
 
 ## Latest Codex Summary
-Updated `.codex-supervisor/issue-journal.md` to replace local filesystem links in the latest summary with repo-relative links and removed the padded inline-code example that was tripping markdownlint MD038 in the stored review excerpt. I committed the repair as `5802a55` (`Fix issue 896 journal review notes`), pushed `codex/issue-896`, and resolved review threads `PRRT_kwDORgvdZ852PCjs` and `PRRT_kwDORgvdZ852PCjz` on PR #909.
-
-Focused verification passed for the reported concerns: a targeted inline-code-span scan found no padded inline code spans, and `rg` found no remaining `/home/tommy` path strings in the journal. The only remaining local dirt is the pre-existing untracked `.codex-supervisor/replay/` directory.
-
-Summary: Fixed the remaining journal-only review feedback by switching summary links to repo-relative paths and cleaning the MD038-triggering inline code example.
-State hint: waiting_ci
-Blocked reason: none
-Tests: `node` inline-code-span scan against `.codex-supervisor/issue-journal.md`; `rg -n` check confirming no `/home/tommy` strings remain in `.codex-supervisor/issue-journal.md`
-Failure signature: none
-Next action: monitor PR #909 for any follow-up CI or review after commit `5802a55`.
+- None yet.
 
 ## Active Failure Context
-- Category: review
-- Summary: no unresolved automated review threads remain after the journal-only repair.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/909#discussion_r2977348311
-- Details:
-  - Changed the latest summary links on line 17 to repo-relative targets.
-  - Removed the padded inline-code example from the stored review excerpt so the reported MD038 case no longer exists.
-  - Pushed commit `5802a55` and resolved review threads `PRRT_kwDORgvdZ852PCjs` and `PRRT_kwDORgvdZ852PCjz`.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: both remaining review threads are valid but limited to journal markdown; no source-code changes are needed.
-- What changed: updated `.codex-supervisor/issue-journal.md` so the latest summary uses repo-relative links and the stored review excerpt no longer includes a padded inline-code example that triggers markdownlint MD038; committed the repair as `5802a55`, pushed `codex/issue-896`, and resolved the two remaining review threads on PR #909.
+- Hypothesis: execution metrics were already being persisted per workspace, but replay and active debugging surfaces never summarized them; loading the existing run summary artifact should expose bottlenecks without affecting replay decisions.
+- What changed: added `src/supervisor/execution-metrics-debugging.ts` to validate and summarize `.codex-supervisor/execution-metrics/run-summary.json`, wired those lines into `handleReplayCommand()` output and active issue status summary lines, and added focused coverage in `src/supervisor/execution-metrics-replay.test.ts` plus status-loading assertions in `src/supervisor/supervisor-selection-status-active-status.test.ts`.
 - Current blocker: none
-- Next exact step: monitor PR #909 for any fresh CI or follow-up review on `5802a5570007a9ee38de2a752d6be1d18495f0fb`.
-- Verification gap: none for the reported review concerns; the broader journal still has pre-existing markdownlint findings outside the scope of this repair.
-- Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: low; the change is documentation-only and does not affect issue execution or aggregation behavior.
-- Last focused command: `gh api graphql -f query='mutation { first: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ852PCjs"}) { thread { id isResolved } } second: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ852PCjz"}) { thread { id isResolved } } }'`
-- Last focused failure: reviewer feedback on `.codex-supervisor/issue-journal.md` reported absolute local links and an MD038 inline-code warning; both were fixed and the related review threads are now resolved.
+- Next exact step: review the diff once more, commit the replay/debugging metrics exposure changes on `codex/issue-897`, and open or update the draft PR if one does not already exist.
+- Verification gap: no known functional gap in the replay/status surfaces covered here; broader supervisor status and explain workflows still rely on existing coverage outside this focused slice.
+- Files touched: `src/cli/replay-command.ts`, `src/supervisor/execution-metrics-debugging.ts`, `src/supervisor/execution-metrics-replay.test.ts`, `src/supervisor/supervisor-cycle-replay.ts`, `src/supervisor/supervisor-selection-active-status.ts`, `src/supervisor/supervisor-selection-status-active-status.test.ts`, `src/supervisor/supervisor-status-model.ts`, `src/supervisor/supervisor.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: low; the change is observational-only and reads the existing execution metrics artifact without changing execution state transitions or replay decision inputs.
+- Last focused command: `npm run build`
+- Last focused failure: `npm run build` initially failed with `sh: 1: tsc: not found` because `node_modules/` was absent in this worktree; `npm ci` restored dependencies and the build then passed.
 - Last focused commands:
 ```bash
 sed -n '1,220p' '<memory>/AGENTS.generated.md'
 sed -n '1,220p' '<memory>/context-index.md'
 sed -n '1,260p' .codex-supervisor/issue-journal.md
-nl -ba .codex-supervisor/issue-journal.md | sed -n '1,120p'
-rg -n '<local-absolute-path>|`\s+[^`]+\s+`' .codex-supervisor/issue-journal.md
 git status --short
-git diff -- .codex-supervisor/issue-journal.md
-git rev-parse HEAD
-perl -ne 'while(/`([^`]*)`/g){ print "$.:<$1>\n" if $1 =~ /^\s|\s$/ }' .codex-supervisor/issue-journal.md
-sed -n '32,36p' .codex-supervisor/issue-journal.md
+git branch --show-current
+rg -n "execution metrics|executionMetrics|replay|debug" src . --glob '!node_modules'
+rg --files src | rg 'execution|replay|snapshot|debug|supervisor'
+sed -n '1,260p' src/supervisor/supervisor-cycle-snapshot.ts
+sed -n '1,320p' src/supervisor/supervisor-cycle-replay.ts
+sed -n '1,260p' src/supervisor/execution-metrics-run-summary.ts
+sed -n '1,260p' src/supervisor/execution-metrics-schema.ts
+sed -n '1,360p' src/supervisor/supervisor-cycle-snapshot.test.ts
+sed -n '1,320p' src/supervisor/supervisor-cycle-replay.test.ts
+sed -n '1,260p' src/cli/replay-command.ts
+sed -n '1,260p' src/cli/replay-handlers.test.ts
+rg -n "run-summary|executionMetricsRunSummary|execution-metrics" src/supervisor src/cli
+sed -n '1,320p' src/supervisor/supervisor-status-rendering.ts
+sed -n '1,360p' src/supervisor/supervisor-status-model.ts
+sed -n '1,260p' src/supervisor/supervisor-selection-active-status.ts
+sed -n '1,360p' src/supervisor/supervisor-selection-status-active-status.test.ts
+sed -n '900,1040p' src/supervisor/supervisor.ts
 apply_patch
 apply_patch
-rg -n '<local-absolute-path>' .codex-supervisor/issue-journal.md
-node - <<'JS' ... JS
-git add .codex-supervisor/issue-journal.md
-git commit -m "Fix issue 896 journal review notes"
-git rev-parse HEAD
-git push origin codex/issue-896
-gh api graphql -f query='mutation { first: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ852PCjs"}) { thread { id isResolved } } second: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ852PCjz"}) { thread { id isResolved } } }'
+npx tsx --test src/supervisor/execution-metrics-replay.test.ts
+npx tsx --test src/supervisor/supervisor-selection-status-active-status.test.ts
+npx tsx --test src/supervisor/supervisor-cycle-snapshot.test.ts
+npx tsx --test src/supervisor/execution-metrics-replay.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts
+npm run build
+test -d node_modules && echo present || echo missing
+sed -n '1,220p' package.json
+ls | rg 'package-lock.json|pnpm-lock.yaml|yarn.lock'
+npm ci
+npm run build
+git diff -- src/cli/replay-command.ts src/supervisor/execution-metrics-debugging.ts src/supervisor/execution-metrics-replay.test.ts src/supervisor/supervisor-cycle-replay.ts src/supervisor/supervisor-selection-active-status.ts src/supervisor/supervisor-selection-status-active-status.test.ts src/supervisor/supervisor-status-model.ts src/supervisor/supervisor.ts
 date -u +"%Y-%m-%dT%H:%M:%S.000Z"
-git status --short
 ```
 ### Scratchpad
-- Keep this section short. The supervisor may compact older notes automatically.
+- Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.

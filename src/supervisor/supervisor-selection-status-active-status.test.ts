@@ -248,6 +248,44 @@ test("loadActiveIssueStatusSnapshot keeps journal handoff, summarizes status, an
     );
     await execFileAsync("git", ["add", "src/supervisor/supervisor-status-model.test.ts"], { cwd: workspace });
     await execFileAsync("git", ["commit", "-m", "add test change"], { cwd: workspace });
+    await fs.mkdir(path.join(workspace, ".codex-supervisor", "execution-metrics"), { recursive: true });
+    await fs.writeFile(
+      path.join(workspace, ".codex-supervisor", "execution-metrics", "run-summary.json"),
+      JSON.stringify({
+        schemaVersion: 4,
+        issueNumber: 58,
+        terminalState: "blocked",
+        terminalOutcome: {
+          category: "blocked",
+          reason: "manual_review",
+        },
+        issueCreatedAt: "2026-03-11T00:00:00Z",
+        startedAt: "2026-03-11T00:10:00Z",
+        prCreatedAt: "2026-03-11T00:20:00Z",
+        prMergedAt: null,
+        finishedAt: "2026-03-11T01:10:00Z",
+        runDurationMs: 3600000,
+        issueLeadTimeMs: 4200000,
+        issueToPrCreatedMs: 1200000,
+        prOpenDurationMs: null,
+        reviewMetrics: {
+          classification: "configured_bot_threads",
+          iterationCount: 2,
+          totalCount: 4,
+          totalCountKind: "actionable_thread_instances",
+        },
+        failureMetrics: {
+          classification: "latest_failure",
+          category: "review",
+          failureKind: null,
+          blockedReason: "manual_review",
+          occurrenceCount: 2,
+          lastOccurredAt: "2026-03-11T01:05:00Z",
+        },
+        recoveryMetrics: null,
+      }),
+      "utf8",
+    );
 
     const snapshot = await loadActiveIssueStatusSnapshot({
       config: createConfig({ defaultBranch: "main" }),
@@ -283,6 +321,11 @@ test("loadActiveIssueStatusSnapshot keeps journal handoff, summarizes status, an
     assert.equal(snapshot.verificationPolicySummary, "verification_policy intensity=focused driver=changed_files:tests");
     assert.equal(snapshot.durableGuardrailSummary, null);
     assert.equal(snapshot.externalReviewFollowUpSummary, null);
+    assert.deepEqual(snapshot.executionMetricsSummaryLines, [
+      "execution_metrics terminal_state=blocked outcome=blocked reason=manual_review run_duration_ms=3600000 issue_lead_time_ms=4200000 issue_to_pr_created_ms=1200000 pr_open_duration_ms=none",
+      "execution_metrics_review classification=configured_bot_threads iterations=2 actionable_threads=4 count_kind=actionable_thread_instances",
+      "execution_metrics_failure category=review failure_kind=none blocked_reason=manual_review occurrences=2 last_occurred_at=2026-03-11T01:05:00Z",
+    ]);
     assert.equal(snapshot.warningMessage, null);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -315,5 +358,6 @@ test("loadActiveIssueStatusSnapshot aggregates journal and GitHub warnings", asy
   assert.deepEqual(snapshot.checks, []);
   assert.deepEqual(snapshot.reviewThreads, []);
   assert.equal(snapshot.handoffSummary, null);
+  assert.deepEqual(snapshot.executionMetricsSummaryLines, []);
   assert.match(snapshot.warningMessage ?? "", /pull request lookup failed/);
 });
