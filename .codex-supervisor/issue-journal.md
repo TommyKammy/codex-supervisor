@@ -14,7 +14,7 @@
 - Updated at: 2026-03-23T13:35:46Z
 
 ## Latest Codex Summary
-- Added optional `localCiCommand` config support plus typed local CI contract summaries for setup-readiness, doctor, and status surfaces; focused verification and requested verification now pass after restoring local npm dependencies in this worktree.
+- Added optional `localCiCommand` config support plus typed local CI contract summaries for setup-readiness, doctor, and status surfaces; focused verification and requested verification now pass after restoring local npm dependencies in this worktree, and draft PR `#900` is open.
 
 ## Active Failure Context
 - None recorded.
@@ -24,11 +24,11 @@
 - Hypothesis: this issue is a narrow typed-surface gap; supervisor config needs an optional repo-owned `localCiCommand`, and setup-readiness/doctor/status should report whether that contract exists without making it a required setup blocker.
 - What changed: added `localCiCommand` to `SupervisorConfig` parsing, introduced a shared typed local CI contract summary helper, surfaced that summary through `diagnoseSetupReadiness`, `diagnoseSupervisorHost`, and `Supervisor.statusReport`, rendered `doctor_local_ci` and `local_ci` lines, added focused regressions in `src/config.test.ts`, `src/doctor.test.ts`, and `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, extended `src/supervisor/supervisor-service.test.ts`, and exposed the optional field in `supervisor.config.example.json`.
 - Current blocker: none
-- Next exact step: commit the local CI contract surface change on `codex/issue-883`, then push and open or update a draft PR if one does not already exist.
+- Next exact step: monitor draft PR `#900` checks and respond if CI or review surfaces a regression.
 - Verification gap: none on the requested issue verification surface.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/config.test.ts`, `src/core/config.ts`, `src/core/types.ts`, `src/doctor.test.ts`, `src/doctor.ts`, `src/setup-readiness.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-service.test.ts`, `src/supervisor/supervisor-status-report.ts`, `src/supervisor/supervisor.ts`, `supervisor.config.example.json`
 - Rollback concern: low; the change is additive and optional, but removing it would require backing out the new typed status/setup/doctor surface and the config parser field together.
-- Last focused command: `npx tsx --test src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`
+- Last focused command: `gh pr create --draft --base main --head codex/issue-883 --title "Local CI config surface: add an optional repo-owned pre-PR verification command" --body "..."`
 - Last focused failure: the initial focused reproducer failed because `localCiCommand` was not parsed and the setup-readiness/doctor local CI summaries were missing; later `npm run build` failed with `sh: 1: tsc: not found` until `npm install` restored local dependencies in this worktree.
 - Last focused commands:
 ```bash
@@ -78,6 +78,10 @@ npx tsx --test src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-s
 apply_patch
 npx tsx --test src/config.test.ts
 git diff -- src/core/types.ts src/core/config.ts src/setup-readiness.ts src/doctor.ts src/supervisor/supervisor-status-report.ts src/supervisor/supervisor.ts src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts supervisor.config.example.json
+git add .codex-supervisor/issue-journal.md src/config.test.ts src/core/config.ts src/core/types.ts src/doctor.test.ts src/doctor.ts src/setup-readiness.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-status-report.ts src/supervisor/supervisor.ts supervisor.config.example.json && git commit -m "feat: expose local ci contract surfaces"
+gh pr view codex/issue-883 --json number,url,isDraft,state,headRefName,baseRefName
+git push -u origin codex/issue-883
+gh pr create --draft --base main --head codex/issue-883 --title "Local CI config surface: add an optional repo-owned pre-PR verification command" --body "..."
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
