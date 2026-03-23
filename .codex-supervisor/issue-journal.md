@@ -5,21 +5,28 @@
 - Branch: codex/issue-911
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 6a13cc8f9dddd41fc8687de7cef94f2eb43675ec
+- Current phase: stabilizing
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: 6c1bd02fbdb6149371077ce03ea0433a8adcce63
 - Blocked reason: none
-- Last failure signature: run_summary_finished_at_lags_failure_or_recovery
+- Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-23T22:23:05Z
+- Updated at: 2026-03-23T22:36:06.043Z
 
 ## Latest Codex Summary
-- Reproduced issue #911 in focused integration tests: legitimate merged-PR, closed-PR, and local-CI-blocked terminal paths threw during execution-metrics run-summary validation because `finishedAt` came from the record timestamp while failure/recovery observations could be later.
-- Fixed `buildExecutionMetricsRunSummaryArtifact()` to normalize the metrics artifact `finishedAt` to the latest of the record timestamp, latest failure observation, and latest recovery observation, keeping metrics persistence observational-only and preserving supervisor terminal-state semantics.
-- Added focused regression coverage in `src/supervisor/execution-metrics-failure-recovery.test.ts`; verified with the prescribed test command plus `npm run build` after restoring dependencies with `npm ci`.
+Normalized execution-metrics summary assembly so `finishedAt` now tracks the latest legitimate terminal observation instead of assuming the record timestamp is always last. That keeps run-summary validation from breaking merged-PR, closed-PR, and local-CI-blocked terminal paths, and it keeps metrics persistence observational-only instead of rerouting control flow into unexpected-failure recovery.
+
+Added focused regression coverage in [src/supervisor/execution-metrics-failure-recovery.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-911/src/supervisor/execution-metrics-failure-recovery.test.ts) and updated the issue journal in [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-911/.codex-supervisor/issue-journal.md). The implementation change is in [src/supervisor/execution-metrics-lifecycle.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-911/src/supervisor/execution-metrics-lifecycle.ts). Commit: `6c1bd02fbdb6149371077ce03ea0433a8adcce63`.
+
+Summary: Normalized execution-metrics `finishedAt` to include later failure/recovery observations, added focused regression coverage, updated the issue journal, and committed the fix.
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/execution-metrics-failure-recovery.test.ts src/run-once-issue-preparation.test.ts src/run-once-turn-execution.test.ts src/supervisor/execution-metrics-schema.test.ts`; `npx tsx --test src/run-once-issue-preparation.test.ts src/run-once-turn-execution.test.ts src/supervisor/execution-metrics-run-summary.test.ts src/supervisor/execution-metrics-schema.test.ts`; `npm run build`
+Next action: open or update the draft PR for `codex/issue-911` with commit `6c1bd02fbdb6149371077ce03ea0433a8adcce63` and monitor CI
+Failure signature: none
 
 ## Active Failure Context
-- Resolved locally: `Invalid execution metrics run summary: recoveryMetrics.lastRecoveredAt must not be after finishedAt.` and `Invalid execution metrics run summary: failureMetrics.lastOccurredAt must not be after finishedAt.`
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
