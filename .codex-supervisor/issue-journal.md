@@ -5,31 +5,46 @@
 - Branch: codex/issue-876
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 4330f936be92934b5663e021702def542a9f08e4
+- Current phase: repairing_ci
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: a4a28c1923b21abbb1200dc6e8f0ab42da73a6be
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-23T11:47:06Z
+- Last failure signature: build (ubuntu-latest):fail|build (macos-latest):fail
+- Repeated failure signature count: 2
+- Updated at: 2026-03-23T11:59:37.035Z
 
 ## Latest Codex Summary
-- Captured operator-facing replay summaries directly inside the decision snapshot and replay formatter, committed the fix as `970f50e`, pushed `codex/issue-876`, and opened draft PR `#889`.
+Implemented the replay-summary fix on `codex/issue-876`: decision-cycle snapshots now retain a compact `operatorSummary` built from the existing operator activity context, and replay output prints the captured `latest_recovery`, `retry_summary`, and `recovery_loop_summary` lines so repeated anomaly and phase-churn context survives past the live timeline. I added focused coverage in the snapshot and replay tests for both persistence and operator-facing output.
+
+Committed as `970f50e` plus journal sync `a4a28c1`, pushed the branch, and opened draft PR `#889`: https://github.com/TommyKammy/codex-supervisor/pull/889. Focused local verification passed; GitHub currently shows `build (ubuntu-latest)` and `build (macos-latest)` pending. The only remaining local dirt is the untracked `.codex-supervisor/replay/` artifact directory.
+
+Summary: Retained operator-facing anomaly summaries in replay snapshots/output, added focused tests, pushed `codex/issue-876`, and opened draft PR `#889`.
+State hint: waiting_ci
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-cycle-replay.test.ts`
+Failure signature: none
+Next action: Monitor PR `#889` check run `23435772583` and respond only if CI or review reports a regression.
 
 ## Active Failure Context
-- Failure reproduced as a coverage gap: replay snapshots retained low-level failure counters and signatures, but dropped the compact operator activity summary that surfaces repeated failure signatures, recovery loops, and recent recovery-driven phase changes.
+- Category: checks
+- Summary: PR #889 has failing checks.
+- Command or source: gh pr checks
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/889
+- Details:
+  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23435772583/job/68173334875
+  - build (macos-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23435772583/job/68173334854
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: persisting a compact operator summary alongside the replay snapshot is the minimal fix because the existing operator activity DTOs already encode retry loops, repeated anomalies, and recovery-driven phase churn cleanly.
-- What changed: added `operatorSummary` to the decision-cycle snapshot, populated it from the existing operator activity context helpers, and taught replay formatting to print the captured `latest_recovery`, `retry_summary`, and `recovery_loop_summary` lines when present.
+- Hypothesis: the CI regression is a replay-corpus schema-compatibility gap, not a problem with the operator-summary feature itself; older replay-corpus snapshots and an in-repo promotion fixture still assumed `SupervisorCycleDecisionSnapshot` had no `operatorSummary`.
+- What changed: backfilled missing `operatorSummary` values to `null` during replay-corpus input validation so older stored snapshots still load, added `operatorSummary: null` to the typed promotion fixture, and added a regression test covering legacy snapshot loading.
 - Current blocker: none
-- Next exact step: monitor draft PR `#889` checks and respond if CI or review exposes a regression; otherwise keep the branch ready for review.
-- Verification gap: focused replay snapshot and replay formatter tests pass locally; broader repo verification has not been rerun because the change is isolated to replay snapshot formatting, so CI remains the only remaining broader signal.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-cycle-snapshot.ts`, `src/supervisor/supervisor-cycle-replay.ts`, `src/supervisor/supervisor-cycle-snapshot.test.ts`, `src/supervisor/supervisor-cycle-replay.test.ts`
-- Rollback concern: low; the patch only adds a derived operator-summary surface on top of existing replay artifacts and does not alter replay decision evaluation.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-876 --title "Retain operator replay anomaly summaries" --body ...`
-- Last focused failure: replay artifacts preserved raw anomaly counters but not the compact operator-facing summary lines, so recent loop context disappeared once the live status moved on.
+- Next exact step: commit the replay-corpus compatibility repair, push `codex/issue-876`, and monitor the rerun of draft PR `#889` checks.
+- Verification gap: local `npm run build` and focused replay-corpus/replay tests now pass; CI has not yet rerun on the repaired commit, so GitHub still reflects the pre-fix failure.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/replay-corpus-loading.test.ts`, `src/supervisor/replay-corpus-promotion.test.ts`, `src/supervisor/replay-corpus-validation.ts`
+- Rollback concern: low; the repair is compatibility-only for replay-corpus snapshot loading and does not change supervisor decision evaluation.
+- Last focused command: `npx tsx --test src/supervisor/replay-corpus-loading.test.ts src/supervisor/replay-corpus-promotion.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-cycle-replay.test.ts`
+- Last focused failure: `npm run build` matched CI and failed with `TS2741` because `src/supervisor/replay-corpus-promotion.test.ts` and `src/supervisor/replay-corpus-validation.ts` constructed `SupervisorCycleDecisionSnapshot` values without the new required `operatorSummary` property.
 - Last focused commands:
 ```bash
 sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-876/AGENTS.generated.md
@@ -55,13 +70,18 @@ git commit -m "Retain operator replay anomaly summaries"
 git rev-parse HEAD
 git push -u origin codex/issue-876
 gh pr create --draft --base main --head codex/issue-876 --title "Retain operator replay anomaly summaries" --body ...
+npm ci
+gh pr checks 889
+gh run view 23435772583 --log-failed
+npm run build
+sed -n '1,220p' src/supervisor/replay-corpus-promotion.test.ts
+sed -n '500,620p' src/supervisor/replay-corpus-validation.ts
+sed -n '1,220p' src/supervisor/replay-corpus-loading.test.ts
+apply_patch
+npx tsx --test src/supervisor/replay-corpus-loading.test.ts src/supervisor/replay-corpus-promotion.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-cycle-replay.test.ts
 ```
 ### Scratchpad
-- 2026-03-23T11:47:06Z: committed `970f50e`, pushed `codex/issue-876`, and opened draft PR `#889` for the retained replay-summary patch.
-- 2026-03-23T11:45:40Z: reproduced the gap as missing replay-summary coverage rather than a functional replay mismatch, added focused tests proving the snapshot and formatter now retain `latest_recovery`, `retry_summary`, and `recovery_loop_summary`, and passed `npx tsx --test src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-cycle-replay.test.ts`.
-- 2026-03-23T11:00:34Z: committed `690022a` to sync the issue journal, pushed `codex/issue-875`, and observed GitHub start a newer PR `#888` rerun as Actions run `23434005312` with both `build` jobs pending.
-- 2026-03-23T10:59:32Z: committed `82e6b50` for the TS18049 narrowing fix, pushed `codex/issue-875`, and confirmed PR `#888` reran as GitHub Actions run `23433971857` with both `build` jobs pending.
-- 2026-03-23T10:58:18Z: reproduced the failing CI build from GitHub Actions run `23433409449`, fixed TS18049 in `describeTimelineCommandResult` by binding `issueNumber = result?.issueNumber`, then passed `npm run build` and `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`.
+- 2026-03-23T12:02:26Z: reproduced PR `#889` build failures from run `23435772583` via `gh run view --log-failed`; both jobs died in `npm run build` with `TS2741` because replay-corpus fixtures/builders were missing `operatorSummary`. Added replay-corpus compatibility backfill plus a legacy-snapshot regression test, then passed local `npm run build` and `npx tsx --test src/supervisor/replay-corpus-loading.test.ts src/supervisor/replay-corpus-promotion.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-cycle-replay.test.ts`.
 - 2026-03-23T11:15:43Z: sanitized `.codex-supervisor/issue-journal.md` to remove absolute local paths from the summary, stored review context, and focused command log; no code behavior changed, so no verification rerun was needed for this review-only edit.
 - 2026-03-23T10:45:19Z: committed `4ee38a6`, pushed `codex/issue-875`, and opened draft PR `#888` after the focused operator timeline verification passed.
 - 2026-03-23T10:43:22Z: reproduced the WebUI timeline gap with a new requeue/active-issue wording regression, then passed `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` after switching timeline cards to typed command summaries and humanized follow-up event summaries.

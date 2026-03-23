@@ -104,6 +104,7 @@ function createSnapshot(): ReplayCorpusInputSnapshot {
       blockedReason: null,
       failureContext: null,
     },
+    operatorSummary: null,
   };
 }
 

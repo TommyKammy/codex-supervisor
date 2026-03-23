@@ -290,3 +290,12 @@ test("replay corpus validation preserves snapshot validation errors for missing 
     /Replay corpus case "review-blocked" input snapshot decision must be an object/,
   );
 });
+
+test("replay corpus validation backfills missing operator summaries from older snapshots", () => {
+  const snapshot = createSnapshot();
+  const { operatorSummary: _operatorSummary, ...legacySnapshot } = snapshot;
+
+  const validated = validateReplayCorpusInputSnapshot(legacySnapshot, "review-blocked");
+
+  assert.equal(validated.operatorSummary, null);
+});

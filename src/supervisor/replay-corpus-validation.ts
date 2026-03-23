@@ -4,6 +4,7 @@ import type {
   ReplayCorpusInputSnapshot,
   ReplayCorpusManifest,
 } from "./replay-corpus-model";
+import type { SupervisorCycleOperatorSummarySnapshot } from "./supervisor-cycle-snapshot";
 
 const RUN_STATES = [
   "queued",
@@ -170,6 +171,31 @@ function ensureSchemaVersion(value: unknown, context: string): 1 {
   }
 
   return 1;
+}
+
+function validateOperatorSummary(
+  raw: unknown,
+  context: string,
+): SupervisorCycleOperatorSummarySnapshot | null {
+  if (raw === undefined || raw === null) {
+    return null;
+  }
+
+  const summary = expectObject(raw, context);
+  const activityContext = summary.activityContext;
+  if (activityContext !== undefined && activityContext !== null) {
+    expectObject(activityContext, `${context} activityContext`);
+  }
+
+  return {
+    latestRecoverySummary: expectNullableString(summary.latestRecoverySummary, `${context} latestRecoverySummary`),
+    retrySummary: expectNullableString(summary.retrySummary, `${context} retrySummary`),
+    recoveryLoopSummary: expectNullableString(summary.recoveryLoopSummary, `${context} recoveryLoopSummary`),
+    activityContext:
+      activityContext === undefined || activityContext === null
+        ? null
+        : (activityContext as SupervisorCycleOperatorSummarySnapshot["activityContext"]),
+  };
 }
 
 export function validateReplayCorpusManifest(raw: unknown, manifestPath: string): ReplayCorpusManifest {
@@ -560,5 +586,6 @@ export function validateReplayCorpusInputSnapshot(raw: unknown, entryId: string)
           ? null
           : validateFailureContext(decision.failureContext, `${context} decision.failureContext`),
     },
+    operatorSummary: validateOperatorSummary(snapshot.operatorSummary, `${context} operatorSummary`),
   };
 }
