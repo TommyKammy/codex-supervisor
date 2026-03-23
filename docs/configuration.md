@@ -109,6 +109,13 @@ Review and merge policy:
 - `localReviewArtifactDir`, `localReviewConfidenceThreshold`, `localReviewReviewerThresholds`
 - `mergeMethod`
 
+Repository-owned local CI policy:
+
+- when a repo exposes a canonical pre-PR entrypoint such as `ci:local` or `verify:pre-pr`, keep that command definition in the managed repo rather than in supervisor inference logic
+- the repo is the source of truth for the command contents; the supervisor should only run the configured entrypoint and observe its exit status
+- exit code `0` means the repo-declared local verification passed; any non-zero exit code means the repo-declared local verification failed
+- if no local CI contract is configured, preserve backward compatibility by not inventing one from workflow YAML or changed-file heuristics
+
 Workspace cleanup:
 
 - `maxDoneWorkspaces`

@@ -1,63 +1,59 @@
-# Issue #877: Operator observability WebUI: render typed retry, recovery, and phase-change context clearly
+# Issue #882: Local CI contract: define the repo-owned pre-PR verification model
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/877
-- Branch: codex/issue-877
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/882
+- Branch: codex/issue-882
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 9d85be7af1227a446bff96e902d0f3173646b504
+- Last head SHA: 64542f22893ee0c7c6847310620d122a620441d8
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-23T12:29:25.647Z
+- Updated at: 2026-03-23T12:58:17.042Z
 
 ## Latest Codex Summary
-- Surfaced typed retry, repeated-recovery, and phase-change observability in the WebUI issue detail pane, added focused dashboard regressions for the new rendering, verified the full issue dashboard test command after installing the already-declared local npm dependencies, and opened draft PR #898.
+- Documented a repo-owned local CI contract for pre-PR verification in the canonical getting-started/configuration docs, added a focused docs regression to lock the contract language, reproduced the gap with that new test, and passed the requested docs verification plus `npm run build` after restoring missing local npm dependencies with `npm install`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining WebUI observability gap was presentation-only; the explain payload already exposed typed `retryContext`, `repeatedRecovery`, and `recentPhaseChanges`, but the dashboard only rendered general operator summaries plus `latestRecovery`.
-- What changed: added typed browser-side summary helpers for retry risk, repeated recovery loops, and recent phase changes; rendered those fields in a dedicated `Retry and recovery` issue detail section; and added focused regressions in the dashboard unit tests and browser-logic tests.
+- Hypothesis: issue #882 was a docs-contract gap rather than a runtime bug; the repo needed an explicit written contract stating that pre-PR local verification is repo-owned, supervisor-invoked, backward-compatible when absent, and not derived from workflow YAML.
+- What changed: added a focused docs regression in `src/getting-started-docs.test.ts`, documented the repo-owned local CI contract in `docs/getting-started.md`, and added a matching policy note in `docs/configuration.md`.
 - Current blocker: none
-- Next exact step: monitor draft PR `#898` checks and respond only if CI reports a regression or review feedback lands.
-- Verification gap: none on the requested dashboard test surface; the full issue verification command passed locally after `npm ci` installed the already-declared `playwright-core` dependency.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard.test.ts`
-- Rollback concern: low; the change is a presentation-only WebUI enhancement over existing typed fields and does not change backend contracts or CLI behavior.
-- Last focused command: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts`
-- Last focused failure: the first full verification attempt failed immediately with `MODULE_NOT_FOUND: playwright-core` because this worktree had not run `npm ci` yet even though `playwright-core` was already declared in `package.json`.
+- Next exact step: commit the docs/test checkpoint on `codex/issue-882`, then open or update the draft PR if needed.
+- Verification gap: none on the requested issue verification surface.
+- Files touched: `.codex-supervisor/issue-journal.md`, `docs/configuration.md`, `docs/getting-started.md`, `src/getting-started-docs.test.ts`
+- Rollback concern: low; the change is documentation plus a focused docs regression and does not alter supervisor runtime behavior.
+- Last focused command: `npm run build`
+- Last focused failure: `npm run build` initially failed with `sh: 1: tsc: not found` because this worktree was missing local npm dependencies; `npm install` restored the toolchain and the rerun passed.
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-877/AGENTS.generated.md
-sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-877/context-index.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-882/AGENTS.generated.md
+sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-882/context-index.md
 sed -n '1,320p' .codex-supervisor/issue-journal.md
 git status --short --branch
-rg -n "retry|recovery|phase change|operatorSummary|recent activity|observability|phaseChange|recoveryLoop|retryRisk|active issue" src/backend -g '*.ts'
-sed -n '1,260p' src/backend/webui-dashboard-browser-logic.test.ts
-sed -n '1,320p' src/backend/webui-dashboard.test.ts
-sed -n '1,260p' src/backend/webui-dashboard-browser-smoke.test.ts
-npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts
-sed -n '480,620p' src/backend/webui-dashboard-browser-script.ts
-sed -n '1,260p' src/backend/webui-dashboard-browser-logic.ts
-rg -n "activityContext|retryContext|phaseChange|recentActivity|operatorSummary|latestRecovery|staleRecovery|recovery loop|retry loop|phase" src -g '*.ts'
-sed -n '260,520p' src/backend/webui-dashboard-browser-logic.ts
-sed -n '200,330p' src/supervisor/supervisor-selection-issue-explain.test.ts
-sed -n '330,430p' src/supervisor/supervisor-selection-issue-explain.test.ts
-sed -n '1,240p' src/supervisor/supervisor-operator-activity-context.ts
-sed -n '240,440p' src/supervisor/supervisor-operator-activity-context.ts
-sed -n '1080,1275p' src/backend/webui-dashboard.test.ts
-sed -n '1,220p' src/backend/webui-dashboard.ts
+rg -n "local CI|ci:local|verify:pre-pr|pre-PR|workflow-YAML|workflow YAML|verification entrypoint|local verification|pre PR|pre-pr" README.md docs src -g '*.md' -g '*.ts'
+sed -n '1,260p' src/readme-docs.test.ts
+sed -n '1,260p' src/getting-started-docs.test.ts
+sed -n '1,260p' README.md
+sed -n '1,320p' docs/getting-started.md
+sed -n '1,260p' docs/local-review.md
+sed -n '1,260p' docs/configuration.md
+sed -n '1,260p' docs/agent-instructions.md
+sed -n '1,260p' supervisor.config.example.json
 apply_patch
-npm ci
-npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts
-test -d node_modules/playwright-core && echo installed || echo missing
-rg -n 'playwright-core|playwright' package.json package-lock.json
-npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts
-git diff -- src/backend/webui-dashboard-browser-logic.ts src/backend/webui-dashboard-browser-script.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts
+npx tsx --test src/getting-started-docs.test.ts
+apply_patch
+npx tsx --test src/getting-started-docs.test.ts
+npx tsx --test src/readme-docs.test.ts src/getting-started-docs.test.ts
+npm run build
+npm install
+npm run build
+git diff -- src/getting-started-docs.test.ts docs/getting-started.md docs/configuration.md .codex-supervisor/issue-journal.md
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad

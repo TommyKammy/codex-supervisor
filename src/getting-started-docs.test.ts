@@ -92,6 +92,20 @@ test("getting-started defines setup readiness as a typed first-run contract dist
   );
 });
 
+test("getting-started defines the repo-owned local CI contract for pre-PR verification", async () => {
+  const content = await readGettingStarted();
+
+  assert.match(content, /repo-owned local CI contract/i);
+  assert.match(content, /ci:local/);
+  assert.match(content, /verify:pre-pr/);
+  assert.match(content, /the repo remains the source of truth/i);
+  assert.match(content, /codex-supervisor only runs the configured entrypoint/i);
+  assert.match(content, /exit code 0/i);
+  assert.match(content, /any non-zero exit code/i);
+  assert.match(content, /if no local CI contract is configured/i);
+  assert.match(content, /does not infer or reconstruct workflow logic from GitHub Actions YAML/i);
+});
+
 test("japanese docs keep overview and getting-started responsibilities separate", async () => {
   const [overview, gettingStarted] = await Promise.all([
     readJapaneseOverview(),

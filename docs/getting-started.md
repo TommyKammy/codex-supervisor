@@ -235,6 +235,24 @@ Minimum rules for that contract:
 - `ready` becomes `true` only when no first-run blockers remain
 - ongoing diagnostics such as GitHub auth details, corrupted state-file findings, orphaned worktree candidates, and other repair-oriented host checks stay in `doctor`
 
+### Repo-owned local CI contract for pre-PR verification
+
+When a managed repo wants a canonical local verification step before PR publication or update, use a repo-owned local CI contract. The repo-owned local CI contract is a single repo-defined entrypoint such as `npm run ci:local` or `npm run verify:pre-pr`.
+
+The repo remains the source of truth for what that command does. codex-supervisor only runs the configured entrypoint. It does not decompose the command, append inferred subtasks, or try to decide which subset of checks matters for the current diff.
+
+Minimum expectations for that contract:
+
+- the entrypoint is owned by the managed repo, not synthesized by the supervisor
+- the command may run any repo-chosen mix of tests, builds, linters, schema checks, or other local verification steps
+- exit code 0 means the configured local verification passed
+- any non-zero exit code means the configured local verification failed and the supervisor should treat that failure as the repo-declared result of the contract
+- stdout and stderr are informative logs from the repo command, not a second machine-readable protocol the supervisor needs to interpret
+
+Backward compatibility stays simple: if no local CI contract is configured, `codex-supervisor` keeps the existing behavior. It does not invent a fallback verification command, and it continues to rely on the issue's `## Verification` guidance plus normal operator/repo workflow instead of pretending a canonical local CI entrypoint exists when the repo has not declared one.
+
+Explicit non-goal: `codex-supervisor` does not infer or reconstruct workflow logic from GitHub Actions YAML, other workflow YAML, or changed-file heuristics as a substitute for this contract. If a repo wants a canonical pre-PR local verification command, the repo must expose that command directly.
+
 ## Move from run-once to loop
 
 When one supervised pass behaves correctly, switch to the continuous loop:
