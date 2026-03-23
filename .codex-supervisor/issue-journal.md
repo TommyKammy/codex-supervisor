@@ -1,63 +1,83 @@
-# Issue #882: Local CI contract: define the repo-owned pre-PR verification model
+# Issue #883: Local CI config surface: add an optional repo-owned pre-PR verification command
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/882
-- Branch: codex/issue-882
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/883
+- Branch: codex/issue-883
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 64542f22893ee0c7c6847310620d122a620441d8
+- Last head SHA: 1e0d274797c06cfc82af609375fb9521286ce0fa
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-23T12:58:17.042Z
+- Updated at: 2026-03-23T13:35:46Z
 
 ## Latest Codex Summary
-- Documented a repo-owned local CI contract for pre-PR verification in the canonical getting-started/configuration docs, added a focused docs regression to lock the contract language, reproduced the gap with that new test, passed the requested docs verification plus `npm run build` after restoring missing local npm dependencies with `npm install`, committed the checkpoint as `03493ea`, pushed `codex/issue-882`, and opened draft PR `#899`.
+- Added optional `localCiCommand` config support plus typed local CI contract summaries for setup-readiness, doctor, and status surfaces; focused verification and requested verification now pass after restoring local npm dependencies in this worktree.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: issue #882 was a docs-contract gap rather than a runtime bug; the repo needed an explicit written contract stating that pre-PR local verification is repo-owned, supervisor-invoked, backward-compatible when absent, and not derived from workflow YAML.
-- What changed: added a focused docs regression in `src/getting-started-docs.test.ts`, documented the repo-owned local CI contract in `docs/getting-started.md`, and added a matching policy note in `docs/configuration.md`.
+- Hypothesis: this issue is a narrow typed-surface gap; supervisor config needs an optional repo-owned `localCiCommand`, and setup-readiness/doctor/status should report whether that contract exists without making it a required setup blocker.
+- What changed: added `localCiCommand` to `SupervisorConfig` parsing, introduced a shared typed local CI contract summary helper, surfaced that summary through `diagnoseSetupReadiness`, `diagnoseSupervisorHost`, and `Supervisor.statusReport`, rendered `doctor_local_ci` and `local_ci` lines, added focused regressions in `src/config.test.ts`, `src/doctor.test.ts`, and `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, extended `src/supervisor/supervisor-service.test.ts`, and exposed the optional field in `supervisor.config.example.json`.
 - Current blocker: none
-- Next exact step: monitor draft PR `#899` checks and respond only if CI reports a regression or review feedback lands.
+- Next exact step: commit the local CI contract surface change on `codex/issue-883`, then push and open or update a draft PR if one does not already exist.
 - Verification gap: none on the requested issue verification surface.
-- Files touched: `.codex-supervisor/issue-journal.md`, `docs/configuration.md`, `docs/getting-started.md`, `src/getting-started-docs.test.ts`
-- Rollback concern: low; the change is documentation plus a focused docs regression and does not alter supervisor runtime behavior.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-882 --title "Local CI contract: define the repo-owned pre-PR verification model" --body "..."`
-- Last focused failure: `npm run build` initially failed with `sh: 1: tsc: not found` because this worktree was missing local npm dependencies; `npm install` restored the toolchain and the rerun passed.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/config.test.ts`, `src/core/config.ts`, `src/core/types.ts`, `src/doctor.test.ts`, `src/doctor.ts`, `src/setup-readiness.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-service.test.ts`, `src/supervisor/supervisor-status-report.ts`, `src/supervisor/supervisor.ts`, `supervisor.config.example.json`
+- Rollback concern: low; the change is additive and optional, but removing it would require backing out the new typed status/setup/doctor surface and the config parser field together.
+- Last focused command: `npx tsx --test src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`
+- Last focused failure: the initial focused reproducer failed because `localCiCommand` was not parsed and the setup-readiness/doctor local CI summaries were missing; later `npm run build` failed with `sh: 1: tsc: not found` until `npm install` restored local dependencies in this worktree.
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-882/AGENTS.generated.md
-sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-882/context-index.md
-sed -n '1,320p' .codex-supervisor/issue-journal.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-883/AGENTS.generated.md
+sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-883/context-index.md
+sed -n '1,360p' .codex-supervisor/issue-journal.md
 git status --short --branch
-rg -n "local CI|ci:local|verify:pre-pr|pre-PR|workflow-YAML|workflow YAML|verification entrypoint|local verification|pre PR|pre-pr" README.md docs src -g '*.md' -g '*.ts'
-sed -n '1,260p' src/readme-docs.test.ts
-sed -n '1,260p' src/getting-started-docs.test.ts
-sed -n '1,260p' README.md
-sed -n '1,320p' docs/getting-started.md
-sed -n '1,260p' docs/local-review.md
-sed -n '1,260p' docs/configuration.md
-sed -n '1,260p' docs/agent-instructions.md
-sed -n '1,260p' supervisor.config.example.json
+rg -n "localCi|local CI|pre-PR|pre-pr|verification entrypoint|doctor|setup readiness|setup-readiness|supervisor status|SupervisorStatus|readiness" src supervisor.config.example.json docs -g '*.ts' -g '*.json' -g '*.md'
+rg --files src | rg 'config|doctor|supervisor-service|status|setup|readiness'
+sed -n '1,260p' src/core/config.ts
+sed -n '1,260p' src/config.test.ts
+sed -n '1,260p' src/setup-readiness.ts
+sed -n '1,320p' src/doctor.ts
+sed -n '1,360p' src/supervisor/supervisor-service.ts
+sed -n '1,420p' src/supervisor/supervisor-service.test.ts
+sed -n '1,260p' src/supervisor/supervisor-status-model.ts
+rg -n "interface SupervisorConfig|type SupervisorConfig|SetupReadinessReport|DoctorDiagnostics|SupervisorStatusDto|localReviewSummaryPath|verificationPolicySummary" src/core/types.ts src/supervisor/supervisor-status-report.ts src/supervisor/supervisor.ts src/doctor.test.ts
+sed -n '1,340p' src/core/types.ts
+sed -n '1,260p' src/supervisor/supervisor-status-report.ts
+sed -n '820,980p' src/supervisor/supervisor.ts
+sed -n '230,340p' src/doctor.test.ts
+sed -n '260,620p' src/core/config.ts
+sed -n '320,520p' src/doctor.ts
+sed -n '520,660p' src/doctor.ts
 apply_patch
-npx tsx --test src/getting-started-docs.test.ts
+npx tsx --test src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-service.test.ts
+sed -n '300,380p' src/doctor.test.ts
+sed -n '150,240p' src/supervisor/supervisor-service.test.ts
+sed -n '240,330p' src/config.test.ts
 apply_patch
-npx tsx --test src/getting-started-docs.test.ts
-npx tsx --test src/readme-docs.test.ts src/getting-started-docs.test.ts
+sed -n '1,260p' src/setup-readiness.ts
+sed -n '1,120p' src/core/config.ts
+sed -n '1,120p' src/supervisor/supervisor.ts
+sed -n '260,420p' src/setup-readiness.ts
+apply_patch
+rg -n "kind: \"setup_readiness\"|overallStatus: \"pass\"|candidateDiscoverySummary:|candidateDiscovery: null,|trustPosture:" src -g '*.test.ts' -g '*.ts'
+rg -n "interface DoctorDiagnostics|DoctorDiagnostics =|renderDoctorReport\\(|statusReport: Awaited<ReturnType<StubSupervisor\\[\\\"statusReport\\\"\\]>> =|SupervisorStatusDto" src -g '*.test.ts' -g '*.ts'
+apply_patch
+rg -n "function createSupervisorFixture|createSupervisorFixture\\(" src/supervisor/supervisor-test-helpers.ts
+sed -n '196,250p' src/supervisor/supervisor-test-helpers.ts
+apply_patch
+npx tsx --test src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts
 npm run build
 npm install
 npm run build
-git add .codex-supervisor/issue-journal.md docs/configuration.md docs/getting-started.md src/getting-started-docs.test.ts && git commit -m "docs: define local ci contract"
-git push -u origin codex/issue-882
-gh pr view codex/issue-882 --json number,url,isDraft,state,headRefName,baseRefName
-gh pr create --draft --base main --head codex/issue-882 --title "Local CI contract: define the repo-owned pre-PR verification model" --body "..."
-git diff -- src/getting-started-docs.test.ts docs/getting-started.md docs/configuration.md .codex-supervisor/issue-journal.md
+npx tsx --test src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-service.test.ts
+apply_patch
+npx tsx --test src/config.test.ts
+git diff -- src/core/types.ts src/core/config.ts src/setup-readiness.ts src/doctor.ts src/supervisor/supervisor-status-report.ts src/supervisor/supervisor.ts src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts supervisor.config.example.json
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad

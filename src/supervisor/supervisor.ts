@@ -1,6 +1,6 @@
 import path from "node:path";
 import { runCommand } from "../core/command";
-import { loadConfig, summarizeCadenceDiagnostics, summarizeTrustDiagnostics } from "../core/config";
+import { loadConfig, summarizeCadenceDiagnostics, summarizeLocalCiContract, summarizeTrustDiagnostics } from "../core/config";
 import { GitHubClient } from "../github";
 import { describeGsdIntegration } from "../gsd";
 import { issueJournalPath } from "../core/journal";
@@ -828,6 +828,7 @@ export class Supervisor {
     const trustDiagnostics = summarizeTrustDiagnostics(this.config);
     const cadenceDiagnostics = summarizeCadenceDiagnostics(this.config);
     const candidateDiscoverySummary = formatCandidateDiscoveryBehaviorLine(this.config);
+    const localCiContract = summarizeLocalCiContract(this.config);
     const gsdSummary = await describeGsdIntegration(this.config);
     const statusRecords = summarizeSupervisorStatusRecords(state);
     const trackedIssues = buildTrackedIssueDtos(state);
@@ -870,6 +871,7 @@ export class Supervisor {
           cadenceDiagnostics,
           candidateDiscoverySummary,
           candidateDiscovery,
+          localCiContract,
           activeIssue: null,
           selectionSummary: options.why ? await buildSelectionSummary(this.github, this.config, state) : null,
           trackedIssues,
@@ -890,6 +892,7 @@ export class Supervisor {
           cadenceDiagnostics,
           candidateDiscoverySummary,
           candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
+          localCiContract,
           activeIssue: null,
           selectionSummary: null,
           trackedIssues,
@@ -947,6 +950,7 @@ export class Supervisor {
       cadenceDiagnostics,
       candidateDiscoverySummary,
       candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
+      localCiContract,
       activeIssue: {
         issueNumber: statusRecords.activeRecord.issue_number,
         state: statusRecords.activeRecord.state,

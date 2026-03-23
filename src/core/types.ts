@@ -61,6 +61,13 @@ export interface CandidateDiscoveryDiagnostics {
   truncated: boolean;
 }
 
+export interface LocalCiContractSummary {
+  configured: boolean;
+  command: string | null;
+  source: "config";
+  summary: string;
+}
+
 export interface SupervisorConfig {
   repoPath: string;
   repoSlug: string;
@@ -101,6 +108,7 @@ export interface SupervisorConfig {
   issueJournalMaxChars: number;
   issueLabel?: string;
   issueSearch?: string;
+  localCiCommand?: string;
   candidateDiscoveryFetchWindow?: number;
   skipTitlePrefixes: string[];
   branchPrefix: string;

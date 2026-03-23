@@ -181,6 +181,12 @@ test("createSupervisorService exposes a dedicated typed setup readiness query", 
       warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
       summary: "Trusted inputs with unsandboxed autonomous execution.",
     },
+    localCiContract: {
+      configured: false,
+      command: null,
+      source: "config",
+      summary: "No repo-owned local CI contract is configured.",
+    },
   };
 
   const service = createSupervisorServiceFromStub({
@@ -195,6 +201,12 @@ test("createSupervisorService preserves typed operator observability fields on s
   const statusReport: Awaited<ReturnType<StubSupervisor["statusReport"]>> = {
     gsdSummary: null,
     candidateDiscovery: null,
+    localCiContract: {
+      configured: true,
+      command: "npm run ci:local",
+      source: "config",
+      summary: "Repo-owned local CI contract is configured.",
+    },
     activeIssue: {
       issueNumber: 42,
       state: "stabilizing",

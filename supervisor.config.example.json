@@ -67,6 +67,7 @@
   "issueJournalRelativePath": ".codex-supervisor/issue-journal.md",
   "issueJournalMaxChars": 6000,
   "issueLabel": "codex",
+  "localCiCommand": "",
   "skipTitlePrefixes": ["Epic:"],
   "branchPrefix": "codex/issue-",
   "pollIntervalSeconds": 120,

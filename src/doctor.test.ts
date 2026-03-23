@@ -324,6 +324,12 @@ test("diagnoseSetupReadiness returns typed first-run setup state distinct from d
     warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
     summary: "Trusted inputs with unsandboxed autonomous execution.",
   });
+  assert.deepEqual(summary.localCiContract, {
+    configured: false,
+    command: null,
+    source: "config",
+    summary: "No repo-owned local CI contract is configured.",
+  });
 });
 
 test("renderDoctorReport surfaces merge-critical recheck cadence visibility", () => {
@@ -350,11 +356,18 @@ test("renderDoctorReport surfaces merge-critical recheck cadence visibility", ()
     },
     candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
     candidateDiscoveryWarning: null,
+    localCiContract: {
+      configured: true,
+      command: "npm run ci:local",
+      source: "config",
+      summary: "Repo-owned local CI contract is configured.",
+    },
   };
 
   const report = renderDoctorReport(diagnostics as Awaited<ReturnType<typeof diagnoseSupervisorHost>>);
 
   assert.match(report, /doctor_cadence poll_interval_seconds=120 merge_critical_recheck_seconds=30 merge_critical_effective_seconds=30 enabled=true/);
+  assert.match(report, /doctor_local_ci configured=true source=config command=npm run ci:local summary=Repo-owned local CI contract is configured\./);
 });
 
 test("diagnoseSupervisorHost and renderDoctorReport surface paginated candidate discovery", async (t) => {

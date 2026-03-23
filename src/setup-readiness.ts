@@ -1,6 +1,6 @@
 import fs from "node:fs";
-import { loadConfigSummary, resolveConfigPath, summarizeTrustDiagnostics } from "./core/config";
-import type { TrustDiagnosticsSummary } from "./core/types";
+import { loadConfigSummary, resolveConfigPath, summarizeLocalCiContract, summarizeTrustDiagnostics } from "./core/config";
+import type { LocalCiContractSummary, TrustDiagnosticsSummary } from "./core/types";
 import { diagnoseSupervisorHost, type DoctorCheck, type DoctorCheckStatus } from "./doctor";
 import { reviewProviderProfileFromConfig } from "./core/review-providers";
 
@@ -89,6 +89,7 @@ export interface SetupReadinessReport {
   hostReadiness: SetupReadinessHostSummary;
   providerPosture: SetupReadinessProviderPosture;
   trustPosture: SetupReadinessTrustPosture;
+  localCiContract?: LocalCiContractSummary;
 }
 
 interface DiagnoseSetupReadinessArgs {
@@ -392,5 +393,6 @@ export async function diagnoseSetupReadiness(
     hostReadiness,
     providerPosture: buildProviderPosture(configSummary.config),
     trustPosture: buildTrustPosture(configSummary.config),
+    localCiContract: summarizeLocalCiContract(configSummary.config ?? { localCiCommand: undefined }),
   };
 }

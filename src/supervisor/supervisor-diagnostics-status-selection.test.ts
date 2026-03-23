@@ -111,6 +111,35 @@ test("status surfaces the default trust posture and execution-safety warning", a
   assert.match(status, /execution_safety_warning=Unsandboxed autonomous execution assumes trusted GitHub-authored inputs\./);
 });
 
+test("statusReport exposes the typed local CI contract summary from config", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+  fixture.config.localCiCommand = "npm run ci:local";
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+
+  assert.deepEqual(report.localCiContract, {
+    configured: true,
+    command: "npm run ci:local",
+    source: "config",
+    summary: "Repo-owned local CI contract is configured.",
+  });
+
+  const status = await supervisor.status();
+  assert.match(status, /local_ci configured=true source=config command=npm run ci:local summary=Repo-owned local CI contract is configured\./);
+});
+
 test("statusReport exposes typed active-issue and selection summary fields alongside legacy lines", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {

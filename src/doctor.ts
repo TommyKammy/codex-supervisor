@@ -3,12 +3,13 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { GitHubClient } from "./github";
 import { runCommand } from "./core/command";
-import { summarizeCadenceDiagnostics, summarizeTrustDiagnostics, type ConfigLoadSummary, loadConfigSummary } from "./core/config";
+import { summarizeCadenceDiagnostics, summarizeLocalCiContract, summarizeTrustDiagnostics, type ConfigLoadSummary, loadConfigSummary } from "./core/config";
 import { parseJson } from "./core/utils";
 import {
   type CandidateDiscoveryDiagnostics,
   type CadenceDiagnosticsSummary,
   type IssueRunRecord,
+  type LocalCiContractSummary,
   type StateLoadFinding,
   type SupervisorConfig,
   type SupervisorStateFile,
@@ -36,6 +37,7 @@ export interface DoctorDiagnostics {
   cadenceDiagnostics: CadenceDiagnosticsSummary;
   candidateDiscoverySummary: string;
   candidateDiscoveryWarning: string | null;
+  localCiContract?: LocalCiContractSummary;
 }
 
 export interface BootstrapRepoSummary {
@@ -505,6 +507,7 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
     cadenceDiagnostics: summarizeCadenceDiagnostics(args.config),
     candidateDiscoverySummary: formatCandidateDiscoveryBehaviorLine(args.config, "doctor_candidate_discovery"),
     candidateDiscoveryWarning,
+    localCiContract: summarizeLocalCiContract(args.config),
   };
 }
 
@@ -564,6 +567,7 @@ export async function diagnoseBootstrapReadiness(
 }
 
 export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
+  const localCiContract = diagnostics.localCiContract ?? summarizeLocalCiContract({ localCiCommand: undefined });
   const mergeCriticalRecheckSeconds =
     diagnostics.cadenceDiagnostics.mergeCriticalRecheckSeconds === null
       ? "disabled"
@@ -574,6 +578,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     `doctor_posture trust_mode=${diagnostics.trustDiagnostics.trustMode} execution_safety_mode=${diagnostics.trustDiagnostics.executionSafetyMode}`,
     `doctor_cadence poll_interval_seconds=${diagnostics.cadenceDiagnostics.pollIntervalSeconds} merge_critical_recheck_seconds=${mergeCriticalRecheckSeconds} merge_critical_effective_seconds=${diagnostics.cadenceDiagnostics.mergeCriticalEffectiveSeconds} enabled=${diagnostics.cadenceDiagnostics.mergeCriticalRecheckEnabled}`,
     diagnostics.candidateDiscoverySummary,
+    `doctor_local_ci configured=${localCiContract.configured} source=${localCiContract.source} command=${sanitizeDoctorValue(localCiContract.command ?? "none")} summary=${sanitizeDoctorValue(localCiContract.summary)}`,
     ...(diagnostics.trustDiagnostics.warning === null
       ? []
       : [`doctor_warning kind=execution_safety detail=${sanitizeDoctorValue(diagnostics.trustDiagnostics.warning)}`]),
