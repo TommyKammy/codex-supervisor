@@ -14,7 +14,7 @@
 - Updated at: 2026-03-23T12:29:25.647Z
 
 ## Latest Codex Summary
-- Surfaced typed retry, repeated-recovery, and phase-change observability in the WebUI issue detail pane, added focused dashboard regressions for the new rendering, and verified the full issue dashboard test command after installing the already-declared local npm dependencies.
+- Surfaced typed retry, repeated-recovery, and phase-change observability in the WebUI issue detail pane, added focused dashboard regressions for the new rendering, verified the full issue dashboard test command after installing the already-declared local npm dependencies, and opened draft PR #898.
 
 ## Active Failure Context
 - None recorded.
@@ -24,7 +24,7 @@
 - Hypothesis: the remaining WebUI observability gap was presentation-only; the explain payload already exposed typed `retryContext`, `repeatedRecovery`, and `recentPhaseChanges`, but the dashboard only rendered general operator summaries plus `latestRecovery`.
 - What changed: added typed browser-side summary helpers for retry risk, repeated recovery loops, and recent phase changes; rendered those fields in a dedicated `Retry and recovery` issue detail section; and added focused regressions in the dashboard unit tests and browser-logic tests.
 - Current blocker: none
-- Next exact step: commit the dashboard observability rendering slice, push `codex/issue-877`, and open a draft PR for issue #877.
+- Next exact step: monitor draft PR `#898` checks and respond only if CI reports a regression or review feedback lands.
 - Verification gap: none on the requested dashboard test surface; the full issue verification command passed locally after `npm ci` installed the already-declared `playwright-core` dependency.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard.test.ts`
 - Rollback concern: low; the change is a presentation-only WebUI enhancement over existing typed fields and does not change backend contracts or CLI behavior.
