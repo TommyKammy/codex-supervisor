@@ -6,102 +6,43 @@
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 3 (implementation=1, repair=2)
-- Last head SHA: 3e205726c49bf624137f5a7a9ffa657545843cec
+- Attempt count: 4 (implementation=1, repair=3)
+- Last head SHA: b45d12b3a08904f885d19d65e4654a3677c478b8
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ852BDOu
-- Repeated failure signature count: 1
-- Updated at: 2026-03-23T02:09:06.690Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-23T02:12:08Z
 
 ## Latest Codex Summary
-Updated [src/no-pull-request-state.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-862/src/no-pull-request-state.ts) so the dedicated stale no-PR recovery counter is only visible when `last_failure_signature` is `STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE`; unrelated no-PR failures now cannot inherit stale-only retry budget. Added a regression in [src/no-pull-request-state.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-862/src/no-pull-request-state.test.ts) for that leak case, updated the issue journal, pushed commits `4c2e232` and `3e20572` to `codex/issue-862`, and resolved GitHub review thread `PRRT_kwDORgvdZ852A-pm`.
+Reformatted the unresolved review blob in [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-862/.codex-supervisor/issue-journal.md) into multi-line Markdown so the CodeRabbit entry no longer relies on the inline code-span pattern that triggered `MD038`. Confirmed the targeted lint output no longer reports `MD038`, committed the journal cleanup as `b45d12b`, pushed `codex/issue-862`, and resolved GitHub review thread `PRRT_kwDORgvdZ852BDOu`.
 
-Focused verification passed: `npx tsx --test src/no-pull-request-state.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-lifecycle.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`. Local status is clean except for the pre-existing untracked `.codex-supervisor/replay/`.
+Focused verification passed: `npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg -n "MD038|no-space-in-code"` returned no matches. Full-file `markdownlint-cli2` still reports the journal's pre-existing style warnings outside this review fix. Local status is clean except for the pre-existing untracked `.codex-supervisor/replay/`.
 
-Summary: Scoped the stale no-PR recovery counter to the stale failure signature, added a regression test, pushed the fix, and resolved the outstanding review thread.
+Summary: Fixed the journal's inline review blob formatting, verified the MD038 warning no longer appears, pushed `b45d12b`, and resolved the remaining review thread on PR #867.
 State hint: pr_open
 Blocked reason: none
-Tests: `npx tsx --test src/no-pull-request-state.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-lifecycle.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`
+Tests: `npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg -n "MD038|no-space-in-code"`
 Failure signature: none
-Next action: Monitor PR #867 for any follow-up review or CI activity after the resolved thread and pushed head `3e20572`.
+Next action: Monitor PR #867 for any follow-up review or CI activity after the resolved thread and pushed head `b45d12b`.
 
 ## Active Failure Context
 - Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
+- Summary: No unresolved automated review threads remain after resolving `PRRT_kwDORgvdZ852BDOu`.
 - Reference: https://github.com/TommyKammy/codex-supervisor/pull/867#discussion_r2972494600
 - Details:
-  - .codex-supervisor/issue-journal.md:33 _⚠️ Potential issue_ | _🟡 Minor_ **Fix markdownlint MD038 on the inline review blob.**
-    Line 33 has markdown formatting that likely introduces spaces inside code span elements. Normalize the inline code spans, or split this into multi-line markdown blocks, to clear lint warnings.
-
-    <details>
-    <summary>Suggested cleanup shape</summary>
-
-    ```diff
-    - - src/no-pull-request-state.ts:17 _⚠️ Potential issue_ | _🟠 Major_ **Scope ...** ...
-    - ```diff
-    - export function ...
-    - ```
-    + - src/no-pull-request-state.ts:17 _⚠️ Potential issue_ | _🟠 Major_ **Scope ...**
-    +
-    + <details>
-    + <summary>Suggested fix</summary>
-    +
-    + ```diff
-    + export function getStaleStabilizingNoPrRecoveryCount(
-    + ...
-    + )
-    + ```
-    + </details>
-    ```
-
-    </details>
-    <!-- suggestion_start -->
-    <details>
-    <summary>📝 Committable suggestion</summary>
-
-    > ‼️ **IMPORTANT**
-    > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test and benchmark the code to ensure it meets the requirements.
-
-    ```suggestion
-    - src/no-pull-request-state.ts:17 _⚠️ Potential issue_ | _🟠 Major_ **Scope the dedicated stale counter to the stale signature before returning it.**
-    <details>
-    <summary>Suggested fix</summary>
-    ```
-
-    </details>
-    <!-- suggestion_end -->
-    <details>
-    <summary>🧰 Tools</summary>
-
-    <details>
-    <summary>🪛 markdownlint-cli2 (0.21.0)</summary>
-
-    [warning] 33-33: Spaces inside code span elements (MD038, no-space-in-code)
-
-    </details>
-    </details>
-    <details>
-    <summary>🤖 Prompt for AI Agents</summary>
-
-    ```text
-    Verify each finding against the current code and only fix it if needed. In @.codex-supervisor/issue-journal.md at line 33, the markdown lint MD038 is triggered by inline code spans containing spaces in the review blob around the suggested fix for getStaleStabilizingNoPrRecoveryCount; fix the markdown by normalizing those inline code spans (remove stray spaces inside backticks) or convert the long suggested diff into a fenced code block so elements like getStaleStabilizingNoPrRecoveryCount, STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE, stale_stabilizing_no_pr_recovery_count, last_failure_signature, and repeated_failure_signature_count appear as proper code without internal spaces; update the inline <details>/<summary> section accordingly to eliminate the MD038 warning.
-    ```
-
-    </details>
-    <!-- fingerprinting:phantom:triton:hawk -->
-    <!-- This is an auto-generated comment by CodeRabbit -->
+  - Rewrote the line-33 review blob as a multi-line Markdown block with fenced snippets and confirmed the targeted markdownlint output no longer reports `MD038`.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining unresolved review thread is documentation-only; expanding the inline review blob in `.codex-supervisor/issue-journal.md` into normal multi-line Markdown should eliminate the reported `MD038` code-span warning without changing supervisor behavior.
-- What changed: rewrote the Active Failure Context entry for thread `PRRT_kwDORgvdZ852BDOu` as a multi-line block with fenced snippets and details sections, so the review blob no longer packs pseudo-code spans onto one list line.
+- Hypothesis: the only remaining risk was the journal's inline review blob formatting; now that the entry is multi-line and the targeted lint output is clear, the PR should be back to passive monitoring unless new review or CI activity appears.
+- What changed: reformatted `.codex-supervisor/issue-journal.md` to eliminate the inline review blob that triggered `MD038`, committed the cleanup as `b45d12b`, pushed `codex/issue-862`, and resolved thread `PRRT_kwDORgvdZ852BDOu`.
 - Current blocker: none
-- Next exact step: commit the journal-formatting cleanup, push `codex/issue-862`, and resolve thread `PRRT_kwDORgvdZ852BDOu` if GitHub still shows it as open on the updated head.
+- Next exact step: monitor PR `#867` for any follow-up review or CI activity after the resolved thread and pushed head `b45d12b`.
 - Verification gap: the targeted `MD038` check is clear; full-file `markdownlint-cli2` still reports the journal's pre-existing line-length, heading-spacing, bare-URL, and inline-HTML warnings outside the scope of this review fix.
 - Files touched: `.codex-supervisor/issue-journal.md`
 - Rollback concern: low; the change is limited to journal formatting and preserves the same review context with more stable Markdown structure.
-- Last focused command: `npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg -n "MD038|no-space-in-code"`
-- Last focused failure: `PRRT_kwDORgvdZ852BDOu`
+- Last focused command: `gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { isResolved id } } }' -F threadId=PRRT_kwDORgvdZ852BDOu`
+- Last focused failure: none
 - Last focused commands:
 ```bash
 sed -n '1,220p' "<local-memory>/issue-862/AGENTS.generated.md"
@@ -116,9 +57,15 @@ nl -ba .codex-supervisor/issue-journal.md | sed -n '28,92p'
 npx markdownlint-cli2 .codex-supervisor/issue-journal.md
 npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg -n "MD038|no-space-in-code"
 git diff -- .codex-supervisor/issue-journal.md
+git add .codex-supervisor/issue-journal.md
+git commit -m "Fix issue journal review markdown"
+git rev-parse HEAD
+git push origin codex/issue-862
+gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { isResolved id } } }' -F threadId=PRRT_kwDORgvdZ852BDOu
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
+- 2026-03-23T02:12:08Z: committed the journal markdown cleanup as `b45d12b`, pushed `codex/issue-862`, and resolved GitHub review thread `PRRT_kwDORgvdZ852BDOu`.
 - 2026-03-23T02:11:10Z: rewrote the unresolved `.codex-supervisor/issue-journal.md` review blob into multi-line Markdown, then confirmed `npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg -n "MD038|no-space-in-code"` returned no matches even though full-file markdownlint still reports pre-existing non-MD038 journal warnings.
 - 2026-03-23T01:57:27Z: pushed review-fix commit `4c2e232` to `codex/issue-862` and resolved GitHub review thread `PRRT_kwDORgvdZ852A-pm` with `gh api graphql`.
 - 2026-03-23T01:55:57Z: validated CodeRabbit thread `PRRT_kwDORgvdZ852A-pm` against the live branch, confirmed `getStaleStabilizingNoPrRecoveryCount` leaked `stale_stabilizing_no_pr_recovery_count` across unrelated failure signatures, then scoped the helper to the stale signature and passed `npx tsx --test src/no-pull-request-state.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-lifecycle.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`.
