@@ -5,55 +5,70 @@
 - Branch: codex/issue-875
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 4943edf5f198cf3f3488fd65de5e0193269899eb
+- Current phase: repairing_ci
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: b2eb1f1b77f3af439e2aa9340d07f9bd3b6d321c
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-23T10:38:53.589Z
+- Last failure signature: build (ubuntu-latest):fail|build (macos-latest):fail
+- Repeated failure signature count: 1
+- Updated at: 2026-03-23T10:57:04.380Z
 
 ## Latest Codex Summary
-- Added richer operator-timeline summaries for typed recovery commands and supervisor follow-up events so recent command, refresh, recovery, and active-issue changes read as one compact sequence; committed as `4ee38a6`, pushed `codex/issue-875`, and opened draft PR `#888`.
+Implemented the operator-timeline follow-up on [src/backend/webui-dashboard-browser-logic.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-875/src/backend/webui-dashboard-browser-logic.ts), [src/backend/webui-dashboard-browser-script.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-875/src/backend/webui-dashboard-browser-script.ts), and the focused regressions in [src/backend/webui-dashboard-browser-logic.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-875/src/backend/webui-dashboard-browser-logic.test.ts) and [src/backend/webui-dashboard.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-875/src/backend/webui-dashboard.test.ts). The timeline now surfaces typed requeue state transitions like `blocked -> queued`, humanizes recovery/active-issue event reasons, and keeps refresh follow-up correlated in the same compact feed.
+
+Committed as `4ee38a6` and `b2eb1f1`, pushed to `origin/codex/issue-875`, and opened draft PR `#888`: https://github.com/TommyKammy/codex-supervisor/pull/888
+
+Summary: Enriched the WebUI operator timeline with typed recovery command summaries, humanized supervisor follow-up events, focused tests, and a draft PR.
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`
+Failure signature: none
+Next action: Monitor draft PR `#888` and address any CI or review feedback.
 
 ## Active Failure Context
-- None recorded.
+- Category: checks
+- Summary: PR #888 has failing checks.
+- Command or source: gh pr checks
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/888
+- Details:
+  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23433409449/job/68165302265
+  - build (macos-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23433409449/job/68165302267
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the WebUI operator timeline should reuse typed command DTO fields and typed supervisor SSE payload fields so recent command outcomes, refresh follow-up, recovery reasons, and active-issue transitions are understandable without reading the raw JSON payloads.
-- What changed: added shared browser-side timeline formatters in `src/backend/webui-dashboard-browser-logic.ts` for typed command results and richer supervisor event summaries, injected those helpers into the inline dashboard browser bundle, switched command timeline cards to render typed recovery/state-transition summaries, added focused regressions in `src/backend/webui-dashboard-browser-logic.test.ts` plus `src/backend/webui-dashboard.test.ts`, committed the patch as `4ee38a6`, pushed `codex/issue-875`, and opened draft PR `#888`.
+- Hypothesis: PR `#888` is failing only because `describeTimelineCommandResult` accesses `result.issueNumber` after an optional-chain guard that TypeScript does not treat as a stable narrowing, so the repair should be a local variable binding rather than a behavior change.
+- What changed: inspected the failed GitHub Actions logs for run `23433409449`, confirmed both `build` jobs stop at `src/backend/webui-dashboard-browser-logic.ts(452,46): error TS18049: 'result' is possibly 'null' or 'undefined'`, then bound `const issueNumber = result?.issueNumber` before the `requeue` branch in `src/backend/webui-dashboard-browser-logic.ts` so the formatter keeps the same output while satisfying `tsc`.
 - Current blocker: none
-- Next exact step: monitor draft PR `#888` and address CI or review feedback if GitHub reports any failures.
-- Verification gap: none on the scoped operator timeline path; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` passes on the local diff.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard.test.ts`
-- Rollback concern: low; the change is isolated to dashboard timeline copy/formatting and focused browser-side tests, with no change to the HTTP command surface or SSE transport.
-- Last focused command: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`
-- Last focused failure: before the patch, operator timeline command cards used generic backend summaries such as `Requeued issue #42.` and follow-up events used raw reason tokens like `reserved_for_cycle`, so operators could not see compact recovery state transitions or humanized follow-up context in sequence; the focused verification command now passes.
+- Next exact step: commit the TypeScript narrowing fix, push `codex/issue-875`, and confirm PR `#888` reruns with passing `build` checks.
+- Verification gap: none on the scoped repair path; `npm run build` and `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` both pass locally after the fix.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.ts`
+- Rollback concern: low; the repair is a one-line local narrowing change in the browser-side timeline formatter with no user-visible text change.
+- Last focused command: `npm run build`
+- Last focused failure: GitHub Actions run `23433409449` failed on both Ubuntu and macOS with `src/backend/webui-dashboard-browser-logic.ts(452,46): error TS18049: 'result' is possibly 'null' or 'undefined'`; the local build now passes after binding `issueNumber` before formatting the requeue summary.
 - Last focused commands:
 ```bash
 sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-875/AGENTS.generated.md
 sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-875/context-index.md
-sed -n '1,320p' .codex-supervisor/issue-journal.md
+sed -n '1,260p' .codex-supervisor/issue-journal.md
 git status --short --branch
-rg -n "timeline|recent command|recovery|phase-change|active issue|operator timeline|recent-history|refresh|command result" src/backend src -g '!node_modules'
-sed -n '1,260p' src/backend/webui-dashboard.test.ts
-sed -n '1,260p' src/backend/webui-dashboard-browser-logic.test.ts
-sed -n '1,260p' src/backend/supervisor-http-server.test.ts
-sed -n '330,440p' src/backend/webui-dashboard-browser-logic.ts
-sed -n '650,780p' src/backend/webui-dashboard-browser-script.ts
-sed -n '780,860p' src/backend/webui-dashboard-browser-script.ts
-sed -n '860,1040p' src/backend/webui-dashboard-browser-script.ts
-sed -n '1036,1328p' src/backend/webui-dashboard-browser-script.ts
-sed -n '1,240p' src/supervisor/supervisor-events.ts
+cat package.json
+gh pr checks 888
+rg -n "name: build|npm run build|npm test|tsx --test|tsc -p" .github/workflows package.json .github -g '*.yml' -g '*.yaml'
+gh run view 23433409449 --log-failed
+npm run build
+nl -ba src/backend/webui-dashboard-browser-logic.ts | sed -n '420,480p'
+rg -n "format.*Command|command result|requeue|result\.|status refresh|active issue|recovery" src/backend/webui-dashboard-browser-logic.ts src/backend -g '!dist'
+ls -1
 apply_patch
-npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts
-apply_patch
+npm ci
+git diff -- src/backend/webui-dashboard-browser-logic.ts
+npm run build
 npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts
-git diff -- src/backend/webui-dashboard-browser-logic.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard-browser-script.ts src/backend/webui-dashboard.test.ts .codex-supervisor/issue-journal.md
+git diff -- .codex-supervisor/issue-journal.md src/backend/webui-dashboard-browser-logic.ts
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
+- 2026-03-23T10:58:18Z: reproduced the failing CI build from GitHub Actions run `23433409449`, fixed TS18049 in `describeTimelineCommandResult` by binding `issueNumber = result?.issueNumber`, then passed `npm run build` and `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`.
 - 2026-03-23T10:45:19Z: committed `4ee38a6`, pushed `codex/issue-875`, and opened draft PR `#888` after the focused operator timeline verification passed.
 - 2026-03-23T10:43:22Z: reproduced the WebUI timeline gap with a new requeue/active-issue wording regression, then passed `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` after switching timeline cards to typed command summaries and humanized follow-up event summaries.
 - 2026-03-22T21:15:08Z: pushed `codex/issue-846` and opened draft PR `#856`; GitHub currently reports `mergeStateStatus=UNSTABLE`, so the next turn should inspect CI/check runs and address any failures or review feedback.

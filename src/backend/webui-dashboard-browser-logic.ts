@@ -443,13 +443,14 @@ export function describeTimelineEvent(event: DashboardTimelineEventLike | null |
 
 export function describeTimelineCommandResult(result: DashboardTimelineCommandResultLike | null | undefined): string {
   const action = result?.action ?? result?.command ?? "command";
-  if (action === "requeue" && Number.isInteger(result?.issueNumber)) {
+  const issueNumber = result?.issueNumber;
+  if (action === "requeue" && Number.isInteger(issueNumber)) {
     const transition =
       result?.previousState || result?.nextState
         ? " " + (result?.previousState ?? "unknown") + " -> " + (result?.nextState ?? "unknown")
         : "";
     const reason = humanizeTimelineValue(result?.recoveryReason);
-    return "requeue issue " + formatIssueRef(result.issueNumber) + transition + (reason ? " (" + reason + ")" : "");
+    return "requeue issue " + formatIssueRef(issueNumber) + transition + (reason ? " (" + reason + ")" : "");
   }
   if (action === "prune-orphaned-workspaces") {
     const pruned = Array.isArray(result?.pruned) ? result.pruned.length : 0;
