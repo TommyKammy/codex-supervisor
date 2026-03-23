@@ -4,6 +4,7 @@ import {
   CadenceDiagnosticsSummary,
   CopilotReviewTimeoutAction,
   ExecutionSafetyMode,
+  LocalCiContractSummary,
   LocalReviewHighSeverityAction,
   LocalReviewPolicy,
   LocalReviewReviewerThresholdConfig,
@@ -264,6 +265,25 @@ export function summarizeCadenceDiagnostics(
   };
 }
 
+export function summarizeLocalCiContract(
+  config: Pick<SupervisorConfig, "localCiCommand">,
+): LocalCiContractSummary {
+  const command =
+    typeof config.localCiCommand === "string" && config.localCiCommand.trim() !== ""
+      ? config.localCiCommand.trim()
+      : null;
+
+  return {
+    configured: command !== null,
+    command,
+    source: "config",
+    summary:
+      command === null
+        ? "No repo-owned local CI contract is configured."
+        : "Repo-owned local CI contract is configured.",
+  };
+}
+
 export function loadConfigSummary(configPath?: string): ConfigLoadSummary {
   const resolvedPath = resolveConfigPath(configPath);
   if (!fs.existsSync(resolvedPath)) {
@@ -455,6 +475,10 @@ function parseSupervisorConfigDocument(raw: Record<string, unknown>, resolvedPat
         : 6000,
     issueLabel: typeof raw.issueLabel === "string" ? raw.issueLabel : undefined,
     issueSearch: typeof raw.issueSearch === "string" ? raw.issueSearch : undefined,
+    localCiCommand:
+      typeof raw.localCiCommand === "string" && raw.localCiCommand.trim() !== ""
+        ? raw.localCiCommand.trim()
+        : undefined,
     candidateDiscoveryFetchWindow:
       typeof raw.candidateDiscoveryFetchWindow === "number" &&
       Number.isFinite(raw.candidateDiscoveryFetchWindow) &&

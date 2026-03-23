@@ -1,4 +1,4 @@
-import type { CadenceDiagnosticsSummary, TrustDiagnosticsSummary } from "../core/types";
+import type { CadenceDiagnosticsSummary, LocalCiContractSummary, TrustDiagnosticsSummary } from "../core/types";
 import { sanitizeStatusValue } from "./supervisor-status-rendering";
 import { truncate } from "../core/utils";
 import type { BlockedReason, RunState, SupervisorStateFile } from "../core/types";
@@ -38,6 +38,7 @@ export interface SupervisorStatusDto {
   cadenceDiagnostics?: CadenceDiagnosticsSummary | null;
   candidateDiscoverySummary?: string | null;
   candidateDiscovery: SupervisorCandidateDiscoveryDto | null;
+  localCiContract?: LocalCiContractSummary;
   activeIssue: SupervisorActiveIssueDto | null;
   selectionSummary: SupervisorSelectionSummaryDto | null;
   trackedIssues: SupervisorTrackedIssueDto[];
@@ -52,6 +53,12 @@ export interface SupervisorStatusDto {
 }
 
 export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
+  const localCiContract = dto.localCiContract ?? {
+    configured: false,
+    command: null,
+    source: "config" as const,
+    summary: "No repo-owned local CI contract is configured.",
+  };
   const trustDiagnostics = dto.trustDiagnostics ?? {
     trustMode: "trusted_repo_and_authors",
     executionSafetyMode: "unsandboxed_autonomous",
@@ -76,6 +83,7 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
       : [`execution_safety_warning=${truncate(sanitizeStatusValue(trustDiagnostics.warning), 200)}`]),
     `merge_critical_recheck_seconds=${mergeCriticalRecheckSeconds} merge_critical_effective_seconds=${cadenceDiagnostics.mergeCriticalEffectiveSeconds} merge_critical_recheck_enabled=${cadenceDiagnostics.mergeCriticalRecheckEnabled}`,
     ...(dto.candidateDiscoverySummary ? [dto.candidateDiscoverySummary] : []),
+    `local_ci configured=${localCiContract.configured} source=${localCiContract.source} command=${truncate(sanitizeStatusValue(localCiContract.command ?? "none"), 200)} summary=${truncate(sanitizeStatusValue(localCiContract.summary), 200)}`,
     ...(dto.reconciliationPhase === null ? [] : [`reconciliation_phase=${dto.reconciliationPhase}`]),
     ...(dto.reconciliationWarning === null ? [] : [dto.reconciliationWarning]),
     ...dto.readinessLines,
