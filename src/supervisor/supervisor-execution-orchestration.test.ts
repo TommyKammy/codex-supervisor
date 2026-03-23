@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Supervisor } from "./supervisor";
 import { handleAuthFailure } from "./supervisor-failure-helpers";
+import { prepareIssueExecutionContext } from "../run-once-issue-preparation";
 import {
   GitHubIssue,
   GitHubPullRequest,
@@ -256,6 +257,104 @@ test("runOnce dry-run selects an issue and hydrates workspace and PR context bef
   assert.equal(resolveCalls, 1);
   assert.equal(checksCalls, 1);
   assert.equal(reviewThreadCalls, 1);
+});
+
+test("prepareIssueExecutionContext blocks PR publication when configured local CI fails before draft PR creation", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.localCiCommand = "npm run ci:local";
+  const issueNumber = 91;
+  const branch = branchName(fixture.config, issueNumber);
+  const record = createRecord({
+    issue_number: issueNumber,
+    state: "stabilizing",
+    branch,
+    pr_number: null,
+    workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+    journal_path: path.join(fixture.workspaceRoot, `issue-${issueNumber}`, ".codex-supervisor", "issue-journal.md"),
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_failure_signature: null,
+    repeated_failure_signature_count: 0,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: record,
+    },
+  };
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Gate PR publication on local CI",
+    body: executionReadyBody("Run configured local CI before opening the PR."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+
+  let createPullRequestCalls = 0;
+  let pushBranchCalls = 0;
+  const result = await prepareIssueExecutionContext({
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      createPullRequest: async () => {
+        createPullRequestCalls += 1;
+        throw new Error("unexpected createPullRequest call");
+      },
+    },
+    config: fixture.config,
+    stateStore: {
+      touch(current, patch) {
+        return { ...current, ...patch, updated_at: current.updated_at };
+      },
+      save: async () => undefined,
+    },
+    state,
+    record,
+    issue,
+    options: { dryRun: false },
+    ensureWorkspace: async () => record.workspace,
+    syncIssueJournal: async () => undefined,
+    syncMemoryArtifacts: async () => ({
+      alwaysReadFiles: [],
+      onDemandFiles: [],
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+    }),
+    getWorkspaceStatus: async () => ({
+      branch,
+      headSha: "head-91",
+      hasUncommittedChanges: false,
+      baseAhead: 1,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    }),
+    pushBranch: async () => {
+      pushBranchCalls += 1;
+    },
+    writeSupervisorCycleDecisionSnapshot: async () => "/tmp/snapshot.json",
+    runLocalCiCommand: async () => {
+      throw new Error("Command failed: sh -lc +1 args\nexitCode=1\nlocal ci failed");
+    },
+  });
+
+  assert.equal(
+    result,
+    "Issue #91 blocked: Configured local CI command failed before opening a pull request.",
+  );
+  assert.equal(createPullRequestCalls, 0);
+  assert.equal(pushBranchCalls, 0);
+  assert.equal(state.issues[String(issueNumber)]?.state, "blocked");
+  assert.equal(state.issues[String(issueNumber)]?.blocked_reason, "verification");
+  assert.equal(state.issues[String(issueNumber)]?.last_failure_signature, "local-ci-gate-failed");
+  assert.match(state.issues[String(issueNumber)]?.last_failure_context?.details[0] ?? "", /local ci failed/);
 });
 
 test("runOnce reclaims a stale stabilizing issue without carrying mismatched tracked PR context", async () => {

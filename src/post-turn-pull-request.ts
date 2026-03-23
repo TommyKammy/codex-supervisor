@@ -29,6 +29,7 @@ import {
   SupervisorStateFile,
 } from "./core/types";
 import { nowIso, truncate } from "./core/utils";
+import { runLocalCiGate, type LocalCiCommandRunner } from "./local-ci";
 import {
   emitSupervisorEvent,
   maybeBuildReviewWaitChangedEvent,
@@ -97,6 +98,7 @@ export interface HandlePostTurnPullRequestTransitionsArgs {
   manualReviewThreads: (config: SupervisorConfig, reviewThreads: ReviewThread[]) => ReviewThread[];
   mergeConflictDetected: (pr: GitHubPullRequest) => boolean;
   runLocalReviewImpl?: typeof runLocalReview;
+  runLocalCiCommand?: LocalCiCommandRunner;
   emitEvent?: SupervisorEventSink;
   loadOpenPullRequestSnapshot?: (prNumber: number) => Promise<{
     pr: GitHubPullRequest;
@@ -244,6 +246,31 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     !localReviewBlocksReady(config, record, refreshed.pr) &&
     !options.dryRun
   ) {
+    const localCiGate = await runLocalCiGate({
+      config,
+      workspacePath,
+      gateLabel: `before marking PR #${refreshed.pr.number} ready`,
+      runLocalCiCommand: args.runLocalCiCommand,
+    });
+    if (!localCiGate.ok) {
+      const failureContext = localCiGate.failureContext;
+      record = stateStore.touch(record, {
+        state: "blocked",
+        last_error: truncate(failureContext?.summary, 1000),
+        last_failure_context: failureContext,
+        ...args.applyFailureSignature(record, failureContext),
+        blocked_reason: "verification",
+      });
+      state.issues[String(record.issue_number)] = record;
+      await stateStore.save(state);
+      await syncJournal(record);
+      return {
+        record,
+        pr: refreshed.pr,
+        checks: refreshed.checks,
+        reviewThreads: refreshed.reviewThreads,
+      };
+    }
     await github.markPullRequestReady(refreshed.pr.number);
   }
 

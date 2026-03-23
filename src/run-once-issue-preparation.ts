@@ -26,6 +26,7 @@ import {
   pushBranch as pushBranchImpl,
 } from "./core/workspace";
 import { shouldPreserveNoPrFailureTracking } from "./no-pull-request-state";
+import { runLocalCiGate, type LocalCiCommandRunner } from "./local-ci";
 import { writeSupervisorCycleDecisionSnapshot as writeSupervisorCycleDecisionSnapshotImpl } from "./supervisor/supervisor-cycle-snapshot";
 
 export type IssueJournalSync = (record: IssueRunRecord) => Promise<void>;
@@ -107,6 +108,7 @@ interface PrepareIssueExecutionContextArgs {
     reviewThreads: ReviewThread[];
   }) => Promise<string>;
   now?: () => string;
+  runLocalCiCommand?: LocalCiCommandRunner;
 }
 
 export function isRestartRunOnce(
@@ -354,6 +356,27 @@ async function hydratePullRequestContext(
     !nextWorkspaceStatus.hasUncommittedChanges &&
     args.record.implementation_attempt_count >= args.config.draftPrAfterAttempt
   ) {
+    const localCiGate = await runLocalCiGate({
+      config: args.config,
+      workspacePath: args.workspacePath,
+      gateLabel: "before opening a pull request",
+      runLocalCiCommand: args.runLocalCiCommand,
+    });
+    if (!localCiGate.ok) {
+      const failureContext = localCiGate.failureContext;
+      const blockedRecord = args.stateStore.touch(record, {
+        state: "blocked",
+        last_error: failureContext?.summary ?? "Configured local CI command failed before opening a pull request.",
+        last_failure_kind: null,
+        last_failure_context: failureContext,
+        ...applyFailureSignature(record, failureContext),
+        blocked_reason: "verification",
+      });
+      args.state.issues[String(blockedRecord.issue_number)] = blockedRecord;
+      await args.stateStore.save(args.state);
+      await args.syncJournal(blockedRecord);
+      return `Issue #${blockedRecord.issue_number} blocked: ${blockedRecord.last_error}`;
+    }
     await pushBranch(args.workspacePath, args.record.branch, nextWorkspaceStatus.remoteBranchExists);
     pr = await args.github.createPullRequest(args.issue, record, { draft: true });
     checks = await args.github.getChecks(pr.number);
