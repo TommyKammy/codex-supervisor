@@ -11,6 +11,9 @@ This repository is operated with AI-assisted implementation loops. Durable proje
 - Preserve current behavior unless the issue explicitly changes it.
 - Keep schema, API, UI, and tests aligned when a feature spans layers.
 - Do not mark work complete while focused verification is still failing.
+- Do not commit workstation-local absolute paths in durable repo artifacts. Use repo-relative paths for in-repo files and redact private local paths.
+- Keep operator-facing query surfaces resilient to partial or missing data. Prefer graceful degradation over hard failure in status, explain, doctor, and setup flows.
+- Do not let transport, refresh, or UI follow-up failures rewrite the outcome of a successful mutation.
 
 ## AI workflow rules
 
