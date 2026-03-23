@@ -1,64 +1,60 @@
-# Issue #874: Operator observability CLI: surface concise retry and recovery-loop summaries in status and explain
+# Issue #875: Operator timeline follow-up: enrich recent command, recovery, and phase-change context
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/874
-- Branch: codex/issue-874
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/875
+- Branch: codex/issue-875
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: a0f020e72cb903f880c34cb5cc4c112d5844ae00
+- Last head SHA: 4943edf5f198cf3f3488fd65de5e0193269899eb
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-23T10:06:13.790Z
+- Updated at: 2026-03-23T10:38:53.589Z
 
 ## Latest Codex Summary
-- None yet.
+- Added richer operator-timeline summaries for typed recovery commands and supervisor follow-up events so recent command, refresh, recovery, and active-issue changes read as one compact sequence.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: concise CLI anomaly lines should be derived from the typed operator activity DTO so `status` and `explain` can highlight retry pressure and recovery-loop risk without adding separate loop-tracking logic in the CLI layer.
-- What changed: added shared `retry_summary` and `recovery_loop_summary` formatters in `src/supervisor/supervisor-operator-activity-context.ts`, threaded `activityContext` into status summary rendering, rendered the same summaries in explain output, added focused coverage in `src/supervisor/supervisor-diagnostics-status-selection.test.ts` and `src/supervisor/supervisor-selection-issue-explain.test.ts`, committed the patch as `13c0060`, pushed `codex/issue-874`, and opened draft PR `#887`.
+- Hypothesis: the WebUI operator timeline should reuse typed command DTO fields and typed supervisor SSE payload fields so recent command outcomes, refresh follow-up, recovery reasons, and active-issue transitions are understandable without reading the raw JSON payloads.
+- What changed: added shared browser-side timeline formatters in `src/backend/webui-dashboard-browser-logic.ts` for typed command results and richer supervisor event summaries, injected those helpers into the inline dashboard browser bundle, switched command timeline cards to render typed recovery/state-transition summaries, and added focused regressions in `src/backend/webui-dashboard-browser-logic.test.ts` plus `src/backend/webui-dashboard.test.ts`.
 - Current blocker: none
-- Next exact step: monitor draft PR `#887` and address CI or review feedback if GitHub reports any failures.
-- Verification gap: none on the scoped CLI path; `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts` passes on the local diff.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-operator-activity-context.ts`, `src/supervisor/supervisor-selection-issue-explain.test.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/supervisor/supervisor-status-model.ts`, `src/supervisor/supervisor.ts`
-- Rollback concern: low; the change only adds compact CLI summary lines derived from existing typed observability data plus focused render-path tests.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts`
-- Last focused failure: before the patch, the CLI rendered raw retry counters and the stale no-PR warning, but it did not surface compact retry/recovery-loop summaries from the typed activity context; the focused verification command now passes.
+- Next exact step: commit the dashboard timeline shaping checkpoint, push `codex/issue-875`, and open or update the draft PR for review/CI.
+- Verification gap: none on the scoped operator timeline path; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` passes on the local diff.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard.test.ts`
+- Rollback concern: low; the change is isolated to dashboard timeline copy/formatting and focused browser-side tests, with no change to the HTTP command surface or SSE transport.
+- Last focused command: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`
+- Last focused failure: before the patch, operator timeline command cards used generic backend summaries such as `Requeued issue #42.` and follow-up events used raw reason tokens like `reserved_for_cycle`, so operators could not see compact recovery state transitions or humanized follow-up context in sequence; the focused verification command now passes.
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-874/AGENTS.generated.md
-sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-874/context-index.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-875/AGENTS.generated.md
+sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-875/context-index.md
 sed -n '1,320p' .codex-supervisor/issue-journal.md
 git status --short --branch
-rg -n "retry|recovery loop|recovery reason|no-progress|observability|status selection|issue explain|operator activity" src/supervisor src -g '!node_modules'
-sed -n '1,260p' src/supervisor/supervisor-diagnostics-status-selection.test.ts
-sed -n '1,260p' src/supervisor/supervisor-selection-issue-explain.test.ts
-sed -n '1,220p' src/supervisor/supervisor-operator-activity-context.ts
-sed -n '1,260p' src/supervisor/supervisor-selection-issue-explain.ts
-sed -n '1,260p' src/supervisor/supervisor-detailed-status-assembly.ts
-sed -n '1,260p' src/supervisor/supervisor-status-rendering.ts
-sed -n '1,220p' src/supervisor/supervisor-selection-active-status.ts
-sed -n '1,240p' src/supervisor/supervisor-status-model.ts
-sed -n '400,540p' src/backend/webui-dashboard-browser-script.ts
-npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts
+rg -n "timeline|recent command|recovery|phase-change|active issue|operator timeline|recent-history|refresh|command result" src/backend src -g '!node_modules'
+sed -n '1,260p' src/backend/webui-dashboard.test.ts
+sed -n '1,260p' src/backend/webui-dashboard-browser-logic.test.ts
+sed -n '1,260p' src/backend/supervisor-http-server.test.ts
+sed -n '330,440p' src/backend/webui-dashboard-browser-logic.ts
+sed -n '650,780p' src/backend/webui-dashboard-browser-script.ts
+sed -n '780,860p' src/backend/webui-dashboard-browser-script.ts
+sed -n '860,1040p' src/backend/webui-dashboard-browser-script.ts
+sed -n '1036,1328p' src/backend/webui-dashboard-browser-script.ts
+sed -n '1,240p' src/supervisor/supervisor-events.ts
 apply_patch
-npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts
+npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts
+apply_patch
+npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts
+git diff -- src/backend/webui-dashboard-browser-logic.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard-browser-script.ts src/backend/webui-dashboard.test.ts .codex-supervisor/issue-journal.md
 date -u +%Y-%m-%dT%H:%M:%SZ
-git diff -- src/supervisor/supervisor-operator-activity-context.ts src/supervisor/supervisor-status-model.ts src/supervisor/supervisor-selection-issue-explain.ts src/supervisor/supervisor.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts
-git add .codex-supervisor/issue-journal.md src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-operator-activity-context.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-selection-issue-explain.ts src/supervisor/supervisor-status-model.ts src/supervisor/supervisor.ts
-git commit -m "Surface retry and recovery loop CLI summaries"
-git push origin codex/issue-874
-gh pr create --draft --base main --head codex/issue-874 --title "Surface concise retry and recovery loop summaries in CLI" --body ...
 ```
 ### Scratchpad
-- 2026-03-22T21:40:05Z: pushed `codex/issue-847` and opened draft PR `#857` for the verified dashboard refresh checkpoint.
-- 2026-03-22T21:40:05Z: reproduced the visual-refresh gap with a new hero-and-section framing regression, refreshed the dashboard page chrome/CSS to add labeled lanes and flatter surfaces, and passed `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts`.
+- 2026-03-23T10:43:22Z: reproduced the WebUI timeline gap with a new requeue/active-issue wording regression, then passed `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` after switching timeline cards to typed command summaries and humanized follow-up event summaries.
 - 2026-03-22T21:15:08Z: pushed `codex/issue-846` and opened draft PR `#856`; GitHub currently reports `mergeStateStatus=UNSTABLE`, so the next turn should inspect CI/check runs and address any failures or review feedback.
 - 2026-03-22T21:14:15Z: confirmed there was no existing PR for `codex/issue-846`; next step is to push the branch and open a draft PR with commit `c4e2a04`.
 - 2026-03-22T21:02:11Z: reproduced the issue with a new shell-structure regression, then passed the focused verification command after moving all dashboard panels onto a shared shell helper with a reserved drag slot and shared subtitle/meta/action lanes.
