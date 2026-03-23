@@ -1,6 +1,7 @@
 import { StateStore } from "./core/state-store";
 import { CodexTurnResult, FailureContext, IssueRunRecord, SupervisorStateFile } from "./core/types";
 import { truncate } from "./core/utils";
+import { syncExecutionMetricsRunSummary } from "./supervisor/execution-metrics-run-summary";
 
 type TurnExecutionFailureStateStore = Pick<StateStore, "save" | "touch">;
 
@@ -120,6 +121,22 @@ async function persistTurnFailurePatch(args: {
   const updated = args.stateStore.touch(args.record, args.patch);
   args.state.issues[String(args.record.issue_number)] = updated;
   await args.stateStore.save(args.state);
+  try {
+    await syncExecutionMetricsRunSummary({
+      previousRecord: args.record,
+      nextRecord: updated,
+    });
+  } catch (metricsError) {
+    console.warn(
+      `Failed to write execution metrics run summary while persisting issue #${args.record.issue_number}.`,
+      {
+        issueNumber: updated.issue_number,
+        terminalState: updated.state,
+        updatedAt: updated.updated_at,
+      },
+      metricsError,
+    );
+  }
   await args.syncJournal(updated);
   return updated;
 }

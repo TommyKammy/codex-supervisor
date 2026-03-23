@@ -10,6 +10,7 @@ import {
   WorkspaceStatus,
 } from "../core/types";
 import { nowIso, truncate } from "../core/utils";
+import { syncExecutionMetricsRunSummary } from "./execution-metrics-run-summary";
 
 type AuthFailureGitHub = Pick<GitHubClient, "authStatus">;
 type FailureHelperStateStore = Pick<StateStore, "save" | "touch">;
@@ -162,6 +163,22 @@ export async function recoverUnexpectedCodexTurnFailure(args: {
     state.activeIssueNumber = null;
   }
   await stateStore.save(state);
+  try {
+    await syncExecutionMetricsRunSummary({
+      previousRecord: record,
+      nextRecord: updated,
+    });
+  } catch (metricsError) {
+    console.warn(
+      `Failed to write execution metrics run summary while recovering issue #${record.issue_number}.`,
+      {
+        issueNumber: updated.issue_number,
+        terminalState: updated.state,
+        updatedAt: updated.updated_at,
+      },
+      metricsError,
+    );
+  }
 
   try {
     await journalSync(updated);
