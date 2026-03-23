@@ -163,10 +163,22 @@ export async function recoverUnexpectedCodexTurnFailure(args: {
     state.activeIssueNumber = null;
   }
   await stateStore.save(state);
-  await syncExecutionMetricsRunSummary({
-    previousRecord: record,
-    nextRecord: updated,
-  });
+  try {
+    await syncExecutionMetricsRunSummary({
+      previousRecord: record,
+      nextRecord: updated,
+    });
+  } catch (metricsError) {
+    console.warn(
+      `Failed to write execution metrics run summary while recovering issue #${record.issue_number}.`,
+      {
+        issueNumber: updated.issue_number,
+        terminalState: updated.state,
+        updatedAt: updated.updated_at,
+      },
+      metricsError,
+    );
+  }
 
   try {
     await journalSync(updated);

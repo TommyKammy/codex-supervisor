@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
-import test from "node:test";
+import test, { mock } from "node:test";
 import { GitHubIssue, IssueRunRecord, SupervisorStateFile } from "../core/types";
 import { recoverUnexpectedCodexTurnFailure } from "./supervisor-failure-helpers";
 import { Supervisor } from "./supervisor";
@@ -226,4 +226,80 @@ test("recoverUnexpectedCodexTurnFailure records unavailable workspace inspection
     "pr_head=none",
     "codex_session_id=none",
   ]);
+});
+
+test("recoverUnexpectedCodexTurnFailure continues journal sync when run summary persistence fails", async () => {
+  const issueNumber = 93;
+  const record = createRecord({
+    issue_number: issueNumber,
+    state: "stabilizing",
+    workspace: "/tmp/issue-93",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: record,
+    },
+  };
+  let syncedRecord: IssueRunRecord | null = null;
+  const metricsError = new Error("no space left on device");
+  const writeFileMock = mock.method(
+    fs,
+    "writeFile",
+    async () => {
+      throw metricsError;
+    },
+  );
+  const consoleWarnings: unknown[][] = [];
+  const warnMock = mock.method(console, "warn", (...args: unknown[]) => {
+    consoleWarnings.push(args);
+  });
+
+  try {
+    const updated = await recoverUnexpectedCodexTurnFailure({
+      stateStore: {
+        touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+          return { ...current, ...patch, updated_at: "2026-03-24T04:00:00.000Z" };
+        },
+        async save(): Promise<void> {},
+      } as unknown as Parameters<typeof recoverUnexpectedCodexTurnFailure>[0]["stateStore"],
+      state,
+      record,
+      issue: {
+        number: issueNumber,
+        title: "Recovery logging survives metrics failures",
+        body: "",
+        createdAt: "2026-03-24T00:00:00Z",
+        updatedAt: "2026-03-24T00:00:00Z",
+        url: `https://example.test/issues/${issueNumber}`,
+        state: "OPEN",
+      },
+      journalSync: async (nextRecord) => {
+        syncedRecord = nextRecord;
+      },
+      error: new Error("Command failed: codex exec resume"),
+      workspaceStatus: {
+        hasUncommittedChanges: false,
+        headSha: "abc1234",
+      },
+      pr: null,
+    });
+
+    assert.equal(writeFileMock.mock.calls.length, 1);
+    assert.equal(syncedRecord, updated);
+    assert.equal(consoleWarnings.length, 1);
+    assert.match(
+      String(consoleWarnings[0]?.[0] ?? ""),
+      /Failed to write execution metrics run summary while recovering issue #93\./,
+    );
+    assert.deepEqual(consoleWarnings[0]?.[1], {
+      issueNumber: 93,
+      terminalState: "failed",
+      updatedAt: "2026-03-24T04:00:00.000Z",
+    });
+    assert.equal(consoleWarnings[0]?.[2], metricsError);
+  } finally {
+    warnMock.mock.restore();
+    writeFileMock.mock.restore();
+  }
 });
