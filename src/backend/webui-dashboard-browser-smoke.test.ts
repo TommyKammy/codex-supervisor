@@ -181,6 +181,72 @@ async function waitForCodeText(page: Page, id: string, pattern: RegExp): Promise
   );
 }
 
+async function dragPanelHandle(page: Page, sourceSelector: string, targetSelector: string): Promise<void> {
+  await page.evaluate(
+    ({ from, to }) => {
+      const sourceHandle = document.querySelector(from);
+      const targetHandle = document.querySelector(to);
+      if (!(sourceHandle instanceof HTMLElement) || !(targetHandle instanceof HTMLElement)) {
+        throw new Error(`Expected drag handles for ${from} -> ${to}.`);
+      }
+
+      sourceHandle.scrollIntoView({ block: "center", inline: "center" });
+      targetHandle.scrollIntoView({ block: "center", inline: "center" });
+
+      const sourceRect = sourceHandle.getBoundingClientRect();
+      const targetRect = targetHandle.getBoundingClientRect();
+      const sourceX = sourceRect.left + sourceRect.width / 2;
+      const sourceY = sourceRect.top + sourceRect.height / 2;
+      const targetX = targetRect.left + targetRect.width / 2;
+      const targetY = targetRect.top + targetRect.height / 2;
+
+      sourceHandle.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          buttons: 1,
+          clientX: sourceX,
+          clientY: sourceY,
+          isPrimary: true,
+          pointerId: 1,
+          pointerType: "mouse",
+        }),
+      );
+      for (let step = 1; step <= 12; step += 1) {
+        const progress = step / 12;
+        sourceHandle.dispatchEvent(
+          new PointerEvent("pointermove", {
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+            buttons: 1,
+            clientX: sourceX + (targetX - sourceX) * progress,
+            clientY: sourceY + (targetY - sourceY) * progress,
+            isPrimary: true,
+            pointerId: 1,
+            pointerType: "mouse",
+          }),
+        );
+      }
+      sourceHandle.dispatchEvent(
+        new PointerEvent("pointerup", {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          buttons: 0,
+          clientX: targetX,
+          clientY: targetY,
+          isPrimary: true,
+          pointerId: 1,
+          pointerType: "mouse",
+        }),
+      );
+    },
+    { from: sourceSelector, to: targetSelector },
+  );
+}
+
 test("browser smoke loads the read-only dashboard against the live HTTP fixture", async (t) => {
   const server = createSupervisorHttpServer({
     service: createStubService(),
@@ -259,6 +325,67 @@ test("browser smoke reorders the dashboard with keyboard controls in reduced mot
   );
   assert.equal(await page.textContent("#connection-state"), "connected");
   assert.equal(await page.textContent("#dashboard-panel-reorder-status"), "Moved operator actions panel before tracked history.");
+});
+
+test("browser smoke reorders the dashboard with pointer dragging in both horizontal directions", async (t) => {
+  const server = createSupervisorHttpServer({
+    service: createStubService(),
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  const browser = await launchBrowser();
+  t.after(async () => {
+    await browser.close();
+  });
+
+  const port = await listen(server);
+  const page = await browser.newPage();
+  await page.goto(`http://127.0.0.1:${port}/`);
+
+  await page.waitForSelector("[data-dashboard-root]");
+  await page.waitForFunction(() => document.getElementById("doctor-overall")?.textContent === "pass");
+
+  await dragPanelHandle(page, "#panel-drag-operator-actions", "#panel-drag-operator-timeline");
+  await page.waitForFunction(
+    () =>
+      Array.from(document.querySelectorAll("#details-grid > article"))
+        .map((element) => element.id)
+        .join(",") ===
+      "panel-issue-details,panel-tracked-history,panel-live-events,panel-operator-actions,panel-operator-timeline",
+  );
+  assert.equal(await page.textContent("#dashboard-panel-reorder-status"), "Moved operator actions panel before operator timeline.");
+  assert.deepEqual(
+    await page.locator("#details-grid > article").evaluateAll((elements) => elements.map((element) => element.id)),
+    [
+      "panel-issue-details",
+      "panel-tracked-history",
+      "panel-live-events",
+      "panel-operator-actions",
+      "panel-operator-timeline",
+    ],
+  );
+  await dragPanelHandle(page, "#panel-drag-operator-timeline", "#panel-drag-tracked-history");
+  await page.waitForFunction(
+    () =>
+      Array.from(document.querySelectorAll("#details-grid > article"))
+        .map((element) => element.id)
+        .join(",") ===
+      "panel-issue-details,panel-operator-timeline,panel-tracked-history,panel-live-events,panel-operator-actions",
+  );
+
+  assert.deepEqual(
+    await page.locator("#details-grid > article").evaluateAll((elements) => elements.map((element) => element.id)),
+    [
+      "panel-issue-details",
+      "panel-operator-timeline",
+      "panel-tracked-history",
+      "panel-live-events",
+      "panel-operator-actions",
+    ],
+  );
+  assert.equal(await page.textContent("#dashboard-panel-reorder-status"), "Moved operator timeline panel before tracked history.");
 });
 
 test("browser smoke runs a confirmed safe command through the dashboard", async (t) => {
