@@ -229,10 +229,12 @@ function renderLatestCodexSummary(summary: string | null, failureSignature: stri
 
   if (failureSignatureLineIndex >= 0) {
     lines[failureSignatureLineIndex] = `Failure signature: ${normalizedFailureSignature}`;
-    return truncate(lines.join("\n"), 4000);
+    const updatedSummary = lines.join("\n");
+    return truncate(updatedSummary, 4000) ?? updatedSummary;
   }
 
-  return truncate(`${summary.trimEnd()}\nFailure signature: ${normalizedFailureSignature}`, 4000);
+  const appendedSummary = `${summary.trimEnd()}\nFailure signature: ${normalizedFailureSignature}`;
+  return truncate(appendedSummary, 4000) ?? appendedSummary;
 }
 
 export function summarizeIssueJournalHandoff(content: string | null): string | null {

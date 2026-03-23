@@ -248,9 +248,11 @@ test("syncIssueJournal keeps the rendered summary failure signature aligned with
       last_failure_context: {
         category: "review",
         summary: "1 unresolved automated review thread(s) remain.",
+        signature: "PRRT_kwDORgvdZ852EV-a",
         command: null,
         url: "https://example.test/pr/880#discussion_r2973644268",
         details: ["review thread still points at the tracked journal snapshot"],
+        updated_at: "2026-03-14T00:00:00Z",
       },
     }),
     journalPath,
