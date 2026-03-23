@@ -58,6 +58,7 @@ export interface BuildDetailedStatusSummaryLinesArgs {
   verificationPolicySummary?: string | null;
   durableGuardrailSummary?: string | null;
   externalReviewFollowUpSummary?: string | null;
+  executionMetricsSummaryLines?: string[];
 }
 
 export function buildDetailedStatusModel(args: BuildDetailedStatusModelArgs): string[] {
@@ -82,6 +83,7 @@ export function buildDetailedStatusSummaryLines(args: BuildDetailedStatusSummary
     verificationPolicySummary = null,
     durableGuardrailSummary = null,
     externalReviewFollowUpSummary = null,
+    executionMetricsSummaryLines = [],
   } = args;
   const lines: string[] = [];
 
@@ -107,6 +109,10 @@ export function buildDetailedStatusSummaryLines(args: BuildDetailedStatusSummary
 
   if (externalReviewFollowUpSummary) {
     lines.push(truncate(sanitizeStatusValue(externalReviewFollowUpSummary), 200) ?? "");
+  }
+
+  for (const executionMetricsSummaryLine of executionMetricsSummaryLines) {
+    lines.push(truncate(sanitizeStatusValue(executionMetricsSummaryLine), 240) ?? "");
   }
 
   const retrySummaryLine = formatRetrySummaryLine(activityContext);

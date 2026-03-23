@@ -961,6 +961,7 @@ export class Supervisor {
       verificationPolicySummary: activeStatus.verificationPolicySummary,
       durableGuardrailSummary: activeStatus.durableGuardrailSummary,
       externalReviewFollowUpSummary: activeStatus.externalReviewFollowUpSummary,
+      executionMetricsSummaryLines: activeStatus.executionMetricsSummaryLines,
     });
 
     return {
