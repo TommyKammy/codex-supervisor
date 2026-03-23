@@ -5,61 +5,60 @@
 - Branch: codex/issue-862
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: be0e4b678496c99ee41766cb87d1d06a1cc72518
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 187c4c6e6b5eb58af305d0e9f2c27445cf305c75
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-23T01:38:16.686Z
+- Last failure signature: PRRT_kwDORgvdZ852A-pm
+- Repeated failure signature count: 1
+- Updated at: 2026-03-23T01:54:56.185Z
 
 ## Latest Codex Summary
-- Added dedicated stale stabilizing no-PR recovery tracking that survives successful no-PR turns without depending on `repeated_failure_signature_count`, and covered increment/reset/persistence behavior with focused regression tests.
+Implemented a dedicated `stale_stabilizing_no_pr_recovery_count` that survives successful no-PR turns and drives stale stabilizing recovery repetition independently from `repeated_failure_signature_count`. The stale recovery reconciliation path now increments/resets that dedicated counter, the no-PR lifecycle preserves stale recovery context without preserving the generic failure count, and focused regressions cover persistence, increment-at-requeue, and reset-on-PR-recovery behavior.
+
+Committed as `187c4c6` (`Add stale no-PR recovery repetition counter`), pushed `codex/issue-862`, and opened draft PR [#867](https://github.com/TommyKammy/codex-supervisor/pull/867). Local worktree is clean except for the pre-existing untracked `.codex-supervisor/replay/`.
+
+Summary: Added dedicated stale stabilizing no-PR recovery repetition tracking, verified the focused stale recovery paths locally, and opened draft PR #867.
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-lifecycle.test.ts src/no-pull-request-state.test.ts`
+Failure signature: none
+Next action: Monitor draft PR #867 and address CI or review feedback if it appears.
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/867#discussion_r2972470020
+- Details:
+  - src/no-pull-request-state.ts:17 _⚠️ Potential issue_ | _🟠 Major_ **Scope the dedicated stale counter to the stale signature before returning it.** On Line 11, the helper returns `stale_stabilizing_no_pr_recovery_count` even when `last_failure_signature` is not stale. Since Line 34 consumes this helper, stale-specific budget can leak into unrelated no-PR failure tracking. <details> <summary>Suggested fix</summary> ```diff export function getStaleStabilizingNoPrRecoveryCount( record: Pick< IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count" | "stale_stabilizing_no_pr_recovery_count" >, ): number { - if ((record.stale_stabilizing_no_pr_recovery_count ?? 0) > 0) { - return record.stale_stabilizing_no_pr_recovery_count ?? 0; + if (record.last_failure_signature !== STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE) { + return 0; } - return record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE - ? record.repeated_failure_signature_count - : 0; + if ((record.stale_stabilizing_no_pr_recovery_count ?? 0) > 0) { + return record.stale_stabilizing_no_pr_recovery_count ?? 0; + } + + return record.repeated_failure_signature_count; } ``` </details> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/no-pull-request-state.ts` around lines 5 - 17, The helper getStaleStabilizingNoPrRecoveryCount currently returns stale_stabilizing_no_pr_recovery_count regardless of the last_failure_signature, allowing stale-specific budget to leak; change the logic so the dedicated counter is only returned when last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE (i.e., check both record.stale_stabilizing_no_pr_recovery_count > 0 AND record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE before returning it), otherwise fall back to returning record.repeated_failure_signature_count when the signature is stale, or 0 when it is not. ``` </details> <!-- fingerprinting:phantom:poseidon:hawk --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: stale stabilizing no-PR recovery was still coupled to the generic failure-signature repeat counter, so successful no-PR turns could leave the stale loop visible in `last_failure_*` while later resets or reuse of `repeated_failure_signature_count` erased the loop budget.
-- What changed: added `stale_stabilizing_no_pr_recovery_count` to `IssueRunRecord` normalization/state-store updates, introduced `getStaleStabilizingNoPrRecoveryCount` in `src/no-pull-request-state.ts`, switched stale recovery reconciliation to increment/reset that dedicated counter, and updated the no-PR lifecycle plus successful no-PR turn path to preserve the stale recovery context while resetting the generic failure-signature count.
+- Hypothesis: the dedicated stale no-PR recovery counter remained correct for stale loops, but `getStaleStabilizingNoPrRecoveryCount` still surfaced that counter for unrelated `last_failure_signature` values, letting stale-only retry budget leak into generic no-PR failure preservation.
+- What changed: scoped `getStaleStabilizingNoPrRecoveryCount` to `STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE` before returning either the dedicated counter or the migration fallback count, and added a regression in `src/no-pull-request-state.test.ts` proving unrelated no-PR failures do not preserve tracking from `stale_stabilizing_no_pr_recovery_count`.
 - Current blocker: none
-- Next exact step: commit the dedicated stale recovery counter changes, push `codex/issue-862`, and open a draft PR because the focused local verification is green.
-- Verification gap: none in the focused stale no-PR recovery surface; helper, lifecycle, turn execution, and reconciliation coverage all pass locally.
-- Files touched: `src/core/types.ts`, `src/core/state-store.ts`, `src/no-pull-request-state.ts`, `src/no-pull-request-state.test.ts`, `src/run-once-turn-execution.ts`, `src/run-once-turn-execution.test.ts`, `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-lifecycle.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `.codex-supervisor/issue-journal.md`
+- Next exact step: commit and push the review fix on `codex/issue-862`, then resolve the outstanding PR review thread if GitHub accepts the updated head.
+- Verification gap: none in the focused stale no-PR recovery surface; helper, lifecycle, turn execution, and reconciliation coverage all pass locally after the review fix.
+- Files touched: `src/no-pull-request-state.ts`, `src/no-pull-request-state.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: low; the new counter is narrowly scoped to stale stabilizing no-PR recovery and falls back to the previous generic repeat count only for migration/older state compatibility.
 - Last focused command: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-lifecycle.test.ts src/no-pull-request-state.test.ts`
-- Last focused failure: `stale-no-pr-recovery-counter-shared-generic-reset`
+- Last focused failure: `PRRT_kwDORgvdZ852A-pm`
 - Last focused commands:
 ```bash
 sed -n '1,220p' "<local-memory>/issue-862/AGENTS.generated.md"
 sed -n '1,220p' "<local-memory>/issue-862/context-index.md"
 sed -n '1,260p' .codex-supervisor/issue-journal.md
 git status --short
-rg -n "stale.*no-PR|stale.*no-pr|no-pr.*stale|stale_state_cleanup|repeated_failure_signature_count|last_failure_context|recovery.*counter|repetition" src -g '!**/dist/**'
-sed -n '1,260p' src/supervisor/supervisor-recovery-reconciliation.test.ts
-sed -n '1,260p' src/run-once-turn-execution.test.ts
-sed -n '1,260p' src/supervisor/supervisor-lifecycle.test.ts
-sed -n '1080,1225p' src/recovery-reconciliation.ts
 sed -n '1,260p' src/no-pull-request-state.ts
-sed -n '400,490p' src/run-once-turn-execution.ts
-sed -n '180,240p' src/supervisor/supervisor-lifecycle.ts
-sed -n '40,90p' src/supervisor/supervisor-failure-helpers.ts
-sed -n '1,240p' src/core/state-store.ts
-sed -n '520,760p' src/supervisor/supervisor-recovery-reconciliation.test.ts
-sed -n '840,1045p' src/run-once-turn-execution.test.ts
 sed -n '1,240p' src/no-pull-request-state.test.ts
-npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-turn-execution.test.ts
-npx tsx --test src/no-pull-request-state.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-lifecycle.test.ts
-npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-lifecycle.test.ts
+apply_patch
 npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-lifecycle.test.ts src/no-pull-request-state.test.ts
-gh pr list --head codex/issue-862 --json number,isDraft,url,state
-git diff -- src/core/types.ts src/core/state-store.ts src/no-pull-request-state.ts src/no-pull-request-state.test.ts src/run-once-turn-execution.ts src/run-once-turn-execution.test.ts src/recovery-reconciliation.ts src/supervisor/supervisor-lifecycle.ts src/supervisor/supervisor-recovery-reconciliation.test.ts
+git diff -- src/no-pull-request-state.ts src/no-pull-request-state.test.ts
+git diff -- .codex-supervisor/issue-journal.md
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
-- 2026-03-23T01:42:48Z: reproduced the stale no-PR counter coupling with focused failing assertions in `src/run-once-turn-execution.test.ts` and `src/supervisor/supervisor-recovery-reconciliation.test.ts`, then switched stale recovery to a dedicated `stale_stabilizing_no_pr_recovery_count` that survives successful no-PR turns while generic failure-signature counts reset independently; focused no-PR helper, lifecycle, turn, and reconciliation tests now pass.
-- 2026-03-22T22:09:23Z: reproduced the drag-reorder gap with a pure browser-logic regression, then added draggable panel handles, browser-only DOM reorder state, and a runtime dashboard drag test; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts` passed.
+- 2026-03-23T01:55:57Z: validated CodeRabbit thread `PRRT_kwDORgvdZ852A-pm` against the live branch, confirmed `getStaleStabilizingNoPrRecoveryCount` leaked `stale_stabilizing_no_pr_recovery_count` across unrelated failure signatures, then scoped the helper to the stale signature and passed `npx tsx --test src/no-pull-request-state.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-lifecycle.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`.
 - 2026-03-22T21:40:05Z: pushed `codex/issue-847` and opened draft PR `#857` for the verified dashboard refresh checkpoint.
 - 2026-03-22T21:40:05Z: reproduced the visual-refresh gap with a new hero-and-section framing regression, refreshed the dashboard page chrome/CSS to add labeled lanes and flatter surfaces, and passed `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts`.
 - 2026-03-22T21:15:08Z: pushed `codex/issue-846` and opened draft PR `#856`; GitHub currently reports `mergeStateStatus=UNSTABLE`, so the next turn should inspect CI/check runs and address any failures or review feedback.

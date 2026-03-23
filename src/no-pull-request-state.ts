@@ -8,13 +8,15 @@ export function getStaleStabilizingNoPrRecoveryCount(
     "last_failure_signature" | "repeated_failure_signature_count" | "stale_stabilizing_no_pr_recovery_count"
   >,
 ): number {
+  if (record.last_failure_signature !== STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE) {
+    return 0;
+  }
+
   if ((record.stale_stabilizing_no_pr_recovery_count ?? 0) > 0) {
     return record.stale_stabilizing_no_pr_recovery_count ?? 0;
   }
 
-  return record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE
-    ? record.repeated_failure_signature_count
-    : 0;
+  return record.repeated_failure_signature_count;
 }
 
 export function shouldPreserveNoPrFailureTracking(
