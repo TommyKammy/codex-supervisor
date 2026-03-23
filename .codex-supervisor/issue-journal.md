@@ -11,10 +11,10 @@
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-23T11:45:40Z
+- Updated at: 2026-03-23T11:47:06Z
 
 ## Latest Codex Summary
-- Captured operator-facing replay summaries directly inside the decision snapshot and replay formatter so repeated anomaly and phase-churn context remains visible after the live timeline advances.
+- Captured operator-facing replay summaries directly inside the decision snapshot and replay formatter, committed the fix as `970f50e`, pushed `codex/issue-876`, and opened draft PR `#889`.
 
 ## Active Failure Context
 - Failure reproduced as a coverage gap: replay snapshots retained low-level failure counters and signatures, but dropped the compact operator activity summary that surfaces repeated failure signatures, recovery loops, and recent recovery-driven phase changes.
@@ -24,11 +24,11 @@
 - Hypothesis: persisting a compact operator summary alongside the replay snapshot is the minimal fix because the existing operator activity DTOs already encode retry loops, repeated anomalies, and recovery-driven phase churn cleanly.
 - What changed: added `operatorSummary` to the decision-cycle snapshot, populated it from the existing operator activity context helpers, and taught replay formatting to print the captured `latest_recovery`, `retry_summary`, and `recovery_loop_summary` lines when present.
 - Current blocker: none
-- Next exact step: commit the focused replay-summary patch, then check whether `codex/issue-876` already has a PR; if not, push and open a draft PR with the focused verification attached.
-- Verification gap: focused replay snapshot and replay formatter tests pass locally; broader repo verification has not been rerun because the change is isolated to replay snapshot formatting.
+- Next exact step: monitor draft PR `#889` checks and respond if CI or review exposes a regression; otherwise keep the branch ready for review.
+- Verification gap: focused replay snapshot and replay formatter tests pass locally; broader repo verification has not been rerun because the change is isolated to replay snapshot formatting, so CI remains the only remaining broader signal.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-cycle-snapshot.ts`, `src/supervisor/supervisor-cycle-replay.ts`, `src/supervisor/supervisor-cycle-snapshot.test.ts`, `src/supervisor/supervisor-cycle-replay.test.ts`
 - Rollback concern: low; the patch only adds a derived operator-summary surface on top of existing replay artifacts and does not alter replay decision evaluation.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-cycle-replay.test.ts`
+- Last focused command: `gh pr create --draft --base main --head codex/issue-876 --title "Retain operator replay anomaly summaries" --body ...`
 - Last focused failure: replay artifacts preserved raw anomaly counters but not the compact operator-facing summary lines, so recent loop context disappeared once the live status moved on.
 - Last focused commands:
 ```bash
@@ -50,8 +50,14 @@ apply_patch
 npx tsx --test src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-cycle-replay.test.ts
 git diff -- src/supervisor/supervisor-cycle-snapshot.ts src/supervisor/supervisor-cycle-replay.ts src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-cycle-replay.test.ts
 date -u +%Y-%m-%dT%H:%M:%SZ
+git add .codex-supervisor/issue-journal.md src/supervisor/supervisor-cycle-snapshot.ts src/supervisor/supervisor-cycle-replay.ts src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-cycle-replay.test.ts
+git commit -m "Retain operator replay anomaly summaries"
+git rev-parse HEAD
+git push -u origin codex/issue-876
+gh pr create --draft --base main --head codex/issue-876 --title "Retain operator replay anomaly summaries" --body ...
 ```
 ### Scratchpad
+- 2026-03-23T11:47:06Z: committed `970f50e`, pushed `codex/issue-876`, and opened draft PR `#889` for the retained replay-summary patch.
 - 2026-03-23T11:45:40Z: reproduced the gap as missing replay-summary coverage rather than a functional replay mismatch, added focused tests proving the snapshot and formatter now retain `latest_recovery`, `retry_summary`, and `recovery_loop_summary`, and passed `npx tsx --test src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-cycle-replay.test.ts`.
 - 2026-03-23T11:00:34Z: committed `690022a` to sync the issue journal, pushed `codex/issue-875`, and observed GitHub start a newer PR `#888` rerun as Actions run `23434005312` with both `build` jobs pending.
 - 2026-03-23T10:59:32Z: committed `82e6b50` for the TS18049 narrowing fix, pushed `codex/issue-875`, and confirmed PR `#888` reran as GitHub Actions run `23433971857` with both `build` jobs pending.
