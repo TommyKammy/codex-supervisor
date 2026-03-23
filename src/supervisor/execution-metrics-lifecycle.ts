@@ -22,6 +22,24 @@ function durationMs(start: string | null, end: string | null): number | null {
   return duration;
 }
 
+function latestTimestamp(...timestamps: Array<string | null | undefined>): string | null {
+  let latest: string | null = null;
+  let latestMs = Number.NEGATIVE_INFINITY;
+
+  for (const timestamp of timestamps) {
+    if (!timestamp) {
+      continue;
+    }
+    const parsed = Date.parse(timestamp);
+    if (parsed > latestMs) {
+      latest = timestamp;
+      latestMs = parsed;
+    }
+  }
+
+  return latest;
+}
+
 function terminalOutcomeForState(args: {
   terminalState: ExecutionMetricsRunSummaryArtifact["terminalState"];
   blockedReason?: BlockedReason | null;
@@ -166,6 +184,11 @@ export function buildExecutionMetricsRunSummaryArtifact(args: {
     lastRecoveryAt: args.lastRecoveryAt,
     staleStabilizingNoPrRecoveryCount: args.staleStabilizingNoPrRecoveryCount,
   });
+  const finishedAt = latestTimestamp(
+    args.finishedAt,
+    failureMetrics?.lastOccurredAt,
+    recoveryMetrics?.lastRecoveredAt,
+  ) ?? args.finishedAt;
 
   return {
     schemaVersion: EXECUTION_METRICS_RUN_SUMMARY_SCHEMA_VERSION,
@@ -176,9 +199,9 @@ export function buildExecutionMetricsRunSummaryArtifact(args: {
     startedAt: args.startedAt,
     prCreatedAt,
     prMergedAt,
-    finishedAt: args.finishedAt,
-    runDurationMs: durationMs(args.startedAt, args.finishedAt) ?? 0,
-    issueLeadTimeMs: durationMs(issueCreatedAt, args.finishedAt),
+    finishedAt,
+    runDurationMs: durationMs(args.startedAt, finishedAt) ?? 0,
+    issueLeadTimeMs: durationMs(issueCreatedAt, finishedAt),
     issueToPrCreatedMs: durationMs(issueCreatedAt, prCreatedAt),
     prOpenDurationMs: durationMs(prCreatedAt, prMergedAt),
     reviewMetrics: buildReviewMetrics(args.processedReviewThreadIds ?? []),
