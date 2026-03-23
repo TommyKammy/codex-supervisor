@@ -1,68 +1,60 @@
-# Issue #849: WebUI layout persistence: save and safely restore panel order in the browser
+# Issue #850: WebUI drag polish: add accessibility, drop feedback, and browser confidence coverage
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/849
-- Branch: codex/issue-849
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/850
+- Branch: codex/issue-850
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: draft_pr
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 60684654002d8839c21aa011398efbbf76e577de
+- Current phase: addressing_review
+- Attempt count: 6 (implementation=2, repair=4)
+- Last head SHA: 2bff9a481e5654c3fb53c265777570fb14b5d6e4
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-22T23:04:46Z
+- Last failure signature: PRRT_kwDORgvdZ852Alqd
+- Repeated failure signature count: 1
+- Updated at: 2026-03-23T00:29:58Z
 
 ## Latest Codex Summary
-Reproduced the missing browser persistence with a new reload regression in `src/backend/webui-dashboard.test.ts`: a drag reorder survived within one runtime but reset after a fresh harness with the same `localStorage`.
+Sanitized `.codex-supervisor/issue-journal.md` on `codex/issue-850` to remove workstation-local absolute paths from the durable handoff, including the latest summary text, the copied review context, and the command history entries. This turn only changes journal metadata; the underlying drag/accessibility implementation and focused verification from `e61f762` remain unchanged.
 
-Implemented browser-local panel layout persistence by restoring a saved order from `localStorage`, normalizing it against the current typed registry, and persisting the normalized order after layout renders. Added focused browser-logic coverage for restore, merge, and invalid-storage fallback.
+I did not rerun tests because this turn only changes the journal. The previously passing verification on `e61f762` remains `npx tsx --test src/backend/webui-dashboard.test.ts`, `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts`, and `npm run build`.
 
-Summary: Added safe browser-local dashboard panel layout persistence, pushed `codex/issue-849`, and opened draft PR `#859`
-State hint: draft_pr
+Summary: Sanitized the issue-850 durable journal to remove workstation-local paths before updating PR `#865`
+State hint: addressing_review
 Blocked reason: none
-Tests: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`
-Failure signature: none
-Next action: monitor PR `#859` for CI and review feedback
+Tests: not rerun this turn; previously passed on `e61f762`: `npx tsx --test src/backend/webui-dashboard.test.ts`; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts`; `npm run build`
+Failure signature: PRRT_kwDORgvdZ852Alqd
+Next action: verify the journal is fully sanitized, commit the review-only fix, push `codex/issue-850`, and resolve the remaining review thread on PR `#865`
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread about workstation-local journal paths remains until the sanitized journal update is pushed.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/865#discussion_r2972336528
+- Details:
+  - CodeRabbit flagged `.codex-supervisor/issue-journal.md` for portable-handoff violations because the durable journal still embedded workstation-local absolute paths in the summary and command history. The fix for this turn is limited to replacing those references with repo-relative paths or `<local-memory>/...` placeholders, with no product-code changes.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: browser-local persistence only needs a typed order payload plus strict normalization on restore, so a small storage wrapper around the existing panel-order logic should satisfy reload persistence without introducing brittle state coupling.
-- What changed: added `restoreDashboardPanelOrder()` and `serializeDashboardPanelOrder()` in `src/backend/webui-dashboard-browser-logic.ts`; wired `src/backend/webui-dashboard-browser-script.ts` to read/write `window.localStorage` with guarded access and to persist the normalized order after rendering; extended `src/backend/webui-dashboard-browser-logic.test.ts` to cover restore, merge, and invalid-storage fallback; and added a runtime reload regression in `src/backend/webui-dashboard.test.ts` using a shared fake browser storage.
+- Hypothesis: the implementation is done; the only remaining work is a review-only journal sanitization so the durable handoff is portable for other operators.
+- What changed: updated `.codex-supervisor/issue-journal.md` locally to remove workstation-local absolute paths from the latest summary, active failure context, and command history while preserving the underlying `e61f762` verification record.
 - Current blocker: none
-- Next exact step: monitor CI and review feedback on PR `#859`, then address any follow-up if needed.
-- Verification gap: none on the focused persistence scope; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts` passed after the storage restore/persist helpers and reload regression were added.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard.test.ts`
-- Rollback concern: low; the behavior change is browser-local only and falls back to the default typed layout if storage is missing, malformed, or outdated.
-- Last focused command: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`
-- Last focused failure: none.
+- Next exact step: verify the journal diff contains no workstation-local paths, commit and push the sanitized journal update, resolve thread `PRRT_kwDORgvdZ852Alqd`, and then monitor PR `#865` CI for the new head.
+- Verification gap: none for code; this turn only updates journal metadata, and the focused dashboard/unit/browser-smoke verification command plus `npm run build` already passed on `e61f762`.
+- Files touched: `.codex-supervisor/issue-journal.md`
+- Rollback concern: low; the change is confined to WebUI markup/CSS/browser behavior and keeps the CLI, HTTP API, and safe-command transport untouched.
+- Last focused command: `git diff -- .codex-supervisor/issue-journal.md`
+- Last focused failure: `PRRT_kwDORgvdZ852Alqd`
 - Last focused commands:
 ```bash
-sed -n '1,220p' "$HOME/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-849/AGENTS.generated.md"
-sed -n '1,220p' "$HOME/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-849/context-index.md"
+sed -n '1,220p' "<local-memory>/issue-850/AGENTS.generated.md"
+sed -n '1,220p' "<local-memory>/issue-850/context-index.md"
 sed -n '1,260p' .codex-supervisor/issue-journal.md
 git status --short --branch
-rg -n "localStorage|sessionStorage|panel layout|dashboard panel|DEFAULT_DASHBOARD_PANEL_LAYOUT|normalizeDashboardPanelLayout|applyDashboardPanelDrop|saved layout|storage" src/backend
-sed -n '1,260p' src/backend/webui-dashboard-panel-layout.ts
-sed -n '1,360p' src/backend/webui-dashboard-browser-logic.test.ts
-sed -n '1,760p' src/backend/webui-dashboard.test.ts
-sed -n '1,280p' src/backend/webui-dashboard-browser-script.ts
-sed -n '820,1040p' src/backend/webui-dashboard-browser-script.ts
-sed -n '1,240p' src/backend/webui-dashboard-browser-logic.ts
-tail -n 120 src/backend/webui-dashboard-browser-script.ts
-rg -n "renderPanelLayout\\(|wirePanelDragAndDrop\\(|refreshStatusAndDoctor\\(|wireEvents\\(" src/backend/webui-dashboard-browser-script.ts
-npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts
+rg -n '<local-path-pattern>' .codex-supervisor/issue-journal.md
+git diff -- .codex-supervisor/issue-journal.md
 date -u +%Y-%m-%dT%H:%M:%SZ
-git rev-parse HEAD
-git status --short --branch
 ```
 ### Scratchpad
-- 2026-03-22T23:04:46Z: committed the persistence checkpoint as `6068465`, pushed `codex/issue-849`, and opened draft PR `#859`.
-- 2026-03-22T23:03:27Z: reproduced the missing reload persistence with a shared-storage dashboard regression, added guarded localStorage restore/persist helpers for the typed panel order, added focused restore/fallback unit coverage, and reran `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`.
-- 2026-03-22T22:37:34Z: fixed the CodeRabbit review threads locally by rejecting cross-lane panel drops before mutating browser layout state, adding a focused cross-lane drag regression, sanitizing workstation-local paths from the issue journal, and rerunning `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`.
+- 2026-03-23T00:29:58Z: confirmed the remaining CodeRabbit finding is valid because the durable journal still contained workstation-local absolute paths, then rewrote the summary/review context/command history locally to use repo-relative references and `<local-memory>` placeholders before preparing the review-only push.
 - 2026-03-22T22:21:32Z: reran `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`, pushed `codex/issue-848`, and opened draft PR `#858` for the drag-reorder checkpoint.
 - 2026-03-22T22:09:23Z: reproduced the drag-reorder gap with a pure browser-logic regression, then added draggable panel handles, browser-only DOM reorder state, and a runtime dashboard drag test; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts` passed.
 - 2026-03-22T21:40:05Z: pushed `codex/issue-847` and opened draft PR `#857` for the verified dashboard refresh checkpoint.

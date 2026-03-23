@@ -192,6 +192,18 @@ export function renderSupervisorDashboardPage(): string {
         line-height: 1.5;
       }
 
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
       .grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -204,6 +216,10 @@ export function renderSupervisorDashboardPage(): string {
         background: var(--surface);
         box-shadow: 0 8px 20px rgba(58, 49, 39, 0.04);
         overflow: hidden;
+        transition:
+          box-shadow 140ms ease,
+          border-color 140ms ease,
+          transform 140ms ease;
       }
 
       .panel-shell {
@@ -253,6 +269,11 @@ export function renderSupervisorDashboardPage(): string {
         color: var(--muted);
         cursor: grab;
         font: inherit;
+        transition:
+          border-color 140ms ease,
+          background 140ms ease,
+          box-shadow 140ms ease,
+          transform 140ms ease;
       }
 
       .panel-drag-handle:hover {
@@ -272,6 +293,12 @@ export function renderSupervisorDashboardPage(): string {
         cursor: grabbing;
       }
 
+      .panel-drag-handle:focus-visible {
+        outline: none;
+        border-color: rgba(29, 106, 116, 0.44);
+        box-shadow: 0 0 0 3px rgba(29, 106, 116, 0.16);
+      }
+
       .panel-drag-handle span {
         display: block;
         font-weight: 700;
@@ -281,7 +308,21 @@ export function renderSupervisorDashboardPage(): string {
 
       .panel.drag-active {
         border-radius: 12px;
+        border-color: rgba(29, 106, 116, 0.28);
         box-shadow: 0 0 0 2px rgba(29, 106, 116, 0.18);
+        transform: translateY(-2px);
+      }
+
+      .panel.drop-target {
+        border-color: rgba(29, 106, 116, 0.34);
+        box-shadow:
+          0 0 0 2px rgba(29, 106, 116, 0.22),
+          0 14px 24px rgba(29, 106, 116, 0.08);
+      }
+
+      .panel.drop-target .panel-drag-handle {
+        border-color: rgba(29, 106, 116, 0.4);
+        box-shadow: 0 0 0 2px rgba(29, 106, 116, 0.12);
       }
 
       .panel-heading {
@@ -591,6 +632,19 @@ export function renderSupervisorDashboardPage(): string {
           justify-content: flex-start;
         }
       }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          scroll-behavior: auto !important;
+          transition-duration: 0.01ms !important;
+        }
+
+        .panel.drag-active {
+          transform: none;
+        }
+      }
     </style>
   </head>
   <body>
@@ -621,6 +675,10 @@ export function renderSupervisorDashboardPage(): string {
           <div class="badge">last refresh <strong id="last-refresh-badge">never</strong></div>
         </div>
       </section>
+      <p id="dashboard-panel-reorder-hint" class="visually-hidden">
+        Reorder panels with drag and drop, or press Space to pick up a panel, Arrow keys to choose a target, Enter to drop, and Escape to cancel.
+      </p>
+      <div id="dashboard-panel-reorder-status" class="visually-hidden" role="status" aria-live="polite"></div>
 
       <section class="dashboard-section" aria-labelledby="overview-heading">
         <div class="section-header">
