@@ -1,6 +1,7 @@
 import type { BlockedReason, FailureKind } from "../core/types";
 import {
   EXECUTION_METRICS_RUN_SUMMARY_SCHEMA_VERSION,
+  type ExecutionMetricsReviewMetrics,
   type ExecutionMetricsRunSummaryArtifact,
   type ExecutionMetricsTerminalOutcome,
 } from "./execution-metrics-schema";
@@ -44,6 +45,29 @@ function terminalOutcomeForState(args: {
   };
 }
 
+function buildReviewMetrics(processedReviewThreadIds: string[]): ExecutionMetricsReviewMetrics | null {
+  const scopedThreadKeys = Array.from(new Set(processedReviewThreadIds));
+  if (scopedThreadKeys.length === 0) {
+    return null;
+  }
+
+  const iterationHeads = new Set<string>();
+  for (const scopedThreadKey of scopedThreadKeys) {
+    const atIndex = scopedThreadKey.lastIndexOf("@");
+    if (atIndex <= 0 || atIndex === scopedThreadKey.length - 1) {
+      continue;
+    }
+    iterationHeads.add(scopedThreadKey.slice(atIndex + 1));
+  }
+
+  return {
+    classification: "configured_bot_threads",
+    iterationCount: iterationHeads.size,
+    totalCount: scopedThreadKeys.length,
+    totalCountKind: "actionable_thread_instances",
+  };
+}
+
 export function buildExecutionMetricsRunSummaryArtifact(args: {
   issueNumber: number;
   terminalState: ExecutionMetricsRunSummaryArtifact["terminalState"];
@@ -54,6 +78,7 @@ export function buildExecutionMetricsRunSummaryArtifact(args: {
   finishedAt: string;
   blockedReason?: BlockedReason | null;
   failureKind?: FailureKind;
+  processedReviewThreadIds?: string[];
 }): ExecutionMetricsRunSummaryArtifact {
   const issueCreatedAt = args.issueCreatedAt ?? null;
   const prCreatedAt = args.prCreatedAt ?? null;
@@ -73,5 +98,6 @@ export function buildExecutionMetricsRunSummaryArtifact(args: {
     issueLeadTimeMs: durationMs(issueCreatedAt, args.finishedAt),
     issueToPrCreatedMs: durationMs(issueCreatedAt, prCreatedAt),
     prOpenDurationMs: durationMs(prCreatedAt, prMergedAt),
+    reviewMetrics: buildReviewMetrics(args.processedReviewThreadIds ?? []),
   };
 }

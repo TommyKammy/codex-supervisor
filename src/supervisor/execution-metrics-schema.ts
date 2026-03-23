@@ -1,4 +1,4 @@
-export const EXECUTION_METRICS_RUN_SUMMARY_SCHEMA_VERSION = 2;
+export const EXECUTION_METRICS_RUN_SUMMARY_SCHEMA_VERSION = 3;
 const EXECUTION_METRICS_RUN_SUMMARY_KEYS = [
   "schemaVersion",
   "issueNumber",
@@ -13,13 +13,23 @@ const EXECUTION_METRICS_RUN_SUMMARY_KEYS = [
   "issueLeadTimeMs",
   "issueToPrCreatedMs",
   "prOpenDurationMs",
+  "reviewMetrics",
 ] as const;
 const TERMINAL_STATES = ["done", "blocked", "failed"] as const;
 const TERMINAL_OUTCOME_CATEGORIES = ["completed", "blocked", "failed"] as const;
+const REVIEW_METRICS_CLASSIFICATIONS = ["configured_bot_threads"] as const;
+const REVIEW_METRICS_TOTAL_COUNT_KINDS = ["actionable_thread_instances"] as const;
 
 export interface ExecutionMetricsTerminalOutcome {
   category: (typeof TERMINAL_OUTCOME_CATEGORIES)[number];
   reason: string | null;
+}
+
+export interface ExecutionMetricsReviewMetrics {
+  classification: (typeof REVIEW_METRICS_CLASSIFICATIONS)[number];
+  iterationCount: number;
+  totalCount: number;
+  totalCountKind: (typeof REVIEW_METRICS_TOTAL_COUNT_KINDS)[number];
 }
 
 export interface ExecutionMetricsRunSummaryArtifact {
@@ -36,6 +46,7 @@ export interface ExecutionMetricsRunSummaryArtifact {
   issueLeadTimeMs: number | null;
   issueToPrCreatedMs: number | null;
   prOpenDurationMs: number | null;
+  reviewMetrics: ExecutionMetricsReviewMetrics | null;
 }
 
 function failValidation(message: string): never {
@@ -112,6 +123,54 @@ function expectNullableNonNegativeInteger(value: unknown, field: string): number
   return expectNonNegativeInteger(value, field);
 }
 
+function expectReviewMetrics(value: unknown): ExecutionMetricsReviewMetrics | null {
+  if (value === null) {
+    return null;
+  }
+
+  const reviewMetrics = expectObject(value);
+  const keys = Object.keys(reviewMetrics);
+  if (
+    keys.length !== 4 ||
+    !keys.includes("classification") ||
+    !keys.includes("iterationCount") ||
+    !keys.includes("totalCount") ||
+    !keys.includes("totalCountKind")
+  ) {
+    failValidation(
+      "reviewMetrics must contain classification, iterationCount, totalCount, and totalCountKind.",
+    );
+  }
+
+  if (
+    typeof reviewMetrics.classification !== "string" ||
+    !REVIEW_METRICS_CLASSIFICATIONS.includes(
+      reviewMetrics.classification as ExecutionMetricsReviewMetrics["classification"],
+    )
+  ) {
+    failValidation(
+      `reviewMetrics.classification must be one of: ${REVIEW_METRICS_CLASSIFICATIONS.join(", ")}.`,
+    );
+  }
+  if (
+    typeof reviewMetrics.totalCountKind !== "string" ||
+    !REVIEW_METRICS_TOTAL_COUNT_KINDS.includes(
+      reviewMetrics.totalCountKind as ExecutionMetricsReviewMetrics["totalCountKind"],
+    )
+  ) {
+    failValidation(
+      `reviewMetrics.totalCountKind must be one of: ${REVIEW_METRICS_TOTAL_COUNT_KINDS.join(", ")}.`,
+    );
+  }
+
+  return {
+    classification: reviewMetrics.classification as ExecutionMetricsReviewMetrics["classification"],
+    iterationCount: expectNonNegativeInteger(reviewMetrics.iterationCount, "reviewMetrics.iterationCount"),
+    totalCount: expectNonNegativeInteger(reviewMetrics.totalCount, "reviewMetrics.totalCount"),
+    totalCountKind: reviewMetrics.totalCountKind as ExecutionMetricsReviewMetrics["totalCountKind"],
+  };
+}
+
 function expectDerivedDuration(
   value: number | null,
   start: string | null,
@@ -161,6 +220,7 @@ export function validateExecutionMetricsRunSummary(raw: unknown): ExecutionMetri
   const issueLeadTimeMs = expectNullableNonNegativeInteger(summary.issueLeadTimeMs, "issueLeadTimeMs");
   const issueToPrCreatedMs = expectNullableNonNegativeInteger(summary.issueToPrCreatedMs, "issueToPrCreatedMs");
   const prOpenDurationMs = expectNullableNonNegativeInteger(summary.prOpenDurationMs, "prOpenDurationMs");
+  const reviewMetrics = expectReviewMetrics(summary.reviewMetrics);
 
   expectDerivedDuration(runDurationMs, startedAt, finishedAt, "runDurationMs");
   expectDerivedDuration(issueLeadTimeMs, issueCreatedAt, finishedAt, "issueLeadTimeMs");
@@ -181,5 +241,6 @@ export function validateExecutionMetricsRunSummary(raw: unknown): ExecutionMetri
     issueLeadTimeMs,
     issueToPrCreatedMs,
     prOpenDurationMs,
+    reviewMetrics,
   };
 }

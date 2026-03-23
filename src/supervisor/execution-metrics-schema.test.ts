@@ -28,6 +28,12 @@ test("validateExecutionMetricsRunSummary accepts the versioned contract and reje
       issueLeadTimeMs: 300000,
       issueToPrCreatedMs: 270000,
       prOpenDurationMs: 15000,
+      reviewMetrics: {
+        classification: "configured_bot_threads",
+        iterationCount: 2,
+        totalCount: 3,
+        totalCountKind: "actionable_thread_instances",
+      },
     }),
     {
       schemaVersion: EXECUTION_METRICS_RUN_SUMMARY_SCHEMA_VERSION,
@@ -46,13 +52,19 @@ test("validateExecutionMetricsRunSummary accepts the versioned contract and reje
       issueLeadTimeMs: 300000,
       issueToPrCreatedMs: 270000,
       prOpenDurationMs: 15000,
+      reviewMetrics: {
+        classification: "configured_bot_threads",
+        iterationCount: 2,
+        totalCount: 3,
+        totalCountKind: "actionable_thread_instances",
+      },
     },
   );
 
   assert.throws(
     () =>
       validateExecutionMetricsRunSummary({
-        schemaVersion: 3,
+        schemaVersion: 2,
         issueNumber: 892,
         terminalState: "done",
         terminalOutcome: {
@@ -68,8 +80,9 @@ test("validateExecutionMetricsRunSummary accepts the versioned contract and reje
         issueLeadTimeMs: 300000,
         issueToPrCreatedMs: 270000,
         prOpenDurationMs: 15000,
+        reviewMetrics: null,
       }),
-    /schemaVersion must be 2/u,
+    /schemaVersion must be 3/u,
   );
 });
 
@@ -88,6 +101,7 @@ test("syncExecutionMetricsRunSummary rejects malformed run summaries before writ
         updated_at: "2026-03-24T04:00:00Z",
         blocked_reason: null,
         last_failure_kind: null,
+        processed_review_thread_ids: [],
       },
     }),
     /startedAt must be an ISO-8601 timestamp/u,
@@ -116,7 +130,62 @@ test("validateExecutionMetricsRunSummary rejects negative derived lifecycle dura
         issueLeadTimeMs: 300000,
         issueToPrCreatedMs: 360000,
         prOpenDurationMs: 0,
+        reviewMetrics: null,
       }),
     /prOpenDurationMs timestamps must be chronological/u,
+  );
+});
+
+test("syncExecutionMetricsRunSummary records coarse review metrics from processed review thread history", async () => {
+  const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "execution-metrics-review-"));
+
+  await syncExecutionMetricsRunSummary({
+    previousRecord: {
+      issue_number: 894,
+      updated_at: "2026-03-24T04:00:00Z",
+    },
+    nextRecord: {
+      state: "done",
+      workspace: workspacePath,
+      updated_at: "2026-03-24T04:05:00Z",
+      blocked_reason: null,
+      last_failure_kind: null,
+      processed_review_thread_ids: ["thread-1@head-a", "thread-2@head-a", "thread-2@head-b"],
+    },
+    issue: {
+      createdAt: "2026-03-24T03:55:00Z",
+    },
+    pullRequest: {
+      createdAt: "2026-03-24T03:59:30Z",
+      mergedAt: "2026-03-24T04:04:00Z",
+    },
+  });
+
+  assert.deepEqual(
+    JSON.parse(await fs.readFile(executionMetricsRunSummaryPath(workspacePath), "utf8")),
+    {
+      schemaVersion: 3,
+      issueNumber: 894,
+      terminalState: "done",
+      terminalOutcome: {
+        category: "completed",
+        reason: "merged",
+      },
+      issueCreatedAt: "2026-03-24T03:55:00Z",
+      startedAt: "2026-03-24T04:00:00Z",
+      prCreatedAt: "2026-03-24T03:59:30Z",
+      prMergedAt: "2026-03-24T04:04:00Z",
+      finishedAt: "2026-03-24T04:05:00Z",
+      runDurationMs: 300000,
+      issueLeadTimeMs: 600000,
+      issueToPrCreatedMs: 270000,
+      prOpenDurationMs: 270000,
+      reviewMetrics: {
+        classification: "configured_bot_threads",
+        iterationCount: 2,
+        totalCount: 3,
+        totalCountKind: "actionable_thread_instances",
+      },
+    },
   );
 });
