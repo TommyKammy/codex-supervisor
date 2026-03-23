@@ -7,6 +7,7 @@ import {
   collectIssueShortcuts,
   describeCommandSelectionChange,
   describeConnectionHealth,
+  describeTimelineCommandResult,
   describeFreshnessState,
   describeTimelineEvent,
   formatTrackedIssues,
@@ -418,7 +419,16 @@ test("describeTimelineEvent summarizes known supervisor events for the operator 
       nextIssueNumber: 77,
       reason: "reserved_for_cycle",
     }),
-    "active issue #42 -> #77 (reserved_for_cycle)",
+    "active issue reserved for cycle: #42 -> #77",
+  );
+
+  assert.equal(
+    describeTimelineEvent({
+      type: "supervisor.recovery",
+      issueNumber: 77,
+      reason: "operator_requeue",
+    }),
+    "recovery issue #77: operator requeue",
   );
 
   assert.equal(
@@ -426,8 +436,9 @@ test("describeTimelineEvent summarizes known supervisor events for the operator 
       type: "supervisor.run_lock.blocked",
       command: "run-once",
       reason: "lock held by pid 123",
+      reconciliationPhase: "addressing_review",
     }),
-    "run-once blocked: lock held by pid 123",
+    "run-once blocked: lock held by pid 123 during addressing review",
   );
 
   assert.equal(
@@ -446,5 +457,29 @@ test("describeTimelineEvent summarizes known supervisor events for the operator 
       message: "  ",
     }),
     "event",
+  );
+});
+
+test("describeTimelineCommandResult summarizes typed recovery and maintenance command outcomes", () => {
+  assert.equal(
+    describeTimelineCommandResult({
+      action: "requeue",
+      issueNumber: 42,
+      previousState: "blocked",
+      nextState: "queued",
+      recoveryReason: "operator_requested",
+      summary: "Requeued issue #42.",
+    }),
+    "requeue issue #42 blocked -> queued (operator requested)",
+  );
+
+  assert.equal(
+    describeTimelineCommandResult({
+      action: "prune-orphaned-workspaces",
+      summary: "Pruned 1 orphaned workspace(s); skipped 2 orphaned workspace(s).",
+      pruned: [{}],
+      skipped: [{}, {}],
+    }),
+    "prune orphaned workspaces: pruned 1, skipped 2",
   );
 });
