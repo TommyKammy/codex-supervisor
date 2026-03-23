@@ -7,42 +7,38 @@
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
 - Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: e4a5d70ced71e989b27e93ad5cc25abffa0c50e0
+- Last head SHA: 5586c7b357b6ac92e6695a109ebbbc3042003ed7
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ852CwlZ
-- Repeated failure signature count: 1
-- Updated at: 2026-03-23T06:27:37Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-23T06:31:25Z
 
 ## Latest Codex Summary
-Validated CodeRabbit's journal-link finding against the live PR state and updated [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) so the remaining workstation-specific markdown links now use repo-relative targets. No product code changed in this follow-up; the dashboard palette checkpoint from commit `e4a5d70` remains the current verified implementation on PR [#878](https://github.com/TommyKammy/codex-supervisor/pull/878).
+Pushed commit `5586c7b` (`Fix journal links for review follow-up`) after converting the remaining workstation-specific markdown links in [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) to repo-relative targets. GitHub now shows the CodeRabbit review thread as resolved/outdated on PR [#878](https://github.com/TommyKammy/codex-supervisor/pull/878); the only live remote state is a pending `CodeRabbit` check, which leaves the PR merge state temporarily `UNSTABLE`.
 
 Repo state is clean on the tracked files; the only remaining local noise is the untracked `.codex-supervisor/replay/` directory.
 
-Summary: Addressed the remaining PR review note by converting the journal's absolute markdown links to repo-relative links
-State hint: addressing_review
+Summary: Pushed the journal-only review fix and confirmed the CodeRabbit thread is resolved on PR #878
+State hint: waiting_ci
 Blocked reason: none
-Tests: `rg -n '\\]\\(/home' .codex-supervisor/issue-journal.md`
-Failure signature: PRRT_kwDORgvdZ852CwlZ
-Next action: push the journal-only review fix to `codex/issue-870`, then recheck PR #878 and resolve the review thread if GitHub reflects the updated links
+Tests: `rg -n '\\]\\(/home' .codex-supervisor/issue-journal.md`; `gh pr view 878 --json number,url,headRefOid,isDraft,mergeStateStatus,reviewDecision`; `gh api graphql -f query='query($id: ID!) { node(id: $id) { ... on PullRequestReviewThread { id isResolved isOutdated path comments(first: 10) { nodes { url body author { login } } } } } }' -F id=PRRT_kwDORgvdZ852CwlZ`; `gh pr checks 878`
+Failure signature: none
+Next action: wait for the pending `CodeRabbit` check to finish, then recheck PR #878 merge state and checks
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 automated review finding is fixed on this branch and pending GitHub re-evaluation.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/878#discussion_r2973098057
-- Details:
-  - .codex-supervisor/issue-journal.md:17 CodeRabbit's repo-relative-link finding was valid. The remaining local filesystem link to `.codex-supervisor/issue-journal.md` and the absolute example links in the quoted diff were replaced with repo-relative markdown targets so the journal renders correctly outside this workstation.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the only remaining review issue on PR #878 is documentation state drift inside `.codex-supervisor/issue-journal.md`; the product change itself is already verified, and the review follow-up is limited to replacing workstation-specific markdown links with repo-relative ones.
-- What changed: replaced the remaining absolute local filesystem markdown targets in `.codex-supervisor/issue-journal.md` with repo-relative links and updated the journal state to reflect that the review comment is fixed locally.
+- Hypothesis: the review fix is complete; the remaining `UNSTABLE` PR state is transient and comes from the pending `CodeRabbit` status rather than a code or documentation regression.
+- What changed: replaced the remaining absolute local filesystem markdown targets in `.codex-supervisor/issue-journal.md`, committed the journal-only fix as `5586c7b`, pushed `codex/issue-870`, and confirmed via GitHub API that the CodeRabbit thread is resolved/outdated on the pushed head.
 - Current blocker: none
-- Next exact step: recheck PR #878 after the pushed journal-only review fix lands so the resolved link cleanup thread can be reviewed/closed.
+- Next exact step: wait for the pending `CodeRabbit` check to settle, then recheck PR #878 merge state/checks and only intervene again if a real failing status appears.
 - Verification gap: none for this follow-up; the change is confined to journal markdown and can be validated by inspecting the updated links directly.
 - Files touched: `.codex-supervisor/issue-journal.md`
 - Rollback concern: low; the change is documentation-only and does not touch dashboard runtime behavior.
-- Last focused command: `rg -n '\\]\\(/home' .codex-supervisor/issue-journal.md`
-- Last focused failure: `PRRT_kwDORgvdZ852CwlZ` due to absolute local markdown links in `.codex-supervisor/issue-journal.md`
+- Last focused command: `gh pr checks 878`
+- Last focused failure: none; GitHub reports `CodeRabbit` pending and the review thread resolved/outdated on head `5586c7b`
 - Last focused commands:
 ```bash
 sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-870/AGENTS.generated.md
@@ -55,6 +51,15 @@ rg -n '/home/tommy/Dev/codex-supervisor-self-worktrees/issue-870|\]\(/home/tommy
 apply_patch
 git diff -- .codex-supervisor/issue-journal.md
 rg -n '\]\(/home' .codex-supervisor/issue-journal.md
+git add .codex-supervisor/issue-journal.md
+git commit -m "Fix journal links for review follow-up"
+git push origin codex/issue-870
+gh pr view 878 --json number,url,headRefOid,isDraft,mergeStateStatus,reviewDecision
+gh api graphql -f query='query($id: ID!) { node(id: $id) { ... on PullRequestReviewThread { id isResolved isOutdated path comments(first: 10) { nodes { url body author { login } } } } } }' -F id=PRRT_kwDORgvdZ852CwlZ
+gh pr checks 878
+date -u +%Y-%m-%dT%H:%M:%SZ
+gh pr view 878 --json headRefOid,mergeStateStatus
+apply_patch
 ```
 ### Scratchpad
 - 2026-03-22T21:40:05Z: pushed `codex/issue-847` and opened draft PR `#857` for the verified dashboard refresh checkpoint.
