@@ -1,57 +1,86 @@
-# Issue #863: Stale recovery convergence: stop repeated no-progress stale cleanup at manual review earlier
+# Issue #864: Stale recovery visibility: surface repeated stale cleanup risk in status and replay
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/863
-- Branch: codex/issue-863
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/864
+- Branch: codex/issue-864
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 93fbe8647b116495fe63437324a8d844c494b60f
+- Current phase: repairing_ci
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 423f3683bd67977494c916493838a3b954c6e43f
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-23T02:35:27.011Z
+- Last failure signature: build (ubuntu-latest):fail|build (macos-latest):fail
+- Repeated failure signature count: 2
+- Updated at: 2026-03-23T03:23:20.570Z
 
 ## Latest Codex Summary
-- None yet.
+Added focused stale-loop visibility for issue #864. Status and explain now emit a `stale_recovery_warning` when a stabilizing issue keeps re-entering stale no-PR recovery, and replay cycle snapshots now retain `stale_stabilizing_no_pr_recovery_count` so the pattern survives after-the-fact inspection. I also added narrow regressions in [src/supervisor/supervisor-diagnostics-status-selection.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-864/src/supervisor/supervisor-diagnostics-status-selection.test.ts), [src/supervisor/supervisor-selection-issue-explain.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-864/src/supervisor/supervisor-selection-issue-explain.test.ts), and [src/supervisor/supervisor-cycle-snapshot.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-864/src/supervisor/supervisor-cycle-snapshot.test.ts).
+
+Committed as `15f07e6` and `423f368`, pushed `codex/issue-864`, and opened draft PR `#869`: https://github.com/TommyKammy/codex-supervisor/pull/869. The only remaining worktree dirt is the pre-existing untracked `.codex-supervisor/replay/` directory, which I left untouched.
+
+Summary: Surfaced repeated stale no-PR recovery risk in status/explain, persisted the stale recovery counter in replay snapshots, added focused tests, and opened draft PR #869.
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts`
+Failure signature: none
+Next action: monitor draft PR #869 for CI and review feedback, then address any follow-up if checks fail or reviewers request changes
 
 ## Active Failure Context
-- None recorded.
+- Category: checks
+- Summary: PR #869 has failing checks.
+- Command or source: gh pr checks
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/869
+- Details:
+  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23419803218/job/68122332843
+  - build (macos-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23419803218/job/68122332839
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: stale stabilizing no-PR recovery was preserving its repeat count in direct helper coverage but dropping it in the full run loop because the lifecycle reset compared against the current `queued` state instead of the inferred next `stabilizing` state.
-- What changed: updated no-PR stale recovery preservation so queued stale requeues keep `stale_stabilizing_no_pr_recovery_count` and related stale-loop tracking when the next lifecycle state is `stabilizing`; added focused helper/lifecycle coverage for the queued-to-stabilizing case and tightened the orchestration replay to prove the next stale cleanup converges to `manual_review`.
+- Hypothesis: PR #869's build failure came from follow-on test fixtures, not the stale-recovery feature itself; `SupervisorExplainDto` added a required `staleRecoveryWarningSummary` field, and backend/browser smoke test doubles plus one HTTP JSON expectation still encoded the old DTO shape.
+- What changed: added `staleRecoveryWarningSummary: null` to the affected `queryExplain` test doubles in `src/backend/supervisor-http-server.test.ts` and `src/backend/webui-dashboard-browser-smoke.test.ts`, and updated the read-only HTTP response expectation to match the expanded DTO.
 - Current blocker: none
-- Next exact step: review the diff, commit the stale recovery convergence fix, and decide whether to open a draft PR if one is still absent for `codex/issue-863`.
-- Verification gap: focused stale recovery and supervisor verification are green locally; broader repository test suites remain unrun this turn.
-- Files touched: `src/no-pull-request-state.ts`, `src/no-pull-request-state.test.ts`, `src/run-once-turn-execution.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-lifecycle.ts`, `src/supervisor/supervisor-lifecycle.test.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts`
-- Rollback concern: medium-low; the behavior change is intentionally narrow to queued stale no-PR requeues, but it touches the generic no-PR lifecycle reset path and should stay covered by the focused orchestration replay.
-- Last focused command: `npx tsx --test src/no-pull-request-state.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`
-- Last focused failure: `stale-no-pr-recovery-count-reset-after-queued-requeue`
+- Next exact step: watch PR #869's rerun to completion and only investigate further if `build (ubuntu-latest)` regresses after commit `79d1b21`.
+- Verification gap: local `npm run build` and a focused mixed backend/supervisor test suite are green; the rerun has only partially completed on GitHub so far (`macos-latest` passed, `ubuntu-latest` pending).
+- Files touched: `src/no-pull-request-state.ts`, `src/supervisor/supervisor-status-model.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/supervisor/supervisor-cycle-snapshot.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-selection-issue-explain.test.ts`, `src/supervisor/supervisor-cycle-snapshot.test.ts`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard-browser-smoke.test.ts`
+- Rollback concern: low; the repair is limited to test fixtures and one test expectation so runtime behavior is unchanged, but future `SupervisorExplainDto` additions could trigger similar fixture drift if test doubles stay handwritten.
+- Last focused command: `npx tsx --test src/backend/supervisor-http-server.test.ts src/backend/webui-dashboard-browser-smoke.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts`
+- Last focused failure: `build:ts2322-supervisor-explain-dto-missing-staleRecoveryWarningSummary`
 - Last focused commands:
 ```bash
-sed -n '1,220p' "<local-memory>/issue-863/AGENTS.generated.md"
-sed -n '1,220p' "<local-memory>/issue-863/context-index.md"
+sed -n '1,220p' "<local-memory>/issue-864/AGENTS.generated.md"
+sed -n '1,220p' "<local-memory>/issue-864/context-index.md"
 sed -n '1,260p' .codex-supervisor/issue-journal.md
-git status --short
-rg -n "stale_stabilizing_no_pr_recovery_count|shouldPreserveStaleStabilizingNoPrRecoveryTracking|resetNoPrLifecycleFailureTracking|manual_review" src
-npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-lifecycle.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts
-npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts
+git status --short --branch
+rg -n "stale|recovery|repeat|warning|status|replay|cycle snapshot|snapshot" src/supervisor src
+sed -n '1,240p' src/supervisor/supervisor-diagnostics-status-selection.test.ts
+sed -n '1,260p' src/supervisor/supervisor-selection-issue-explain.test.ts
+sed -n '1,260p' src/supervisor/supervisor-cycle-snapshot.test.ts
+sed -n '1,260p' src/supervisor/supervisor-selection-issue-explain.ts
+sed -n '1,260p' src/supervisor/supervisor-cycle-snapshot.ts
+sed -n '1,320p' src/supervisor/supervisor.ts
+sed -n '1,320p' src/supervisor/supervisor-status-model.ts
+npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts
+sed -n '1,340p' src/supervisor/supervisor-detailed-status-assembly.ts
+sed -n '1,260p' src/core/types.ts
+rg -n "stale_stabilizing_no_pr_recovery_count|stale-stabilizing-no-pr-recovery-loop|repeat_count" src
+sed -n '260,420p' src/supervisor/supervisor-selection-issue-explain.ts
+sed -n '1100,1195p' src/recovery-reconciliation.ts
+sed -n '1,220p' src/no-pull-request-state.ts
+sed -n '1,280p' src/supervisor/supervisor-operator-activity-context.ts
+sed -n '1,260p' src/supervisor/supervisor-status-report.ts
+sed -n '1,220p' src/supervisor/supervisor-selection-active-status.ts
 apply_patch
-npx tsx --test src/no-pull-request-state.test.ts src/supervisor/supervisor-execution-orchestration.test.ts
-npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-lifecycle.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts
-rm .codex-supervisor/replay/decision-cycle-snapshot.json && rmdir .codex-supervisor/replay
+npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts
+git status --short
+git diff --stat
+date -u +%Y-%m-%dT%H:%M:%SZ
+gh pr view --json number,isDraft,state,url --head codex/issue-864
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
-- 2026-03-23T02:44:29Z: reproduced the stale convergence bug with `src/supervisor/supervisor-execution-orchestration.test.ts`; the stale cleanup requeued the issue but the next cycle reset `stale_stabilizing_no_pr_recovery_count` to `0` before the successful no-PR turn finished.
-- 2026-03-23T02:44:29Z: fixed the queued-to-stabilizing preservation gap by passing the inferred next no-PR state into `resetNoPrLifecycleFailureTracking`, widened stale preservation to queued stale requeues, and passed `npx tsx --test src/no-pull-request-state.test.ts src/supervisor/supervisor-execution-orchestration.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-lifecycle.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts`.
-- 2026-03-23T02:12:08Z: committed the journal markdown cleanup as `b45d12b`, pushed `codex/issue-862`, and resolved GitHub review thread `PRRT_kwDORgvdZ852BDOu`.
-- 2026-03-23T02:11:10Z: rewrote the unresolved `.codex-supervisor/issue-journal.md` review blob into multi-line Markdown, then confirmed `npx markdownlint-cli2 .codex-supervisor/issue-journal.md 2>&1 | rg -n "MD038|no-space-in-code"` returned no matches even though full-file markdownlint still reports pre-existing non-MD038 journal warnings.
-- 2026-03-23T01:57:27Z: pushed review-fix commit `4c2e232` to `codex/issue-862` and resolved GitHub review thread `PRRT_kwDORgvdZ852A-pm` with `gh api graphql`.
-- 2026-03-23T01:55:57Z: validated CodeRabbit thread `PRRT_kwDORgvdZ852A-pm` against the live branch, confirmed `getStaleStabilizingNoPrRecoveryCount` leaked `stale_stabilizing_no_pr_recovery_count` across unrelated failure signatures, then scoped the helper to the stale signature and passed `npx tsx --test src/no-pull-request-state.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-lifecycle.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`.
+- 2026-03-23T03:26:13Z: committed the CI repair as `79d1b21` (`Fix explain DTO test fixtures`) and pushed `codex/issue-864`; PR #869 reran immediately, with `build (macos-latest)` passing and `build (ubuntu-latest)` still pending at the time of this note.
+- 2026-03-23T03:25:00Z: reproduced PR #869's `npm run build` failure from Actions via `gh run view 23419803218 --log-failed`; TypeScript reported `TS2322` in `src/backend/supervisor-http-server.test.ts` and `src/backend/webui-dashboard-browser-smoke.test.ts` because `SupervisorExplainDto` now requires `staleRecoveryWarningSummary`.
+- 2026-03-23T03:25:00Z: repaired the failing backend test doubles/expectation, then passed `npm run build` and `npx tsx --test src/backend/supervisor-http-server.test.ts src/backend/webui-dashboard-browser-smoke.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts`.
 - 2026-03-22T21:40:05Z: pushed `codex/issue-847` and opened draft PR `#857` for the verified dashboard refresh checkpoint.
 - 2026-03-22T21:40:05Z: reproduced the visual-refresh gap with a new hero-and-section framing regression, refreshed the dashboard page chrome/CSS to add labeled lanes and flatter surfaces, and passed `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts`.
 - 2026-03-22T21:15:08Z: pushed `codex/issue-846` and opened draft PR `#856`; GitHub currently reports `mergeStateStatus=UNSTABLE`, so the next turn should inspect CI/check runs and address any failures or review feedback.

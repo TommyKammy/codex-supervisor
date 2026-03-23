@@ -340,3 +340,61 @@ test("buildIssueExplainDto degrades when PR resolution fails", async () => {
     reviewWaits: [],
   });
 });
+
+test("buildIssueExplainSummary surfaces repeated stale cleanup risk for no-PR recovery loops", async () => {
+  const config = createConfig({
+    sameFailureSignatureRepeatLimit: 3,
+  });
+  const issue = createIssue({
+    number: 608,
+    title: "Surface repeated stale cleanup risk",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issue.number)]: createRecord({
+        issue_number: issue.number,
+        state: "queued",
+        branch: branchName(config, issue.number),
+        blocked_reason: null,
+        last_error:
+          "Issue #608 re-entered stale stabilizing recovery without a tracked PR; the supervisor will retry while the repeat count remains below 3.",
+        last_failure_context: {
+          category: "blocked",
+          summary:
+            "Issue #608 re-entered stale stabilizing recovery without a tracked PR; the supervisor will retry while the repeat count remains below 3.",
+          signature: "stale-stabilizing-no-pr-recovery-loop",
+          command: null,
+          details: [
+            "state=stabilizing",
+            "tracked_pr=none",
+            "branch_state=recoverable",
+            "repeat_count=1/3",
+          ],
+          url: null,
+          updated_at: "2026-03-23T03:10:00Z",
+        },
+        last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
+        repeated_failure_signature_count: 0,
+        stale_stabilizing_no_pr_recovery_count: 1,
+      }),
+    },
+  };
+
+  const lines = await buildIssueExplainSummary(
+    {
+      getIssue: async () => issue,
+      listAllIssues: async () => [issue],
+      listCandidateIssues: async () => [],
+    },
+    config,
+    state,
+    issue.number,
+  );
+
+  assert.ok(
+    lines.includes(
+      "stale_recovery_warning issue=#608 status=retrying state=queued repeat_count=1/3 tracked_pr=none action=confirm_whether_the_change_already_landed_or_retarget_the_issue_manually",
+    ),
+  );
+});

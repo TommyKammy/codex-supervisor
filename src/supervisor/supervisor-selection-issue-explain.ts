@@ -15,6 +15,7 @@ import {
   shouldEnforceExecutionReady,
 } from "./supervisor-execution-policy";
 import { shouldAutoRetryTimeout } from "./supervisor-failure-helpers";
+import { buildStaleStabilizingNoPrRecoveryWarningLine } from "../no-pull-request-state";
 import {
   evaluateAutonomousExecutionTrust,
   isAutonomousExecutionTrustBlockedRecord,
@@ -51,6 +52,7 @@ export interface SupervisorExplainDto {
   changeRiskLines: string[];
   externalReviewFollowUpSummary: string | null;
   latestRecoverySummary: string | null;
+  staleRecoveryWarningSummary: string | null;
   activityContext: SupervisorIssueActivityContextDto | null;
   selectionReason: string | null;
   reasons: string[];
@@ -198,6 +200,7 @@ export async function buildIssueExplainDto(
     record,
   });
   const latestRecoverySummary = record ? formatLatestRecoveryStatusLine(record) : null;
+  const staleRecoveryWarningSummary = record ? buildStaleStabilizingNoPrRecoveryWarningLine(record, config) : null;
   let pr: GitHubPullRequest | null = null;
   if (record && github.resolvePullRequestForBranch) {
     try {
@@ -260,6 +263,7 @@ export async function buildIssueExplainDto(
     changeRiskLines,
     externalReviewFollowUpSummary,
     latestRecoverySummary,
+    staleRecoveryWarningSummary,
     activityContext: record
       ? maybeBuildIssueActivityContext({
         config,
@@ -289,6 +293,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...dto.changeRiskLines,
     ...(dto.externalReviewFollowUpSummary ? [dto.externalReviewFollowUpSummary] : []),
     ...(dto.latestRecoverySummary ? [dto.latestRecoverySummary] : []),
+    ...(dto.staleRecoveryWarningSummary ? [dto.staleRecoveryWarningSummary] : []),
   ];
 
   if (dto.selectionReason) {

@@ -292,6 +292,63 @@ Expose typed operator-facing issue detail fields.
   });
 });
 
+test("status surfaces repeated stale cleanup risk before the stale recovery loop exhausts retries", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const issueNumber = 366;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "queued",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        blocked_reason: null,
+        last_error:
+          "Issue #366 re-entered stale stabilizing recovery without a tracked PR; the supervisor will retry while the repeat count remains below 3.",
+        last_failure_context: {
+          category: "blocked",
+          summary:
+            "Issue #366 re-entered stale stabilizing recovery without a tracked PR; the supervisor will retry while the repeat count remains below 3.",
+          signature: "stale-stabilizing-no-pr-recovery-loop",
+          command: null,
+          details: [
+            "state=stabilizing",
+            "tracked_pr=none",
+            "branch_state=recoverable",
+            "repeat_count=1/3",
+          ],
+          url: null,
+          updated_at: "2026-03-23T03:10:00Z",
+        },
+        last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
+        repeated_failure_signature_count: 0,
+        stale_stabilizing_no_pr_recovery_count: 1,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const status = await supervisor.status();
+  assert.match(
+    status,
+    /stale_recovery_warning issue=#366 status=retrying state=queued repeat_count=1\/3 tracked_pr=none action=confirm_whether_the_change_already_landed_or_retarget_the_issue_manually/,
+  );
+});
+
 test("status surfaces merge-critical recheck cadence and disabled fallback visibility", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {

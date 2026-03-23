@@ -4,6 +4,7 @@ import {
   formatLatestRecoveryStatusLine,
   sanitizeStatusValue,
 } from "./supervisor-detailed-status-assembly";
+import { buildStaleStabilizingNoPrRecoveryWarningLine } from "../no-pull-request-state";
 import {
   displayRelativeArtifactPath,
 } from "./supervisor-status-summary-helpers";
@@ -105,6 +106,13 @@ export function buildDetailedStatusSummaryLines(args: BuildDetailedStatusSummary
     const latestRecoveryLine = formatLatestRecoveryStatusLine(latestRecoveryRecord);
     if (latestRecoveryLine) {
       lines.push(latestRecoveryLine);
+    }
+  }
+
+  if (activeRecord) {
+    const staleRecoveryWarningLine = buildStaleStabilizingNoPrRecoveryWarningLine(activeRecord, config);
+    if (staleRecoveryWarningLine) {
+      lines.push(staleRecoveryWarningLine);
     }
   }
 
