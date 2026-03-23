@@ -257,6 +257,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       record = stateStore.touch(record, {
         state: "blocked",
         last_error: truncate(failureContext?.summary, 1000),
+        last_failure_kind: null,
         last_failure_context: failureContext,
         ...args.applyFailureSignature(record, failureContext),
         blocked_reason: "verification",

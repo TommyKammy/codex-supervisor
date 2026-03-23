@@ -119,7 +119,7 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion 
   const draftPr = createPullRequest({ title: "Gate ready promotion", isDraft: true });
   const state: SupervisorStateFile = {
     activeIssueNumber: 102,
-    issues: { "102": createRecord({ state: "draft_pr", pr_number: draftPr.number }) },
+    issues: { "102": createRecord({ state: "draft_pr", pr_number: draftPr.number, last_failure_kind: "timeout" }) },
   };
 
   let readyCalls = 0;
@@ -204,6 +204,7 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion 
   assert.equal(syncJournalCalls, 1);
   assert.equal(result.record.state, "blocked");
   assert.equal(result.record.blocked_reason, "verification");
+  assert.equal(result.record.last_failure_kind, null);
   assert.equal(result.record.last_failure_signature, "local-ci-gate-failed");
   assert.match(result.record.last_error ?? "", /Configured local CI command failed before marking PR #116 ready\./);
 });

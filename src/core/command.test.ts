@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runCommand } from "./command";
+import { CommandExecutionError, runCommand } from "./command";
 
 test("runCommand failure errors redact trailing raw arguments", async () => {
   const secretArg = "token=super-secret-value";
@@ -52,6 +52,24 @@ test("runCommand failure errors bound noisy stderr", async () => {
       assert.match(error.message, new RegExp(noisySuffix));
       assert.match(error.message, /\n\.\.\.\n/);
       assert.ok(error.message.length < 900, `expected bounded error message, got length ${error.message.length}`);
+      return true;
+    },
+  );
+});
+
+test("runCommand failure errors preserve stdout and stderr on the error object", async () => {
+  await assert.rejects(
+    () =>
+      runCommand(process.execPath, [
+        "-e",
+        "process.stdout.write('stdout line\\n'); process.stderr.write('stderr line\\n'); process.exit(6);",
+      ]),
+    (error: unknown) => {
+      assert.ok(error instanceof CommandExecutionError);
+      assert.equal(error.exitCode, 6);
+      assert.equal(error.timedOut, false);
+      assert.equal(error.stdout, "stdout line\n");
+      assert.equal(error.stderr, "stderr line\n");
       return true;
     },
   );

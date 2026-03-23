@@ -16,6 +16,23 @@ export interface CommandResult {
   stderr: string;
 }
 
+export class CommandExecutionError extends Error {
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly timedOut: boolean;
+
+  constructor(message: string, args: { exitCode: number; stdout: string; stderr: string; timedOut: boolean }) {
+    super(message);
+    this.name = "CommandExecutionError";
+    this.exitCode = args.exitCode;
+    this.stdout = args.stdout;
+    this.stderr = args.stderr;
+    this.timedOut = args.timedOut;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
 function formatCommandErrorStderr(stderr: string): string | null {
   const trimmed = stderr.trim();
   if (trimmed === "") {
@@ -146,7 +163,7 @@ export async function runCommand(
       const exitCode = code ?? 1;
       if (timedOut) {
         settleReject(
-          new Error(
+          new CommandExecutionError(
             [
               `Command timed out: ${commandSummary}`,
               `exitCode=${exitCode}`,
@@ -154,6 +171,7 @@ export async function runCommand(
             ]
               .filter(Boolean)
               .join("\n"),
+            { exitCode, stdout, stderr, timedOut: true },
           ),
         );
         return;
@@ -161,7 +179,7 @@ export async function runCommand(
 
       if (!allowExitCodes.includes(exitCode)) {
         settleReject(
-          new Error(
+          new CommandExecutionError(
             [
               `Command failed: ${commandSummary}`,
               `exitCode=${exitCode}`,
@@ -169,6 +187,7 @@ export async function runCommand(
             ]
               .filter(Boolean)
               .join("\n"),
+            { exitCode, stdout, stderr, timedOut: false },
           ),
         );
         return;
