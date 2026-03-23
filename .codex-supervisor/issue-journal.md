@@ -5,46 +5,42 @@
 - Branch: codex/issue-873
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: repairing_ci
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: d851469a9cead975322a7757f6f2c05e5970534b
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=1, repair=2)
+- Last head SHA: bb8af4e24ae7021f419d82cc5d169a6099d88cf5
 - Blocked reason: none
-- Last failure signature: build (ubuntu-latest):fail|build (macos-latest):fail
+- Last failure signature: PRRT_kwDORgvdZ852EV-a
 - Repeated failure signature count: 1
-- Updated at: 2026-03-23T08:35:48.374Z
+- Updated at: 2026-03-23T08:54:44Z
 
 ## Latest Codex Summary
-Added typed operator observability on the shared activity-context DTO in [supervisor-operator-activity-context.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-873/src/supervisor/supervisor-operator-activity-context.ts). Status and explain now expose structured `retryContext`, `repeatedRecovery`, and recovery-derived `recentPhaseChanges` without disturbing the legacy status lines. I also tightened the focused contract tests in [supervisor-diagnostics-status-selection.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-873/src/supervisor/supervisor-diagnostics-status-selection.test.ts), [supervisor-selection-issue-explain.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-873/src/supervisor/supervisor-selection-issue-explain.test.ts), and [supervisor-service.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-873/src/supervisor/supervisor-service.test.ts).
+Patched the journal renderer in [journal.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-873/src/core/journal.ts) so the rendered `Latest Codex Summary` always uses the live snapshot failure signature instead of preserving a stale footer from the prior Codex turn. Added a focused regression in [journal.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-873/src/journal.test.ts) and updated this tracked journal snapshot to the active review-thread signature.
 
-Checkpoint commit is `d851469` (`Add typed operator observability context`). I pushed `codex/issue-873` and opened draft PR [#880](https://github.com/TommyKammy/codex-supervisor/pull/880). The only remaining workspace artifact is the pre-existing untracked [`.codex-supervisor/replay/`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-873/.codex-supervisor/replay/) directory.
-
-Summary: Added typed retry, repeated-recovery, and recent phase-change observability to the shared operator activity context; verified it through focused service/status/explain tests; pushed commit `d851469`; opened draft PR `#880`
-State hint: draft_pr
+Summary: Aligned the issue-journal failure-signature footer with the live snapshot state, added focused regression coverage, and updated the tracked journal to the active review-thread signature
+State hint: addressing_review
 Blocked reason: none
-Tests: `npx tsx --test src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts`
-Failure signature: none
-Next action: Monitor draft PR `#880` and wire any review-driven follow-up without regressing the legacy CLI status output
+Tests: `npx tsx --test src/journal.test.ts`
+Failure signature: PRRT_kwDORgvdZ852EV-a
+Next action: Commit and push the journal canonicalization fix to PR `#880`, then refresh the unresolved review thread state
 
 ## Active Failure Context
-- Category: checks
-- Summary: PR #880 has failing checks.
-- Command or source: gh pr checks
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/880
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/880#discussion_r2973644268
 - Details:
-  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23427540544/job/68145650746
-  - build (macos-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23427540544/job/68145650707
+  - .codex-supervisor/issue-journal.md:25 _⚠️ Potential issue_ | _🟡 Minor_ **Resolve conflicting failure-signature state in the same snapshot.** This snapshot reports failing checks (Lines 29-35) and a non-empty last failure signature (Line 12), but also sets `Failure signature: none` (Line 25). Keep one canonical value per snapshot to avoid breaking status consumers and handoff decisions. Also applies to: 29-35 <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In @.codex-supervisor/issue-journal.md around lines 12 - 25, The snapshot has conflicting failure-signature fields: "Last failure signature", "Repeated failure signature" and the separate "Failure signature" (currently set to "none"); pick and persist a single canonical source-of-truth for failures in .codex-supervisor/issue-journal.md (either populate "Failure signature" from "Last failure signature"/"Repeated failure signature" or clear the latter two) and update all three keys consistently so consumers see one authoritative value; locate and fix the fields named "Last failure signature", "Repeated failure signature", and "Failure signature" in the file to enforce the chosen canonical representation. ``` </details> <!-- fingerprinting:phantom:triton:hawk --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the CI failure came from additive DTO fields not being propagated into compile-checked test doubles, plus a service-test stub whose throw-only async methods widened overrides poorly under stricter typing.
-- What changed: updated the HTTP explain fixture in `src/backend/supervisor-http-server.test.ts` to include `retryContext`, `repeatedRecovery`, and `recentPhaseChanges`, and tightened `src/supervisor/supervisor-service.test.ts` by typing the stub supervisor methods and pinning the status/explain fixtures to the real return types with an explicit active-issue narrowing assertion.
+- Hypothesis: the journal writer preserves a stale `Failure signature:` footer from `last_codex_summary` even after supervisor state transitions update `last_failure_signature`, so the rendered snapshot needs to canonicalize that footer to the live signature.
+- What changed: updated `src/core/journal.ts` to rewrite the rendered `Latest Codex Summary` failure-signature line from `record.last_failure_signature`, added focused regression coverage in `src/journal.test.ts`, and aligned this tracked journal snapshot/footer to the active review-thread signature.
 - Current blocker: none
-- Next exact step: commit and push the CI repair checkpoint on `codex/issue-873`, then rerun PR checks or inspect the refreshed GitHub status until `build` turns green.
-- Verification gap: none for the repaired CI path; local `npm run build` and the focused supervisor/HTTP suites are passing.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/supervisor/supervisor-service.test.ts`
-- Rollback concern: low; the repair only updates compile-time test fixtures and helper typing to match the already-landed additive DTO contract.
-- Last focused command: `npm run build`
-- Last focused failure: `src/backend/supervisor-http-server.test.ts` missing `retryContext`/`repeatedRecovery`/`recentPhaseChanges`, plus `src/supervisor/supervisor-service.test.ts` fixture typing widened `state` and collapsed stub overrides into mismatched async signatures.
+- Next exact step: commit and push the journal canonicalization fix on `codex/issue-873`, then refresh PR `#880` and resolve the remaining review thread if the diff matches the review intent.
+- Verification gap: none for the journal-rendering path; `npx tsx --test src/journal.test.ts` passes on the updated diff.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/core/journal.ts`, `src/journal.test.ts`
+- Rollback concern: low; the patch only normalizes the rendered summary footer to the already-canonical `last_failure_signature` field and adds focused coverage.
+- Last focused command: `npx tsx --test src/journal.test.ts`
+- Last focused failure: the rendered journal snapshot kept `Failure signature: none` inside `Latest Codex Summary` while the live snapshot and active failure context had already advanced to review signature `PRRT_kwDORgvdZ852EV-a`.
 - Last focused commands:
 ```bash
 sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-873/AGENTS.generated.md
@@ -68,8 +64,19 @@ npm run build
 npx tsx --test src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/backend/supervisor-http-server.test.ts
 git status --short --branch
 date -u +%Y-%m-%dT%H:%M:%SZ
+rg -n "Failure signature|Last failure signature|Repeated failure signature" .codex-supervisor src README.md docs -g '!node_modules'
+nl -ba .codex-supervisor/issue-journal.md | sed -n '1,80p'
+git diff -- .codex-supervisor/issue-journal.md
+sed -n '240,360p' src/core/journal.ts
+rg -n "Latest Codex Summary|Failure signature|Last failure signature|Repeated failure signature count" src/core src/supervisor -g '!node_modules'
+sed -n '1,260p' src/journal.test.ts
+sed -n '1,140p' src/codex/codex-output-parser.ts
+apply_patch
+npx tsx --test src/journal.test.ts
+date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
+- 2026-03-23T08:54:44Z: fixed the journal-rendering drift by canonicalizing the rendered summary `Failure signature:` line to `last_failure_signature`, added focused coverage in `src/journal.test.ts`, and updated the tracked journal snapshot to the active review-thread signature.
 - 2026-03-23T08:38:54Z: reproduced the failing PR build from the GitHub Actions log, fixed the stale test doubles in `supervisor-http-server.test.ts` and `supervisor-service.test.ts`, and re-passed `npm run build` plus `npx tsx --test src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/backend/supervisor-http-server.test.ts`.
 - 2026-03-23T08:10:30Z: reproduced the missing typed observability contract by tightening the focused service/status/explain tests, then passed the requested verification after extending the shared activity-context DTO with retry counts, repeated stale no-PR recovery metadata, and recovery-derived recent phase changes.
 - 2026-03-23T07:22:48Z: validated the CodeRabbit flake note, added a DOM-order `waitForFunction` after the first pointer drag in `src/backend/webui-dashboard-browser-smoke.test.ts`, and re-passed `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts`.

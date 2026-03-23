@@ -224,3 +224,41 @@ ${Array.from({ length: 30 }, (_, index) => `- Scratch line ${index + 1}: ${"deta
   assert.doesNotMatch(content, /Scratch line 1:/);
   assert.match(content, /Scratch line 30:/);
 });
+
+test("syncIssueJournal keeps the rendered summary failure signature aligned with the live snapshot", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-failure-signature-"));
+  const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
+
+  await syncIssueJournal({
+    issue,
+    record: createRecord({
+      workspace: tempDir,
+      journal_path: journalPath,
+      state: "addressing_review",
+      last_failure_signature: "PRRT_kwDORgvdZ852EV-a",
+      repeated_failure_signature_count: 1,
+      last_codex_summary: [
+        "Summary: waiting for refreshed CI checks",
+        "State hint: waiting_ci",
+        "Blocked reason: none",
+        "Tests: npm run build",
+        "Failure signature: none",
+        "Next action: monitor the check run",
+      ].join("\n"),
+      last_failure_context: {
+        category: "review",
+        summary: "1 unresolved automated review thread(s) remain.",
+        command: null,
+        url: "https://example.test/pr/880#discussion_r2973644268",
+        details: ["review thread still points at the tracked journal snapshot"],
+      },
+    }),
+    journalPath,
+  });
+
+  const content = await fs.readFile(journalPath, "utf8");
+  assert.match(content, /- Last failure signature: PRRT_kwDORgvdZ852EV-a/);
+  assert.match(content, /- Repeated failure signature count: 1/);
+  assert.match(content, /Failure signature: PRRT_kwDORgvdZ852EV-a/);
+  assert.doesNotMatch(content, /Failure signature: none/);
+});

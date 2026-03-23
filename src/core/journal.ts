@@ -218,6 +218,23 @@ function formatTrackedJournalPath(workspacePath: string, targetPath: string): st
   return relativePath.split(path.sep).join("/");
 }
 
+function renderLatestCodexSummary(summary: string | null, failureSignature: string | null): string {
+  if (!summary) {
+    return "- None yet.";
+  }
+
+  const normalizedFailureSignature = failureSignature ?? "none";
+  const lines = summary.trimEnd().split("\n");
+  const failureSignatureLineIndex = lines.findIndex((line) => /^Failure signature:/i.test(line.trim()));
+
+  if (failureSignatureLineIndex >= 0) {
+    lines[failureSignatureLineIndex] = `Failure signature: ${normalizedFailureSignature}`;
+    return truncate(lines.join("\n"), 4000);
+  }
+
+  return truncate(`${summary.trimEnd()}\nFailure signature: ${normalizedFailureSignature}`, 4000);
+}
+
 export function summarizeIssueJournalHandoff(content: string | null): string | null {
   const values = parseCurrentHandoffValues(content);
   const blocker = normalizeHandoffSummaryValue(values.get("Current blocker"));
@@ -287,7 +304,7 @@ function buildSupervisorSnapshot(args: {
     `- Updated at: ${record.updated_at}`,
     "",
     "## Latest Codex Summary",
-    record.last_codex_summary ? truncate(record.last_codex_summary, 4000) : "- None yet.",
+    renderLatestCodexSummary(record.last_codex_summary, record.last_failure_signature),
     "",
     "## Active Failure Context",
     failureContext,
