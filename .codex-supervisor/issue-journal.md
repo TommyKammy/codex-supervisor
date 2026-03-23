@@ -37,7 +37,7 @@ Next action: Monitor draft PR #867 and address CI or review feedback if it appea
 - Hypothesis: the dedicated stale no-PR recovery counter remained correct for stale loops, but `getStaleStabilizingNoPrRecoveryCount` still surfaced that counter for unrelated `last_failure_signature` values, letting stale-only retry budget leak into generic no-PR failure preservation.
 - What changed: scoped `getStaleStabilizingNoPrRecoveryCount` to `STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE` before returning either the dedicated counter or the migration fallback count, and added a regression in `src/no-pull-request-state.test.ts` proving unrelated no-PR failures do not preserve tracking from `stale_stabilizing_no_pr_recovery_count`.
 - Current blocker: none
-- Next exact step: commit and push the review fix on `codex/issue-862`, then resolve the outstanding PR review thread if GitHub accepts the updated head.
+- Next exact step: monitor PR `#867` for any follow-up review or CI activity after pushing `4c2e232` and resolving thread `PRRT_kwDORgvdZ852A-pm`.
 - Verification gap: none in the focused stale no-PR recovery surface; helper, lifecycle, turn execution, and reconciliation coverage all pass locally after the review fix.
 - Files touched: `src/no-pull-request-state.ts`, `src/no-pull-request-state.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: low; the new counter is narrowly scoped to stale stabilizing no-PR recovery and falls back to the previous generic repeat count only for migration/older state compatibility.
@@ -58,6 +58,7 @@ git diff -- .codex-supervisor/issue-journal.md
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
+- 2026-03-23T01:57:27Z: pushed review-fix commit `4c2e232` to `codex/issue-862` and resolved GitHub review thread `PRRT_kwDORgvdZ852A-pm` with `gh api graphql`.
 - 2026-03-23T01:55:57Z: validated CodeRabbit thread `PRRT_kwDORgvdZ852A-pm` against the live branch, confirmed `getStaleStabilizingNoPrRecoveryCount` leaked `stale_stabilizing_no_pr_recovery_count` across unrelated failure signatures, then scoped the helper to the stale signature and passed `npx tsx --test src/no-pull-request-state.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-lifecycle.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`.
 - 2026-03-22T21:40:05Z: pushed `codex/issue-847` and opened draft PR `#857` for the verified dashboard refresh checkpoint.
 - 2026-03-22T21:40:05Z: reproduced the visual-refresh gap with a new hero-and-section framing regression, refreshed the dashboard page chrome/CSS to add labeled lanes and flatter surfaces, and passed `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts`.
