@@ -1,87 +1,58 @@
-# Issue #875: Operator timeline follow-up: enrich recent command, recovery, and phase-change context
+# Issue #876: Operator replay summary: retain recent anomaly context beyond the live timeline
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/875
-- Branch: codex/issue-875
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/876
+- Branch: codex/issue-876
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: waiting_ci
-- Attempt count: 4 (implementation=1, repair=3)
-- Last head SHA: 3e177659bd086bf3fb9fe7f8813d1df04b9feb19
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 4330f936be92934b5663e021702def542a9f08e4
 - Blocked reason: none
 - Last failure signature: none
-- Repeated failure signature count: 1
-- Updated at: 2026-03-23T11:17:01Z
+- Repeated failure signature count: 0
+- Updated at: 2026-03-23T11:45:40Z
 
 ## Latest Codex Summary
-Sanitized absolute local paths out of [issue-journal.md](.codex-supervisor/issue-journal.md), committed the review-only fix as `3e17765`, pushed `codex/issue-875`, and resolved the matching CodeRabbit thread on PR `#888`.
-
-This edit does not affect product code, so I did not rerun the local TypeScript and test suite from the prior repair. GitHub Actions reran automatically on push as run `23434613288`; `build (ubuntu-latest)` has passed and `build (macos-latest)` is still pending.
-
-Summary: Fixed the remaining review feedback by sanitizing issue-journal paths, pushed the journal-only patch, and resolved the review thread while waiting on the final macOS build.
-State hint: waiting_ci
-Blocked reason: none
-Tests: Not rerun for this journal-only edit; checked `gh pr checks 888`
-Failure signature: none
-Next action: Monitor PR #888 Actions run `23434613288` until `build (macos-latest)` finishes, then react only if GitHub reports a new failure.
+- Captured operator-facing replay summaries directly inside the decision snapshot and replay formatter so repeated anomaly and phase-churn context remains visible after the live timeline advances.
 
 ## Active Failure Context
-- Category: checks
-- Summary: PR #888 reran CI after the journal-path review fix; one build job remains pending.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/888
-- Details:
-  - Current rerun after commit `3e17765`: build (ubuntu-latest) (pass/SUCCESS) https://github.com/TommyKammy/codex-supervisor/actions/runs/23434613288/job/68169401478
-  - Current rerun after commit `3e17765`: build (macos-latest) (pending) https://github.com/TommyKammy/codex-supervisor/actions/runs/23434613288/job/68169401452
+- Failure reproduced as a coverage gap: replay snapshots retained low-level failure counters and signatures, but dropped the compact operator activity summary that surfaces repeated failure signatures, recovery loops, and recent recovery-driven phase changes.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the review fix is complete and the branch only needs the remaining `build (macos-latest)` check from Actions run `23434613288` to finish; no additional code changes should be needed unless that job reports a new failure.
-- What changed: sanitized `.codex-supervisor/issue-journal.md`, committed the review-only patch as `3e17765`, pushed `codex/issue-875`, resolved review thread `PRRT_kwDORgvdZ852GYeu`, and rechecked PR status in GitHub.
+- Hypothesis: persisting a compact operator summary alongside the replay snapshot is the minimal fix because the existing operator activity DTOs already encode retry loops, repeated anomalies, and recovery-driven phase churn cleanly.
+- What changed: added `operatorSummary` to the decision-cycle snapshot, populated it from the existing operator activity context helpers, and taught replay formatting to print the captured `latest_recovery`, `retry_summary`, and `recovery_loop_summary` lines when present.
 - Current blocker: none
-- Next exact step: monitor PR `#888` run `23434613288` until `build (macos-latest)` leaves pending, then respond only if GitHub reports a failure or new review feedback.
-- Verification gap: none for local behavior because this was a journal-only documentation fix; the only outstanding verification is the GitHub-hosted macOS build still in progress.
-- Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: low; the change only rewrites operator journal text and stored command examples.
-- Last focused command: `gh pr checks 888`
-- Last focused failure: none; the review thread is resolved and the only open item is `build (macos-latest)` still pending in Actions run `23434613288`.
+- Next exact step: commit the focused replay-summary patch, then check whether `codex/issue-876` already has a PR; if not, push and open a draft PR with the focused verification attached.
+- Verification gap: focused replay snapshot and replay formatter tests pass locally; broader repo verification has not been rerun because the change is isolated to replay snapshot formatting.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-cycle-snapshot.ts`, `src/supervisor/supervisor-cycle-replay.ts`, `src/supervisor/supervisor-cycle-snapshot.test.ts`, `src/supervisor/supervisor-cycle-replay.test.ts`
+- Rollback concern: low; the patch only adds a derived operator-summary surface on top of existing replay artifacts and does not alter replay decision evaluation.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-cycle-replay.test.ts`
+- Last focused failure: replay artifacts preserved raw anomaly counters but not the compact operator-facing summary lines, so recent loop context disappeared once the live status moved on.
 - Last focused commands:
 ```bash
-sed -n '1,220p' ../../codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-875/AGENTS.generated.md
-sed -n '1,260p' ../../codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-875/context-index.md
-sed -n '1,260p' .codex-supervisor/issue-journal.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-876/AGENTS.generated.md
+sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-876/context-index.md
+sed -n '1,320p' .codex-supervisor/issue-journal.md
 git status --short --branch
-cat package.json
-gh pr checks 888
-rg -n "name: build|npm run build|npm test|tsx --test|tsc -p" .github/workflows package.json .github -g '*.yml' -g '*.yaml'
-gh run view 23433409449 --log-failed
-npm run build
-nl -ba src/backend/webui-dashboard-browser-logic.ts | sed -n '420,480p'
-rg -n "format.*Command|command result|requeue|result\.|status refresh|active issue|recovery" src/backend/webui-dashboard-browser-logic.ts src/backend -g '!dist'
-ls -1
+rg -n "decision-cycle-snapshot|formatSupervisorCycleReplay|replay artifact|recent history|history summary|summary surface" src -g '*.ts'
+find .codex-supervisor/replay -maxdepth 3 -type f | sort
+sed -n '1,260p' src/supervisor/supervisor-cycle-snapshot.test.ts
+sed -n '1,320p' src/supervisor/supervisor-cycle-replay.test.ts
+sed -n '1,320p' src/supervisor/supervisor-cycle-snapshot.ts
+sed -n '1,320p' src/supervisor/supervisor-cycle-replay.ts
+sed -n '1,260p' src/supervisor/supervisor-operator-activity-context.ts
+sed -n '260,460p' src/supervisor/supervisor-operator-activity-context.ts
+sed -n '1,220p' src/supervisor/supervisor-detailed-status-assembly.ts
+npx tsx --test src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-cycle-replay.test.ts src/cli/replay-handlers.test.ts
 apply_patch
-npm ci
-git diff -- src/backend/webui-dashboard-browser-logic.ts
-npm run build
-npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts
-git diff -- .codex-supervisor/issue-journal.md src/backend/webui-dashboard-browser-logic.ts
-git add .codex-supervisor/issue-journal.md src/backend/webui-dashboard-browser-logic.ts
-git commit -m "Fix timeline command result narrowing"
-git push origin codex/issue-875
-gh pr checks 888
-git status --short --branch
-git rev-parse HEAD
-gh pr checks 888
-date -u +%Y-%m-%dT%H:%M:%SZ
-git add .codex-supervisor/issue-journal.md
-git commit -m "Sanitize issue journal paths"
-git rev-parse HEAD
-git push origin codex/issue-875
-gh api graphql -f query='mutation($threadId:ID!){ resolveReviewThread(input:{threadId:$threadId}) { thread { isResolved } } }' -F threadId=PRRT_kwDORgvdZ852GYeu
-gh pr checks 888
+npx tsx --test src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-cycle-replay.test.ts
+git diff -- src/supervisor/supervisor-cycle-snapshot.ts src/supervisor/supervisor-cycle-replay.ts src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-cycle-replay.test.ts
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
-- 2026-03-23T11:17:01Z: pushed review-fix commit `3e17765`, resolved CodeRabbit thread `PRRT_kwDORgvdZ852GYeu`, and confirmed PR `#888` reran as Actions run `23434613288` with Ubuntu passed and macOS still pending.
+- 2026-03-23T11:45:40Z: reproduced the gap as missing replay-summary coverage rather than a functional replay mismatch, added focused tests proving the snapshot and formatter now retain `latest_recovery`, `retry_summary`, and `recovery_loop_summary`, and passed `npx tsx --test src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-cycle-replay.test.ts`.
 - 2026-03-23T11:00:34Z: committed `690022a` to sync the issue journal, pushed `codex/issue-875`, and observed GitHub start a newer PR `#888` rerun as Actions run `23434005312` with both `build` jobs pending.
 - 2026-03-23T10:59:32Z: committed `82e6b50` for the TS18049 narrowing fix, pushed `codex/issue-875`, and confirmed PR `#888` reran as GitHub Actions run `23433971857` with both `build` jobs pending.
 - 2026-03-23T10:58:18Z: reproduced the failing CI build from GitHub Actions run `23433409449`, fixed TS18049 in `describeTimelineCommandResult` by binding `issueNumber = result?.issueNumber`, then passed `npm run build` and `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts`.

@@ -11,7 +11,21 @@ import {
   SupervisorConfig,
   WorkspaceStatus,
 } from "../core/types";
+import {
+  formatRecoveryLoopSummaryLine,
+  formatRetrySummaryLine,
+  maybeBuildIssueActivityContext,
+  type SupervisorIssueActivityContextDto,
+} from "./supervisor-operator-activity-context";
+import { formatLatestRecoveryStatusLine } from "./supervisor-detailed-status-assembly";
 import { replaySupervisorCycleDecisionSnapshot } from "./supervisor-cycle-replay";
+
+export interface SupervisorCycleOperatorSummarySnapshot {
+  latestRecoverySummary: string | null;
+  retrySummary: string | null;
+  recoveryLoopSummary: string | null;
+  activityContext: SupervisorIssueActivityContextDto | null;
+}
 
 export interface SupervisorCycleDecisionSnapshot {
   schemaVersion: 1;
@@ -80,6 +94,7 @@ export interface SupervisorCycleDecisionSnapshot {
     blockedReason: IssueRunRecord["blocked_reason"];
     failureContext: FailureContext | null;
   };
+  operatorSummary: SupervisorCycleOperatorSummarySnapshot | null;
 }
 
 export function supervisorCycleSnapshotPath(workspacePath: string): string {
@@ -97,6 +112,11 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
   reviewThreads: ReviewThread[];
 }): SupervisorCycleDecisionSnapshot {
   const { config, capturedAt, issue, record, workspaceStatus, pr, checks, reviewThreads } = args;
+  const activityContext = maybeBuildIssueActivityContext({
+    config,
+    record,
+    pr,
+  });
   const replay = replaySupervisorCycleDecisionSnapshot({
     schemaVersion: 1,
     capturedAt,
@@ -169,6 +189,7 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
       blockedReason: null,
       failureContext: null,
     },
+    operatorSummary: null,
   }, config);
 
   return {
@@ -238,6 +259,14 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
       reviewThreads,
     },
     decision: replay.replayedDecision,
+    operatorSummary: activityContext
+      ? {
+          latestRecoverySummary: formatLatestRecoveryStatusLine(record),
+          retrySummary: formatRetrySummaryLine(activityContext),
+          recoveryLoopSummary: formatRecoveryLoopSummaryLine(activityContext),
+          activityContext,
+        }
+      : null,
   };
 }
 

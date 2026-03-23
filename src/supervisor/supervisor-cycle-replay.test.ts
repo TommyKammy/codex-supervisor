@@ -9,7 +9,7 @@ import {
   WorkspaceStatus,
 } from "../core/types";
 import { buildSupervisorCycleDecisionSnapshot } from "./supervisor-cycle-snapshot";
-import { replaySupervisorCycleDecisionSnapshot } from "./supervisor-cycle-replay";
+import { formatSupervisorCycleReplay, replaySupervisorCycleDecisionSnapshot } from "./supervisor-cycle-replay";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
@@ -463,4 +463,63 @@ test("replaySupervisorCycleDecisionSnapshot escalates repeated identical PR fail
   assert.equal(replayed.replayedDecision.shouldRunCodex, false);
   assert.equal(replayed.replayedDecision.blockedReason, null);
   assert.equal(replayed.replayedDecision.failureContext?.signature, "changes-requested:head-539");
+});
+
+test("formatSupervisorCycleReplay retains captured operator anomaly summaries", () => {
+  const config = createConfig();
+  const snapshot = buildSupervisorCycleDecisionSnapshot({
+    config,
+    capturedAt: "2026-03-18T03:00:00Z",
+    issue: createIssue({
+      number: 540,
+      title: "Replay operator summary",
+      url: "https://example.test/issues/540",
+    }),
+    record: createRecord({
+      issue_number: 540,
+      state: "queued",
+      pr_number: null,
+      branch: "codex/issue-540",
+      workspace: "/tmp/workspaces/issue-540",
+      journal_path: "/tmp/workspaces/issue-540/.codex-supervisor/issue-journal.md",
+      last_recovery_reason:
+        "tracked_pr_head_advanced: resumed issue #540 from blocked to addressing_review after tracked PR #96 advanced",
+      last_recovery_at: "2026-03-18T02:58:00Z",
+      repeated_failure_signature_count: 2,
+      last_failure_signature: "changes-requested:head-540",
+      last_error: "Requested changes remain unresolved on PR #96.",
+    }),
+    workspaceStatus: createWorkspaceStatus({
+      branch: "codex/issue-540",
+      headSha: "head-540",
+    }),
+    pr: createPr({
+      number: 96,
+      url: "https://example.test/pull/96",
+      headRefName: "codex/issue-540",
+      headRefOid: "head-540",
+    }),
+    checks: [{ name: "build", state: "completed", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  const replayed = replaySupervisorCycleDecisionSnapshot(snapshot, config);
+  const formatted = formatSupervisorCycleReplay({
+    snapshotPath: "/tmp/workspaces/issue-540/.codex-supervisor/replay/decision-cycle-snapshot.json",
+    replayResult: replayed,
+    snapshot,
+  });
+
+  assert.match(
+    formatted,
+    /^latest_recovery issue=#540 at=2026-03-18T02:58:00Z reason=tracked_pr_head_advanced detail=resumed issue #540 from blocked to addressing_review after tracked PR #96 advanced$/m,
+  );
+  assert.match(
+    formatted,
+    /^retry_summary same_failure_signature=2 last_failure_signature=changes-requested:head-540 apparent_no_progress=yes$/m,
+  );
+  assert.match(
+    formatted,
+    /^recovery_loop_summary latest_reason=tracked_pr_head_advanced phase_change=blocked->addressing_review apparent_no_progress=yes$/m,
+  );
 });
