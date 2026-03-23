@@ -218,6 +218,45 @@ function formatTrackedJournalPath(workspacePath: string, targetPath: string): st
   return relativePath.split(path.sep).join("/");
 }
 
+function truncateSummaryBody(summary: string, maxLength: number): string {
+  if (summary.length === 0 || maxLength <= 0) {
+    return "";
+  }
+
+  if (summary.length <= maxLength) {
+    return summary;
+  }
+
+  if (maxLength <= 3) {
+    return summary.slice(0, maxLength);
+  }
+
+  return truncate(summary, maxLength) ?? "";
+}
+
+function renderLatestCodexSummary(summary: string | null, failureSignature: string | null): string {
+  if (!summary) {
+    return "- None yet.";
+  }
+
+  const normalizedFailureSignature = failureSignature ?? "none";
+  const failureSignatureLine = `Failure signature: ${normalizedFailureSignature}`;
+  if (failureSignatureLine.length >= 4000) {
+    return truncate(failureSignatureLine, 4000) ?? failureSignatureLine;
+  }
+
+  const body = summary
+    .trimEnd()
+    .split("\n")
+    .filter((line) => !/^Failure signature:/i.test(line.trim()))
+    .join("\n")
+    .trimEnd();
+  const bodyBudget = Math.max(0, 4000 - failureSignatureLine.length - (body.length > 0 ? 1 : 0));
+  const truncatedBody = truncateSummaryBody(body, bodyBudget);
+
+  return truncatedBody.length > 0 ? `${truncatedBody}\n${failureSignatureLine}` : failureSignatureLine;
+}
+
 export function summarizeIssueJournalHandoff(content: string | null): string | null {
   const values = parseCurrentHandoffValues(content);
   const blocker = normalizeHandoffSummaryValue(values.get("Current blocker"));
@@ -287,7 +326,7 @@ function buildSupervisorSnapshot(args: {
     `- Updated at: ${record.updated_at}`,
     "",
     "## Latest Codex Summary",
-    record.last_codex_summary ? truncate(record.last_codex_summary, 4000) : "- None yet.",
+    renderLatestCodexSummary(record.last_codex_summary, record.last_failure_signature),
     "",
     "## Active Failure Context",
     failureContext,

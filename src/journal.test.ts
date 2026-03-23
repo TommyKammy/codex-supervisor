@@ -73,6 +73,12 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
   };
 }
 
+function extractLatestCodexSummary(content: string): string {
+  const match = content.match(/## Latest Codex Summary\n([\s\S]*?)\n\n## Active Failure Context/);
+  assert.ok(match, "expected latest Codex summary section");
+  return match[1];
+}
+
 test("syncIssueJournal writes the structured handoff schema for new journals", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-schema-"));
   const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
@@ -223,4 +229,90 @@ ${Array.from({ length: 30 }, (_, index) => `- Scratch line ${index + 1}: ${"deta
   assert.match(content, /- Verification gap: Full npm test was not rerun\./);
   assert.doesNotMatch(content, /Scratch line 1:/);
   assert.match(content, /Scratch line 30:/);
+});
+
+test("syncIssueJournal keeps the rendered summary failure signature aligned with the live snapshot", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-failure-signature-"));
+  const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
+
+  await syncIssueJournal({
+    issue,
+    record: createRecord({
+      workspace: tempDir,
+      journal_path: journalPath,
+      state: "addressing_review",
+      last_failure_signature: "PRRT_kwDORgvdZ852EV-a",
+      repeated_failure_signature_count: 1,
+      last_codex_summary: [
+        "Summary: waiting for refreshed CI checks",
+        "State hint: waiting_ci",
+        "Blocked reason: none",
+        "Tests: npm run build",
+        "Failure signature: none",
+        "Next action: monitor the check run",
+      ].join("\n"),
+      last_failure_context: {
+        category: "review",
+        summary: "1 unresolved automated review thread(s) remain.",
+        signature: "PRRT_kwDORgvdZ852EV-a",
+        command: null,
+        url: "https://example.test/pr/880#discussion_r2973644268",
+        details: ["review thread still points at the tracked journal snapshot"],
+        updated_at: "2026-03-14T00:00:00Z",
+      },
+    }),
+    journalPath,
+  });
+
+  const content = await fs.readFile(journalPath, "utf8");
+  assert.match(content, /- Last failure signature: PRRT_kwDORgvdZ852EV-a/);
+  assert.match(content, /- Repeated failure signature count: 1/);
+  assert.match(content, /Failure signature: PRRT_kwDORgvdZ852EV-a/);
+  assert.doesNotMatch(content, /Failure signature: none/);
+});
+
+test("syncIssueJournal preserves an appended failure signature when the summary is truncated", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-truncated-appended-signature-"));
+  const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
+
+  await syncIssueJournal({
+    issue,
+    record: createRecord({
+      workspace: tempDir,
+      journal_path: journalPath,
+      last_failure_signature: "retry-budget",
+      last_codex_summary: `Summary: ${"detail ".repeat(700).trim()}`,
+    }),
+    journalPath,
+  });
+
+  const content = await fs.readFile(journalPath, "utf8");
+  const renderedSummary = extractLatestCodexSummary(content);
+  assert.ok(renderedSummary.length <= 4000);
+  assert.match(renderedSummary, /Failure signature: retry-budget$/);
+});
+
+test("syncIssueJournal preserves a replaced failure signature when the summary is truncated", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-truncated-replaced-signature-"));
+  const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
+
+  await syncIssueJournal({
+    issue,
+    record: createRecord({
+      workspace: tempDir,
+      journal_path: journalPath,
+      last_failure_signature: "PRRT_kwDORgvdZ852E4Jy",
+      last_codex_summary: [
+        `Summary: ${"detail ".repeat(700).trim()}`,
+        "Failure signature: stale-footer",
+      ].join("\n"),
+    }),
+    journalPath,
+  });
+
+  const content = await fs.readFile(journalPath, "utf8");
+  const renderedSummary = extractLatestCodexSummary(content);
+  assert.ok(renderedSummary.length <= 4000);
+  assert.match(renderedSummary, /Failure signature: PRRT_kwDORgvdZ852E4Jy$/);
+  assert.doesNotMatch(renderedSummary, /Failure signature: stale-footer/);
 });

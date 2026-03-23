@@ -1,66 +1,88 @@
-# Issue #871: WebUI drag-and-drop bug: fix asymmetric pointer reordering across dashboard columns
+# Issue #873: Operator observability contract: add typed retry, recovery, and phase-change context
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/871
-- Branch: codex/issue-871
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/873
+- Branch: codex/issue-873
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: e264997db17fd7d7cbae26bb05157363cee9dc73
+- Current phase: waiting_ci
+- Attempt count: 3 (implementation=1, repair=2)
+- Last head SHA: f5f7a2b40a69b46b8e4ce45116749e84dd7856cc
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ852DQTW
+- Last failure signature: PRRT_kwDORgvdZ852EV-a
 - Repeated failure signature count: 1
-- Updated at: 2026-03-23T07:22:06.671Z
+- Updated at: 2026-03-23T08:56:21Z
 
 ## Latest Codex Summary
-Implemented and pushed the dashboard fix for pointer reordering. The change is on `codex/issue-871` as commit `e264997` and draft PR [#879](https://github.com/TommyKammy/codex-supervisor/pull/879).
+Patched the journal renderer in [journal.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-873/src/core/journal.ts) so the rendered `Latest Codex Summary` always uses the live snapshot failure signature instead of preserving a stale footer from the prior Codex turn. Added a focused regression in [journal.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-873/src/journal.test.ts), pushed commit `f5f7a2b` to PR `#880`, resolved the CodeRabbit review thread, and triggered fresh build jobs.
 
-The fix keeps keyboard reordering intact while adding a pointer-driven reorder path in [`src/backend/webui-dashboard-browser-script.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-871/src/backend/webui-dashboard-browser-script.ts) that tracks hovered panels via `elementFromPoint()` and avoids losing targets on bubbled child `dragleave` events. I also added a real-browser regression in [`src/backend/webui-dashboard-browser-smoke.test.ts`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-871/src/backend/webui-dashboard-browser-smoke.test.ts) that exercises pointer reordering in both horizontal directions.
-
-Verification passed:
-- `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts`
-- `npm run build`
-
-GitHub currently shows PR `#879` as `UNSTABLE` only because `build (ubuntu-latest)` and `build (macos-latest)` are still pending. I also updated the issue journal locally, but that journal-only sync is not committed so the worktree still has [`.codex-supervisor/issue-journal.md`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-871/.codex-supervisor/issue-journal.md) modified plus the existing untracked replay directory.
-
-Summary: Fixed WebUI pointer panel reordering, added a real-browser regression for both horizontal directions, pushed commit `e264997`, and opened draft PR `#879`.
+Summary: Fixed the journal failure-signature rendering drift, added focused regression coverage, pushed commit `f5f7a2b`, resolved the review thread, and kicked off fresh PR builds
 State hint: waiting_ci
 Blocked reason: none
-Tests: `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts`; `npm run build`
-Failure signature: none
-Next action: Wait for PR `#879` CI checks to finish and only intervene if `build (ubuntu-latest)` or `build (macos-latest)` fails.
+Tests: `npx tsx --test src/journal.test.ts`
+Failure signature: PRRT_kwDORgvdZ852EV-a
+Next action: Monitor PR `#880` checks for commit `f5f7a2b` and only re-enter repair if `build (ubuntu-latest)` or `build (macos-latest)` fails
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/879#discussion_r2973268865
-- Details:
-  - src/backend/webui-dashboard-browser-smoke.test.ts:361 _⚠️ Potential issue_ | _🟡 Minor_ **Potential test flakiness: missing wait after first drag operation.** The first drag asserts panel order immediately after `dragPanelHandle` returns (lines 352-361), while the second drag correctly uses `waitForFunction` to wait for the DOM to stabilize (lines 363-369). If the panel reorder involves any async DOM updates, the first assertion could intermittently fail. Consider adding a similar `waitForFunction` before the first assertion for consistency: <details> <summary>🛡️ Proposed fix for consistency</summary> ```diff await dragPanelHandle(page, "#panel-drag-operator-actions", "#panel-drag-operator-timeline"); + await page.waitForFunction( + () => + Array.from(document.querySelectorAll("#details-grid > article")) + .map((element) => element.id) + .join(",") === + "panel-issue-details,panel-tracked-history,panel-live-events,panel-operator-actions,panel-operator-timeline", + ); assert.equal(await page.textContent("#dashboard-panel-reorder-status"), "Moved operator actions panel before operator timeline.");``` </details> <!-- suggestion_start --> <details> <summary>📝 Committable suggestion</summary> > ‼️ **IMPORTANT** > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements. ```suggestion await dragPanelHandle(page, "#panel-drag-operator-actions", "#panel-drag-operator-timeline"); await page.waitForFunction( () => Array.from(document.querySelectorAll("#details-grid > article")) .map((element) => element.id) .join(",") === "panel-issue-details,panel-tracked-history,panel-live-events,panel-operator-actions,panel-operator-timeline", ); assert.equal(await page.textContent("#dashboard-panel-reorder-status"), "Moved operator actions panel before operator timeline."); assert.deepEqual( await page.locator("#details-grid > article").evaluateAll((elements) => elements.map((element) => element.id)), [ "panel-issue-details", "panel-tracked-history", "panel-live-events", "panel-operator-actions", "panel-operator-timeline", ], );``` </details> <!-- suggestion_end --> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/backend/webui-dashboard-browser-smoke.test.ts` around lines 350 - 361, The first drag's assertions are prone to race conditions; after calling dragPanelHandle for "#panel-drag-operator-actions" -> "#panel-drag-operator-timeline" you should await a waitForFunction that checks the DOM/order has updated (for example, poll the locator "#details-grid > article" and confirm the element ids equal the expected array and/or that "#dashboard-panel-reorder-status" text equals "Moved operator actions panel before operator timeline.") before running the assert.equal and assert.deepEqual; add this waitForFunction (similar to the second drag's implementation) to stabilize the DOM after dragPanelHandle. ``` </details> <!-- fingerprinting:phantom:medusa:ocelot --> <!-- This is an auto-generated comment by CodeRabbit -->
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining review feedback is valid and limited to smoke-test stability; the first pointer-drag assertion should wait for the reordered DOM state just like the second drag already does, without changing product behavior.
-- What changed: added a `page.waitForFunction(...)` after the first `dragPanelHandle(page, "#panel-drag-operator-actions", "#panel-drag-operator-timeline")` call in `src/backend/webui-dashboard-browser-smoke.test.ts` so the test waits for the expected `#details-grid > article` order before asserting the reorder status text and panel ids.
+- Hypothesis: the journal writer preserves a stale `Failure signature:` footer from `last_codex_summary` even after supervisor state transitions update `last_failure_signature`, so the rendered snapshot needs to canonicalize that footer to the live signature.
+- What changed: updated `src/core/journal.ts` to rewrite the rendered `Latest Codex Summary` failure-signature line from `record.last_failure_signature`, added focused regression coverage in `src/journal.test.ts`, pushed commit `f5f7a2b`, resolved the CodeRabbit review thread, and refreshed this journal to the new waiting-CI state.
 - Current blocker: none
-- Next exact step: commit and push this review fix on `codex/issue-871`, then resolve the automated PR thread on `#879`.
-- Verification gap: none locally for this review fix; the focused dashboard/browser suite passed after the test change.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-smoke.test.ts`
-- Rollback concern: low; the change only makes an existing browser smoke assertion wait for the DOM reorder it already expects.
-- Last focused command: `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts`
-- Last focused failure: `PRRT_kwDORgvdZ852DQTW` review thread about a potentially flaky immediate assertion after the first pointer drag; resolved locally by waiting for the reordered DOM state before asserting.
+- Next exact step: monitor PR `#880` check run `23429106798` for commit `f5f7a2b` and only re-enter repair if either build job fails.
+- Verification gap: none for the journal-rendering path; `npx tsx --test src/journal.test.ts` passes on the updated diff.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/core/journal.ts`, `src/journal.test.ts`
+- Rollback concern: low; the patch only normalizes the rendered summary footer to the already-canonical `last_failure_signature` field and adds focused coverage.
+- Last focused command: `npx tsx --test src/journal.test.ts`
+- Last focused failure: the rendered journal snapshot kept `Failure signature: none` inside `Latest Codex Summary` while the live snapshot had already advanced to review signature `PRRT_kwDORgvdZ852EV-a`; the review thread is now resolved and fresh CI is pending on commit `f5f7a2b`.
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-871/AGENTS.generated.md
-sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-871/context-index.md
-sed -n '1,260p' .codex-supervisor/issue-journal.md
-sed -n '320,410p' src/backend/webui-dashboard-browser-smoke.test.ts
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-873/AGENTS.generated.md
+sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-873/context-index.md
+sed -n '1,320p' .codex-supervisor/issue-journal.md
+gh pr checks 880
+gh run view 23427540544 --job 68145650746 --log
+node -p "JSON.stringify(require('./package.json').scripts, null, 2)"
+npm ci
+sed -n '430,500p' src/backend/supervisor-http-server.test.ts
+sed -n '740,820p' src/backend/supervisor-http-server.test.ts
+sed -n '1,290p' src/supervisor/supervisor-service.test.ts
+sed -n '1,220p' src/supervisor/supervisor-operator-activity-context.ts
+sed -n '220,420p' src/supervisor/supervisor-operator-activity-context.ts
+sed -n '1,180p' src/supervisor/supervisor-service.ts
+sed -n '1,160p' src/supervisor/supervisor-status-report.ts
+sed -n '1,180p' src/supervisor/supervisor-selection-issue-explain.ts
+sed -n '1,180p' src/doctor.ts
 apply_patch
-npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts
+npm run build
+npx tsx --test src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/backend/supervisor-http-server.test.ts
 git status --short --branch
+date -u +%Y-%m-%dT%H:%M:%SZ
+rg -n "Failure signature|Last failure signature|Repeated failure signature" .codex-supervisor src README.md docs -g '!node_modules'
+nl -ba .codex-supervisor/issue-journal.md | sed -n '1,80p'
+git diff -- .codex-supervisor/issue-journal.md
+sed -n '240,360p' src/core/journal.ts
+rg -n "Latest Codex Summary|Failure signature|Last failure signature|Repeated failure signature count" src/core src/supervisor -g '!node_modules'
+sed -n '1,260p' src/journal.test.ts
+sed -n '1,140p' src/codex/codex-output-parser.ts
+apply_patch
+npx tsx --test src/journal.test.ts
+date -u +%Y-%m-%dT%H:%M:%SZ
+git add .codex-supervisor/issue-journal.md src/core/journal.ts src/journal.test.ts
+git commit -m "Normalize journal failure signature rendering"
+git push origin codex/issue-873
+gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -f threadId='PRRT_kwDORgvdZ852EV-a'
+gh pr checks 880
+gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}}}}}' -f owner='TommyKammy' -f repo='codex-supervisor' -F number=880
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
+- 2026-03-23T08:56:21Z: pushed `f5f7a2b` to PR `#880`, resolved review thread `PRRT_kwDORgvdZ852EV-a`, confirmed all review threads are resolved, and observed a fresh GitHub Actions run `23429106798` with both `build` jobs pending.
+- 2026-03-23T08:54:44Z: fixed the journal-rendering drift by canonicalizing the rendered summary `Failure signature:` line to `last_failure_signature`, added focused coverage in `src/journal.test.ts`, and updated the tracked journal snapshot to the active review-thread signature.
+- 2026-03-23T08:38:54Z: reproduced the failing PR build from the GitHub Actions log, fixed the stale test doubles in `supervisor-http-server.test.ts` and `supervisor-service.test.ts`, and re-passed `npm run build` plus `npx tsx --test src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/backend/supervisor-http-server.test.ts`.
+- 2026-03-23T08:10:30Z: reproduced the missing typed observability contract by tightening the focused service/status/explain tests, then passed the requested verification after extending the shared activity-context DTO with retry counts, repeated stale no-PR recovery metadata, and recovery-derived recent phase changes.
 - 2026-03-23T07:22:48Z: validated the CodeRabbit flake note, added a DOM-order `waitForFunction` after the first pointer drag in `src/backend/webui-dashboard-browser-smoke.test.ts`, and re-passed `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts`.
 - 2026-03-22T21:40:05Z: pushed `codex/issue-847` and opened draft PR `#857` for the verified dashboard refresh checkpoint.
 - 2026-03-22T21:40:05Z: reproduced the visual-refresh gap with a new hero-and-section framing regression, refreshed the dashboard page chrome/CSS to add labeled lanes and flatter surfaces, and passed `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts`.
