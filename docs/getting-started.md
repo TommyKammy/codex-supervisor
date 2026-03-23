@@ -198,6 +198,7 @@ interface SetupReadinessReport {
   overallStatus: "configured" | "missing" | "invalid";
   fields: SetupReadinessField[];
   blockers: SetupReadinessBlocker[];
+  localCiContract?: LocalCiContractSummary;
 }
 
 interface SetupReadinessField {
@@ -232,6 +233,7 @@ Minimum rules for that contract:
 - each field reports a typed state of `configured | missing | invalid` plus typed metadata the UI can use to render editable setup inputs without inferring from labels
 - `blockers` lists only the conditions that still prevent a safe first run
 - each blocker carries typed remediation guidance so the browser does not have to reverse-engineer next actions from free-form text
+- the setup flow and WebUI should surface whether the repo-owned local CI contract is configured so operators know whether PR publication depends on a canonical repo-owned pre-PR command or on issue-level verification guidance
 - `ready` becomes `true` only when no first-run blockers remain
 - ongoing diagnostics such as GitHub auth details, corrupted state-file findings, orphaned worktree candidates, and other repair-oriented host checks stay in `doctor`
 
@@ -250,6 +252,8 @@ Minimum expectations for that contract:
 - stdout and stderr are informative logs from the repo command, not a second machine-readable protocol the supervisor needs to interpret
 
 Backward compatibility stays simple: if no local CI contract is configured, `codex-supervisor` keeps the existing behavior. It does not invent a fallback verification command, and it continues to rely on the issue's `## Verification` guidance plus normal operator/repo workflow instead of pretending a canonical local CI entrypoint exists when the repo has not declared one.
+
+Operator impact: when configured local CI fails, PR publication stays blocked and ready-for-review promotion stays blocked until the repo-owned command passes again. Setup/readiness and WebUI guidance should make that visible so operators can tell the difference between a missing contract and a failing configured contract.
 
 Explicit non-goal: `codex-supervisor` does not infer or reconstruct workflow logic from GitHub Actions YAML, other workflow YAML, or changed-file heuristics as a substitute for this contract. If a repo wants a canonical pre-PR local verification command, the repo must expose that command directly.
 

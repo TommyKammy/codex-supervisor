@@ -19,6 +19,8 @@ export function renderSetupBrowserScript(): string {
         providerDetails: document.getElementById("setup-provider-details"),
         trustPosture: document.getElementById("setup-trust-posture"),
         trustDetails: document.getElementById("setup-trust-details"),
+        localCiSummary: document.getElementById("setup-local-ci-summary"),
+        localCiDetails: document.getElementById("setup-local-ci-details"),
       };
       const editableFieldOrder = [
         "repoPath",
@@ -342,6 +344,34 @@ export function renderSetupBrowserScript(): string {
             }]
             : [],
           "No trust posture details reported.",
+        );
+        const localCiContract = report.localCiContract || {
+          configured: false,
+          command: null,
+          source: "config",
+          summary: "No repo-owned local CI contract is configured.",
+        };
+        setText(elements.localCiSummary, localCiContract.summary);
+        renderChecklist(
+          elements.localCiDetails,
+          [{
+            title: "Configured: " + (localCiContract.configured ? "yes" : "no"),
+            tone: "",
+            meta: [
+              "Command: " + (localCiContract.command || "none"),
+              "Source: " + formatToken(localCiContract.source || "unknown"),
+            ],
+            notes: localCiContract.configured
+              ? [
+                "This repo-owned command is the canonical local verification step before PR publication or update.",
+                "When configured local CI fails, PR publication or ready-for-review promotion stays blocked until the repo-owned command passes again.",
+              ]
+              : [
+                "If the repo does not declare this contract, codex-supervisor falls back to the issue's ## Verification guidance and operator workflow.",
+                "When configured local CI fails, PR publication or ready-for-review promotion stays blocked until the repo-owned command passes again.",
+              ],
+          }],
+          "No local CI contract details reported.",
         );
       }
 

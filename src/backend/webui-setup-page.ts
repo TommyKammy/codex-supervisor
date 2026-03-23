@@ -343,6 +343,18 @@ export function renderSupervisorSetupPage(): string {
               </ul>
             </div>
           </article>
+
+          <article class="panel">
+            <div class="panel-header">
+              <h2>Local CI contract</h2>
+            </div>
+            <div class="panel-body">
+              <p id="setup-local-ci-summary" class="hint">Loading typed local CI contract…</p>
+              <ul id="setup-local-ci-details" class="list list--plain">
+                <li>Loading local CI contract details…</li>
+              </ul>
+            </div>
+          </article>
         </section>
 
         <section class="grid grid--details" aria-label="setup-details">

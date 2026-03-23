@@ -1778,6 +1778,12 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
           warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
           summary: "Trusted inputs with unsandboxed autonomous execution.",
         },
+        localCiContract: {
+          configured: false,
+          command: null,
+          source: "config",
+          summary: "No repo-owned local CI contract is configured.",
+        },
       }),
     },
   ]);
@@ -1802,6 +1808,11 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
   assert.match(harness.document.getElementById("setup-provider-posture")?.textContent ?? "", /No review provider is configured\./u);
   assert.match(harness.document.getElementById("setup-provider-details")?.textContent ?? "", /Provider profile: None.*Signal source: none.*Configured reviewers: none.*Configured: no/u);
   assert.match(harness.document.getElementById("setup-trust-details")?.textContent ?? "", /Trust mode: Trusted Repo And Authors.*Execution safety: Unsandboxed Autonomous.*Warning: Unsandboxed autonomous execution assumes trusted GitHub-authored inputs\./u);
+  assert.match(harness.document.getElementById("setup-local-ci-summary")?.textContent ?? "", /No repo-owned local CI contract is configured\./u);
+  assert.match(
+    harness.document.getElementById("setup-local-ci-details")?.textContent ?? "",
+    /Configured: no.*Command: none.*If the repo does not declare this contract, codex-supervisor falls back to the issue's ## Verification guidance and operator workflow.*When configured local CI fails, PR publication or ready-for-review promotion stays blocked until the repo-owned command passes again\./u,
+  );
   assert.equal(harness.remainingFetches.length, 0);
 });
 
@@ -1884,6 +1895,12 @@ test("setup shell saves through the narrow setup config API and revalidates read
           warning: null,
           summary: "Trusted inputs with unsandboxed autonomous execution.",
         },
+        localCiContract: {
+          configured: false,
+          command: null,
+          source: "config",
+          summary: "No repo-owned local CI contract is configured.",
+        },
       }),
     },
     {
@@ -1956,6 +1973,12 @@ test("setup shell saves through the narrow setup config API and revalidates read
         warning: null,
         summary: "Trusted inputs with unsandboxed autonomous execution.",
       },
+      localCiContract: {
+        configured: true,
+        command: "npm run ci:local",
+        source: "config",
+        summary: "Repo-owned local CI contract is configured.",
+      },
     },
   }));
   await harness.flush();
@@ -2015,6 +2038,12 @@ test("setup shell saves through the narrow setup config API and revalidates read
       warning: null,
       summary: "Trusted inputs with unsandboxed autonomous execution.",
     },
+    localCiContract: {
+      configured: true,
+      command: "npm run ci:local",
+      source: "config",
+      summary: "Repo-owned local CI contract is configured.",
+    },
   }));
 
   await submitPromise;
@@ -2041,6 +2070,11 @@ test("setup shell saves through the narrow setup config API and revalidates read
   assert.match(saveStatus.textContent, /Saved 2 setup fields\./u);
   assert.match(harness.document.getElementById("setup-overall-status")?.textContent ?? "", /configured/u);
   assert.match(harness.document.getElementById("setup-blocker-summary")?.textContent ?? "", /No blocking setup conditions remain\./u);
+  assert.match(harness.document.getElementById("setup-local-ci-summary")?.textContent ?? "", /Repo-owned local CI contract is configured\./u);
+  assert.match(
+    harness.document.getElementById("setup-local-ci-details")?.textContent ?? "",
+    /Configured: yes.*Command: npm run ci:local.*Source: config.*This repo-owned command is the canonical local verification step before PR publication or update.*When configured local CI fails, PR publication or ready-for-review promotion stays blocked until the repo-owned command passes again\./u,
+  );
   assert.equal(harness.remainingFetches.length, 0);
 });
 
