@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { GitHubIssue, GitHubPullRequest, IssueRunRecord } from "../core/types";
+import type { RecoveryEvent } from "../run-once-cycle-prelude";
 import { isTerminalState, writeJsonAtomic } from "../core/utils";
 import {
   type ExecutionMetricsRunSummaryArtifact,
@@ -15,10 +16,21 @@ export async function syncExecutionMetricsRunSummary(args: {
   previousRecord: Pick<IssueRunRecord, "issue_number" | "updated_at">;
   nextRecord: Pick<
     IssueRunRecord,
-    "state" | "workspace" | "updated_at" | "blocked_reason" | "last_failure_kind" | "processed_review_thread_ids"
+    | "state"
+    | "workspace"
+    | "updated_at"
+    | "blocked_reason"
+    | "last_failure_kind"
+    | "last_failure_context"
+    | "repeated_failure_signature_count"
+    | "processed_review_thread_ids"
+    | "last_recovery_reason"
+    | "last_recovery_at"
+    | "stale_stabilizing_no_pr_recovery_count"
   >;
   issue?: Pick<GitHubIssue, "createdAt"> | null;
   pullRequest?: Pick<GitHubPullRequest, "createdAt" | "mergedAt"> | null;
+  recoveryEvents?: RecoveryEvent[];
 }): Promise<string | null> {
   const { state } = args.nextRecord;
   if (!isTerminalState(state) || !args.nextRecord.workspace) {
@@ -41,7 +53,13 @@ export async function syncExecutionMetricsRunSummary(args: {
     finishedAt: args.nextRecord.updated_at,
     blockedReason: args.nextRecord.blocked_reason,
     failureKind: args.nextRecord.last_failure_kind,
+    failureContext: args.nextRecord.last_failure_context,
+    repeatedFailureSignatureCount: args.nextRecord.repeated_failure_signature_count,
     processedReviewThreadIds: args.nextRecord.processed_review_thread_ids,
+    recoveryEvents: args.recoveryEvents,
+    lastRecoveryReason: args.nextRecord.last_recovery_reason,
+    lastRecoveryAt: args.nextRecord.last_recovery_at,
+    staleStabilizingNoPrRecoveryCount: args.nextRecord.stale_stabilizing_no_pr_recovery_count,
   });
 
   const artifactPath = executionMetricsRunSummaryPath(args.nextRecord.workspace);

@@ -230,6 +230,7 @@ async function ensureRecordJournalContext(
 interface PreparedIssueRunContext extends PreparedIssueExecutionContext {
   state: SupervisorStateFile;
   options: Pick<CliOptions, "dryRun">;
+  recoveryEvents: RecoveryEvent[];
   recoveryLog: string | null;
 }
 
@@ -607,6 +608,7 @@ export class Supervisor {
       memoryArtifacts,
       options,
       recoveryLog,
+      recoveryEvents,
     } = context;
     let record = context.record;
     let workspaceStatus = context.workspaceStatus;
@@ -658,6 +660,7 @@ export class Supervisor {
           nextRecord: record,
           issue,
           pullRequest: pr,
+          recoveryEvents,
         });
         await syncJournal(record);
         return prependRecoveryLog(
@@ -717,7 +720,7 @@ export class Supervisor {
         pr,
         options,
       });
-      record = await this.handlePostTurnMergeAndCompletion(state, issue, postTurn.record, postTurn.pr, options);
+      record = await this.handlePostTurnMergeAndCompletion(state, issue, postTurn.record, postTurn.pr, options, recoveryEvents);
       await syncJournal(record);
       return prependRecoveryLog(formatStatus(record), recoveryLog);
     }
@@ -767,6 +770,7 @@ export class Supervisor {
     record: IssueRunRecord,
     pr: GitHubPullRequest,
     options: Pick<CliOptions, "dryRun">,
+    recoveryEvents: RecoveryEvent[] = [],
   ): Promise<IssueRunRecord> {
     let nextRecord = record;
 
@@ -788,6 +792,7 @@ export class Supervisor {
       nextRecord,
       issue,
       pullRequest: pr,
+      recoveryEvents,
     });
     return nextRecord;
   }
@@ -1279,6 +1284,7 @@ export class Supervisor {
           ...preparedIssue,
           state,
           options,
+          recoveryEvents,
           recoveryLog,
         }),
       };

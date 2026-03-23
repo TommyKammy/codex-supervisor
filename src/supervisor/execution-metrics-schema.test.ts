@@ -34,6 +34,21 @@ test("validateExecutionMetricsRunSummary accepts the versioned contract and reje
         totalCount: 3,
         totalCountKind: "actionable_thread_instances",
       },
+      failureMetrics: {
+        classification: "latest_failure",
+        category: "review",
+        failureKind: "command_error",
+        blockedReason: "verification",
+        occurrenceCount: 2,
+        lastOccurredAt: "2026-03-24T03:59:00Z",
+      },
+      recoveryMetrics: {
+        classification: "latest_recovery",
+        reason: "operator_requeue",
+        occurrenceCount: 1,
+        lastRecoveredAt: "2026-03-24T03:59:30Z",
+        timeToLatestRecoveryMs: 30000,
+      },
     }),
     {
       schemaVersion: EXECUTION_METRICS_RUN_SUMMARY_SCHEMA_VERSION,
@@ -58,13 +73,28 @@ test("validateExecutionMetricsRunSummary accepts the versioned contract and reje
         totalCount: 3,
         totalCountKind: "actionable_thread_instances",
       },
+      failureMetrics: {
+        classification: "latest_failure",
+        category: "review",
+        failureKind: "command_error",
+        blockedReason: "verification",
+        occurrenceCount: 2,
+        lastOccurredAt: "2026-03-24T03:59:00Z",
+      },
+      recoveryMetrics: {
+        classification: "latest_recovery",
+        reason: "operator_requeue",
+        occurrenceCount: 1,
+        lastRecoveredAt: "2026-03-24T03:59:30Z",
+        timeToLatestRecoveryMs: 30000,
+      },
     },
   );
 
   assert.throws(
     () =>
       validateExecutionMetricsRunSummary({
-        schemaVersion: 2,
+        schemaVersion: 3,
         issueNumber: 892,
         terminalState: "done",
         terminalOutcome: {
@@ -81,8 +111,10 @@ test("validateExecutionMetricsRunSummary accepts the versioned contract and reje
         issueToPrCreatedMs: 270000,
         prOpenDurationMs: 15000,
         reviewMetrics: null,
+        failureMetrics: null,
+        recoveryMetrics: null,
       }),
-    /schemaVersion must be 3/u,
+    /schemaVersion must be 4/u,
   );
 });
 
@@ -101,7 +133,12 @@ test("syncExecutionMetricsRunSummary rejects malformed run summaries before writ
         updated_at: "2026-03-24T04:00:00Z",
         blocked_reason: null,
         last_failure_kind: null,
+        last_failure_context: null,
+        repeated_failure_signature_count: 0,
         processed_review_thread_ids: [],
+        last_recovery_reason: null,
+        last_recovery_at: null,
+        stale_stabilizing_no_pr_recovery_count: 0,
       },
     }),
     /startedAt must be an ISO-8601 timestamp/u,
@@ -131,6 +168,8 @@ test("validateExecutionMetricsRunSummary rejects negative derived lifecycle dura
         issueToPrCreatedMs: 360000,
         prOpenDurationMs: 0,
         reviewMetrics: null,
+        failureMetrics: null,
+        recoveryMetrics: null,
       }),
     /prOpenDurationMs timestamps must be chronological/u,
   );
@@ -150,7 +189,12 @@ test("syncExecutionMetricsRunSummary records coarse review metrics from processe
       updated_at: "2026-03-24T04:05:00Z",
       blocked_reason: null,
       last_failure_kind: null,
+      last_failure_context: null,
+      repeated_failure_signature_count: 0,
       processed_review_thread_ids: ["thread-1@head-a", "thread-2@head-a", "thread-2@head-b"],
+      last_recovery_reason: null,
+      last_recovery_at: null,
+      stale_stabilizing_no_pr_recovery_count: 0,
     },
     issue: {
       createdAt: "2026-03-24T03:55:00Z",
@@ -164,7 +208,7 @@ test("syncExecutionMetricsRunSummary records coarse review metrics from processe
   assert.deepEqual(
     JSON.parse(await fs.readFile(executionMetricsRunSummaryPath(workspacePath), "utf8")),
     {
-      schemaVersion: 3,
+      schemaVersion: 4,
       issueNumber: 894,
       terminalState: "done",
       terminalOutcome: {
@@ -186,6 +230,8 @@ test("syncExecutionMetricsRunSummary records coarse review metrics from processe
         totalCount: 3,
         totalCountKind: "actionable_thread_instances",
       },
+      failureMetrics: null,
+      recoveryMetrics: null,
     },
   );
 });

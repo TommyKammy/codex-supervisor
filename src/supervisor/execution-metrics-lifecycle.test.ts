@@ -15,7 +15,7 @@ test("buildExecutionMetricsRunSummaryArtifact derives lead-time and PR milestone
       processedReviewThreadIds: ["thread-1@head-a", "thread-2@head-a", "thread-2@head-b"],
     }),
     {
-      schemaVersion: 3,
+      schemaVersion: 4,
       issueNumber: 893,
       terminalState: "done",
       terminalOutcome: {
@@ -37,6 +37,8 @@ test("buildExecutionMetricsRunSummaryArtifact derives lead-time and PR milestone
         totalCount: 3,
         totalCountKind: "actionable_thread_instances",
       },
+      failureMetrics: null,
+      recoveryMetrics: null,
     },
   );
 });

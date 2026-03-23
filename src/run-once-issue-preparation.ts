@@ -319,6 +319,7 @@ async function hydratePullRequestContext(
         nextRecord: doneRecord,
         issue: args.issue,
         pullRequest: resolvedPr,
+        recoveryEvents: [recoveryEvent],
       });
       return { kind: "restart", recoveryEvents: [recoveryEvent] };
     } else if (resolvedPr.state === "CLOSED") {

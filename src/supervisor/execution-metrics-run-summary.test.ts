@@ -17,7 +17,7 @@ import { createConfig as createTurnConfig, createIssue, createPullRequest, creat
 import type { AgentRunner, AgentTurnRequest } from "./agent-runner";
 
 interface ExecutionMetricsRunSummary {
-  schemaVersion: 3;
+  schemaVersion: 4;
   issueNumber: number;
   terminalState: "done" | "blocked" | "failed";
   terminalOutcome: {
@@ -38,6 +38,33 @@ interface ExecutionMetricsRunSummary {
     iterationCount: number;
     totalCount: number;
     totalCountKind: "actionable_thread_instances";
+  } | null;
+  failureMetrics: {
+    classification: "latest_failure";
+    category: "checks" | "review" | "conflict" | "codex" | "manual" | "blocked";
+    failureKind: "timeout" | "command_error" | "codex_exit" | "codex_failed" | null;
+    blockedReason:
+      | "requirements"
+      | "clarification"
+      | "permissions"
+      | "secrets"
+      | "verification"
+      | "review_bot_timeout"
+      | "copilot_timeout"
+      | "manual_review"
+      | "manual_pr_closed"
+      | "handoff_missing"
+      | "unknown"
+      | null;
+    occurrenceCount: number;
+    lastOccurredAt: string;
+  } | null;
+  recoveryMetrics: {
+    classification: "latest_recovery";
+    reason: string;
+    occurrenceCount: number;
+    lastRecoveredAt: string;
+    timeToLatestRecoveryMs: number | null;
   } | null;
 }
 
@@ -277,7 +304,7 @@ test("prepareIssueExecutionContext writes a run summary artifact for done outcom
 
   const artifact = await readExecutionMetricsRunSummary(workspacePath);
   assert.deepEqual(artifact, {
-    schemaVersion: 3,
+    schemaVersion: 4,
     issueNumber: 240,
     terminalState: "done",
     terminalOutcome: {
@@ -294,6 +321,14 @@ test("prepareIssueExecutionContext writes a run summary artifact for done outcom
     issueToPrCreatedMs: 180000,
     prOpenDurationMs: 120000,
     reviewMetrics: null,
+    failureMetrics: null,
+    recoveryMetrics: {
+      classification: "latest_recovery",
+      reason: "merged_pr_convergence",
+      occurrenceCount: 1,
+      lastRecoveredAt: "2026-03-24T00:05:30Z",
+      timeToLatestRecoveryMs: null,
+    },
   });
 });
 
@@ -446,7 +481,7 @@ test("executeCodexTurnPhase writes a run summary artifact for blocked outcomes",
   });
   const artifact = await readExecutionMetricsRunSummary(workspacePath);
   assert.deepEqual(artifact, {
-    schemaVersion: 3,
+    schemaVersion: 4,
     issueNumber: 102,
     terminalState: "blocked",
     terminalOutcome: {
@@ -468,6 +503,15 @@ test("executeCodexTurnPhase writes a run summary artifact for blocked outcomes",
       totalCount: 3,
       totalCountKind: "actionable_thread_instances",
     },
+    failureMetrics: {
+      classification: "latest_failure",
+      category: "blocked",
+      failureKind: null,
+      blockedReason: "verification",
+      occurrenceCount: 1,
+      lastOccurredAt: "2026-03-24T01:05:00Z",
+    },
+    recoveryMetrics: null,
   });
 });
 
@@ -611,7 +655,7 @@ test("executeCodexTurnPhase writes a run summary artifact for failed outcomes", 
   });
   const artifact = await readExecutionMetricsRunSummary(workspacePath);
   assert.deepEqual(artifact, {
-    schemaVersion: 3,
+    schemaVersion: 4,
     issueNumber: 103,
     terminalState: "failed",
     terminalOutcome: {
@@ -628,5 +672,14 @@ test("executeCodexTurnPhase writes a run summary artifact for failed outcomes", 
     issueToPrCreatedMs: null,
     prOpenDurationMs: null,
     reviewMetrics: null,
+    failureMetrics: {
+      classification: "latest_failure",
+      category: "codex",
+      failureKind: "command_error",
+      blockedReason: null,
+      occurrenceCount: 1,
+      lastOccurredAt: artifact.finishedAt,
+    },
+    recoveryMetrics: null,
   });
 });
