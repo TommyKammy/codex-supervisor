@@ -17,11 +17,22 @@ import { createConfig as createTurnConfig, createIssue, createPullRequest, creat
 import type { AgentRunner, AgentTurnRequest } from "./agent-runner";
 
 interface ExecutionMetricsRunSummary {
-  schemaVersion: 1;
+  schemaVersion: 2;
   issueNumber: number;
   terminalState: "done" | "blocked" | "failed";
+  terminalOutcome: {
+    category: "completed" | "blocked" | "failed";
+    reason: string | null;
+  };
+  issueCreatedAt: string | null;
   startedAt: string;
+  prCreatedAt: string | null;
+  prMergedAt: string | null;
   finishedAt: string;
+  runDurationMs: number;
+  issueLeadTimeMs: number | null;
+  issueToPrCreatedMs: number | null;
+  prOpenDurationMs: number | null;
 }
 
 function executionMetricsRunSummaryPath(workspacePath: string): string {
@@ -217,6 +228,7 @@ test("prepareIssueExecutionContext writes a run summary artifact for done outcom
   const mergedPr = createPreparationPullRequest({
     number: 191,
     state: "MERGED",
+    createdAt: "2026-03-24T00:03:00Z",
     mergedAt: "2026-03-24T00:05:00Z",
     headRefOid: "merged-head-191",
   });
@@ -259,11 +271,22 @@ test("prepareIssueExecutionContext writes a run summary artifact for done outcom
 
   const artifact = await readExecutionMetricsRunSummary(workspacePath);
   assert.deepEqual(artifact, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     issueNumber: 240,
     terminalState: "done",
+    terminalOutcome: {
+      category: "completed",
+      reason: "merged",
+    },
+    issueCreatedAt: "2026-03-24T00:00:00Z",
     startedAt: "2026-03-24T00:00:00Z",
+    prCreatedAt: "2026-03-24T00:03:00Z",
+    prMergedAt: "2026-03-24T00:05:00Z",
     finishedAt: "2026-03-24T00:06:00Z",
+    runDurationMs: 360000,
+    issueLeadTimeMs: 360000,
+    issueToPrCreatedMs: 180000,
+    prOpenDurationMs: 120000,
   });
 });
 
@@ -283,7 +306,12 @@ test("executeCodexTurnPhase writes a run summary artifact for blocked outcomes",
       "102": record,
     },
   };
-  const issue = createIssue({ number: 102, title: "Blocked metrics summary" });
+  const issue = createIssue({
+    number: 102,
+    title: "Blocked metrics summary",
+    createdAt: "2026-03-24T00:59:00Z",
+    updatedAt: "2026-03-24T00:59:00Z",
+  });
 
   let blockedJournalReads = 0;
   const result = await executeCodexTurnPhase({
@@ -410,11 +438,22 @@ test("executeCodexTurnPhase writes a run summary artifact for blocked outcomes",
   });
   const artifact = await readExecutionMetricsRunSummary(workspacePath);
   assert.deepEqual(artifact, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     issueNumber: 102,
     terminalState: "blocked",
+    terminalOutcome: {
+      category: "blocked",
+      reason: "verification",
+    },
+    issueCreatedAt: "2026-03-24T00:59:00Z",
     startedAt: "2026-03-24T01:00:00Z",
+    prCreatedAt: null,
+    prMergedAt: null,
     finishedAt: "2026-03-24T01:05:00Z",
+    runDurationMs: 300000,
+    issueLeadTimeMs: 360000,
+    issueToPrCreatedMs: null,
+    prOpenDurationMs: null,
   });
 });
 
@@ -462,7 +501,12 @@ test("executeCodexTurnPhase writes a run summary artifact for failed outcomes", 
     context: {
       state,
       record,
-      issue: createIssue({ number: 103, title: "Failed metrics summary" }),
+      issue: createIssue({
+        number: 103,
+        title: "Failed metrics summary",
+        createdAt: "2026-03-24T01:58:00Z",
+        updatedAt: "2026-03-24T01:58:00Z",
+      }),
       previousCodexSummary: null,
       previousError: null,
       workspacePath,
@@ -553,10 +597,21 @@ test("executeCodexTurnPhase writes a run summary artifact for failed outcomes", 
   });
   const artifact = await readExecutionMetricsRunSummary(workspacePath);
   assert.deepEqual(artifact, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     issueNumber: 103,
     terminalState: "failed",
+    terminalOutcome: {
+      category: "failed",
+      reason: "command_error",
+    },
+    issueCreatedAt: "2026-03-24T01:58:00Z",
     startedAt: "2026-03-24T02:00:00Z",
+    prCreatedAt: null,
+    prMergedAt: null,
     finishedAt: "2026-03-24T02:04:00Z",
+    runDurationMs: 240000,
+    issueLeadTimeMs: 360000,
+    issueToPrCreatedMs: null,
+    prOpenDurationMs: null,
   });
 });

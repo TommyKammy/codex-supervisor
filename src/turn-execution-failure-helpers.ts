@@ -1,5 +1,5 @@
 import { StateStore } from "./core/state-store";
-import { CodexTurnResult, FailureContext, IssueRunRecord, SupervisorStateFile } from "./core/types";
+import { CodexTurnResult, FailureContext, GitHubIssue, IssueRunRecord, SupervisorStateFile } from "./core/types";
 import { truncate } from "./core/utils";
 import { syncExecutionMetricsRunSummary } from "./supervisor/execution-metrics-run-summary";
 
@@ -9,6 +9,7 @@ interface PersistTurnExecutionFailureArgs {
   stateStore: TurnExecutionFailureStateStore;
   state: SupervisorStateFile;
   record: IssueRunRecord;
+  issue: Pick<GitHubIssue, "createdAt">;
   syncJournal: (record: IssueRunRecord) => Promise<void>;
   issueNumber: number;
   error: unknown;
@@ -28,6 +29,7 @@ interface PersistCodexExitFailureArgs {
   stateStore: TurnExecutionFailureStateStore;
   state: SupervisorStateFile;
   record: IssueRunRecord;
+  issue: Pick<GitHubIssue, "createdAt">;
   syncJournal: (record: IssueRunRecord) => Promise<void>;
   issueNumber: number;
   codexResult: Pick<CodexTurnResult, "lastMessage" | "stderr" | "stdout">;
@@ -47,6 +49,7 @@ interface PersistMissingJournalHandoffArgs {
   stateStore: TurnExecutionFailureStateStore;
   state: SupervisorStateFile;
   record: IssueRunRecord;
+  issue: Pick<GitHubIssue, "createdAt">;
   syncJournal: (record: IssueRunRecord) => Promise<void>;
   issueNumber: number;
   buildCodexFailureContext: (
@@ -64,6 +67,7 @@ interface PersistHintedCodexTurnStateArgs {
   stateStore: TurnExecutionFailureStateStore;
   state: SupervisorStateFile;
   record: IssueRunRecord;
+  issue: Pick<GitHubIssue, "createdAt">;
   syncJournal: (record: IssueRunRecord) => Promise<void>;
   issueNumber: number;
   lastMessage: string;
@@ -115,6 +119,7 @@ async function persistTurnFailurePatch(args: {
   stateStore: TurnExecutionFailureStateStore;
   state: SupervisorStateFile;
   record: IssueRunRecord;
+  issue: Pick<GitHubIssue, "createdAt">;
   syncJournal: (record: IssueRunRecord) => Promise<void>;
   patch: Partial<IssueRunRecord>;
 }): Promise<IssueRunRecord> {
@@ -125,6 +130,7 @@ async function persistTurnFailurePatch(args: {
     await syncExecutionMetricsRunSummary({
       previousRecord: args.record,
       nextRecord: updated,
+      issue: args.issue,
     });
   } catch (metricsError) {
     console.warn(
@@ -154,6 +160,7 @@ export async function persistCodexTurnExecutionFailure(args: PersistTurnExecutio
     stateStore: args.stateStore,
     state: args.state,
     record: args.record,
+    issue: args.issue,
     syncJournal: args.syncJournal,
     patch: {
       state: "failed",
@@ -182,6 +189,7 @@ export async function persistCodexTurnExitFailure(args: PersistCodexExitFailureA
     stateStore: args.stateStore,
     state: args.state,
     record: args.record,
+    issue: args.issue,
     syncJournal: args.syncJournal,
     patch: {
       state: "failed",
@@ -208,6 +216,7 @@ export async function persistMissingCodexJournalHandoff(
     stateStore: args.stateStore,
     state: args.state,
     record: args.record,
+    issue: args.issue,
     syncJournal: args.syncJournal,
     patch: {
       state: "blocked",
@@ -234,6 +243,7 @@ export async function persistHintedCodexTurnState(args: PersistHintedCodexTurnSt
     stateStore: args.stateStore,
     state: args.state,
     record: args.record,
+    issue: args.issue,
     syncJournal: args.syncJournal,
     patch: {
       state: args.hintedState,

@@ -317,6 +317,8 @@ async function hydratePullRequestContext(
       await syncExecutionMetricsRunSummary({
         previousRecord: record,
         nextRecord: doneRecord,
+        issue: args.issue,
+        pullRequest: resolvedPr,
       });
       return { kind: "restart", recoveryEvents: [recoveryEvent] };
     } else if (resolvedPr.state === "CLOSED") {
@@ -353,6 +355,8 @@ async function hydratePullRequestContext(
       await syncExecutionMetricsRunSummary({
         previousRecord: record,
         nextRecord: blockedRecord,
+        issue: args.issue,
+        pullRequest: resolvedPr,
       });
       await args.syncJournal(blockedRecord);
       return `Issue #${blockedRecord.issue_number} blocked because PR #${resolvedPr.number} was closed without merge.`;
@@ -392,6 +396,7 @@ async function hydratePullRequestContext(
       await syncExecutionMetricsRunSummary({
         previousRecord: record,
         nextRecord: blockedRecord,
+        issue: args.issue,
       });
       await args.syncJournal(blockedRecord);
       return `Issue #${blockedRecord.issue_number} blocked: ${blockedRecord.last_error}`;

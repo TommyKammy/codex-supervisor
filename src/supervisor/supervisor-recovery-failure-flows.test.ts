@@ -154,7 +154,9 @@ test("recoverUnexpectedCodexTurnFailure preserves dirty recovery context and tim
     },
     pr: {
       number: 55,
+      createdAt: "2026-03-13T00:10:00Z",
       headRefOid: "feed123",
+      mergedAt: null,
     },
   });
 

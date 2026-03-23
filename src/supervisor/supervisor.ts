@@ -656,6 +656,8 @@ export class Supervisor {
         await syncExecutionMetricsRunSummary({
           previousRecord: lifecycle.recordForState,
           nextRecord: record,
+          issue,
+          pullRequest: pr,
         });
         await syncJournal(record);
         return prependRecoveryLog(
@@ -715,7 +717,7 @@ export class Supervisor {
         pr,
         options,
       });
-      record = await this.handlePostTurnMergeAndCompletion(state, postTurn.record, postTurn.pr, options);
+      record = await this.handlePostTurnMergeAndCompletion(state, issue, postTurn.record, postTurn.pr, options);
       await syncJournal(record);
       return prependRecoveryLog(formatStatus(record), recoveryLog);
     }
@@ -761,6 +763,7 @@ export class Supervisor {
 
   private async handlePostTurnMergeAndCompletion(
     state: SupervisorStateFile,
+    issue: GitHubIssue,
     record: IssueRunRecord,
     pr: GitHubPullRequest,
     options: Pick<CliOptions, "dryRun">,
@@ -783,6 +786,8 @@ export class Supervisor {
     await syncExecutionMetricsRunSummary({
       previousRecord: record,
       nextRecord,
+      issue,
+      pullRequest: pr,
     });
     return nextRecord;
   }

@@ -25,6 +25,7 @@ test("persistHintedCodexTurnState records blocked reasons and repeated blocker b
     },
     state,
     record: state.issues["102"]!,
+    issue: { createdAt: "2026-03-13T00:00:00Z" },
     syncJournal: async () => {
       syncJournalCalls += 1;
     },
@@ -108,6 +109,7 @@ test("persistHintedCodexTurnState continues journal sync when run summary persis
       },
       state,
       record: state.issues["103"]!,
+      issue: { createdAt: "2026-03-24T03:00:00Z" },
       syncJournal: async () => {
         syncJournalCalls += 1;
       },
