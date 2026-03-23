@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   inferStateWithoutPullRequest,
+  STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
   shouldPreserveNoPrFailureTracking,
   shouldPreserveStaleStabilizingNoPrRecoveryTracking,
 } from "./no-pull-request-state";
@@ -161,6 +162,21 @@ test("shouldPreserveNoPrFailureTracking only keeps repeated blocked no-PR failur
       }),
     ),
     false,
+  );
+});
+
+test("shouldPreserveStaleStabilizingNoPrRecoveryTracking keeps stale no-PR recovery count across queued requeue cycles", () => {
+  assert.equal(
+    shouldPreserveStaleStabilizingNoPrRecoveryTracking(
+      createRecord({
+        state: "queued",
+        pr_number: null,
+        last_failure_signature: STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
+        repeated_failure_signature_count: 2,
+      }),
+      "stabilizing",
+    ),
+    true,
   );
 });
 

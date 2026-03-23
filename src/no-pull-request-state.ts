@@ -50,7 +50,7 @@ export function shouldPreserveStaleStabilizingNoPrRecoveryTracking(
 ): boolean {
   return (
     record.pr_number === null &&
-    record.state === "stabilizing" &&
+    (record.state === "queued" || record.state === "stabilizing") &&
     nextState === "stabilizing" &&
     record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE &&
     getStaleStabilizingNoPrRecoveryCount(record) > 0
