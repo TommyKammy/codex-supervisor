@@ -1,71 +1,73 @@
-# Issue #895: Execution metrics failure and recovery: record structured failure and recovery summaries
+# Issue #896: Execution metrics aggregation: generate daily rollups from persisted run summaries
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/895
-- Branch: codex/issue-895
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/896
+- Branch: codex/issue-896
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: e998202c3cf1ae538515dc42f0cc78e94ad0d4e4
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=1, repair=2)
+- Last head SHA: 5802a5570007a9ee38de2a752d6be1d18495f0fb
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-23T19:12:40.085Z
+- Last failure signature: PRRT_kwDORgvdZ852PCjs|PRRT_kwDORgvdZ852PCjz
+- Repeated failure signature count: 1
+- Updated at: 2026-03-23T20:28:14.000Z
 
 ## Latest Codex Summary
-- None yet.
+Updated `.codex-supervisor/issue-journal.md` to replace local filesystem links in the latest summary with repo-relative links and removed the padded inline-code example that was tripping markdownlint MD038 in the stored review excerpt. I committed the repair as `5802a55` (`Fix issue 896 journal review notes`), pushed `codex/issue-896`, and resolved review threads `PRRT_kwDORgvdZ852PCjs` and `PRRT_kwDORgvdZ852PCjz` on PR #909.
+
+Focused verification passed for the reported concerns: a targeted inline-code-span scan found no padded inline code spans, and `rg` found no remaining `/home/tommy` path strings in the journal. The only remaining local dirt is the pre-existing untracked `.codex-supervisor/replay/` directory.
+
+Summary: Fixed the remaining journal-only review feedback by switching summary links to repo-relative paths and cleaning the MD038-triggering inline code example.
+State hint: waiting_ci
+Blocked reason: none
+Tests: `node` inline-code-span scan against `.codex-supervisor/issue-journal.md`; `rg -n` check confirming no `/home/tommy` strings remain in `.codex-supervisor/issue-journal.md`
+Failure signature: none
+Next action: monitor PR #909 for any follow-up CI or review after commit `5802a55`.
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: no unresolved automated review threads remain after the journal-only repair.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/909#discussion_r2977348311
+- Details:
+  - Changed the latest summary links on line 17 to repo-relative targets.
+  - Removed the padded inline-code example from the stored review excerpt so the reported MD038 case no longer exists.
+  - Pushed commit `5802a55` and resolved review threads `PRRT_kwDORgvdZ852PCjs` and `PRRT_kwDORgvdZ852PCjz`.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: issue #895 can be satisfied by extending the execution-metrics run-summary contract with nullable `failureMetrics` and `recoveryMetrics` blocks derived from already persisted failure/recovery state plus in-flight `RecoveryEvent`s, so metrics improve without changing retry, recovery, or stop decisions.
-- What changed: added a focused reproducer in `src/supervisor/execution-metrics-failure-recovery.test.ts`; bumped `src/supervisor/execution-metrics-schema.ts` to schema version 4 with nullable `failureMetrics` and `recoveryMetrics` blocks plus validation rules; updated `src/supervisor/execution-metrics-lifecycle.ts` to derive latest failure metrics from `last_failure_context`/`last_failure_kind`/`blocked_reason` and latest recovery metrics from issue-scoped `RecoveryEvent`s or persisted `last_recovery_*`; threaded the extra state through `src/supervisor/execution-metrics-run-summary.ts`, `src/run-once-issue-preparation.ts`, and `src/supervisor/supervisor.ts`; refreshed `src/supervisor/execution-metrics-schema.test.ts`, `src/supervisor/execution-metrics-lifecycle.test.ts`, and `src/supervisor/execution-metrics-run-summary.test.ts` for the version-4 contract.
+- Hypothesis: both remaining review threads are valid but limited to journal markdown; no source-code changes are needed.
+- What changed: updated `.codex-supervisor/issue-journal.md` so the latest summary uses repo-relative links and the stored review excerpt no longer includes a padded inline-code example that triggers markdownlint MD038; committed the repair as `5802a55`, pushed `codex/issue-896`, and resolved the two remaining review threads on PR #909.
 - Current blocker: none
-- Next exact step: stage the execution-metrics changes, commit the issue-895 checkpoint, and then open or update the branch PR if supervisor policy requires it this turn.
-- Verification gap: none in the requested scope after `npm ci`; `npm run build`, `npx tsx --test src/supervisor/execution-metrics-failure-recovery.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`, and the focused execution-metrics suite all pass.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/run-once-issue-preparation.ts`, `src/supervisor/execution-metrics-failure-recovery.test.ts`, `src/supervisor/execution-metrics-lifecycle.ts`, `src/supervisor/execution-metrics-lifecycle.test.ts`, `src/supervisor/execution-metrics-run-summary.ts`, `src/supervisor/execution-metrics-run-summary.test.ts`, `src/supervisor/execution-metrics-schema.ts`, `src/supervisor/execution-metrics-schema.test.ts`, `src/supervisor/supervisor.ts`
-- Rollback concern: medium; schema version 4 extends persisted run-summary artifacts, so downstream consumers pinned to version 3 need to tolerate or migrate to the new failure/recovery blocks.
-- Last focused command: `npm run build`
-- Last focused failure: `npm run build` first failed with `sh: 1: tsc: not found` because this worktree lacked `node_modules`; after `npm ci`, a subsequent build surfaced a TypeScript scope error in `src/supervisor/supervisor.ts` from passing `recoveryEvents` outside its context, and threading `recoveryEvents` through `runPreparedIssue` resolved it.
+- Next exact step: monitor PR #909 for any fresh CI or follow-up review on `5802a5570007a9ee38de2a752d6be1d18495f0fb`.
+- Verification gap: none for the reported review concerns; the broader journal still has pre-existing markdownlint findings outside the scope of this repair.
+- Files touched: `.codex-supervisor/issue-journal.md`
+- Rollback concern: low; the change is documentation-only and does not affect issue execution or aggregation behavior.
+- Last focused command: `gh api graphql -f query='mutation { first: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ852PCjs"}) { thread { id isResolved } } second: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ852PCjz"}) { thread { id isResolved } } }'`
+- Last focused failure: reviewer feedback on `.codex-supervisor/issue-journal.md` reported absolute local links and an MD038 inline-code warning; both were fixed and the related review threads are now resolved.
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-895/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-895/context-index.md
+sed -n '1,220p' '<memory>/AGENTS.generated.md'
+sed -n '1,220p' '<memory>/context-index.md'
 sed -n '1,260p' .codex-supervisor/issue-journal.md
+nl -ba .codex-supervisor/issue-journal.md | sed -n '1,120p'
+rg -n '<local-absolute-path>|`\s+[^`]+\s+`' .codex-supervisor/issue-journal.md
 git status --short
-git branch --show-current && git rev-parse HEAD
-rg -n "failure|recovery|run summary|runSummary|execution metrics|structured" src/supervisor src --glob '!node_modules'
-sed -n '1,260p' src/supervisor/execution-metrics-run-summary.ts
-sed -n '1,260p' src/supervisor/execution-metrics-schema.ts
-sed -n '1,320p' src/supervisor/execution-metrics-lifecycle.ts
-sed -n '1,320p' src/supervisor/supervisor-recovery-reconciliation.test.ts
-sed -n '1,360p' src/supervisor/execution-metrics-run-summary.test.ts
-sed -n '1,280p' src/supervisor/execution-metrics-schema.test.ts
-sed -n '1,260p' src/supervisor/execution-metrics-lifecycle.test.ts
-sed -n '1,320p' src/recovery-reconciliation.ts
-sed -n '1,260p' src/run-once-cycle-prelude.ts
-sed -n '280,440p' src/run-once-issue-preparation.ts
-sed -n '420,620p' src/run-once-turn-execution.ts
-sed -n '620,820p' src/supervisor/supervisor.ts
+git diff -- .codex-supervisor/issue-journal.md
+git rev-parse HEAD
+perl -ne 'while(/`([^`]*)`/g){ print "$.:<$1>\n" if $1 =~ /^\s|\s$/ }' .codex-supervisor/issue-journal.md
+sed -n '32,36p' .codex-supervisor/issue-journal.md
 apply_patch
-npx tsx --test src/supervisor/execution-metrics-failure-recovery.test.ts
 apply_patch
-npx tsx --test src/supervisor/execution-metrics-failure-recovery.test.ts
-npx tsx --test src/supervisor/execution-metrics-lifecycle.test.ts src/supervisor/execution-metrics-schema.test.ts src/supervisor/execution-metrics-run-summary.test.ts
-apply_patch
-npx tsx -e 'import { buildExecutionMetricsRunSummaryArtifact } from "./src/supervisor/execution-metrics-lifecycle.ts"; console.log(JSON.stringify(buildExecutionMetricsRunSummaryArtifact({ issueNumber: 894, terminalState: "done", issueCreatedAt: "2026-03-24T03:55:00Z", startedAt: "2026-03-24T04:00:00Z", prCreatedAt: "2026-03-24T03:59:30Z", prMergedAt: "2026-03-24T04:04:00Z", finishedAt: "2026-03-24T04:05:00Z", blockedReason: null, failureKind: null, failureContext: null, repeatedFailureSignatureCount: 0, processedReviewThreadIds: ["thread-1@head-a","thread-2@head-a","thread-2@head-b"], lastRecoveryReason: null, lastRecoveryAt: null, staleStabilizingNoPrRecoveryCount: 0 }), null, 2));'
-npx tsx --test src/supervisor/execution-metrics-schema.test.ts
-npx tsx --test src/supervisor/execution-metrics-failure-recovery.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts
-npx tsx --test src/supervisor/execution-metrics-lifecycle.test.ts src/supervisor/execution-metrics-schema.test.ts src/supervisor/execution-metrics-run-summary.test.ts
-npm run build
-npm ci
-npm run build
-npx tsx --test src/supervisor/execution-metrics-failure-recovery.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts
+rg -n '<local-absolute-path>' .codex-supervisor/issue-journal.md
+node - <<'JS' ... JS
+git add .codex-supervisor/issue-journal.md
+git commit -m "Fix issue 896 journal review notes"
+git rev-parse HEAD
+git push origin codex/issue-896
+gh api graphql -f query='mutation { first: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ852PCjs"}) { thread { id isResolved } } second: resolveReviewThread(input: {threadId: "PRRT_kwDORgvdZ852PCjz"}) { thread { id isResolved } } }'
+date -u +"%Y-%m-%dT%H:%M:%S.000Z"
 git status --short
-date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
