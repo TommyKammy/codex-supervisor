@@ -220,6 +220,7 @@ test("createSupervisorService preserves typed operator observability fields on s
         verificationPolicySummary: null,
         durableGuardrailSummary: null,
         externalReviewFollowUpSummary: null,
+        localCiStatus: null,
         latestRecovery: null,
         retryContext: {
           timeoutRetryCount: 1,

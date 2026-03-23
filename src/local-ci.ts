@@ -1,5 +1,5 @@
 import { runCommand } from "./core/command";
-import { FailureContext, SupervisorConfig } from "./core/types";
+import { FailureContext, LatestLocalCiResult, SupervisorConfig } from "./core/types";
 import { nowIso, truncate } from "./core/utils";
 
 const LOCAL_CI_COMMAND_TIMEOUT_MS = 5 * 60_000;
@@ -7,6 +7,7 @@ const LOCAL_CI_COMMAND_TIMEOUT_MS = 5 * 60_000;
 export interface LocalCiGateResult {
   ok: boolean;
   failureContext: FailureContext | null;
+  latestResult: LatestLocalCiResult | null;
 }
 
 export type LocalCiCommandRunner = (command: string, workspacePath: string) => Promise<void>;
@@ -62,12 +63,22 @@ export async function runLocalCiGate(args: {
       ? args.config.localCiCommand.trim()
       : null;
   if (!command) {
-    return { ok: true, failureContext: null };
+    return { ok: true, failureContext: null, latestResult: null };
   }
 
+  const ranAt = nowIso();
   try {
     await (args.runLocalCiCommand ?? executeLocalCiCommand)(command, args.workspacePath);
-    return { ok: true, failureContext: null };
+    return {
+      ok: true,
+      failureContext: null,
+      latestResult: {
+        outcome: "passed",
+        summary: truncate(`Configured local CI command passed ${args.gateLabel}.`, 1000) ?? "Configured local CI command passed.",
+        ran_at: ranAt,
+        head_sha: null,
+      },
+    };
   } catch (error) {
     const summary = truncate(`Configured local CI command failed ${args.gateLabel}.`, 1000) ?? "Configured local CI command failed.";
     return {
@@ -79,7 +90,13 @@ export async function runLocalCiGate(args: {
         command,
         details: buildFailureDetails(error),
         url: null,
-        updated_at: nowIso(),
+        updated_at: ranAt,
+      },
+      latestResult: {
+        outcome: "failed",
+        summary,
+        ran_at: ranAt,
+        head_sha: null,
       },
     };
   }

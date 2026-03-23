@@ -7,7 +7,7 @@ import {
   getStaleStabilizingNoPrRecoveryCount,
   STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
 } from "../no-pull-request-state";
-import type { GitHubPullRequest, IssueRunRecord, RunState, SupervisorConfig } from "../core/types";
+import type { GitHubPullRequest, IssueRunRecord, LatestLocalCiResult, RunState, SupervisorConfig } from "../core/types";
 
 export interface SupervisorLatestRecoveryDto {
   issueNumber: number;
@@ -59,6 +59,7 @@ export interface SupervisorIssueActivityContextDto {
   verificationPolicySummary: string | null;
   durableGuardrailSummary: string | null;
   externalReviewFollowUpSummary: string | null;
+  localCiStatus: SupervisorLocalCiStatusDto | null;
   latestRecovery: SupervisorLatestRecoveryDto | null;
   retryContext: SupervisorRetryContextDto;
   repeatedRecovery: SupervisorRepeatedRecoveryDto | null;
@@ -66,6 +67,15 @@ export interface SupervisorIssueActivityContextDto {
   localReviewSummaryPath: string | null;
   externalReviewMissesPath: string | null;
   reviewWaits: SupervisorReviewWaitDto[];
+}
+
+export interface SupervisorLocalCiStatusDto {
+  outcome: LatestLocalCiResult["outcome"];
+  summary: string;
+  ranAt: string;
+  headSha: string | null;
+  headStatus: "current" | "stale" | "unknown";
+  context: "blocking" | "warning" | "notice";
 }
 
 function retrySummaryHasLoopRisk(context: Pick<SupervisorIssueActivityContextDto, "retryContext" | "repeatedRecovery">): boolean {
@@ -140,6 +150,25 @@ export function formatRecoveryLoopSummaryLine(
   ].join(" ");
 }
 
+export function formatLocalCiStatusLine(
+  context: SupervisorIssueActivityContextDto | null,
+): string | null {
+  const localCiStatus = context?.localCiStatus ?? null;
+  if (!localCiStatus) {
+    return null;
+  }
+
+  return [
+    "local_ci_result",
+    `outcome=${localCiStatus.outcome}`,
+    `context=${localCiStatus.context}`,
+    `head=${localCiStatus.headStatus}`,
+    `head_sha=${localCiStatus.headSha ?? "none"}`,
+    `ran_at=${localCiStatus.ranAt}`,
+    `summary=${localCiStatus.summary.replace(/\r?\n/g, "\\n")}`,
+  ].join(" ");
+}
+
 type ActivityRecord = Pick<
   IssueRunRecord,
   | "issue_number"
@@ -149,6 +178,8 @@ type ActivityRecord = Pick<
   | "external_review_misses_path"
   | "review_wait_started_at"
   | "review_wait_head_sha"
+  | "latest_local_ci_result"
+  | "last_head_sha"
   | "timeout_retry_count"
   | "blocked_verification_retry_count"
   | "repeated_blocker_count"
@@ -157,6 +188,39 @@ type ActivityRecord = Pick<
   | "state"
   | "blocked_reason"
 >;
+
+function buildLocalCiStatusDto(
+  record: Pick<IssueRunRecord, "latest_local_ci_result" | "last_head_sha" | "blocked_reason" | "last_failure_signature">,
+  pr: GitHubPullRequest | null,
+): SupervisorLocalCiStatusDto | null {
+  const result = record.latest_local_ci_result ?? null;
+  if (!result) {
+    return null;
+  }
+
+  const currentHeadSha = pr?.headRefOid ?? record.last_head_sha ?? null;
+  const headStatus =
+    result.head_sha === null || currentHeadSha === null
+      ? "unknown"
+      : result.head_sha === currentHeadSha
+        ? "current"
+        : "stale";
+  const context =
+    result.outcome === "passed"
+      ? "notice"
+      : record.blocked_reason === "verification" && record.last_failure_signature === "local-ci-gate-failed"
+        ? "blocking"
+        : "warning";
+
+  return {
+    outcome: result.outcome,
+    summary: result.summary,
+    ranAt: result.ran_at,
+    headSha: result.head_sha,
+    headStatus,
+    context,
+  };
+}
 
 const RUN_STATE_VALUES: RunState[] = [
   "queued",
@@ -351,6 +415,7 @@ export function buildIssueActivityContext(args: {
     verificationPolicySummary: args.verificationPolicySummary ?? null,
     durableGuardrailSummary: args.durableGuardrailSummary ?? null,
     externalReviewFollowUpSummary: args.externalReviewFollowUpSummary ?? null,
+    localCiStatus: buildLocalCiStatusDto(args.record, args.pr),
     latestRecovery: buildLatestRecoveryDto(args.record),
     retryContext: buildRetryContextDto(args.record),
     repeatedRecovery: buildRepeatedRecoveryDto(args.config, args.record),
@@ -384,6 +449,7 @@ export function maybeBuildIssueActivityContext(args: {
     context.verificationPolicySummary !== null ||
     context.durableGuardrailSummary !== null ||
     context.externalReviewFollowUpSummary !== null ||
+    context.localCiStatus !== null ||
     context.latestRecovery !== null ||
     context.retryContext.timeoutRetryCount > 0 ||
     context.retryContext.blockedVerificationRetryCount > 0 ||

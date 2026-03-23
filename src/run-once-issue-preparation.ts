@@ -366,6 +366,12 @@ async function hydratePullRequestContext(
       const failureContext = localCiGate.failureContext;
       const blockedRecord = args.stateStore.touch(record, {
         state: "blocked",
+        latest_local_ci_result: localCiGate.latestResult
+          ? {
+              ...localCiGate.latestResult,
+              head_sha: nextWorkspaceStatus.headSha,
+            }
+          : null,
         last_error: failureContext?.summary ?? "Configured local CI command failed before opening a pull request.",
         last_failure_kind: null,
         last_failure_context: failureContext,
@@ -377,6 +383,17 @@ async function hydratePullRequestContext(
       await args.syncJournal(blockedRecord);
       return `Issue #${blockedRecord.issue_number} blocked: ${blockedRecord.last_error}`;
     }
+    record = args.stateStore.touch(record, {
+      latest_local_ci_result: localCiGate.latestResult
+        ? {
+            ...localCiGate.latestResult,
+            head_sha: nextWorkspaceStatus.headSha,
+          }
+        : null,
+    });
+    args.state.issues[String(record.issue_number)] = record;
+    await args.stateStore.save(args.state);
+    await args.syncJournal(record);
     await pushBranch(args.workspacePath, args.record.branch, nextWorkspaceStatus.remoteBranchExists);
     pr = await args.github.createPullRequest(args.issue, record, { draft: true });
     checks = await args.github.getChecks(pr.number);
