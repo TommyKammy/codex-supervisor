@@ -152,10 +152,41 @@ interface DashboardTimelineEventLike {
   detail?: string | null;
   command?: string | null;
   prNumber?: number | null;
+  reconciliationPhase?: string | null;
+  previousStartedAt?: string | null;
+  nextStartedAt?: string | null;
+  previousHeadSha?: string | null;
+  nextHeadSha?: string | null;
+}
+
+export interface DashboardTimelineCommandResultLike {
+  action?: string | null;
+  command?: string | null;
+  outcome?: string | null;
+  summary?: string | null;
+  status?: string | null;
+  issueNumber?: number | null;
+  previousState?: string | null;
+  nextState?: string | null;
+  recoveryReason?: string | null;
+  pruned?: Array<unknown> | null;
+  skipped?: Array<unknown> | null;
+  markerCleared?: boolean | null;
 }
 
 export function formatIssueRef(issueNumber: number | null | undefined): string {
   return Number.isInteger(issueNumber) ? "#" + issueNumber : "none";
+}
+
+export function humanizeTimelineValue(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  return trimmed.replace(/[_-]+/gu, " ");
 }
 
 export function parseSelectedIssueNumber(status: DashboardStatusLike | null | undefined): number | null {
@@ -364,27 +395,42 @@ export function describeTimelineEvent(event: DashboardTimelineEventLike | null |
     case "supervisor.active_issue.changed":
       return (
         "active issue " +
+        (humanizeTimelineValue(event.reason) ?? "changed") +
+        ": " +
         formatIssueRef(event.previousIssueNumber) +
         " -> " +
-        formatIssueRef(event.nextIssueNumber) +
+        formatIssueRef(event.nextIssueNumber)
+      );
+    case "supervisor.recovery": {
+      const reason = humanizeTimelineValue(event.reason) ?? "updated";
+      return "recovery issue " + formatIssueRef(event.issueNumber) + ": " + reason;
+    }
+    case "supervisor.loop.skipped":
+      return (
+        "loop skipped: " +
+        (humanizeTimelineValue(event.reason) ?? "unknown") +
         " (" +
-        (event.reason ?? "changed") +
+        (event.detail ?? "no detail") +
         ")"
       );
-    case "supervisor.recovery":
-      return "recovery for issue " + formatIssueRef(event.issueNumber) + ": " + (event.reason ?? "updated");
-    case "supervisor.loop.skipped":
-      return "loop skipped (" + (event.reason ?? "unknown") + "): " + (event.detail ?? "no detail");
-    case "supervisor.run_lock.blocked":
-      return (event.command ?? "command") + " blocked: " + (event.reason ?? "unknown reason");
+    case "supervisor.run_lock.blocked": {
+      const phaseSuffix = humanizeTimelineValue(event.reconciliationPhase);
+      return (
+        (event.command ?? "command") +
+        " blocked: " +
+        (event.reason ?? "unknown reason") +
+        (phaseSuffix ? " during " + phaseSuffix : "")
+      );
+    }
     case "supervisor.review_wait.changed":
       return (
         "review wait " +
-        (event.reason ?? "updated") +
+        (humanizeTimelineValue(event.reason) ?? "updated") +
         " for issue " +
         formatIssueRef(event.issueNumber) +
         " PR " +
-        formatIssueRef(event.prNumber)
+        formatIssueRef(event.prNumber) +
+        (event.previousHeadSha !== event.nextHeadSha && event.nextHeadSha ? " on " + event.nextHeadSha.slice(0, 7) : "")
       );
     default: {
       const label = [event?.summary, event?.message, event?.type].find(
@@ -393,4 +439,26 @@ export function describeTimelineEvent(event: DashboardTimelineEventLike | null |
       return label?.trim() ?? "event";
     }
   }
+}
+
+export function describeTimelineCommandResult(result: DashboardTimelineCommandResultLike | null | undefined): string {
+  const action = result?.action ?? result?.command ?? "command";
+  const issueNumber = result?.issueNumber;
+  if (action === "requeue" && Number.isInteger(issueNumber)) {
+    const transition =
+      result?.previousState || result?.nextState
+        ? " " + (result?.previousState ?? "unknown") + " -> " + (result?.nextState ?? "unknown")
+        : "";
+    const reason = humanizeTimelineValue(result?.recoveryReason);
+    return "requeue issue " + formatIssueRef(issueNumber) + transition + (reason ? " (" + reason + ")" : "");
+  }
+  if (action === "prune-orphaned-workspaces") {
+    const pruned = Array.isArray(result?.pruned) ? result.pruned.length : 0;
+    const skipped = Array.isArray(result?.skipped) ? result.skipped.length : 0;
+    return "prune orphaned workspaces: pruned " + pruned + ", skipped " + skipped;
+  }
+  if (action === "reset-corrupt-json-state") {
+    return result?.markerCleared === false ? "reset corrupt JSON state: no marker present" : "reset corrupt JSON state";
+  }
+  return result?.status ?? result?.summary ?? action;
 }

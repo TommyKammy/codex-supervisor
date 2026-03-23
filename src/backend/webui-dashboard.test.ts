@@ -1547,8 +1547,67 @@ test("dashboard correlates command results and subsequent supervisor events in o
   await harness.flush();
 
   const timelineText = joinChildText(operatorTimeline);
-  assert.match(timelineText, /active issue #42 -> #77 \(reserved_for_cycle\)/u);
+  assert.match(timelineText, /active issue reserved for cycle: #42 -> #77/u);
   assert.match(timelineText, /after run-once/u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard enriches requeue commands with typed recovery and refresh context in the operator timeline", async () => {
+  const harness = createDashboardHarness([
+    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 42 })) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    { path: "/api/issues/42/explain", response: jsonResponse(createExplain(42, { state: "blocked" })) },
+    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
+    {
+      path: "/api/commands/requeue",
+      method: "POST",
+      body: JSON.stringify({ issueNumber: 42 }),
+      response: jsonResponse({
+        action: "requeue",
+        issueNumber: 42,
+        outcome: "mutated",
+        summary: "Requeued issue #42.",
+        previousState: "blocked",
+        previousRecordSnapshot: null,
+        nextState: "queued",
+        recoveryReason: "operator_requested",
+      }),
+    },
+    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 42 })) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    { path: "/api/issues/42/explain", response: jsonResponse(createExplain(42, { state: "queued" })) },
+    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
+    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 42 })) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    { path: "/api/issues/42/explain", response: jsonResponse(createExplain(42, { state: "queued" })) },
+    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
+  ]);
+  await harness.flush();
+
+  const requeueButton = harness.document.getElementById("requeue-button");
+  const operatorTimeline = harness.document.getElementById("operator-timeline");
+  assert.ok(requeueButton);
+  assert.ok(operatorTimeline);
+  assert.ok(harness.eventSource);
+
+  await requeueButton.dispatch("click");
+  await harness.flush();
+
+  const timelineText = joinChildText(operatorTimeline);
+  assert.match(timelineText, /requeue issue #42 blocked -> queued \(operator requested\)/u);
+  assert.match(timelineText, /selected issue unchanged \(#42\)/u);
+
+  await harness.eventSource.dispatch("supervisor.recovery", {
+    type: "supervisor.recovery",
+    family: "recovery",
+    issueNumber: 42,
+    reason: "operator_requested",
+    at: "2026-03-22T00:02:00.000Z",
+  });
+  await harness.flush();
+
+  assert.match(joinChildText(operatorTimeline), /recovery issue #42: operator requested/u);
+  assert.match(joinChildText(operatorTimeline), /after requeue/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 
@@ -1943,8 +2002,9 @@ test("dashboard leaves unrelated later supervisor events unlabeled in the operat
   });
   await harness.flush();
 
-  const recoveryEntry = findChildByText(operatorTimeline, /recovery for issue #99/u);
+  const recoveryEntry = findChildByText(operatorTimeline, /recovery issue #99: operator requeue/u);
   assert.ok(recoveryEntry);
+  assert.match(recoveryEntry.textContent, /recovery issue #99: operator requeue/u);
   assert.doesNotMatch(recoveryEntry.textContent, /after run-once/u);
   assert.equal(harness.remainingFetches.length, 0);
 });

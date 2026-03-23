@@ -13,8 +13,10 @@ import {
   formatTrackedIssues,
   describeConnectionHealth,
   describeFreshnessState,
+  describeTimelineCommandResult,
   describeTimelineEvent,
   collectTimelineEventIssueNumbers,
+  humanizeTimelineValue,
   normalizeDashboardPanelOrder,
   parseSelectedIssueNumber,
   restoreDashboardPanelOrder,
@@ -38,6 +40,8 @@ const injectedBrowserLogic = [
   describeCommandSelectionChange,
   describeConnectionHealth,
   describeFreshnessState,
+  humanizeTimelineValue,
+  describeTimelineCommandResult,
   describeTimelineEvent,
   collectTimelineEventIssueNumbers,
   parseSelectedIssueNumber,
@@ -980,7 +984,7 @@ export function renderDashboardBrowserScript(): string {
           pushTimeline({
             kind: "command",
             at: new Date().toISOString(),
-            summary: state.commandResult.status || state.commandResult.summary || args.label,
+            summary: describeTimelineCommandResult(state.commandResult),
             detail: JSON.stringify(state.commandResult, null, 2),
             commandLabel: null,
           });
@@ -992,7 +996,12 @@ export function renderDashboardBrowserScript(): string {
               kind: "refresh",
               at: new Date().toISOString(),
               summary: describeCommandSelectionChange(previousSelectedIssueNumber, state.selectedIssueNumber),
-              detail: "Refreshed /api/status and /api/doctor after " + args.label + ".",
+              detail:
+                "Refreshed /api/status and /api/doctor after " +
+                args.label +
+                ". Follow-up issue: " +
+                formatIssueRef(state.selectedIssueNumber) +
+                ".",
               commandLabel: args.label,
             });
             const issueNumberToLoad = state.selectedIssueNumber ?? state.loadedIssueNumber;
