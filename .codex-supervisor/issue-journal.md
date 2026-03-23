@@ -35,13 +35,13 @@ Next action: Inspect draft PR #909 and decide whether the remaining scope needs 
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: the remaining review thread is valid because `addFailurePattern` ignores `failureMetrics.occurrenceCount`; daily failure-pattern rollups need to sum the recorded per-run occurrence counts rather than treating every failure summary as exactly one occurrence.
-- What changed: updated `src/supervisor/execution-metrics-aggregation.ts` so `addFailurePattern` uses `failureMetrics.occurrenceCount` when creating and updating daily failure-pattern entries; extended `src/supervisor/execution-metrics-aggregation.test.ts` with a second same-day `codex/command_error` run so the focused test exercises the existing-entry path and expects an aggregated count of `5`.
+- What changed: updated `src/supervisor/execution-metrics-aggregation.ts` so `addFailurePattern` uses `failureMetrics.occurrenceCount` when creating and updating daily failure-pattern entries; extended `src/supervisor/execution-metrics-aggregation.test.ts` with a second same-day `codex/command_error` run so the focused test exercises the existing-entry path and expects an aggregated count of `5`; committed the fix as `b4b2aee` (`Preserve failure occurrence counts in rollups`) and pushed `codex/issue-896` to refresh PR #909.
 - Current blocker: none
-- Next exact step: commit and push the review fix to PR #909, then re-check whether any review thread or follow-up verification remains open.
+- Next exact step: re-check PR #909 for any remaining unresolved review thread or follow-up CI after the pushed fix.
 - Verification gap: none in the requested scope; `npx tsx --test src/supervisor/execution-metrics-aggregation.test.ts` and `npm run build` pass after the fix.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/execution-metrics-aggregation.test.ts`, `src/supervisor/execution-metrics-aggregation.ts`
 - Rollback concern: low; the change only affects additive reporting for daily failure-pattern counts and a focused test, without touching issue execution.
-- Last focused command: `npm run build`
+- Last focused command: `git push origin codex/issue-896`
 - Last focused failure: automated review thread `PRRT_kwDORgvdZ852O2yV` correctly identified that failure-pattern rollups undercount repeated failures by incrementing with a hardcoded `1`; no local verification failures remain after the fix.
 - Last focused commands:
 ```bash
@@ -58,6 +58,9 @@ npx tsx --test src/supervisor/execution-metrics-aggregation.test.ts
 npm run build
 git diff -- src/supervisor/execution-metrics-aggregation.ts src/supervisor/execution-metrics-aggregation.test.ts
 git rev-parse HEAD
+git add .codex-supervisor/issue-journal.md src/supervisor/execution-metrics-aggregation.ts src/supervisor/execution-metrics-aggregation.test.ts
+git commit -m "Preserve failure occurrence counts in rollups"
+git push origin codex/issue-896
 ```
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
