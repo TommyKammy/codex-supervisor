@@ -14,7 +14,7 @@
 - Updated at: 2026-03-23T10:38:53.589Z
 
 ## Latest Codex Summary
-- Added richer operator-timeline summaries for typed recovery commands and supervisor follow-up events so recent command, refresh, recovery, and active-issue changes read as one compact sequence.
+- Added richer operator-timeline summaries for typed recovery commands and supervisor follow-up events so recent command, refresh, recovery, and active-issue changes read as one compact sequence; committed as `4ee38a6`, pushed `codex/issue-875`, and opened draft PR `#888`.
 
 ## Active Failure Context
 - None recorded.
@@ -22,9 +22,9 @@
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: the WebUI operator timeline should reuse typed command DTO fields and typed supervisor SSE payload fields so recent command outcomes, refresh follow-up, recovery reasons, and active-issue transitions are understandable without reading the raw JSON payloads.
-- What changed: added shared browser-side timeline formatters in `src/backend/webui-dashboard-browser-logic.ts` for typed command results and richer supervisor event summaries, injected those helpers into the inline dashboard browser bundle, switched command timeline cards to render typed recovery/state-transition summaries, and added focused regressions in `src/backend/webui-dashboard-browser-logic.test.ts` plus `src/backend/webui-dashboard.test.ts`.
+- What changed: added shared browser-side timeline formatters in `src/backend/webui-dashboard-browser-logic.ts` for typed command results and richer supervisor event summaries, injected those helpers into the inline dashboard browser bundle, switched command timeline cards to render typed recovery/state-transition summaries, added focused regressions in `src/backend/webui-dashboard-browser-logic.test.ts` plus `src/backend/webui-dashboard.test.ts`, committed the patch as `4ee38a6`, pushed `codex/issue-875`, and opened draft PR `#888`.
 - Current blocker: none
-- Next exact step: commit the dashboard timeline shaping checkpoint, push `codex/issue-875`, and open or update the draft PR for review/CI.
+- Next exact step: monitor draft PR `#888` and address CI or review feedback if GitHub reports any failures.
 - Verification gap: none on the scoped operator timeline path; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` passes on the local diff.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-logic.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard.test.ts`
 - Rollback concern: low; the change is isolated to dashboard timeline copy/formatting and focused browser-side tests, with no change to the HTTP command surface or SSE transport.
@@ -54,6 +54,7 @@ git diff -- src/backend/webui-dashboard-browser-logic.ts src/backend/webui-dashb
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
+- 2026-03-23T10:45:19Z: committed `4ee38a6`, pushed `codex/issue-875`, and opened draft PR `#888` after the focused operator timeline verification passed.
 - 2026-03-23T10:43:22Z: reproduced the WebUI timeline gap with a new requeue/active-issue wording regression, then passed `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` after switching timeline cards to typed command summaries and humanized follow-up event summaries.
 - 2026-03-22T21:15:08Z: pushed `codex/issue-846` and opened draft PR `#856`; GitHub currently reports `mergeStateStatus=UNSTABLE`, so the next turn should inspect CI/check runs and address any failures or review feedback.
 - 2026-03-22T21:14:15Z: confirmed there was no existing PR for `codex/issue-846`; next step is to push the branch and open a draft PR with commit `c4e2a04`.
