@@ -5,46 +5,72 @@
 - Branch: codex/issue-873
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 280f63565c1c792156440bff42db8c38228d3b9b
+- Current phase: repairing_ci
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: d851469a9cead975322a7757f6f2c05e5970534b
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-23T08:04:57.930Z
+- Last failure signature: build (ubuntu-latest):fail|build (macos-latest):fail
+- Repeated failure signature count: 1
+- Updated at: 2026-03-23T08:35:48.374Z
 
 ## Latest Codex Summary
-- None yet.
+Added typed operator observability on the shared activity-context DTO in [supervisor-operator-activity-context.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-873/src/supervisor/supervisor-operator-activity-context.ts). Status and explain now expose structured `retryContext`, `repeatedRecovery`, and recovery-derived `recentPhaseChanges` without disturbing the legacy status lines. I also tightened the focused contract tests in [supervisor-diagnostics-status-selection.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-873/src/supervisor/supervisor-diagnostics-status-selection.test.ts), [supervisor-selection-issue-explain.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-873/src/supervisor/supervisor-selection-issue-explain.test.ts), and [supervisor-service.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-873/src/supervisor/supervisor-service.test.ts).
+
+Checkpoint commit is `d851469` (`Add typed operator observability context`). I pushed `codex/issue-873` and opened draft PR [#880](https://github.com/TommyKammy/codex-supervisor/pull/880). The only remaining workspace artifact is the pre-existing untracked [`.codex-supervisor/replay/`](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-873/.codex-supervisor/replay/) directory.
+
+Summary: Added typed retry, repeated-recovery, and recent phase-change observability to the shared operator activity context; verified it through focused service/status/explain tests; pushed commit `d851469`; opened draft PR `#880`
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts`
+Failure signature: none
+Next action: Monitor draft PR `#880` and wire any review-driven follow-up without regressing the legacy CLI status output
 
 ## Active Failure Context
-- None recorded.
+- Category: checks
+- Summary: PR #880 has failing checks.
+- Command or source: gh pr checks
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/880
+- Details:
+  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23427540544/job/68145650746
+  - build (macos-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23427540544/job/68145650707
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the existing operator activity context is the right DTO boundary; extending it with typed retry counts, repeated stale-recovery metadata, and recovery-derived phase transitions should satisfy status and explain without changing legacy status lines.
-- What changed: added typed retry, repeated-recovery, and recent phase-change fields to `SupervisorIssueActivityContextDto` in `src/supervisor/supervisor-operator-activity-context.ts`, then tightened the focused service/status/explain tests to assert the new contract.
+- Hypothesis: the CI failure came from additive DTO fields not being propagated into compile-checked test doubles, plus a service-test stub whose throw-only async methods widened overrides poorly under stricter typing.
+- What changed: updated the HTTP explain fixture in `src/backend/supervisor-http-server.test.ts` to include `retryContext`, `repeatedRecovery`, and `recentPhaseChanges`, and tightened `src/supervisor/supervisor-service.test.ts` by typing the stub supervisor methods and pinning the status/explain fixtures to the real return types with an explicit active-issue narrowing assertion.
 - Current blocker: none
-- Next exact step: commit this observability checkpoint on `codex/issue-873`, then decide whether to open the draft PR immediately or continue with any follow-up UI wiring in a later pass.
-- Verification gap: none for the targeted supervisor DTO surfaces; the requested focused suites are passing locally.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-operator-activity-context.ts`, `src/supervisor/supervisor-service.test.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-selection-issue-explain.test.ts`
-- Rollback concern: low; the change is additive DTO expansion around existing record fields and recovery parsing, with legacy status lines left intact.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts`
-- Last focused failure: missing typed `retryContext`, `repeatedRecovery`, and `recentPhaseChanges` fields on the shared operator activity context.
+- Next exact step: commit and push the CI repair checkpoint on `codex/issue-873`, then rerun PR checks or inspect the refreshed GitHub status until `build` turns green.
+- Verification gap: none for the repaired CI path; local `npm run build` and the focused supervisor/HTTP suites are passing.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/supervisor-http-server.test.ts`, `src/supervisor/supervisor-service.test.ts`
+- Rollback concern: low; the repair only updates compile-time test fixtures and helper typing to match the already-landed additive DTO contract.
+- Last focused command: `npm run build`
+- Last focused failure: `src/backend/supervisor-http-server.test.ts` missing `retryContext`/`repeatedRecovery`/`recentPhaseChanges`, plus `src/supervisor/supervisor-service.test.ts` fixture typing widened `state` and collapsed stub overrides into mismatched async signatures.
 - Last focused commands:
 ```bash
 sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-873/AGENTS.generated.md
 sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-873/context-index.md
-sed -n '1,260p' .codex-supervisor/issue-journal.md
-sed -n '1,260p' src/supervisor/supervisor-service.test.ts
-sed -n '1,260p' src/supervisor/supervisor-diagnostics-status-selection.test.ts
-sed -n '1,260p' src/supervisor/supervisor-selection-issue-explain.test.ts
-sed -n '1,360p' src/supervisor/supervisor-operator-activity-context.ts
+sed -n '1,320p' .codex-supervisor/issue-journal.md
+gh pr checks 880
+gh run view 23427540544 --job 68145650746 --log
+node -p "JSON.stringify(require('./package.json').scripts, null, 2)"
+npm ci
+sed -n '430,500p' src/backend/supervisor-http-server.test.ts
+sed -n '740,820p' src/backend/supervisor-http-server.test.ts
+sed -n '1,290p' src/supervisor/supervisor-service.test.ts
+sed -n '1,220p' src/supervisor/supervisor-operator-activity-context.ts
+sed -n '220,420p' src/supervisor/supervisor-operator-activity-context.ts
+sed -n '1,180p' src/supervisor/supervisor-service.ts
+sed -n '1,160p' src/supervisor/supervisor-status-report.ts
+sed -n '1,180p' src/supervisor/supervisor-selection-issue-explain.ts
+sed -n '1,180p' src/doctor.ts
 apply_patch
-npx tsx --test src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts
+npm run build
+npx tsx --test src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/backend/supervisor-http-server.test.ts
 git status --short --branch
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
+- 2026-03-23T08:38:54Z: reproduced the failing PR build from the GitHub Actions log, fixed the stale test doubles in `supervisor-http-server.test.ts` and `supervisor-service.test.ts`, and re-passed `npm run build` plus `npx tsx --test src/supervisor/supervisor-service.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/backend/supervisor-http-server.test.ts`.
 - 2026-03-23T08:10:30Z: reproduced the missing typed observability contract by tightening the focused service/status/explain tests, then passed the requested verification after extending the shared activity-context DTO with retry counts, repeated stale no-PR recovery metadata, and recovery-derived recent phase changes.
 - 2026-03-23T07:22:48Z: validated the CodeRabbit flake note, added a DOM-order `waitForFunction` after the first pointer drag in `src/backend/webui-dashboard-browser-smoke.test.ts`, and re-passed `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts`.
 - 2026-03-22T21:40:05Z: pushed `codex/issue-847` and opened draft PR `#857` for the verified dashboard refresh checkpoint.

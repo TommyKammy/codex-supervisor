@@ -6,7 +6,22 @@ import { buildActiveIssueChangedEvent, type SupervisorEventSink } from "./superv
 import { createSupervisorService, createSupervisorServiceFromSupervisor } from "./supervisor-service";
 import { Supervisor } from "./supervisor";
 
-function createStubSupervisor() {
+type StubSupervisor = Pick<
+  Supervisor,
+  | "config"
+  | "pollIntervalMs"
+  | "runOnce"
+  | "statusReport"
+  | "runRecoveryAction"
+  | "pruneOrphanedWorkspaces"
+  | "resetCorruptJsonState"
+  | "explainReport"
+  | "issueLint"
+  | "doctorReport"
+  | "setupReadinessReport"
+>;
+
+function createStubSupervisor(): StubSupervisor {
   return {
     config: {} as SupervisorConfig,
     pollIntervalMs: async () => 60_000,
@@ -177,7 +192,7 @@ test("createSupervisorService exposes a dedicated typed setup readiness query", 
 });
 
 test("createSupervisorService preserves typed operator observability fields on status and explain queries", async () => {
-  const statusReport = {
+  const statusReport: Awaited<ReturnType<StubSupervisor["statusReport"]>> = {
     gsdSummary: null,
     candidateDiscovery: null,
     activeIssue: {
@@ -234,7 +249,8 @@ test("createSupervisorService preserves typed operator observability fields on s
     whyLines: [],
     warning: null,
   };
-  const explainReport = {
+  assert.ok(statusReport.activeIssue);
+  const explainReport: Awaited<ReturnType<StubSupervisor["explainReport"]>> = {
     issueNumber: 42,
     title: "Typed operator observability",
     state: "stabilizing",
