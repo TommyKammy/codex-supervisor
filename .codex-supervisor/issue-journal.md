@@ -1,74 +1,69 @@
-# Issue #870: WebUI visual follow-up: finish the dashboard palette shift away from warm tones
+# Issue #871: WebUI drag-and-drop bug: fix asymmetric pointer reordering across dashboard columns
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/870
-- Branch: codex/issue-870
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/871
+- Branch: codex/issue-871
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 22723a4804d7e97fff285fb66db2d74ea7c05c8a
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 62e8d495a6efdee617117dbf18ce6e229a91d6e3
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-23T06:32:50Z
+- Updated at: 2026-03-23T06:56:21.776Z
 
 ## Latest Codex Summary
-Pushed follow-up commit `22723a4` (`Update journal after review fix push`) so the durable handoff matches the branch after the journal-link review fix. PR [#878](https://github.com/TommyKammy/codex-supervisor/pull/878) now points at `22723a4`; the CodeRabbit review thread remains resolved/outdated, and the current `UNSTABLE` merge state is explained by freshly re-queued `build (ubuntu-latest)` and `build (macos-latest)` checks.
-
-Repo state is clean on the tracked files; the only remaining local noise is the untracked `.codex-supervisor/replay/` directory.
-
-Summary: Pushed the review-fix commits and synced the journal; PR #878 is now waiting on re-queued build checks
-State hint: waiting_ci
-Blocked reason: none
-Tests: `rg -n '\\]\\(/home' .codex-supervisor/issue-journal.md`; `gh pr view 878 --json number,url,headRefOid,isDraft,mergeStateStatus,reviewDecision`; `gh api graphql -f query='query($id: ID!) { node(id: $id) { ... on PullRequestReviewThread { id isResolved isOutdated path comments(first: 10) { nodes { url body author { login } } } } } }' -F id=PRRT_kwDORgvdZ852CwlZ`; `gh pr checks 878`
-Failure signature: none
-Next action: wait for the re-queued `build (ubuntu-latest)` and `build (macos-latest)` checks to finish, then recheck PR #878 merge state
+- Added a real-browser smoke regression for dashboard pointer reordering in both horizontal directions, then fixed the WebUI drag handling by tracking pointer-hover targets with `elementFromPoint()` and ignoring bubbled descendant `dragleave` churn.
+- Verified that pointer reordering, keyboard reordering, and the existing dashboard/browser suites all pass locally along with `npm run build`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the review fix is complete; the remaining `UNSTABLE` PR state is transient and comes from the re-queued build checks after the metadata-only journal sync, not from a new regression.
-- What changed: replaced the remaining absolute local filesystem markdown targets in `.codex-supervisor/issue-journal.md`, pushed the review-fix commit `5586c7b`, then pushed the journal-sync commit `22723a4` and confirmed via GitHub API that the CodeRabbit thread remains resolved/outdated on the updated head.
+- Hypothesis: the asymmetric pointer reorder bug came from relying on native `dragover`/`dragleave` target state alone; a local pointer-tracking path plus descendant-safe `dragleave` handling fixes the dashboard reorder behavior without touching backend semantics.
+- What changed: added `browser smoke reorders the dashboard with pointer dragging in both horizontal directions` in `src/backend/webui-dashboard-browser-smoke.test.ts`, then updated `src/backend/webui-dashboard-browser-script.ts` so pointer drags track hover targets with `document.elementFromPoint()`, commit on `pointerup`, suppress conflicting native drags for that path, and ignore bubbled child `dragleave` events.
 - Current blocker: none
-- Next exact step: wait for the re-queued build checks to settle on head `22723a4`, then recheck PR #878 and only intervene if a real failing status appears.
-- Verification gap: none for this follow-up; the change is confined to journal markdown and can be validated by inspecting the updated links directly.
-- Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: low; the change is documentation-only and does not touch dashboard runtime behavior.
-- Last focused command: `gh pr checks 878`
-- Last focused failure: none; GitHub reports `build (ubuntu-latest)` and `build (macos-latest)` pending on head `22723a4`
+- Next exact step: stage the dashboard/browser files plus this journal update, commit the verified checkpoint, and then decide whether to push/open the draft PR for `codex/issue-871`.
+- Verification gap: none on the local fix; the focused browser/UI tests and full build passed.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-browser-smoke.test.ts`
+- Rollback concern: moderate-low; the change is local to WebUI drag behavior, but pointer handling now has a custom path that should stay aligned with the existing keyboard/native drag semantics.
+- Last focused command: `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts`
+- Last focused failure: `pointer-drag-cancelled-before-target` during early smoke-test reproduction; resolved after scrolling targets into view in the browser test and adding the custom pointer drag path in the dashboard script.
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-870/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-870/context-index.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-871/AGENTS.generated.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-871/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
 git status --short --branch
-date -u +%Y-%m-%dT%H:%M:%SZ
-git rev-parse HEAD
-rg -n '/home/tommy/Dev/codex-supervisor-self-worktrees/issue-870|\]\(/home/tommy/' .codex-supervisor/issue-journal.md
+rg -n "drag|pointer|reorder|dashboard" src/backend -g '*test.ts'
+sed -n '1,220p' src/backend/webui-dashboard-browser-smoke.test.ts
+sed -n '1,260p' src/backend/webui-dashboard-browser-script.ts
+sed -n '1,260p' src/backend/webui-dashboard-browser-logic.ts
+sed -n '260,520p' src/backend/webui-dashboard-browser-script.ts
+sed -n '520,920p' src/backend/webui-dashboard.test.ts
+sed -n '1,220p' src/backend/webui-dashboard-browser-smoke.test.ts
+sed -n '960,1095p' src/backend/webui-dashboard-browser-script.ts
+npm ci
+npx tsx --test src/backend/webui-dashboard-browser-smoke.test.ts
 apply_patch
-git diff -- .codex-supervisor/issue-journal.md
-rg -n '\]\(/home' .codex-supervisor/issue-journal.md
-git add .codex-supervisor/issue-journal.md
-git commit -m "Fix journal links for review follow-up"
-git push origin codex/issue-870
-gh pr view 878 --json number,url,headRefOid,isDraft,mergeStateStatus,reviewDecision
-gh api graphql -f query='query($id: ID!) { node(id: $id) { ... on PullRequestReviewThread { id isResolved isOutdated path comments(first: 10) { nodes { url body author { login } } } } } }' -F id=PRRT_kwDORgvdZ852CwlZ
-gh pr checks 878
-date -u +%Y-%m-%dT%H:%M:%SZ
-gh pr view 878 --json headRefOid,mergeStateStatus
 apply_patch
-git add .codex-supervisor/issue-journal.md
-git commit -m "Update journal after review fix push"
-git push origin codex/issue-870
-gh pr view 878 --json headRefOid,mergeStateStatus
-gh pr checks 878
-date -u +%Y-%m-%dT%H:%M:%SZ
+npx tsx --test src/backend/webui-dashboard-browser-smoke.test.ts --test-name-pattern "pointer dragging"
+sed -n '1,260p' src/backend/webui-dashboard-page.ts
+sed -n '260,340p' src/backend/webui-dashboard-page.ts
+rg -n "asymmetric|right to left|left to right|drag-and-drop|pointer reordering|dragleave" -S .
 apply_patch
+npx tsx --test src/backend/webui-dashboard.test.ts
+apply_patch
+npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts
+npm run build
+git status --short --branch
+git diff -- src/backend/webui-dashboard-browser-script.ts src/backend/webui-dashboard-browser-smoke.test.ts
+date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
+- 2026-03-23T07:08:26Z: reproduced the missing real-browser pointer coverage with a new smoke test, then fixed the dashboard by adding a pointer-driven reorder path backed by `elementFromPoint()` and descendant-safe `dragleave` handling; `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts` and `npm run build` both passed.
 - 2026-03-22T21:40:05Z: pushed `codex/issue-847` and opened draft PR `#857` for the verified dashboard refresh checkpoint.
 - 2026-03-22T21:40:05Z: reproduced the visual-refresh gap with a new hero-and-section framing regression, refreshed the dashboard page chrome/CSS to add labeled lanes and flatter surfaces, and passed `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-logic.test.ts`.
 - 2026-03-22T21:15:08Z: pushed `codex/issue-846` and opened draft PR `#856`; GitHub currently reports `mergeStateStatus=UNSTABLE`, so the next turn should inspect CI/check runs and address any failures or review feedback.

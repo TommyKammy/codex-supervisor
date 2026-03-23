@@ -79,6 +79,7 @@ export function renderDashboardBrowserScript(): string {
         },
         draggedPanelId: null,
         dropTargetPanelId: null,
+        pointerDrag: null,
       };
 
       const elements = {
@@ -260,6 +261,23 @@ export function renderDashboardBrowserScript(): string {
         );
       }
 
+      function panelIdFromElement(element) {
+        if (!(element instanceof Element)) {
+          return null;
+        }
+        const panel = element.closest("[data-panel-id]");
+        if (!(panel instanceof HTMLElement)) {
+          return null;
+        }
+        const panelId = panel.dataset.panelId || null;
+        return panelId && panelId in elements.panels ? panelId : null;
+      }
+
+      function getPointerDropTarget(clientX, clientY) {
+        const hoveredPanelId = panelIdFromElement(document.elementFromPoint(clientX, clientY));
+        return canDropPanelOnTarget(state.draggedPanelId, hoveredPanelId) ? hoveredPanelId : null;
+      }
+
       function moveKeyboardDropTarget(draggedPanelId, direction) {
         const candidates = getKeyboardDropCandidates(draggedPanelId);
         if (candidates.length === 0) {
@@ -323,6 +341,47 @@ export function renderDashboardBrowserScript(): string {
         announcePanelReorderStatus(
           "Moved " + String(draggedPanelId).replace(/-/g, " ") + " panel before " + targetPanelId.replace(/-/g, " ") + ".",
         );
+      }
+
+      function startPointerPanelDrag(panelId) {
+        clearDragState();
+        state.draggedPanelId = panelId;
+        elements.panels[panelId]?.classList.add("drag-active");
+        setDropTargetPanel(null);
+        announcePanelReorderStatus("Dragging " + panelId.replace(/-/g, " ") + " panel.");
+      }
+
+      function finishPointerPanelDrag(panelId, cancelled) {
+        const activePointerDrag = state.pointerDrag;
+        if (!activePointerDrag || activePointerDrag.panelId !== panelId) {
+          return;
+        }
+
+        const dragHandle = elements.dragHandles[panelId];
+        if (dragHandle) {
+          dragHandle.draggable = true;
+          if (
+            typeof dragHandle.hasPointerCapture === "function" &&
+            typeof dragHandle.releasePointerCapture === "function" &&
+            activePointerDrag.pointerId !== null &&
+            dragHandle.hasPointerCapture(activePointerDrag.pointerId)
+          ) {
+            dragHandle.releasePointerCapture(activePointerDrag.pointerId);
+          }
+        }
+
+        state.pointerDrag = null;
+        if (!activePointerDrag.active) {
+          return;
+        }
+
+        if (cancelled) {
+          clearDragState();
+          announcePanelReorderStatus("Panel reorder cancelled.");
+          return;
+        }
+
+        commitPanelDrop(state.dropTargetPanelId);
       }
 
       function renderPanelLayout() {
@@ -998,6 +1057,10 @@ export function renderDashboardBrowserScript(): string {
           }
 
           dragHandle.addEventListener("dragstart", (event) => {
+            if (state.pointerDrag?.panelId === panelId) {
+              event.preventDefault();
+              return;
+            }
             clearDragState();
             state.draggedPanelId = panelId;
             panel.classList.add("drag-active");
@@ -1015,6 +1078,61 @@ export function renderDashboardBrowserScript(): string {
             if (shouldAnnounceFinished) {
               announcePanelReorderStatus("Panel reorder finished.");
             }
+          });
+
+          dragHandle.addEventListener("pointerdown", (event) => {
+            if (!event.isPrimary || event.button !== 0) {
+              return;
+            }
+            state.pointerDrag = {
+              panelId,
+              pointerId: event.pointerId ?? null,
+              startX: event.clientX ?? 0,
+              startY: event.clientY ?? 0,
+              active: false,
+            };
+            dragHandle.draggable = false;
+            if (typeof dragHandle.setPointerCapture === "function" && event.pointerId !== undefined) {
+              dragHandle.setPointerCapture(event.pointerId);
+            }
+          });
+
+          dragHandle.addEventListener("pointermove", (event) => {
+            const activePointerDrag = state.pointerDrag;
+            if (!activePointerDrag || activePointerDrag.panelId !== panelId) {
+              return;
+            }
+            const clientX = event.clientX ?? activePointerDrag.startX;
+            const clientY = event.clientY ?? activePointerDrag.startY;
+            if (!activePointerDrag.active) {
+              const deltaX = clientX - activePointerDrag.startX;
+              const deltaY = clientY - activePointerDrag.startY;
+              if (Math.hypot(deltaX, deltaY) < 6) {
+                return;
+              }
+              activePointerDrag.active = true;
+              startPointerPanelDrag(panelId);
+            }
+
+            setDropTargetPanel(getPointerDropTarget(clientX, clientY));
+            event.preventDefault();
+          });
+
+          dragHandle.addEventListener("pointerup", (event) => {
+            const activePointerDrag = state.pointerDrag;
+            if (!activePointerDrag || activePointerDrag.panelId !== panelId) {
+              return;
+            }
+            finishPointerPanelDrag(panelId, false);
+            event.preventDefault();
+          });
+
+          dragHandle.addEventListener("pointercancel", () => {
+            finishPointerPanelDrag(panelId, true);
+          });
+
+          dragHandle.addEventListener("lostpointercapture", () => {
+            finishPointerPanelDrag(panelId, true);
           });
 
           dragHandle.addEventListener("keydown", (event) => {
@@ -1060,7 +1178,10 @@ export function renderDashboardBrowserScript(): string {
             }
           });
 
-          panel.addEventListener("dragleave", () => {
+          panel.addEventListener("dragleave", (event) => {
+            if (event.target !== panel) {
+              return;
+            }
             if (state.dropTargetPanelId === panelId) {
               setDropTargetPanel(null);
             }
