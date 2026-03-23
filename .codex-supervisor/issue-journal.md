@@ -39,8 +39,8 @@ Next action: Monitor PR `#889` check run `23435772583` and respond only if CI or
 - Hypothesis: the CI regression is a replay-corpus schema-compatibility gap, not a problem with the operator-summary feature itself; older replay-corpus snapshots and an in-repo promotion fixture still assumed `SupervisorCycleDecisionSnapshot` had no `operatorSummary`.
 - What changed: backfilled missing `operatorSummary` values to `null` during replay-corpus input validation so older stored snapshots still load, added `operatorSummary: null` to the typed promotion fixture, and added a regression test covering legacy snapshot loading.
 - Current blocker: none
-- Next exact step: commit the replay-corpus compatibility repair, push `codex/issue-876`, and monitor the rerun of draft PR `#889` checks.
-- Verification gap: local `npm run build` and focused replay-corpus/replay tests now pass; CI has not yet rerun on the repaired commit, so GitHub still reflects the pre-fix failure.
+- Next exact step: monitor draft PR `#889` check run `23436355309` after repair commit `2d23d94` and respond only if CI reports another regression.
+- Verification gap: local `npm run build` and focused replay-corpus/replay tests pass on `2d23d94`; GitHub has started rerunning `build (ubuntu-latest)` and `build (macos-latest)`, but those checks are still pending.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/replay-corpus-loading.test.ts`, `src/supervisor/replay-corpus-promotion.test.ts`, `src/supervisor/replay-corpus-validation.ts`
 - Rollback concern: low; the repair is compatibility-only for replay-corpus snapshot loading and does not change supervisor decision evaluation.
 - Last focused command: `npx tsx --test src/supervisor/replay-corpus-loading.test.ts src/supervisor/replay-corpus-promotion.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-cycle-replay.test.ts`
@@ -81,6 +81,7 @@ apply_patch
 npx tsx --test src/supervisor/replay-corpus-loading.test.ts src/supervisor/replay-corpus-promotion.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-cycle-replay.test.ts
 ```
 ### Scratchpad
+- 2026-03-23T12:04:07Z: committed the repair as `2d23d94` (`Repair replay corpus operator-summary drift`), pushed `codex/issue-876`, and confirmed PR `#889` started GitHub Actions rerun `23436355309` with both `build` jobs pending.
 - 2026-03-23T12:02:26Z: reproduced PR `#889` build failures from run `23435772583` via `gh run view --log-failed`; both jobs died in `npm run build` with `TS2741` because replay-corpus fixtures/builders were missing `operatorSummary`. Added replay-corpus compatibility backfill plus a legacy-snapshot regression test, then passed local `npm run build` and `npx tsx --test src/supervisor/replay-corpus-loading.test.ts src/supervisor/replay-corpus-promotion.test.ts src/supervisor/supervisor-cycle-snapshot.test.ts src/supervisor/supervisor-cycle-replay.test.ts`.
 - 2026-03-23T11:15:43Z: sanitized `.codex-supervisor/issue-journal.md` to remove absolute local paths from the summary, stored review context, and focused command log; no code behavior changed, so no verification rerun was needed for this review-only edit.
 - 2026-03-23T10:45:19Z: committed `4ee38a6`, pushed `codex/issue-875`, and opened draft PR `#888` after the focused operator timeline verification passed.
