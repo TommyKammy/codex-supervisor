@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inferStateWithoutPullRequest, shouldPreserveNoPrFailureTracking } from "./no-pull-request-state";
+import {
+  inferStateWithoutPullRequest,
+  shouldPreserveNoPrFailureTracking,
+  shouldPreserveStaleStabilizingNoPrRecoveryTracking,
+} from "./no-pull-request-state";
 import { IssueRunRecord, WorkspaceStatus } from "./core/types";
 
 function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
@@ -147,4 +151,47 @@ test("shouldPreserveNoPrFailureTracking only keeps repeated blocked no-PR failur
     false,
   );
   assert.equal(shouldPreserveNoPrFailureTracking(createRecord({ pr_number: 123 })), false);
+});
+
+test("shouldPreserveStaleStabilizingNoPrRecoveryTracking only keeps stale stabilizing no-PR retries", () => {
+  assert.equal(
+    shouldPreserveStaleStabilizingNoPrRecoveryTracking(
+      createRecord({
+        state: "stabilizing",
+        last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
+      }),
+      "stabilizing",
+    ),
+    true,
+  );
+  assert.equal(
+    shouldPreserveStaleStabilizingNoPrRecoveryTracking(
+      createRecord({
+        state: "stabilizing",
+        last_failure_signature: "handoff-missing",
+      }),
+      "stabilizing",
+    ),
+    false,
+  );
+  assert.equal(
+    shouldPreserveStaleStabilizingNoPrRecoveryTracking(
+      createRecord({
+        state: "stabilizing",
+        last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
+      }),
+      "draft_pr",
+    ),
+    false,
+  );
+  assert.equal(
+    shouldPreserveStaleStabilizingNoPrRecoveryTracking(
+      createRecord({
+        state: "implementing",
+        last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
+      }),
+      "stabilizing",
+    ),
+    false,
+  );
 });

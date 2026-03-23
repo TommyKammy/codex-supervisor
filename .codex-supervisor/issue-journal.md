@@ -1,59 +1,51 @@
-# Issue #850: WebUI drag polish: add accessibility, drop feedback, and browser confidence coverage
+# Issue #861: Stale recovery guard: preserve stale no-PR convergence tracking across successful no-PR turns
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/850
-- Branch: codex/issue-850
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/861
+- Branch: codex/issue-861
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 6 (implementation=2, repair=4)
-- Last head SHA: 2bff9a481e5654c3fb53c265777570fb14b5d6e4
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 2d9a696082ea37977cb1c6fc960ea2184aeaa6e0
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ852Alqd
-- Repeated failure signature count: 1
-- Updated at: 2026-03-23T00:29:58Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-23T00:59:48Z
 
 ## Latest Codex Summary
-Sanitized `.codex-supervisor/issue-journal.md` on `codex/issue-850` to remove workstation-local absolute paths from the durable handoff, including the latest summary text, the copied review context, and the command history entries. This turn only changes journal metadata; the underlying drag/accessibility implementation and focused verification from `e61f762` remain unchanged.
-
-I did not rerun tests because this turn only changes the journal. The previously passing verification on `e61f762` remains `npx tsx --test src/backend/webui-dashboard.test.ts`, `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts`, and `npm run build`.
-
-Summary: Sanitized the issue-850 durable journal to remove workstation-local paths before updating PR `#865`
-State hint: addressing_review
-Blocked reason: none
-Tests: not rerun this turn; previously passed on `e61f762`: `npx tsx --test src/backend/webui-dashboard.test.ts`; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts`; `npm run build`
-Failure signature: PRRT_kwDORgvdZ852Alqd
-Next action: verify the journal is fully sanitized, commit the review-only fix, push `codex/issue-850`, and resolve the remaining review thread on PR `#865`
+- Preserved stale stabilizing no-PR convergence tracking across successful no-PR turns so the repeat guard now survives the stale cleanup -> no-PR turn -> stale cleanup loop and converges at the existing repeat limit.
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 unresolved automated review thread about workstation-local journal paths remains until the sanitized journal update is pushed.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/865#discussion_r2972336528
-- Details:
-  - CodeRabbit flagged `.codex-supervisor/issue-journal.md` for portable-handoff violations because the durable journal still embedded workstation-local absolute paths in the summary and command history. The fix for this turn is limited to replacing those references with repo-relative paths or `<local-memory>/...` placeholders, with no product-code changes.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the implementation is done; the only remaining work is a review-only journal sanitization so the durable handoff is portable for other operators.
-- What changed: updated `.codex-supervisor/issue-journal.md` locally to remove workstation-local absolute paths from the latest summary, active failure context, and command history while preserving the underlying `e61f762` verification record.
+- Hypothesis: the stale recovery loop was resetting in the generic successful no-PR turn path after recovery had already incremented the `stale-stabilizing-no-pr-recovery-loop` signature.
+- What changed: added a focused `executeCodexTurnPhase` regression for the successful no-PR reset, introduced a narrow stale-no-PR preservation helper in `src/no-pull-request-state.ts`, preserved that signature/context/count in `src/run-once-turn-execution.ts` only when the turn still ends `stabilizing` with no PR, and added an orchestration regression that covers stale cleanup -> successful no-PR turn -> stale cleanup convergence.
 - Current blocker: none
-- Next exact step: verify the journal diff contains no workstation-local paths, commit and push the sanitized journal update, resolve thread `PRRT_kwDORgvdZ852Alqd`, and then monitor PR `#865` CI for the new head.
-- Verification gap: none for code; this turn only updates journal metadata, and the focused dashboard/unit/browser-smoke verification command plus `npm run build` already passed on `e61f762`.
-- Files touched: `.codex-supervisor/issue-journal.md`
-- Rollback concern: low; the change is confined to WebUI markup/CSS/browser behavior and keeps the CLI, HTTP API, and safe-command transport untouched.
-- Last focused command: `git diff -- .codex-supervisor/issue-journal.md`
-- Last focused failure: `PRRT_kwDORgvdZ852Alqd`
+- Next exact step: review the final diff, commit the stale no-PR guard fix on `codex/issue-861`, and open or update the draft PR if one is still missing.
+- Verification gap: none in the focused regression surface; the issue verification command passed locally after the fix.
+- Files touched: `src/no-pull-request-state.ts`, `src/no-pull-request-state.test.ts`, `src/recovery-reconciliation.ts`, `src/run-once-turn-execution.ts`, `src/run-once-turn-execution.test.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: low; the behavior change is isolated to successful no-PR turns that remain in stale stabilizing recovery, while unrelated successful flows still clear generic failure signatures.
+- Last focused command: `npx tsx --test src/run-once-turn-execution.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`
+- Last focused failure: `stale-stabilizing-no-pr-recovery-loop-reset`
 - Last focused commands:
 ```bash
-sed -n '1,220p' "<local-memory>/issue-850/AGENTS.generated.md"
-sed -n '1,220p' "<local-memory>/issue-850/context-index.md"
+sed -n '1,220p' "<local-memory>/issue-861/AGENTS.generated.md"
+sed -n '1,220p' "<local-memory>/issue-861/context-index.md"
 sed -n '1,260p' .codex-supervisor/issue-journal.md
 git status --short --branch
-rg -n '<local-path-pattern>' .codex-supervisor/issue-journal.md
-git diff -- .codex-supervisor/issue-journal.md
+rg -n "stale|no-PR|stabilizing|convergence|failure signature" src
+sed -n '1088,1185p' src/recovery-reconciliation.ts
+sed -n '320,520p' src/run-once-turn-execution.ts
+npx tsx --test src/run-once-turn-execution.test.ts
+npx tsx --test src/no-pull-request-state.test.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts
+npx tsx --test src/run-once-turn-execution.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts
 date -u +%Y-%m-%dT%H:%M:%SZ
 ```
 ### Scratchpad
+- 2026-03-23T00:59:48Z: reproduced the bug with a focused `executeCodexTurnPhase` regression showing a successful no-PR turn cleared `stale-stabilizing-no-pr-recovery-loop`, then fixed the post-turn no-PR success path to preserve only that stale stabilizing signature/context/count when the issue still ends `stabilizing` without a PR and verified the full stale cleanup -> no-PR turn -> stale cleanup sequence with the targeted orchestration suite.
 - 2026-03-23T00:29:58Z: confirmed the remaining CodeRabbit finding is valid because the durable journal still contained workstation-local absolute paths, then rewrote the summary/review context/command history locally to use repo-relative references and `<local-memory>` placeholders before preparing the review-only push.
 - 2026-03-22T22:21:32Z: reran `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`, pushed `codex/issue-848`, and opened draft PR `#858` for the drag-reorder checkpoint.
 - 2026-03-22T22:09:23Z: reproduced the drag-reorder gap with a pure browser-logic regression, then added draggable panel handles, browser-only DOM reorder state, and a runtime dashboard drag test; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts` passed.

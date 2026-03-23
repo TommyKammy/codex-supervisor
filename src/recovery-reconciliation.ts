@@ -20,6 +20,7 @@ import {
   type SupervisorMutationResultDto,
   type SupervisorOrphanPruneResultDto,
 } from "./supervisor/supervisor-mutation-report";
+import { STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE } from "./no-pull-request-state";
 
 const OWNER_GUARDED_ACTIVE_STATES = new Set<RunState>([
   "planning",
@@ -50,7 +51,6 @@ function sanitizeRecoveryReason(reason: string): string {
   return reason.replace(/\r?\n/g, "\\n");
 }
 
-const STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE = "stale-stabilizing-no-pr-recovery-loop";
 type StaleStabilizingNoPrBranchState = "recoverable" | "already_satisfied_on_main";
 
 function matchesTrackedBranch(

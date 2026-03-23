@@ -840,3 +840,187 @@ test("executeCodexTurnPhase does not take a session lock when the turn must rest
   assert.equal(requests[0]?.issue.body, "## Summary\nAddressing review should restart from a fresh prompt.");
   assert.equal(state.issues["102"]?.state, "stabilizing");
 });
+
+test("executeCodexTurnPhase preserves stale stabilizing no-PR recovery tracking across a successful no-PR turn", async () => {
+  const staleNoPrFailureContext = {
+    category: "blocked" as const,
+    summary:
+      "Issue #102 re-entered stale stabilizing recovery without a tracked PR; the supervisor will retry while the repeat count remains below 3.",
+    signature: "stale-stabilizing-no-pr-recovery-loop",
+    command: null,
+    details: [
+      "state=stabilizing",
+      "tracked_pr=none",
+      "branch_state=recoverable",
+      "repeat_count=1/3",
+      "operator_action=confirm whether the implementation already landed elsewhere or retarget the tracked issue manually",
+    ],
+    url: null,
+    updated_at: "2026-03-13T06:00:00.000Z",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "stabilizing",
+        pr_number: null,
+        last_error: staleNoPrFailureContext.summary,
+        last_failure_context: staleNoPrFailureContext,
+        last_failure_signature: staleNoPrFailureContext.signature,
+        repeated_failure_signature_count: 1,
+      }),
+    },
+  };
+
+  const result = await executeCodexTurnPhase({
+    config: createConfig(),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue: createIssue({ title: "Preserve stale no-PR recovery tracking" }),
+      previousCodexSummary: null,
+      previousError: null,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      journalPath: path.join("/tmp/workspaces/issue-102", ".codex-supervisor", "issue-journal.md"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      workspaceStatus: {
+        branch: "codex/issue-102",
+        headSha: "head-a",
+        hasUncommittedChanges: false,
+        baseAhead: 0,
+        baseBehind: 0,
+        remoteBranchExists: true,
+        remoteAhead: 0,
+        remoteBehind: 0,
+      },
+      pr: null,
+      checks: [],
+      reviewThreads: [],
+      options: { dryRun: false },
+    },
+    acquireSessionLock: async () => null,
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-03-13T06:20:00Z",
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    normalizeBlockerSignature: () => null,
+    isVerificationBlockedMessage: () => false,
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "stabilizing",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    inferStateWithoutPullRequest: () => "stabilizing",
+    blockedReasonFromReviewState: () => null,
+    recoverUnexpectedCodexTurnFailure: async () => {
+      throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+    },
+    getWorkspaceStatus: async () => ({
+      branch: "codex/issue-102",
+      headSha: "head-a",
+      hasUncommittedChanges: false,
+      baseAhead: 0,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    }),
+    pushBranch: async () => {
+      throw new Error("unexpected pushBranch call");
+    },
+    readIssueJournal: (() => {
+      let readCount = 0;
+      return async () => {
+        readCount += 1;
+        return readCount === 1
+          ? [
+              "## Codex Working Notes",
+              "### Current Handoff",
+              "- Hypothesis: the stale no-PR turn can make progress without reopening a PR.",
+              "- Next exact step: keep the recovery repeat tracking intact.",
+            ].join("\n")
+          : [
+              "## Codex Working Notes",
+              "### Current Handoff",
+              "- Hypothesis: the stale no-PR turn can make progress without reopening a PR.",
+              "- What changed: completed another successful no-PR turn.",
+              "- Next exact step: continue the stale recovery loop if needed.",
+            ].join("\n");
+      };
+    })(),
+    agentRunner: createSuccessfulAgentRunner(async () => ({
+      exitCode: 0,
+      sessionId: null,
+      supervisorMessage: [
+        "Summary: continued stale recovery without opening a PR",
+        "State hint: stabilizing",
+        "Blocked reason: none",
+        "Tests: not run",
+        "Failure signature: none",
+        "Next action: continue",
+      ].join("\n"),
+      stderr: "",
+      stdout: "",
+      structuredResult: {
+        summary: "continued stale recovery without opening a PR",
+        stateHint: "stabilizing",
+        blockedReason: null,
+        failureSignature: null,
+        nextAction: "continue",
+        tests: "not run",
+      },
+      failureKind: null,
+      failureContext: null,
+    })),
+  });
+
+  assert.equal(result.kind, "completed");
+  assert.equal(state.issues["102"]?.state, "stabilizing");
+  assert.equal(state.issues["102"]?.pr_number, null);
+  assert.equal(state.issues["102"]?.last_failure_context, staleNoPrFailureContext);
+  assert.equal(state.issues["102"]?.last_failure_signature, staleNoPrFailureContext.signature);
+  assert.equal(state.issues["102"]?.repeated_failure_signature_count, 1);
+});
