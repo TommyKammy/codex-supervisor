@@ -411,6 +411,7 @@ export interface CliOptions {
     | "status"
     | "requeue"
     | "rollup-execution-metrics"
+    | "summarize-post-merge-audits"
     | "prune-orphaned-workspaces"
     | "reset-corrupt-json-state"
     | "explain"

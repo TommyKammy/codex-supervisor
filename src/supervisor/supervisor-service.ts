@@ -9,6 +9,7 @@ import type {
   SupervisorOrphanPruneResultDto,
   SupervisorRecoveryAction,
 } from "./supervisor-mutation-report";
+import type { PostMergeAuditPatternSummaryDto } from "./post-merge-audit-summary";
 import type { SupervisorIssueLintDto } from "./supervisor-selection-issue-lint";
 import type { SupervisorExplainDto } from "./supervisor-selection-status";
 import type { SupervisorStatusDto } from "./supervisor-status-report";
@@ -25,6 +26,7 @@ export interface SupervisorService {
   runRecoveryAction: (action: SupervisorRecoveryAction, issueNumber: number) => Promise<SupervisorMutationResultDto>;
   pruneOrphanedWorkspaces: () => Promise<SupervisorOrphanPruneResultDto>;
   rollupExecutionMetrics?: () => Promise<SupervisorExecutionMetricsRollupResultDto>;
+  queryPostMergeAuditSummary?: () => Promise<PostMergeAuditPatternSummaryDto>;
   resetCorruptJsonState: () => Promise<JsonCorruptStateResetResult>;
   queryExplain: (issueNumber: number) => Promise<SupervisorExplainDto>;
   queryIssueLint: (issueNumber: number) => Promise<SupervisorIssueLintDto>;
@@ -92,6 +94,10 @@ class SupervisorApplicationService implements SupervisorService {
 
   rollupExecutionMetrics(): Promise<SupervisorExecutionMetricsRollupResultDto> {
     return this.supervisor.rollupExecutionMetrics();
+  }
+
+  queryPostMergeAuditSummary(): Promise<PostMergeAuditPatternSummaryDto> {
+    return this.supervisor.postMergeAuditSummaryReport();
   }
 
   resetCorruptJsonState(): Promise<JsonCorruptStateResetResult> {

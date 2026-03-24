@@ -67,6 +67,19 @@ test("parseArgs accepts rollup-execution-metrics without an issue number", () =>
   });
 });
 
+test("parseArgs accepts summarize-post-merge-audits without an issue number", () => {
+  assert.deepEqual(parseArgs(["summarize-post-merge-audits"]), {
+    command: "summarize-post-merge-audits",
+    configPath: undefined,
+    dryRun: false,
+    why: false,
+    issueNumber: undefined,
+    snapshotPath: undefined,
+    caseId: undefined,
+    corpusPath: undefined,
+  });
+});
+
 test("parseArgs accepts reset-corrupt-json-state without an issue number", () => {
   assert.deepEqual(parseArgs(["reset-corrupt-json-state"]), {
     command: "reset-corrupt-json-state",
