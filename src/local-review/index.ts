@@ -19,6 +19,10 @@ export type {
   FinalizedLocalReview,
   LocalReviewArtifact,
   LocalReviewFinding,
+  PreMergeFinalEvaluation,
+  PreMergeFinalEvaluationOutcome,
+  PreMergeResidualFinding,
+  PreMergeResidualResolution,
   LocalReviewResult,
   LocalReviewRootCauseSummary,
   LocalReviewRoleResult,
@@ -33,6 +37,7 @@ export {
   buildLocalReviewBlockerSummary,
   LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY,
 } from "./result";
+export { derivePreMergeFinalEvaluation } from "./final-evaluation";
 
 export function localReviewHasActionableFindings(
   record: Pick<IssueRunRecordLike, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation">,

@@ -109,6 +109,7 @@ export function formatLocalReviewResult(args: {
     verifiedMaxSeverity: args.finalized.verifiedMaxSeverity,
     recommendation: args.finalized.recommendation,
     degraded: args.finalized.degraded,
+    finalEvaluation: args.finalized.finalEvaluation,
     rawOutput: args.artifacts.rawOutput,
   };
 }
