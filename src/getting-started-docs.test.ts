@@ -44,6 +44,9 @@ test("getting-started stays focused on operator setup and flow", async () => {
   assert.match(content, /\[Configuration reference\]\(\.\/configuration\.md\)/);
   assert.match(content, /\[Local review reference\]\(\.\/local-review\.md\)/);
   assert.match(content, /\[Issue metadata reference\]\(\.\/issue-metadata\.md\)/);
+  assert.match(content, /npm run verify:paths/);
+  assert.match(content, /lightweight pre-PR path-hygiene check/i);
+  assert.match(content, /independent from `build` and `test`/i);
 
   assert.doesNotMatch(content, /^## Full picture$/m);
   assert.doesNotMatch(content, /^## What codex-supervisor does$/m);
