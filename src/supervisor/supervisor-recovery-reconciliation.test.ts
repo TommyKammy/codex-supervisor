@@ -1117,6 +1117,113 @@ test("reconcileTrackedMergedButOpenIssues refreshes open issue snapshots for mer
   ]);
 });
 
+test("reconcileTrackedMergedButOpenIssues keeps merged convergence done when audit persistence fails", async () => {
+  const artifactRootFile = path.join(
+    await fs.mkdtemp(path.join(os.tmpdir(), "reconcile-audit-failure-")),
+    "artifacts-file",
+  );
+  await fs.writeFile(artifactRootFile, "not-a-directory\n", "utf8");
+
+  const record = createRecord({
+    issue_number: 366,
+    state: "merging",
+    pr_number: 191,
+    blocked_reason: null,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 366,
+    issues: {
+      "366": record,
+    },
+  };
+  const mergedPr: GitHubPullRequest = {
+    number: 191,
+    title: "Merged implementation",
+    url: "https://example.test/pr/191",
+    state: "MERGED",
+    createdAt: "2026-03-13T00:10:00Z",
+    updatedAt: "2026-03-13T00:20:00Z",
+    isDraft: false,
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "merged-head-191",
+    mergeStateStatus: "CLEAN",
+    reviewDecision: "APPROVED",
+    mergedAt: "2026-03-13T00:20:00Z",
+    copilotReviewState: null,
+    copilotReviewRequestedAt: null,
+    copilotReviewArrivedAt: null,
+  };
+  const closedIssue: GitHubIssue = {
+    number: 366,
+    title: "Merged implementation issue",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:21:00Z",
+    url: "https://example.test/issues/366",
+    state: "CLOSED",
+  };
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const warnings: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args);
+  };
+
+  try {
+    const recoveryEvents = await reconcileTrackedMergedButOpenIssues(
+      {
+        getPullRequestIfExists: async () => mergedPr,
+        getIssue: async () => closedIssue,
+        closeIssue: async () => {
+          throw new Error("unexpected closeIssue call");
+        },
+        closePullRequest: async () => {
+          throw new Error("unexpected closePullRequest call");
+        },
+        getChecks: async () => [],
+        getMergedPullRequestsClosingIssue: async () => [],
+        getUnresolvedReviewThreads: async () => [],
+      },
+      stateStore,
+      state,
+      createConfig({
+        localReviewArtifactDir: artifactRootFile,
+      }),
+      [closedIssue],
+    );
+
+    assert.equal(saveCalls, 1);
+    assert.equal(state.activeIssueNumber, null);
+    assert.equal(state.issues["366"]?.state, "done");
+    assert.equal(state.issues["366"]?.pr_number, 191);
+    assert.equal(state.issues["366"]?.last_head_sha, "merged-head-191");
+    assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+      "merged_pr_convergence: tracked PR #191 merged; marked issue #366 done",
+    ]);
+    assert.equal(warnings.length, 1);
+    assert.match(
+      String(warnings[0]?.[0] ?? ""),
+      /Failed to write post-merge audit artifact for issue #366\./,
+    );
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
 test("reconcileTrackedMergedButOpenIssues does not rewrite recovery metadata when the done state is already current", async () => {
   const original = createRecord({
     issue_number: 366,

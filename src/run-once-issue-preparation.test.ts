@@ -1,3 +1,6 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -543,6 +546,85 @@ test("prepareIssueExecutionContext restarts when a tracked PR already merged", a
   assert.equal(state.issues["240"]?.state, "done");
   assert.equal(state.issues["240"]?.pr_number, 191);
   assert.equal(state.issues["240"]?.last_head_sha, "merged-head-191");
+});
+
+test("prepareIssueExecutionContext keeps merged-PR convergence done when audit persistence fails", async () => {
+  const record = createRecord({
+    implementation_attempt_count: 2,
+    pr_number: 191,
+    state: "pr_open",
+  });
+  const state = createState(record);
+  const issue = createIssue();
+  const mergedPr = createPullRequest({
+    number: 191,
+    state: "MERGED",
+    isDraft: false,
+    headRefOid: "merged-head-191",
+    mergedAt: "2026-03-15T00:20:00Z",
+  });
+  const artifactRootFile = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "prep-audit-failure-")), "artifacts-file");
+  await fs.writeFile(artifactRootFile, "not-a-directory\n", "utf8");
+
+  const warnings: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args);
+  };
+
+  try {
+    const result = await prepareIssueExecutionContext({
+      github: {
+        resolvePullRequestForBranch: async () => mergedPr,
+        getChecks: async () => {
+          throw new Error("unexpected getChecks call");
+        },
+        getUnresolvedReviewThreads: async () => {
+          throw new Error("unexpected getUnresolvedReviewThreads call");
+        },
+        createPullRequest: async () => {
+          throw new Error("unexpected createPullRequest call");
+        },
+      },
+      config: createConfig({
+        localReviewArtifactDir: artifactRootFile,
+      }),
+      stateStore: {
+        touch(currentRecord, patch) {
+          return { ...currentRecord, ...patch };
+        },
+        async save() {},
+      },
+      state,
+      record,
+      issue,
+      options: { dryRun: true },
+      ensureWorkspace: async () => "/tmp/workspaces/issue-240",
+      syncIssueJournal: async () => {},
+      syncMemoryArtifacts: async () => ({
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+      }),
+      getWorkspaceStatus: async () => createWorkspaceStatus(),
+      now: () => "2026-03-15T00:30:00Z",
+    });
+
+    assert.ok(isRestartRunOnce(result));
+    assert.equal(result.recoveryEvents?.[0]?.reason, "merged_pr_convergence: tracked PR #191 merged; marked issue #240 done");
+    assert.equal(state.activeIssueNumber, null);
+    assert.equal(state.issues["240"]?.state, "done");
+    assert.equal(state.issues["240"]?.pr_number, 191);
+    assert.equal(state.issues["240"]?.last_head_sha, "merged-head-191");
+    assert.equal(warnings.length, 1);
+    assert.match(
+      String(warnings[0]?.[0] ?? ""),
+      /Failed to write post-merge audit artifact for issue #240\./,
+    );
+  } finally {
+    console.warn = originalWarn;
+  }
 });
 
 test("prepareIssueExecutionContext blocks and syncs the journal when a tracked PR was closed", async () => {
