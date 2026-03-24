@@ -80,6 +80,7 @@ import {
   executionMetricsRetentionRootPath,
   syncExecutionMetricsRunSummary,
 } from "./execution-metrics-run-summary";
+import { syncPostMergeAuditArtifact } from "./post-merge-audit-artifact";
 import {
   attemptBudgetForLane,
   attemptLane,
@@ -840,6 +841,13 @@ export class Supervisor {
       recoveryEvents,
       retentionRootPath: executionMetricsRetentionRootPath(this.config.stateFile),
     });
+    await syncPostMergeAuditArtifact({
+      config: this.config,
+      previousRecord: record,
+      nextRecord,
+      issue,
+      pullRequest: currentPr,
+    });
     return nextRecord;
   }
 
@@ -1261,9 +1269,9 @@ export class Supervisor {
       handleAuthFailure: (state) => handleAuthFailure(this.github, this.stateStore, state),
       listAllIssues: () => this.github.listAllIssues(),
       reconcileTrackedMergedButOpenIssues: (state, issues) =>
-        reconcileTrackedMergedButOpenIssues(this.github, this.stateStore, state, issues),
+        reconcileTrackedMergedButOpenIssues(this.github, this.stateStore, state, this.config, issues),
       reconcileMergedIssueClosures: (state, issues) =>
-        reconcileMergedIssueClosures(this.github, this.stateStore, state, issues),
+        reconcileMergedIssueClosures(this.github, this.stateStore, state, this.config, issues),
       reconcileStaleFailedIssueStates: (state, issues) =>
         reconcileStaleFailedIssueStates(this.github, this.stateStore, state, this.config, issues, {
           inferStateFromPullRequest,

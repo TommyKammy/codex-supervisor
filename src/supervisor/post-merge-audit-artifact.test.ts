@@ -1,0 +1,175 @@
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { writeJsonAtomic } from "../core/utils";
+import { type LocalReviewArtifact } from "../local-review/types";
+import { createConfig, createFailureContext, createIssue, createPullRequest, createRecord } from "../turn-execution-test-helpers";
+import { type ExecutionMetricsRunSummaryArtifact } from "./execution-metrics-schema";
+import {
+  executionMetricsRunSummaryPath,
+} from "./execution-metrics-run-summary";
+import {
+  postMergeAuditArtifactPath,
+  syncPostMergeAuditArtifact,
+  type PostMergeAuditArtifact,
+} from "./post-merge-audit-artifact";
+
+test("syncPostMergeAuditArtifact persists a typed completed-work artifact", async () => {
+  const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "post-merge-audit-"));
+  const reviewDir = path.join(os.tmpdir(), "post-merge-audit-reviews");
+  const config = createConfig({
+    localReviewArtifactDir: reviewDir,
+    repoSlug: "owner/repo",
+  });
+  const localReviewSummaryPath = path.join(reviewDir, "owner-repo", "issue-102", "head-deadbeef.md");
+  const localReviewFindingsPath = `${localReviewSummaryPath.slice(0, -3)}.json`;
+
+  await fs.mkdir(path.dirname(localReviewSummaryPath), { recursive: true });
+  await fs.writeFile(localReviewSummaryPath, "# local review\n", "utf8");
+  const localReviewArtifact: LocalReviewArtifact = {
+    issueNumber: 102,
+    prNumber: 116,
+    branch: "codex/issue-102",
+    headSha: "merged-head-116",
+    ranAt: "2026-03-24T10:00:00Z",
+    confidenceThreshold: 0.7,
+    reviewerThresholds: {
+      generic: { confidenceThreshold: 0.7, minimumSeverity: "low" },
+      specialist: { confidenceThreshold: 0.7, minimumSeverity: "low" },
+    },
+    roles: ["reviewer"],
+    autoDetectedRoles: [],
+    summary: "Local review captured one durable root cause.",
+    recommendation: "changes_requested",
+    degraded: false,
+    findingsCount: 1,
+    rootCauseCount: 1,
+    maxSeverity: "medium",
+    actionableFindings: [],
+    rootCauseSummaries: [],
+    verification: {
+      required: false,
+      summary: "No high-severity findings required verification.",
+      recommendation: "unknown",
+      degraded: false,
+      findingsCount: 0,
+      verifiedFindingsCount: 0,
+      verifiedMaxSeverity: "none",
+      findings: [],
+    },
+    verifiedFindings: [],
+    finalEvaluation: {
+      outcome: "follow_up_eligible",
+      residualFindings: [],
+      mustFixCount: 0,
+      manualReviewCount: 0,
+      followUpCount: 0,
+    },
+    guardrailProvenance: {
+      verifier: { committedPath: null, committedCount: 0 },
+      externalReview: { committedPath: null, committedCount: 0, runtimeSources: [] },
+    },
+    roleReports: [],
+    verifierReport: null,
+  };
+  await writeJsonAtomic(localReviewFindingsPath, localReviewArtifact);
+
+  const executionMetricsArtifact: ExecutionMetricsRunSummaryArtifact = {
+    schemaVersion: 4,
+    issueNumber: 102,
+    terminalState: "done",
+    terminalOutcome: { category: "completed", reason: "merged" },
+    issueCreatedAt: "2026-03-24T09:55:00Z",
+    startedAt: "2026-03-24T10:00:00Z",
+    prCreatedAt: "2026-03-24T10:03:00Z",
+    prMergedAt: "2026-03-24T10:05:00Z",
+    finishedAt: "2026-03-24T10:06:00Z",
+    runDurationMs: 360000,
+    issueLeadTimeMs: 660000,
+    issueToPrCreatedMs: 480000,
+    prOpenDurationMs: 120000,
+    reviewMetrics: null,
+    failureMetrics: {
+      classification: "latest_failure",
+      category: "review",
+      failureKind: "command_error",
+      blockedReason: null,
+      occurrenceCount: 2,
+      lastOccurredAt: "2026-03-24T10:04:00Z",
+    },
+    recoveryMetrics: {
+      classification: "latest_recovery",
+      reason: "merged_pr_convergence",
+      occurrenceCount: 1,
+      lastRecoveredAt: "2026-03-24T10:06:00Z",
+      timeToLatestRecoveryMs: 120000,
+    },
+  };
+  await writeJsonAtomic(executionMetricsRunSummaryPath(workspacePath), executionMetricsArtifact);
+
+  const previousRecord = createRecord({
+    issue_number: 102,
+    branch: "codex/issue-102",
+    workspace: workspacePath,
+    local_review_summary_path: localReviewSummaryPath,
+    local_review_run_at: "2026-03-24T10:00:00Z",
+    local_review_recommendation: "changes_requested",
+    local_review_findings_count: 1,
+    local_review_root_cause_count: 1,
+    local_review_max_severity: "medium",
+    local_review_verified_findings_count: 0,
+    local_review_verified_max_severity: "none",
+    external_review_misses_path: "/tmp/reviews/external-review-misses-head-merged-head-116.json",
+    last_failure_kind: "command_error",
+    last_failure_context: createFailureContext("Code review exposed a recurring mismatch."),
+    blocked_reason: "manual_review",
+    repeated_failure_signature_count: 2,
+    updated_at: "2026-03-24T10:00:00Z",
+  });
+  const nextRecord = {
+    ...previousRecord,
+    state: "done" as const,
+    last_recovery_reason: "merged_pr_convergence: tracked PR #116 merged; marked issue #102 done",
+    last_recovery_at: "2026-03-24T10:06:00Z",
+    updated_at: "2026-03-24T10:06:00Z",
+  };
+  const issue = createIssue({
+    number: 102,
+    title: "Persist a completed-work audit artifact",
+    createdAt: "2026-03-24T09:55:00Z",
+    updatedAt: "2026-03-24T10:06:00Z",
+  });
+  const pullRequest = createPullRequest({
+    number: 116,
+    title: "Persist completed-work audit artifact",
+    headRefName: "codex/issue-102",
+    headRefOid: "merged-head-116",
+    createdAt: "2026-03-24T10:03:00Z",
+    mergedAt: "2026-03-24T10:05:00Z",
+  });
+
+  const artifactPath = await syncPostMergeAuditArtifact({
+    config,
+    previousRecord,
+    nextRecord,
+    issue,
+    pullRequest,
+  });
+
+  assert.equal(
+    artifactPath,
+    postMergeAuditArtifactPath({ config, issueNumber: 102, headSha: "merged-head-116" }),
+  );
+
+  const artifact = JSON.parse(await fs.readFile(artifactPath!, "utf8")) as PostMergeAuditArtifact;
+  assert.equal(artifact.schemaVersion, 1);
+  assert.equal(artifact.issue.title, "Persist a completed-work audit artifact");
+  assert.equal(artifact.pullRequest.number, 116);
+  assert.equal(artifact.executionMetrics?.terminalState, "done");
+  assert.equal(artifact.artifacts.localReviewSummaryPath, localReviewSummaryPath);
+  assert.equal(artifact.localReview?.artifact?.summary, localReviewArtifact.summary);
+  assert.equal(artifact.failureTaxonomy.latestFailure?.failureKind, "command_error");
+  assert.equal(artifact.failureTaxonomy.latestRecovery?.reason, nextRecord.last_recovery_reason);
+});

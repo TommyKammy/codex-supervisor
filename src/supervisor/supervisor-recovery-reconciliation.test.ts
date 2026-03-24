@@ -833,6 +833,7 @@ test("reconcileMergedIssueClosures clears a stale active issue pointer even when
     },
     stateStore,
     state,
+    createConfig(),
     [closedIssue],
   );
 
@@ -1018,6 +1019,7 @@ test("reconcileTrackedMergedButOpenIssues fetches missing issue snapshots for no
     },
     stateStore,
     state,
+    createConfig(),
     [],
   );
 
@@ -1110,6 +1112,7 @@ test("reconcileTrackedMergedButOpenIssues refreshes open issue snapshots for mer
     },
     stateStore,
     state,
+    createConfig(),
     [staleOpenIssue],
   );
 
@@ -1216,6 +1219,7 @@ test("reconcileTrackedMergedButOpenIssues does not rewrite recovery metadata whe
     },
     stateStore,
     state,
+    createConfig(),
     [closedIssue],
   );
 

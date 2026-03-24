@@ -33,6 +33,7 @@ import {
   executionMetricsRetentionRootPath,
   syncExecutionMetricsRunSummarySafely,
 } from "./supervisor/execution-metrics-run-summary";
+import { syncPostMergeAuditArtifact } from "./supervisor/post-merge-audit-artifact";
 
 export type IssueJournalSync = (record: IssueRunRecord) => Promise<void>;
 export type MemoryArtifacts = Awaited<ReturnType<typeof syncMemoryArtifactsImpl>>;
@@ -349,6 +350,13 @@ async function hydratePullRequestContext(
         recoveryEvents: [recoveryEvent],
         retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
         warningContext: "persisting",
+      });
+      await syncPostMergeAuditArtifact({
+        config: args.config,
+        previousRecord: record,
+        nextRecord: doneRecord,
+        issue: args.issue,
+        pullRequest: resolvedPr,
       });
       return { kind: "restart", recoveryEvents: [recoveryEvent] };
     } else if (resolvedPr.state === "CLOSED") {
