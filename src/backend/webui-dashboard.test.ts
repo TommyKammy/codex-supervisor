@@ -473,11 +473,14 @@ test("dashboard page frames the hero and both panel groups with labeled section 
 
   assert.match(html, /<div class="app-shell">[\s\S]*<aside class="sidebar">[\s\S]*<main class="content" data-dashboard-root>/u);
   assert.match(html, /<header class="topbar">[\s\S]*<h1>Operator dashboard<\/h1>[\s\S]*Layout: fixed admin dashboard/u);
+  assert.match(html, /Mode: web only \(loop off\)/u);
   assert.match(html, /<section class="hero">[\s\S]*<article class="hero-card">[\s\S]*<aside class="summary-card">/u);
+  assert.match(html, /Loop mode is off on this host/u);
   assert.match(
     html,
     /<section class="stats-grid" aria-label="live summary">[\s\S]*id="connection-state"[\s\S]*id="freshness-state"[\s\S]*id="selected-issue-badge"[\s\S]*id="last-refresh-badge"/u,
   );
+  assert.match(html, /id="status-workflow"/u);
   assert.match(
     html,
     /<section class="dashboard-section" aria-labelledby="overview-heading">[\s\S]*<p class="section-kicker">Overview lane<\/p>[\s\S]*<h2 id="overview-heading">Operational snapshot<\/h2>[\s\S]*<div id="overview-grid" class="overview-grid" aria-label="overview" data-panel-grid="overview">/u,
@@ -583,11 +586,15 @@ test("dashboard derives the selected issue from typed status fields without pars
 
   const selectedIssueBadge = harness.document.getElementById("selected-issue-badge");
   const issueNumberInput = harness.document.getElementById("issue-number-input");
+  const statusWorkflow = harness.document.getElementById("status-workflow");
   assert.ok(selectedIssueBadge);
   assert.ok(issueNumberInput);
+  assert.ok(statusWorkflow);
 
   assert.equal(selectedIssueBadge.textContent, "#42");
   assert.equal(issueNumberInput.value, "42");
+  assert.match(statusWorkflow.textContent, /Execute/u);
+  assert.match(statusWorkflow.textContent, /#42/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 
@@ -686,18 +693,22 @@ test("dashboard moves tracked history into a dedicated panel with non-done defau
   assert.match(statusLines.textContent, /tracked issues=2/u);
   assert.doesNotMatch(statusLines.textContent, /tracked issue #58/u);
   assert.match(trackedHistorySummary.textContent, /showing 1 of 2 tracked issues/u);
-  assert.match(
-    trackedHistoryLines.textContent,
-    /tracked issue #58 \[queued\] branch=codex\/issue-58 pr=#58 blocked_reason=requirements:verification/u,
-  );
-  assert.doesNotMatch(trackedHistoryLines.textContent, /tracked issue #12 \[done\]/u);
+  assert.match(trackedHistoryLines.textContent, /#58/u);
+  assert.match(trackedHistoryLines.textContent, /queued/u);
+  assert.match(trackedHistoryLines.textContent, /pr #58/u);
+  assert.match(trackedHistoryLines.textContent, /requirements:verification/u);
+  assert.doesNotMatch(trackedHistoryLines.textContent, /codex\/issue-58/u);
+  assert.doesNotMatch(trackedHistoryLines.textContent, /#12/u);
   assert.match(trackedHistoryToggle.textContent, /Show done issues/u);
 
   await trackedHistoryToggle.dispatch("click");
   await harness.flush();
 
   assert.match(trackedHistorySummary.textContent, /showing 2 of 2 tracked issues/u);
-  assert.match(trackedHistoryLines.textContent, /tracked issue #12 \[done\] branch=codex\/issue-12 pr=#12/u);
+  assert.match(trackedHistoryLines.textContent, /#12/u);
+  assert.match(trackedHistoryLines.textContent, /done/u);
+  assert.match(trackedHistoryLines.textContent, /pr #12/u);
+  assert.doesNotMatch(trackedHistoryLines.textContent, /codex\/issue-12/u);
   assert.match(trackedHistoryToggle.textContent, /Hide done issues/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
@@ -747,11 +758,11 @@ test("dashboard lets operators inspect typed runnable and blocked issues without
   assert.ok(issueSummary);
 
   assert.equal(issueShortcuts.children.length, 2);
-  assert.match(joinChildText(issueShortcuts), /#77 runnable ready Ready for inspection/u);
-  assert.match(joinChildText(issueShortcuts), /#93 blocked requirements:scope, verification Needs scope repair/u);
+  assert.match(joinChildText(issueShortcuts), /#77runnable ready • Ready for inspection/u);
+  assert.match(joinChildText(issueShortcuts), /#93blocked requirements:scope, verification • Needs scope repair/u);
   assert.doesNotMatch(joinChildText(issueShortcuts), /#12 tracked done codex\/issue-12 pr=#12/u);
 
-  const blockedIssueButton = findChildByText(issueShortcuts, /#93 blocked/u);
+  const blockedIssueButton = findChildByText(issueShortcuts, /#93blocked/u);
   assert.ok(blockedIssueButton);
 
   await blockedIssueButton.dispatch("click");

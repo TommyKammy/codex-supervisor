@@ -303,6 +303,18 @@ export function renderSupervisorDashboardPage(): string {
         padding: 18px;
       }
 
+      .stat-icon {
+        display: inline-grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+        background: rgba(26, 187, 156, 0.12);
+        color: var(--accent-strong);
+        font-size: 1.1rem;
+        font-weight: 700;
+      }
+
       .stat-label {
         color: var(--muted-surface);
       }
@@ -365,9 +377,28 @@ export function renderSupervisorDashboardPage(): string {
 
       .panel-header-main,
       .panel-heading {
-        display: grid;
+        display: flex;
+        align-items: flex-start;
         gap: 4px;
         min-width: 0;
+      }
+
+      .panel-heading {
+        display: grid;
+      }
+
+      .panel-icon {
+        display: inline-grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        margin-right: 10px;
+        border-radius: 10px;
+        background: rgba(42, 63, 84, 0.08);
+        color: var(--text);
+        font-size: 1rem;
+        font-weight: 700;
+        flex: 0 0 auto;
       }
 
       .panel-header-aside {
@@ -437,6 +468,45 @@ export function renderSupervisorDashboardPage(): string {
         color: var(--muted-surface);
       }
 
+      .loop-off-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(26, 187, 156, 0.12);
+        color: var(--accent-strong);
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .empty-state {
+        display: grid;
+        gap: 8px;
+        place-items: start;
+        padding: 14px;
+        border: 1px dashed var(--border-strong);
+        border-radius: var(--radius-sm);
+        background: var(--surface-soft);
+      }
+
+      .empty-state strong {
+        font-size: 0.95rem;
+      }
+
+      .empty-icon {
+        display: inline-grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 999px;
+        background: rgba(42, 63, 84, 0.08);
+        color: var(--muted-surface);
+        font-size: 0.95rem;
+      }
+
       .stack,
       .row,
       .detail-stack,
@@ -488,7 +558,8 @@ export function renderSupervisorDashboardPage(): string {
       .toolbar button,
       .action-card button,
       .panel-header button,
-      .shortcut-button {
+      .shortcut-button,
+      .chip {
         font: inherit;
       }
 
@@ -539,9 +610,68 @@ export function renderSupervisorDashboardPage(): string {
         text-align: left;
       }
 
+      .shortcut-button strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 0.96rem;
+      }
+
+      .shortcut-button span {
+        color: var(--muted-surface);
+        font-size: 0.88rem;
+      }
+
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--surface-soft);
+        color: var(--text);
+        font-size: 0.82rem;
+        line-height: 1;
+      }
+
+      .chip::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--border-strong);
+      }
+
+      .chip.ok::before {
+        background: var(--ok);
+      }
+
+      .chip.warn::before {
+        background: var(--warn);
+      }
+
+      .chip.fail::before {
+        background: var(--danger);
+      }
+
+      .chip.info::before {
+        background: var(--accent);
+      }
+
       .shortcut-list,
       .detail-grid,
-      .action-grid {
+      .action-grid,
+      .metric-grid,
+      .lint-grid,
+      .history-list,
+      .status-list,
+      .workflow-rail {
         display: grid;
         gap: 10px;
       }
@@ -555,9 +685,20 @@ export function renderSupervisorDashboardPage(): string {
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       }
 
+      .metric-grid {
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      }
+
+      .lint-grid {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      }
+
       .detail-card,
       .action-card,
-      .event-item {
+      .event-item,
+      .metric-tile,
+      .history-card,
+      .status-line {
         border: 1px solid var(--border);
         border-radius: var(--radius-sm);
       }
@@ -595,13 +736,270 @@ export function renderSupervisorDashboardPage(): string {
         background: #fff;
       }
 
+      .action-card-large {
+        gap: 12px;
+        min-height: 196px;
+        align-content: start;
+        padding: 18px;
+        background: linear-gradient(180deg, #ffffff, #f7fafc);
+      }
+
+      .action-card-large strong {
+        font-size: 1.12rem;
+      }
+
+      .action-card-large button {
+        width: 100%;
+        justify-self: stretch;
+      }
+
+      .action-kicker {
+        font-size: 0.72rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--muted-surface);
+      }
+
+      .action-icon {
+        display: inline-grid;
+        place-items: center;
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        background: rgba(26, 187, 156, 0.12);
+        color: var(--accent-strong);
+        font-size: 1.15rem;
+        font-weight: 700;
+      }
+
       .action-card button {
         justify-self: start;
+      }
+
+      .status-hero {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: end;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .metric-tile,
+      .history-card,
+      .status-line {
+        background: var(--surface-soft);
+      }
+
+      .metric-tile {
+        display: grid;
+        gap: 6px;
+        padding: 12px 14px;
+      }
+
+      .metric-tile-label {
+        font-size: 0.75rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted-surface);
+      }
+
+      .metric-tile-value {
+        font-size: 1.2rem;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        color: var(--text);
+      }
+
+      .metric-tile-detail {
+        color: var(--muted-surface);
+        font-size: 0.82rem;
+        line-height: 1.45;
+      }
+
+      .metric-tile-value.ok {
+        color: var(--ok);
+      }
+
+      .metric-tile-value.warn {
+        color: var(--warn);
+      }
+
+      .metric-tile-value.fail {
+        color: var(--danger);
+      }
+
+      .status-line {
+        padding: 12px 14px;
+        font-size: 0.9rem;
+        line-height: 1.45;
+        color: var(--text);
+      }
+
+      .workflow-rail {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        align-items: stretch;
+      }
+
+      .workflow-step {
+        position: relative;
+        display: grid;
+        gap: 8px;
+        padding: 14px 14px 14px 18px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--surface-soft);
+      }
+
+      .workflow-step::after {
+        content: "";
+        position: absolute;
+        top: 26px;
+        left: calc(100% - 6px);
+        width: 12px;
+        height: 2px;
+        background: #cfd9e4;
+      }
+
+      .workflow-step:last-child::after {
+        display: none;
+      }
+
+      .workflow-step.done {
+        background: linear-gradient(180deg, #f1fbf8, #ffffff);
+      }
+
+      .workflow-step.current {
+        border-color: rgba(26, 187, 156, 0.38);
+        box-shadow: 0 10px 24px rgba(26, 187, 156, 0.12);
+      }
+
+      .workflow-step.idle {
+        opacity: 0.78;
+      }
+
+      .workflow-copy {
+        display: grid;
+        gap: 4px;
+      }
+
+      .workflow-copy strong {
+        font-size: 0.94rem;
+      }
+
+      .workflow-copy span {
+        color: var(--muted-surface);
+        font-size: 0.82rem;
+        line-height: 1.45;
+      }
+
+      .workflow-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+        background: #cfd9e4;
+      }
+
+      .workflow-step.done .workflow-dot {
+        background: var(--ok);
+      }
+
+      .workflow-step.current .workflow-dot {
+        background: var(--accent);
+        box-shadow: 0 0 0 6px rgba(26, 187, 156, 0.14);
+      }
+
+      .workflow-step.warn .workflow-dot {
+        background: var(--warn);
+      }
+
+      .history-card {
+        display: grid;
+        gap: 10px;
+        padding: 14px;
+      }
+
+      .history-card-header {
+        display: flex;
+        align-items: start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .history-number {
+        font-size: 1.05rem;
+        font-weight: 700;
+      }
+
+      .history-meta {
+        color: var(--muted-surface);
+        font-size: 0.84rem;
+        line-height: 1.45;
       }
 
       .event-item {
         padding: 13px 14px;
         background: var(--surface-muted);
+      }
+
+      .event-item.timeline-item {
+        position: relative;
+        padding-left: 42px;
+      }
+
+      .event-item.timeline-item::before {
+        content: "";
+        position: absolute;
+        top: 18px;
+        left: 20px;
+        bottom: -18px;
+        width: 2px;
+        background: #d6dde8;
+      }
+
+      .event-item.timeline-item:last-child::before {
+        display: none;
+      }
+
+      .timeline-dot {
+        position: absolute;
+        top: 16px;
+        left: 12px;
+        display: inline-grid;
+        place-items: center;
+        width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: #fff;
+        font-size: 0.68rem;
+        font-weight: 700;
+      }
+
+      .timeline-dot.command {
+        background: var(--accent);
+      }
+
+      .timeline-dot.refresh {
+        background: var(--warn);
+      }
+
+      .timeline-dot.event {
+        background: var(--ok);
+      }
+
+      .event-summary {
+        margin: 0 0 6px;
+        font-weight: 600;
+        line-height: 1.45;
+      }
+
+      .event-detail {
+        margin: 0;
+        color: var(--muted-surface);
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 0.9rem;
+        line-height: 1.5;
       }
 
       .event-meta {
@@ -616,6 +1014,10 @@ export function renderSupervisorDashboardPage(): string {
       @media (max-width: 1220px) {
         .stats-grid {
           grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .workflow-rail {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
         .overview-grid {
@@ -648,7 +1050,8 @@ export function renderSupervisorDashboardPage(): string {
         }
 
         .stats-grid,
-        .details-grid {
+        .details-grid,
+        .workflow-rail {
           grid-template-columns: 1fr;
         }
 
@@ -718,6 +1121,7 @@ export function renderSupervisorDashboardPage(): string {
           <div class="topbar-meta">
             <div class="topbar-pill">Layout: fixed admin dashboard</div>
             <div class="topbar-pill">Surface: local WebUI</div>
+            <div class="topbar-pill">Mode: web only (loop off)</div>
           </div>
         </header>
 
@@ -728,6 +1132,7 @@ export function renderSupervisorDashboardPage(): string {
                 <p class="section-kicker">Supervisor workspace</p>
                 <h2>Operational visibility without panel drag-and-drop.</h2>
                 <p>Current health, issue context, and safe actions stay in a predictable layout so repeat visits feel familiar.</p>
+                <div class="loop-off-pill">Loop mode is off on this host</div>
               </div>
             </article>
             <aside class="summary-card">
@@ -743,22 +1148,27 @@ export function renderSupervisorDashboardPage(): string {
 
           <section class="stats-grid" aria-label="live summary">
             <article class="stat-card">
+              <span class="stat-icon" aria-hidden="true">⌁</span>
               <p class="stat-label">Connection</p>
               <strong id="connection-state" class="live-value">connecting</strong>
             </article>
             <article class="stat-card">
+              <span class="stat-icon" aria-hidden="true">◌</span>
               <p class="stat-label">Freshness</p>
               <strong id="freshness-state" class="live-value">awaiting refresh</strong>
             </article>
             <article class="stat-card">
+              <span class="stat-icon" aria-hidden="true">↻</span>
               <p class="stat-label">Refresh</p>
               <strong id="refresh-state" class="live-value">idle</strong>
             </article>
             <article class="stat-card">
+              <span class="stat-icon" aria-hidden="true">#</span>
               <p class="stat-label">Selected issue</p>
               <strong id="selected-issue-badge">none</strong>
             </article>
             <article class="stat-card">
+              <span class="stat-icon" aria-hidden="true">◷</span>
               <p class="stat-label">Last refresh</p>
               <strong id="last-refresh-badge">never</strong>
             </article>

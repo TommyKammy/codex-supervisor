@@ -30,10 +30,15 @@ interface DashboardPanelShellOptions {
   section: DashboardPanelSection;
   title: string;
   subtitle: string;
+  iconMarkup: string;
   bodyMarkup: string;
   bodyClassName?: string;
   headerMetaMarkup?: string;
   headerActionMarkup?: string;
+}
+
+function renderPanelIcon(symbol: string): string {
+  return `<span class="panel-icon" aria-hidden="true">${symbol}</span>`;
 }
 
 function renderDashboardPanelShell(options: DashboardPanelShellOptions): DashboardPanelDefinition {
@@ -53,6 +58,7 @@ function renderDashboardPanelShell(options: DashboardPanelShellOptions): Dashboa
           <div class="panel-shell">
             <div class="panel-header">
               <div class="panel-header-main">
+                ${options.iconMarkup}
                 <div class="panel-heading">
                   <h2>${options.title}</h2>
                   <p class="panel-subtitle">${options.subtitle}</p>
@@ -77,12 +83,39 @@ export const DASHBOARD_PANEL_REGISTRY = [
     section: "overview",
     title: "Status",
     subtitle: "Supervisor selection, readiness, and reconciliation at a glance.",
+    iconMarkup: renderPanelIcon("◔"),
     headerMetaMarkup: '<span id="status-warning" class="hint"></span>',
     bodyClassName: "stack",
-    bodyMarkup: `              <div class="metric" id="status-reconciliation">loading</div>
+    bodyMarkup: `              <div class="status-hero">
+                <div>
+                  <div class="row-label">Reconciliation</div>
+                  <div class="metric" id="status-reconciliation">loading</div>
+                </div>
+                <div class="chip-row">
+                  <span class="chip info">web mode</span>
+                  <span class="chip ok">loop off</span>
+                </div>
+              </div>
+              <div id="status-metrics" class="metric-grid">
+                <div class="metric-tile panel-empty-state">Loading summary metrics…</div>
+              </div>
               <div class="row">
-                <div class="row-label">Summary</div>
-                <pre id="status-lines" class="code">Loading /api/status?why=true…</pre>
+                <div class="row-label">Workflow position</div>
+                <div id="status-workflow" class="workflow-rail">
+                  <div class="workflow-step current">
+                    <span class="workflow-dot"></span>
+                    <div class="workflow-copy">
+                      <strong>Assess</strong>
+                      <span>Loading supervisor workflow…</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="row">
+                <div class="row-label">Focus lines</div>
+                <div id="status-lines" class="status-list">
+                  <div class="status-line panel-empty-state">Loading /api/status?why=true…</div>
+                </div>
               </div>`,
   }),
   renderDashboardPanelShell({
@@ -90,6 +123,7 @@ export const DASHBOARD_PANEL_REGISTRY = [
     section: "overview",
     title: "Doctor",
     subtitle: "Environment checks that gate safe supervisor execution.",
+    iconMarkup: renderPanelIcon("✚"),
     headerMetaMarkup: '<span id="doctor-overall" class="metric">…</span>',
     bodyClassName: "stack",
     bodyMarkup: `              <div class="row">
@@ -104,6 +138,7 @@ export const DASHBOARD_PANEL_REGISTRY = [
     section: "details",
     title: "Issue details",
     subtitle: "Typed issue context and lint results for the current selection.",
+    iconMarkup: renderPanelIcon("#"),
     headerMetaMarkup: '<span id="issue-summary" class="hint">No issue loaded.</span>',
     bodyClassName: "stack",
     bodyMarkup: `              <div class="row">
@@ -116,15 +151,20 @@ export const DASHBOARD_PANEL_REGISTRY = [
                 <input id="issue-number-input" type="number" min="1" step="1" inputmode="numeric" placeholder="Issue number">
                 <button type="submit">Load issue details</button>
               </form>
+              <div id="issue-metrics" class="metric-grid">
+                <div class="metric-tile panel-empty-state">Select an issue to load metrics.</div>
+              </div>
               <div class="row">
-                <div class="row-label">Explain</div>
+                <div class="row-label">Explain focus</div>
                 <div id="issue-explain" class="detail-stack">
                   <div class="panel-empty-state detail-empty">Choose an issue number to load /api/issues/:issueNumber/explain.</div>
                 </div>
               </div>
               <div class="row">
-                <div class="row-label">Issue lint</div>
-                <pre id="issue-lint" class="code">Issue lint appears here after a selection.</pre>
+                <div class="row-label">Lint posture</div>
+                <div id="issue-lint" class="lint-grid">
+                  <div class="metric-tile panel-empty-state">Issue lint appears here after a selection.</div>
+                </div>
               </div>`,
   }),
   renderDashboardPanelShell({
@@ -132,12 +172,15 @@ export const DASHBOARD_PANEL_REGISTRY = [
     section: "details",
     title: "Tracked history",
     subtitle: "Current tracked issues in a compact queue view.",
+    iconMarkup: renderPanelIcon("◎"),
     headerMetaMarkup: '<span id="tracked-history-summary" class="hint">Waiting for tracked history…</span>',
     headerActionMarkup: '<button type="button" id="tracked-history-toggle">Show done issues</button>',
     bodyClassName: "stack",
     bodyMarkup: `              <div class="row">
                 <div class="row-label">Tracked issues</div>
-                <pre id="tracked-history-lines" class="code panel-empty-state">Loading tracked history…</pre>
+                <div id="tracked-history-lines" class="history-list">
+                  <div class="history-card panel-empty-state">Loading tracked history…</div>
+                </div>
               </div>`,
   }),
   renderDashboardPanelShell({
@@ -145,29 +188,34 @@ export const DASHBOARD_PANEL_REGISTRY = [
     section: "details",
     title: "Operator actions",
     subtitle: "Existing safe command endpoints without changing backend semantics.",
+    iconMarkup: renderPanelIcon("⌘"),
     headerMetaMarkup: '<span id="command-status" class="hint">No command run yet.</span>',
     bodyClassName: "stack",
-    bodyMarkup: `              <p class="hint">
-                Commands run one at a time. Confirmation rejections, in-flight progress, and refresh follow-up guidance
-                appear below.
-              </p>
-              <div class="action-grid">
-                <div class="action-card">
+    bodyMarkup: `              <div class="action-grid action-grid-large">
+                <div class="action-card action-card-large">
+                  <span class="action-icon" aria-hidden="true">▶</span>
+                  <span class="action-kicker">Cycle</span>
                   <strong>Run once</strong>
                   <p>Trigger one safe supervisor cycle through <code>/api/commands/run-once</code>.</p>
                   <button type="button" id="run-once-button">Run once</button>
                 </div>
-                <div class="action-card">
+                <div class="action-card action-card-large">
+                  <span class="action-icon" aria-hidden="true">↺</span>
+                  <span class="action-kicker">Issue</span>
                   <strong>Requeue issue</strong>
                   <p>Requeue the selected issue only after issue details are loaded.</p>
                   <button type="button" id="requeue-button">Requeue selected issue</button>
                 </div>
-                <div class="action-card">
+                <div class="action-card action-card-large">
+                  <span class="action-icon" aria-hidden="true">✦</span>
+                  <span class="action-kicker">Cleanup</span>
                   <strong>Prune orphaned workspaces</strong>
                   <p>Requires confirm before calling <code>/api/commands/prune-orphaned-workspaces</code>.</p>
                   <button type="button" id="prune-workspaces-button">Confirm and prune</button>
                 </div>
-                <div class="action-card">
+                <div class="action-card action-card-large">
+                  <span class="action-icon" aria-hidden="true">⌁</span>
+                  <span class="action-kicker">Recovery</span>
                   <strong>Reset corrupt JSON state</strong>
                   <p>Requires confirm before calling <code>/api/commands/reset-corrupt-json-state</code>.</p>
                   <button type="button" id="reset-json-state-button">Confirm and reset</button>
@@ -183,6 +231,7 @@ export const DASHBOARD_PANEL_REGISTRY = [
     section: "details",
     title: "Live events",
     subtitle: "Supervisor SSE activity streamed from the existing /api/events endpoint.",
+    iconMarkup: renderPanelIcon("◉"),
     headerMetaMarkup: '<span class="hint">SSE from /api/events</span>',
     bodyMarkup: `              <div id="event-list" class="event-list">
                 <div class="panel-empty-state event-item">Waiting for live events…</div>
@@ -193,6 +242,7 @@ export const DASHBOARD_PANEL_REGISTRY = [
     section: "details",
     title: "Operator timeline",
     subtitle: "Recent commands, refreshes, and correlated live events in one feed.",
+    iconMarkup: renderPanelIcon("↗"),
     headerMetaMarkup: '<span class="hint">Recent commands, refreshes, and correlated live events</span>',
     bodyMarkup: `              <div id="operator-timeline" class="event-list">
                 <div class="panel-empty-state event-item">Waiting for operator activity…</div>
