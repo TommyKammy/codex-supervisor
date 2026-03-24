@@ -64,6 +64,8 @@ test("writeLocalReviewArtifacts renders durable guardrail provenance compactly",
   const summary = await fs.readFile(artifacts.summaryPath, "utf8");
 
   assert.match(summary, /## Durable guardrails/);
+  assert.match(summary, /## Pre-merge final evaluation/);
+  assert.match(summary, /- Outcome: mergeable/);
   assert.match(summary, /- Verifier committed: 1 from docs\/shared-memory\/verifier-guardrails\.json/);
   assert.match(summary, /- External review committed: 1 from docs\/shared-memory\/external-review-guardrails\.json/);
   assert.match(summary, /- External review runtime: 2 from owner-repo\/issue-38\/external-review-misses-head-111122223333\.json/);

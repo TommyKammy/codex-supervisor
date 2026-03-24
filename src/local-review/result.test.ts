@@ -140,6 +140,26 @@ test("formatLocalReviewResult preserves finalized summary fields and blocker sum
       verifiedMaxSeverity: "none",
       recommendation: "changes_requested",
       degraded: false,
+      finalEvaluation: {
+        outcome: "follow_up_eligible",
+        residualFindings: [
+          {
+            findingKey: "src/example.ts|20|21|medium issue|this still needs follow-up.",
+            summary: "This still needs follow-up.",
+            severity: "medium",
+            category: "tests",
+            file: "src/example.ts",
+            start: 20,
+            end: 21,
+            source: "local_review",
+            resolution: "follow_up_candidate",
+            rationale: "Residual non-high-severity finding is eligible for explicit follow-up instead of blocking merge by itself.",
+          },
+        ],
+        mustFixCount: 0,
+        manualReviewCount: 0,
+        followUpCount: 1,
+      },
       rawOutput: "raw output",
     },
   );

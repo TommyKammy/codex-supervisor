@@ -44,6 +44,38 @@ export interface LocalReviewVerificationFinding {
   rationale: string;
 }
 
+export type PreMergeFinalEvaluationOutcome =
+  | "mergeable"
+  | "fix_blocked"
+  | "manual_review_blocked"
+  | "follow_up_eligible";
+
+export type PreMergeResidualResolution =
+  | "must_fix"
+  | "manual_review_required"
+  | "follow_up_candidate";
+
+export interface PreMergeResidualFinding {
+  findingKey: string;
+  summary: string;
+  severity: ActionableSeverity;
+  category: string | null;
+  file: string | null;
+  start: number | null;
+  end: number | null;
+  source: "local_review";
+  resolution: PreMergeResidualResolution;
+  rationale: string;
+}
+
+export interface PreMergeFinalEvaluation {
+  outcome: PreMergeFinalEvaluationOutcome;
+  residualFindings: PreMergeResidualFinding[];
+  mustFixCount: number;
+  manualReviewCount: number;
+  followUpCount: number;
+}
+
 export interface LocalReviewRootCauseSummary {
   summary: string;
   severity: ActionableSeverity;
@@ -127,6 +159,7 @@ export interface LocalReviewArtifact {
     findings: LocalReviewVerificationFinding[];
   };
   verifiedFindings: LocalReviewFinding[];
+  finalEvaluation: PreMergeFinalEvaluation;
   guardrailProvenance: LocalReviewGuardrailProvenance;
   roleReports: Array<{
     role: string;
@@ -164,6 +197,7 @@ export interface FinalizedLocalReview {
   actionableFindings: LocalReviewFinding[];
   rootCauseSummaries: LocalReviewRootCauseSummary[];
   verifiedFindings: LocalReviewFinding[];
+  finalEvaluation: PreMergeFinalEvaluation;
   artifact: LocalReviewArtifact;
 }
 
@@ -180,5 +214,6 @@ export interface LocalReviewResult {
   verifiedMaxSeverity: LocalReviewSeverity;
   recommendation: "ready" | "changes_requested" | "unknown";
   degraded: boolean;
+  finalEvaluation: PreMergeFinalEvaluation;
   rawOutput: string;
 }

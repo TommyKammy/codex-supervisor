@@ -4,6 +4,7 @@ import { type CodexExecutionTarget } from "../core/types";
 import { type SupervisorConfig } from "../core/types";
 import { truncate } from "../core/utils";
 import { findingMeetsReviewerThreshold, reviewerTypeForRole, thresholdsForReviewerType } from "./thresholds";
+import { derivePreMergeFinalEvaluation } from "./final-evaluation";
 import {
   type FinalizedLocalReview,
   type LocalReviewGuardrailProvenance,
@@ -323,6 +324,11 @@ export function finalizeLocalReview(args: {
     (finding) => verificationByKey.get(findingKey(finding))?.verdict === "confirmed",
   );
   const verifiedMaxSeverity = maxSeverity(verifiedFindings);
+  const finalEvaluation = derivePreMergeFinalEvaluation({
+    actionableFindings,
+    verificationFindings: args.verifierReport?.findings ?? [],
+    degraded,
+  });
   const guardrailProvenance: LocalReviewGuardrailProvenance = args.guardrailProvenance ?? {
     verifier: {
       committedPath: null,
@@ -363,6 +369,7 @@ export function finalizeLocalReview(args: {
       findings: args.verifierReport?.findings ?? [],
     },
     verifiedFindings,
+    finalEvaluation,
     guardrailProvenance,
     roleReports,
     verifierReport: args.verifierReport
@@ -393,6 +400,7 @@ export function finalizeLocalReview(args: {
     actionableFindings,
     rootCauseSummaries,
     verifiedFindings,
+    finalEvaluation,
     artifact,
   };
 }
