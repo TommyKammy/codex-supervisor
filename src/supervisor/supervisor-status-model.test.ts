@@ -195,7 +195,7 @@ test("buildDetailedStatusModel preserves check summaries and local-review drift 
   assert.ok(
     lines.some((line) =>
       line.includes(
-        "local_review gating=no policy=block_ready findings=2 root_causes=1 max_severity=high verified_findings=1 verified_max_severity=high head=stale reviewed_head_sha=cafebabe pr_head_sha=deadbeef ran_at=2026-03-11T15:00:00Z needs_review_run=yes drift=cafebabe->deadbeef signature=local-review:high:2 repeated=2 stalled=no",
+        "local_review gating=yes policy=block_ready findings=2 root_causes=1 max_severity=high verified_findings=1 verified_max_severity=high head=stale reviewed_head_sha=cafebabe pr_head_sha=deadbeef ran_at=2026-03-11T15:00:00Z blocker_summary=high src/status.ts:12 stale review head needs_review_run=yes drift=cafebabe->deadbeef signature=local-review:high:2 repeated=2 stalled=no",
       ),
     ),
   );

@@ -79,8 +79,12 @@ export function localReviewBlocksReady(
   >,
   pr: GitHubPullRequest,
 ): boolean {
+  if (!config.localReviewEnabled) {
+    return false;
+  }
+
   if (config.localReviewPolicy === "block_ready") {
-    return localReviewHasActionableFindings(record, pr);
+    return record.local_review_head_sha !== pr.headRefOid || localReviewHasActionableFindings(record, pr);
   }
 
   if (config.localReviewPolicy !== "block_merge") {
@@ -109,7 +113,7 @@ export function localReviewBlocksMerge(
   >,
   pr: GitHubPullRequest,
 ): boolean {
-  if (pr.isDraft || config.localReviewPolicy !== "block_merge") {
+  if (!config.localReviewEnabled || pr.isDraft || config.localReviewPolicy !== "block_merge") {
     return false;
   }
 

@@ -5,55 +5,58 @@
 - Branch: codex/issue-918
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 559aabdc4850e2416b9cb1afdc9d775b88d4ef74
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: 5c8f95547ab22406d1448fe6e84e2a966f5e36f8
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-24T02:36:14.802Z
+- Last failure signature: external-review-family-layout-module-list-drift
+- Repeated failure signature count: 1
+- Updated at: 2026-03-24T03:00:10Z
 
 ## Latest Codex Summary
-Implemented the final-evaluation gate and committed it as `559aabd` (`Gate merge completion on final evaluation resolution`).
+Addressed the three automated review findings on draft PR [#933](https://github.com/TommyKammy/codex-supervisor/pull/933). `block_ready` now requires a fresh local review only when local review is enabled, the post-turn merge recheck carries the refreshed PR snapshot through state updates and execution metrics, and generated memory artifacts plus this journal no longer embed operator-local absolute paths.
 
-The change persists pre-merge final-evaluation outcomes on the issue record, uses those outcomes to block both draft-to-ready and ready-to-merge transitions for unresolved or blocked `block_merge` reviews, and still allows `follow_up_eligible` assessments to proceed. I also updated the affected readiness and status-rendering tests and recorded the turn in the issue journal.
+Added focused regression coverage for stale review heads, refreshed merge snapshots, generated memory path rendering, and local-review status output under enabled gating. The branch head remains `5c8f955`; only the untracked local `.codex-supervisor/replay/` output is outside the tracked changes.
 
-Verification: `npm ci`, `npm run build`, `npx tsx --test src/pull-request-state-policy.test.ts src/supervisor/supervisor-pr-readiness.test.ts`, `npx tsx --test src/supervisor/supervisor-status-rendering-supervisor.test.ts src/supervisor/supervisor-status-rendering.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-pr-readiness.test.ts`, and `npx tsx --test src/**/*.test.ts`. The full suite now has one remaining unrelated failure in `src/external-review/external-review-family-layout.test.ts`, which still expects an older external-review module list.
-
-Summary: Added durable final-evaluation gating for merge progression, committed as `559aabd`, and reduced full-suite failures to one unrelated external-review layout test.
-State hint: local_review
+Summary: Addressed PR `#933` review feedback and normalized tracked/generated path rendering
+State hint: addressing_review
 Blocked reason: none
-Tests: `npm ci`; `npm run build`; `npx tsx --test src/pull-request-state-policy.test.ts src/supervisor/supervisor-pr-readiness.test.ts`; `npx tsx --test src/supervisor/supervisor-status-rendering-supervisor.test.ts src/supervisor/supervisor-status-rendering.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-pr-readiness.test.ts`; `npx tsx --test src/**/*.test.ts` (1 unrelated failure remains)
-Next action: push `codex/issue-918` and update the draft PR with the verification note that only `src/external-review/external-review-family-layout.test.ts` remains failing and is unrelated
-Failure signature: none
+Tests: `npx tsx --test src/review-handling.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-pr-readiness.test.ts src/core/memory.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-status-model.test.ts src/supervisor/supervisor-status-rendering-supervisor.test.ts`; `npm run build`; `npx tsx --test src/**/*.test.ts` still fails only in unrelated `src/external-review/external-review-family-layout.test.ts`
+Next action: commit the review fixes, push `codex/issue-918`, and resolve the PR `#933` review threads
+Failure signature: external-review-family-layout-module-list-drift
 
 ## Active Failure Context
-- None recorded.
+- Category: verification
+- Summary: Full-suite verification still has one unrelated existing failure outside issue #918.
+- Reference: src/external-review/external-review-family-layout.test.ts
+- Details:
+  - The expected runtime module list is stale.
+  - Runtime now includes `external-review-miss-digest.ts` and `external-review-prevention-targets.ts`.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: merge gating now needs to read a durable current-head final-evaluation outcome from the issue record so synchronous PR lifecycle decisions can distinguish unresolved, blocked, and follow-up-eligible local-review results without re-reading artifacts.
-- What changed: added persisted pre-merge final-evaluation fields to `IssueRunRecord` plus state-store normalization; recorded final-evaluation outcome/counts when local review runs; changed `localReviewBlocksReady` and `localReviewBlocksMerge` so `block_merge` requires a resolved current-head final evaluation and allows only `mergeable` or `follow_up_eligible`; guarded `handlePostTurnMergeAndCompletion` so stale `ready_to_merge` records still refuse auto-merge when the final evaluation is unresolved or blocked; updated focused lifecycle/policy tests plus affected status-rendering expectations to reflect the stricter gate.
+- Hypothesis: the PR review findings are resolved on this branch; only the longstanding unrelated external-review layout test remains outside issue #918 scope.
+- What changed: tightened `localReviewBlocksReady` so stale or missing reviews block the ready transition only when local review is enabled; carried refreshed PR snapshots through `handlePostTurnMergeAndCompletion` state/metrics updates; rendered generated memory artifact paths relative to the workspace; updated readiness and status regression coverage to match the enabled-gating contract; redacted operator-local paths from this tracked journal.
 - Current blocker: none
-- Next exact step: monitor draft PR `#933` and either address review/CI feedback or, if the unrelated external-review layout failure needs cleanup on this branch, decide explicitly whether to follow it up separately.
-- Verification gap: issue-relevant focused tests and `npm run build` now pass after `npm ci`; the full suite is down to one unrelated existing failure in `src/external-review/external-review-family-layout.test.ts`.
-- Files touched: `src/core/types.ts`, `src/core/state-store.ts`, `src/review-handling.ts`, `src/post-turn-pull-request.ts`, `src/supervisor/supervisor.ts`, `src/pull-request-state-policy.test.ts`, `src/supervisor/supervisor-pr-readiness.test.ts`, `src/supervisor/supervisor-status-rendering-supervisor.test.ts`, `src/supervisor/supervisor-status-rendering.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: moderate-low; the change alters merge gating behavior for `block_merge` local review by requiring a current-head resolved final evaluation, so rollback would reopen the path where blocked or unresolved assessments can still mark PRs ready or enable auto-merge.
-- Last focused command: `npm ci && npm run build && npx tsx --test src/pull-request-state-policy.test.ts src/supervisor/supervisor-pr-readiness.test.ts src/supervisor/supervisor-status-rendering-supervisor.test.ts src/supervisor/supervisor-status-rendering.test.ts && npx tsx --test src/**/*.test.ts`
+- Next exact step: commit these review fixes, push `codex/issue-918`, and resolve the PR `#933` review threads.
+- Verification gap: `npm run build` and the issue-relevant targeted suites pass; full `src/**/*.test.ts` still fails only at unrelated `src/external-review/external-review-family-layout.test.ts`.
+- Files touched: `src/core/memory.ts`, `src/core/memory.test.ts`, `src/pull-request-state-policy.test.ts`, `src/review-handling.ts`, `src/review-handling.test.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-pr-readiness.test.ts`, `src/supervisor/supervisor-status-model-supervisor.test.ts`, `src/supervisor/supervisor-status-model.test.ts`, `src/supervisor/supervisor-status-rendering-supervisor.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: low-moderate; reverting would reopen the stale-review ready transition, stale-head merge race, and operator-local path leakage in tracked/generated artifacts.
+- Last focused command: `npx tsx --test src/**/*.test.ts`
 - Last focused failure: `npx tsx --test src/**/*.test.ts` now fails only at `src/external-review/external-review-family-layout.test.ts` because the expected runtime module list is stale (`external-review-miss-digest.ts` and `external-review-prevention-targets.ts` are present but not reflected in the test).
 - Draft PR: `#933` https://github.com/TommyKammy/codex-supervisor/pull/933
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-918/AGENTS.generated.md
-sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-918/context-index.md
+sed -n '1,220p' ../../codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-918/AGENTS.generated.md
+sed -n '1,260p' ../../codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-918/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
 git status --short
-git branch --show-current
-git log --oneline --decorate -5
-npm ci
+sed -n '1,220p' src/review-handling.ts
+sed -n '740,860p' src/supervisor/supervisor.ts
+sed -n '1,220p' src/core/memory.ts
+npx tsx --test src/review-handling.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-pr-readiness.test.ts src/core/memory.test.ts
+npx tsx --test src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-status-model.test.ts src/supervisor/supervisor-status-rendering-supervisor.test.ts
 npm run build
-npx tsx --test src/pull-request-state-policy.test.ts src/supervisor/supervisor-pr-readiness.test.ts
-npx tsx --test src/supervisor/supervisor-status-rendering-supervisor.test.ts src/supervisor/supervisor-status-rendering.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-pr-readiness.test.ts
 npx tsx --test src/**/*.test.ts
 ```
 ### Scratchpad

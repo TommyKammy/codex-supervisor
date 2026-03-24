@@ -151,7 +151,7 @@ test("summarizeChecks treats cancelled runs as waiting, not failing", () => {
 });
 
 test("formatDetailedStatus shows blocking local review status for current PR head", () => {
-  const config = createConfig({ localReviewPolicy: "block_ready" });
+  const config = createConfig({ localReviewEnabled: true, localReviewPolicy: "block_ready" });
   const record = createRecord({
     local_review_head_sha: "deadbeef",
     local_review_blocker_summary: "high src/supervisor.ts:210-214 stale artifact context drives the wrong repair path.",
@@ -790,7 +790,7 @@ test("formatDetailedStatus reports idle status with the latest record and latest
 });
 
 test("formatDetailedStatus marks stale local review as gating until current-head final evaluation resolves", () => {
-  const config = createConfig({ localReviewPolicy: "block_merge" });
+  const config = createConfig({ localReviewEnabled: true, localReviewPolicy: "block_merge" });
   const record = createRecord({
     local_review_head_sha: "oldhead",
     local_review_max_severity: "medium",
@@ -842,7 +842,7 @@ test("formatDetailedStatus reports unknown local review head status without a PR
 });
 
 test("formatDetailedStatus reports none local review head status with current PR head", () => {
-  const config = createConfig({ localReviewPolicy: "block_merge" });
+  const config = createConfig({ localReviewEnabled: true, localReviewPolicy: "block_merge" });
   const record = createRecord({
     local_review_head_sha: null,
     local_review_run_at: null,

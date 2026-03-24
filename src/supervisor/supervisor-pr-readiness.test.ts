@@ -546,6 +546,7 @@ test("handlePostTurnMergeAndCompletion refreshes PR state before enabling auto-m
   ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, stalePr, { dryRun: false });
 
   assert.equal(result.state, "merging");
+  assert.equal(result.last_head_sha, "head-fresh-117");
   assert.equal(getPullRequestCalls, 1);
   assert.equal(autoMergeCalls, 1);
 });
@@ -581,7 +582,7 @@ test("handlePostTurnMergeAndCompletion blocks stale ready-to-merge records when 
     url: `https://example.test/issues/${issueNumber}`,
     state: "OPEN",
   };
-  const pr: GitHubPullRequest = {
+  const stalePr: GitHubPullRequest = {
     number: 119,
     title: "Do not enable auto-merge",
     url: "https://example.test/pr/119",
@@ -592,8 +593,12 @@ test("handlePostTurnMergeAndCompletion blocks stale ready-to-merge records when 
     mergeStateStatus: "CLEAN",
     mergeable: "MERGEABLE",
     headRefName: "codex/issue-119",
-    headRefOid: "head-119",
+    headRefOid: "head-119-stale",
     mergedAt: null,
+  };
+  const refreshedPr: GitHubPullRequest = {
+    ...stalePr,
+    headRefOid: "head-119",
   };
 
   let autoMergeCalls = 0;
@@ -601,7 +606,7 @@ test("handlePostTurnMergeAndCompletion blocks stale ready-to-merge records when 
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     getPullRequest: async (prNumber: number) => {
       assert.equal(prNumber, 119);
-      return pr;
+      return refreshedPr;
     },
     enableAutoMerge: async () => {
       autoMergeCalls += 1;
@@ -618,10 +623,11 @@ test("handlePostTurnMergeAndCompletion blocks stale ready-to-merge records when 
         options: { dryRun: boolean },
       ) => Promise<ReturnType<typeof createRecord>>;
     }
-  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, stalePr, { dryRun: false });
 
   assert.equal(result.state, "blocked");
   assert.equal(result.blocked_reason, "verification");
+  assert.equal(result.last_head_sha, "head-119");
   assert.equal(autoMergeCalls, 0);
 });
 

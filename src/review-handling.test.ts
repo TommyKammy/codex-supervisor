@@ -226,7 +226,7 @@ test("hasProcessedReviewThread ignores unrelated same-head fingerprints when dec
   );
 });
 
-test("local review gating only blocks the intended transition for current actionable findings", () => {
+test("local review gating respects enabled policy requirements for ready and merge transitions", () => {
   const pr = createPullRequest({ isDraft: false });
   const actionableRecord = createRecord({
     local_review_head_sha: "deadbeef",
@@ -235,9 +235,28 @@ test("local review gating only blocks the intended transition for current action
   });
 
   assert.equal(localReviewBlocksReady(createConfig({ localReviewPolicy: "block_ready" }), actionableRecord, pr), true);
-  assert.equal(localReviewBlocksReady(createConfig({ localReviewPolicy: "block_merge" }), actionableRecord, pr), false);
+  assert.equal(localReviewBlocksReady(createConfig({ localReviewPolicy: "block_merge" }), actionableRecord, pr), true);
   assert.equal(localReviewBlocksMerge(createConfig({ localReviewPolicy: "block_merge" }), actionableRecord, pr), true);
   assert.equal(localReviewBlocksMerge(createConfig({ localReviewPolicy: "block_ready" }), actionableRecord, pr), false);
+  assert.equal(
+    localReviewBlocksReady(
+      createConfig({ localReviewEnabled: false, localReviewPolicy: "block_ready" }),
+      createRecord(),
+      pr,
+    ),
+    false,
+  );
+});
+
+test("block_ready keeps stale local reviews blocking the ready transition", () => {
+  const pr = createPullRequest({ headRefOid: "head-new" });
+  const staleRecord = createRecord({
+    local_review_head_sha: "head-old",
+    local_review_findings_count: 0,
+    local_review_recommendation: "ready",
+  });
+
+  assert.equal(localReviewBlocksReady(createConfig({ localReviewPolicy: "block_ready" }), staleRecord, pr), true);
 });
 
 test("local review high-severity actions distinguish retry from blocked", () => {

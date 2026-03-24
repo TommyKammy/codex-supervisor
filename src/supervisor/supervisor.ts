@@ -780,17 +780,22 @@ export class Supervisor {
     recoveryEvents: RecoveryEvent[] = [],
   ): Promise<IssueRunRecord> {
     let nextRecord = record;
+    let currentPr = pr;
 
     if (nextRecord.state === "ready_to_merge" && !options.dryRun) {
-      const refreshedPr = await this.github.getPullRequest(pr.number);
-      if (localReviewBlocksMerge(this.config, nextRecord, refreshedPr)) {
+      currentPr = await this.github.getPullRequest(pr.number);
+      if (localReviewBlocksMerge(this.config, nextRecord, currentPr)) {
         nextRecord = this.stateStore.touch(nextRecord, {
           state: "blocked",
           blocked_reason: "verification",
+          last_head_sha: currentPr.headRefOid,
         });
       } else {
-        await this.github.enableAutoMerge(refreshedPr.number, refreshedPr.headRefOid);
-        nextRecord = this.stateStore.touch(nextRecord, { state: "merging" });
+        await this.github.enableAutoMerge(currentPr.number, currentPr.headRefOid);
+        nextRecord = this.stateStore.touch(nextRecord, {
+          state: "merging",
+          last_head_sha: currentPr.headRefOid,
+        });
       }
       state.issues[String(nextRecord.issue_number)] = nextRecord;
     }
@@ -805,7 +810,7 @@ export class Supervisor {
       previousRecord: record,
       nextRecord,
       issue,
-      pullRequest: pr,
+      pullRequest: currentPr,
       recoveryEvents,
       retentionRootPath: executionMetricsRetentionRootPath(this.config.stateFile),
     });

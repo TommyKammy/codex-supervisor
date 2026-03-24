@@ -125,6 +125,18 @@ test("inferStateFromPullRequest covers local review policy gating combinations",
       expected: "draft_pr",
     },
     {
+      name: "block_ready keeps draft PRs in draft_pr when the saved local review head is stale",
+      config: { localReviewEnabled: true, localReviewPolicy: "block_ready", copilotReviewWaitMinutes: 0 },
+      record: {
+        state: "draft_pr",
+        local_review_head_sha: "head122",
+        local_review_findings_count: 0,
+        local_review_recommendation: "ready",
+      },
+      pr: { isDraft: true, headRefOid: "head123" },
+      expected: "draft_pr",
+    },
+    {
       name: "block_ready does not block a ready PR after it becomes ready",
       config: { localReviewEnabled: true, localReviewPolicy: "block_ready", copilotReviewWaitMinutes: 0 },
       record: {
