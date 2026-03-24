@@ -210,3 +210,34 @@ test("classifyStaleStabilizingNoPrBranchState ignores supervisor-owned replay ar
 
   assert.equal(result, "already_satisfied_on_main");
 });
+
+test("classifyStaleStabilizingNoPrBranchState treats replay-to-code renames as meaningful workspace changes", async () => {
+  const { repoPath, rootPath } = await createRepositoryWithOrigin();
+  const journalPath = path.join(repoPath, ".codex-supervisor", "issue-journal.md");
+  const replayArtifactPath = path.join(repoPath, ".codex-supervisor", "replay", "decision-cycle-snapshot.json");
+  const renamedArtifactPath = path.join(repoPath, "src", "generated.ts");
+
+  await fs.mkdir(path.dirname(replayArtifactPath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n");
+  await fs.writeFile(replayArtifactPath, "{\n  \"kind\": \"replay\"\n}\n");
+  await runCommand("git", ["-C", repoPath, "add", replayArtifactPath]);
+  await runCommand("git", ["-C", repoPath, "commit", "-m", "track replay artifact"]);
+  await runCommand("git", ["-C", repoPath, "push", "origin", "main"]);
+
+  await fs.mkdir(path.dirname(renamedArtifactPath), { recursive: true });
+  await runCommand("git", ["-C", repoPath, "mv", replayArtifactPath, renamedArtifactPath]);
+
+  const supervisor = new Supervisor(
+    createConfig({
+      repoPath,
+      workspaceRoot: rootPath,
+    }),
+  );
+
+  const result = await classifyStaleStabilizingNoPrBranchState(supervisor, {
+    workspace: repoPath,
+    journal_path: journalPath,
+  });
+
+  assert.equal(result, "recoverable");
+});

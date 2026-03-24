@@ -5,57 +5,58 @@
 - Branch: codex/issue-937
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: waiting_ci
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 2b87ac4ed5c1bb0994f254849c407078dc045dc0
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=1, repair=2)
+- Last head SHA: ce245115e0ecb8c7302516bd574a5ab243ac1177
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-24T13:23:30Z
+- Last failure signature: PRRT_kwDORgvdZ852bKqY|PRRT_kwDORgvdZ852bKqh
+- Repeated failure signature count: 1
+- Updated at: 2026-03-24T13:43:39Z
 
 ## Latest Codex Summary
-Merged `origin/main` into `codex/issue-937` as `6856871`, refreshed the issue journal in `2b87ac4`, and pushed the branch back to `origin/codex/issue-937`. The stale no-PR replay-artifact fix remained intact after the base integration, including the newer `main`-branch reconciliation and post-merge-audit plumbing.
+Addressed both open automated review threads locally. The stale no-PR classifier in [src/supervisor/supervisor.ts](src/supervisor/supervisor.ts) now reads `git status --porcelain=v1 -z` and only ignores a workspace-status entry when every path in that entry is supervisor-owned, which closes the replay-to-code rename gap. Added a focused regression in [src/supervisor/supervisor-stale-no-pr-branch-state.test.ts](src/supervisor/supervisor-stale-no-pr-branch-state.test.ts) to keep replay-to-code renames classified as meaningful local changes, and scrubbed machine-local paths from [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md).
 
-Focused verification still passes on the merged tree: `npx tsx --test src/supervisor/supervisor-stale-no-pr-branch-state.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts` and `npm run build`. Draft PR [#945](https://github.com/TommyKammy/codex-supervisor/pull/945) now points at `2b87ac4` and GitHub reports `mergeStateStatus=UNSTABLE` only because CI is currently in progress (`build (ubuntu-latest)` and `build (macos-latest)` started at `2026-03-24T13:23:08Z`). The only remaining local artifact is the intentionally untracked `.codex-supervisor/replay/` directory.
+Focused verification passed on the local review-fix tree: `npx tsx --test src/supervisor/supervisor-stale-no-pr-branch-state.test.ts src/supervisor/supervisor-execution-orchestration.test.ts` and `npm run build`. The only intentional local artifact remains the untracked `.codex-supervisor/replay/` directory.
 
-Summary: Integrated `origin/main`, preserved the replay-artifact already-landed convergence fix, resolved the tracked journal conflict conservatively, and revalidated the targeted supervisor tests plus build.
-State hint: waiting_ci
+Summary: Patched replay-artifact status parsing for rename safety, added a focused regression test, and removed machine-local journal paths.
+State hint: addressing_review
 Blocked reason: none
-Tests: `npx tsx --test src/supervisor/supervisor-stale-no-pr-branch-state.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`; `npm run build`
-Next action: Monitor draft PR #945 until CI completes, then recheck mergeability once GitHub stops reporting `UNSTABLE`.
-Failure signature: none
+Tests: `npx tsx --test src/supervisor/supervisor-stale-no-pr-branch-state.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`; `npm run build`
+Next action: Commit and push the review-fix branch update, then recheck PR #945 review threads and CI on the new head.
+Failure signature: PRRT_kwDORgvdZ852bKqY|PRRT_kwDORgvdZ852bKqh
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 2 automated review thread(s) addressed locally; PR #945 still needs the new head pushed and reevaluated.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/945#discussion_r2981612639
+- Details:
+  - .codex-supervisor/issue-journal.md: machine-local absolute links and command examples were rewritten as portable repo-relative references or plain filenames.
+  - src/supervisor/supervisor.ts: workspace-status parsing now uses porcelain `-z` entries and only ignores replay/journal artifacts when every path in a rename/copy entry stays inside the supervisor-owned set; replay-to-code renames remain meaningful and keep the branch `recoverable`.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the replay-artifact fix is complete, and the branch is now only waiting for GitHub to finish reevaluating PR #945 on the refreshed merge base.
-- What changed: merged `origin/main` into `codex/issue-937` as `6856871`; reviewed the merged [supervisor.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-937/src/supervisor/supervisor.ts), [recovery-reconciliation.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-937/src/recovery-reconciliation.ts), and [supervisor-recovery-reconciliation.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-937/src/supervisor/supervisor-recovery-reconciliation.test.ts) changes to confirm the replay-artifact classifier and already-satisfied convergence logic still hold after the new `main`-branch signatures and post-merge-audit sync hooks landed; resolved the tracked journal conflict by keeping the issue-937 journal content and letting Git reapply the local journal edits after the merge commit; committed the refreshed journal as `2b87ac4` and pushed `codex/issue-937` to update PR #945.
+- Hypothesis: the remaining review risk was limited to workspace-status parsing for rename/copy entries and the checked-in journal's machine-local paths; both are now fixed locally and ready to push.
+- What changed: switched stale no-PR workspace-status inspection in [src/supervisor/supervisor.ts](src/supervisor/supervisor.ts) from line-based `git status --short` parsing to porcelain `-z` parsing; treat rename/copy entries as ignored only when every path involved is the issue journal or within `.codex-supervisor/replay/`; added a replay-to-code rename regression in [src/supervisor/supervisor-stale-no-pr-branch-state.test.ts](src/supervisor/supervisor-stale-no-pr-branch-state.test.ts); replaced machine-local absolute links and memory-file command paths in [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) with portable references.
 - Current blocker: none.
-- Next exact step: monitor draft PR #945 until the in-progress CI jobs finish, then recheck mergeability once GitHub stops reporting `UNSTABLE`.
-- Verification gap: none for the targeted stale no-PR path after the base merge; focused stale branch-state, reconciliation, and orchestration tests plus `npm run build` all pass on `6856871`, and the pushed head is `2b87ac4`.
-- Files touched: merge commit `6856871`, journal follow-up `2b87ac4`, and `.codex-supervisor/issue-journal.md`; issue-specific logic remains in `src/recovery-reconciliation.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-stale-no-pr-branch-state.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts`, and `src/supervisor/supervisor-test-helpers.ts`.
-- Rollback concern: low; reverting the merge would restore the dirty PR state, and reverting the issue-specific commits would restore the stale replay-artifact misclassification and the incorrect manual-review convergence path for already-landed no-PR recovery.
-- Last focused command: `gh pr view 945 --json url,isDraft,mergeStateStatus,reviewDecision,headRefOid,statusCheckRollup`
-- Last focused failure: `git merge --autostash origin/main` stopped on the tracked `.codex-supervisor/issue-journal.md` conflict because `origin/main` carried a different issue journal; resolved by keeping the issue-937 journal content and letting Git reapply the local journal edits after the merge commit.
+- Next exact step: commit and push `codex/issue-937`, then recheck PR #945 so GitHub reevaluates the addressed review threads on the new head.
+- Verification gap: none for the addressed review feedback; the targeted stale branch-state/orchestration tests and `npm run build` all pass after the parser change and journal scrub.
+- Files touched: [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md), [src/supervisor/supervisor.ts](src/supervisor/supervisor.ts), and [src/supervisor/supervisor-stale-no-pr-branch-state.test.ts](src/supervisor/supervisor-stale-no-pr-branch-state.test.ts).
+- Rollback concern: low; reverting this review-fix patch would reopen the replay-to-code rename false-negative and restore the non-portable journal paths, while leaving the original stale no-PR already-landed fix in a review-blocked state.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-stale-no-pr-branch-state.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`
+- Last focused failure: none; focused tests and `npm run build` both passed after the parser change.
 - Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/945
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-937/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-937/context-index.md
+sed -n '1,220p' .local/memory/TommyKammy-codex-supervisor/issue-937/AGENTS.generated.md
+sed -n '1,220p' .local/memory/TommyKammy-codex-supervisor/issue-937/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
 git status --short --branch
-git fetch origin
-git merge --autostash origin/main
-git diff --cached --unified=40 -- src/recovery-reconciliation.ts src/supervisor/supervisor.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-stale-no-pr-branch-state.test.ts src/supervisor/supervisor-execution-orchestration.test.ts src/supervisor/supervisor-test-helpers.ts
-git checkout --ours .codex-supervisor/issue-journal.md
-npx tsx --test src/supervisor/supervisor-stale-no-pr-branch-state.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts
+sed -n '380,500p' src/supervisor/supervisor.ts
+sed -n '1,260p' src/supervisor/supervisor-stale-no-pr-branch-state.test.ts
+npx tsx --test src/supervisor/supervisor-stale-no-pr-branch-state.test.ts src/supervisor/supervisor-execution-orchestration.test.ts
 npm run build
-git commit -m "Merge origin/main into codex/issue-937"
-git commit -m "Update issue #937 journal after merge resolution"
-git push origin codex/issue-937
-gh pr view 945 --json url,isDraft,mergeStateStatus,reviewDecision,headRefOid,statusCheckRollup
+rg -n '/home/' .codex-supervisor/issue-journal.md
+git diff -- src/supervisor/supervisor.ts src/supervisor/supervisor-stale-no-pr-branch-state.test.ts .codex-supervisor/issue-journal.md
 ```
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
