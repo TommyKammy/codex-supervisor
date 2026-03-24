@@ -832,11 +832,26 @@ export class Supervisor {
         ...lifecycle.mergeLatencyVisibilityPatch,
         ...lifecycle.copilotTimeoutPatch,
       };
+      const effectiveFailureContext =
+        lifecycle.failureContext ??
+        (lifecycle.nextState === "local_review_fix" &&
+        localReviewHighSeverityNeedsRetry(this.config, lifecycle.recordForState, currentPr)
+          ? localReviewFailureContext(lifecycle.recordForState)
+          : null);
 
       if (lifecycle.nextState !== "ready_to_merge") {
         nextRecord = this.stateStore.touch(nextRecord, {
           ...lifecyclePatch,
           state: lifecycle.nextState,
+          last_error:
+            lifecycle.nextState === "blocked" && effectiveFailureContext
+              ? truncate(effectiveFailureContext.summary, 1000)
+              : lifecycle.nextState === "local_review_fix" &&
+                  localReviewHighSeverityNeedsRetry(this.config, lifecycle.recordForState, currentPr)
+                ? truncate(localReviewFailureSummary(lifecycle.recordForState), 1000)
+                : nextRecord.last_error,
+          last_failure_context: effectiveFailureContext,
+          ...applyFailureSignature(nextRecord, effectiveFailureContext),
           blocked_reason:
             lifecycle.nextState === "blocked"
               ? blockedReasonForLifecycleState(
