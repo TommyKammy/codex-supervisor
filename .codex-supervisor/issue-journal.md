@@ -1,28 +1,28 @@
-# Issue #946: Stale no-PR branch-state bug: preserve whitespace in base-diff paths before replay-artifact filtering
+# Issue #948: Path hygiene check: add a focused detector for workstation-local absolute paths
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/946
-- Branch: codex/issue-946
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/948
+- Branch: codex/issue-948
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 4 (implementation=4, repair=0)
-- Last head SHA: d88c032746f0fd1dc3fba16800023ed1fc9470e2
+- Current phase: waiting_ci
+- Attempt count: 5 (implementation=2, repair=3)
+- Last head SHA: 91e2a0d240ffe0248e46148d05ffedc232d49dd6
 - Blocked reason: none
-- Last failure signature: stale-stabilizing-no-pr-recovery-loop
+- Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-24T16:04:12.000Z
+- Updated at: 2026-03-24T17:29:42+00:00
 
 ## Latest Codex Summary
-Fixed the stale no-PR branch-state gap in [src/supervisor/supervisor.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-946/src/supervisor/supervisor.ts) by preserving literal `git diff --name-only` path text before replay-artifact filtering. I also added tracked base-diff regressions in [src/supervisor/supervisor-stale-no-pr-branch-state.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-946/src/supervisor/supervisor-stale-no-pr-branch-state.test.ts) to prove that leading-whitespace replay-like paths stay meaningful while exact supervisor-owned replay artifact paths remain ignored.
+Validated the CodeRabbit review note on `--exclude-path` normalization in [scripts/check-workstation-local-paths.ts](scripts/check-workstation-local-paths.ts), updated repo-relative path normalization to canonicalize slash variants plus leading `./`, and added a regression case in [src/workstation-local-path-detector.test.ts](src/workstation-local-path-detector.test.ts) covering `--exclude-path ./docs/guide.md`.
 
-The requested focused tests and `npm run build` both pass after the change. I committed the checkpoint as `b768692` (`Preserve base diff paths verbatim`), pushed `codex/issue-946`, and opened draft PR [#962](https://github.com/TommyKammy/codex-supervisor/pull/962). The worktree still has expected untracked local supervisor artifacts under `.codex-supervisor/pre-merge/` and `.codex-supervisor/replay/`.
+Because the tracked issue journal had regressed to workstation-local absolute links, I also restored those references to repo-relative form so [scripts/check-workstation-local-paths.ts](scripts/check-workstation-local-paths.ts) could verify the worktree again. Focused verification passed, I pushed `91e2a0d` to `origin/codex/issue-948`, and I resolved the CodeRabbit review thread `PRRT_kwDORgvdZ852fkSD`. PR [#963](https://github.com/TommyKammy/codex-supervisor/pull/963) remains open with `mergeStateStatus=UNSTABLE`.
 
-Summary: Removed base-diff path trimming before replay-artifact filtering, added tracked whitespace-path regressions, and opened draft PR #962
-State hint: draft_pr
+Summary: Normalized excluded path inputs, added a `./` exclusion regression test, reran the detector, pushed the review fix, and resolved the review thread
+State hint: waiting_ci
 Blocked reason: none
-Tests: `npx tsx --test src/supervisor/supervisor-stale-no-pr-branch-state.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`; `npm run build`
-Next action: Monitor PR #962 for CI and review feedback
+Tests: `npx tsx --test src/workstation-local-path-detector.test.ts`; `npx tsx scripts/check-workstation-local-paths.ts`
+Next action: Monitor PR #963 for refreshed checks or follow-up review feedback on `codex/issue-948`
 Failure signature: none
 
 ## Active Failure Context
@@ -30,40 +30,36 @@ Failure signature: none
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the real bug was still present on `d88c032`; `classifyStaleStabilizingNoPrBranchState()` trimmed each `git diff --name-only` line before calling `isIgnoredSupervisorArtifactPath()`, so a tracked path like ` .codex-supervisor/replay/decision-cycle-snapshot.json` could be collapsed into a supervisor-owned replay artifact and misclassified as already satisfied on `main`.
-- What changed: removed the `.trim()` normalization from the base-diff path pipeline in `src/supervisor/supervisor.ts` so replay-artifact filtering compares the literal diff text. Added two focused regressions in `src/supervisor/supervisor-stale-no-pr-branch-state.test.ts`: one that keeps exact tracked replay artifact paths ignored in the base diff, and one that proves a tracked leading-space replay-like path remains meaningful and keeps the branch recoverable. Reran the requested focused tests plus `npm run build`, and refreshed this journal entry with the current verification timestamp.
+- Hypothesis: the CodeRabbit finding is fully addressed, and any remaining risk on issue #948 is limited to post-push CI or new review feedback rather than detector logic.
+- What changed: updated [scripts/check-workstation-local-paths.ts](scripts/check-workstation-local-paths.ts) so repo-relative path normalization canonicalizes slash variants and strips leading `./` segments before exclude matching, added regression coverage in [src/workstation-local-path-detector.test.ts](src/workstation-local-path-detector.test.ts) for `--exclude-path ./docs/guide.md`, cleaned the journal back to repo-relative links so the detector passes on the tracked tree again, pushed `91e2a0d`, and resolved review thread `PRRT_kwDORgvdZ852fkSD`.
 - Current blocker: none.
-- Next exact step: monitor draft PR #962 for CI and review feedback, then address any findings.
-- Verification gap: none; the requested focused tests and `npm run build` both pass in this workspace as of 2026-03-24T16:02:17Z.
-- Files touched: [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md), [src/supervisor/supervisor.ts](src/supervisor/supervisor.ts), and [src/supervisor/supervisor-stale-no-pr-branch-state.test.ts](src/supervisor/supervisor-stale-no-pr-branch-state.test.ts).
-- Rollback concern: low; reverting this patch would reintroduce the base-diff false-ignore bug for whitespace-prefixed replay-like tracked paths.
-- Last focused command: `gh pr view 962 --json number,url,isDraft,state,headRefOid`
+- Next exact step: monitor PR #963 for refreshed checks and repair any follow-up review or CI findings on `codex/issue-948`.
+- Verification gap: none for the changed behavior; the remaining signal is PR-level CI and review.
+- Files touched: [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md), [scripts/check-workstation-local-paths.ts](scripts/check-workstation-local-paths.ts), and [src/workstation-local-path-detector.test.ts](src/workstation-local-path-detector.test.ts).
+- Rollback concern: low; the functional change is isolated to CLI exclude-path normalization and its regression coverage.
+- Last focused command: `gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: {threadId: $threadId}) { thread { isResolved } } }' -F threadId=PRRT_kwDORgvdZ852fkSD`
 - Last focused failure: none.
-- Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/962
+- Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/963
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-946/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-946/context-index.md
-sed -n '1,320p' .codex-supervisor/issue-journal.md
-git status --short
+sed -n '1,220p' ../codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-948/AGENTS.generated.md
+sed -n '1,220p' ../codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-948/context-index.md
+sed -n '1,260p' .codex-supervisor/issue-journal.md
+sed -n '1,240p' scripts/check-workstation-local-paths.ts
+sed -n '1,240p' src/workstation-local-path-detector.test.ts
+git status --short --branch
+nl -ba scripts/check-workstation-local-paths.ts | sed -n '1,180p'
+nl -ba src/workstation-local-path-detector.test.ts | sed -n '1,220p'
+npx tsx --test src/workstation-local-path-detector.test.ts
+rg -n '<unix-home-prefix>|<macos-users-prefix>|<windows-users-prefix>' .codex-supervisor/issue-journal.md
+npx tsx scripts/check-workstation-local-paths.ts
+git diff --stat -- scripts/check-workstation-local-paths.ts src/workstation-local-path-detector.test.ts .codex-supervisor/issue-journal.md
+git add scripts/check-workstation-local-paths.ts src/workstation-local-path-detector.test.ts .codex-supervisor/issue-journal.md
+git commit -m "Normalize excluded workstation-local paths"
+git push origin codex/issue-948
+gh pr view 963 --json url,isDraft,state,mergeStateStatus,headRefOid,reviewDecision
+gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: {threadId: $threadId}) { thread { isResolved } } }' -F threadId=PRRT_kwDORgvdZ852fkSD
 git rev-parse HEAD
-git rev-list --left-right --count origin/main...HEAD
-gh pr list --head codex/issue-946 --state all --json number,state,isDraft,title,headRefName,baseRefName,url
-rg -n "replay artifact|base-diff|trim\\(|supervisor-owned" src/supervisor
-git diff -- .codex-supervisor/issue-journal.md
-sed -n '1,260p' src/supervisor/supervisor-stale-no-pr-branch-state.test.ts
-sed -n '1,260p' src/supervisor/supervisor-recovery-reconciliation.test.ts
-sed -n '1,260p' src/supervisor/supervisor-execution-orchestration.test.ts
-sed -n '430,520p' src/supervisor/supervisor.ts
-git diff -- src/supervisor/supervisor.ts src/supervisor/supervisor-stale-no-pr-branch-state.test.ts
-npx tsx --test src/supervisor/supervisor-stale-no-pr-branch-state.test.ts
-npx tsx --test src/supervisor/supervisor-stale-no-pr-branch-state.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts
-npm run build
-git add src/supervisor/supervisor.ts src/supervisor/supervisor-stale-no-pr-branch-state.test.ts .codex-supervisor/issue-journal.md
-git commit -m "Preserve base diff paths verbatim"
-git push -u origin codex/issue-946
-gh pr create --draft --base main --head codex/issue-946 --title "Fix stale no-PR base-diff whitespace filtering" --body ...
-gh pr view 962 --json number,url,isDraft,state,headRefOid
 date -Iseconds -u
 ```
 ### Scratchpad
