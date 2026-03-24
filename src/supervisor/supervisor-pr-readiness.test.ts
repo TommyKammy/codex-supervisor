@@ -653,7 +653,12 @@ test("handlePostTurnMergeAndCompletion blocks stale ready-to-merge records when 
         state: "ready_to_merge",
         local_review_head_sha: "head-119",
         local_review_findings_count: 1,
+        local_review_root_cause_count: 1,
+        local_review_max_severity: "medium",
+        local_review_verified_findings_count: 0,
+        local_review_verified_max_severity: "none",
         local_review_recommendation: "changes_requested",
+        local_review_summary_path: "/tmp/reviews/issue-119.md",
         pre_merge_evaluation_outcome: "fix_blocked",
         blocked_reason: null,
       }),
@@ -722,6 +727,14 @@ test("handlePostTurnMergeAndCompletion blocks stale ready-to-merge records when 
   assert.equal(result.state, "blocked");
   assert.equal(result.blocked_reason, "verification");
   assert.equal(result.last_head_sha, "head-119");
+  assert.match(result.last_error ?? "", /Local review found 1 actionable finding/);
+  assert.equal(result.last_failure_context?.category, "blocked");
+  assert.equal(
+    result.last_failure_context?.signature,
+    "local-review:medium:none:1:0:clean",
+  );
+  assert.equal(result.last_failure_signature, "local-review:medium:none:1:0:clean");
+  assert.equal(result.repeated_failure_signature_count, 1);
   assert.equal(autoMergeCalls, 0);
 });
 

@@ -1,45 +1,34 @@
-# Issue #953: Schema contract discipline: require explicit schema-version bumps for required persisted and API contract changes
+# Issue #954: Refreshed snapshot propagation: require downstream state, actions, and metrics to use the latest source-of-truth snapshot
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/953
-- Branch: codex/issue-953
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/954
+- Branch: codex/issue-954
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: f3869480bdf0cdf32810dec6ab13ad5e842d1aaf
+- Current phase: reproducing
+- Attempt count: 3 (implementation=3, repair=0)
+- Last head SHA: 794f64da7412bdb82c35eb66b9241a47f843a51b
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-24T22:12:15Z
+- Updated at: 2026-03-24T23:22:53.207Z
 
 ## Latest Codex Summary
-Added explicit versioned contract discipline for the two issue-scoped surfaces and committed it as `f386948` on `codex/issue-953`.
-
-The change exports and enforces the execution-metrics top-level schema keys in [src/supervisor/execution-metrics-schema.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-953/src/supervisor/execution-metrics-schema.ts), adds a dedicated post-merge audit summary validator in [src/supervisor/post-merge-audit-summary.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-953/src/supervisor/post-merge-audit-summary.ts), and tightens the focused tests in [src/supervisor/execution-metrics-schema.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-953/src/supervisor/execution-metrics-schema.test.ts) and [src/supervisor/post-merge-audit-summary.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-953/src/supervisor/post-merge-audit-summary.test.ts) so missing required fields and unsupported schema versions fail explicitly. I also updated the working notes in [.codex-supervisor/issue-journal.md](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-953/.codex-supervisor/issue-journal.md).
-
-Verification passed after restoring dev dependencies with `npm ci`: `npx tsx --test src/supervisor/post-merge-audit-summary.test.ts src/supervisor/execution-metrics-schema.test.ts` and `npm run build`. The untracked `.codex-supervisor/pre-merge/` and `.codex-supervisor/replay/` directories were left untouched.
-
-Summary: Added explicit schema-contract validation and focused regression coverage for execution metrics and post-merge audit summary payloads; committed as `f386948`
-State hint: draft_pr
-Blocked reason: none
-Tests: `npm ci`; `npx tsx --test src/supervisor/post-merge-audit-summary.test.ts src/supervisor/execution-metrics-schema.test.ts`; `npm run build`
-Next action: Open or update the draft PR for `codex/issue-953` with commit `f386948` and monitor CI
-Failure signature: none
+- Reproduced a refreshed-snapshot propagation gap in `handlePostTurnMergeAndCompletion`: after a fresh merge-readiness snapshot downgraded a stale `ready_to_merge` record to `blocked`, the state transition kept the stale `last_error` instead of the refreshed failure context/signature. Tightened `src/supervisor/supervisor-pr-readiness.test.ts` to assert the refreshed local-review blocker details, then updated `src/supervisor/supervisor.ts` to propagate the refreshed failure context, last error, and failure signature through the post-refresh state write.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: schema-versioned artifacts were validating value shapes, but the live code did not explicitly pin the required top-level contract for `ExecutionMetricsRunSummaryArtifact` and did not validate the API-facing `PostMergeAuditPatternSummaryDto` at all, so required-field contract changes could drift without an explicit schema-version discipline checkpoint.
-- What changed: added focused regressions in `src/supervisor/execution-metrics-schema.test.ts` and `src/supervisor/post-merge-audit-summary.test.ts` that pin the current top-level required keys and reject unsupported schema versions or missing required fields; exported `EXECUTION_METRICS_RUN_SUMMARY_TOP_LEVEL_KEYS`; added explicit top-level key enforcement to `validateExecutionMetricsRunSummary`; added `validatePostMergeAuditPatternSummary()` plus nested DTO validation and routed `summarizePostMergeAuditPatterns()` through it.
-- PR status: pushed `codex/issue-953` to `origin` and opened draft PR #968 (`https://github.com/TommyKammy/codex-supervisor/pull/968`).
+- Hypothesis: one refreshed-snapshot path still used stale downstream state fields after recomputing merge readiness, specifically the post-ready-to-merge refresh path that could downgrade to `blocked` without carrying the refreshed failure context forward.
+- What changed: tightened `src/supervisor/supervisor-pr-readiness.test.ts` so the stale-ready-to-merge regression asserts refreshed local-review blocker details; updated `handlePostTurnMergeAndCompletion()` in `src/supervisor/supervisor.ts` to propagate refreshed failure context, `last_error`, and failure-signature tracking when a refreshed snapshot downgrades the PR after rechecking merge readiness.
 - Current blocker: none.
-- Next exact step: monitor PR #968 CI, then address any review or build feedback and move the PR out of draft when ready.
-- Verification gap: none in the requested scope; after restoring dev dependencies with `npm ci`, `npx tsx --test src/supervisor/post-merge-audit-summary.test.ts src/supervisor/execution-metrics-schema.test.ts` and `npm run build` both passed.
-- Files touched: `src/supervisor/execution-metrics-schema.ts`, `src/supervisor/execution-metrics-schema.test.ts`, `src/supervisor/post-merge-audit-summary.ts`, `src/supervisor/post-merge-audit-summary.test.ts`, `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low; runtime behavior only gains stricter contract validation for already-versioned summary payloads.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-953 --title "Issue #953: Enforce explicit versioned schema contracts" --body ...`
+- Next exact step: commit the issue-954 fix, then open or update the draft PR from `codex/issue-954`.
+- Verification gap: none in the requested scope; `npx tsx --test src/supervisor/supervisor-pr-readiness.test.ts`, `npx tsx --test src/supervisor/supervisor-pr-readiness.test.ts src/post-turn-pull-request.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts`, and `npm run build` passed after `npm ci`.
+- Files touched: `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-pr-readiness.test.ts`, `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; the runtime change only affects refreshed post-merge-readiness downgrades and aligns persisted failure fields with the already-computed refreshed lifecycle snapshot.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-pr-readiness.test.ts src/post-turn-pull-request.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts && npm run build`
+- PR status: no PR opened from `codex/issue-954` yet in this turn.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
