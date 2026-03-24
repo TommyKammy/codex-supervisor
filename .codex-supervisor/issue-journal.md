@@ -24,10 +24,10 @@
 - Hypothesis: execution and reconciliation already route observational metrics and post-merge audit persistence through non-gating wrappers; the issue needs focused regressions proving merged-convergence outcomes stay `done` even when post-merge audit persistence fails.
 - What changed: added `prepareIssueExecutionContext keeps merged-PR convergence done when audit persistence fails` in `src/run-once-issue-preparation.test.ts` and `reconcileTrackedMergedButOpenIssues keeps merged convergence done when audit persistence fails` in `src/supervisor/supervisor-recovery-reconciliation.test.ts`; each test forces the audit artifact path to fail by pointing `localReviewArtifactDir` at a file, then asserts the warning is logged while the intended `done` outcome and cleanup still happen.
 - Current blocker: none.
-- Next exact step: commit the focused regression coverage, open or update the draft PR for `codex/issue-952`, and watch for CI/review feedback.
+- Next exact step: monitor draft PR #967, react to CI or review feedback, and transition from draft when the branch is ready.
 - Verification gap: none in the requested scope; `npx tsx --test src/run-once-turn-execution.test.ts src/run-once-issue-preparation.test.ts src/recovery-reconciliation.test.ts src/supervisor/post-merge-audit-artifact.test.ts src/supervisor/execution-metrics-run-summary.test.ts` and `npm run build` both passed after running `npm ci` to restore local dev dependencies.
 - Files touched: `src/run-once-issue-preparation.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `.codex-supervisor/issue-journal.md`.
 - Rollback concern: low; the patch only adds regression coverage and does not change runtime behavior.
-- Last focused command: `npm run build`
+- Last focused command: `gh pr create --draft --base main --head codex/issue-952 --title "Issue #952: Add non-gating audit persistence regressions" --body ...`
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
