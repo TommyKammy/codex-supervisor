@@ -243,3 +243,29 @@ test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and 
   assert.equal(summary.recoveryPatterns[0]?.artifactCount, 2);
   assert.equal(summary.recoveryPatterns[0]?.occurrenceCount, 2);
 });
+
+test("summarizePostMergeAuditPatterns tolerates root-cause summaries without finding metadata", async () => {
+  const reviewDir = await fs.mkdtemp(path.join(os.tmpdir(), "post-merge-audit-summary-"));
+  const config = createConfig({
+    localReviewArtifactDir: reviewDir,
+    repoSlug: "owner/repo",
+  });
+  const artifactDir = postMergeAuditArtifactDir(config);
+  const artifact = createPostMergeArtifact();
+  const rootCause = artifact.localReview?.artifact?.rootCauseSummaries[0];
+
+  assert.ok(rootCause);
+  delete (rootCause as unknown as Record<string, unknown>).findingsCount;
+  delete (rootCause as unknown as Record<string, unknown>).findingKeys;
+
+  await fs.mkdir(artifactDir, { recursive: true });
+  await writeJsonAtomic(path.join(artifactDir, "issue-102-head-merged-head.json"), artifact);
+
+  const summary = await summarizePostMergeAuditPatterns(config);
+
+  assert.equal(summary.artifactsAnalyzed, 1);
+  assert.equal(summary.artifactsSkipped, 0);
+  assert.equal(summary.reviewPatterns.length, 1);
+  assert.equal(summary.reviewPatterns[0]?.evidenceCount, 0);
+  assert.deepEqual(summary.reviewPatterns[0]?.exampleFindingKeys, []);
+});

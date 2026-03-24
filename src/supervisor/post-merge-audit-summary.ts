@@ -215,12 +215,14 @@ export async function summarizePostMergeAuditPatterns(
       if (!isLocalReviewRootCauseSummary(rootCause)) {
         continue;
       }
+      const findingsCount = typeof rootCause.findingsCount === "number" ? rootCause.findingsCount : 0;
+      const findingKeys = Array.isArray(rootCause.findingKeys) ? rootCause.findingKeys : [];
       const key = buildReviewPatternKey(rootCause);
       const existing = reviewPatterns.get(key);
       if (existing) {
         existing.artifactNumbers.add(artifact.issueNumber);
-        existing.evidenceCount += rootCause.findingsCount;
-        for (const findingKey of rootCause.findingKeys) {
+        existing.evidenceCount += findingsCount;
+        for (const findingKey of findingKeys) {
           existing.findingKeys.add(findingKey);
         }
         continue;
@@ -231,8 +233,8 @@ export async function summarizePostMergeAuditPatterns(
         category: rootCause.category,
         severity: rootCause.severity,
         artifactNumbers: new Set([artifact.issueNumber]),
-        evidenceCount: rootCause.findingsCount,
-        findingKeys: new Set(rootCause.findingKeys),
+        evidenceCount: findingsCount,
+        findingKeys: new Set(findingKeys),
       });
     }
 
