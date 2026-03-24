@@ -2,6 +2,7 @@ import {
   localReviewBlocksMerge,
   localReviewHighSeverityNeedsBlock,
   localReviewHighSeverityNeedsRetry,
+  localReviewRequiresManualReview,
   localReviewRetryLoopStalled,
 } from "./review-handling";
 import {
@@ -470,6 +471,10 @@ export function blockedReasonFromReviewState(
     return "manual_review";
   }
 
+  if (localReviewRequiresManualReview(config, record, pr)) {
+    return "manual_review";
+  }
+
   if (localReviewHighSeverityNeedsBlock(config, record, pr) || localReviewBlocksMerge(config, record, pr)) {
     return "verification";
   }
@@ -642,6 +647,10 @@ export function inferStateFromPullRequest(
   }
 
   if (config.humanReviewBlocksMerge && manualThreads.length > 0) {
+    return "blocked";
+  }
+
+  if (localReviewRequiresManualReview(config, record, pr)) {
     return "blocked";
   }
 

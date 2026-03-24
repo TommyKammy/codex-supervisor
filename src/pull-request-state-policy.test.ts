@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inferStateFromPullRequest } from "./pull-request-state";
+import { blockedReasonFromReviewState, inferStateFromPullRequest } from "./pull-request-state";
 import { GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "./core/types";
 import { createConfig, createPullRequest, createRecord, passingChecks } from "./pull-request-state-test-helpers";
 
@@ -294,6 +294,44 @@ test("inferStateFromPullRequest blocks stalled identical high local-review retri
 
   assert.equal(
     inferStateFromPullRequest(config, record, createPullRequest({ isDraft: true }), [], []),
+    "blocked",
+  );
+});
+
+test("blockedReasonFromReviewState reports manual_review for manual-review-blocked local review outcomes", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    copilotReviewWaitMinutes: 0,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    local_review_head_sha: "head123",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+  });
+
+  assert.equal(
+    blockedReasonFromReviewState(config, record, createPullRequest({ headRefOid: "head123" }), []),
+    "manual_review",
+  );
+});
+
+test("inferStateFromPullRequest blocks draft PRs when the current head still needs manual verification", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    copilotReviewWaitMinutes: 0,
+  });
+  const record = createRecord({
+    state: "draft_pr",
+    local_review_head_sha: "head123",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+  });
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, createPullRequest({ isDraft: true, headRefOid: "head123" }), [], []),
     "blocked",
   );
 });
