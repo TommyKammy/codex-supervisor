@@ -8,7 +8,11 @@ import { createConfig } from "../turn-execution-test-helpers";
 import type { LocalReviewArtifact } from "../local-review/types";
 import type { PostMergeAuditArtifact } from "./post-merge-audit-artifact";
 import { postMergeAuditArtifactDir } from "./post-merge-audit-artifact";
-import { summarizePostMergeAuditPatterns } from "./post-merge-audit-summary";
+import {
+  POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS,
+  summarizePostMergeAuditPatterns,
+  validatePostMergeAuditPatternSummary,
+} from "./post-merge-audit-summary";
 
 function createLocalReviewArtifact(overrides: Partial<LocalReviewArtifact> = {}): LocalReviewArtifact {
   return {
@@ -224,6 +228,8 @@ test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and 
 
   const summary = await summarizePostMergeAuditPatterns(config);
 
+  assert.deepEqual(validatePostMergeAuditPatternSummary(summary), summary);
+  assert.deepEqual(Object.keys(summary).sort(), [...POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS].sort());
   assert.equal(summary.schemaVersion, 2);
   assert.equal(summary.advisoryOnly, true);
   assert.equal(summary.autoApplyGuardrails, false);
@@ -282,6 +288,37 @@ test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and 
   assert.deepEqual(summary.promotionCandidates[0]?.supportingFindingKeys, [
     "src/supervisor.ts|210|214|retry path|stale context",
   ]);
+});
+
+test("validatePostMergeAuditPatternSummary rejects unsupported schema versions and missing required fields", () => {
+  const summary = {
+    schemaVersion: 2,
+    generatedAt: "2026-03-25T00:00:00Z",
+    artifactDir: "/tmp/post-merge",
+    advisoryOnly: true,
+    autoApplyGuardrails: false,
+    autoCreateFollowUpIssues: false,
+    artifactsAnalyzed: 1,
+    artifactsSkipped: 0,
+    reviewPatterns: [],
+    failurePatterns: [],
+    recoveryPatterns: [],
+    promotionCandidates: [],
+  } as const;
+
+  assert.deepEqual(validatePostMergeAuditPatternSummary(summary), summary);
+
+  assert.throws(
+    () => validatePostMergeAuditPatternSummary({ ...summary, schemaVersion: 1 }),
+    /schemaVersion must be 2\./u,
+  );
+
+  const { promotionCandidates, ...summaryWithoutPromotionCandidates } = summary;
+  void promotionCandidates;
+  assert.throws(
+    () => validatePostMergeAuditPatternSummary(summaryWithoutPromotionCandidates),
+    /summary must contain schemaVersion, generatedAt, artifactDir, advisoryOnly, autoApplyGuardrails, autoCreateFollowUpIssues, artifactsAnalyzed, artifactsSkipped, reviewPatterns, failurePatterns, recoveryPatterns, and promotionCandidates\./u,
+  );
 });
 
 test("summarizePostMergeAuditPatterns keeps review promotion candidate keys unique per severity and preserves full finding traceability", async () => {

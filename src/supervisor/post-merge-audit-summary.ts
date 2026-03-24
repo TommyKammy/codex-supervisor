@@ -7,6 +7,62 @@ import type { PostMergeAuditArtifact } from "./post-merge-audit-artifact";
 import { postMergeAuditArtifactDir } from "./post-merge-audit-artifact";
 
 export const POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION = 2;
+export const POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS = [
+  "schemaVersion",
+  "generatedAt",
+  "artifactDir",
+  "advisoryOnly",
+  "autoApplyGuardrails",
+  "autoCreateFollowUpIssues",
+  "artifactsAnalyzed",
+  "artifactsSkipped",
+  "reviewPatterns",
+  "failurePatterns",
+  "recoveryPatterns",
+  "promotionCandidates",
+] as const;
+const POST_MERGE_AUDIT_REVIEW_PATTERN_KEYS = [
+  "key",
+  "summary",
+  "category",
+  "severity",
+  "artifactCount",
+  "evidenceCount",
+  "exampleIssueNumbers",
+  "exampleFindingKeys",
+] as const;
+const POST_MERGE_AUDIT_FAILURE_PATTERN_KEYS = [
+  "key",
+  "category",
+  "failureKind",
+  "blockedReason",
+  "summary",
+  "artifactCount",
+  "repeatedCount",
+  "exampleIssueNumbers",
+  "lastSeenAt",
+] as const;
+const POST_MERGE_AUDIT_RECOVERY_PATTERN_KEYS = [
+  "key",
+  "reason",
+  "artifactCount",
+  "occurrenceCount",
+  "exampleIssueNumbers",
+  "latestRecoveredAt",
+] as const;
+const POST_MERGE_AUDIT_PROMOTION_CANDIDATE_KEYS = [
+  "key",
+  "category",
+  "title",
+  "summary",
+  "rationale",
+  "sourcePatternKeys",
+  "supportingIssueNumbers",
+  "supportingFindingKeys",
+  "advisoryOnly",
+  "autoApply",
+  "autoCreateFollowUpIssue",
+] as const;
 
 export interface PostMergeAuditReviewPatternDto {
   key: string;
@@ -69,6 +125,238 @@ export interface PostMergeAuditPatternSummaryDto {
   failurePatterns: PostMergeAuditFailurePatternDto[];
   recoveryPatterns: PostMergeAuditRecoveryPatternDto[];
   promotionCandidates: PostMergeAuditPromotionCandidateDto[];
+}
+
+function failSummaryValidation(message: string): never {
+  throw new Error(`Invalid post-merge audit pattern summary: ${message}`);
+}
+
+function formatSummaryKeyList(keys: readonly string[]): string {
+  if (keys.length <= 1) {
+    return keys.join("");
+  }
+
+  return `${keys.slice(0, -1).join(", ")}, and ${keys.at(-1)}`;
+}
+
+function expectSummaryObject(value: unknown, field: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    failSummaryValidation(`${field} must be an object.`);
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function expectExactKeys(
+  value: Record<string, unknown>,
+  keys: readonly string[],
+  field: string,
+): void {
+  const actualKeys = Object.keys(value);
+  if (actualKeys.length !== keys.length || keys.some((key) => !actualKeys.includes(key))) {
+    failSummaryValidation(`${field} must contain ${formatSummaryKeyList(keys)}.`);
+  }
+}
+
+function expectSummaryString(value: unknown, field: string): string {
+  if (typeof value !== "string") {
+    failSummaryValidation(`${field} must be a string.`);
+  }
+
+  return value;
+}
+
+function expectNullableSummaryString(value: unknown, field: string): string | null {
+  if (value === null) {
+    return null;
+  }
+
+  return expectSummaryString(value, field);
+}
+
+function expectSummaryBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") {
+    failSummaryValidation(`${field} must be a boolean.`);
+  }
+
+  return value;
+}
+
+function expectSummaryInteger(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    failSummaryValidation(`${field} must be a non-negative integer.`);
+  }
+
+  return value;
+}
+
+function expectStringArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    failSummaryValidation(`${field} must be an array of strings.`);
+  }
+
+  return [...value];
+}
+
+function expectIntegerArray(value: unknown, field: string): number[] {
+  if (!Array.isArray(value) || value.some((entry) => !Number.isInteger(entry) || entry < 0)) {
+    failSummaryValidation(`${field} must be an array of non-negative integers.`);
+  }
+
+  return [...value];
+}
+
+function expectReviewPattern(value: unknown, index: number): PostMergeAuditReviewPatternDto {
+  const pattern = expectSummaryObject(value, `reviewPatterns[${index}]`);
+  expectExactKeys(pattern, POST_MERGE_AUDIT_REVIEW_PATTERN_KEYS, `reviewPatterns[${index}]`);
+  const severity = expectSummaryString(pattern.severity, `reviewPatterns[${index}].severity`);
+  if (!isActionableSeverity(severity)) {
+    failSummaryValidation(`reviewPatterns[${index}].severity must be one of: low, medium, high.`);
+  }
+
+  return {
+    key: expectSummaryString(pattern.key, `reviewPatterns[${index}].key`),
+    summary: expectSummaryString(pattern.summary, `reviewPatterns[${index}].summary`),
+    category: expectNullableSummaryString(pattern.category, `reviewPatterns[${index}].category`),
+    severity,
+    artifactCount: expectSummaryInteger(pattern.artifactCount, `reviewPatterns[${index}].artifactCount`),
+    evidenceCount: expectSummaryInteger(pattern.evidenceCount, `reviewPatterns[${index}].evidenceCount`),
+    exampleIssueNumbers: expectIntegerArray(
+      pattern.exampleIssueNumbers,
+      `reviewPatterns[${index}].exampleIssueNumbers`,
+    ),
+    exampleFindingKeys: expectStringArray(pattern.exampleFindingKeys, `reviewPatterns[${index}].exampleFindingKeys`),
+  };
+}
+
+function expectFailurePattern(value: unknown, index: number): PostMergeAuditFailurePatternDto {
+  const pattern = expectSummaryObject(value, `failurePatterns[${index}]`);
+  expectExactKeys(pattern, POST_MERGE_AUDIT_FAILURE_PATTERN_KEYS, `failurePatterns[${index}]`);
+
+  return {
+    key: expectSummaryString(pattern.key, `failurePatterns[${index}].key`),
+    category: expectNullableSummaryString(pattern.category, `failurePatterns[${index}].category`),
+    failureKind: expectNullableSummaryString(pattern.failureKind, `failurePatterns[${index}].failureKind`),
+    blockedReason: expectNullableSummaryString(pattern.blockedReason, `failurePatterns[${index}].blockedReason`),
+    summary: expectNullableSummaryString(pattern.summary, `failurePatterns[${index}].summary`),
+    artifactCount: expectSummaryInteger(pattern.artifactCount, `failurePatterns[${index}].artifactCount`),
+    repeatedCount: expectSummaryInteger(pattern.repeatedCount, `failurePatterns[${index}].repeatedCount`),
+    exampleIssueNumbers: expectIntegerArray(
+      pattern.exampleIssueNumbers,
+      `failurePatterns[${index}].exampleIssueNumbers`,
+    ),
+    lastSeenAt: expectNullableSummaryString(pattern.lastSeenAt, `failurePatterns[${index}].lastSeenAt`),
+  };
+}
+
+function expectRecoveryPattern(value: unknown, index: number): PostMergeAuditRecoveryPatternDto {
+  const pattern = expectSummaryObject(value, `recoveryPatterns[${index}]`);
+  expectExactKeys(pattern, POST_MERGE_AUDIT_RECOVERY_PATTERN_KEYS, `recoveryPatterns[${index}]`);
+
+  return {
+    key: expectSummaryString(pattern.key, `recoveryPatterns[${index}].key`),
+    reason: expectSummaryString(pattern.reason, `recoveryPatterns[${index}].reason`),
+    artifactCount: expectSummaryInteger(pattern.artifactCount, `recoveryPatterns[${index}].artifactCount`),
+    occurrenceCount: expectSummaryInteger(pattern.occurrenceCount, `recoveryPatterns[${index}].occurrenceCount`),
+    exampleIssueNumbers: expectIntegerArray(
+      pattern.exampleIssueNumbers,
+      `recoveryPatterns[${index}].exampleIssueNumbers`,
+    ),
+    latestRecoveredAt: expectNullableSummaryString(
+      pattern.latestRecoveredAt,
+      `recoveryPatterns[${index}].latestRecoveredAt`,
+    ),
+  };
+}
+
+function expectPromotionCategory(value: unknown, field: string): PostMergeAuditPromotionCategoryDto {
+  if (value !== "shared_memory" && value !== "guardrail" && value !== "checklist" && value !== "documentation") {
+    failSummaryValidation(`${field} must be one of: shared_memory, guardrail, checklist, documentation.`);
+  }
+
+  return value;
+}
+
+function expectPromotionCandidate(value: unknown, index: number): PostMergeAuditPromotionCandidateDto {
+  const candidate = expectSummaryObject(value, `promotionCandidates[${index}]`);
+  expectExactKeys(candidate, POST_MERGE_AUDIT_PROMOTION_CANDIDATE_KEYS, `promotionCandidates[${index}]`);
+
+  if (candidate.advisoryOnly !== true) {
+    failSummaryValidation(`promotionCandidates[${index}].advisoryOnly must be true.`);
+  }
+  if (candidate.autoApply !== false) {
+    failSummaryValidation(`promotionCandidates[${index}].autoApply must be false.`);
+  }
+  if (candidate.autoCreateFollowUpIssue !== false) {
+    failSummaryValidation(`promotionCandidates[${index}].autoCreateFollowUpIssue must be false.`);
+  }
+
+  return {
+    key: expectSummaryString(candidate.key, `promotionCandidates[${index}].key`),
+    category: expectPromotionCategory(candidate.category, `promotionCandidates[${index}].category`),
+    title: expectSummaryString(candidate.title, `promotionCandidates[${index}].title`),
+    summary: expectSummaryString(candidate.summary, `promotionCandidates[${index}].summary`),
+    rationale: expectSummaryString(candidate.rationale, `promotionCandidates[${index}].rationale`),
+    sourcePatternKeys: expectStringArray(
+      candidate.sourcePatternKeys,
+      `promotionCandidates[${index}].sourcePatternKeys`,
+    ),
+    supportingIssueNumbers: expectIntegerArray(
+      candidate.supportingIssueNumbers,
+      `promotionCandidates[${index}].supportingIssueNumbers`,
+    ),
+    supportingFindingKeys: expectStringArray(
+      candidate.supportingFindingKeys,
+      `promotionCandidates[${index}].supportingFindingKeys`,
+    ),
+    advisoryOnly: true,
+    autoApply: false,
+    autoCreateFollowUpIssue: false,
+  };
+}
+
+export function validatePostMergeAuditPatternSummary(raw: unknown): PostMergeAuditPatternSummaryDto {
+  const summary = expectSummaryObject(raw, "summary");
+  expectExactKeys(summary, POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS, "summary");
+  if (summary.schemaVersion !== POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION) {
+    failSummaryValidation(`schemaVersion must be ${POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION}.`);
+  }
+  if (summary.advisoryOnly !== true) {
+    failSummaryValidation("advisoryOnly must be true.");
+  }
+  if (summary.autoApplyGuardrails !== false) {
+    failSummaryValidation("autoApplyGuardrails must be false.");
+  }
+  if (summary.autoCreateFollowUpIssues !== false) {
+    failSummaryValidation("autoCreateFollowUpIssues must be false.");
+  }
+  if (!Array.isArray(summary.reviewPatterns)) {
+    failSummaryValidation("reviewPatterns must be an array.");
+  }
+  if (!Array.isArray(summary.failurePatterns)) {
+    failSummaryValidation("failurePatterns must be an array.");
+  }
+  if (!Array.isArray(summary.recoveryPatterns)) {
+    failSummaryValidation("recoveryPatterns must be an array.");
+  }
+  if (!Array.isArray(summary.promotionCandidates)) {
+    failSummaryValidation("promotionCandidates must be an array.");
+  }
+
+  return {
+    schemaVersion: POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION,
+    generatedAt: expectSummaryString(summary.generatedAt, "generatedAt"),
+    artifactDir: expectSummaryString(summary.artifactDir, "artifactDir"),
+    advisoryOnly: true,
+    autoApplyGuardrails: false,
+    autoCreateFollowUpIssues: false,
+    artifactsAnalyzed: expectSummaryInteger(summary.artifactsAnalyzed, "artifactsAnalyzed"),
+    artifactsSkipped: expectSummaryInteger(summary.artifactsSkipped, "artifactsSkipped"),
+    reviewPatterns: summary.reviewPatterns.map((pattern, index) => expectReviewPattern(pattern, index)),
+    failurePatterns: summary.failurePatterns.map((pattern, index) => expectFailurePattern(pattern, index)),
+    recoveryPatterns: summary.recoveryPatterns.map((pattern, index) => expectRecoveryPattern(pattern, index)),
+    promotionCandidates: summary.promotionCandidates.map((candidate, index) => expectPromotionCandidate(candidate, index)),
+  };
 }
 
 function normalizeText(value: string): string {
@@ -469,7 +757,7 @@ export async function summarizePostMergeAuditPatterns(
     right.supportingIssueNumbers.length - left.supportingIssueNumbers.length ||
     compareStringsAscending(left.key, right.key));
 
-  return {
+  return validatePostMergeAuditPatternSummary({
     schemaVersion: POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION,
     generatedAt: nowIso(),
     artifactDir,
@@ -482,7 +770,7 @@ export async function summarizePostMergeAuditPatterns(
     failurePatterns: summarizedFailurePatterns,
     recoveryPatterns: summarizedRecoveryPatterns,
     promotionCandidates,
-  };
+  });
 }
 
 export function renderPostMergeAuditPatternSummaryDto(dto: PostMergeAuditPatternSummaryDto): string {

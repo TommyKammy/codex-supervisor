@@ -1,7 +1,7 @@
 import type { BlockedReason, FailureContextCategory, FailureKind } from "../core/types";
 
 export const EXECUTION_METRICS_RUN_SUMMARY_SCHEMA_VERSION = 4;
-const EXECUTION_METRICS_RUN_SUMMARY_KEYS = [
+export const EXECUTION_METRICS_RUN_SUMMARY_TOP_LEVEL_KEYS = [
   "schemaVersion",
   "issueNumber",
   "terminalState",
@@ -93,12 +93,30 @@ function failValidation(message: string): never {
   throw new Error(`Invalid execution metrics run summary: ${message}`);
 }
 
+function formatKeyList(keys: readonly string[]): string {
+  if (keys.length <= 1) {
+    return keys.join("");
+  }
+
+  return `${keys.slice(0, -1).join(", ")}, and ${keys.at(-1)}`;
+}
+
 function expectObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     failValidation("summary must be an object.");
   }
 
   return value as Record<string, unknown>;
+}
+
+function expectExactTopLevelKeys(value: Record<string, unknown>): void {
+  const actualKeys = Object.keys(value);
+  if (
+    actualKeys.length !== EXECUTION_METRICS_RUN_SUMMARY_TOP_LEVEL_KEYS.length ||
+    EXECUTION_METRICS_RUN_SUMMARY_TOP_LEVEL_KEYS.some((key) => !actualKeys.includes(key))
+  ) {
+    failValidation(`summary must contain ${formatKeyList(EXECUTION_METRICS_RUN_SUMMARY_TOP_LEVEL_KEYS)}.`);
+  }
 }
 
 function expectNonNegativeInteger(value: unknown, field: string): number {
@@ -351,8 +369,13 @@ function expectDerivedDuration(
 
 export function validateExecutionMetricsRunSummary(raw: unknown): ExecutionMetricsRunSummaryArtifact {
   const summary = expectObject(raw);
+  expectExactTopLevelKeys(summary);
   for (const key of Object.keys(summary)) {
-    if (!EXECUTION_METRICS_RUN_SUMMARY_KEYS.includes(key as (typeof EXECUTION_METRICS_RUN_SUMMARY_KEYS)[number])) {
+    if (
+      !EXECUTION_METRICS_RUN_SUMMARY_TOP_LEVEL_KEYS.includes(
+        key as (typeof EXECUTION_METRICS_RUN_SUMMARY_TOP_LEVEL_KEYS)[number],
+      )
+    ) {
       failValidation(`${key} is not allowed.`);
     }
   }
