@@ -8,6 +8,7 @@ import {
   STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
 } from "../no-pull-request-state";
 import type { GitHubPullRequest, IssueRunRecord, LatestLocalCiResult, RunState, SupervisorConfig } from "../core/types";
+import type { SupervisorPreMergeEvaluationDto } from "./supervisor-pre-merge-evaluation";
 
 export interface SupervisorLatestRecoveryDto {
   issueNumber: number;
@@ -59,6 +60,7 @@ export interface SupervisorIssueActivityContextDto {
   verificationPolicySummary: string | null;
   durableGuardrailSummary: string | null;
   externalReviewFollowUpSummary: string | null;
+  preMergeEvaluation?: SupervisorPreMergeEvaluationDto | null;
   localCiStatus: SupervisorLocalCiStatusDto | null;
   latestRecovery: SupervisorLatestRecoveryDto | null;
   retryContext: SupervisorRetryContextDto;
@@ -407,6 +409,7 @@ export function buildIssueActivityContext(args: {
   verificationPolicySummary?: string | null;
   durableGuardrailSummary?: string | null;
   externalReviewFollowUpSummary?: string | null;
+  preMergeEvaluation?: SupervisorPreMergeEvaluationDto | null;
 }): SupervisorIssueActivityContextDto {
   return {
     handoffSummary: args.handoffSummary ?? null,
@@ -415,6 +418,7 @@ export function buildIssueActivityContext(args: {
     verificationPolicySummary: args.verificationPolicySummary ?? null,
     durableGuardrailSummary: args.durableGuardrailSummary ?? null,
     externalReviewFollowUpSummary: args.externalReviewFollowUpSummary ?? null,
+    preMergeEvaluation: args.preMergeEvaluation ?? null,
     localCiStatus: buildLocalCiStatusDto(args.record, args.pr),
     latestRecovery: buildLatestRecoveryDto(args.record),
     retryContext: buildRetryContextDto(args.record),
@@ -440,6 +444,7 @@ export function maybeBuildIssueActivityContext(args: {
   verificationPolicySummary?: string | null;
   durableGuardrailSummary?: string | null;
   externalReviewFollowUpSummary?: string | null;
+  preMergeEvaluation?: SupervisorPreMergeEvaluationDto | null;
 }): SupervisorIssueActivityContextDto | null {
   const context = buildIssueActivityContext(args);
   const hasSummary =
@@ -449,6 +454,7 @@ export function maybeBuildIssueActivityContext(args: {
     context.verificationPolicySummary !== null ||
     context.durableGuardrailSummary !== null ||
     context.externalReviewFollowUpSummary !== null ||
+    context.preMergeEvaluation !== null ||
     context.localCiStatus !== null ||
     context.latestRecovery !== null ||
     context.retryContext.timeoutRetryCount > 0 ||

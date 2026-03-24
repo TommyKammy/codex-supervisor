@@ -42,6 +42,15 @@ Parallelizable: No`,
   };
 }
 
+async function writeLocalReviewArtifact(args: {
+  summaryPath: string;
+  artifact: Record<string, unknown>;
+}): Promise<void> {
+  await fs.mkdir(path.dirname(args.summaryPath), { recursive: true });
+  await fs.writeFile(args.summaryPath, "# local review\n", "utf8");
+  await fs.writeFile(`${args.summaryPath.slice(0, -3)}.json`, `${JSON.stringify(args.artifact, null, 2)}\n`, "utf8");
+}
+
 test("buildIssueExplainSummary keeps non-runnable explain output stable", async () => {
   const config = createConfig({
     maxImplementationAttemptsPerIssue: 5,
@@ -232,6 +241,7 @@ test("buildIssueExplainDto exposes typed operator activity context", async () =>
     verificationPolicySummary: null,
     durableGuardrailSummary: null,
     externalReviewFollowUpSummary: null,
+    preMergeEvaluation: null,
     localCiStatus: {
       outcome: "failed",
       summary: "Configured local CI command failed before marking PR #605 ready.",
@@ -375,6 +385,7 @@ test("buildIssueExplainDto degrades when PR resolution fails", async () => {
     verificationPolicySummary: null,
     durableGuardrailSummary: null,
     externalReviewFollowUpSummary: null,
+    preMergeEvaluation: null,
     localCiStatus: null,
     latestRecovery: {
       issueNumber,
@@ -457,5 +468,126 @@ test("buildIssueExplainSummary surfaces repeated stale cleanup risk for no-PR re
     lines.includes(
       "recovery_loop_summary kind=stale_stabilizing_no_pr status=retrying repeat_count=1/3 action=confirm_whether_the_change_already_landed_or_retarget_the_issue_manually apparent_no_progress=yes",
     ),
+  );
+});
+
+test("buildIssueExplainSummary surfaces follow-up-eligible pre-merge evaluation state", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 609;
+  const summaryPath = path.join(fixture.workspaceRoot, "reviews", "owner-repo", `issue-${issueNumber}`, "head-609.md");
+  await writeLocalReviewArtifact({
+    summaryPath,
+    artifact: {
+      issueNumber,
+      prNumber: issueNumber,
+      branch: branchName(fixture.config, issueNumber),
+      headSha: "head-609",
+      ranAt: "2026-03-24T00:11:00Z",
+      confidenceThreshold: 0.7,
+      reviewerThresholds: {
+        generic: { confidenceThreshold: 0.7, minimumSeverity: "low" },
+        specialist: { confidenceThreshold: 0.7, minimumSeverity: "low" },
+      },
+      roles: ["reviewer"],
+      autoDetectedRoles: [],
+      summary: "Local review found follow-up eligible residuals.",
+      recommendation: "changes_requested",
+      degraded: false,
+      findingsCount: 1,
+      rootCauseCount: 1,
+      maxSeverity: "medium",
+      actionableFindings: [],
+      rootCauseSummaries: [],
+      verification: {
+        required: false,
+        summary: "No high-severity findings required verification.",
+        recommendation: "ready",
+        degraded: false,
+        findingsCount: 0,
+        verifiedFindingsCount: 0,
+        verifiedMaxSeverity: "none",
+        findings: [],
+      },
+      verifiedFindings: [],
+      finalEvaluation: {
+        outcome: "follow_up_eligible",
+        residualFindings: [],
+        mustFixCount: 0,
+        manualReviewCount: 0,
+        followUpCount: 1,
+      },
+      guardrailProvenance: {
+        verifier: { committedPath: null, committedCount: 0 },
+        externalReview: { committedPath: null, committedCount: 0, runtimeSources: [] },
+      },
+      roleReports: [],
+      verifierReport: null,
+    },
+  });
+
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Surface pre-merge evaluation context",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        local_review_summary_path: summaryPath,
+        local_review_head_sha: "head-609",
+        local_review_run_at: "2026-03-24T00:11:00Z",
+      }),
+    },
+  };
+  const config = createConfig({
+    workspaceRoot: fixture.workspaceRoot,
+    stateFile: fixture.stateFile,
+    repoPath: fixture.repoPath,
+    localReviewArtifactDir: path.join(fixture.workspaceRoot, "reviews"),
+  });
+
+  const dto = await buildIssueExplainDto(
+    {
+      getIssue: async () => issue,
+      listAllIssues: async () => [issue],
+      listCandidateIssues: async () => [issue],
+      resolvePullRequestForBranch: async () => ({
+        number: issueNumber,
+        title: "Surface pre-merge evaluation context",
+        url: `https://example.test/pull/${issueNumber}`,
+        state: "OPEN",
+        createdAt: "2026-03-24T00:00:00Z",
+        updatedAt: "2026-03-24T00:00:00Z",
+        isDraft: false,
+        reviewDecision: "APPROVED",
+        mergeStateStatus: "CLEAN",
+        headRefName: branchName(fixture.config, issueNumber),
+        headRefOid: "head-609",
+      }),
+    },
+    config,
+    state,
+    issueNumber,
+  );
+
+  assert.deepEqual(dto.activityContext?.preMergeEvaluation, {
+    status: "follow_up_eligible",
+    outcome: "follow_up_eligible",
+    reason: "follow_up_candidates=1",
+    headStatus: "current",
+    summaryPath: "owner-repo/issue-609/head-609.md",
+    artifactPath: "owner-repo/issue-609/head-609.json",
+    ranAt: "2026-03-24T00:11:00Z",
+    mustFixCount: 0,
+    manualReviewCount: 0,
+    followUpCount: 1,
+  });
+  assert.match(
+    renderIssueExplainDto(dto),
+    /^pre_merge_evaluation status=follow_up_eligible outcome=follow_up_eligible head=current must_fix=0 manual_review=0 follow_up=1 reason=follow_up_candidates=1 ran_at=2026-03-24T00:11:00Z summary_path=owner-repo\/issue-609\/head-609\.md artifact_path=owner-repo\/issue-609\/head-609\.json$/m,
   );
 });

@@ -45,6 +45,7 @@ import {
   maybeBuildIssueActivityContext,
   type SupervisorIssueActivityContextDto,
 } from "./supervisor-operator-activity-context";
+import { formatPreMergeEvaluationStatusLine, loadPreMergeEvaluationDto } from "./supervisor-pre-merge-evaluation";
 
 export type ExplainIssueGitHub = Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
   Partial<ActiveStatusGitHub>;
@@ -223,6 +224,13 @@ export async function buildIssueExplainDto(
       handoffSummary = null;
     }
   }
+  const preMergeEvaluation = record
+    ? await loadPreMergeEvaluationDto({
+      config,
+      record,
+      pr,
+    })
+    : null;
 
   if (matchingSkipPrefix) {
     reasons.push(`skip_title_prefix ${matchingSkipPrefix}`);
@@ -278,6 +286,7 @@ export async function buildIssueExplainDto(
         handoffSummary,
         changeClassesSummary: changeRiskLines.length > 0 ? changeRiskLines.join(" | ") : null,
         externalReviewFollowUpSummary,
+        preMergeEvaluation,
       })
       : null,
     selectionReason: runnable
@@ -291,6 +300,7 @@ export async function buildIssueExplainDto(
 
 export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
   const localCiStatusLine = formatLocalCiStatusLine(dto.activityContext);
+  const preMergeEvaluationLine = formatPreMergeEvaluationStatusLine(dto.activityContext?.preMergeEvaluation ?? null);
   const retrySummaryLine = formatRetrySummaryLine(dto.activityContext);
   const recoveryLoopSummaryLine = formatRecoveryLoopSummaryLine(dto.activityContext);
   const lines = [
@@ -301,6 +311,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     `runnable=${dto.runnable ? "yes" : "no"}`,
     ...dto.changeRiskLines,
     ...(dto.externalReviewFollowUpSummary ? [dto.externalReviewFollowUpSummary] : []),
+    ...(preMergeEvaluationLine ? [preMergeEvaluationLine] : []),
     ...(localCiStatusLine ? [localCiStatusLine] : []),
     ...(retrySummaryLine ? [retrySummaryLine] : []),
     ...(recoveryLoopSummaryLine ? [recoveryLoopSummaryLine] : []),
