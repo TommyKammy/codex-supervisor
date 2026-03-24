@@ -215,6 +215,166 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion 
   assert.match(result.record.last_error ?? "", /Configured local CI command failed before marking PR #116 ready\./);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase creates execution-ready follow-up issues for follow-up-eligible residuals", async () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+  });
+  const issue = createIssue({
+    title: "Track residual post-merge work",
+    body: `## Summary
+Allow merge after local review while tracking bounded residual work.
+
+## Scope
+- keep follow-up issue creation explicit
+- keep blocking findings on the source issue
+- leave unrelated scheduling behavior unchanged
+
+## Acceptance criteria
+- follow-up-eligible residuals create explicit issues
+- blocking residuals still block the source issue
+
+## Verification
+- npx tsx --test src/post-turn-pull-request.test.ts
+
+Part of: #900
+Depends on: none
+Execution order: 1 of 1
+Parallelizable: No`,
+  });
+  const draftPr = createPullRequest({ title: "Create residual follow-up issues", isDraft: true });
+  const createdIssues: Array<{ title: string; body: string }> = [];
+  let readyCalls = 0;
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      createIssue: async (title: string, body: string) => {
+        createdIssues.push({ title, body });
+        return createIssue({
+          number: 205,
+          title,
+          body,
+          url: "https://example.test/issues/205",
+        });
+      },
+      markPullRequestReady: async () => {
+        readyCalls += 1;
+      },
+    },
+    context: {
+      state: {
+        activeIssueNumber: 102,
+        issues: { "102": createRecord({ state: "draft_pr", pr_number: draftPr.number }) },
+      },
+      record: createRecord({ state: "draft_pr", pr_number: draftPr.number }),
+      issue,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: draftPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record, pr) => ({
+      recordForState: record,
+      nextState: "waiting_ci",
+      failureContext: null,
+      reviewWaitPatch: { review_wait_started_at: "2026-03-13T06:26:22Z", review_wait_head_sha: pr.headRefOid },
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalReviewImpl: async () => ({
+      ranAt: "2026-03-24T00:11:00Z",
+      summaryPath: "/tmp/reviews/owner-repo/issue-102/head-116.md",
+      findingsPath: "/tmp/reviews/owner-repo/issue-102/head-116.json",
+      summary: "Local review found a bounded medium-severity residual.",
+      blockerSummary: "medium src/example.ts:20-21 This still needs follow-up.",
+      findingsCount: 1,
+      rootCauseCount: 1,
+      maxSeverity: "medium",
+      verifiedFindingsCount: 0,
+      verifiedMaxSeverity: "none",
+      recommendation: "changes_requested",
+      degraded: false,
+      finalEvaluation: {
+        outcome: "follow_up_eligible",
+        residualFindings: [
+          {
+            findingKey: "src/example.ts|20|21|medium issue|this still needs follow-up.",
+            summary: "This still needs follow-up.",
+            severity: "medium",
+            category: "tests",
+            file: "src/example.ts",
+            start: 20,
+            end: 21,
+            source: "local_review",
+            resolution: "follow_up_candidate",
+            rationale: "Residual non-high-severity finding is eligible for explicit follow-up instead of blocking merge by itself.",
+          },
+        ],
+        mustFixCount: 0,
+        manualReviewCount: 0,
+        followUpCount: 1,
+      },
+      rawOutput: "raw output",
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: draftPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(createdIssues.length, 1);
+  assert.match(createdIssues[0]?.title ?? "", /follow-up/i);
+  assert.match(createdIssues[0]?.body ?? "", /Depends on: #102/);
+  assert.match(createdIssues[0]?.body ?? "", /Part of: #900/);
+  assert.match(createdIssues[0]?.body ?? "", /Execution order: 1 of 1/);
+  assert.match(createdIssues[0]?.body ?? "", /Parallelizable: Yes/);
+  assert.match(createdIssues[0]?.body ?? "", /Source issue: #102/);
+  assert.equal(readyCalls, 1);
+  assert.equal(result.record.pre_merge_evaluation_outcome, "follow_up_eligible");
+});
+
 test("handlePostTurnPullRequestTransitionsPhase emits typed review-wait change events", async () => {
   const config = createConfig();
   const issue = createIssue({ title: "Emit review wait changes" });

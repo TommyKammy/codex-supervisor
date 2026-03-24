@@ -527,6 +527,28 @@ export class GitHubClient {
     return created;
   }
 
+  async createIssue(title: string, body: string): Promise<GitHubIssue> {
+    const { owner, repo } = this.repoOwnerAndName();
+    const result = await this.runGhCommand([
+      "api",
+      `repos/${owner}/${repo}/issues`,
+      "--method",
+      "POST",
+      "-f",
+      `title=${title}`,
+      "-f",
+      `body=${body}`,
+    ]);
+
+    const created = parseJson<GitHubRestIssue>(result.stdout, `gh api repos/${owner}/${repo}/issues`);
+    const mapped = this.mapRestIssue(created);
+    if (!mapped) {
+      throw new Error("Created GitHub issue response unexpectedly described a pull request.");
+    }
+
+    return mapped;
+  }
+
   private async findPullRequestAfterCreation(branch: string): Promise<GitHubPullRequest | null> {
     for (let attempt = 0; attempt <= POST_CREATE_PR_LOOKUP_RETRY_LIMIT; attempt += 1) {
       const pullRequest = await this.findOpenPullRequest(branch);
