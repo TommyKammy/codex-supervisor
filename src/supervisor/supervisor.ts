@@ -80,7 +80,7 @@ import {
   executionMetricsRetentionRootPath,
   syncExecutionMetricsRunSummary,
 } from "./execution-metrics-run-summary";
-import { syncPostMergeAuditArtifact } from "./post-merge-audit-artifact";
+import { syncPostMergeAuditArtifactSafely } from "./post-merge-audit-artifact";
 import {
   attemptBudgetForLane,
   attemptLane,
@@ -841,12 +841,13 @@ export class Supervisor {
       recoveryEvents,
       retentionRootPath: executionMetricsRetentionRootPath(this.config.stateFile),
     });
-    await syncPostMergeAuditArtifact({
+    await syncPostMergeAuditArtifactSafely({
       config: this.config,
       previousRecord: record,
       nextRecord,
       issue,
       pullRequest: currentPr,
+      warningContext: "persisting",
     });
     return nextRecord;
   }

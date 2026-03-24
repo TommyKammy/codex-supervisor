@@ -13,6 +13,7 @@ import {
 import {
   postMergeAuditArtifactPath,
   syncPostMergeAuditArtifact,
+  syncPostMergeAuditArtifactSafely,
   type PostMergeAuditArtifact,
 } from "./post-merge-audit-artifact";
 
@@ -172,4 +173,137 @@ test("syncPostMergeAuditArtifact persists a typed completed-work artifact", asyn
   assert.equal(artifact.localReview?.artifact?.summary, localReviewArtifact.summary);
   assert.equal(artifact.failureTaxonomy.latestFailure?.failureKind, "command_error");
   assert.equal(artifact.failureTaxonomy.latestRecovery?.reason, nextRecord.last_recovery_reason);
+});
+
+test("syncPostMergeAuditArtifact ignores stale execution metrics summaries", async () => {
+  const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "post-merge-audit-stale-metrics-"));
+  const reviewDir = await fs.mkdtemp(path.join(os.tmpdir(), "post-merge-audit-stale-reviews-"));
+  const config = createConfig({
+    localReviewArtifactDir: reviewDir,
+    repoSlug: "owner/repo",
+  });
+
+  const staleExecutionMetrics: ExecutionMetricsRunSummaryArtifact = {
+    schemaVersion: 4,
+    issueNumber: 102,
+    terminalState: "blocked",
+    terminalOutcome: { category: "blocked", reason: "manual_review" },
+    issueCreatedAt: "2026-03-24T09:55:00Z",
+    startedAt: "2026-03-24T10:00:00Z",
+    prCreatedAt: "2026-03-24T10:03:00Z",
+    prMergedAt: "2026-03-24T10:04:00Z",
+    finishedAt: "2026-03-24T10:05:00Z",
+    runDurationMs: 300000,
+    issueLeadTimeMs: 600000,
+    issueToPrCreatedMs: 480000,
+    prOpenDurationMs: 60000,
+    reviewMetrics: null,
+    failureMetrics: {
+      classification: "latest_failure",
+      category: "review",
+      failureKind: "command_error",
+      blockedReason: "manual_review",
+      occurrenceCount: 1,
+      lastOccurredAt: "2026-03-24T10:05:00Z",
+    },
+    recoveryMetrics: null,
+  };
+  await writeJsonAtomic(executionMetricsRunSummaryPath(workspacePath), staleExecutionMetrics);
+
+  const previousRecord = createRecord({
+    issue_number: 102,
+    branch: "codex/issue-102",
+    workspace: workspacePath,
+    updated_at: "2026-03-24T10:00:00Z",
+  });
+  const nextRecord = {
+    ...previousRecord,
+    state: "done" as const,
+    updated_at: "2026-03-24T10:06:00Z",
+    last_recovery_reason: "merged_pr_convergence",
+    last_recovery_at: "2026-03-24T10:06:00Z",
+  };
+  const issue = createIssue({
+    number: 102,
+    updatedAt: "2026-03-24T10:06:00Z",
+  });
+  const pullRequest = createPullRequest({
+    number: 116,
+    headRefOid: "merged-head-116",
+    createdAt: "2026-03-24T10:03:00Z",
+    mergedAt: "2026-03-24T10:05:00Z",
+  });
+
+  const artifactPath = await syncPostMergeAuditArtifact({
+    config,
+    previousRecord,
+    nextRecord,
+    issue,
+    pullRequest,
+  });
+
+  const artifact = JSON.parse(await fs.readFile(artifactPath!, "utf8")) as PostMergeAuditArtifact;
+  assert.equal(artifact.executionMetrics, null);
+  assert.equal(artifact.artifacts.executionMetricsSummaryPath, null);
+});
+
+test("syncPostMergeAuditArtifactSafely swallows malformed local review artifacts", async () => {
+  const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "post-merge-audit-safe-wrapper-"));
+  const reviewDir = await fs.mkdtemp(path.join(os.tmpdir(), "post-merge-audit-safe-wrapper-reviews-"));
+  const config = createConfig({
+    localReviewArtifactDir: reviewDir,
+    repoSlug: "owner/repo",
+  });
+  const localReviewSummaryPath = path.join(reviewDir, "owner-repo", "issue-102", "head-deadbeef.md");
+  const localReviewFindingsPath = `${localReviewSummaryPath.slice(0, -3)}.json`;
+  await fs.mkdir(path.dirname(localReviewSummaryPath), { recursive: true });
+  await fs.writeFile(localReviewSummaryPath, "# local review\n", "utf8");
+  await fs.writeFile(localReviewFindingsPath, "{not-json", "utf8");
+
+  const previousRecord = createRecord({
+    issue_number: 102,
+    branch: "codex/issue-102",
+    workspace: workspacePath,
+    local_review_summary_path: localReviewSummaryPath,
+    updated_at: "2026-03-24T10:00:00Z",
+  });
+  const nextRecord = {
+    ...previousRecord,
+    state: "done" as const,
+    updated_at: "2026-03-24T10:06:00Z",
+    last_recovery_reason: "merged_pr_convergence",
+    last_recovery_at: "2026-03-24T10:06:00Z",
+  };
+  const issue = createIssue({
+    number: 102,
+    updatedAt: "2026-03-24T10:06:00Z",
+  });
+  const pullRequest = createPullRequest({
+    number: 116,
+    headRefOid: "merged-head-116",
+    createdAt: "2026-03-24T10:03:00Z",
+    mergedAt: "2026-03-24T10:05:00Z",
+  });
+
+  const warnings: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args);
+  };
+  try {
+    const artifactPath = await syncPostMergeAuditArtifactSafely({
+      config,
+      previousRecord,
+      nextRecord,
+      issue,
+      pullRequest,
+      warningContext: "persisting",
+    });
+    assert.equal(artifactPath, null);
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.equal(warnings.length, 1);
+  assert.match(String(warnings[0][0]), /Failed to persist post-merge audit artifact while persisting issue #102\./u);
 });

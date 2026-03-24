@@ -16,7 +16,7 @@ import {
   executionMetricsRetentionRootPath,
   syncExecutionMetricsRunSummarySafely,
 } from "./supervisor/execution-metrics-run-summary";
-import { syncPostMergeAuditArtifact } from "./supervisor/post-merge-audit-artifact";
+import { syncPostMergeAuditArtifactSafely } from "./supervisor/post-merge-audit-artifact";
 import {
   buildSupervisorMutationRecordSnapshot,
   type PrunedOrphanedWorkspaceResultDto,
@@ -705,7 +705,7 @@ export async function reconcileMergedIssueClosures(
         retentionRootPath: executionMetricsRetentionRootPath(config.stateFile),
         warningContext: "reconciling",
       });
-      await syncPostMergeAuditArtifact({
+      await syncPostMergeAuditArtifactSafely({
         config,
         previousRecord: record,
         nextRecord: updated,
@@ -717,6 +717,7 @@ export async function reconcileMergedIssueClosures(
           updatedAt: updated.updated_at,
         },
         pullRequest: satisfyingPullRequest,
+        warningContext: "reconciling",
       });
     }
     if (state.activeIssueNumber === record.issue_number) {
@@ -807,12 +808,13 @@ export async function reconcileTrackedMergedButOpenIssues(
           retentionRootPath: executionMetricsRetentionRootPath(config.stateFile),
           warningContext: "reconciling",
         });
-        await syncPostMergeAuditArtifact({
+        await syncPostMergeAuditArtifactSafely({
           config,
           previousRecord: record,
           nextRecord: updated,
           issue,
           pullRequest: trackedPullRequest,
+          warningContext: "reconciling",
         });
       }
       if (state.activeIssueNumber === record.issue_number) {
@@ -857,12 +859,13 @@ export async function reconcileTrackedMergedButOpenIssues(
       retentionRootPath: executionMetricsRetentionRootPath(config.stateFile),
       warningContext: "reconciling",
     });
-    await syncPostMergeAuditArtifact({
+    await syncPostMergeAuditArtifactSafely({
       config,
       previousRecord: record,
       nextRecord: updated,
       issue,
       pullRequest: trackedPullRequest,
+      warningContext: "reconciling",
     });
   }
 

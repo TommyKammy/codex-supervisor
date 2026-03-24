@@ -111,6 +111,32 @@ async function loadTypedLocalReviewArtifact(summaryPath: string | null): Promise
   return { findingsPath, artifact };
 }
 
+function validateExecutionMetricsRunSummarySafely(
+  issueNumber: number,
+  raw: unknown,
+): ExecutionMetricsRunSummaryArtifact | null {
+  try {
+    return validateExecutionMetricsRunSummary(raw);
+  } catch (error) {
+    console.warn(`Failed to validate execution metrics run summary for post-merge audit issue #${issueNumber}.`, error);
+    return null;
+  }
+}
+
+async function writePostMergeAuditArtifactSafely(
+  issueNumber: number,
+  artifactPath: string,
+  artifact: PostMergeAuditArtifact,
+): Promise<string | null> {
+  try {
+    await writeJsonAtomic(artifactPath, artifact);
+    return artifactPath;
+  } catch (error) {
+    console.warn(`Failed to write post-merge audit artifact for issue #${issueNumber}.`, error);
+    return null;
+  }
+}
+
 function localReviewSourceRecord(
   previousRecord: Pick<
     IssueRunRecord,
@@ -193,9 +219,16 @@ export async function syncPostMergeAuditArtifact(args: {
 
   const executionMetricsSummaryPath = executionMetricsRunSummaryPath(args.nextRecord.workspace);
   const executionMetricsRaw = await readJsonIfExists<ExecutionMetricsRunSummaryArtifact>(executionMetricsSummaryPath);
-  const executionMetrics = executionMetricsRaw
-    ? validateExecutionMetricsRunSummary(executionMetricsRaw)
+  const loadedExecutionMetrics = executionMetricsRaw
+    ? validateExecutionMetricsRunSummarySafely(args.issue.number, executionMetricsRaw)
     : null;
+  const executionMetrics =
+    loadedExecutionMetrics &&
+    loadedExecutionMetrics.issueNumber === args.issue.number &&
+    loadedExecutionMetrics.terminalState === "done" &&
+    loadedExecutionMetrics.prMergedAt === args.pullRequest.mergedAt
+      ? loadedExecutionMetrics
+      : null;
 
   const localReviewRecord = localReviewSourceRecord(args.previousRecord, args.nextRecord);
   const { findingsPath: localReviewFindingsPath, artifact: localReviewArtifact } = await loadTypedLocalReviewArtifact(
@@ -289,6 +322,26 @@ export async function syncPostMergeAuditArtifact(args: {
     issueNumber: args.issue.number,
     headSha: args.pullRequest.headRefOid,
   });
-  await writeJsonAtomic(artifactPath, artifact);
-  return artifactPath;
+  return writePostMergeAuditArtifactSafely(args.issue.number, artifactPath, artifact);
+}
+
+export async function syncPostMergeAuditArtifactSafely(
+  args: Parameters<typeof syncPostMergeAuditArtifact>[0] & {
+    warningContext: string;
+  },
+): Promise<string | null> {
+  try {
+    return await syncPostMergeAuditArtifact(args);
+  } catch (error) {
+    console.warn(
+      `Failed to persist post-merge audit artifact while ${args.warningContext} issue #${args.previousRecord.issue_number}.`,
+      {
+        issueNumber: args.previousRecord.issue_number,
+        terminalState: args.nextRecord.state,
+        updatedAt: args.nextRecord.updated_at,
+      },
+      error,
+    );
+    return null;
+  }
 }

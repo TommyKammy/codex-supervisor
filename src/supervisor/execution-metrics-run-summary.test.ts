@@ -257,6 +257,8 @@ async function readExecutionMetricsRunSummary(workspacePath: string): Promise<Ex
 
 test("prepareIssueExecutionContext writes a run summary artifact for done outcomes", async () => {
   const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "execution-metrics-done-"));
+  const reviewDir = await fs.mkdtemp(path.join(os.tmpdir(), "execution-metrics-done-reviews-"));
+  const config = createPreparationConfig({ localReviewArtifactDir: reviewDir });
   const record = createPreparationRecord(workspacePath);
   const state = createState(record);
   const mergedPr = createPreparationPullRequest({
@@ -276,7 +278,7 @@ test("prepareIssueExecutionContext writes a run summary artifact for done outcom
         throw new Error("unexpected createPullRequest call");
       },
     },
-    config: createPreparationConfig(),
+    config,
     stateStore: {
       touch(currentRecord, patch) {
         return {
@@ -333,7 +335,7 @@ test("prepareIssueExecutionContext writes a run summary artifact for done outcom
   });
 
   const postMergeAuditPath = postMergeAuditArtifactPath({
-    config: createPreparationConfig(),
+    config,
     issueNumber: 240,
     headSha: "merged-head-191",
   });
