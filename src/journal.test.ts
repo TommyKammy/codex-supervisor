@@ -115,6 +115,57 @@ test("syncIssueJournal writes workspace metadata as workspace-relative paths", a
   assert.doesNotMatch(content, new RegExp(tempDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
+test("syncIssueJournal normalizes absolute local paths before writing durable content", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-path-normalization-"));
+  const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
+  const repoFilePath = path.join(tempDir, "src", "journal.ts");
+  const hostOnlyPath = ["", "home", "alice", ".config", "codex", "history.log"].join("/");
+
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    `# Issue #177: Structured handoff: define a clearer issue journal schema
+
+## Codex Working Notes
+### Current Handoff
+- What changed: Investigated ${repoFilePath} and ${hostOnlyPath}.
+
+### Scratchpad
+- Notes mention ${repoFilePath}.
+- Machine-local note: ${hostOnlyPath}
+`,
+    "utf8",
+  );
+
+  await syncIssueJournal({
+    issue,
+    record: createRecord({
+      workspace: tempDir,
+      journal_path: journalPath,
+      last_codex_summary: `Summary: Reproduced in ${repoFilePath} with extra context from ${hostOnlyPath}`,
+      last_failure_context: {
+        category: "verification",
+        summary: `Path leak persisted through ${repoFilePath}`,
+        signature: "journal-path-leak",
+        command: `cat ${repoFilePath} ${hostOnlyPath}`,
+        url: "https://example.test/issues/177",
+        details: [
+          `Repo file: ${repoFilePath}`,
+          `Host file: ${hostOnlyPath}`,
+        ],
+        updated_at: "2026-03-14T00:00:00Z",
+      },
+    }),
+    journalPath,
+  });
+
+  const content = await fs.readFile(journalPath, "utf8");
+  assert.doesNotMatch(content, new RegExp(tempDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.doesNotMatch(content, new RegExp(hostOnlyPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(content, /src\/journal\.ts/);
+  assert.match(content, /<redacted-local-path>/);
+});
+
 test("syncIssueJournal preserves legacy handoff content by normalizing old field names", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-legacy-"));
   const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");

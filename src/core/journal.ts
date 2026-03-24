@@ -4,6 +4,10 @@ import { GitHubIssue, IssueRunRecord } from "./types";
 import { ensureDir, truncate } from "./utils";
 
 const NOTES_MARKER = "## Codex Working Notes";
+const DURABLE_PATH_TOKEN_PATTERN = /[^\s"'`<>]+/g;
+const LEADING_PATH_PUNCTUATION = "([{";
+const TRAILING_PATH_PUNCTUATION = ")]},;:!?";
+const REDACTED_LOCAL_PATH = "<redacted-local-path>";
 const HANDOFF_FIELDS = [
   "Hypothesis",
   "What changed",
@@ -218,6 +222,80 @@ function formatTrackedJournalPath(workspacePath: string, targetPath: string): st
   return relativePath.split(path.sep).join("/");
 }
 
+function stripTokenPunctuation(token: string): { leading: string; core: string; trailing: string } {
+  let leading = "";
+  let trailing = "";
+  let core = token;
+
+  while (core.length > 0 && LEADING_PATH_PUNCTUATION.includes(core[0])) {
+    leading += core[0];
+    core = core.slice(1);
+  }
+
+  while (core.length > 0 && TRAILING_PATH_PUNCTUATION.includes(core[core.length - 1])) {
+    trailing = `${core[core.length - 1]}${trailing}`;
+    core = core.slice(0, -1);
+  }
+
+  if (core.endsWith(".") && /(?:^\/|^[A-Za-z]:[\\/])/.test(core)) {
+    core = core.slice(0, -1);
+    trailing = `.${trailing}`;
+  }
+
+  return { leading, core, trailing };
+}
+
+function normalizeWorkspaceAbsolutePath(candidate: string, workspacePath: string): string | null {
+  const normalizedCandidate = candidate.replace(/\\/g, "/");
+  const normalizedWorkspace = path.resolve(workspacePath).replace(/\\/g, "/");
+  const compareCandidate = /^[A-Za-z]:\//.test(normalizedCandidate) ? normalizedCandidate.toLowerCase() : normalizedCandidate;
+  const compareWorkspace = /^[A-Za-z]:\//.test(normalizedWorkspace) ? normalizedWorkspace.toLowerCase() : normalizedWorkspace;
+
+  if (compareCandidate !== compareWorkspace && !compareCandidate.startsWith(`${compareWorkspace}/`)) {
+    return null;
+  }
+
+  const relativePath = path.posix.relative(normalizedWorkspace, normalizedCandidate);
+  if (relativePath.startsWith("../") || relativePath === "..") {
+    return null;
+  }
+
+  return relativePath.length === 0 ? "." : relativePath;
+}
+
+function isNonPortableLocalAbsolutePath(candidate: string): boolean {
+  const normalizedCandidate = candidate.replace(/\\/g, "/");
+  return (
+    normalizedCandidate.startsWith("/home/") ||
+    normalizedCandidate.startsWith("/Users/") ||
+    /^[A-Za-z]:\/Users\//.test(normalizedCandidate)
+  );
+}
+
+function normalizeDurableJournalText(text: string | null | undefined, workspacePath: string): string {
+  if (!text) {
+    return text ?? "";
+  }
+
+  return text.replace(DURABLE_PATH_TOKEN_PATTERN, (token) => {
+    const { leading, core, trailing } = stripTokenPunctuation(token);
+    if (core.length === 0) {
+      return token;
+    }
+
+    const workspaceRelativePath = normalizeWorkspaceAbsolutePath(core, workspacePath);
+    if (workspaceRelativePath) {
+      return `${leading}${workspaceRelativePath}${trailing}`;
+    }
+
+    if (isNonPortableLocalAbsolutePath(core)) {
+      return `${leading}${REDACTED_LOCAL_PATH}${trailing}`;
+    }
+
+    return token;
+  });
+}
+
 function truncateSummaryBody(summary: string, maxLength: number): string {
   if (summary.length === 0 || maxLength <= 0) {
     return "";
@@ -293,16 +371,17 @@ function buildSupervisorSnapshot(args: {
   journalPath: string;
 }): string {
   const { issue, record, journalPath } = args;
+  const sanitize = (value: string | null | undefined): string => normalizeDurableJournalText(value, record.workspace);
   const failureContext = record.last_failure_context
     ? [
         `- Category: ${record.last_failure_context.category ?? "unknown"}`,
-        `- Summary: ${record.last_failure_context.summary}`,
+        `- Summary: ${sanitize(record.last_failure_context.summary)}`,
         record.last_failure_context.command
-          ? `- Command or source: ${record.last_failure_context.command}`
+          ? `- Command or source: ${sanitize(record.last_failure_context.command)}`
           : null,
-        record.last_failure_context.url ? `- Reference: ${record.last_failure_context.url}` : null,
+        record.last_failure_context.url ? `- Reference: ${sanitize(record.last_failure_context.url)}` : null,
         ...(record.last_failure_context.details.length > 0
-          ? ["- Details:", ...record.last_failure_context.details.map((detail) => `  - ${detail}`)]
+          ? ["- Details:", ...record.last_failure_context.details.map((detail) => `  - ${sanitize(detail)}`)]
           : []),
       ]
         .filter(Boolean)
@@ -326,7 +405,7 @@ function buildSupervisorSnapshot(args: {
     `- Updated at: ${record.updated_at}`,
     "",
     "## Latest Codex Summary",
-    renderLatestCodexSummary(record.last_codex_summary, record.last_failure_signature),
+    renderLatestCodexSummary(sanitize(record.last_codex_summary), record.last_failure_signature),
     "",
     "## Active Failure Context",
     failureContext,
@@ -421,7 +500,7 @@ export async function syncIssueJournal(args: {
   const { issue, record, journalPath, maxChars = 6000 } = args;
   await ensureDir(path.dirname(journalPath));
   const existing = await readIssueJournal(journalPath);
-  const notes = existing ? preserveCodexNotes(existing) : null;
+  const notes = existing ? normalizeDurableJournalText(preserveCodexNotes(existing), record.workspace) : null;
   const snapshot = buildSupervisorSnapshot({ issue, record, journalPath });
   const nextContent = `${snapshot}\n${notes ? compactCodexNotes(notes, maxChars) : NOTES_TEMPLATE}`;
   await fs.writeFile(journalPath, nextContent, "utf8");
