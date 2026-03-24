@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { type LocalReviewRoleSelection } from "../review-role-detector";
 import { type SupervisorConfig } from "../core/types";
+import { createPostMergeAuditResult, renderPostMergeAuditContractSummary } from "./post-merge-audit";
 import {
   type FinalizedLocalReview,
   type LocalReviewFinding,
@@ -143,6 +144,14 @@ export async function writeLocalReviewArtifacts(args: {
       `- Must-fix residuals: ${args.finalized.finalEvaluation.mustFixCount}`,
       `- Manual-review residuals: ${args.finalized.finalEvaluation.manualReviewCount}`,
       `- Follow-up-eligible residuals: ${args.finalized.finalEvaluation.followUpCount}`,
+      "",
+      "## Post-merge audit contract",
+      renderPostMergeAuditContractSummary(
+        createPostMergeAuditResult({
+          recurringPatterns: [],
+          promotionCandidates: [],
+        }),
+      ),
       "",
       "## Auto-detected roles",
       ...summarizeAutoDetectedRoles(args.finalized.artifact.autoDetectedRoles),

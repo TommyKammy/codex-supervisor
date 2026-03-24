@@ -19,6 +19,15 @@ export type {
   FinalizedLocalReview,
   LocalReviewArtifact,
   LocalReviewFinding,
+  PostMergeAuditFollowUpIssueCreation,
+  PostMergeAuditGating,
+  PostMergeAuditIssueCompletionBehavior,
+  PostMergeAuditMergeBehavior,
+  PostMergeAuditOutcome,
+  PostMergeAuditPromotionCandidate,
+  PostMergeAuditPromotionCandidateKind,
+  PostMergeAuditRecurringPatternSummary,
+  PostMergeAuditResult,
   PreMergeFinalEvaluation,
   PreMergeFinalEvaluationOutcome,
   PreMergeResidualFinding,
@@ -38,6 +47,7 @@ export {
   LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY,
 } from "./result";
 export { derivePreMergeFinalEvaluation } from "./final-evaluation";
+export { createPostMergeAuditResult, renderPostMergeAuditContractSummary } from "./post-merge-audit";
 
 export function localReviewHasActionableFindings(
   record: Pick<IssueRunRecordLike, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation">,
