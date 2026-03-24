@@ -13,6 +13,11 @@ import { GitHubIssue, IssueRunRecord, PullRequestCheck, ReviewThread, RunState, 
 import { hoursSince, nowIso } from "./core/utils";
 import { branchNameForIssue, cleanupWorkspace, isSafeCleanupTarget } from "./core/workspace";
 import {
+  executionMetricsRetentionRootPath,
+  syncExecutionMetricsRunSummarySafely,
+} from "./supervisor/execution-metrics-run-summary";
+import { syncPostMergeAuditArtifactSafely } from "./supervisor/post-merge-audit-artifact";
+import {
   buildSupervisorMutationRecordSnapshot,
   type PrunedOrphanedWorkspaceResultDto,
   type SkippedOrphanedWorkspaceResultDto,
@@ -635,10 +640,12 @@ export async function reconcileMergedIssueClosures(
   github: RecoveryGitHubLike,
   stateStore: StateStoreLike,
   state: SupervisorStateFile,
+  config: SupervisorConfig,
   issues: GitHubIssue[],
 ): Promise<RecoveryEvent[]> {
   let changed = false;
   const recoveryEvents: RecoveryEvent[] = [];
+  const issueByNumber = new Map(issues.map((issue) => [issue.number, issue]));
   const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
 
   for (const record of Object.values(state.issues)) {
@@ -689,6 +696,29 @@ export async function reconcileMergedIssueClosures(
       state.issues[String(record.issue_number)] = updated;
       changed = true;
       recoveryEvents.push(recoveryEvent);
+      await syncExecutionMetricsRunSummarySafely({
+        previousRecord: record,
+        nextRecord: updated,
+        issue: issueByNumber.get(record.issue_number) ?? null,
+        pullRequest: satisfyingPullRequest,
+        recoveryEvents: [recoveryEvent],
+        retentionRootPath: executionMetricsRetentionRootPath(config.stateFile),
+        warningContext: "reconciling",
+      });
+      await syncPostMergeAuditArtifactSafely({
+        config,
+        previousRecord: record,
+        nextRecord: updated,
+        issue: issueByNumber.get(record.issue_number) ?? {
+          number: record.issue_number,
+          title: `Issue #${record.issue_number}`,
+          url: "",
+          createdAt: updated.updated_at,
+          updatedAt: updated.updated_at,
+        },
+        pullRequest: satisfyingPullRequest,
+        warningContext: "reconciling",
+      });
     }
     if (state.activeIssueNumber === record.issue_number) {
       state.activeIssueNumber = null;
@@ -707,6 +737,7 @@ export async function reconcileTrackedMergedButOpenIssues(
   github: RecoveryGitHubLike,
   stateStore: StateStoreLike,
   state: SupervisorStateFile,
+  config: SupervisorConfig,
   issues: GitHubIssue[],
 ): Promise<RecoveryEvent[]> {
   let changed = false;
@@ -768,6 +799,23 @@ export async function reconcileTrackedMergedButOpenIssues(
         state.issues[String(record.issue_number)] = updated;
         changed = true;
         recoveryEvents.push(recoveryEvent);
+        await syncExecutionMetricsRunSummarySafely({
+          previousRecord: record,
+          nextRecord: updated,
+          issue,
+          pullRequest: trackedPullRequest,
+          recoveryEvents: [recoveryEvent],
+          retentionRootPath: executionMetricsRetentionRootPath(config.stateFile),
+          warningContext: "reconciling",
+        });
+        await syncPostMergeAuditArtifactSafely({
+          config,
+          previousRecord: record,
+          nextRecord: updated,
+          issue,
+          pullRequest: trackedPullRequest,
+          warningContext: "reconciling",
+        });
       }
       if (state.activeIssueNumber === record.issue_number) {
         state.activeIssueNumber = null;
@@ -802,6 +850,23 @@ export async function reconcileTrackedMergedButOpenIssues(
     }
     changed = true;
     recoveryEvents.push(recoveryEvent);
+    await syncExecutionMetricsRunSummarySafely({
+      previousRecord: record,
+      nextRecord: updated,
+      issue,
+      pullRequest: trackedPullRequest,
+      recoveryEvents: [recoveryEvent],
+      retentionRootPath: executionMetricsRetentionRootPath(config.stateFile),
+      warningContext: "reconciling",
+    });
+    await syncPostMergeAuditArtifactSafely({
+      config,
+      previousRecord: record,
+      nextRecord: updated,
+      issue,
+      pullRequest: trackedPullRequest,
+      warningContext: "reconciling",
+    });
   }
 
   if (changed) {
