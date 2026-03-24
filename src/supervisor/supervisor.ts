@@ -468,7 +468,6 @@ export class Supervisor {
       ]);
       const meaningfulBaseDiff = baseDiffResult.stdout
         .split("\n")
-        .map((line) => line.trim())
         .filter((line) => line.length > 0 && !isIgnoredSupervisorArtifactPath(line, journalRelativePath));
       const meaningfulWorkspaceChanges = parseGitStatusPorcelainV1Paths(workspaceStatusResult.stdout)
         .filter((paths) =>
