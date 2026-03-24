@@ -81,6 +81,7 @@ import {
   syncExecutionMetricsRunSummary,
 } from "./execution-metrics-run-summary";
 import { syncPostMergeAuditArtifactSafely } from "./post-merge-audit-artifact";
+import { summarizePostMergeAuditPatterns, type PostMergeAuditPatternSummaryDto } from "./post-merge-audit-summary";
 import {
   attemptBudgetForLane,
   attemptLane,
@@ -1156,6 +1157,10 @@ export class Supervisor {
     } finally {
       await lock.release();
     }
+  }
+
+  async postMergeAuditSummaryReport(): Promise<PostMergeAuditPatternSummaryDto> {
+    return summarizePostMergeAuditPatterns(this.config);
   }
 
   async resetCorruptJsonState() {

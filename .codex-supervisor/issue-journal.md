@@ -1,32 +1,28 @@
-# Issue #938: Manual-verification UI issues can stall without explicit blocked state
+# Issue #925: Post-merge audit analysis: summarize recurring review, recovery, and failure patterns
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/938
-- Branch: codex/issue-938
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/925
+- Branch: codex/issue-925
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: eacef0c87bca5db490b37e0cd1dc21c273c1620c
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: 9b9d7f7f963ce985ad04a08087779eac75b33c12
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-24T09:17:17Z
+- Last failure signature: PRRT_kwDORgvdZ852YBEc
+- Repeated failure signature count: 1
+- Updated at: 2026-03-24T10:38:34Z
 
 ## Latest Codex Summary
-Updated the late-stage manual-verification path so a current-head `manual_review_blocked` outcome now converges to an explicit `state=blocked` / `blocked_reason=manual_review` instead of lingering in `draft_pr`. The change is in [post-turn-pull-request.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-938/src/post-turn-pull-request.ts), [pull-request-state.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-938/src/pull-request-state.ts), and [review-handling.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-938/src/review-handling.ts). I also added focused regressions in [post-turn-pull-request.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-938/src/post-turn-pull-request.test.ts) and [pull-request-state-policy.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-938/src/pull-request-state-policy.test.ts), updated the journal, and committed the checkpoint as `eacef0c` (`Block manual-review-gated draft PRs explicitly`).
+I addressed the open CodeRabbit review on PR [#941](https://github.com/TommyKammy/codex-supervisor/pull/941) by making `summarizePostMergeAuditPatterns` tolerate persisted root-cause summaries that omit `findingsCount` or `findingKeys`. The repair is committed as `9b9d7f7` (`Handle missing audit finding metadata`) and pushed to `codex/issue-925`, so the PR head now includes the defensive defaults plus the malformed-artifact regression test.
 
-Verification here:
-`npx tsx --test src/post-turn-pull-request.test.ts src/pull-request-state-policy.test.ts`
-`npx tsx --test src/post-turn-pull-request.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-selection-status-active-status.test.ts src/supervisor/supervisor-status-rendering.test.ts`
-`npm run build`
-`node dist/index.js status --config <temp>/supervisor.config.json`
+Focused verification for this repair is green: `npx tsx --test src/supervisor/post-merge-audit-summary.test.ts` and `npm run build`.
 
-Summary: Explicitly block manual-review-gated draft/current-head PR states, confirm the supervisor-level reconciliation/status slice stays green, and verify the built CLI now renders `state=blocked` with `blocked_reason=manual_review`
-State hint: stabilizing
+Summary: Committed and pushed the PR #941 review repair for missing root-cause finding metadata in post-merge audit summaries
+State hint: addressing_review
 Blocked reason: none
-Tests: `npx tsx --test src/post-turn-pull-request.test.ts src/pull-request-state-policy.test.ts`; `npx tsx --test src/post-turn-pull-request.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-selection-status-active-status.test.ts src/supervisor/supervisor-status-rendering.test.ts`; `npm run build`; `node dist/index.js status --config <temp>/supervisor.config.json`
-Next action: monitor draft PR #940 and let the supervisor observe the explicit `manual_review` block through normal status/CI flows
+Tests: `npx tsx --test src/supervisor/post-merge-audit-summary.test.ts`; `npm run build`
+Next action: monitor PR #941 for CI or reviewer follow-up on commit `9b9d7f7`
 Failure signature: none
 
 ## Active Failure Context
@@ -34,27 +30,26 @@ Failure signature: none
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `manual_review_blocked` was typed and surfaced in pre-merge artifacts, but the draft-PR lifecycle still treated it like a runnable late-stage state, leaving `state=draft_pr` and `blocked_reason=null` instead of recording an explicit manual-review block.
-- What changed: added a focused reproducer in `src/post-turn-pull-request.test.ts` for a draft PR whose local review requires manual verification; added state-policy coverage in `src/pull-request-state-policy.test.ts`; introduced `localReviewRequiresManualReview()` in `src/review-handling.ts`; updated `src/post-turn-pull-request.ts` and `src/pull-request-state.ts` so current-head `manual_review_blocked` outcomes converge to `state=blocked` with `blocked_reason=manual_review` and do not promote draft PRs to ready.
+- Hypothesis: persisted post-merge audit artifacts already captured the raw review, recovery, and failure signals needed for recurring-pattern analysis, but there was no typed aggregate that operators could query without manually inspecting individual JSON files.
+- What changed: repaired the `summarizePostMergeAuditPatterns` review-pattern reducer so persisted artifacts missing `findingsCount` or `findingKeys` no longer throw during aggregation; defaulted those fields to `0` and `[]` at read time and added a regression test that deletes both keys from a persisted root-cause summary before summarization.
 - Current blocker: none.
-- Next exact step: monitor draft PR #940, then let the supervisor observe the explicit `manual_review` blocked state through normal PR/status flows.
-- Verification gap: acceptance-level merge/manual-close convergence is still exercised by existing reconciliation coverage rather than a new end-to-end CLI script, but the targeted reconciliation/status tests and a real built `status --config` invocation are green locally.
-- Files touched: `src/post-turn-pull-request.ts`, `src/post-turn-pull-request.test.ts`, `src/pull-request-state.ts`, `src/pull-request-state-policy.test.ts`, `src/review-handling.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: low; reverting would restore the ambiguous draft/manual-verification stall and make UI-heavy issues look runnable when they actually need operator verification.
-- Last focused command: `node dist/index.js status --config <temp>/supervisor.config.json`
-- Last focused failure: none
-- Draft PR: #940 https://github.com/TommyKammy/codex-supervisor/pull/940
+- Next exact step: monitor PR #941 for any follow-up after the pushed repair commit `9b9d7f7`.
+- Verification gap: none for the repair; focused test coverage and a clean TypeScript build both passed after the change.
+- Files touched: `src/supervisor/post-merge-audit-summary.ts`, `src/supervisor/post-merge-audit-summary.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: low; reverting would only remove a read-only analysis surface and leave the persisted audit artifacts intact.
+- Last focused command: `gh pr view 941 --json number,url,headRefName,headRefOid,isDraft`
+- Last focused failure: `npm run build` initially failed because the new regression test deleted typed properties via a direct `Record<string, unknown>` cast; resolved by casting through `unknown` before deleting the fields.
+- Draft PR: #941 https://github.com/TommyKammy/codex-supervisor/pull/941
 - Last focused commands:
 ```bash
-git status --short
-git branch -vv
-gh pr list --head codex/issue-938 --json number,title,state,isDraft,url
-sed -n '1,260p' src/supervisor/supervisor-recovery-reconciliation.test.ts
-sed -n '240,380p' src/supervisor/supervisor-selection-status-active-status.test.ts
-sed -n '1,220p' src/supervisor/supervisor-status-rendering.test.ts
-npx tsx --test src/post-turn-pull-request.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-selection-status-active-status.test.ts src/supervisor/supervisor-status-rendering.test.ts
+npx tsx --test src/supervisor/post-merge-audit-summary.test.ts
 npm run build
-node dist/index.js status --config <temp>/supervisor.config.json
+date -u +"%Y-%m-%dT%H:%M:%SZ"
+git diff -- src/supervisor/post-merge-audit-summary.ts src/supervisor/post-merge-audit-summary.test.ts .codex-supervisor/issue-journal.md
+git add src/supervisor/post-merge-audit-summary.ts src/supervisor/post-merge-audit-summary.test.ts .codex-supervisor/issue-journal.md
+git commit -m "Handle missing audit finding metadata"
+git push origin codex/issue-925
+gh pr view 941 --json number,url,headRefName,headRefOid,isDraft
 ```
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.

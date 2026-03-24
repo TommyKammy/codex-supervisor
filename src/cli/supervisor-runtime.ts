@@ -7,6 +7,7 @@ import { renderJsonCorruptStateResetResultDto } from "../supervisor/supervisor-m
 import { renderSupervisorExecutionMetricsRollupResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderSupervisorMutationResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderSupervisorOrphanPruneResultDto } from "../supervisor/supervisor-mutation-report";
+import { renderPostMergeAuditPatternSummaryDto } from "../supervisor/post-merge-audit-summary";
 import { renderIssueExplainDto } from "../supervisor/supervisor-selection-status";
 import { renderIssueLintDto } from "../supervisor/supervisor-selection-issue-lint";
 import { isCorruptJsonFailClosedMessage } from "../supervisor/supervisor";
@@ -21,6 +22,7 @@ type SupervisorRuntimeCommand = Extract<
   | "status"
   | "requeue"
   | "rollup-execution-metrics"
+  | "summarize-post-merge-audits"
   | "prune-orphaned-workspaces"
   | "reset-corrupt-json-state"
   | "explain"
@@ -53,6 +55,7 @@ export function isSupervisorRuntimeCommand(command: CliOptions["command"]): comm
     command === "status" ||
     command === "requeue" ||
     command === "rollup-execution-metrics" ||
+    command === "summarize-post-merge-audits" ||
     command === "prune-orphaned-workspaces" ||
     command === "reset-corrupt-json-state" ||
     command === "explain" ||
@@ -67,6 +70,7 @@ function requiresGsdInstall(command: SupervisorRuntimeCommand): boolean {
     command !== "status" &&
     command !== "requeue" &&
     command !== "rollup-execution-metrics" &&
+    command !== "summarize-post-merge-audits" &&
     command !== "prune-orphaned-workspaces" &&
     command !== "reset-corrupt-json-state" &&
     command !== "explain" &&
@@ -158,6 +162,14 @@ export async function runSupervisorCommand(
       throw new Error("Missing supervisor execution metrics rollup support.");
     }
     writeStdout(renderSupervisorExecutionMetricsRollupResultDto(await service.rollupExecutionMetrics()));
+    return;
+  }
+
+  if (options.command === "summarize-post-merge-audits") {
+    if (!service.queryPostMergeAuditSummary) {
+      throw new Error("Missing post-merge audit summary support.");
+    }
+    writeStdout(renderPostMergeAuditPatternSummaryDto(await service.queryPostMergeAuditSummary()));
     return;
   }
 

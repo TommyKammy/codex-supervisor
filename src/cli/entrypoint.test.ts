@@ -185,6 +185,29 @@ test("runCli routes rollup-execution-metrics through the supervisor runtime boun
   });
 });
 
+test("runCli routes summarize-post-merge-audits through the supervisor runtime boundary", async () => {
+  const service = { tag: "service" };
+  let runtimeCommand: Record<string, unknown> | undefined;
+
+  await runCli(["summarize-post-merge-audits"], {
+    createSupervisorService: () => service as never,
+    runSupervisorCommand: async (command, dependencies) => {
+      runtimeCommand = {
+        ...command,
+        service: dependencies.service,
+      };
+    },
+  });
+
+  assert.deepEqual(runtimeCommand, {
+    command: "summarize-post-merge-audits",
+    dryRun: false,
+    why: false,
+    issueNumber: undefined,
+    service,
+  });
+});
+
 test("runCli routes reset-corrupt-json-state through the supervisor runtime boundary", async () => {
   const service = { tag: "service" };
   let runtimeCommand: Record<string, unknown> | undefined;
