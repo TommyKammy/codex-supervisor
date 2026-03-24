@@ -6,37 +6,39 @@
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 4a88f0cb74cd46f36f2e773aa9e3c7ff27943a19
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: 7a5421d5224abecc816d9a2fd39ec2e72fd82484
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-24T03:57:35.228Z
+- Updated at: 2026-03-24T04:13:36.988Z
 
 ## Latest Codex Summary
-- Added a focused regression proving that downstream execution-order siblings were becoming runnable when the predecessor record was already `done` but its pre-merge final evaluation had not resolved.
-- Fixed sequencing to treat a record as cleared only when it is `done` and either has no local-review evaluation state at all or its final evaluation outcome is resolved (`mergeable` or `follow_up_eligible`). Updated readiness and selection diagnostics to use the same predicate so explainability matches runnable selection.
-- Focused sequencing tests pass. Full `npx tsx --test src/**/*.test.ts` still has unrelated environment/repo failures: missing `playwright-core` for `src/backend/webui-dashboard-browser-smoke.test.ts`, and a pre-existing `src/external-review/external-review-family-layout.test.ts` mismatch. `npm run build` is blocked locally because `tsc` is not installed in this worktree.
+Installed the missing local dev dependencies with `npm install`, which restored both `tsc` and `playwright-core` in this worktree. The sequencing fix from `7a5421d` still passes its focused regressions, and `npm run build` is now green locally.
+
+The prior full-suite blocker turned out to be a stale expected-file allowlist in [src/external-review/external-review-family-layout.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-919/src/external-review/external-review-family-layout.test.ts), not a sequencing regression. I updated that test to include the two current runtime modules (`external-review-miss-digest.ts` and `external-review-prevention-targets.ts`), and the full `npx tsx --test src/**/*.test.ts` run now passes.
+
+Summary: Sequencing remains blocked on unresolved final evaluation as intended, local build/test verification is clean, and the stale external-review layout test was synchronized so the repo suite passes again
+State hint: draft_pr
+Blocked reason: none
+Tests: `npm install`; `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-selection-readiness-summary.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts`; `npm run build`; `npx tsx --test src/external-review/external-review-family-layout.test.ts`; `npx tsx --test src/**/*.test.ts`
+Next action: Commit the stale layout-test sync, push `codex/issue-919`, and open a draft PR
+Failure signature: none
 
 ## Active Failure Context
-- Category: blocked
-- Summary: Full verification is not currently clean in this workspace because required local tooling and one unrelated repo-wide layout expectation are missing.
-- Details:
-  - `npm run build` fails with `sh: 1: tsc: not found`.
-  - `npx tsx --test src/**/*.test.ts` fails in `src/backend/webui-dashboard-browser-smoke.test.ts` because `playwright-core` is not installed.
-  - `npx tsx --test src/**/*.test.ts` also fails in `src/external-review/external-review-family-layout.test.ts` due to an existing file-layout expectation mismatch unrelated to sequencing.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: sequencing currently treats `record.state === "done"` as sufficient, so downstream siblings become runnable before the predecessor's pre-merge final evaluation resolves.
-- What changed: added focused regressions in `src/issue-metadata/issue-metadata.test.ts` and `src/supervisor/supervisor-selection-readiness-summary.test.ts`; introduced `isRecordDoneForSequencing()` in `src/issue-metadata/issue-metadata.ts`; updated `findBlockingIssue()`, readiness summaries, and selection/explain formatting to require a resolved final-evaluation outcome (`mergeable` or `follow_up_eligible`) before a predecessor counts as cleared.
-- Current blocker: local environment is missing `tsc` and `playwright-core`; full suite also reports an unrelated `external-review-family-layout` mismatch.
-- Next exact step: commit this sequencing fix, then either install the missing local toolchain or rerun verification in CI/another prepared workspace to separate the unrelated full-suite failures from this issue.
-- Verification gap: repo-wide `npm run build` and the full test command are not fully green in this workspace because of the unrelated/tooling failures listed above.
-- Files touched: `src/issue-metadata/issue-metadata.ts`, `src/issue-metadata/issue-metadata.test.ts`, `src/supervisor/supervisor-selection-readiness-summary.ts`, `src/supervisor/supervisor-selection-readiness-summary.test.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `.codex-supervisor/issue-journal.md`
+- What changed: added focused regressions in `src/issue-metadata/issue-metadata.test.ts` and `src/supervisor/supervisor-selection-readiness-summary.test.ts`; introduced `isRecordDoneForSequencing()` in `src/issue-metadata/issue-metadata.ts`; updated `findBlockingIssue()`, readiness summaries, and selection/explain formatting to require a resolved final-evaluation outcome (`mergeable` or `follow_up_eligible`) before a predecessor counts as cleared; installed local dependencies; and synchronized `src/external-review/external-review-family-layout.test.ts` with the current runtime modules so the full suite passes again.
+- Current blocker: none.
+- Next exact step: commit the layout-test sync, push `codex/issue-919`, and open a draft PR for the sequencing fix.
+- Verification gap: none locally; focused sequencing tests, `npm run build`, the external-review layout test, and the full test suite are green in this workspace.
+- Files touched: `src/issue-metadata/issue-metadata.ts`, `src/issue-metadata/issue-metadata.test.ts`, `src/supervisor/supervisor-selection-readiness-summary.ts`, `src/supervisor/supervisor-selection-readiness-summary.test.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/external-review/external-review-family-layout.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: low to moderate; reverting would let downstream sibling work start while the predecessor is still pending or blocked in final evaluation, and diagnostics would again disagree with actual sequencing behavior.
-- Last focused command: `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-selection-readiness-summary.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts`
-- Last focused failure: `buildReadinessSummary` incorrectly reported `execution_order_satisfied` while predecessor `#91` had `state=done` but `pre_merge_evaluation_outcome=null`
+- Last focused command: `npx tsx --test src/**/*.test.ts`
+- Last focused failure: none
 - Draft PR: none
 - Last focused commands:
 ```bash
@@ -50,6 +52,9 @@ npx tsx --test src/supervisor/supervisor-selection-readiness-summary.test.ts
 npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-selection-readiness-summary.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts
 npx tsx --test src/**/*.test.ts
 npm run build
+npm install
+npx tsx --test src/external-review/external-review-family-layout.test.ts
+npx tsx --test src/**/*.test.ts
 ```
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
