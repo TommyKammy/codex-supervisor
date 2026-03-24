@@ -18,18 +18,18 @@ Addressing the remaining review feedback in `src/core/journal.ts`. The durable j
 
 Added focused regressions in `src/journal.test.ts` for inline assignments, Markdown links, quoted spaced paths, and broader local absolute roots. I also normalized tracked sample-path literals in `src/journal.test.ts` and this journal so the durable-path policy check passes again.
 
-Committed the implementation fix as `d418fc2`, refreshed this journal handoff in follow-up commit `864b6cd`, and pushed both to `codex/issue-950`, updating PR #965 with the repaired sanitizer, regression coverage, and current local status.
+Committed the implementation fix, refreshed this journal handoff in follow-up commits, and pushed the updates to `codex/issue-950`, updating PR #965 with the repaired sanitizer, regression coverage, and current local status.
 
 Summary: Implemented and pushed the review fixes for journal path normalization, added focused regression coverage, normalized the tracked durable text, synced the journal handoff, and reran the focused verification set successfully.
 State hint: waiting_ci
 Blocked reason: none
 Tests: `npx tsx --test src/journal.test.ts`; `npx tsc --noEmit`; `npx tsx --test src/workstation-local-path-detector.test.ts`; `npm run verify:paths`
-Next action: Wait for PR #965 checks on head `864b6cd`, then resolve the remaining automated review threads if the remote build stays green.
+Next action: Wait for PR #965 checks on the latest pushed branch head, then resolve the remaining automated review threads if the remote build stays green.
 Failure signature: none
 
 ## Active Failure Context
 - Category: checks
-- Summary: PR #965 checks are pending on pushed head `864b6cd`.
+- Summary: PR #965 checks are pending on the latest pushed branch head.
 - Command or source: `gh pr checks 965`
 - Reference: https://github.com/TommyKammy/codex-supervisor/pull/965
 - Details:
@@ -38,10 +38,10 @@ Failure signature: none
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the two review threads are valid, and the pushed patch on head `864b6cd` should satisfy them unless CI exposes a platform-specific edge case.
-- What changed: patched `src/core/journal.ts` to sanitize inline absolute-path substrings and broader local roots, added focused regression tests in `src/journal.test.ts`, normalized tracked durable-path text in fixtures and this journal, committed the implementation fix plus the journal handoff update, and pushed both to the PR branch.
+- Hypothesis: the two review threads are valid, and the pushed patch should satisfy them unless CI exposes a platform-specific edge case.
+- What changed: patched `src/core/journal.ts` to sanitize inline absolute-path substrings and broader local roots, added focused regression tests in `src/journal.test.ts`, normalized tracked durable-path text in fixtures and this journal, committed the implementation fix plus journal handoff updates, and pushed them to the PR branch.
 - Current blocker: none.
-- Next exact step: monitor PR #965 checks for head `864b6cd`, then resolve the automated review threads if the branch stays green.
+- Next exact step: monitor PR #965 checks for the latest pushed branch head, then resolve the automated review threads if the branch stays green.
 - Verification gap: none.
 - Files touched: `src/core/journal.ts`, `src/journal.test.ts`, `.codex-supervisor/issue-journal.md`.
 - Rollback concern: low; the change only affects journal path normalization heuristics, regression fixtures, and durable notes.
