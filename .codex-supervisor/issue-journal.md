@@ -1,64 +1,68 @@
-# Issue #948: Path hygiene check: add a focused detector for workstation-local absolute paths
+# Issue #949: Path hygiene command: expose the focused path check as `npm run verify:paths`
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/948
-- Branch: codex/issue-948
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/949
+- Branch: codex/issue-949
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: waiting_ci
-- Attempt count: 5 (implementation=2, repair=3)
-- Last head SHA: 91e2a0d240ffe0248e46148d05ffedc232d49dd6
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: e6fa6cfab5c58bc1dc95b1cb853b5cf912ef9ccc
 - Blocked reason: none
-- Last failure signature: none
+- Last failure signature: missing-verify-paths-script
 - Repeated failure signature count: 0
-- Updated at: 2026-03-24T17:29:42+00:00
+- Updated at: 2026-03-24T18:04:42+00:00
 
 ## Latest Codex Summary
-Validated the CodeRabbit review note on `--exclude-path` normalization in [scripts/check-workstation-local-paths.ts](scripts/check-workstation-local-paths.ts), updated repo-relative path normalization to canonicalize slash variants plus leading `./`, and added a regression case in [src/workstation-local-path-detector.test.ts](src/workstation-local-path-detector.test.ts) covering `--exclude-path ./docs/guide.md`.
-
-Because the tracked issue journal had regressed to workstation-local absolute links, I also restored those references to repo-relative form so [scripts/check-workstation-local-paths.ts](scripts/check-workstation-local-paths.ts) could verify the worktree again. Focused verification passed, I pushed `91e2a0d` to `origin/codex/issue-948`, and I resolved the CodeRabbit review thread `PRRT_kwDORgvdZ852fkSD`. PR [#963](https://github.com/TommyKammy/codex-supervisor/pull/963) remains open with `mergeStateStatus=UNSTABLE`.
-
-Summary: Normalized excluded path inputs, added a `./` exclusion regression test, reran the detector, pushed the review fix, and resolved the review thread
-State hint: waiting_ci
-Blocked reason: none
-Tests: `npx tsx --test src/workstation-local-path-detector.test.ts`; `npx tsx scripts/check-workstation-local-paths.ts`
-Next action: Monitor PR #963 for refreshed checks or follow-up review feedback on `codex/issue-948`
-Failure signature: none
+- Reproduced the issue as `npm run verify:paths` missing from `package.json`, added a focused package-entrypoint regression test, exposed the detector as `npm run verify:paths`, documented it in getting-started as a lightweight pre-PR check independent from `build` and `test`, and verified the command passes on the current tree and fails on an injected tracked violation after installing dependencies.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the CodeRabbit finding is fully addressed, and any remaining risk on issue #948 is limited to post-push CI or new review feedback rather than detector logic.
-- What changed: updated [scripts/check-workstation-local-paths.ts](scripts/check-workstation-local-paths.ts) so repo-relative path normalization canonicalizes slash variants and strips leading `./` segments before exclude matching, added regression coverage in [src/workstation-local-path-detector.test.ts](src/workstation-local-path-detector.test.ts) for `--exclude-path ./docs/guide.md`, cleaned the journal back to repo-relative links so the detector passes on the tracked tree again, pushed `91e2a0d`, and resolved review thread `PRRT_kwDORgvdZ852fkSD`.
+- Hypothesis: issue #949 is addressed by exposing the existing focused detector through `npm run verify:paths`, keeping `build` and `test` unchanged, and pinning that behavior with a package-level regression plus lightweight docs coverage.
+- What changed: added `verify:paths` to [package.json](package.json), added package-entrypoint coverage in [src/workstation-local-path-detector.test.ts](src/workstation-local-path-detector.test.ts), documented the command in [docs/getting-started.md](docs/getting-started.md) as a lightweight pre-PR path-hygiene step independent from `build` and `test`, and tightened [src/getting-started-docs.test.ts](src/getting-started-docs.test.ts) to keep that guidance present.
 - Current blocker: none.
-- Next exact step: monitor PR #963 for refreshed checks and repair any follow-up review or CI findings on `codex/issue-948`.
-- Verification gap: none for the changed behavior; the remaining signal is PR-level CI and review.
-- Files touched: [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md), [scripts/check-workstation-local-paths.ts](scripts/check-workstation-local-paths.ts), and [src/workstation-local-path-detector.test.ts](src/workstation-local-path-detector.test.ts).
-- Rollback concern: low; the functional change is isolated to CLI exclude-path normalization and its regression coverage.
-- Last focused command: `gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: {threadId: $threadId}) { thread { isResolved } } }' -F threadId=PRRT_kwDORgvdZ852fkSD`
-- Last focused failure: none.
-- Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/963
+- Next exact step: commit the focused `verify:paths` changes on `codex/issue-949`, then open or update the draft PR for this branch if needed.
+- Verification gap: none for the focused command; local command-level verification required `npm install` because `node_modules` was absent and `npm run verify:paths` initially failed with `sh: 1: tsx: not found`.
+- Files touched: [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md), [docs/getting-started.md](docs/getting-started.md), [package.json](package.json), [src/getting-started-docs.test.ts](src/getting-started-docs.test.ts), and [src/workstation-local-path-detector.test.ts](src/workstation-local-path-detector.test.ts).
+- Rollback concern: low; the behavior change is limited to exposing an existing detector behind a new npm script plus focused tests/docs.
+- Last focused command: `npm run verify:paths`
+- Last focused failure: `npm run verify:paths` initially failed before `npm install` because the workspace did not have `node_modules` yet, producing `sh: 1: tsx: not found`; after `npm install`, the command passed on the current tree and failed as expected on an injected tracked violation.
+- Draft PR: none
 - Last focused commands:
 ```bash
-sed -n '1,220p' ../codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-948/AGENTS.generated.md
-sed -n '1,220p' ../codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-948/context-index.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-949/AGENTS.generated.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-949/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
-sed -n '1,240p' scripts/check-workstation-local-paths.ts
-sed -n '1,240p' src/workstation-local-path-detector.test.ts
 git status --short --branch
-nl -ba scripts/check-workstation-local-paths.ts | sed -n '1,180p'
-nl -ba src/workstation-local-path-detector.test.ts | sed -n '1,220p'
+sed -n '1,240p' package.json
+sed -n '1,260p' scripts/check-workstation-local-paths.ts
+sed -n '1,280p' src/workstation-local-path-detector.test.ts
+npm run verify:paths
+rg -n "verify:paths|check-workstation-local-paths|pre-PR|pre PR|build|test" README.md docs/getting-started.md src scripts package.json
+sed -n '236,272p' docs/getting-started.md
+sed -n '40,70p' README.md
+sed -n '1,220p' src/readme-docs.test.ts
+sed -n '1,220p' src/getting-started-docs.test.ts
 npx tsx --test src/workstation-local-path-detector.test.ts
-rg -n '<unix-home-prefix>|<macos-users-prefix>|<windows-users-prefix>' .codex-supervisor/issue-journal.md
-npx tsx scripts/check-workstation-local-paths.ts
-git diff --stat -- scripts/check-workstation-local-paths.ts src/workstation-local-path-detector.test.ts .codex-supervisor/issue-journal.md
-git add scripts/check-workstation-local-paths.ts src/workstation-local-path-detector.test.ts .codex-supervisor/issue-journal.md
-git commit -m "Normalize excluded workstation-local paths"
-git push origin codex/issue-948
-gh pr view 963 --json url,isDraft,state,mergeStateStatus,headRefOid,reviewDecision
-gh api graphql -f query='mutation($threadId: ID!) { resolveReviewThread(input: {threadId: $threadId}) { thread { isResolved } } }' -F threadId=PRRT_kwDORgvdZ852fkSD
+npx tsx --test src/getting-started-docs.test.ts
+ls node_modules/.bin/tsx
+test -f package-lock.json && echo yes || echo no
+npm install
+npm run verify:paths
+tmpdir=$(mktemp -d)
+git -C "$tmpdir" init -b main >/dev/null
+git -C "$tmpdir" config user.name 'Codex Supervisor'
+git -C "$tmpdir" config user.email 'codex@example.test'
+printf '# fixture\n' > "$tmpdir/README.md"
+git -C "$tmpdir" add README.md
+git -C "$tmpdir" commit -m seed >/dev/null
+npm run verify:paths -- --workspace "$tmpdir"
+printf 'Workspace note: /home/alice/dev/private-repo\n' > "$tmpdir/README.md"
+npm run verify:paths -- --workspace "$tmpdir"
+git diff -- src/workstation-local-path-detector.test.ts src/getting-started-docs.test.ts docs/getting-started.md package.json
 git rev-parse HEAD
 date -Iseconds -u
 ```

@@ -40,6 +40,18 @@ function runDetector(repoPath: string, ...args: string[]): SpawnSyncReturns<stri
   );
 }
 
+function runVerifyPaths(repoPath: string, ...args: string[]): SpawnSyncReturns<string> {
+  const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+  return spawnSync(npmCommand, ["run", "verify:paths", "--", "--workspace", repoPath, ...args], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      FORCE_COLOR: "0",
+    },
+  });
+}
+
 test("workstation-local path detector flags tracked durable artifacts and allows explicit exclusions", async (t) => {
   const repoPath = await createTrackedRepo();
   t.after(async () => {
@@ -79,4 +91,25 @@ test("workstation-local path detector flags tracked durable artifacts and allows
     0,
     `expected normalized explicit exclusion to pass\nstdout:\n${normalizedAllowedResult.stdout}\nstderr:\n${normalizedAllowedResult.stderr}`,
   );
+});
+
+test("npm run verify:paths exposes the focused workstation-local path detector", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  const cleanResult = runVerifyPaths(repoPath);
+  assert.equal(
+    cleanResult.status,
+    0,
+    `expected clean repository to pass via package script\nstdout:\n${cleanResult.stdout}\nstderr:\n${cleanResult.stderr}`,
+  );
+
+  await fs.writeFile(path.join(repoPath, "README.md"), `Workspace note: ${SAMPLE_FORBIDDEN_PATH}\n`, "utf8");
+
+  const failingResult = runVerifyPaths(repoPath);
+  assert.notEqual(failingResult.status, 0, "expected forbidden tracked path to fail via package script");
+  assert.match(failingResult.stderr, /Forbidden workstation-local absolute path references found:/);
+  assert.match(failingResult.stderr, /README\.md:1/);
 });

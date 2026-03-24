@@ -31,6 +31,12 @@ npm install
 npm run build
 ```
 
+For a lightweight pre-PR path-hygiene check that stays independent from `build` and `test`, run:
+
+```bash
+npm run verify:paths
+```
+
 If you want to run the WebUI browser smoke suite locally or in CI, use:
 
 ```bash

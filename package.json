@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "guardrails:check": "tsx src/committed-guardrails-cli.ts check",
     "guardrails:fix": "tsx src/committed-guardrails-cli.ts fix",
+    "verify:paths": "tsx scripts/check-workstation-local-paths.ts",
     "test": "tsx --test \"src/**/*.test.ts\"",
     "test:webui-smoke": "tsx --test src/backend/webui-dashboard-browser-smoke.test.ts",
     "dev": "tsx src/index.ts",
