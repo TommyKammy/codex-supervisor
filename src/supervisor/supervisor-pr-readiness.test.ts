@@ -476,7 +476,7 @@ test("handlePostTurnPullRequestTransitions does not mark block-merge draft PRs r
   assert.equal(readyCalls, 0);
 });
 
-test("handlePostTurnMergeAndCompletion refreshes PR state before enabling auto-merge", async () => {
+test("handlePostTurnMergeAndCompletion reverts to stabilizing when the refreshed head changes before auto-merge", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 103;
   const state: SupervisorStateFile = {
@@ -526,6 +526,14 @@ test("handlePostTurnMergeAndCompletion refreshes PR state before enabling auto-m
       getPullRequestCalls += 1;
       return freshPr;
     },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 117);
+      return [];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 117);
+      return [];
+    },
     enableAutoMerge: async (prNumber: number, headSha: string) => {
       assert.equal(prNumber, 117);
       assert.equal(headSha, "head-fresh-117");
@@ -545,10 +553,88 @@ test("handlePostTurnMergeAndCompletion refreshes PR state before enabling auto-m
     }
   ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, stalePr, { dryRun: false });
 
-  assert.equal(result.state, "merging");
+  assert.equal(result.state, "stabilizing");
   assert.equal(result.last_head_sha, "head-fresh-117");
   assert.equal(getPullRequestCalls, 1);
-  assert.equal(autoMergeCalls, 1);
+  assert.equal(autoMergeCalls, 0);
+});
+
+test("handlePostTurnMergeAndCompletion reverts to draft when the refreshed PR is no longer merge-ready", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 118;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Respect refreshed draft status before auto-merge",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const stalePr: GitHubPullRequest = {
+    number: 118,
+    title: "Do not auto-merge drafts",
+    url: "https://example.test/pr/118",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-118",
+    headRefOid: "head-118",
+    mergedAt: null,
+  };
+  const refreshedPr: GitHubPullRequest = {
+    ...stalePr,
+    isDraft: true,
+  };
+
+  let autoMergeCalls = 0;
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 118);
+      return refreshedPr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 118);
+      return [];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 118);
+      return [];
+    },
+    enableAutoMerge: async () => {
+      autoMergeCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, stalePr, { dryRun: false });
+
+  assert.equal(result.state, "draft_pr");
+  assert.equal(result.blocked_reason, null);
+  assert.equal(result.last_head_sha, "head-118");
+  assert.equal(autoMergeCalls, 0);
 });
 
 test("handlePostTurnMergeAndCompletion blocks stale ready-to-merge records when final evaluation is not resolved", async () => {
@@ -607,6 +693,14 @@ test("handlePostTurnMergeAndCompletion blocks stale ready-to-merge records when 
     getPullRequest: async (prNumber: number) => {
       assert.equal(prNumber, 119);
       return refreshedPr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 119);
+      return [];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 119);
+      return [];
     },
     enableAutoMerge: async () => {
       autoMergeCalls += 1;

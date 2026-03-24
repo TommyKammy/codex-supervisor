@@ -29,7 +29,6 @@ import {
 import { inferStateWithoutPullRequest } from "../no-pull-request-state";
 import {
   hasProcessedReviewThread,
-  localReviewBlocksMerge,
   localReviewBlocksReady,
   localReviewFailureContext,
   localReviewFailureSummary,
@@ -783,17 +782,44 @@ export class Supervisor {
     let currentPr = pr;
 
     if (nextRecord.state === "ready_to_merge" && !options.dryRun) {
-      currentPr = await this.github.getPullRequest(pr.number);
-      if (localReviewBlocksMerge(this.config, nextRecord, currentPr)) {
+      const refreshed = await this.loadOpenPullRequestSnapshot(pr.number);
+      currentPr = refreshed.pr;
+      const lifecycle = derivePullRequestLifecycleSnapshot(
+        this.config,
+        nextRecord,
+        currentPr,
+        refreshed.checks,
+        refreshed.reviewThreads,
+      );
+      const lifecyclePatch = {
+        ...lifecycle.reviewWaitPatch,
+        ...lifecycle.copilotRequestObservationPatch,
+        ...lifecycle.mergeLatencyVisibilityPatch,
+        ...lifecycle.copilotTimeoutPatch,
+      };
+
+      if (lifecycle.nextState !== "ready_to_merge") {
         nextRecord = this.stateStore.touch(nextRecord, {
-          state: "blocked",
-          blocked_reason: "verification",
+          ...lifecyclePatch,
+          state: lifecycle.nextState,
+          blocked_reason:
+            lifecycle.nextState === "blocked"
+              ? blockedReasonForLifecycleState(
+                  this.config,
+                  lifecycle.recordForState,
+                  currentPr,
+                  refreshed.checks,
+                  refreshed.reviewThreads,
+                )
+              : null,
           last_head_sha: currentPr.headRefOid,
         });
       } else {
         await this.github.enableAutoMerge(currentPr.number, currentPr.headRefOid);
         nextRecord = this.stateStore.touch(nextRecord, {
+          ...lifecyclePatch,
           state: "merging",
+          blocked_reason: null,
           last_head_sha: currentPr.headRefOid,
         });
       }

@@ -6,58 +6,56 @@
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 5c8f95547ab22406d1448fe6e84e2a966f5e36f8
+- Attempt count: 4 (implementation=2, repair=2)
+- Last head SHA: 873cd821c999548049b625b77790b79995976ec1
 - Blocked reason: none
-- Last failure signature: external-review-family-layout-module-list-drift
+- Last failure signature: PRRT_kwDORgvdZ852TB7D
 - Repeated failure signature count: 1
-- Updated at: 2026-03-24T03:00:10Z
+- Updated at: 2026-03-24T03:30:09Z
 
 ## Latest Codex Summary
-Addressed the three automated review findings on draft PR [#933](https://github.com/TommyKammy/codex-supervisor/pull/933). `block_ready` now requires a fresh local review only when local review is enabled, the post-turn merge recheck carries the refreshed PR snapshot through state updates and execution metrics, and generated memory artifacts plus this journal no longer embed operator-local absolute paths.
+Verified the remaining CodeRabbit finding on PR `#933` is still valid on this branch: `handlePostTurnMergeAndCompletion()` refreshed the PR but only rechecked `localReviewBlocksMerge()`, so a PR that became draft or otherwise non-ready could still reach `enableAutoMerge()`. I replaced that ad hoc check with a refreshed lifecycle snapshot and full `inferStateFromPullRequest()` re-evaluation before auto-merge.
 
-Added focused regression coverage for stale review heads, refreshed merge snapshots, generated memory path rendering, and local-review status output under enabled gating. The branch head remains `5c8f955`; only the untracked local `.codex-supervisor/replay/` output is outside the tracked changes.
+Added regression coverage for the two refreshed non-ready cases that matter here: a changed head now falls back to `stabilizing`, and a draft refresh falls back to `draft_pr` instead of enabling auto-merge. Focused readiness/lifecycle tests and `npm run build` all pass locally.
 
-Summary: Addressed PR `#933` review feedback and normalized tracked/generated path rendering
+Summary: Rechecked the remaining PR #933 merge-gate review finding, fixed the refreshed readiness hole locally, and added regression coverage
 State hint: addressing_review
 Blocked reason: none
-Tests: `npx tsx --test src/review-handling.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-pr-readiness.test.ts src/core/memory.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-status-model.test.ts src/supervisor/supervisor-status-rendering-supervisor.test.ts`; `npm run build`; `npx tsx --test src/**/*.test.ts` still fails only in unrelated `src/external-review/external-review-family-layout.test.ts`
-Next action: commit the review fixes, push `codex/issue-918`, and resolve the PR `#933` review threads
-Failure signature: external-review-family-layout-module-list-drift
+Tests: `npx tsx --test src/supervisor/supervisor-pr-readiness.test.ts`; `npx tsx --test src/pull-request-state-policy.test.ts src/supervisor/supervisor-lifecycle.test.ts`; `npm run build`
+Next action: Commit and push the refreshed merge-gate fix to PR `#933`, then confirm the remaining review thread can be resolved cleanly
+Failure signature: PRRT_kwDORgvdZ852TB7D
 
 ## Active Failure Context
-- Category: verification
-- Summary: Full-suite verification still has one unrelated existing failure outside issue #918.
-- Reference: src/external-review/external-review-family-layout.test.ts
+- Category: review
+- Summary: Remaining automated review finding reproduced locally and fixed; GitHub still needs the branch update before the thread can be cleared.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/933#discussion_r2978749108
 - Details:
-  - The expected runtime module list is stale.
-  - Runtime now includes `external-review-miss-digest.ts` and `external-review-prevention-targets.ts`.
+  - `src/supervisor/supervisor.ts` now reloads the full open-PR snapshot, re-derives the lifecycle with `derivePullRequestLifecycleSnapshot()`, and only calls `enableAutoMerge()` when the refreshed lifecycle state is still `ready_to_merge`.
+  - `src/supervisor/supervisor-pr-readiness.test.ts` now covers the refreshed draft regression and the refreshed head-change fallback so merge enablement cannot race past a non-ready PR.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the PR review findings are resolved on this branch; only the longstanding unrelated external-review layout test remains outside issue #918 scope.
-- What changed: tightened `localReviewBlocksReady` so stale or missing reviews block the ready transition only when local review is enabled; carried refreshed PR snapshots through `handlePostTurnMergeAndCompletion` state/metrics updates; rendered generated memory artifact paths relative to the workspace; updated readiness and status regression coverage to match the enabled-gating contract; redacted operator-local paths from this tracked journal.
+- Hypothesis: the last open PR `#933` review thread is fixed by re-running full lifecycle inference on the refreshed PR snapshot before auto-merge enablement.
+- What changed: replaced the merge-time `localReviewBlocksMerge()` recheck with a refreshed `derivePullRequestLifecycleSnapshot()` pass in `handlePostTurnMergeAndCompletion`; when the refreshed PR is no longer `ready_to_merge`, the supervisor now persists the inferred state (`stabilizing`, `draft_pr`, `blocked`, etc.) instead of enabling auto-merge; added regression coverage for refreshed head changes and refreshed draft PRs.
 - Current blocker: none
-- Next exact step: commit these review fixes, push `codex/issue-918`, and resolve the PR `#933` review threads.
-- Verification gap: `npm run build` and the issue-relevant targeted suites pass; full `src/**/*.test.ts` still fails only at unrelated `src/external-review/external-review-family-layout.test.ts`.
-- Files touched: `src/core/memory.ts`, `src/core/memory.test.ts`, `src/pull-request-state-policy.test.ts`, `src/review-handling.ts`, `src/review-handling.test.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-pr-readiness.test.ts`, `src/supervisor/supervisor-status-model-supervisor.test.ts`, `src/supervisor/supervisor-status-model.test.ts`, `src/supervisor/supervisor-status-rendering-supervisor.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: low-moderate; reverting would reopen the stale-review ready transition, stale-head merge race, and operator-local path leakage in tracked/generated artifacts.
-- Last focused command: `npx tsx --test src/**/*.test.ts`
-- Last focused failure: `npx tsx --test src/**/*.test.ts` now fails only at `src/external-review/external-review-family-layout.test.ts` because the expected runtime module list is stale (`external-review-miss-digest.ts` and `external-review-prevention-targets.ts` are present but not reflected in the test).
+- Next exact step: commit and push this branch update, then confirm PR `#933` no longer offers the merge-time readiness thread as an open blocker.
+- Verification gap: none for the touched path; refreshed readiness, lifecycle inference, and build all pass locally.
+- Files touched: `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-pr-readiness.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: moderate; reverting would reopen the merge-time race that can enable auto-merge after the PR becomes draft or otherwise leaves `ready_to_merge`.
+- Last focused command: `npx tsx --test src/pull-request-state-policy.test.ts src/supervisor/supervisor-lifecycle.test.ts`
+- Last focused failure: none
 - Draft PR: `#933` https://github.com/TommyKammy/codex-supervisor/pull/933
 - Last focused commands:
 ```bash
-sed -n '1,220p' ../../codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-918/AGENTS.generated.md
-sed -n '1,260p' ../../codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-918/context-index.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-918/AGENTS.generated.md
+sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-918/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
-git status --short
-sed -n '1,220p' src/review-handling.ts
-sed -n '740,860p' src/supervisor/supervisor.ts
-sed -n '1,220p' src/core/memory.ts
-npx tsx --test src/review-handling.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-pr-readiness.test.ts src/core/memory.test.ts
-npx tsx --test src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-status-model.test.ts src/supervisor/supervisor-status-rendering-supervisor.test.ts
+sed -n '720,860p' src/supervisor/supervisor.ts
+sed -n '569,730p' src/pull-request-state.ts
+sed -n '480,700p' src/supervisor/supervisor-pr-readiness.test.ts
+npx tsx --test src/supervisor/supervisor-pr-readiness.test.ts
+npx tsx --test src/pull-request-state-policy.test.ts src/supervisor/supervisor-lifecycle.test.ts
 npm run build
-npx tsx --test src/**/*.test.ts
 ```
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
