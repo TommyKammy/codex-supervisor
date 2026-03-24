@@ -135,6 +135,7 @@ function createPullRequest(overrides: Partial<GitHubPullRequest> = {}): GitHubPu
 
 test("buildDetailedStatusModel returns the reusable core status lines for an active PR", () => {
   const config = createConfig({
+    localReviewEnabled: true,
     localReviewPolicy: "block_ready",
     reviewBotLogins: ["chatgpt-codex-connector"],
   });

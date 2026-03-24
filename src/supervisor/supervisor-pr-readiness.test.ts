@@ -372,10 +372,111 @@ test("handlePostTurnPullRequestTransitions refreshes PR state after marking read
   assert.ok(result.record.review_wait_started_at);
   assert.equal(readyCalls, 1);
   assert.equal(snapshotLoads, 2);
-  assert.equal(syncJournalCalls, 0);
+  assert.equal(syncJournalCalls, 1);
 });
 
-test("handlePostTurnMergeAndCompletion refreshes PR state before enabling auto-merge", async () => {
+test("handlePostTurnPullRequestTransitions does not mark block-merge draft PRs ready when final evaluation is unresolved", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 118;
+  const branch = branchName(fixture.config, issueNumber);
+  const config = createConfig({
+    ...fixture.config,
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "draft_pr",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: 118,
+        local_review_head_sha: "head-118",
+        local_review_findings_count: 1,
+        local_review_recommendation: "changes_requested",
+        pre_merge_evaluation_outcome: "fix_blocked",
+        blocked_reason: null,
+      }),
+    },
+  };
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Respect final evaluation before ready-for-review",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const draftPr: GitHubPullRequest = {
+    number: 118,
+    title: "Final evaluation must block ready",
+    url: "https://example.test/pr/118",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: true,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: "head-118",
+    mergedAt: null,
+  };
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+  let readyCalls = 0;
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { loadOpenPullRequestSnapshot: (prNumber: number) => Promise<unknown> }).loadOpenPullRequestSnapshot = async (
+    prNumber: number,
+  ) => {
+    assert.equal(prNumber, 118);
+    return { pr: draftPr, checks, reviewThreads: [] };
+  };
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    markPullRequestReady: async () => {
+      readyCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnPullRequestTransitions: (context: {
+        state: SupervisorStateFile;
+        record: ReturnType<typeof createRecord>;
+        issue: GitHubIssue;
+        workspacePath: string;
+        syncJournal: (record: ReturnType<typeof createRecord>) => Promise<void>;
+        memoryArtifacts: { alwaysReadFiles: string[]; onDemandFiles: string[] };
+        pr: GitHubPullRequest;
+        options: { dryRun: boolean };
+      }) => Promise<{
+        record: ReturnType<typeof createRecord>;
+        pr: GitHubPullRequest;
+        checks: PullRequestCheck[];
+        reviewThreads: ReviewThread[];
+      }>;
+    }
+  ).handlePostTurnPullRequestTransitions({
+    state,
+    record: state.issues[String(issueNumber)]!,
+    issue,
+    workspacePath: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+    syncJournal: async () => {},
+    memoryArtifacts: { alwaysReadFiles: [], onDemandFiles: [] },
+    pr: draftPr,
+    options: { dryRun: false },
+  });
+
+  assert.equal(result.record.state, "draft_pr");
+  assert.equal(result.record.blocked_reason, null);
+  assert.equal(readyCalls, 0);
+});
+
+test("handlePostTurnMergeAndCompletion reverts to stabilizing when the refreshed head changes before auto-merge", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 103;
   const state: SupervisorStateFile = {
@@ -386,6 +487,15 @@ test("handlePostTurnMergeAndCompletion refreshes PR state before enabling auto-m
         state: "ready_to_merge",
       }),
     },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Enable auto-merge from fresh head",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
   };
 
   const stalePr: GitHubPullRequest = {
@@ -416,6 +526,14 @@ test("handlePostTurnMergeAndCompletion refreshes PR state before enabling auto-m
       getPullRequestCalls += 1;
       return freshPr;
     },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 117);
+      return [];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 117);
+      return [];
+    },
     enableAutoMerge: async (prNumber: number, headSha: string) => {
       assert.equal(prNumber, 117);
       assert.equal(headSha, "head-fresh-117");
@@ -427,16 +545,184 @@ test("handlePostTurnMergeAndCompletion refreshes PR state before enabling auto-m
     supervisor as unknown as {
       handlePostTurnMergeAndCompletion: (
         state: SupervisorStateFile,
+        issue: GitHubIssue,
         record: ReturnType<typeof createRecord>,
         pr: GitHubPullRequest,
         options: { dryRun: boolean },
       ) => Promise<ReturnType<typeof createRecord>>;
     }
-  ).handlePostTurnMergeAndCompletion(state, state.issues[String(issueNumber)]!, stalePr, { dryRun: false });
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, stalePr, { dryRun: false });
 
-  assert.equal(result.state, "merging");
+  assert.equal(result.state, "stabilizing");
+  assert.equal(result.last_head_sha, "head-fresh-117");
   assert.equal(getPullRequestCalls, 1);
-  assert.equal(autoMergeCalls, 1);
+  assert.equal(autoMergeCalls, 0);
+});
+
+test("handlePostTurnMergeAndCompletion reverts to draft when the refreshed PR is no longer merge-ready", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 118;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Respect refreshed draft status before auto-merge",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const stalePr: GitHubPullRequest = {
+    number: 118,
+    title: "Do not auto-merge drafts",
+    url: "https://example.test/pr/118",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-118",
+    headRefOid: "head-118",
+    mergedAt: null,
+  };
+  const refreshedPr: GitHubPullRequest = {
+    ...stalePr,
+    isDraft: true,
+  };
+
+  let autoMergeCalls = 0;
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 118);
+      return refreshedPr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 118);
+      return [];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 118);
+      return [];
+    },
+    enableAutoMerge: async () => {
+      autoMergeCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, stalePr, { dryRun: false });
+
+  assert.equal(result.state, "draft_pr");
+  assert.equal(result.blocked_reason, null);
+  assert.equal(result.last_head_sha, "head-118");
+  assert.equal(autoMergeCalls, 0);
+});
+
+test("handlePostTurnMergeAndCompletion blocks stale ready-to-merge records when final evaluation is not resolved", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 119;
+  const config = createConfig({
+    ...fixture.config,
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        local_review_head_sha: "head-119",
+        local_review_findings_count: 1,
+        local_review_recommendation: "changes_requested",
+        pre_merge_evaluation_outcome: "fix_blocked",
+        blocked_reason: null,
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Hold merge until final evaluation resolves",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const stalePr: GitHubPullRequest = {
+    number: 119,
+    title: "Do not enable auto-merge",
+    url: "https://example.test/pr/119",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-119",
+    headRefOid: "head-119-stale",
+    mergedAt: null,
+  };
+  const refreshedPr: GitHubPullRequest = {
+    ...stalePr,
+    headRefOid: "head-119",
+  };
+
+  let autoMergeCalls = 0;
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 119);
+      return refreshedPr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 119);
+      return [];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 119);
+      return [];
+    },
+    enableAutoMerge: async () => {
+      autoMergeCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, stalePr, { dryRun: false });
+
+  assert.equal(result.state, "blocked");
+  assert.equal(result.blocked_reason, "verification");
+  assert.equal(result.last_head_sha, "head-119");
+  assert.equal(autoMergeCalls, 0);
 });
 
 test("runOnce records an observed Copilot request time when GitHub omits the request timestamp", async () => {

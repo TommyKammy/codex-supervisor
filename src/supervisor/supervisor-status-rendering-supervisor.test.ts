@@ -151,7 +151,7 @@ test("summarizeChecks treats cancelled runs as waiting, not failing", () => {
 });
 
 test("formatDetailedStatus shows blocking local review status for current PR head", () => {
-  const config = createConfig({ localReviewPolicy: "block_ready" });
+  const config = createConfig({ localReviewEnabled: true, localReviewPolicy: "block_ready" });
   const record = createRecord({
     local_review_head_sha: "deadbeef",
     local_review_blocker_summary: "high src/supervisor.ts:210-214 stale artifact context drives the wrong repair path.",
@@ -789,8 +789,8 @@ test("formatDetailedStatus reports idle status with the latest record and latest
   );
 });
 
-test("formatDetailedStatus marks stale local review as non-gating", () => {
-  const config = createConfig({ localReviewPolicy: "block_merge" });
+test("formatDetailedStatus marks stale local review as gating until current-head final evaluation resolves", () => {
+  const config = createConfig({ localReviewEnabled: true, localReviewPolicy: "block_merge" });
   const record = createRecord({
     local_review_head_sha: "oldhead",
     local_review_max_severity: "medium",
@@ -811,7 +811,7 @@ test("formatDetailedStatus marks stale local review as non-gating", () => {
 
   assert.match(
     status,
-    /local_review gating=no policy=block_merge findings=2 root_causes=0 max_severity=medium verified_findings=0 verified_max_severity=none head=stale reviewed_head_sha=oldhead pr_head_sha=newhead ran_at=2026-03-11T14:05:00Z needs_review_run=yes drift=oldhead->newhead/,
+    /local_review gating=yes policy=block_merge findings=2 root_causes=0 max_severity=medium verified_findings=0 verified_max_severity=none head=stale reviewed_head_sha=oldhead pr_head_sha=newhead ran_at=2026-03-11T14:05:00Z needs_review_run=yes drift=oldhead->newhead/,
   );
 });
 
@@ -842,7 +842,7 @@ test("formatDetailedStatus reports unknown local review head status without a PR
 });
 
 test("formatDetailedStatus reports none local review head status with current PR head", () => {
-  const config = createConfig({ localReviewPolicy: "block_merge" });
+  const config = createConfig({ localReviewEnabled: true, localReviewPolicy: "block_merge" });
   const record = createRecord({
     local_review_head_sha: null,
     local_review_run_at: null,
@@ -860,7 +860,7 @@ test("formatDetailedStatus reports none local review head status with current PR
 
   assert.match(
     status,
-    /local_review gating=no policy=block_merge findings=0 root_causes=0 max_severity=none verified_findings=0 verified_max_severity=none head=none reviewed_head_sha=none pr_head_sha=newhead ran_at=none/,
+    /local_review gating=yes policy=block_merge findings=0 root_causes=0 max_severity=none verified_findings=0 verified_max_severity=none head=none reviewed_head_sha=none pr_head_sha=newhead ran_at=none/,
   );
   assert.doesNotMatch(status, /blocker_summary=/);
 });

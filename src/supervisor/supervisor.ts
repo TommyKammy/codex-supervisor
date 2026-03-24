@@ -29,7 +29,6 @@ import {
 import { inferStateWithoutPullRequest } from "../no-pull-request-state";
 import {
   hasProcessedReviewThread,
-  localReviewBlocksMerge,
   localReviewBlocksReady,
   localReviewFailureContext,
   localReviewFailureSummary,
@@ -780,11 +779,50 @@ export class Supervisor {
     recoveryEvents: RecoveryEvent[] = [],
   ): Promise<IssueRunRecord> {
     let nextRecord = record;
+    let currentPr = pr;
 
     if (nextRecord.state === "ready_to_merge" && !options.dryRun) {
-      const refreshedPr = await this.github.getPullRequest(pr.number);
-      await this.github.enableAutoMerge(refreshedPr.number, refreshedPr.headRefOid);
-      nextRecord = this.stateStore.touch(nextRecord, { state: "merging" });
+      const refreshed = await this.loadOpenPullRequestSnapshot(pr.number);
+      currentPr = refreshed.pr;
+      const lifecycle = derivePullRequestLifecycleSnapshot(
+        this.config,
+        nextRecord,
+        currentPr,
+        refreshed.checks,
+        refreshed.reviewThreads,
+      );
+      const lifecyclePatch = {
+        ...lifecycle.reviewWaitPatch,
+        ...lifecycle.copilotRequestObservationPatch,
+        ...lifecycle.mergeLatencyVisibilityPatch,
+        ...lifecycle.copilotTimeoutPatch,
+      };
+
+      if (lifecycle.nextState !== "ready_to_merge") {
+        nextRecord = this.stateStore.touch(nextRecord, {
+          ...lifecyclePatch,
+          state: lifecycle.nextState,
+          blocked_reason:
+            lifecycle.nextState === "blocked"
+              ? blockedReasonForLifecycleState(
+                  this.config,
+                  lifecycle.recordForState,
+                  currentPr,
+                  refreshed.checks,
+                  refreshed.reviewThreads,
+                )
+              : null,
+          last_head_sha: currentPr.headRefOid,
+        });
+      } else {
+        await this.github.enableAutoMerge(currentPr.number, currentPr.headRefOid);
+        nextRecord = this.stateStore.touch(nextRecord, {
+          ...lifecyclePatch,
+          state: "merging",
+          blocked_reason: null,
+          last_head_sha: currentPr.headRefOid,
+        });
+      }
       state.issues[String(nextRecord.issue_number)] = nextRecord;
     }
 
@@ -798,7 +836,7 @@ export class Supervisor {
       previousRecord: record,
       nextRecord,
       issue,
-      pullRequest: pr,
+      pullRequest: currentPr,
       recoveryEvents,
       retentionRootPath: executionMetricsRetentionRootPath(this.config.stateFile),
     });

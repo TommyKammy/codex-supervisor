@@ -1,54 +1,61 @@
-# Issue #917: Final evaluation visibility: surface pending and resolved pre-merge evaluation state clearly
+# Issue #918: Final evaluation gate: block merge completion until the pre-merge assessment resolves cleanly
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/917
-- Branch: codex/issue-917
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/918
+- Branch: codex/issue-918
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 407efb7d3efe8262e59a04d51f792b2a616d860f
+- Current phase: addressing_review
+- Attempt count: 4 (implementation=2, repair=2)
+- Last head SHA: 873cd821c999548049b625b77790b79995976ec1
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-24T01:41:22.605Z
+- Last failure signature: PRRT_kwDORgvdZ852TB7D
+- Repeated failure signature count: 1
+- Updated at: 2026-03-24T03:30:09Z
 
 ## Latest Codex Summary
-- None yet.
+Verified the remaining CodeRabbit finding on PR `#933` is still valid on this branch: `handlePostTurnMergeAndCompletion()` refreshed the PR but only rechecked `localReviewBlocksMerge()`, so a PR that became draft or otherwise non-ready could still reach `enableAutoMerge()`. I replaced that ad hoc check with a refreshed lifecycle snapshot and full `inferStateFromPullRequest()` re-evaluation before auto-merge.
+
+Added regression coverage for the two refreshed non-ready cases that matter here: a changed head now falls back to `stabilizing`, and a draft refresh falls back to `draft_pr` instead of enabling auto-merge. Focused readiness/lifecycle tests and `npm run build` all pass locally.
+
+Summary: Rechecked the remaining PR #933 merge-gate review finding, fixed the refreshed readiness hole locally, and added regression coverage
+State hint: addressing_review
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/supervisor-pr-readiness.test.ts`; `npx tsx --test src/pull-request-state-policy.test.ts src/supervisor/supervisor-lifecycle.test.ts`; `npm run build`
+Next action: Commit and push the refreshed merge-gate fix to PR `#933`, then confirm the remaining review thread can be resolved cleanly
+Failure signature: PRRT_kwDORgvdZ852TB7D
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: Remaining automated review finding reproduced locally and fixed; GitHub still needs the branch update before the thread can be cleared.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/933#discussion_r2978749108
+- Details:
+  - `src/supervisor/supervisor.ts` now reloads the full open-PR snapshot, re-derives the lifecycle with `derivePullRequestLifecycleSnapshot()`, and only calls `enableAutoMerge()` when the refreshed lifecycle state is still `ready_to_merge`.
+  - `src/supervisor/supervisor-pr-readiness.test.ts` now covers the refreshed draft regression and the refreshed head-change fallback so merge enablement cannot race past a non-ready PR.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the typed pre-merge assessment snapshot already captures the right evidence, but operator-facing `status` and `explain` still need a shared observational summary that turns the current local-review artifact into pending, passed, blocked, or follow-up-eligible final-evaluation visibility.
-- What changed: added `src/supervisor/supervisor-pre-merge-evaluation.ts` to derive a typed pre-merge evaluation DTO and a rendered `pre_merge_evaluation ...` status line from the current local-review artifact plus head-drift state; threaded that DTO into operator activity context so `status` and `explain` both surface the same final-evaluation state and reason; added focused coverage in `src/supervisor/supervisor-selection-status-active-status.test.ts`, `src/supervisor/supervisor-selection-issue-explain.test.ts`, and `src/supervisor/supervisor-status-model-supervisor.test.ts`, and updated typed DTO expectations in the existing supervisor status/explain tests.
+- Hypothesis: the last open PR `#933` review thread is fixed by re-running full lifecycle inference on the refreshed PR snapshot before auto-merge enablement.
+- What changed: replaced the merge-time `localReviewBlocksMerge()` recheck with a refreshed `derivePullRequestLifecycleSnapshot()` pass in `handlePostTurnMergeAndCompletion`; when the refreshed PR is no longer `ready_to_merge`, the supervisor now persists the inferred state (`stabilizing`, `draft_pr`, `blocked`, etc.) instead of enabling auto-merge; added regression coverage for refreshed head changes and refreshed draft PRs.
 - Current blocker: none
-- Next exact step: commit the observational visibility change, update draft PR `#931`, and let CI confirm the targeted operator-facing status/explain coverage stays green.
-- Verification gap: focused status/explain tests and `npm run build` passed after `npm ci`; `npx tsx --test src/**/*.test.ts` still reports unrelated repository-wide failures outside this issue (`src/backend/webui-dashboard-browser-smoke.test.ts` missing `playwright-core`, `src/external-review/external-review-alignment.test.ts` alignment failure, and pre-existing readiness/status expectation drift in `src/supervisor/supervisor-pr-readiness.test.ts` and `src/supervisor/supervisor-status-rendering.test.ts`).
-- Files touched: `src/supervisor/supervisor-pre-merge-evaluation.ts`, `src/supervisor/supervisor-operator-activity-context.ts`, `src/supervisor/supervisor-selection-active-status.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/supervisor/supervisor-status-model.ts`, `src/supervisor/supervisor-selection-status-active-status.test.ts`, `src/supervisor/supervisor-selection-issue-explain.test.ts`, `src/supervisor/supervisor-status-model-supervisor.test.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-service.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: low; the change is observational-only and only enriches typed operator status/explain surfaces from existing local-review artifacts without changing merge gating or lifecycle state decisions.
-- Last focused command: `npm ci && npm run build && npx tsx --test src/supervisor/supervisor-selection-status-active-status.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-service.test.ts`
-- Last focused failure: `npx tsx --test src/**/*.test.ts` still fails in unrelated existing areas (`Cannot find module 'playwright-core'` for the browser smoke test plus pre-existing repository-wide expectation drift in readiness/status suites), but the new final-evaluation visibility coverage added in this turn passes.
-- Draft PR: `#931` https://github.com/TommyKammy/codex-supervisor/pull/931
+- Next exact step: commit and push this branch update, then confirm PR `#933` no longer offers the merge-time readiness thread as an open blocker.
+- Verification gap: none for the touched path; refreshed readiness, lifecycle inference, and build all pass locally.
+- Files touched: `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-pr-readiness.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: moderate; reverting would reopen the merge-time race that can enable auto-merge after the PR becomes draft or otherwise leaves `ready_to_merge`.
+- Last focused command: `npx tsx --test src/pull-request-state-policy.test.ts src/supervisor/supervisor-lifecycle.test.ts`
+- Last focused failure: none
+- Draft PR: `#933` https://github.com/TommyKammy/codex-supervisor/pull/933
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-917/AGENTS.generated.md
-sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-917/context-index.md
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-918/AGENTS.generated.md
+sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-918/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
-git status --short
-git branch --show-current
-git log --oneline --decorate -5
-rg -n "final evaluation|pre-merge|assessment-snapshot|follow-up-eligible|blocked|pending" src
-sed -n '1,360p' src/supervisor/supervisor-selection-active-status.ts
-sed -n '1,420p' src/supervisor/supervisor-selection-issue-explain.ts
-sed -n '1,360p' src/supervisor/supervisor-status-model.ts
-npx tsx --test src/supervisor/supervisor-selection-status-active-status.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts
-npx tsx --test src/supervisor/supervisor-selection-status-active-status.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-service.test.ts
-npx tsx --test src/**/*.test.ts
-npm ci
+sed -n '720,860p' src/supervisor/supervisor.ts
+sed -n '569,730p' src/pull-request-state.ts
+sed -n '480,700p' src/supervisor/supervisor-pr-readiness.test.ts
+npx tsx --test src/supervisor/supervisor-pr-readiness.test.ts
+npx tsx --test src/pull-request-state-policy.test.ts src/supervisor/supervisor-lifecycle.test.ts
 npm run build
-npx tsx --test src/supervisor/supervisor-selection-status-active-status.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-service.test.ts
 ```
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.

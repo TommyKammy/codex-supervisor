@@ -230,6 +230,10 @@ export interface IssueRunRecord {
   local_review_verified_findings_count: number;
   local_review_recommendation: "ready" | "changes_requested" | "unknown" | null;
   local_review_degraded: boolean;
+  pre_merge_evaluation_outcome?: "mergeable" | "fix_blocked" | "manual_review_blocked" | "follow_up_eligible" | null;
+  pre_merge_must_fix_count?: number;
+  pre_merge_manual_review_count?: number;
+  pre_merge_follow_up_count?: number;
   last_local_review_signature: string | null;
   repeated_local_review_signature_count: number;
   latest_local_ci_result?: LatestLocalCiResult | null;
