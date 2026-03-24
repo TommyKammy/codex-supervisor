@@ -12,6 +12,7 @@ import {
   localReviewFailureSummary,
   localReviewHighSeverityNeedsBlock,
   localReviewHighSeverityNeedsRetry,
+  localReviewRequiresManualReview,
   localReviewRetryLoopCandidate,
   localReviewRetryLoopStalled,
   localReviewStallFailureContext,
@@ -296,9 +297,10 @@ export async function handlePostTurnPullRequestTransitionsPhase(
           ? `local-review:${localReview.maxSeverity ?? "unknown"}:${localReview.rootCauseCount}:${localReview.degraded ? "degraded" : "clean"}`
           : null;
       const signatureTracking = nextLocalReviewSignatureTracking(record, refreshed.pr.headRefOid, actionableSignature);
+      const manualReviewBlocked = localReview.finalEvaluation.outcome === "manual_review_blocked";
 
       record = stateStore.touch(record, {
-        state: "draft_pr",
+        state: manualReviewBlocked ? "blocked" : "draft_pr",
         local_review_head_sha: refreshed.pr.headRefOid,
         local_review_blocker_summary: localReview.blockerSummary,
         local_review_summary_path: localReview.summaryPath,
@@ -321,7 +323,9 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         external_review_near_match_findings_count: 0,
         external_review_missed_findings_count: 0,
         blocked_reason:
-          localReview.recommendation !== "ready" && config.localReviewHighSeverityAction === "blocked" && localReview.verifiedMaxSeverity === "high"
+          manualReviewBlocked
+            ? "manual_review"
+            : localReview.recommendation !== "ready" && config.localReviewHighSeverityAction === "blocked" && localReview.verifiedMaxSeverity === "high"
             ? "verification"
             : null,
         last_error:
@@ -329,6 +333,8 @@ export async function handlePostTurnPullRequestTransitionsPhase(
             ? truncate(
                 localReview.degraded
                   ? "Local review completed in a degraded state."
+                  : manualReviewBlocked
+                    ? `Local review requires manual verification before the PR can proceed (${localReview.finalEvaluation.manualReviewCount} unresolved manual-review residual${localReview.finalEvaluation.manualReviewCount === 1 ? "" : "s"}).`
                   : localReview.verifiedMaxSeverity === "high" && config.localReviewHighSeverityAction === "retry"
                     ? `Local review found high-severity issues (${localReview.findingsCount} actionable findings across ${localReview.rootCauseCount} root cause(s)). Codex will continue with a repair pass before the PR can proceed.`
                     : localReview.verifiedMaxSeverity === "high" && config.localReviewHighSeverityAction === "blocked"
@@ -390,6 +396,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     args.configuredBotReviewThreads(config, refreshed.reviewThreads).length === 0 &&
     (!config.humanReviewBlocksMerge || args.manualReviewThreads(config, refreshed.reviewThreads).length === 0) &&
     !args.mergeConflictDetected(refreshed.pr) &&
+    !localReviewRequiresManualReview(config, record, refreshed.pr) &&
     !localReviewBlocksReady(config, record, refreshed.pr) &&
     !options.dryRun
   ) {

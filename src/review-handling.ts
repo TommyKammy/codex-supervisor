@@ -128,6 +128,19 @@ export function localReviewBlocksMerge(
   );
 }
 
+export function localReviewRequiresManualReview(
+  config: SupervisorConfig,
+  record: Pick<IssueRunRecord, "local_review_head_sha" | "pre_merge_evaluation_outcome">,
+  pr: GitHubPullRequest,
+): boolean {
+  return (
+    config.localReviewEnabled &&
+    config.localReviewPolicy === "block_merge" &&
+    record.local_review_head_sha === pr.headRefOid &&
+    record.pre_merge_evaluation_outcome === "manual_review_blocked"
+  );
+}
+
 export function localReviewHighSeverityNeedsRetry(
   config: SupervisorConfig,
   record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_verified_max_severity">,
