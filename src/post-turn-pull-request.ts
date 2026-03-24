@@ -3,6 +3,8 @@ import {
   LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY,
   runLocalReview,
   shouldRunLocalReview,
+  type LocalReviewResult,
+  type PreMergeResidualFinding,
 } from "./local-review";
 import {
   localReviewBlocksReady,
@@ -35,6 +37,7 @@ import {
   maybeBuildReviewWaitChangedEvent,
   type SupervisorEventSink,
 } from "./supervisor/supervisor-events";
+import { parseIssueMetadata } from "./issue-metadata";
 
 export interface PostTurnPullRequestContext {
   state: SupervisorStateFile;
@@ -72,10 +75,137 @@ export interface PullRequestLifecycleSnapshot {
   >;
 }
 
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function findMarkdownSectionContent(body: string, title: string): string | null {
+  const lines = body.split(/\r?\n/);
+  const headingPattern = new RegExp(`^\\s*##\\s*${escapeRegExp(title)}\\s*$`, "i");
+
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!headingPattern.test(lines[index] ?? "")) {
+      continue;
+    }
+
+    const sectionLines: string[] = [];
+    for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+      if (/^\s*##\s*\S/.test(lines[cursor] ?? "")) {
+        break;
+      }
+
+      sectionLines.push(lines[cursor] ?? "");
+    }
+
+    const content = sectionLines.join("\n").trim();
+    return content.length > 0 ? content : null;
+  }
+
+  return null;
+}
+
+function renderResidualLines(finding: Pick<PreMergeResidualFinding, "start" | "end">): string | null {
+  if (finding.start == null) {
+    return null;
+  }
+
+  return finding.end != null && finding.end !== finding.start
+    ? `${finding.start}-${finding.end}`
+    : `${finding.start}`;
+}
+
+function buildResidualFollowUpIssueDraft(args: {
+  sourceIssue: GitHubIssue;
+  pr: GitHubPullRequest;
+  localReview: LocalReviewResult;
+  residualFinding: PreMergeResidualFinding;
+}): { title: string; body: string } {
+  const { sourceIssue, pr, localReview, residualFinding } = args;
+  const metadata = parseIssueMetadata(sourceIssue);
+  const sourceVerification = findMarkdownSectionContent(sourceIssue.body, "Verification");
+  const renderedLines = renderResidualLines(residualFinding);
+  const location = residualFinding.file
+    ? `\`${residualFinding.file}${renderedLines ? `:${renderedLines}` : ""}\``
+    : "the bounded residual area";
+  const title = truncate(
+    `Follow-up: ${sourceIssue.title} (#${sourceIssue.number}) - ${residualFinding.summary}`,
+    240,
+  ) ?? `Follow-up: issue #${sourceIssue.number}`;
+  const verificationLines = sourceVerification
+    ? sourceVerification.split(/\r?\n/)
+    : [`- add and run the narrowest targeted verification for ${location}.`];
+
+  return {
+    title,
+    body: [
+      "## Summary",
+      `Resolve the residual non-blocking finding left behind by source issue #${sourceIssue.number} after PR #${pr.number} merges.`,
+      "",
+      "## Scope",
+      `- address the residual finding: ${residualFinding.summary}`,
+      `- focus changes on ${location}.`,
+      "- keep unrelated behavior unchanged outside this follow-up.",
+      "",
+      "## Acceptance criteria",
+      `- the residual finding from source issue #${sourceIssue.number} is resolved or explicitly dismissed with rationale.`,
+      "- any targeted coverage or guardrail needed for this residual is added.",
+      `- traceability back to source issue #${sourceIssue.number} and PR #${pr.number} remains documented.`,
+      "",
+      "## Verification",
+      ...verificationLines,
+      `- confirm the residual finding for ${location} is covered by the updated verification.`,
+      "",
+      ...(metadata.parentIssueNumber ? [`Part of: #${metadata.parentIssueNumber}`] : []),
+      `Depends on: #${sourceIssue.number}`,
+      "Execution order: 1 of 1",
+      "Parallelizable: Yes",
+      "",
+      "## Traceability",
+      `- Source issue: #${sourceIssue.number}`,
+      `- Source PR: #${pr.number}`,
+      `- Pre-merge final evaluation outcome: ${localReview.finalEvaluation.outcome}`,
+      `- Residual finding key: \`${residualFinding.findingKey}\``,
+      `- Severity: ${residualFinding.severity}`,
+      ...(residualFinding.category ? [`- Category: ${residualFinding.category}`] : []),
+      ...(residualFinding.file ? [`- File: \`${residualFinding.file}\``] : []),
+      ...(renderedLines ? [`- Lines: ${renderedLines}`] : []),
+      `- Summary: ${residualFinding.summary}`,
+      `- Rationale: ${residualFinding.rationale}`,
+      `- Source artifact: \`${localReview.summaryPath}\``,
+    ].join("\n"),
+  };
+}
+
+async function createResidualFollowUpIssues(args: {
+  github: Partial<Pick<GitHubClient, "createIssue">>;
+  issue: GitHubIssue;
+  pr: GitHubPullRequest;
+  localReview: LocalReviewResult;
+}): Promise<void> {
+  if (!args.github.createIssue) {
+    throw new Error("GitHub issue creation is unavailable for follow-up-eligible residual findings.");
+  }
+
+  const residualFindings = args.localReview.finalEvaluation.residualFindings.filter(
+    (finding) => finding.resolution === "follow_up_candidate",
+  );
+
+  for (const residualFinding of residualFindings) {
+    const draft = buildResidualFollowUpIssueDraft({
+      sourceIssue: args.issue,
+      pr: args.pr,
+      localReview: args.localReview,
+      residualFinding,
+    });
+    await args.github.createIssue(draft.title, draft.body);
+  }
+}
+
 export interface HandlePostTurnPullRequestTransitionsArgs {
   config: SupervisorConfig;
   stateStore: Pick<StateStore, "touch" | "save">;
-  github: Pick<GitHubClient, "getPullRequest" | "getChecks" | "getUnresolvedReviewThreads" | "markPullRequestReady">;
+  github: Pick<GitHubClient, "getPullRequest" | "getChecks" | "getUnresolvedReviewThreads" | "markPullRequestReady"> &
+    Partial<Pick<GitHubClient, "createIssue">>;
   context: PostTurnPullRequestContext;
   derivePullRequestLifecycleSnapshot: (
     record: IssueRunRecord,
@@ -208,6 +338,15 @@ export async function handlePostTurnPullRequestTransitionsPhase(
               )
             : null,
       });
+
+      if (localReview.finalEvaluation.outcome === "follow_up_eligible") {
+        await createResidualFollowUpIssues({
+          github,
+          issue,
+          pr: refreshed.pr,
+          localReview,
+        });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       record = stateStore.touch(record, {

@@ -1,62 +1,54 @@
-# Issue #919: Final evaluation sequencing: keep downstream sibling work waiting until evaluation resolves
+# Issue #920: Final evaluation follow-ups: create explicit residual follow-up issues when merge is allowed
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/919
-- Branch: codex/issue-919
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/920
+- Branch: codex/issue-920
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 7a5421d5224abecc816d9a2fd39ec2e72fd82484
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 71295fb41972d9ee50cd590bc3c0d0ce0205698e
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-24T04:13:36.988Z
+- Updated at: 2026-03-24T04:41:12.046Z
 
 ## Latest Codex Summary
-Installed the missing local dev dependencies with `npm install`, which restored both `tsc` and `playwright-core` in this worktree. The sequencing fix from `7a5421d` still passes its focused regressions, and `npm run build` is now green locally.
+- Added explicit residual follow-up issue creation for `follow_up_eligible` pre-merge final evaluations. The post-turn PR flow now turns each `follow_up_candidate` residual into an execution-ready GitHub issue that depends on the source issue, carries forward the parent epic when present, reuses the source verification section, and includes source-issue / PR / artifact traceability before the draft PR is allowed to proceed.
 
-The prior full-suite blocker turned out to be a stale expected-file allowlist in [src/external-review/external-review-family-layout.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-919/src/external-review/external-review-family-layout.test.ts), not a sequencing regression. I updated that test to include the two current runtime modules (`external-review-miss-digest.ts` and `external-review-prevention-targets.ts`), and the full `npx tsx --test src/**/*.test.ts` run now passes.
+- Added a focused regression in `src/post-turn-pull-request.test.ts` that first reproduced the missing follow-up issue creation path, then verified the generated issue body keeps scheduler-compatible metadata (`Part of`, `Depends on`, `Execution order`, `Parallelizable`) and source traceability intact. Added `GitHubClient.createIssue()` to support the new path.
 
-Summary: Sequencing remains blocked on unresolved final evaluation as intended, local build/test verification is clean, and the draft PR is open with the stale external-review layout test synchronized so the repo suite passes again
-State hint: draft_pr
-Blocked reason: none
-Tests: `npm install`; `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-selection-readiness-summary.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts`; `npm run build`; `npx tsx --test src/external-review/external-review-family-layout.test.ts`; `npx tsx --test src/**/*.test.ts`
-Next action: Monitor draft PR #934 and address any CI or review feedback
-Failure signature: none
+- Verification is green locally after restoring dependencies with `npm install`: `npx tsx --test src/post-turn-pull-request.test.ts`; `npx tsx --test src/post-turn-pull-request.test.ts src/supervisor/supervisor-pr-readiness.test.ts src/github/github.test.ts`; `npm run build`; `npx tsx --test src/**/*.test.ts`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: sequencing currently treats `record.state === "done"` as sufficient, so downstream siblings become runnable before the predecessor's pre-merge final evaluation resolves.
-- What changed: added focused regressions in `src/issue-metadata/issue-metadata.test.ts` and `src/supervisor/supervisor-selection-readiness-summary.test.ts`; introduced `isRecordDoneForSequencing()` in `src/issue-metadata/issue-metadata.ts`; updated `findBlockingIssue()`, readiness summaries, and selection/explain formatting to require a resolved final-evaluation outcome (`mergeable` or `follow_up_eligible`) before a predecessor counts as cleared; installed local dependencies; and synchronized `src/external-review/external-review-family-layout.test.ts` with the current runtime modules so the full suite passes again.
+- Hypothesis: `follow_up_eligible` final evaluations were persisted only as counts/outcome on the source record, so merge could proceed without creating explicit scheduler-visible residual follow-up issues.
+- What changed: added focused regression coverage in `src/post-turn-pull-request.test.ts`; introduced follow-up issue drafting in `src/post-turn-pull-request.ts` that converts each `follow_up_candidate` residual into an execution-ready issue with inherited parent-epic metadata, `Depends on: #<source>`, `Execution order: 1 of 1`, `Parallelizable: Yes`, and explicit source traceability; added `GitHubClient.createIssue()` in `src/github/github.ts`; restored local dependencies so `npm run build` works in this worktree.
 - Current blocker: none.
-- Next exact step: monitor draft PR #934, then address any CI or review feedback if it appears.
-- Verification gap: none locally; focused sequencing tests, `npm run build`, the external-review layout test, and the full test suite are green in this workspace.
-- Files touched: `src/issue-metadata/issue-metadata.ts`, `src/issue-metadata/issue-metadata.test.ts`, `src/supervisor/supervisor-selection-readiness-summary.ts`, `src/supervisor/supervisor-selection-readiness-summary.test.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/external-review/external-review-family-layout.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: low to moderate; reverting would let downstream sibling work start while the predecessor is still pending or blocked in final evaluation, and diagnostics would again disagree with actual sequencing behavior.
+- Next exact step: review the diff, commit the follow-up-issue creation change, and open or update the branch PR if needed.
+- Verification gap: none locally; focused post-turn regression, adjacent PR-readiness / GitHub tests, `npm run build`, and the full test suite are green in this workspace.
+- Files touched: `src/post-turn-pull-request.ts`, `src/post-turn-pull-request.test.ts`, `src/github/github.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: moderate; reverting would restore the previous silent gap where mergeable residual work was not turned into explicit follow-up issues, so operators would lose scheduler-visible tracking for bounded post-merge work.
 - Last focused command: `npx tsx --test src/**/*.test.ts`
 - Last focused failure: none
-- Draft PR: #934 (`https://github.com/TommyKammy/codex-supervisor/pull/934`)
+- Draft PR: none
 - Last focused commands:
 ```bash
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-919/AGENTS.generated.md
-sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-919/context-index.md
+sed -n '1,240p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-920/AGENTS.generated.md
+sed -n '1,240p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-920/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
-sed -n '1,260p' src/issue-metadata/issue-metadata.ts
-sed -n '1,280p' src/supervisor/supervisor-selection-readiness-summary.ts
-npx tsx --test src/issue-metadata/issue-metadata.test.ts
-npx tsx --test src/supervisor/supervisor-selection-readiness-summary.test.ts
-npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-selection-readiness-summary.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts
-npx tsx --test src/**/*.test.ts
-npm run build
+rg -n "follow_up|follow-up|follow up|final evaluation|residual" src .codex-supervisor -g '!node_modules'
+sed -n '1,320p' src/post-turn-pull-request.ts
+sed -n '1,260p' src/post-turn-pull-request.test.ts
+sed -n '1,360p' src/github/github.ts
+npx tsx --test src/post-turn-pull-request.test.ts
+npx tsx --test src/post-turn-pull-request.test.ts src/supervisor/supervisor-pr-readiness.test.ts src/github/github.test.ts
 npm install
-npx tsx --test src/external-review/external-review-family-layout.test.ts
+npm run build
 npx tsx --test src/**/*.test.ts
-git push -u origin codex/issue-919
-gh pr create --draft --base main --head codex/issue-919 --title "Keep downstream sibling work blocked until final eval resolves" --body ...
 ```
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
