@@ -14,7 +14,7 @@
 - Updated at: 2026-03-24T00:00:44.588Z
 
 ## Latest Codex Summary
-- Added a safe execution-metrics run-summary wrapper so local-CI blocked-before-PR flows stay blocked even when observational metrics validation or writes fail.
+- Added a safe execution-metrics run-summary wrapper so local-CI blocked-before-PR flows stay blocked even when observational metrics validation or writes fail; pushed `codex/issue-913` and opened draft PR #929.
 
 ## Active Failure Context
 - None recorded.
@@ -24,7 +24,7 @@
 - Hypothesis: execution-metrics persistence must remain observational; local-CI failures before PR creation should stay normal blocked verification outcomes even when run-summary validation or writes fail.
 - What changed: added `syncExecutionMetricsRunSummarySafely()` in `src/supervisor/execution-metrics-run-summary.ts` to centralize the warning-and-continue behavior for terminal run-summary persistence; switched the direct terminal-state persistence in `src/run-once-issue-preparation.ts` and `src/run-once-turn-execution.ts` to the safe wrapper; refactored `src/turn-execution-failure-helpers.ts` and `src/supervisor/supervisor-failure-helpers.ts` to use the shared helper instead of duplicating try/catch blocks; added a focused regression in `src/run-once-turn-execution.test.ts` that forces an execution-metrics validation failure during the local-CI blocked-before-PR path and asserts the flow still returns the blocked result.
 - Current blocker: none
-- Next exact step: stage the issue-913 changes, create a checkpoint commit on `codex/issue-913`, and open or update a draft PR if one does not already exist.
+- Next exact step: monitor draft PR #929, address review or CI feedback, and keep the blocked local-CI regression green.
 - Verification gap: no known gap in the targeted blocked-before-PR local-CI flow; broader full-suite coverage was not rerun beyond the focused execution, preparation, local-CI, and recovery-helper tests plus `npm run build`.
 - Files touched: `src/supervisor/execution-metrics-run-summary.ts`, `src/run-once-issue-preparation.ts`, `src/run-once-turn-execution.ts`, `src/turn-execution-failure-helpers.ts`, `src/supervisor/supervisor-failure-helpers.ts`, `src/run-once-turn-execution.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: low; the change only isolates observational execution-metrics failures from terminal execution-state transitions and does not change the local-CI contract itself.
