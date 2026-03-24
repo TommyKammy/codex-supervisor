@@ -115,6 +115,7 @@ export function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunR
     blocked_verification_retry_count: 0,
     repeated_blocker_count: 0,
     repeated_failure_signature_count: 1,
+    stale_stabilizing_no_pr_recovery_count: 0,
     last_head_sha: "abcdef1",
     last_codex_summary: null,
     last_recovery_reason: null,

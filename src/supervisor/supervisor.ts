@@ -188,6 +188,43 @@ interface ReadyIssueContext {
 
 const LONG_RECONCILIATION_WARNING_THRESHOLD_MS = 5 * 60 * 1000;
 
+function isIgnoredSupervisorArtifactPath(
+  relativePath: string,
+  journalRelativePath: string,
+): boolean {
+  return relativePath === journalRelativePath
+    || relativePath === ".codex-supervisor/replay"
+    || relativePath.startsWith(".codex-supervisor/replay/");
+}
+
+function parseGitStatusPorcelainV1Paths(statusOutput: string): string[][] {
+  const fields = statusOutput.split("\0");
+  const entries: string[][] = [];
+
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index];
+    if (field.length < 4) {
+      continue;
+    }
+
+    const statusCode = field.slice(0, 2);
+    const paths = [field.slice(3)].filter((entry) => entry.length > 0);
+    if (statusCode.includes("R") || statusCode.includes("C")) {
+      const pairedPath = fields[index + 1] ?? "";
+      if (pairedPath.length > 0) {
+        paths.push(pairedPath);
+        index += 1;
+      }
+    }
+
+    if (paths.length > 0) {
+      entries.push(paths);
+    }
+  }
+
+  return entries;
+}
+
 function buildLongReconciliationWarning(snapshot: {
   phase: string;
   startedAt: string | null;
@@ -425,20 +462,17 @@ export class Supervisor {
         runCommand("git", ["-C", record.workspace, "diff", "--name-only", `origin/${this.config.defaultBranch}...HEAD`], {
           timeoutMs: gitProbeTimeoutMs,
         }),
-        runCommand("git", ["-C", record.workspace, "status", "--short", "--untracked-files=all"], {
+        runCommand("git", ["-C", record.workspace, "status", "--porcelain=v1", "-z", "--untracked-files=all"], {
           timeoutMs: gitProbeTimeoutMs,
         }),
       ]);
       const meaningfulBaseDiff = baseDiffResult.stdout
         .split("\n")
         .map((line) => line.trim())
-        .filter((line) => line.length > 0 && line !== journalRelativePath);
-      const meaningfulWorkspaceChanges = workspaceStatusResult.stdout
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0)
-        .map((line) => line.replace(/^[ MADRCU?!]{2}\s+/, ""))
-        .filter((line) => line.length > 0 && line !== journalRelativePath);
+        .filter((line) => line.length > 0 && !isIgnoredSupervisorArtifactPath(line, journalRelativePath));
+      const meaningfulWorkspaceChanges = parseGitStatusPorcelainV1Paths(workspaceStatusResult.stdout)
+        .filter((paths) =>
+          paths.some((relativePath) => !isIgnoredSupervisorArtifactPath(relativePath, journalRelativePath)));
 
       return meaningfulBaseDiff.length === 0 && meaningfulWorkspaceChanges.length === 0
         ? "already_satisfied_on_main"

@@ -187,3 +187,86 @@ test("classifyStaleStabilizingNoPrBranchState returns recoverable when the branc
 
   assert.equal(result, "recoverable");
 });
+
+test("classifyStaleStabilizingNoPrBranchState ignores supervisor-owned replay artifacts", async () => {
+  const { repoPath, rootPath } = await createRepositoryWithOrigin();
+  const journalPath = path.join(repoPath, ".codex-supervisor", "issue-journal.md");
+  const replayArtifactPath = path.join(repoPath, ".codex-supervisor", "replay", "decision-cycle-snapshot.json");
+  await fs.mkdir(path.dirname(replayArtifactPath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n");
+  await fs.writeFile(replayArtifactPath, "{\n  \"kind\": \"replay\"\n}\n");
+
+  const supervisor = new Supervisor(
+    createConfig({
+      repoPath,
+      workspaceRoot: rootPath,
+    }),
+  );
+
+  const result = await classifyStaleStabilizingNoPrBranchState(supervisor, {
+    workspace: repoPath,
+    journal_path: journalPath,
+  });
+
+  assert.equal(result, "already_satisfied_on_main");
+});
+
+test("classifyStaleStabilizingNoPrBranchState preserves leading whitespace in porcelain paths", async () => {
+  const { repoPath, rootPath } = await createRepositoryWithOrigin();
+  const journalPath = path.join(repoPath, ".codex-supervisor", "issue-journal.md");
+  const misleadingReplayLikePath = path.join(
+    repoPath,
+    " .codex-supervisor",
+    "replay",
+    "decision-cycle-snapshot.json",
+  );
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.mkdir(path.dirname(misleadingReplayLikePath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n");
+  await fs.writeFile(misleadingReplayLikePath, "{\n  \"kind\": \"not-supervisor-owned\"\n}\n");
+
+  const supervisor = new Supervisor(
+    createConfig({
+      repoPath,
+      workspaceRoot: rootPath,
+    }),
+  );
+
+  const result = await classifyStaleStabilizingNoPrBranchState(supervisor, {
+    workspace: repoPath,
+    journal_path: journalPath,
+  });
+
+  assert.equal(result, "recoverable");
+});
+
+test("classifyStaleStabilizingNoPrBranchState treats replay-to-code renames as meaningful workspace changes", async () => {
+  const { repoPath, rootPath } = await createRepositoryWithOrigin();
+  const journalPath = path.join(repoPath, ".codex-supervisor", "issue-journal.md");
+  const replayArtifactPath = path.join(repoPath, ".codex-supervisor", "replay", "decision-cycle-snapshot.json");
+  const renamedArtifactPath = path.join(repoPath, "src", "generated.ts");
+
+  await fs.mkdir(path.dirname(replayArtifactPath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n");
+  await fs.writeFile(replayArtifactPath, "{\n  \"kind\": \"replay\"\n}\n");
+  await runCommand("git", ["-C", repoPath, "add", replayArtifactPath]);
+  await runCommand("git", ["-C", repoPath, "commit", "-m", "track replay artifact"]);
+  await runCommand("git", ["-C", repoPath, "push", "origin", "main"]);
+
+  await fs.mkdir(path.dirname(renamedArtifactPath), { recursive: true });
+  await runCommand("git", ["-C", repoPath, "mv", replayArtifactPath, renamedArtifactPath]);
+
+  const supervisor = new Supervisor(
+    createConfig({
+      repoPath,
+      workspaceRoot: rootPath,
+    }),
+  );
+
+  const result = await classifyStaleStabilizingNoPrBranchState(supervisor, {
+    workspace: repoPath,
+    journal_path: journalPath,
+  });
+
+  assert.equal(result, "recoverable");
+});
