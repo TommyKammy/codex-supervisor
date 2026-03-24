@@ -76,6 +76,44 @@ export interface PreMergeFinalEvaluation {
   followUpCount: number;
 }
 
+export type PostMergeAuditOutcome = "no_action" | "learning_recorded" | "promotion_candidates_identified";
+export type PostMergeAuditPromotionCandidateKind = "shared_memory" | "guardrail";
+export type PostMergeAuditGating = "non_gating";
+export type PostMergeAuditMergeBehavior = "unchanged";
+export type PostMergeAuditIssueCompletionBehavior = "unchanged";
+export type PostMergeAuditFollowUpIssueCreation = "separate_contract";
+
+export interface PostMergeAuditRecurringPatternSummary {
+  key: string;
+  summary: string;
+  category: string | null;
+  severity: ActionableSeverity;
+  evidenceCount: number;
+  sourceCount: number;
+  exampleFindingKeys: string[];
+}
+
+export interface PostMergeAuditPromotionCandidate {
+  key: string;
+  kind: PostMergeAuditPromotionCandidateKind;
+  title: string;
+  summary: string;
+  rationale: string;
+  sourcePatternKeys: string[];
+  autoPromote: boolean;
+  autoCreateFollowUpIssue: boolean;
+}
+
+export interface PostMergeAuditResult {
+  outcome: PostMergeAuditOutcome;
+  gating: PostMergeAuditGating;
+  mergeBehavior: PostMergeAuditMergeBehavior;
+  issueCompletionBehavior: PostMergeAuditIssueCompletionBehavior;
+  followUpIssueCreation: PostMergeAuditFollowUpIssueCreation;
+  recurringPatterns: PostMergeAuditRecurringPatternSummary[];
+  promotionCandidates: PostMergeAuditPromotionCandidate[];
+}
+
 export interface LocalReviewRootCauseSummary {
   summary: string;
   severity: ActionableSeverity;
