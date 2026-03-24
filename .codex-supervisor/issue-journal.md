@@ -1,54 +1,52 @@
-# Issue #923: Post-merge audit contract: define typed non-gating learning outcomes and promotion candidates
+# Issue #937: Stale already-landed convergence misclassifies replay artifacts and blocks issue #924
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/923
-- Branch: codex/issue-923
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/937
+- Branch: codex/issue-937
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: dfda4edf6173c9c2eeccf24eedb6dd5bea95de36
+- Last head SHA: 1f68f280a6e8ae44c558ccc09a96bd42e652cbf9
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-24T05:01:13.103Z
+- Last failure signature: requirements:scope|acceptance criteria|verification
+- Repeated failure signature count: 1
+- Updated at: 2026-03-24T12:39:53.160Z
 
 ## Latest Codex Summary
-- None yet.
+- Reproduced the stale no-PR misclassification with focused tests, updated stale branch classification to ignore supervisor-owned replay artifacts under `.codex-supervisor/replay/`, and changed stale already-satisfied reconciliation to mark the issue `done` instead of escalating to `manual_review`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the repo had a typed pre-merge evaluation contract, but no separate typed post-merge audit contract for non-gating learning outcomes, recurring-pattern summaries, or promotion candidates.
-- What changed: added focused regression coverage in `src/local-review/post-merge-audit.test.ts`; introduced a dedicated `src/local-review/post-merge-audit.ts` helper plus new typed models in `src/local-review/types.ts` for advisory-only post-merge outcomes, recurring-pattern summaries, and promotion candidates; documented the non-gating contract in `src/local-review/artifacts.ts` and tightened `src/local-review/artifacts.test.ts`.
+- Hypothesis: stale no-PR branch classification was counting supervisor-owned replay output under `.codex-supervisor/replay/` as a meaningful local change, and stale reconciliation was treating `already_satisfied_on_main` as a manual-stop condition instead of a clean convergence.
+- What changed: added focused regression coverage in `src/supervisor/supervisor-stale-no-pr-branch-state.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, and `src/supervisor/supervisor-execution-orchestration.test.ts`; updated `src/supervisor/supervisor.ts` so the stale no-PR classifier ignores the issue journal plus `.codex-supervisor/replay/**`; updated `src/recovery-reconciliation.ts` so `already_satisfied_on_main` converges to `done` and clears stale no-PR recovery tracking; normalized `src/supervisor/supervisor-test-helpers.ts` so default test records include `stale_stabilizing_no_pr_recovery_count: 0`.
 - Current blocker: none.
-- Next exact step: monitor draft PR #936, address review feedback if any arrives, and promote it once ready.
-- Verification gap: none locally; focused post-merge audit coverage, adjacent local-review tests, `npm run build`, and the full test suite are green in this workspace.
-- Files touched: `src/local-review/types.ts`, `src/local-review/post-merge-audit.ts`, `src/local-review/post-merge-audit.test.ts`, `src/local-review/artifacts.ts`, `src/local-review/artifacts.test.ts`, `src/local-review/index.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: low; reverting would remove the typed post-merge audit contract and the explicit non-gating documentation needed for later reporting and promotion work.
-- Last focused command: `npx tsx --test src/**/*.test.ts`
-- Last focused failure: none
-- Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/936
+- Next exact step: commit the #937 replay-artifact stale-convergence fix on `codex/issue-937`, then open or update a draft PR if none exists yet.
+- Verification gap: none for the targeted stale no-PR path; focused stale branch-state, reconciliation, and orchestration tests plus `npm run build` are green after restoring local dev dependencies with `npm install`.
+- Files touched: `src/recovery-reconciliation.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-stale-no-pr-branch-state.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts`, `src/supervisor/supervisor-test-helpers.ts`, `.codex-supervisor/issue-journal.md`, `package-lock.json`
+- Rollback concern: low; reverting would restore the stale replay-artifact misclassification and the incorrect manual-review convergence path for already-landed no-PR recovery.
+- Last focused command: `npm run build`
+- Last focused failure: `npm run build` initially failed with `sh: 1: tsc: not found`; resolved by running `npm install` and rerunning the build successfully.
+- Draft PR: none
 - Last focused commands:
 ```bash
-sed -n '1,240p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-923/AGENTS.generated.md
-sed -n '1,240p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-923/context-index.md
+sed -n '1,240p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-937/AGENTS.generated.md
+sed -n '1,240p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-937/context-index.md
 sed -n '1,260p' .codex-supervisor/issue-journal.md
-rg -n "post-merge|post merge|audit outcome|promotion candidate|learning outcome|follow_up_eligible|final evaluation|promotion" src .codex-supervisor -g '!node_modules'
-sed -n '1,220p' src/local-review/types.ts
-sed -n '1,320p' src/core/types.ts
-sed -n '1,220p' src/local-review/final-evaluation.ts
-sed -n '1,220p' src/local-review/artifacts.ts
-sed -n '1,220p' src/local-review/final-evaluation.test.ts
-sed -n '1,200p' src/local-review/artifacts.test.ts
-sed -n '1,220p' src/local-review/result.test.ts
-npx tsx --test src/local-review/post-merge-audit.test.ts
-npx tsx --test src/local-review/artifacts.test.ts src/local-review/final-evaluation.test.ts src/local-review/result.test.ts
+git status --short
+sed -n '380,470p' src/supervisor/supervisor.ts
+sed -n '1,260p' src/supervisor/supervisor-stale-no-pr-branch-state.test.ts
+sed -n '520,790p' src/supervisor/supervisor-recovery-reconciliation.test.ts
+sed -n '1050,1195p' src/recovery-reconciliation.ts
+npx tsx --test src/supervisor/supervisor-stale-no-pr-branch-state.test.ts
+npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts
+npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts
+npx tsx --test src/supervisor/supervisor-stale-no-pr-branch-state.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts
 npm install
 npm run build
-npx tsx --test src/**/*.test.ts
 ```
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.

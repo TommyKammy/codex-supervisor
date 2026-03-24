@@ -19,6 +19,7 @@ import {
   createRecord,
   createSupervisorFixture,
   executionReadyBody,
+  git,
 } from "./supervisor-test-helpers";
 
 test("runOnce records timeout bookkeeping when Codex exits non-zero", async () => {
@@ -580,6 +581,115 @@ test("runOnce preserves stale no-PR recovery tracking across a successful no-PR 
     secondRecord.stale_stabilizing_no_pr_recovery_count,
     fixture.config.sameFailureSignatureRepeatLimit,
   );
+});
+
+test("runOnce converges a stale no-PR issue to done when only the journal and replay artifacts differ from origin/main", async () => {
+  const fixture = await createSupervisorFixture({
+    codexScriptLines: [
+      "#!/bin/sh",
+      "set -eu",
+      "echo unexpected codex invocation >&2",
+      "exit 99",
+      "",
+    ],
+  });
+  const issueNumber = 92;
+  const branch = branchName(fixture.config, issueNumber);
+  const workspace = path.join(fixture.workspaceRoot, `issue-${issueNumber}`);
+  const journalPath = path.join(workspace, ".codex-supervisor", "issue-journal.md");
+  const replayArtifactPath = path.join(workspace, ".codex-supervisor", "replay", "decision-cycle-snapshot.json");
+
+  git(["clone", fixture.repoPath, workspace]);
+  git(["checkout", "-b", branch], workspace);
+  await fs.mkdir(path.dirname(replayArtifactPath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n", "utf8");
+  await fs.writeFile(replayArtifactPath, "{\n  \"kind\": \"replay\"\n}\n", "utf8");
+
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "stabilizing",
+        branch,
+        workspace,
+        journal_path: journalPath,
+        pr_number: null,
+        codex_session_id: "stale-session",
+        implementation_attempt_count: 2,
+        last_error:
+          "Issue #92 re-entered stale stabilizing recovery without a tracked PR; the supervisor will retry while the repeat count remains below 3.",
+        last_failure_context: {
+          category: "blocked",
+          summary:
+            "Issue #92 re-entered stale stabilizing recovery without a tracked PR; the supervisor will retry while the repeat count remains below 3.",
+          signature: "stale-stabilizing-no-pr-recovery-loop",
+          command: null,
+          details: [
+            "state=stabilizing",
+            "tracked_pr=none",
+            "branch_state=recoverable",
+            "repeat_count=1/3",
+            "operator_action=confirm whether the implementation already landed elsewhere or retarget the tracked issue manually",
+          ],
+          url: null,
+          updated_at: "2026-03-13T00:00:00.000Z",
+        },
+        last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
+        repeated_failure_signature_count: 1,
+        stale_stabilizing_no_pr_recovery_count: 1,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Treat replay artifacts as supervisor-owned stale cleanup noise",
+    body: executionReadyBody("Treat replay artifacts as supervisor-owned stale cleanup noise."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: false });
+  assert.match(
+    message,
+    /recovery issue=#92 reason=already_satisfied_on_main: marked issue #92 done after stale stabilizing recovery found no meaningful branch changes/,
+  );
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)]!;
+  assert.equal(persisted.activeIssueNumber, null);
+  assert.equal(record.state, "done");
+  assert.equal(record.pr_number, null);
+  assert.equal(record.codex_session_id, null);
+  assert.equal(record.blocked_reason, null);
+  assert.equal(record.last_error, null);
+  assert.equal(record.last_failure_context, null);
+  assert.equal(record.last_failure_signature, null);
+  assert.equal(record.repeated_failure_signature_count, 0);
+  assert.equal(record.stale_stabilizing_no_pr_recovery_count, 0);
 });
 
 test("runOnce returns no matching issue when no runnable candidate is available", async () => {

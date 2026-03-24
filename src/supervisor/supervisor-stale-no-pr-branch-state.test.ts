@@ -187,3 +187,26 @@ test("classifyStaleStabilizingNoPrBranchState returns recoverable when the branc
 
   assert.equal(result, "recoverable");
 });
+
+test("classifyStaleStabilizingNoPrBranchState ignores supervisor-owned replay artifacts", async () => {
+  const { repoPath, rootPath } = await createRepositoryWithOrigin();
+  const journalPath = path.join(repoPath, ".codex-supervisor", "issue-journal.md");
+  const replayArtifactPath = path.join(repoPath, ".codex-supervisor", "replay", "decision-cycle-snapshot.json");
+  await fs.mkdir(path.dirname(replayArtifactPath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n");
+  await fs.writeFile(replayArtifactPath, "{\n  \"kind\": \"replay\"\n}\n");
+
+  const supervisor = new Supervisor(
+    createConfig({
+      repoPath,
+      workspaceRoot: rootPath,
+    }),
+  );
+
+  const result = await classifyStaleStabilizingNoPrBranchState(supervisor, {
+    workspace: repoPath,
+    journal_path: journalPath,
+  });
+
+  assert.equal(result, "already_satisfied_on_main");
+});

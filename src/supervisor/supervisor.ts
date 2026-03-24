@@ -413,6 +413,10 @@ export class Supervisor {
   ): Promise<"recoverable" | "already_satisfied_on_main"> {
     const journalPath = record.journal_path ?? issueJournalPath(record.workspace, this.config.issueJournalRelativePath);
     const journalRelativePath = path.relative(record.workspace, journalPath).replace(/\\/g, "/");
+    const isIgnoredSupervisorArtifact = (relativePath: string): boolean =>
+      relativePath === journalRelativePath
+      || relativePath === ".codex-supervisor/replay"
+      || relativePath.startsWith(".codex-supervisor/replay/");
     const gitProbeTimeoutMs = this.config.codexExecTimeoutMinutes * 60_000;
 
     try {
@@ -430,13 +434,13 @@ export class Supervisor {
       const meaningfulBaseDiff = baseDiffResult.stdout
         .split("\n")
         .map((line) => line.trim())
-        .filter((line) => line.length > 0 && line !== journalRelativePath);
+        .filter((line) => line.length > 0 && !isIgnoredSupervisorArtifact(line));
       const meaningfulWorkspaceChanges = workspaceStatusResult.stdout
         .split("\n")
         .map((line) => line.trim())
         .filter((line) => line.length > 0)
         .map((line) => line.replace(/^[ MADRCU?!]{2}\s+/, ""))
-        .filter((line) => line.length > 0 && line !== journalRelativePath);
+        .filter((line) => line.length > 0 && !isIgnoredSupervisorArtifact(line));
 
       return meaningfulBaseDiff.length === 0 && meaningfulWorkspaceChanges.length === 0
         ? "already_satisfied_on_main"

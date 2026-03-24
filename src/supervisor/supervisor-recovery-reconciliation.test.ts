@@ -689,7 +689,7 @@ test("reconcileStaleActiveIssueReservation blocks a repeated stale stabilizing n
   );
 });
 
-test("reconcileStaleActiveIssueReservation converges already-satisfied-on-main stale stabilizing no-PR recovery to an explicit manual stop", async () => {
+test("reconcileStaleActiveIssueReservation converges already-satisfied-on-main stale stabilizing no-PR recovery to done", async () => {
   const config = createConfig();
   const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
   const state: SupervisorStateFile = {
@@ -735,31 +735,21 @@ test("reconcileStaleActiveIssueReservation converges already-satisfied-on-main s
   });
 
   assert.equal(state.activeIssueNumber, null);
-  assert.equal(state.issues["366"]?.state, "blocked");
+  assert.equal(state.issues["366"]?.state, "done");
   assert.equal(state.issues["366"]?.pr_number, null);
   assert.equal(state.issues["366"]?.codex_session_id, null);
-  assert.equal(state.issues["366"]?.blocked_reason, "manual_review");
-  assert.equal(
-    state.issues["366"]?.last_failure_signature,
-    "stale-stabilizing-no-pr-recovery-loop",
-  );
-  assert.equal(
-    state.issues["366"]?.repeated_failure_signature_count,
-    0,
-  );
-  assert.equal(
-    state.issues["366"]?.stale_stabilizing_no_pr_recovery_count,
-    config.sameFailureSignatureRepeatLimit,
-  );
-  assert.match(
-    state.issues["366"]?.last_error ?? "",
-    /already satisfied on origin\/main/i,
-  );
+  assert.equal(state.issues["366"]?.blocked_reason, null);
+  assert.equal(state.issues["366"]?.last_error, null);
+  assert.equal(state.issues["366"]?.last_failure_kind, null);
+  assert.equal(state.issues["366"]?.last_failure_context, null);
+  assert.equal(state.issues["366"]?.last_failure_signature, null);
+  assert.equal(state.issues["366"]?.repeated_failure_signature_count, 0);
+  assert.equal(state.issues["366"]?.stale_stabilizing_no_pr_recovery_count, 0);
   assert.equal(saveCalls, 1);
   assert.equal(recoveryEvents.length, 1);
   assert.match(
     formatRecoveryLog(recoveryEvents) ?? "",
-    /recovery issue=#366 reason=stale_state_manual_stop: blocked issue #366 after repeated stale stabilizing recovery without a tracked PR/,
+    /recovery issue=#366 reason=already_satisfied_on_main: marked issue #366 done after stale stabilizing recovery found no meaningful branch changes/,
   );
 });
 
