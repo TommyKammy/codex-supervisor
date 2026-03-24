@@ -18,11 +18,13 @@ Addressing the remaining review feedback in `src/core/journal.ts`. The durable j
 
 Added focused regressions in `src/journal.test.ts` for inline assignments, Markdown links, quoted spaced paths, and broader local absolute roots. I also normalized tracked sample-path literals in `src/journal.test.ts` and this journal so the durable-path policy check passes again.
 
-Summary: Implemented the review fixes for journal path normalization, added focused regression coverage, normalized the tracked durable text, and reran the focused verification set successfully.
-State hint: addressing_review
+Committed the review fix as `d418fc2` and pushed it to `codex/issue-950`, updating PR #965 with the repaired sanitizer and regression coverage.
+
+Summary: Implemented and pushed the review fixes for journal path normalization, added focused regression coverage, normalized the tracked durable text, and reran the focused verification set successfully.
+State hint: waiting_ci
 Blocked reason: none
 Tests: `npx tsx --test src/journal.test.ts`; `npx tsc --noEmit`; `npx tsx --test src/workstation-local-path-detector.test.ts`; `npm run verify:paths`
-Next action: Commit and push the review fix to PR #965, then resolve the remaining automated review threads.
+Next action: Wait for PR #965 checks on head `d418fc2`, then resolve the remaining automated review threads if the remote build stays green.
 Failure signature: none
 
 ## Active Failure Context
@@ -30,13 +32,13 @@ Failure signature: none
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the two review threads are valid, and the current patch should be ready to land once the PR branch is updated with the now-green focused verification set.
-- What changed: patched `src/core/journal.ts` to sanitize inline absolute-path substrings and broader local roots, added focused regression tests in `src/journal.test.ts`, and normalized tracked durable-path text in fixtures and this journal so the focused verification set passes.
+- Hypothesis: the two review threads are valid, and the pushed patch on head `d418fc2` should satisfy them unless CI exposes a platform-specific edge case.
+- What changed: patched `src/core/journal.ts` to sanitize inline absolute-path substrings and broader local roots, added focused regression tests in `src/journal.test.ts`, normalized tracked durable-path text in fixtures and this journal, committed the fix, and pushed it to the PR branch.
 - Current blocker: none.
-- Next exact step: commit and push the review fix, then resolve the remaining automated review threads on PR #965.
+- Next exact step: monitor PR #965 checks for head `d418fc2`, then resolve the automated review threads if the branch stays green.
 - Verification gap: none.
 - Files touched: `src/core/journal.ts`, `src/journal.test.ts`, `.codex-supervisor/issue-journal.md`.
 - Rollback concern: low; the change only affects journal path normalization heuristics, regression fixtures, and durable notes.
-- Last focused command: `npx tsx --test src/workstation-local-path-detector.test.ts`
+- Last focused command: `git push origin codex/issue-950`
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
