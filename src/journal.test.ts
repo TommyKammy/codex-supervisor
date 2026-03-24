@@ -115,6 +115,163 @@ test("syncIssueJournal writes workspace metadata as workspace-relative paths", a
   assert.doesNotMatch(content, new RegExp(tempDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
+test("syncIssueJournal normalizes absolute local paths before writing durable content", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-path-normalization-"));
+  const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
+  const repoFilePath = path.join(tempDir, "src", "journal.ts");
+  const hostOnlyPath = ["", "home", "alice", ".config", "codex", "history.log"].join("/");
+
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    `# Issue #177: Structured handoff: define a clearer issue journal schema
+
+## Codex Working Notes
+### Current Handoff
+- What changed: Investigated ${repoFilePath} and ${hostOnlyPath}.
+
+### Scratchpad
+- Notes mention ${repoFilePath}.
+- Machine-local note: ${hostOnlyPath}
+`,
+    "utf8",
+  );
+
+  await syncIssueJournal({
+    issue,
+    record: createRecord({
+      workspace: tempDir,
+      journal_path: journalPath,
+      last_codex_summary: `Summary: Reproduced in ${repoFilePath} with extra context from ${hostOnlyPath}`,
+      last_failure_context: {
+        category: "manual",
+        summary: `Path leak persisted through ${repoFilePath}`,
+        signature: "journal-path-leak",
+        command: `cat ${repoFilePath} ${hostOnlyPath}`,
+        url: "https://example.test/issues/177",
+        details: [
+          `Repo file: ${repoFilePath}`,
+          `Host file: ${hostOnlyPath}`,
+        ],
+        updated_at: "2026-03-14T00:00:00Z",
+      },
+    }),
+    journalPath,
+  });
+
+  const content = await fs.readFile(journalPath, "utf8");
+  assert.doesNotMatch(content, new RegExp(tempDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.doesNotMatch(content, new RegExp(hostOnlyPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(content, /src\/journal\.ts/);
+  assert.match(content, /<redacted-local-path>/);
+});
+
+test("syncIssueJournal normalizes inline absolute path substrings and quoted spaced paths", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-inline-paths-"));
+  const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
+  const repoFilePath = path.join(tempDir, "docs", "Alice Smith", "guide.md");
+  const hostOnlyPath = ["", "Users", "Alice Smith", "log.txt"].join("/");
+
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    `# Issue #177: Structured handoff: define a clearer issue journal schema
+
+## Codex Working Notes
+### Current Handoff
+- What changed: Captured path=${repoFilePath} and [guide](${repoFilePath}).
+
+### Scratchpad
+- Quoted host path: "${hostOnlyPath}".
+`,
+    "utf8",
+  );
+
+  await syncIssueJournal({
+    issue,
+    record: createRecord({
+      workspace: tempDir,
+      journal_path: journalPath,
+      last_codex_summary: `Summary: path=${repoFilePath} [guide](${repoFilePath}) "${hostOnlyPath}"`,
+      last_failure_context: {
+        category: "manual",
+        summary: `Inline path path=${repoFilePath}`,
+        signature: "journal-inline-paths",
+        command: `cat path=${repoFilePath}`,
+        url: "https://example.test/issues/177",
+        details: [
+          `[guide](${repoFilePath})`,
+          `"${hostOnlyPath}"`,
+        ],
+        updated_at: "2026-03-14T00:00:00Z",
+      },
+    }),
+    journalPath,
+  });
+
+  const content = await fs.readFile(journalPath, "utf8");
+  assert.doesNotMatch(content, new RegExp(tempDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.doesNotMatch(content, new RegExp(hostOnlyPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(content, /path=docs\/Alice Smith\/guide\.md/);
+  assert.match(content, /\[guide\]\(docs\/Alice Smith\/guide\.md\)/);
+  assert.match(content, /"<redacted-local-path>"/);
+});
+
+test("syncIssueJournal redacts broader non-portable absolute path roots", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-nonportable-roots-"));
+  const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
+  const nonPortablePaths = [
+    ["", "tmp", "codex", "run.log"].join("/"),
+    ["", "private", "var", "folders", "aa", "bb", "cache.txt"].join("/"),
+    ["", "mnt", "c", "Users", "Alice", "report.txt"].join("/"),
+    "C:/Codex/log.txt",
+  ];
+
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    `# Issue #177: Structured handoff: define a clearer issue journal schema
+
+## Codex Working Notes
+### Current Handoff
+- What changed: Checked ${nonPortablePaths.join(" and ")}.
+
+### Scratchpad
+- Host notes: ${nonPortablePaths.join(" | ")}
+`,
+    "utf8",
+  );
+
+  await syncIssueJournal({
+    issue,
+    record: createRecord({
+      workspace: tempDir,
+      journal_path: journalPath,
+      last_codex_summary: `Summary: ${nonPortablePaths.join(" | ")}`,
+      last_failure_context: {
+        category: "manual",
+        summary: `Leaked local paths ${nonPortablePaths.join(" and ")}`,
+        signature: "journal-nonportable-roots",
+        command: `cat ${nonPortablePaths.join(" ")}`,
+        url: "https://example.test/issues/177",
+        details: nonPortablePaths,
+        updated_at: "2026-03-14T00:00:00Z",
+      },
+    }),
+    journalPath,
+  });
+
+  const content = await fs.readFile(journalPath, "utf8");
+  for (const candidate of nonPortablePaths) {
+    assert.doesNotMatch(content, new RegExp(candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+
+  assert.ok(
+    (content.match(/<redacted-local-path>/g) ?? []).length >= nonPortablePaths.length,
+    "expected broader local absolute path roots to be redacted",
+  );
+});
+
 test("syncIssueJournal preserves legacy handoff content by normalizing old field names", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-legacy-"));
   const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");

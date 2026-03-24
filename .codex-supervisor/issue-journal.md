@@ -1,91 +1,50 @@
-# Issue #949: Path hygiene command: expose the focused path check as `npm run verify:paths`
+# Issue #950: Issue journal normalization: redact or normalize local absolute paths before writing durable output
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/949
-- Branch: codex/issue-949
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/950
+- Branch: codex/issue-950
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 0d6ab50f7d0883fbfcc020c5b3ee3fdc63e2a769
+- Attempt count: 4 (implementation=2, repair=2)
+- Last head SHA: ab75cec48da893569361eafcb70952f1867c4957
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ852gXrK
+- Last failure signature: PRRT_kwDORgvdZ852hV_K|PRRT_kwDORgvdZ852hV_L
 - Repeated failure signature count: 1
-- Updated at: 2026-03-24T18:21:41+00:00
+- Updated at: 2026-03-24T19:54:36.607Z
 
 ## Latest Codex Summary
-Sanitized committed workstation-local absolute paths out of [issue-journal.md](.codex-supervisor/issue-journal.md) so the new `npm run verify:paths` command no longer fails on the repository's own durable journal content.
+Addressing the remaining review feedback in `src/core/journal.ts`. The durable journal sanitizer now targets inline absolute-path substrings such as `path=<redacted-local-path>` and Markdown links, and it broadens non-portable local-root detection while preserving in-repo paths as repo-relative text.
 
-The implementation from PR [#964](https://github.com/TommyKammy/codex-supervisor/pull/964) remains unchanged. This repair only updates the committed journal text so the focused path-hygiene verifier stays self-consistent with the repository contents.
+Added focused regressions in `src/journal.test.ts` for inline assignments, Markdown links, quoted spaced paths, and broader local absolute roots. I also normalized tracked sample-path literals in `src/journal.test.ts` and this journal so the durable-path policy check passes again.
 
-Summary: Removed workstation-local absolute paths from the committed issue journal so `npm run verify:paths` passes on the current tree without excluding `.codex-supervisor/issue-journal.md`.
-State hint: local_review_fix
+Committed the implementation fix, refreshed this journal handoff in follow-up commits, and pushed the updates to `codex/issue-950`, updating PR #965 with the repaired sanitizer, regression coverage, and current local status.
+
+Summary: Implemented and pushed the review fixes for journal path normalization, added focused regression coverage, normalized the tracked durable text, synced the journal handoff, and reran the focused verification set successfully.
+State hint: waiting_ci
 Blocked reason: none
-Tests: `npm run verify:paths`
-Next action: Push the journal-sanitization review fix to PR #964, resolve the addressed review thread, and monitor for any additional review or CI follow-up.
+Tests: `npx tsx --test src/journal.test.ts`; `npx tsc --noEmit`; `npx tsx --test src/workstation-local-path-detector.test.ts`; `npm run verify:paths`
+Next action: Wait for PR #965 checks on the latest pushed branch head, then resolve the remaining automated review threads if the remote build stays green.
 Failure signature: none
 
 ## Active Failure Context
-- None recorded.
+- Category: checks
+- Summary: PR #965 checks are pending on the latest pushed branch head.
+- Command or source: `gh pr checks 965`
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/965
+- Details:
+  - build (ubuntu-latest) (pending)
+  - build (macos-latest) (pending)
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining review thread is satisfied by keeping the implementation unchanged and removing workstation-local absolute paths from the committed journal so `npm run verify:paths` stays focused, self-consistent, and independent from `build` and `test`.
-- What changed: sanitized durable journal references that embedded workstation-local absolute paths, preserving the review history with relative links and placeholders instead of broadening `DEFAULT_EXCLUDED_PATHS`.
+- Hypothesis: the two review threads are valid, and the pushed patch should satisfy them unless CI exposes a platform-specific edge case.
+- What changed: patched `src/core/journal.ts` to sanitize inline absolute-path substrings and broader local roots, added focused regression tests in `src/journal.test.ts`, normalized tracked durable-path text in fixtures and this journal, committed the implementation fix plus journal handoff updates, and pushed them to the PR branch.
 - Current blocker: none.
-- Next exact step: push the repair commit, resolve the addressed CodeRabbit thread if possible, and watch PR #964 for any follow-up.
+- Next exact step: monitor PR #965 checks for the latest pushed branch head, then resolve the automated review threads if the branch stays green.
 - Verification gap: none.
-- Files touched: [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md).
-- Rollback concern: low; the repair only rewrites journal text and does not change the detector or npm scripts.
-- Last focused command: `npm run verify:paths`
-- Last focused failure: `npm run verify:paths` failed on the current tree because [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) still contained committed workstation-local absolute paths in the persisted summary, copied review text, and command log.
-- Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/964
-- Last focused commands:
-```bash
-sed -n '1,220p' <memory-root>/TommyKammy-codex-supervisor/issue-949/AGENTS.generated.md
-sed -n '1,220p' <memory-root>/TommyKammy-codex-supervisor/issue-949/context-index.md
-sed -n '1,260p' .codex-supervisor/issue-journal.md
-git status --short --branch
-sed -n '1,240p' package.json
-sed -n '1,260p' scripts/check-workstation-local-paths.ts
-sed -n '1,280p' src/workstation-local-path-detector.test.ts
-npm run verify:paths
-rg -n "verify:paths|check-workstation-local-paths|pre-PR|pre PR|build|test" README.md docs/getting-started.md src scripts package.json
-sed -n '236,272p' docs/getting-started.md
-sed -n '40,70p' README.md
-sed -n '1,220p' src/readme-docs.test.ts
-sed -n '1,220p' src/getting-started-docs.test.ts
-npx tsx --test src/workstation-local-path-detector.test.ts
-npx tsx --test src/getting-started-docs.test.ts
-ls node_modules/.bin/tsx
-test -f package-lock.json && echo yes || echo no
-npm install
-npm run verify:paths
-tmpdir=$(mktemp -d)
-git -C "$tmpdir" init -b main >/dev/null
-git -C "$tmpdir" config user.name 'Codex Supervisor'
-git -C "$tmpdir" config user.email 'codex@example.test'
-printf '# fixture\n' > "$tmpdir/README.md"
-git -C "$tmpdir" add README.md
-git -C "$tmpdir" commit -m seed >/dev/null
-npm run verify:paths -- --workspace "$tmpdir"
-printf 'Workspace note: <forbidden-local-absolute-path>\n' > "$tmpdir/README.md"
-npm run verify:paths -- --workspace "$tmpdir"
-git diff -- src/workstation-local-path-detector.test.ts src/getting-started-docs.test.ts docs/getting-started.md package.json
-git rev-parse HEAD
-date -Iseconds -u
-git add package.json docs/getting-started.md src/getting-started-docs.test.ts src/workstation-local-path-detector.test.ts .codex-supervisor/issue-journal.md
-git commit -m "Expose verify:paths command"
-git push -u origin codex/issue-949
-gh pr view --json url,isDraft,state,headRefName
-gh pr create --draft --base main --head codex/issue-949 --title "Expose verify:paths command" --body ...
-nl -ba .codex-supervisor/issue-journal.md | sed -n '14,90p'
-date -Iseconds -u
-git diff -- .codex-supervisor/issue-journal.md
-rg -n '<workstation-home-pattern>' .codex-supervisor/issue-journal.md
-npm run verify:paths
-nl -ba .codex-supervisor/issue-journal.md | sed -n '1,120p'
-git diff --stat
-```
+- Files touched: `src/core/journal.ts`, `src/journal.test.ts`, `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; the change only affects journal path normalization heuristics, regression fixtures, and durable notes.
+- Last focused command: `gh pr checks 965`
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
