@@ -17,22 +17,30 @@ export function renderSupervisorDashboardPage(): string {
     <style>
       :root {
         color-scheme: light;
-        --bg: #f4f7fb;
-        --bg-accent: #e3ebf5;
-        --surface: rgba(252, 253, 255, 0.94);
-        --surface-muted: #f6f9fc;
-        --surface-strong: #fcfdff;
-        --border: rgba(31, 46, 68, 0.1);
-        --border-strong: rgba(31, 46, 68, 0.16);
-        --text: #182132;
-        --muted: #5f6b81;
-        --danger: #a33a2b;
-        --warn: #8f6118;
-        --ok: #1d6b54;
-        --accent: #4a5fb4;
-        --accent-strong: #37498e;
-        --shadow: 0 18px 40px rgba(40, 58, 92, 0.08);
-        font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+        --bg: #f3f5f8;
+        --sidebar: #2a3f54;
+        --sidebar-deep: #1d2b38;
+        --sidebar-text: rgba(233, 239, 245, 0.92);
+        --sidebar-muted: rgba(203, 214, 226, 0.68);
+        --topbar: rgba(255, 255, 255, 0.92);
+        --surface: #ffffff;
+        --surface-soft: #fafbfd;
+        --surface-muted: #f5f7fa;
+        --border: #e3e8ef;
+        --border-strong: #d1d9e6;
+        --text: #2a3f54;
+        --muted: #73879c;
+        --accent: #1abb9c;
+        --accent-strong: #169f84;
+        --ok: #1d8f74;
+        --warn: #c58b1a;
+        --danger: #d9534f;
+        --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06);
+        --shadow-md: 0 10px 24px rgba(15, 23, 42, 0.08);
+        --radius-lg: 18px;
+        --radius-md: 14px;
+        --radius-sm: 10px;
+        font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
       }
 
       * {
@@ -44,138 +52,276 @@ export function renderSupervisorDashboardPage(): string {
         min-height: 100vh;
         color: var(--text);
         background:
-          radial-gradient(circle at top left, rgba(74, 95, 180, 0.09), transparent 34%),
-          radial-gradient(circle at top right, rgba(42, 122, 140, 0.08), transparent 28%),
-          linear-gradient(180deg, var(--bg) 0%, #edf3f9 100%);
+          radial-gradient(circle at top right, rgba(26, 187, 156, 0.09), transparent 24%),
+          linear-gradient(180deg, #f7f9fc 0%, var(--bg) 100%);
       }
 
-      .shell {
-        width: min(1180px, calc(100vw - 32px));
-        margin: 0 auto;
-        padding: 24px 0 40px;
+      .app-shell {
+        display: grid;
+        grid-template-columns: 280px minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        gap: 24px;
+        padding: 24px 20px;
+        color: var(--sidebar-text);
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
+          linear-gradient(180deg, var(--sidebar) 0%, var(--sidebar-deep) 100%);
+        border-right: 1px solid rgba(255, 255, 255, 0.06);
+      }
+
+      .brand {
+        display: grid;
+        gap: 6px;
+      }
+
+      .brand-kicker,
+      .nav-label,
+      .stat-label,
+      .section-kicker,
+      .panel-header h2,
+      .row-label {
+        margin: 0;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .brand-kicker,
+      .nav-label,
+      .section-kicker,
+      .panel-header h2,
+      .row-label {
+        color: var(--muted);
+      }
+
+      .brand-title {
+        margin: 0;
+        font-size: 1.55rem;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+      }
+
+      .brand-note,
+      .nav-item small,
+      .workspace-card p,
+      .hero-copy p,
+      .section-lead,
+      .panel-subtitle,
+      .action-card p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .brand-note {
+        color: var(--sidebar-muted);
+      }
+
+      .nav-block {
+        display: grid;
+        gap: 10px;
+      }
+
+      .nav-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .nav-item {
+        display: grid;
+        gap: 4px;
+        padding: 12px 14px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .nav-item strong {
+        color: var(--sidebar-text);
+        font-size: 0.96rem;
+      }
+
+      .nav-item small {
+        color: var(--sidebar-muted);
+      }
+
+      .workspace-card {
+        display: grid;
+        gap: 10px;
+        padding: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.05);
+      }
+
+      .workspace-card strong {
+        font-size: 1rem;
+      }
+
+      .workspace-card p {
+        color: var(--sidebar-muted);
+      }
+
+      .sidebar-footer {
+        color: var(--sidebar-muted);
+        font-size: 0.82rem;
+      }
+
+      .content {
+        min-width: 0;
+        padding: 18px;
+      }
+
+      .topbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 18px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--topbar);
+        box-shadow: var(--shadow-sm);
+        backdrop-filter: blur(10px);
+      }
+
+      .topbar-title {
+        display: grid;
+        gap: 4px;
+      }
+
+      .topbar-title h1 {
+        margin: 0;
+        font-size: 1.65rem;
+        letter-spacing: -0.03em;
+      }
+
+      .topbar-title p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      .topbar-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .topbar-pill {
+        padding: 10px 14px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .page {
+        display: grid;
+        gap: 18px;
+        margin-top: 18px;
       }
 
       .hero {
         display: grid;
-        gap: 20px;
-        padding: 28px;
-        border: 1px solid var(--border);
-        border-radius: 28px;
-        background:
-          linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(244, 248, 253, 0.98)),
-          linear-gradient(135deg, rgba(74, 95, 180, 0.05), rgba(42, 122, 140, 0.04));
-        box-shadow: var(--shadow);
+        grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.9fr);
+        gap: 18px;
       }
 
-      .hero-body {
-        display: grid;
-        grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.9fr);
-        gap: 20px;
-        align-items: start;
+      .hero-card,
+      .summary-card,
+      .stat-card,
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--surface);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .hero-card,
+      .summary-card {
+        padding: 20px 22px;
       }
 
       .hero-copy {
         display: grid;
-        gap: 12px;
-      }
-
-      .hero-eyebrow {
-        color: var(--accent);
-        font-size: 0.8rem;
-        font-weight: 700;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-      }
-
-      .hero h1 {
-        margin: 0;
-        font-family: "Iowan Old Style", "Palatino Linotype", serif;
-        font-size: clamp(2.2rem, 4vw, 3.4rem);
-        line-height: 0.94;
-        letter-spacing: -0.04em;
-      }
-
-      .hero p {
-        margin: 0;
-        max-width: 64ch;
-        color: var(--muted);
-        font-size: 1rem;
-        line-height: 1.6;
-      }
-
-      .hero-summary {
-        display: grid;
-        gap: 12px;
-        padding: 18px;
-        border: 1px solid var(--border);
-        border-radius: 22px;
-        background:
-          linear-gradient(180deg, rgba(249, 251, 255, 0.98), rgba(242, 247, 252, 0.96));
-      }
-
-      .hero-summary-label {
-        margin: 0;
-        color: var(--muted);
-        font-size: 0.76rem;
-        font-weight: 700;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-      }
-
-      .hero-bar {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
         gap: 10px;
       }
 
-      .badge {
-        display: grid;
-        gap: 6px;
-        min-height: 88px;
-        padding: 14px 16px;
-        border-radius: 18px;
-        border: 1px solid var(--border);
-        background: var(--surface-strong);
-        color: var(--muted);
-        font-size: 0.8rem;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
+      .hero-copy h2 {
+        margin: 0;
+        font-size: clamp(2rem, 4vw, 3rem);
+        line-height: 1;
+        letter-spacing: -0.045em;
       }
 
-      .badge strong {
+      .summary-card {
+        display: grid;
+        gap: 10px;
+        background: linear-gradient(180deg, #ffffff, #f8fbfd);
+      }
+
+      .summary-card strong {
+        font-size: 1.25rem;
+      }
+
+      .summary-list {
+        display: grid;
+        gap: 10px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .summary-list li {
+        color: var(--muted);
+      }
+
+      .summary-list strong {
+        display: block;
+        margin-bottom: 2px;
+        font-size: 0.95rem;
         color: var(--text);
-        font-size: 1.05rem;
-        letter-spacing: -0.01em;
-        text-transform: none;
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .stat-card {
+        display: grid;
+        gap: 8px;
+        padding: 18px;
+      }
+
+      .stat-label {
+        color: var(--muted);
+      }
+
+      .stat-card strong {
+        font-size: 1.35rem;
+        letter-spacing: -0.03em;
+        word-break: break-word;
       }
 
       .dashboard-section {
         display: grid;
-        gap: 16px;
-        margin-top: 24px;
+        gap: 14px;
       }
 
       .section-header {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-        align-items: end;
-        justify-content: space-between;
-      }
-
-      .section-heading {
         display: grid;
         gap: 6px;
-      }
-
-      .section-kicker {
-        margin: 0;
-        color: var(--accent);
-        font-size: 0.8rem;
-        font-weight: 700;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
+        padding: 0 2px;
       }
 
       .section-header h2 {
@@ -184,42 +330,21 @@ export function renderSupervisorDashboardPage(): string {
         letter-spacing: -0.03em;
       }
 
-      .section-lead {
-        margin: 0;
-        max-width: 70ch;
-        color: var(--muted);
-        font-size: 0.95rem;
-        line-height: 1.5;
-      }
-
-      .visually-hidden {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        margin: -1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border: 0;
-      }
-
-      .grid {
+      .overview-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        grid-template-columns: minmax(0, 1.45fr) minmax(320px, 1fr);
+        gap: 16px;
+      }
+
+      .details-grid {
+        display: grid;
+        grid-template-columns: repeat(12, minmax(0, 1fr));
         gap: 16px;
       }
 
       .panel {
-        border: 1px solid var(--border);
-        border-radius: 20px;
-        background: var(--surface);
-        box-shadow: 0 10px 24px rgba(40, 58, 92, 0.05);
+        min-width: 0;
         overflow: hidden;
-        transition:
-          box-shadow 140ms ease,
-          border-color 140ms ease,
-          transform 140ms ease;
       }
 
       .panel-shell {
@@ -232,116 +357,23 @@ export function renderSupervisorDashboardPage(): string {
         flex-wrap: wrap;
         justify-content: space-between;
         gap: 12px;
-        align-items: flex-start;
-        padding: 18px 20px 12px;
-        border-bottom: 1px solid rgba(31, 46, 68, 0.08);
-        background: linear-gradient(180deg, rgba(249, 251, 255, 0.94), rgba(244, 248, 252, 0.82));
+        align-items: start;
+        padding: 16px 18px 14px;
+        border-bottom: 1px solid var(--border);
+        background: linear-gradient(180deg, #ffffff, #fbfcfe);
       }
 
-      .panel-header-main {
-        display: flex;
-        align-items: flex-start;
-        gap: 12px;
-        min-width: min(320px, 100%);
-        flex: 1 1 320px;
-      }
-
-      .panel-drag-slot {
-        width: 36px;
-        min-width: 36px;
-        height: 36px;
-      }
-
-      .panel-drag-handle {
-        width: 100%;
-        height: 100%;
-        border-radius: 12px;
-        border: 1px dashed rgba(31, 46, 68, 0.14);
-        background:
-          linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(232, 239, 248, 0.86)),
-          repeating-linear-gradient(
-            90deg,
-            transparent 0,
-            transparent 7px,
-            rgba(31, 46, 68, 0.07) 7px,
-            rgba(31, 46, 68, 0.07) 10px
-          );
-        color: var(--muted);
-        cursor: grab;
-        font: inherit;
-        transition:
-          border-color 140ms ease,
-          background 140ms ease,
-          box-shadow 140ms ease,
-          transform 140ms ease;
-      }
-
-      .panel-drag-handle:hover {
-        border-color: rgba(74, 95, 180, 0.35);
-        background:
-          linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(232, 239, 248, 0.94)),
-          repeating-linear-gradient(
-            90deg,
-            transparent 0,
-            transparent 7px,
-            rgba(74, 95, 180, 0.11) 7px,
-            rgba(74, 95, 180, 0.11) 10px
-          );
-      }
-
-      .panel-drag-handle:active {
-        cursor: grabbing;
-      }
-
-      .panel-drag-handle:focus-visible {
-        outline: none;
-        border-color: rgba(74, 95, 180, 0.44);
-        box-shadow: 0 0 0 3px rgba(74, 95, 180, 0.16);
-      }
-
-      .panel-drag-handle span {
-        display: block;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        transform: translateY(-1px);
-      }
-
-      .panel.drag-active {
-        border-radius: 12px;
-        border-color: rgba(74, 95, 180, 0.28);
-        box-shadow: 0 0 0 2px rgba(74, 95, 180, 0.18);
-        transform: translateY(-2px);
-      }
-
-      .panel.drop-target {
-        border-color: rgba(74, 95, 180, 0.34);
-        box-shadow:
-          0 0 0 2px rgba(74, 95, 180, 0.2),
-          0 14px 24px rgba(74, 95, 180, 0.08);
-      }
-
-      .panel.drop-target .panel-drag-handle {
-        border-color: rgba(74, 95, 180, 0.4);
-        box-shadow: 0 0 0 2px rgba(74, 95, 180, 0.12);
-      }
-
+      .panel-header-main,
       .panel-heading {
         display: grid;
         gap: 4px;
-      }
-
-      .panel-subtitle {
-        margin: 0;
-        color: var(--muted);
-        font-size: 0.92rem;
-        line-height: 1.45;
+        min-width: 0;
       }
 
       .panel-header-aside {
         display: grid;
-        gap: 10px;
+        gap: 8px;
         justify-items: end;
-        flex: 0 1 auto;
         min-width: 0;
       }
 
@@ -349,58 +381,69 @@ export function renderSupervisorDashboardPage(): string {
       .panel-header-actions {
         display: flex;
         flex-wrap: wrap;
-        gap: 10px;
+        gap: 8px;
         justify-content: flex-end;
       }
 
-      .panel-header h2 {
-        margin: 0;
-        font-size: 0.9rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-      }
-
       .panel-body {
-        padding: 0 20px 20px;
+        padding: 18px;
       }
 
-      .panel-empty-state {
-        color: var(--muted);
+      #panel-issue-details {
+        grid-column: span 7;
+      }
+
+      #panel-tracked-history {
+        grid-column: span 5;
+      }
+
+      #panel-operator-actions {
+        grid-column: span 4;
+      }
+
+      #panel-live-events {
+        grid-column: span 4;
+      }
+
+      #panel-operator-timeline {
+        grid-column: span 4;
       }
 
       .metric {
-        font-size: 1.8rem;
+        font-size: 2rem;
+        line-height: 1;
         font-weight: 700;
+        letter-spacing: -0.04em;
       }
 
-      .metric.ok {
+      .metric.ok,
+      .live-value.ok {
         color: var(--ok);
       }
 
-      .metric.warn {
+      .metric.warn,
+      .live-value.warn {
         color: var(--warn);
       }
 
-      .metric.fail {
+      .metric.fail,
+      .live-value.fail,
+      .danger {
         color: var(--danger);
       }
 
-      .stack {
+      .panel-empty-state,
+      .hint {
+        color: var(--muted);
+      }
+
+      .stack,
+      .row,
+      .detail-stack,
+      .detail-list,
+      .event-list {
         display: grid;
         gap: 10px;
-      }
-
-      .row {
-        display: grid;
-        gap: 6px;
-      }
-
-      .row-label {
-        color: var(--muted);
-        font-size: 0.85rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
       }
 
       .list {
@@ -409,18 +452,20 @@ export function renderSupervisorDashboardPage(): string {
       }
 
       .list li + li {
-        margin-top: 6px;
+        margin-top: 8px;
       }
 
       .code,
-      pre {
+      pre,
+      .detail-empty {
         margin: 0;
-        border-radius: 14px;
-        padding: 14px;
-        background: #1f1d1a;
-        color: #f5f1ea;
+        padding: 14px 16px;
+        border: 0;
+        border-radius: var(--radius-sm);
+        background: #1f3042;
+        color: #edf3f9;
         overflow: auto;
-        font: 0.87rem/1.55 "Iosevka Term", "SFMono-Regular", monospace;
+        font: 0.86rem/1.55 "Consolas", "SFMono-Regular", monospace;
       }
 
       .toolbar {
@@ -430,54 +475,113 @@ export function renderSupervisorDashboardPage(): string {
         align-items: center;
       }
 
+      .toolbar input {
+        min-width: 180px;
+        padding: 11px 13px;
+        border: 1px solid var(--border-strong);
+        border-radius: 8px;
+        background: #fff;
+        color: var(--text);
+        font: inherit;
+      }
+
+      .toolbar button,
+      .action-card button,
+      .panel-header button,
+      .shortcut-button {
+        font: inherit;
+      }
+
+      .toolbar button,
+      .action-card button {
+        padding: 11px 15px;
+        border: 0;
+        border-radius: 999px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+        color: #fff;
+        cursor: pointer;
+      }
+
+      .toolbar button:hover,
+      .action-card button:hover {
+        filter: brightness(1.04);
+      }
+
+      .toolbar button:disabled,
+      .action-card button:disabled {
+        cursor: not-allowed;
+        opacity: 0.64;
+        filter: grayscale(0.2);
+      }
+
+      .panel-header button,
+      .shortcut-button {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #fff;
+        color: var(--text);
+        cursor: pointer;
+      }
+
+      .panel-header button {
+        padding: 8px 12px;
+      }
+
+      .panel-header button:hover,
+      .shortcut-button:hover {
+        border-color: #c8d2df;
+        background: var(--surface-soft);
+      }
+
+      .shortcut-button {
+        width: 100%;
+        padding: 12px 13px;
+        text-align: left;
+      }
+
+      .shortcut-list,
+      .detail-grid,
+      .action-grid {
+        display: grid;
+        gap: 10px;
+      }
+
       .shortcut-list {
-        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      }
+
+      .detail-grid,
+      .action-grid {
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 10px;
       }
 
-      .detail-stack {
-        display: grid;
-        gap: 10px;
+      .detail-card,
+      .action-card,
+      .event-item {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
       }
 
-      .detail-empty {
-        margin: 0;
-        border-radius: 14px;
+      .detail-card,
+      .action-card {
         padding: 14px;
-        background: #1f1d1a;
-        color: #f5f1ea;
-        font: 0.87rem/1.55 "Iosevka Term", "SFMono-Regular", monospace;
-      }
-
-      .detail-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 10px;
       }
 
       .detail-card {
         display: grid;
         gap: 8px;
-        padding: 14px;
-        border-radius: 16px;
-        border: 1px solid var(--border);
-        background: var(--surface-strong);
+        background: var(--surface-soft);
       }
 
-      .detail-card h3 {
+      .detail-card h3,
+      .action-card strong {
         margin: 0;
-        font-size: 0.95rem;
-      }
-
-      .detail-list {
-        display: grid;
-        gap: 6px;
+        font-size: 1rem;
       }
 
       .detail-item {
         color: var(--muted);
-        font-size: 0.9rem;
+        font-size: 0.92rem;
         line-height: 1.45;
       }
 
@@ -485,227 +589,205 @@ export function renderSupervisorDashboardPage(): string {
         color: var(--text);
       }
 
-      .shortcut-button {
-        width: 100%;
-        padding: 12px 14px;
-        border-radius: 14px;
-        border: 1px solid var(--border);
-        background: var(--surface-strong);
-        color: var(--text);
-        font: inherit;
-        text-align: left;
-        cursor: pointer;
-      }
-
-      .shortcut-button:hover {
-        border-color: rgba(74, 95, 180, 0.35);
-        background: rgba(247, 250, 255, 0.96);
-      }
-
-      .toolbar input {
-        min-width: 180px;
-        padding: 12px 14px;
-        border-radius: 12px;
-        border: 1px solid var(--border-strong);
-        background: var(--surface-strong);
-        color: var(--text);
-        font: inherit;
-      }
-
-      .toolbar button {
-        padding: 12px 16px;
-        border: 0;
-        border-radius: 12px;
-        background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-        color: white;
-        font: inherit;
-        cursor: pointer;
-      }
-
-      .toolbar button:hover {
-        filter: brightness(1.04);
-      }
-
-      .toolbar button:disabled {
-        cursor: not-allowed;
-        filter: grayscale(0.2);
-        opacity: 0.6;
-      }
-
-      .panel-header button {
-        padding: 10px 14px;
-        border: 1px solid var(--border);
-        border-radius: 999px;
-        background: var(--surface-strong);
-        color: var(--text);
-        font: inherit;
-        cursor: pointer;
-      }
-
-      .panel-header button:hover {
-        border-color: rgba(74, 95, 180, 0.35);
-        background: rgba(247, 250, 255, 0.96);
-      }
-
-      .action-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 12px;
-      }
-
       .action-card {
         display: grid;
-        gap: 8px;
-        padding: 14px;
-        border-radius: 16px;
-        border: 1px solid var(--border);
-        background: var(--surface-muted);
-      }
-
-      .action-card strong {
-        font-size: 1rem;
-      }
-
-      .action-card p {
-        margin: 0;
-        color: var(--muted);
-        font-size: 0.92rem;
+        gap: 10px;
+        background: #fff;
       }
 
       .action-card button {
         justify-self: start;
       }
 
-      .event-list {
-        display: grid;
-        gap: 10px;
-      }
-
       .event-item {
-        padding: 12px 14px;
-        border-radius: 14px;
+        padding: 13px 14px;
         background: var(--surface-muted);
-        border: 1px solid rgba(31, 46, 68, 0.08);
       }
 
       .event-meta {
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
+        margin-bottom: 6px;
         color: var(--muted);
         font-size: 0.82rem;
-        margin-bottom: 6px;
       }
 
-      .hint {
-        color: var(--muted);
-      }
-
-      .danger {
-        color: var(--danger);
-      }
-
-      @media (max-width: 720px) {
-        .shell {
-          width: min(100vw - 20px, 1200px);
-          padding-top: 20px;
+      @media (max-width: 1220px) {
+        .stats-grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
         }
 
-        .hero {
-          padding: 22px;
-        }
-
-        .hero-body {
+        .overview-grid {
           grid-template-columns: 1fr;
         }
 
-        .panel-header,
-        .panel-body {
-          padding-left: 16px;
-          padding-right: 16px;
+        #panel-issue-details,
+        #panel-tracked-history,
+        #panel-operator-actions,
+        #panel-live-events,
+        #panel-operator-timeline {
+          grid-column: span 6;
+        }
+      }
+
+      @media (max-width: 980px) {
+        .app-shell {
+          grid-template-columns: 1fr;
         }
 
-        .panel-header-aside,
-        .panel-header-meta,
-        .panel-header-actions {
-          justify-items: start;
-          justify-content: flex-start;
+        .sidebar {
+          grid-template-rows: auto;
+          gap: 16px;
+          border-right: 0;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .hero {
+          grid-template-columns: 1fr;
+        }
+
+        .stats-grid,
+        .details-grid {
+          grid-template-columns: 1fr;
+        }
+
+        #panel-issue-details,
+        #panel-tracked-history,
+        #panel-operator-actions,
+        #panel-live-events,
+        #panel-operator-timeline {
+          grid-column: auto;
         }
       }
 
       @media (prefers-reduced-motion: reduce) {
-        *, *::before, *::after {
+        *,
+        *::before,
+        *::after {
           animation-duration: 0.01ms !important;
           animation-iteration-count: 1 !important;
           scroll-behavior: auto !important;
           transition-duration: 0.01ms !important;
         }
-
-        .panel.drag-active {
-          transform: none;
-        }
       }
     </style>
   </head>
   <body>
-    <main class="shell" data-dashboard-root>
-      <section class="hero">
-        <div class="hero-body">
-          <div class="hero-copy">
-            <p class="hero-eyebrow">Supervisor workspace</p>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <p class="brand-kicker">codex-supervisor</p>
+          <h1 class="brand-title">Operator Console</h1>
+          <p class="brand-note">A fixed-layout admin dashboard inspired by classic control panels and tuned for issue operations.</p>
+        </div>
+
+        <section class="nav-block">
+          <p class="nav-label">Navigation</p>
+          <div class="nav-list">
+            <div class="nav-item">
+              <strong>Operational Snapshot</strong>
+              <small>Selection, readiness, and environment health.</small>
+            </div>
+            <div class="nav-item">
+              <strong>Issue Workbench</strong>
+              <small>Issue detail, queue state, and operator actions.</small>
+            </div>
+            <div class="nav-item">
+              <strong>Live Activity</strong>
+              <small>Recent events and timeline context.</small>
+            </div>
+          </div>
+        </section>
+
+        <section class="workspace-card">
+          <p class="nav-label">Workspace</p>
+          <strong>Supervisor workspace</strong>
+          <p>Keep overview, actions, and timeline visible without rearranging the dashboard.</p>
+        </section>
+
+        <div class="sidebar-footer">Stable panel positions make scanning faster during repeated operator checks.</div>
+      </aside>
+
+      <main class="content" data-dashboard-root>
+        <header class="topbar">
+          <div class="topbar-title">
             <h1>Operator dashboard</h1>
-            <p>
-              Supervisor status and safe command transport backed by JSON endpoints and the live SSE stream.
-              The command surface stays limited to existing operator-safe mutations.
-            </p>
+            <p>Monitor the current supervisor state, inspect the selected issue, and run the existing safe commands.</p>
           </div>
-          <div class="hero-summary">
-            <p class="hero-summary-label">Live operator summary</p>
-            <p>
-              Read the overview lane first for selection and environment health, then move into operator details
-              for issue context, safe commands, and recent events.
-            </p>
+          <div class="topbar-meta">
+            <div class="topbar-pill">Layout: fixed admin dashboard</div>
+            <div class="topbar-pill">Surface: local WebUI</div>
           </div>
-        </div>
-        <div class="hero-bar">
-          <div class="badge">connection <strong id="connection-state">connecting</strong></div>
-          <div class="badge">freshness <strong id="freshness-state">awaiting refresh</strong></div>
-          <div class="badge">refresh <strong id="refresh-state">idle</strong></div>
-          <div class="badge">selected issue <strong id="selected-issue-badge">none</strong></div>
-          <div class="badge">last refresh <strong id="last-refresh-badge">never</strong></div>
-        </div>
-      </section>
-      <p id="dashboard-panel-reorder-hint" class="visually-hidden">
-        Reorder panels with drag and drop, or press Space to pick up a panel, Arrow keys to choose a target, Enter to drop, and Escape to cancel.
-      </p>
-      <div id="dashboard-panel-reorder-status" class="visually-hidden" role="status" aria-live="polite"></div>
+        </header>
 
-      <section class="dashboard-section" aria-labelledby="overview-heading">
-        <div class="section-header">
-          <div class="section-heading">
-            <p class="section-kicker">Dashboard lane</p>
-            <h2 id="overview-heading">Overview</h2>
-            <p class="section-lead">Top-level supervisor state, readiness, and environment checks in a compact lane.</p>
-          </div>
-        </div>
-        <div id="overview-grid" class="grid" aria-label="overview" data-panel-grid="overview">
+        <div class="page">
+          <section class="hero">
+            <article class="hero-card">
+              <div class="hero-copy">
+                <p class="section-kicker">Supervisor workspace</p>
+                <h2>Operational visibility without panel drag-and-drop.</h2>
+                <p>Current health, issue context, and safe actions stay in a predictable layout so repeat visits feel familiar.</p>
+              </div>
+            </article>
+            <aside class="summary-card">
+              <p class="section-kicker">Operating model</p>
+              <strong>Gentelella-inspired structure, supervisor-specific content.</strong>
+              <ul class="summary-list">
+                <li><strong>Top row:</strong> quick-glance health and selection metrics.</li>
+                <li><strong>Main row:</strong> overview on the left, doctor checks on the right.</li>
+                <li><strong>Workbench row:</strong> issue detail first, queue and activity panels following.</li>
+              </ul>
+            </aside>
+          </section>
+
+          <section class="stats-grid" aria-label="live summary">
+            <article class="stat-card">
+              <p class="stat-label">Connection</p>
+              <strong id="connection-state" class="live-value">connecting</strong>
+            </article>
+            <article class="stat-card">
+              <p class="stat-label">Freshness</p>
+              <strong id="freshness-state" class="live-value">awaiting refresh</strong>
+            </article>
+            <article class="stat-card">
+              <p class="stat-label">Refresh</p>
+              <strong id="refresh-state" class="live-value">idle</strong>
+            </article>
+            <article class="stat-card">
+              <p class="stat-label">Selected issue</p>
+              <strong id="selected-issue-badge">none</strong>
+            </article>
+            <article class="stat-card">
+              <p class="stat-label">Last refresh</p>
+              <strong id="last-refresh-badge">never</strong>
+            </article>
+          </section>
+
+          <section class="dashboard-section" aria-labelledby="overview-heading">
+            <div class="section-header">
+              <p class="section-kicker">Overview lane</p>
+              <h2 id="overview-heading">Operational snapshot</h2>
+              <p class="section-lead">Keep the current selection, readiness summary, and environment diagnostics balanced across one row.</p>
+            </div>
+            <div id="overview-grid" class="overview-grid" aria-label="overview" data-panel-grid="overview">
 ${renderDashboardPanelSection("overview")}
-        </div>
-      </section>
+            </div>
+          </section>
 
-      <section class="dashboard-section" aria-labelledby="details-heading">
-        <div class="section-header">
-          <div class="section-heading">
-            <p class="section-kicker">Dashboard lane</p>
-            <h2 id="details-heading">Operator details</h2>
-            <p class="section-lead">Issue context, action controls, and event feeds remain intact with cleaner framing.</p>
-          </div>
-        </div>
-        <div id="details-grid" class="grid" aria-label="details" data-panel-grid="details">
+          <section class="dashboard-section" aria-labelledby="details-heading">
+            <div class="section-header">
+              <p class="section-kicker">Workbench lane</p>
+              <h2 id="details-heading">Issue workbench</h2>
+              <p class="section-lead">Lead with issue detail, then keep queue state, actions, and live activity in a balanced three-panel row.</p>
+            </div>
+            <div id="details-grid" class="details-grid" aria-label="details" data-panel-grid="details">
 ${renderDashboardPanelSection("details")}
+            </div>
+          </section>
         </div>
-      </section>
-    </main>
+      </main>
+    </div>
 
     <script>${renderDashboardBrowserScript()}
     </script>

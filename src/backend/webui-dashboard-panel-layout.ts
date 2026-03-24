@@ -53,20 +53,6 @@ function renderDashboardPanelShell(options: DashboardPanelShellOptions): Dashboa
           <div class="panel-shell">
             <div class="panel-header">
               <div class="panel-header-main">
-                <div class="panel-drag-slot">
-                  <button
-                    id="panel-drag-${options.id}"
-                    class="panel-drag-handle"
-                    type="button"
-                    draggable="true"
-                    aria-label="Reorder ${options.title} panel"
-                    aria-describedby="dashboard-panel-reorder-hint"
-                    aria-keyshortcuts="Space Enter ArrowUp ArrowDown Escape"
-                    title="Drag to reorder this panel"
-                  >
-                    <span aria-hidden="true">::</span>
-                  </button>
-                </div>
                 <div class="panel-heading">
                   <h2>${options.title}</h2>
                   <p class="panel-subtitle">${options.subtitle}</p>
@@ -145,7 +131,7 @@ export const DASHBOARD_PANEL_REGISTRY = [
     id: "tracked-history",
     section: "details",
     title: "Tracked history",
-    subtitle: "Current tracked issues with a reserved place for future layout controls.",
+    subtitle: "Current tracked issues in a compact queue view.",
     headerMetaMarkup: '<span id="tracked-history-summary" class="hint">Waiting for tracked history…</span>',
     headerActionMarkup: '<button type="button" id="tracked-history-toggle">Show done issues</button>',
     bodyClassName: "stack",

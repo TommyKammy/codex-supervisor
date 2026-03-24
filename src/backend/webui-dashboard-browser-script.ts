@@ -1,5 +1,4 @@
 import {
-  applyDashboardPanelDrop,
   buildStatusLines,
   collectTrackedIssues,
   collectIssueShortcuts,
@@ -20,16 +19,10 @@ import {
   describeTimelineEvent,
   collectTimelineEventIssueNumbers,
   humanizeTimelineValue,
-  normalizeDashboardPanelOrder,
   parseSelectedIssueNumber,
-  restoreDashboardPanelOrder,
-  serializeDashboardPanelOrder,
 } from "./webui-dashboard-browser-logic";
-import { DASHBOARD_PANEL_REGISTRY } from "./webui-dashboard-panel-layout";
 
 const injectedBrowserLogic = [
-  normalizeDashboardPanelOrder,
-  applyDashboardPanelDrop,
   collectTrackedIssues,
   formatTrackedIssues,
   formatTrackedHistorySummary,
@@ -51,21 +44,13 @@ const injectedBrowserLogic = [
   describeTimelineEvent,
   collectTimelineEventIssueNumbers,
   parseSelectedIssueNumber,
-  restoreDashboardPanelOrder,
-  serializeDashboardPanelOrder,
 ]
   .map((helper) => helper.toString().replace(/__name\([^;]+;\s*/gu, ""))
   .join("\n\n");
 
 export function renderDashboardBrowserScript(): string {
-  const dashboardPanelIds = DASHBOARD_PANEL_REGISTRY.map((panel) => panel.id);
-  const dashboardPanelSections = Object.fromEntries(DASHBOARD_PANEL_REGISTRY.map((panel) => [panel.id, panel.section]));
   return `
       ${injectedBrowserLogic}
-
-      const DASHBOARD_PANEL_IDS = ${JSON.stringify(dashboardPanelIds)};
-      const DASHBOARD_PANEL_SECTIONS = ${JSON.stringify(dashboardPanelSections)};
-      const DASHBOARD_PANEL_LAYOUT_STORAGE_KEY = "codex-supervisor.dashboard.panel-layout";
 
       const state = {
         selectedIssueNumber: null,
@@ -84,12 +69,6 @@ export function renderDashboardBrowserScript(): string {
         hasSuccessfulRefresh: false,
         lastRefreshAt: null,
         showDoneTrackedIssues: false,
-        panelLayout: {
-          order: restoreDashboardPanelOrder(readDashboardPanelLayoutStorage(), DASHBOARD_PANEL_IDS),
-        },
-        draggedPanelId: null,
-        dropTargetPanelId: null,
-        pointerDrag: null,
       };
 
       const elements = {
@@ -120,15 +99,6 @@ export function renderDashboardBrowserScript(): string {
         resetJsonStateButton: document.getElementById("reset-json-state-button"),
         operatorTimeline: document.getElementById("operator-timeline"),
         eventList: document.getElementById("event-list"),
-        overviewGrid: document.getElementById("overview-grid"),
-        detailsGrid: document.getElementById("details-grid"),
-        panelReorderStatus: document.getElementById("dashboard-panel-reorder-status"),
-        panels: Object.fromEntries(
-          DASHBOARD_PANEL_IDS.map((panelId) => [panelId, document.getElementById("panel-" + panelId)]),
-        ),
-        dragHandles: Object.fromEntries(
-          DASHBOARD_PANEL_IDS.map((panelId) => [panelId, document.getElementById("panel-drag-" + panelId)]),
-        ),
       };
 
       const knownEventTypes = [
@@ -140,23 +110,6 @@ export function renderDashboardBrowserScript(): string {
       ];
 
       const COMMAND_CORRELATION_WINDOW_MS = 15000;
-
-      function readDashboardPanelLayoutStorage() {
-        try {
-          return window.localStorage?.getItem(DASHBOARD_PANEL_LAYOUT_STORAGE_KEY) ?? null;
-        } catch {
-          return null;
-        }
-      }
-
-      function persistDashboardPanelLayout() {
-        try {
-          window.localStorage?.setItem(
-            DASHBOARD_PANEL_LAYOUT_STORAGE_KEY,
-            serializeDashboardPanelOrder(state.panelLayout.order, DASHBOARD_PANEL_IDS),
-          );
-        } catch {}
-      }
 
       function setText(element, value) {
         if (element) {
@@ -222,202 +175,6 @@ export function renderDashboardBrowserScript(): string {
         setLiveBadgeState(elements.freshnessState, freshnessLabel, freshnessTone);
         setLiveBadgeState(elements.refreshState, state.refreshPhase, refreshTone);
         setText(elements.lastRefreshBadge, formatRefreshTime(state.lastRefreshAt));
-      }
-
-      function clearDragState() {
-        const draggedPanel = state.draggedPanelId === null ? null : elements.panels[state.draggedPanelId];
-        const dropTargetPanel = state.dropTargetPanelId === null ? null : elements.panels[state.dropTargetPanelId];
-        draggedPanel?.classList.remove("drag-active");
-        dropTargetPanel?.classList.remove("drop-target");
-        state.draggedPanelId = null;
-        state.dropTargetPanelId = null;
-      }
-
-      function canDropPanelOnTarget(draggedPanelId, targetPanelId) {
-        if (draggedPanelId === null || draggedPanelId === targetPanelId) {
-          return false;
-        }
-
-        const normalizedOrder = normalizeDashboardPanelOrder(state.panelLayout.order, DASHBOARD_PANEL_IDS);
-        const draggedIndex = normalizedOrder.indexOf(draggedPanelId);
-        const targetIndex = normalizedOrder.indexOf(targetPanelId);
-        if (draggedIndex === -1 || targetIndex === -1) {
-          return false;
-        }
-
-        return DASHBOARD_PANEL_SECTIONS[normalizedOrder[draggedIndex]] === DASHBOARD_PANEL_SECTIONS[normalizedOrder[targetIndex]];
-      }
-
-      function announcePanelReorderStatus(message) {
-        setText(elements.panelReorderStatus, message);
-      }
-
-      function setDropTargetPanel(panelId) {
-        if (state.dropTargetPanelId === panelId) {
-          return;
-        }
-        const previousTarget = state.dropTargetPanelId === null ? null : elements.panels[state.dropTargetPanelId];
-        previousTarget?.classList.remove("drop-target");
-        state.dropTargetPanelId = panelId;
-        const nextTarget = panelId === null ? null : elements.panels[panelId];
-        nextTarget?.classList.add("drop-target");
-      }
-
-      function getKeyboardDropCandidates(draggedPanelId) {
-        const normalizedOrder = normalizeDashboardPanelOrder(state.panelLayout.order, DASHBOARD_PANEL_IDS);
-        const draggedSection = DASHBOARD_PANEL_SECTIONS[draggedPanelId];
-        return normalizedOrder.filter(
-          (panelId) => panelId !== draggedPanelId && DASHBOARD_PANEL_SECTIONS[panelId] === draggedSection,
-        );
-      }
-
-      function panelIdFromElement(element) {
-        if (!(element instanceof Element)) {
-          return null;
-        }
-        const panel = element.closest("[data-panel-id]");
-        if (!(panel instanceof HTMLElement)) {
-          return null;
-        }
-        const panelId = panel.dataset.panelId || null;
-        return panelId && panelId in elements.panels ? panelId : null;
-      }
-
-      function getPointerDropTarget(clientX, clientY) {
-        const hoveredPanelId = panelIdFromElement(document.elementFromPoint(clientX, clientY));
-        return canDropPanelOnTarget(state.draggedPanelId, hoveredPanelId) ? hoveredPanelId : null;
-      }
-
-      function moveKeyboardDropTarget(draggedPanelId, direction) {
-        const candidates = getKeyboardDropCandidates(draggedPanelId);
-        if (candidates.length === 0) {
-          return null;
-        }
-
-        if (state.dropTargetPanelId && candidates.includes(state.dropTargetPanelId)) {
-          const currentIndex = candidates.indexOf(state.dropTargetPanelId);
-          const nextIndex = Math.max(0, Math.min(candidates.length - 1, currentIndex + direction));
-          return candidates[nextIndex];
-        }
-
-        const normalizedOrder = normalizeDashboardPanelOrder(state.panelLayout.order, DASHBOARD_PANEL_IDS);
-        const draggedIndex = normalizedOrder.indexOf(draggedPanelId);
-        if (draggedIndex === -1) {
-          return candidates[0];
-        }
-
-        const draggedPeers = normalizedOrder.filter(
-          (panelId) => panelId !== draggedPanelId && DASHBOARD_PANEL_SECTIONS[panelId] === DASHBOARD_PANEL_SECTIONS[draggedPanelId],
-        );
-        if (direction < 0) {
-          const previousPeer = [...draggedPeers].reverse().find((panelId) => normalizedOrder.indexOf(panelId) < draggedIndex);
-          return previousPeer ?? candidates[0];
-        }
-
-        const nextPeer = draggedPeers.find((panelId) => normalizedOrder.indexOf(panelId) > draggedIndex);
-        if (!nextPeer) {
-          return candidates[candidates.length - 1];
-        }
-
-        const nextPeerIndex = candidates.indexOf(nextPeer);
-        return candidates[Math.min(candidates.length - 1, nextPeerIndex + 1)] ?? candidates[candidates.length - 1];
-      }
-
-      function startKeyboardPanelDrag(panelId) {
-        state.draggedPanelId = panelId;
-        elements.panels[panelId]?.classList.add("drag-active");
-        setDropTargetPanel(null);
-        announcePanelReorderStatus(
-          "Picked up " + panelId.replace(/-/g, " ") + " panel. Use arrow keys to choose a drop target, Enter to drop, and Escape to cancel.",
-        );
-      }
-
-      function commitPanelDrop(targetPanelId) {
-        if (!canDropPanelOnTarget(state.draggedPanelId, targetPanelId)) {
-          clearDragState();
-          announcePanelReorderStatus("Panel reorder cancelled.");
-          return;
-        }
-
-        state.panelLayout.order = applyDashboardPanelDrop(
-          state.panelLayout.order,
-          state.draggedPanelId,
-          targetPanelId,
-          DASHBOARD_PANEL_IDS,
-        );
-        renderPanelLayout();
-        const draggedPanelId = state.draggedPanelId;
-        clearDragState();
-        announcePanelReorderStatus(
-          "Moved " + String(draggedPanelId).replace(/-/g, " ") + " panel before " + targetPanelId.replace(/-/g, " ") + ".",
-        );
-      }
-
-      function startPointerPanelDrag(panelId) {
-        clearDragState();
-        state.draggedPanelId = panelId;
-        elements.panels[panelId]?.classList.add("drag-active");
-        setDropTargetPanel(null);
-        announcePanelReorderStatus("Dragging " + panelId.replace(/-/g, " ") + " panel.");
-      }
-
-      function finishPointerPanelDrag(panelId, cancelled) {
-        const activePointerDrag = state.pointerDrag;
-        if (!activePointerDrag || activePointerDrag.panelId !== panelId) {
-          return;
-        }
-
-        const dragHandle = elements.dragHandles[panelId];
-        if (dragHandle) {
-          dragHandle.draggable = true;
-          if (
-            typeof dragHandle.hasPointerCapture === "function" &&
-            typeof dragHandle.releasePointerCapture === "function" &&
-            activePointerDrag.pointerId !== null &&
-            dragHandle.hasPointerCapture(activePointerDrag.pointerId)
-          ) {
-            dragHandle.releasePointerCapture(activePointerDrag.pointerId);
-          }
-        }
-
-        state.pointerDrag = null;
-        if (!activePointerDrag.active) {
-          return;
-        }
-
-        if (cancelled) {
-          clearDragState();
-          announcePanelReorderStatus("Panel reorder cancelled.");
-          return;
-        }
-
-        commitPanelDrop(state.dropTargetPanelId);
-      }
-
-      function renderPanelLayout() {
-        state.panelLayout.order = normalizeDashboardPanelOrder(state.panelLayout.order, DASHBOARD_PANEL_IDS);
-        persistDashboardPanelLayout();
-
-        const overviewPanels = [];
-        const detailPanels = [];
-        for (const panelId of state.panelLayout.order) {
-          const panel = elements.panels[panelId];
-          if (!panel) {
-            continue;
-          }
-          if (DASHBOARD_PANEL_SECTIONS[panelId] === "overview") {
-            overviewPanels.push(panel);
-            continue;
-          }
-          detailPanels.push(panel);
-        }
-
-        for (const panel of overviewPanels) {
-          elements.overviewGrid?.appendChild(panel);
-        }
-        for (const panel of detailPanels) {
-          elements.detailsGrid?.appendChild(panel);
-        }
       }
 
       function formatLatestRecovery(activityContext, fallbackSummary) {
@@ -1069,160 +826,6 @@ export function renderDashboardBrowserScript(): string {
         }
       }
 
-      function wirePanelDragAndDrop() {
-        for (const panelId of DASHBOARD_PANEL_IDS) {
-          const panel = elements.panels[panelId];
-          const dragHandle = elements.dragHandles[panelId];
-          if (!panel || !dragHandle) {
-            continue;
-          }
-
-          dragHandle.addEventListener("dragstart", (event) => {
-            if (state.pointerDrag?.panelId === panelId) {
-              event.preventDefault();
-              return;
-            }
-            clearDragState();
-            state.draggedPanelId = panelId;
-            panel.classList.add("drag-active");
-            setDropTargetPanel(null);
-            announcePanelReorderStatus("Dragging " + panelId.replace(/-/g, " ") + " panel.");
-            if (event.dataTransfer) {
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData("text/plain", panelId);
-            }
-          });
-
-          dragHandle.addEventListener("dragend", () => {
-            const shouldAnnounceFinished = state.draggedPanelId === panelId;
-            clearDragState();
-            if (shouldAnnounceFinished) {
-              announcePanelReorderStatus("Panel reorder finished.");
-            }
-          });
-
-          dragHandle.addEventListener("pointerdown", (event) => {
-            if (!event.isPrimary || event.button !== 0) {
-              return;
-            }
-            state.pointerDrag = {
-              panelId,
-              pointerId: event.pointerId ?? null,
-              startX: event.clientX ?? 0,
-              startY: event.clientY ?? 0,
-              active: false,
-            };
-            dragHandle.draggable = false;
-            if (typeof dragHandle.setPointerCapture === "function" && event.pointerId !== undefined) {
-              dragHandle.setPointerCapture(event.pointerId);
-            }
-          });
-
-          dragHandle.addEventListener("pointermove", (event) => {
-            const activePointerDrag = state.pointerDrag;
-            if (!activePointerDrag || activePointerDrag.panelId !== panelId) {
-              return;
-            }
-            const clientX = event.clientX ?? activePointerDrag.startX;
-            const clientY = event.clientY ?? activePointerDrag.startY;
-            if (!activePointerDrag.active) {
-              const deltaX = clientX - activePointerDrag.startX;
-              const deltaY = clientY - activePointerDrag.startY;
-              if (Math.hypot(deltaX, deltaY) < 6) {
-                return;
-              }
-              activePointerDrag.active = true;
-              startPointerPanelDrag(panelId);
-            }
-
-            setDropTargetPanel(getPointerDropTarget(clientX, clientY));
-            event.preventDefault();
-          });
-
-          dragHandle.addEventListener("pointerup", (event) => {
-            const activePointerDrag = state.pointerDrag;
-            if (!activePointerDrag || activePointerDrag.panelId !== panelId) {
-              return;
-            }
-            finishPointerPanelDrag(panelId, false);
-            event.preventDefault();
-          });
-
-          dragHandle.addEventListener("pointercancel", () => {
-            finishPointerPanelDrag(panelId, true);
-          });
-
-          dragHandle.addEventListener("lostpointercapture", () => {
-            finishPointerPanelDrag(panelId, true);
-          });
-
-          dragHandle.addEventListener("keydown", (event) => {
-            const key = event.key;
-            if (key === " " || key === "Enter") {
-              event.preventDefault();
-              if (state.draggedPanelId !== panelId) {
-                clearDragState();
-                startKeyboardPanelDrag(panelId);
-                return;
-              }
-              commitPanelDrop(state.dropTargetPanelId);
-              return;
-            }
-
-            if (key === "Escape" && state.draggedPanelId === panelId) {
-              event.preventDefault();
-              clearDragState();
-              announcePanelReorderStatus("Panel reorder cancelled.");
-              return;
-            }
-
-            if ((key === "ArrowUp" || key === "ArrowDown") && state.draggedPanelId === panelId) {
-              event.preventDefault();
-              const nextTarget = moveKeyboardDropTarget(panelId, key === "ArrowUp" ? -1 : 1);
-              setDropTargetPanel(nextTarget);
-              if (nextTarget) {
-                announcePanelReorderStatus(
-                  "Drop target " + nextTarget.replace(/-/g, " ") + ". Press Enter to move the panel.",
-                );
-              }
-            }
-          });
-
-          panel.addEventListener("dragover", (event) => {
-            if (!canDropPanelOnTarget(state.draggedPanelId, panelId)) {
-              return;
-            }
-            event.preventDefault();
-            setDropTargetPanel(panelId);
-            if (event.dataTransfer) {
-              event.dataTransfer.dropEffect = "move";
-            }
-          });
-
-          panel.addEventListener("dragleave", (event) => {
-            if (event.target !== panel) {
-              return;
-            }
-            if (state.dropTargetPanelId === panelId) {
-              setDropTargetPanel(null);
-            }
-          });
-
-          panel.addEventListener("drop", (event) => {
-            if (state.draggedPanelId === null) {
-              return;
-            }
-            if (!canDropPanelOnTarget(state.draggedPanelId, panelId)) {
-              clearDragState();
-              announcePanelReorderStatus("Panel reorder cancelled.");
-              return;
-            }
-            event.preventDefault();
-            commitPanelDrop(panelId);
-          });
-        }
-      }
-
       function wireEvents() {
         const source = new EventSource("/api/events");
         state.connectionPhase = "connecting";
@@ -1344,7 +947,6 @@ export function renderDashboardBrowserScript(): string {
       });
 
       async function bootstrap() {
-        renderPanelLayout();
         renderLiveState();
         try {
           await refreshStatusAndDoctor();
@@ -1357,7 +959,6 @@ export function renderDashboardBrowserScript(): string {
         }
 
         renderCommandResult();
-        wirePanelDragAndDrop();
         wireEvents();
         renderEvents();
         renderOperatorTimeline();
