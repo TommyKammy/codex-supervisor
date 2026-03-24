@@ -471,378 +471,76 @@ test("dashboard shell renders panels from the typed default layout in the curren
 test("dashboard page frames the hero and both panel groups with labeled section chrome", () => {
   const html = renderSupervisorDashboardHtml();
 
-  assert.match(html, /<section class="hero"[\s\S]*<p class="hero-eyebrow">Supervisor workspace<\/p>/u);
-  assert.match(html, /<div class="hero-body">[\s\S]*<div class="hero-copy">[\s\S]*<div class="hero-summary">/u);
+  assert.match(html, /<div class="app-shell">[\s\S]*<aside class="sidebar">[\s\S]*<main class="content" data-dashboard-root>/u);
+  assert.match(html, /<header class="topbar">[\s\S]*<h1>Operator dashboard<\/h1>[\s\S]*Layout: fixed admin dashboard/u);
+  assert.match(html, /Mode: web only \(loop off\)/u);
+  assert.match(html, /<section class="hero">[\s\S]*<article class="hero-card">[\s\S]*<aside class="summary-card">/u);
+  assert.match(html, /Loop mode is off on this host/u);
   assert.match(
     html,
-    /id="dashboard-panel-reorder-hint" class="visually-hidden"[\s\S]*Space to pick up a panel[\s\S]*id="dashboard-panel-reorder-status" class="visually-hidden" role="status" aria-live="polite"/u,
+    /<section class="stats-grid" aria-label="live summary">[\s\S]*id="connection-state"[\s\S]*id="freshness-state"[\s\S]*id="selected-issue-badge"[\s\S]*id="last-refresh-badge"/u,
+  );
+  assert.match(html, /id="status-workflow"/u);
+  assert.match(
+    html,
+    /<section class="dashboard-section" aria-labelledby="overview-heading">[\s\S]*<p class="section-kicker">Overview lane<\/p>[\s\S]*<h2 id="overview-heading">Operational snapshot<\/h2>[\s\S]*<div id="overview-grid" class="overview-grid" aria-label="overview" data-panel-grid="overview">/u,
   );
   assert.match(
     html,
-    /<section class="dashboard-section" aria-labelledby="overview-heading">[\s\S]*<p class="section-kicker">Dashboard lane<\/p>[\s\S]*<h2 id="overview-heading">Overview<\/h2>[\s\S]*<div id="overview-grid" class="grid" aria-label="overview" data-panel-grid="overview">/u,
-  );
-  assert.match(
-    html,
-    /<section class="dashboard-section" aria-labelledby="details-heading">[\s\S]*<p class="section-kicker">Dashboard lane<\/p>[\s\S]*<h2 id="details-heading">Operator details<\/h2>[\s\S]*<div id="details-grid" class="grid" aria-label="details" data-panel-grid="details">/u,
+    /<section class="dashboard-section" aria-labelledby="details-heading">[\s\S]*<p class="section-kicker">Workbench lane<\/p>[\s\S]*<h2 id="details-heading">Issue workbench<\/h2>[\s\S]*<div id="details-grid" class="details-grid" aria-label="details" data-panel-grid="details">/u,
   );
 });
 
 test("dashboard panel registry exposes a shared shell structure for every panel", () => {
   for (const panel of DASHBOARD_PANEL_REGISTRY) {
     assert.match(panel.markup, /<article id="panel-[^"]+" class="panel" data-panel-id="[^"]+" data-panel-section="[^"]+">[\s\S]*<div class="panel-shell">/u);
-    assert.match(
-      panel.markup,
-      /<div class="panel-header">[\s\S]*<div class="panel-drag-slot">[\s\S]*<button[\s\S]*id="panel-drag-[^"]+"[\s\S]*class="panel-drag-handle"[\s\S]*draggable="true"[\s\S]*aria-label="Reorder [^"]+ panel"[\s\S]*aria-describedby="dashboard-panel-reorder-hint"[\s\S]*aria-keyshortcuts="Space Enter ArrowUp ArrowDown Escape"/u,
-    );
+    assert.match(panel.markup, /<div class="panel-header">[\s\S]*<div class="panel-header-main">[\s\S]*<div class="panel-heading">/u);
     assert.match(panel.markup, /<div class="panel-heading">[\s\S]*<h2>[\s\S]+<\/h2>[\s\S]*<p class="panel-subtitle">[\s\S]+<\/p>/u);
     assert.match(panel.markup, /<div class="panel-body/u);
+    assert.doesNotMatch(panel.markup, /panel-drag-|panel-drag-handle|panel-drag-slot/u);
   }
 });
 
-test("dashboard page includes reduced-motion-safe drag polish styles", () => {
+test("dashboard page includes reduced-motion-safe fixed-layout styles", () => {
   const html = renderSupervisorDashboardHtml();
 
-  assert.match(html, /\.panel\.drop-target \{/u);
-  assert.match(html, /\.panel-drag-handle:focus-visible \{/u);
+  assert.match(html, /\.overview-grid \{/u);
+  assert.match(html, /\.details-grid \{/u);
   assert.match(html, /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*transition-duration: 0\.01ms/u);
 });
 
-test("dashboard page uses a neutral shell palette instead of the earlier warm dashboard treatment", () => {
+test("dashboard page uses a gentelella-inspired admin shell palette and layout", () => {
   const html = renderSupervisorDashboardHtml();
 
-  assert.match(html, /--bg: #f4f7fb;/u);
-  assert.match(html, /--bg-accent: #e3ebf5;/u);
-  assert.match(html, /--surface-muted: #f6f9fc;/u);
-  assert.match(html, /--accent: #4a5fb4;/u);
+  assert.match(html, /--sidebar: #2a3f54;/u);
+  assert.match(html, /--accent: #1abb9c;/u);
+  assert.match(html, /--muted-sidebar: rgba\(214, 224, 235, 0\.82\);/u);
+  assert.match(html, /--muted-surface: #5f7288;/u);
+  assert.match(html, /--text: #2a3f54;/u);
   assert.match(
     html,
-    /body \{[\s\S]*radial-gradient\(circle at top left, rgba\(74, 95, 180, 0\.09\), transparent 34%\),[\s\S]*radial-gradient\(circle at top right, rgba\(42, 122, 140, 0\.08\), transparent 28%\),[\s\S]*linear-gradient\(180deg, var\(--bg\) 0%, #edf3f9 100%\);/u,
+    /\.app-shell \{[\s\S]*grid-template-columns: 280px minmax\(0, 1fr\);/u,
   );
   assert.match(
     html,
-    /\.panel-header \{[\s\S]*background: linear-gradient\(180deg, rgba\(249, 251, 255, 0\.94\), rgba\(244, 248, 252, 0\.82\)\);/u,
+    /\.sidebar \{[\s\S]*linear-gradient\(180deg, var\(--sidebar\) 0%, var\(--sidebar-deep\) 100%\);/u,
   );
-  assert.doesNotMatch(html, /rgba\(160, 103, 18, 0\.08\)|236, 231, 223|250, 247, 242/u);
+  assert.match(html, /#panel-issue-details \{[\s\S]*grid-column: span 7;/u);
+  assert.match(html, /#panel-tracked-history \{[\s\S]*grid-column: span 5;/u);
 });
 
-test("dashboard reorders panels through drag handles without touching backend fetch flow", async () => {
-  const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-  ]);
-  await harness.flush();
+test("dashboard keeps the fixed panel layout without any drag affordances", async () => {
+  const html = renderSupervisorDashboardHtml();
 
-  const overviewGrid = harness.document.getElementById("overview-grid");
-  const detailsGrid = harness.document.getElementById("details-grid");
-  const operatorTimelineHandle = harness.document.getElementById("panel-drag-operator-timeline");
-  const trackedHistoryPanel = harness.document.getElementById("panel-tracked-history");
-  const operatorTimelinePanel = harness.document.getElementById("panel-operator-timeline");
-  const panelReorderStatus = harness.document.getElementById("dashboard-panel-reorder-status");
-  assert.ok(overviewGrid);
-  assert.ok(detailsGrid);
-  assert.ok(operatorTimelineHandle);
-  assert.ok(trackedHistoryPanel);
-  assert.ok(operatorTimelinePanel);
-  assert.ok(panelReorderStatus);
-
-  assert.deepEqual(childIds(overviewGrid), ["panel-status", "panel-doctor"]);
-  assert.deepEqual(childIds(detailsGrid), [
-    "panel-issue-details",
-    "panel-tracked-history",
-    "panel-operator-actions",
-    "panel-live-events",
-    "panel-operator-timeline",
-  ]);
-
-  const dataTransfer = {
-    effectAllowed: "",
-    dropEffect: "",
-    setData() {},
-  };
-
-  await operatorTimelineHandle.dispatch("dragstart", { dataTransfer });
-  await trackedHistoryPanel.dispatch("dragover", {
-    dataTransfer,
-    preventDefault() {},
-  });
-  await trackedHistoryPanel.dispatch("drop", {
-    dataTransfer,
-    preventDefault() {},
-  });
-  await operatorTimelineHandle.dispatch("dragend");
-  await harness.flush();
-
-  assert.deepEqual(childIds(detailsGrid), [
-    "panel-issue-details",
-    "panel-operator-timeline",
-    "panel-tracked-history",
-    "panel-operator-actions",
-    "panel-live-events",
-  ]);
-  assert.equal(operatorTimelinePanel.classList.contains("drag-active"), false);
-  assert.equal(panelReorderStatus.textContent, "Moved operator timeline panel before tracked history.");
-  assert.deepEqual(
-    harness.fetchCalls.map((call) => call.path),
-    ["/api/status?why=true", "/api/doctor"],
+  assert.match(
+    html,
+    /<div id="overview-grid" class="overview-grid" aria-label="overview" data-panel-grid="overview">[\s\S]*data-panel-id="status"[\s\S]*data-panel-id="doctor"[\s\S]*<\/div>/u,
   );
-  assert.equal(harness.remainingFetches.length, 0);
-});
-
-test("dashboard restores a reordered panel layout from browser storage after reload", async () => {
-  const localStorage = new FakeStorage();
-  const firstHarness = createDashboardHarness(
-    [
-      { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-      { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    ],
-    { localStorage },
+  assert.match(
+    html,
+    /<div id="details-grid" class="details-grid" aria-label="details" data-panel-grid="details">[\s\S]*data-panel-id="issue-details"[\s\S]*data-panel-id="tracked-history"[\s\S]*data-panel-id="operator-actions"[\s\S]*data-panel-id="live-events"[\s\S]*data-panel-id="operator-timeline"[\s\S]*<\/div>/u,
   );
-  await firstHarness.flush();
-
-  const operatorTimelineHandle = firstHarness.document.getElementById("panel-drag-operator-timeline");
-  const trackedHistoryPanel = firstHarness.document.getElementById("panel-tracked-history");
-  const detailsGrid = firstHarness.document.getElementById("details-grid");
-  assert.ok(operatorTimelineHandle);
-  assert.ok(trackedHistoryPanel);
-  assert.ok(detailsGrid);
-
-  const dataTransfer = {
-    effectAllowed: "",
-    dropEffect: "",
-    setData() {},
-  };
-
-  await operatorTimelineHandle.dispatch("dragstart", { dataTransfer });
-  await trackedHistoryPanel.dispatch("dragover", {
-    dataTransfer,
-    preventDefault() {},
-  });
-  await trackedHistoryPanel.dispatch("drop", {
-    dataTransfer,
-    preventDefault() {},
-  });
-  await firstHarness.flush();
-
-  assert.deepEqual(childIds(detailsGrid), [
-    "panel-issue-details",
-    "panel-operator-timeline",
-    "panel-tracked-history",
-    "panel-operator-actions",
-    "panel-live-events",
-  ]);
-
-  const secondHarness = createDashboardHarness(
-    [
-      { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-      { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    ],
-    { localStorage },
-  );
-  await secondHarness.flush();
-
-  const reloadedDetailsGrid = secondHarness.document.getElementById("details-grid");
-  assert.ok(reloadedDetailsGrid);
-  assert.deepEqual(childIds(reloadedDetailsGrid), [
-    "panel-issue-details",
-    "panel-operator-timeline",
-    "panel-tracked-history",
-    "panel-operator-actions",
-    "panel-live-events",
-  ]);
-});
-
-test("dashboard ignores cross-lane panel drops and keeps the current layout", async () => {
-  const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-  ]);
-  await harness.flush();
-
-  const overviewGrid = harness.document.getElementById("overview-grid");
-  const detailsGrid = harness.document.getElementById("details-grid");
-  const statusPanel = harness.document.getElementById("panel-status");
-  const operatorTimelineHandle = harness.document.getElementById("panel-drag-operator-timeline");
-  const operatorTimelinePanel = harness.document.getElementById("panel-operator-timeline");
-  const panelReorderStatus = harness.document.getElementById("dashboard-panel-reorder-status");
-  assert.ok(overviewGrid);
-  assert.ok(detailsGrid);
-  assert.ok(statusPanel);
-  assert.ok(operatorTimelineHandle);
-  assert.ok(operatorTimelinePanel);
-  assert.ok(panelReorderStatus);
-
-  const dataTransfer = {
-    effectAllowed: "",
-    dropEffect: "",
-    setData() {},
-  };
-
-  await operatorTimelineHandle.dispatch("dragstart", { dataTransfer });
-  await statusPanel.dispatch("dragover", {
-    dataTransfer,
-    preventDefault() {},
-  });
-  await statusPanel.dispatch("drop", {
-    dataTransfer,
-    preventDefault() {},
-  });
-  await operatorTimelineHandle.dispatch("dragend");
-  await harness.flush();
-
-  assert.deepEqual(childIds(overviewGrid), ["panel-status", "panel-doctor"]);
-  assert.deepEqual(childIds(detailsGrid), [
-    "panel-issue-details",
-    "panel-tracked-history",
-    "panel-operator-actions",
-    "panel-live-events",
-    "panel-operator-timeline",
-  ]);
-  assert.equal(operatorTimelinePanel.classList.contains("drag-active"), false);
-  assert.equal(panelReorderStatus.textContent, "Panel reorder cancelled.");
-  assert.deepEqual(
-    harness.fetchCalls.map((call) => call.path),
-    ["/api/status?why=true", "/api/doctor"],
-  );
-  assert.equal(harness.remainingFetches.length, 0);
-});
-
-test("dashboard supports keyboard panel reordering with visible drop-target feedback", async () => {
-  const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-  ]);
-  await harness.flush();
-
-  const detailsGrid = harness.document.getElementById("details-grid");
-  const operatorActionsHandle = harness.document.getElementById("panel-drag-operator-actions");
-  const operatorActionsPanel = harness.document.getElementById("panel-operator-actions");
-  const trackedHistoryPanel = harness.document.getElementById("panel-tracked-history");
-  assert.ok(detailsGrid);
-  assert.ok(operatorActionsHandle);
-  assert.ok(operatorActionsPanel);
-  assert.ok(trackedHistoryPanel);
-
-  await operatorActionsHandle.dispatch("keydown", {
-    key: " ",
-    preventDefault() {},
-  });
-  await operatorActionsHandle.dispatch("keydown", {
-    key: "ArrowUp",
-    preventDefault() {},
-  });
-
-  assert.equal(operatorActionsPanel.classList.contains("drag-active"), true);
-  assert.equal(trackedHistoryPanel.classList.contains("drop-target"), true);
-
-  await operatorActionsHandle.dispatch("keydown", {
-    key: "Enter",
-    preventDefault() {},
-  });
-  await harness.flush();
-
-  assert.deepEqual(childIds(detailsGrid), [
-    "panel-issue-details",
-    "panel-operator-actions",
-    "panel-tracked-history",
-    "panel-live-events",
-    "panel-operator-timeline",
-  ]);
-  assert.equal(operatorActionsPanel.classList.contains("drag-active"), false);
-  assert.equal(trackedHistoryPanel.classList.contains("drop-target"), false);
-  assert.deepEqual(
-    harness.fetchCalls.map((call) => call.path),
-    ["/api/status?why=true", "/api/doctor"],
-  );
-});
-
-test("dashboard moves a keyboard-dragged panel down one slot on the first ArrowDown", async () => {
-  const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-  ]);
-  await harness.flush();
-
-  const detailsGrid = harness.document.getElementById("details-grid");
-  const operatorActionsHandle = harness.document.getElementById("panel-drag-operator-actions");
-  const operatorActionsPanel = harness.document.getElementById("panel-operator-actions");
-  const operatorTimelinePanel = harness.document.getElementById("panel-operator-timeline");
-  const liveEventsPanel = harness.document.getElementById("panel-live-events");
-  assert.ok(detailsGrid);
-  assert.ok(operatorActionsHandle);
-  assert.ok(operatorActionsPanel);
-  assert.ok(operatorTimelinePanel);
-  assert.ok(liveEventsPanel);
-
-  await operatorActionsHandle.dispatch("keydown", {
-    key: " ",
-    preventDefault() {},
-  });
-  await operatorActionsHandle.dispatch("keydown", {
-    key: "ArrowDown",
-    preventDefault() {},
-  });
-
-  assert.equal(operatorActionsPanel.classList.contains("drag-active"), true);
-  assert.equal(operatorTimelinePanel.classList.contains("drop-target"), true);
-  assert.equal(liveEventsPanel.classList.contains("drop-target"), false);
-
-  await operatorActionsHandle.dispatch("keydown", {
-    key: "Enter",
-    preventDefault() {},
-  });
-  await harness.flush();
-
-  assert.deepEqual(childIds(detailsGrid), [
-    "panel-issue-details",
-    "panel-tracked-history",
-    "panel-live-events",
-    "panel-operator-actions",
-    "panel-operator-timeline",
-  ]);
-  assert.equal(operatorActionsPanel.classList.contains("drag-active"), false);
-  assert.equal(operatorTimelinePanel.classList.contains("drop-target"), false);
-});
-
-test("dashboard pointer dragstart clears stale keyboard drag state before activating the new panel", async () => {
-  const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-  ]);
-  await harness.flush();
-
-  const operatorActionsHandle = harness.document.getElementById("panel-drag-operator-actions");
-  const operatorTimelineHandle = harness.document.getElementById("panel-drag-operator-timeline");
-  const operatorActionsPanel = harness.document.getElementById("panel-operator-actions");
-  const operatorTimelinePanel = harness.document.getElementById("panel-operator-timeline");
-  const trackedHistoryPanel = harness.document.getElementById("panel-tracked-history");
-  const panelReorderStatus = harness.document.getElementById("dashboard-panel-reorder-status");
-  assert.ok(operatorActionsHandle);
-  assert.ok(operatorTimelineHandle);
-  assert.ok(operatorActionsPanel);
-  assert.ok(operatorTimelinePanel);
-  assert.ok(trackedHistoryPanel);
-  assert.ok(panelReorderStatus);
-
-  await operatorActionsHandle.dispatch("keydown", {
-    key: " ",
-    preventDefault() {},
-  });
-  await operatorActionsHandle.dispatch("keydown", {
-    key: "ArrowUp",
-    preventDefault() {},
-  });
-
-  const dataTransfer = {
-    effectAllowed: "",
-    dropEffect: "",
-    setData() {},
-  };
-  await operatorTimelineHandle.dispatch("dragstart", { dataTransfer });
-
-  assert.equal(operatorActionsPanel.classList.contains("drag-active"), false);
-  assert.equal(trackedHistoryPanel.classList.contains("drop-target"), false);
-  assert.equal(operatorTimelinePanel.classList.contains("drag-active"), true);
-  assert.equal(panelReorderStatus.textContent, "Dragging operator timeline panel.");
+  assert.doesNotMatch(html, /panel-drag-|dashboard-panel-reorder|drag-active|drop-target/u);
 });
 
 test("dashboard keeps requeue disabled until the selected issue finishes loading", async () => {
@@ -888,11 +586,15 @@ test("dashboard derives the selected issue from typed status fields without pars
 
   const selectedIssueBadge = harness.document.getElementById("selected-issue-badge");
   const issueNumberInput = harness.document.getElementById("issue-number-input");
+  const statusWorkflow = harness.document.getElementById("status-workflow");
   assert.ok(selectedIssueBadge);
   assert.ok(issueNumberInput);
+  assert.ok(statusWorkflow);
 
   assert.equal(selectedIssueBadge.textContent, "#42");
   assert.equal(issueNumberInput.value, "42");
+  assert.match(statusWorkflow.textContent, /Execute/u);
+  assert.match(statusWorkflow.textContent, /#42/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 
@@ -991,18 +693,22 @@ test("dashboard moves tracked history into a dedicated panel with non-done defau
   assert.match(statusLines.textContent, /tracked issues=2/u);
   assert.doesNotMatch(statusLines.textContent, /tracked issue #58/u);
   assert.match(trackedHistorySummary.textContent, /showing 1 of 2 tracked issues/u);
-  assert.match(
-    trackedHistoryLines.textContent,
-    /tracked issue #58 \[queued\] branch=codex\/issue-58 pr=#58 blocked_reason=requirements:verification/u,
-  );
-  assert.doesNotMatch(trackedHistoryLines.textContent, /tracked issue #12 \[done\]/u);
+  assert.match(trackedHistoryLines.textContent, /#58/u);
+  assert.match(trackedHistoryLines.textContent, /queued/u);
+  assert.match(trackedHistoryLines.textContent, /pr #58/u);
+  assert.match(trackedHistoryLines.textContent, /requirements:verification/u);
+  assert.doesNotMatch(trackedHistoryLines.textContent, /codex\/issue-58/u);
+  assert.doesNotMatch(trackedHistoryLines.textContent, /#12/u);
   assert.match(trackedHistoryToggle.textContent, /Show done issues/u);
 
   await trackedHistoryToggle.dispatch("click");
   await harness.flush();
 
   assert.match(trackedHistorySummary.textContent, /showing 2 of 2 tracked issues/u);
-  assert.match(trackedHistoryLines.textContent, /tracked issue #12 \[done\] branch=codex\/issue-12 pr=#12/u);
+  assert.match(trackedHistoryLines.textContent, /#12/u);
+  assert.match(trackedHistoryLines.textContent, /done/u);
+  assert.match(trackedHistoryLines.textContent, /pr #12/u);
+  assert.doesNotMatch(trackedHistoryLines.textContent, /codex\/issue-12/u);
   assert.match(trackedHistoryToggle.textContent, /Hide done issues/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
@@ -1052,11 +758,11 @@ test("dashboard lets operators inspect typed runnable and blocked issues without
   assert.ok(issueSummary);
 
   assert.equal(issueShortcuts.children.length, 2);
-  assert.match(joinChildText(issueShortcuts), /#77 runnable ready Ready for inspection/u);
-  assert.match(joinChildText(issueShortcuts), /#93 blocked requirements:scope, verification Needs scope repair/u);
+  assert.match(joinChildText(issueShortcuts), /#77runnable ready • Ready for inspection/u);
+  assert.match(joinChildText(issueShortcuts), /#93blocked requirements:scope, verification • Needs scope repair/u);
   assert.doesNotMatch(joinChildText(issueShortcuts), /#12 tracked done codex\/issue-12 pr=#12/u);
 
-  const blockedIssueButton = findChildByText(issueShortcuts, /#93 blocked/u);
+  const blockedIssueButton = findChildByText(issueShortcuts, /#93blocked/u);
   assert.ok(blockedIssueButton);
 
   await blockedIssueButton.dispatch("click");

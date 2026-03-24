@@ -1,5 +1,4 @@
 import {
-  applyDashboardPanelDrop,
   buildStatusLines,
   collectTrackedIssues,
   collectIssueShortcuts,
@@ -20,16 +19,10 @@ import {
   describeTimelineEvent,
   collectTimelineEventIssueNumbers,
   humanizeTimelineValue,
-  normalizeDashboardPanelOrder,
   parseSelectedIssueNumber,
-  restoreDashboardPanelOrder,
-  serializeDashboardPanelOrder,
 } from "./webui-dashboard-browser-logic";
-import { DASHBOARD_PANEL_REGISTRY } from "./webui-dashboard-panel-layout";
 
 const injectedBrowserLogic = [
-  normalizeDashboardPanelOrder,
-  applyDashboardPanelDrop,
   collectTrackedIssues,
   formatTrackedIssues,
   formatTrackedHistorySummary,
@@ -51,21 +44,13 @@ const injectedBrowserLogic = [
   describeTimelineEvent,
   collectTimelineEventIssueNumbers,
   parseSelectedIssueNumber,
-  restoreDashboardPanelOrder,
-  serializeDashboardPanelOrder,
 ]
   .map((helper) => helper.toString().replace(/__name\([^;]+;\s*/gu, ""))
   .join("\n\n");
 
 export function renderDashboardBrowserScript(): string {
-  const dashboardPanelIds = DASHBOARD_PANEL_REGISTRY.map((panel) => panel.id);
-  const dashboardPanelSections = Object.fromEntries(DASHBOARD_PANEL_REGISTRY.map((panel) => [panel.id, panel.section]));
   return `
       ${injectedBrowserLogic}
-
-      const DASHBOARD_PANEL_IDS = ${JSON.stringify(dashboardPanelIds)};
-      const DASHBOARD_PANEL_SECTIONS = ${JSON.stringify(dashboardPanelSections)};
-      const DASHBOARD_PANEL_LAYOUT_STORAGE_KEY = "codex-supervisor.dashboard.panel-layout";
 
       const state = {
         selectedIssueNumber: null,
@@ -84,12 +69,6 @@ export function renderDashboardBrowserScript(): string {
         hasSuccessfulRefresh: false,
         lastRefreshAt: null,
         showDoneTrackedIssues: false,
-        panelLayout: {
-          order: restoreDashboardPanelOrder(readDashboardPanelLayoutStorage(), DASHBOARD_PANEL_IDS),
-        },
-        draggedPanelId: null,
-        dropTargetPanelId: null,
-        pointerDrag: null,
       };
 
       const elements = {
@@ -99,6 +78,8 @@ export function renderDashboardBrowserScript(): string {
         selectedIssueBadge: document.getElementById("selected-issue-badge"),
         lastRefreshBadge: document.getElementById("last-refresh-badge"),
         statusReconciliation: document.getElementById("status-reconciliation"),
+        statusMetrics: document.getElementById("status-metrics"),
+        statusWorkflow: document.getElementById("status-workflow"),
         statusLines: document.getElementById("status-lines"),
         statusWarning: document.getElementById("status-warning"),
         trackedHistorySummary: document.getElementById("tracked-history-summary"),
@@ -107,6 +88,7 @@ export function renderDashboardBrowserScript(): string {
         doctorOverall: document.getElementById("doctor-overall"),
         doctorChecks: document.getElementById("doctor-checks"),
         issueSummary: document.getElementById("issue-summary"),
+        issueMetrics: document.getElementById("issue-metrics"),
         issueShortcuts: document.getElementById("issue-shortcuts"),
         issueExplain: document.getElementById("issue-explain"),
         issueLint: document.getElementById("issue-lint"),
@@ -120,15 +102,6 @@ export function renderDashboardBrowserScript(): string {
         resetJsonStateButton: document.getElementById("reset-json-state-button"),
         operatorTimeline: document.getElementById("operator-timeline"),
         eventList: document.getElementById("event-list"),
-        overviewGrid: document.getElementById("overview-grid"),
-        detailsGrid: document.getElementById("details-grid"),
-        panelReorderStatus: document.getElementById("dashboard-panel-reorder-status"),
-        panels: Object.fromEntries(
-          DASHBOARD_PANEL_IDS.map((panelId) => [panelId, document.getElementById("panel-" + panelId)]),
-        ),
-        dragHandles: Object.fromEntries(
-          DASHBOARD_PANEL_IDS.map((panelId) => [panelId, document.getElementById("panel-drag-" + panelId)]),
-        ),
       };
 
       const knownEventTypes = [
@@ -141,23 +114,6 @@ export function renderDashboardBrowserScript(): string {
 
       const COMMAND_CORRELATION_WINDOW_MS = 15000;
 
-      function readDashboardPanelLayoutStorage() {
-        try {
-          return window.localStorage?.getItem(DASHBOARD_PANEL_LAYOUT_STORAGE_KEY) ?? null;
-        } catch {
-          return null;
-        }
-      }
-
-      function persistDashboardPanelLayout() {
-        try {
-          window.localStorage?.setItem(
-            DASHBOARD_PANEL_LAYOUT_STORAGE_KEY,
-            serializeDashboardPanelOrder(state.panelLayout.order, DASHBOARD_PANEL_IDS),
-          );
-        } catch {}
-      }
-
       function setText(element, value) {
         if (element) {
           element.innerHTML = "";
@@ -169,6 +125,208 @@ export function renderDashboardBrowserScript(): string {
         if (element) {
           element.innerHTML = "";
           element.textContent = Array.isArray(lines) ? lines.join("\\n") : String(lines);
+        }
+      }
+
+      function appendChip(container, label, tone) {
+        if (!container) {
+          return;
+        }
+        const chip = document.createElement("span");
+        chip.className = "chip " + (tone || "info");
+        chip.textContent = label;
+        container.appendChild(chip);
+      }
+
+      function toneForStatus(value) {
+        const normalized = typeof value === "string" ? value.toLowerCase() : "";
+        if (["pass", "connected", "fresh", "ready", "runnable", "completed", "done", "open"].includes(normalized)) {
+          return "ok";
+        }
+        if (["warn", "refreshing", "queued", "blocked", "stale", "reconnecting", "in_progress"].includes(normalized)) {
+          return "warn";
+        }
+        if (["fail", "failed", "rejected", "error"].includes(normalized)) {
+          return "fail";
+        }
+        return "info";
+      }
+
+      function buildEmptyState(icon, title, detail) {
+        const state = document.createElement("div");
+        state.className = "empty-state";
+
+        const iconElement = document.createElement("span");
+        iconElement.className = "empty-icon";
+        iconElement.textContent = icon;
+
+        const titleElement = document.createElement("strong");
+        titleElement.textContent = title;
+
+        const detailElement = document.createElement("span");
+        detailElement.className = "hint";
+        detailElement.textContent = detail;
+
+        state.appendChild(iconElement);
+        state.appendChild(titleElement);
+        state.appendChild(detailElement);
+        return state;
+      }
+
+      function appendMetricTile(container, label, value, tone, detail) {
+        if (!container) {
+          return;
+        }
+        const tile = document.createElement("div");
+        tile.className = "metric-tile";
+
+        const labelElement = document.createElement("span");
+        labelElement.className = "metric-tile-label";
+        labelElement.textContent = label;
+
+        const valueElement = document.createElement("strong");
+        valueElement.className = ["metric-tile-value", tone || ""].filter(Boolean).join(" ");
+        valueElement.textContent = value;
+
+        tile.appendChild(labelElement);
+        tile.appendChild(valueElement);
+
+        if (detail) {
+          const detailElement = document.createElement("span");
+          detailElement.className = "metric-tile-detail";
+          detailElement.textContent = detail;
+          tile.appendChild(detailElement);
+        }
+
+        container.appendChild(tile);
+      }
+
+      function appendTextCard(container, className, text) {
+        if (!container) {
+          return;
+        }
+        const card = document.createElement("div");
+        card.className = className;
+        card.textContent = text;
+        container.appendChild(card);
+      }
+
+      function countCandidateIssues(status) {
+        const observed = status && status.candidateDiscovery ? status.candidateDiscovery.observedMatchingOpenIssues : null;
+        return typeof observed === "number" ? String(observed) : "n/a";
+      }
+
+      function buildWorkflowSteps(status) {
+        const selectedIssueNumber = parseSelectedIssueNumber(status);
+        const runnableCount = Array.isArray(status && status.runnableIssues) ? status.runnableIssues.length : 0;
+        const blockedCount = Array.isArray(status && status.blockedIssues) ? status.blockedIssues.length : 0;
+        const trackedCount = Array.isArray(status && status.trackedIssues) ? status.trackedIssues.length : 0;
+        const candidateDiscovery = status && status.candidateDiscovery ? status.candidateDiscovery : null;
+        const normalizedPhase =
+          status && typeof status.reconciliationPhase === "string" ? status.reconciliationPhase.toLowerCase() : "steady";
+
+        let currentStepId = "observe";
+        let currentDetail = "Supervisor is watching the queue and waiting for the next actionable signal.";
+
+        if (selectedIssueNumber !== null) {
+          currentStepId = "execute";
+          currentDetail = "Issue " + formatIssueRef(selectedIssueNumber) + " is the current active focus.";
+        } else if (blockedCount > 0 && runnableCount === 0) {
+          currentStepId = "recover";
+          currentDetail = "No runnable issue is available, so the supervisor is waiting on recovery or unblock work.";
+        } else if (runnableCount > 0) {
+          currentStepId = "select";
+          currentDetail = "Runnable candidates are available and ready for selection.";
+        } else if (trackedCount > 0 || candidateDiscovery || /discover|scan|triage|queue|reconcile|refresh/u.test(normalizedPhase)) {
+          currentStepId = "triage";
+          currentDetail = "Tracked work and queue signals are being reconciled before an issue is selected.";
+        }
+
+        const stepOrder = ["observe", "triage", "select", "execute", "recover"];
+        const currentIndex = stepOrder.indexOf(currentStepId);
+
+        return [
+          {
+            id: "observe",
+            title: "Observe",
+            detail: currentStepId === "observe" ? currentDetail : "Connection and freshness checks keep the workspace current.",
+            state: currentIndex > 0 ? "done" : currentIndex === 0 ? "current" : "idle",
+          },
+          {
+            id: "triage",
+            title: "Triage",
+            detail:
+              currentStepId === "triage"
+                ? currentDetail
+                : trackedCount > 0
+                  ? String(trackedCount) + " tracked issues remain in the working set."
+                  : "Queue discovery and reconciliation determine the next candidate.",
+            state: currentIndex > 1 ? "done" : currentIndex === 1 ? "current" : "idle",
+          },
+          {
+            id: "select",
+            title: "Select",
+            detail:
+              currentStepId === "select"
+                ? currentDetail
+                : runnableCount > 0
+                  ? String(runnableCount) + " runnable issue(s) are available."
+                  : "No runnable issue is currently waiting for handoff.",
+            state: currentIndex > 2 ? "done" : currentIndex === 2 ? "current" : "idle",
+          },
+          {
+            id: "execute",
+            title: "Execute",
+            detail:
+              currentStepId === "execute"
+                ? currentDetail
+                : selectedIssueNumber !== null
+                  ? "Selected issue is " + formatIssueRef(selectedIssueNumber) + "."
+                  : "No active issue is currently executing.",
+            state: currentIndex > 3 ? "done" : currentIndex === 3 ? "current" : "idle",
+          },
+          {
+            id: "recover",
+            title: "Recover",
+            detail:
+              currentStepId === "recover"
+                ? currentDetail
+                : blockedCount > 0
+                  ? String(blockedCount) + " blocked issue(s) need unblock or recovery."
+                  : "Recovery remains quiet while runnable work is available.",
+            state:
+              currentIndex === 4 ? "current warn" : blockedCount > 0 && currentStepId !== "recover" ? "warn" : "idle",
+          },
+        ];
+      }
+
+      function renderWorkflow(status) {
+        if (!elements.statusWorkflow) {
+          return;
+        }
+        elements.statusWorkflow.innerHTML = "";
+        const steps = buildWorkflowSteps(status);
+        for (const step of steps) {
+          const article = document.createElement("article");
+          article.className = "workflow-step " + step.state;
+
+          const dot = document.createElement("span");
+          dot.className = "workflow-dot";
+
+          const copy = document.createElement("div");
+          copy.className = "workflow-copy";
+
+          const title = document.createElement("strong");
+          title.textContent = step.title;
+
+          const detail = document.createElement("span");
+          detail.textContent = step.detail;
+
+          copy.appendChild(title);
+          copy.appendChild(detail);
+          article.appendChild(dot);
+          article.appendChild(copy);
+          elements.statusWorkflow.appendChild(article);
         }
       }
 
@@ -198,7 +356,8 @@ export function renderDashboardBrowserScript(): string {
           return;
         }
         setText(element, label);
-        element.className = liveBadgeClass(tone);
+        const toneClass = liveBadgeClass(tone);
+        element.className = ["live-value", toneClass].filter(Boolean).join(" ");
       }
 
       function formatRefreshTime(timestamp) {
@@ -222,202 +381,6 @@ export function renderDashboardBrowserScript(): string {
         setLiveBadgeState(elements.freshnessState, freshnessLabel, freshnessTone);
         setLiveBadgeState(elements.refreshState, state.refreshPhase, refreshTone);
         setText(elements.lastRefreshBadge, formatRefreshTime(state.lastRefreshAt));
-      }
-
-      function clearDragState() {
-        const draggedPanel = state.draggedPanelId === null ? null : elements.panels[state.draggedPanelId];
-        const dropTargetPanel = state.dropTargetPanelId === null ? null : elements.panels[state.dropTargetPanelId];
-        draggedPanel?.classList.remove("drag-active");
-        dropTargetPanel?.classList.remove("drop-target");
-        state.draggedPanelId = null;
-        state.dropTargetPanelId = null;
-      }
-
-      function canDropPanelOnTarget(draggedPanelId, targetPanelId) {
-        if (draggedPanelId === null || draggedPanelId === targetPanelId) {
-          return false;
-        }
-
-        const normalizedOrder = normalizeDashboardPanelOrder(state.panelLayout.order, DASHBOARD_PANEL_IDS);
-        const draggedIndex = normalizedOrder.indexOf(draggedPanelId);
-        const targetIndex = normalizedOrder.indexOf(targetPanelId);
-        if (draggedIndex === -1 || targetIndex === -1) {
-          return false;
-        }
-
-        return DASHBOARD_PANEL_SECTIONS[normalizedOrder[draggedIndex]] === DASHBOARD_PANEL_SECTIONS[normalizedOrder[targetIndex]];
-      }
-
-      function announcePanelReorderStatus(message) {
-        setText(elements.panelReorderStatus, message);
-      }
-
-      function setDropTargetPanel(panelId) {
-        if (state.dropTargetPanelId === panelId) {
-          return;
-        }
-        const previousTarget = state.dropTargetPanelId === null ? null : elements.panels[state.dropTargetPanelId];
-        previousTarget?.classList.remove("drop-target");
-        state.dropTargetPanelId = panelId;
-        const nextTarget = panelId === null ? null : elements.panels[panelId];
-        nextTarget?.classList.add("drop-target");
-      }
-
-      function getKeyboardDropCandidates(draggedPanelId) {
-        const normalizedOrder = normalizeDashboardPanelOrder(state.panelLayout.order, DASHBOARD_PANEL_IDS);
-        const draggedSection = DASHBOARD_PANEL_SECTIONS[draggedPanelId];
-        return normalizedOrder.filter(
-          (panelId) => panelId !== draggedPanelId && DASHBOARD_PANEL_SECTIONS[panelId] === draggedSection,
-        );
-      }
-
-      function panelIdFromElement(element) {
-        if (!(element instanceof Element)) {
-          return null;
-        }
-        const panel = element.closest("[data-panel-id]");
-        if (!(panel instanceof HTMLElement)) {
-          return null;
-        }
-        const panelId = panel.dataset.panelId || null;
-        return panelId && panelId in elements.panels ? panelId : null;
-      }
-
-      function getPointerDropTarget(clientX, clientY) {
-        const hoveredPanelId = panelIdFromElement(document.elementFromPoint(clientX, clientY));
-        return canDropPanelOnTarget(state.draggedPanelId, hoveredPanelId) ? hoveredPanelId : null;
-      }
-
-      function moveKeyboardDropTarget(draggedPanelId, direction) {
-        const candidates = getKeyboardDropCandidates(draggedPanelId);
-        if (candidates.length === 0) {
-          return null;
-        }
-
-        if (state.dropTargetPanelId && candidates.includes(state.dropTargetPanelId)) {
-          const currentIndex = candidates.indexOf(state.dropTargetPanelId);
-          const nextIndex = Math.max(0, Math.min(candidates.length - 1, currentIndex + direction));
-          return candidates[nextIndex];
-        }
-
-        const normalizedOrder = normalizeDashboardPanelOrder(state.panelLayout.order, DASHBOARD_PANEL_IDS);
-        const draggedIndex = normalizedOrder.indexOf(draggedPanelId);
-        if (draggedIndex === -1) {
-          return candidates[0];
-        }
-
-        const draggedPeers = normalizedOrder.filter(
-          (panelId) => panelId !== draggedPanelId && DASHBOARD_PANEL_SECTIONS[panelId] === DASHBOARD_PANEL_SECTIONS[draggedPanelId],
-        );
-        if (direction < 0) {
-          const previousPeer = [...draggedPeers].reverse().find((panelId) => normalizedOrder.indexOf(panelId) < draggedIndex);
-          return previousPeer ?? candidates[0];
-        }
-
-        const nextPeer = draggedPeers.find((panelId) => normalizedOrder.indexOf(panelId) > draggedIndex);
-        if (!nextPeer) {
-          return candidates[candidates.length - 1];
-        }
-
-        const nextPeerIndex = candidates.indexOf(nextPeer);
-        return candidates[Math.min(candidates.length - 1, nextPeerIndex + 1)] ?? candidates[candidates.length - 1];
-      }
-
-      function startKeyboardPanelDrag(panelId) {
-        state.draggedPanelId = panelId;
-        elements.panels[panelId]?.classList.add("drag-active");
-        setDropTargetPanel(null);
-        announcePanelReorderStatus(
-          "Picked up " + panelId.replace(/-/g, " ") + " panel. Use arrow keys to choose a drop target, Enter to drop, and Escape to cancel.",
-        );
-      }
-
-      function commitPanelDrop(targetPanelId) {
-        if (!canDropPanelOnTarget(state.draggedPanelId, targetPanelId)) {
-          clearDragState();
-          announcePanelReorderStatus("Panel reorder cancelled.");
-          return;
-        }
-
-        state.panelLayout.order = applyDashboardPanelDrop(
-          state.panelLayout.order,
-          state.draggedPanelId,
-          targetPanelId,
-          DASHBOARD_PANEL_IDS,
-        );
-        renderPanelLayout();
-        const draggedPanelId = state.draggedPanelId;
-        clearDragState();
-        announcePanelReorderStatus(
-          "Moved " + String(draggedPanelId).replace(/-/g, " ") + " panel before " + targetPanelId.replace(/-/g, " ") + ".",
-        );
-      }
-
-      function startPointerPanelDrag(panelId) {
-        clearDragState();
-        state.draggedPanelId = panelId;
-        elements.panels[panelId]?.classList.add("drag-active");
-        setDropTargetPanel(null);
-        announcePanelReorderStatus("Dragging " + panelId.replace(/-/g, " ") + " panel.");
-      }
-
-      function finishPointerPanelDrag(panelId, cancelled) {
-        const activePointerDrag = state.pointerDrag;
-        if (!activePointerDrag || activePointerDrag.panelId !== panelId) {
-          return;
-        }
-
-        const dragHandle = elements.dragHandles[panelId];
-        if (dragHandle) {
-          dragHandle.draggable = true;
-          if (
-            typeof dragHandle.hasPointerCapture === "function" &&
-            typeof dragHandle.releasePointerCapture === "function" &&
-            activePointerDrag.pointerId !== null &&
-            dragHandle.hasPointerCapture(activePointerDrag.pointerId)
-          ) {
-            dragHandle.releasePointerCapture(activePointerDrag.pointerId);
-          }
-        }
-
-        state.pointerDrag = null;
-        if (!activePointerDrag.active) {
-          return;
-        }
-
-        if (cancelled) {
-          clearDragState();
-          announcePanelReorderStatus("Panel reorder cancelled.");
-          return;
-        }
-
-        commitPanelDrop(state.dropTargetPanelId);
-      }
-
-      function renderPanelLayout() {
-        state.panelLayout.order = normalizeDashboardPanelOrder(state.panelLayout.order, DASHBOARD_PANEL_IDS);
-        persistDashboardPanelLayout();
-
-        const overviewPanels = [];
-        const detailPanels = [];
-        for (const panelId of state.panelLayout.order) {
-          const panel = elements.panels[panelId];
-          if (!panel) {
-            continue;
-          }
-          if (DASHBOARD_PANEL_SECTIONS[panelId] === "overview") {
-            overviewPanels.push(panel);
-            continue;
-          }
-          detailPanels.push(panel);
-        }
-
-        for (const panel of overviewPanels) {
-          elements.overviewGrid?.appendChild(panel);
-        }
-        for (const panel of detailPanels) {
-          elements.detailsGrid?.appendChild(panel);
-        }
       }
 
       function formatLatestRecovery(activityContext, fallbackSummary) {
@@ -561,16 +524,58 @@ export function renderDashboardBrowserScript(): string {
         }
 
         const status = state.status;
-        setText(elements.statusReconciliation, status.reconciliationPhase || "steady");
+        const reconciliationPhase = status.reconciliationPhase || "steady";
+        setText(elements.statusReconciliation, reconciliationPhase);
+        elements.statusReconciliation.className = "metric " + metricClass(reconciliationPhase);
         setText(elements.statusWarning, status.warning ? status.warning.message : "");
         elements.statusWarning?.classList.remove("danger");
-        const lines = buildStatusLines(status);
-        setCode(elements.statusLines, lines.length > 0 ? lines : ["No status lines reported."]);
+        if (elements.statusMetrics) {
+          elements.statusMetrics.innerHTML = "";
+          appendMetricTile(
+            elements.statusMetrics,
+            "tracked",
+            String((status.trackedIssues || []).length),
+            (status.trackedIssues || []).length > 0 ? "info" : "",
+            "issues with supervisor worktrees",
+          );
+          appendMetricTile(
+            elements.statusMetrics,
+            "runnable",
+            String((status.runnableIssues || []).length),
+            (status.runnableIssues || []).length > 0 ? "ok" : "",
+            "ready candidates surfaced by the supervisor",
+          );
+          appendMetricTile(
+            elements.statusMetrics,
+            "blocked",
+            String((status.blockedIssues || []).length),
+            (status.blockedIssues || []).length > 0 ? "warn" : "",
+            "issues waiting on scope or verification",
+          );
+          appendMetricTile(
+            elements.statusMetrics,
+            "candidates",
+            countCandidateIssues(status),
+            status.candidateDiscovery && status.candidateDiscovery.warning ? "warn" : "",
+            status.selectionSummary && status.selectionSummary.selectedIssueNumber
+              ? "selected " + formatIssueRef(status.selectionSummary.selectedIssueNumber)
+              : "no active issue selected",
+          );
+        }
+        renderWorkflow(status);
+        if (elements.statusLines) {
+          const lines = buildStatusLines(status);
+          elements.statusLines.innerHTML = "";
+          const summaryLines = lines.length > 0 ? lines : ["No status lines reported."];
+          for (const line of summaryLines) {
+            appendTextCard(elements.statusLines, "status-line", line);
+          }
+        }
         renderTrackedHistory();
       }
 
       function renderTrackedHistory() {
-        const trackedHistoryLines = formatTrackedIssues(state.status, {
+        const trackedIssues = collectTrackedIssues(state.status, {
           includeDone: state.showDoneTrackedIssues,
         });
         setText(
@@ -579,16 +584,55 @@ export function renderDashboardBrowserScript(): string {
             includeDone: state.showDoneTrackedIssues,
           }),
         );
-        setCode(
-          elements.trackedHistoryLines,
-          trackedHistoryLines.length > 0
-            ? trackedHistoryLines
-            : [
+        if (elements.trackedHistoryLines) {
+          elements.trackedHistoryLines.innerHTML = "";
+          if (trackedIssues.length === 0) {
+            elements.trackedHistoryLines.appendChild(
+              buildEmptyState(
+                "◎",
+                state.showDoneTrackedIssues ? "No tracked issues reported" : "No active tracked issues",
                 state.showDoneTrackedIssues
-                  ? "No tracked issues reported."
-                  : "No non-done tracked issues. Show done issues to inspect older history.",
-              ],
-        );
+                  ? "Tracked items will appear here after supervisor activity."
+                  : "Show done issues to inspect older queue history.",
+              ),
+            );
+          } else {
+            for (const trackedIssue of trackedIssues) {
+              const card = document.createElement("article");
+              card.className = "history-card";
+
+              const header = document.createElement("div");
+              header.className = "history-card-header";
+
+              const issueNumber = document.createElement("strong");
+              issueNumber.className = "history-number";
+              issueNumber.textContent = "#" + trackedIssue.issueNumber;
+              header.appendChild(issueNumber);
+
+              const chips = document.createElement("div");
+              chips.className = "chip-row";
+              appendChip(chips, trackedIssue.state, toneForStatus(trackedIssue.state));
+              if (trackedIssue.prNumber !== null && trackedIssue.prNumber !== undefined) {
+                appendChip(chips, "pr #" + trackedIssue.prNumber, "info");
+              }
+              if (trackedIssue.blockedReason) {
+                appendChip(chips, trackedIssue.blockedReason, "warn");
+              }
+              header.appendChild(chips);
+
+              const meta = document.createElement("p");
+              meta.className = "history-meta";
+              meta.textContent =
+                trackedIssue.state === "done"
+                  ? "Completed tracked issue kept for operator history."
+                  : "Tracked issue remains active in the supervisor queue.";
+
+              card.appendChild(header);
+              card.appendChild(meta);
+              elements.trackedHistoryLines.appendChild(card);
+            }
+          }
+        }
         if (elements.trackedHistoryToggle) {
           elements.trackedHistoryToggle.textContent = state.showDoneTrackedIssues ? "Hide done issues" : "Show done issues";
         }
@@ -611,7 +655,14 @@ export function renderDashboardBrowserScript(): string {
         elements.doctorChecks.innerHTML = "";
         for (const check of checks) {
           const item = document.createElement("li");
-          item.textContent = check.name + " [" + check.status + "] " + check.summary;
+          const summary = document.createElement("div");
+          summary.textContent = check.name + " " + check.summary;
+          item.appendChild(summary);
+
+          const chips = document.createElement("div");
+          chips.className = "chip-row";
+          appendChip(chips, check.status, toneForStatus(check.status));
+          item.appendChild(chips);
           elements.doctorChecks.appendChild(item);
         }
       }
@@ -619,6 +670,14 @@ export function renderDashboardBrowserScript(): string {
       function renderIssue() {
         if (!state.explain) {
           setText(elements.issueSummary, "No issue loaded.");
+          if (elements.issueMetrics) {
+            elements.issueMetrics.innerHTML = "";
+            elements.issueMetrics.appendChild(buildEmptyState("#", "No issue metrics yet", "Load an issue to inspect status, selection, and lint posture."));
+          }
+          if (elements.issueLint) {
+            elements.issueLint.innerHTML = "";
+            elements.issueLint.appendChild(buildEmptyState("!", "No lint posture yet", "Issue lint will appear after an issue is loaded."));
+          }
           return;
         }
 
@@ -627,20 +686,71 @@ export function renderDashboardBrowserScript(): string {
           elements.issueSummary,
           "#" + explain.issueNumber + " " + explain.title + " | runnable=" + (explain.runnable ? "yes" : "no"),
         );
+        if (elements.issueMetrics) {
+          elements.issueMetrics.innerHTML = "";
+          appendMetricTile(
+            elements.issueMetrics,
+            "state",
+            explain.state || "unknown",
+            toneForStatus(explain.state),
+            explain.blockedReason && explain.blockedReason !== "none" ? explain.blockedReason : "current issue posture",
+          );
+          appendMetricTile(
+            elements.issueMetrics,
+            "runnable",
+            explain.runnable ? "yes" : "no",
+            explain.runnable ? "ok" : "warn",
+            "selection reason: " + (explain.selectionReason || "none"),
+          );
+          appendMetricTile(
+            elements.issueMetrics,
+            "reasons",
+            String((explain.reasons || []).length),
+            (explain.reasons || []).length > 0 ? "info" : "",
+            (explain.reasons || []).join(" | ") || "no explain reasons",
+          );
+          appendMetricTile(
+            elements.issueMetrics,
+            "recovery",
+            explain.latestRecoverySummary ? "recent" : "quiet",
+            explain.latestRecoverySummary ? "warn" : "ok",
+            explain.latestRecoverySummary || explain.failureSummary || "no recent recovery or failure summary",
+          );
+        }
         renderIssueExplainDetails(explain);
 
-        if (state.issueLint) {
+        if (elements.issueLint) {
+          elements.issueLint.innerHTML = "";
+        }
+        if (state.issueLint && elements.issueLint) {
           const lint = state.issueLint;
-          setCode(
+          appendMetricTile(
             elements.issueLint,
-            formatKeyValueBlock([
-              ["execution_ready", lint.executionReady ? "yes" : "no"],
-              ["missing_required", (lint.missingRequired || []).join(" | ") || "none"],
-              ["missing_recommended", (lint.missingRecommended || []).join(" | ") || "none"],
-              ["metadata_errors", (lint.metadataErrors || []).join(" | ") || "none"],
-              ["high_risk_blocking_ambiguity", lint.highRiskBlockingAmbiguity || "none"],
-              ["repair_guidance", (lint.repairGuidance || []).join(" | ") || "none"],
-            ]),
+            "execution ready",
+            lint.executionReady ? "yes" : "no",
+            lint.executionReady ? "ok" : "warn",
+            lint.highRiskBlockingAmbiguity || "typed issue lint posture",
+          );
+          appendMetricTile(
+            elements.issueLint,
+            "required gaps",
+            String((lint.missingRequired || []).length),
+            (lint.missingRequired || []).length > 0 ? "warn" : "ok",
+            (lint.missingRequired || []).join(" | ") || "none",
+          );
+          appendMetricTile(
+            elements.issueLint,
+            "recommended gaps",
+            String((lint.missingRecommended || []).length),
+            (lint.missingRecommended || []).length > 0 ? "info" : "ok",
+            (lint.missingRecommended || []).join(" | ") || "none",
+          );
+          appendMetricTile(
+            elements.issueLint,
+            "repair guidance",
+            String((lint.repairGuidance || []).length),
+            (lint.repairGuidance || []).length > 0 ? "warn" : "ok",
+            (lint.repairGuidance || []).join(" | ") || "none",
           );
         }
       }
@@ -654,18 +764,21 @@ export function renderDashboardBrowserScript(): string {
         elements.issueShortcuts.innerHTML = "";
 
         if (shortcuts.length === 0) {
-          const emptyState = document.createElement("div");
-          emptyState.className = "hint";
-          emptyState.textContent = "No typed issue shortcuts reported.";
-          elements.issueShortcuts.appendChild(emptyState);
+          elements.issueShortcuts.appendChild(
+            buildEmptyState("?", "No issue shortcuts yet", "Runnable or blocked issues will surface here."),
+          );
           return;
         }
 
         for (const shortcut of shortcuts) {
           const button = document.createElement("button");
           button.className = "shortcut-button";
-          button.textContent =
-            "#" + shortcut.issueNumber + " " + shortcut.label + (shortcut.detail ? " " + shortcut.detail : "");
+          const title = document.createElement("strong");
+          title.textContent = "#" + shortcut.issueNumber;
+          const detail = document.createElement("span");
+          detail.textContent = shortcut.label + (shortcut.detail ? " • " + shortcut.detail : "");
+          button.appendChild(title);
+          button.appendChild(detail);
           button.addEventListener("click", async () => {
             try {
               await loadIssue(shortcut.issueNumber);
@@ -691,10 +804,24 @@ export function renderDashboardBrowserScript(): string {
           meta.className = "event-meta";
           meta.textContent = [event.type, event.family || "", event.at || ""].filter(Boolean).join(" | ");
 
-          const body = document.createElement("div");
+          const summary = document.createElement("p");
+          summary.className = "event-summary";
+          summary.textContent = describeTimelineEvent(event);
+
+          const chips = document.createElement("div");
+          chips.className = "chip-row";
+          appendChip(chips, event.type || "event", toneForStatus(event.type));
+          if (event.family) {
+            appendChip(chips, event.family, "info");
+          }
+
+          const body = document.createElement("p");
+          body.className = "event-detail";
           body.textContent = JSON.stringify(event, null, 2);
 
           card.appendChild(meta);
+          card.appendChild(summary);
+          card.appendChild(chips);
           card.appendChild(body);
           elements.eventList.appendChild(card);
         }
@@ -719,7 +846,11 @@ export function renderDashboardBrowserScript(): string {
               ];
         for (const entry of entries) {
           const card = document.createElement("div");
-          card.className = "event-item";
+          card.className = "event-item timeline-item";
+
+          const dot = document.createElement("span");
+          dot.className = "timeline-dot " + entry.kind;
+          dot.textContent = entry.kind === "command" ? "C" : entry.kind === "refresh" ? "R" : "E";
 
           const meta = document.createElement("div");
           meta.className = "event-meta";
@@ -727,10 +858,25 @@ export function renderDashboardBrowserScript(): string {
             .filter(Boolean)
             .join(" | ");
 
-          const body = document.createElement("div");
-          body.textContent = [entry.summary, entry.detail].filter(Boolean).join("\\n");
+          const summary = document.createElement("p");
+          summary.className = "event-summary";
+          summary.textContent = entry.summary || "Timeline event";
 
+          const chips = document.createElement("div");
+          chips.className = "chip-row";
+          appendChip(chips, entry.kind, toneForStatus(entry.kind));
+          if (entry.commandLabel) {
+            appendChip(chips, "after " + entry.commandLabel, "info");
+          }
+
+          const body = document.createElement("p");
+          body.className = "event-detail";
+          body.textContent = entry.detail || "";
+
+          card.appendChild(dot);
           card.appendChild(meta);
+          card.appendChild(summary);
+          card.appendChild(chips);
           card.appendChild(body);
           elements.operatorTimeline.appendChild(card);
         }
@@ -1069,160 +1215,6 @@ export function renderDashboardBrowserScript(): string {
         }
       }
 
-      function wirePanelDragAndDrop() {
-        for (const panelId of DASHBOARD_PANEL_IDS) {
-          const panel = elements.panels[panelId];
-          const dragHandle = elements.dragHandles[panelId];
-          if (!panel || !dragHandle) {
-            continue;
-          }
-
-          dragHandle.addEventListener("dragstart", (event) => {
-            if (state.pointerDrag?.panelId === panelId) {
-              event.preventDefault();
-              return;
-            }
-            clearDragState();
-            state.draggedPanelId = panelId;
-            panel.classList.add("drag-active");
-            setDropTargetPanel(null);
-            announcePanelReorderStatus("Dragging " + panelId.replace(/-/g, " ") + " panel.");
-            if (event.dataTransfer) {
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData("text/plain", panelId);
-            }
-          });
-
-          dragHandle.addEventListener("dragend", () => {
-            const shouldAnnounceFinished = state.draggedPanelId === panelId;
-            clearDragState();
-            if (shouldAnnounceFinished) {
-              announcePanelReorderStatus("Panel reorder finished.");
-            }
-          });
-
-          dragHandle.addEventListener("pointerdown", (event) => {
-            if (!event.isPrimary || event.button !== 0) {
-              return;
-            }
-            state.pointerDrag = {
-              panelId,
-              pointerId: event.pointerId ?? null,
-              startX: event.clientX ?? 0,
-              startY: event.clientY ?? 0,
-              active: false,
-            };
-            dragHandle.draggable = false;
-            if (typeof dragHandle.setPointerCapture === "function" && event.pointerId !== undefined) {
-              dragHandle.setPointerCapture(event.pointerId);
-            }
-          });
-
-          dragHandle.addEventListener("pointermove", (event) => {
-            const activePointerDrag = state.pointerDrag;
-            if (!activePointerDrag || activePointerDrag.panelId !== panelId) {
-              return;
-            }
-            const clientX = event.clientX ?? activePointerDrag.startX;
-            const clientY = event.clientY ?? activePointerDrag.startY;
-            if (!activePointerDrag.active) {
-              const deltaX = clientX - activePointerDrag.startX;
-              const deltaY = clientY - activePointerDrag.startY;
-              if (Math.hypot(deltaX, deltaY) < 6) {
-                return;
-              }
-              activePointerDrag.active = true;
-              startPointerPanelDrag(panelId);
-            }
-
-            setDropTargetPanel(getPointerDropTarget(clientX, clientY));
-            event.preventDefault();
-          });
-
-          dragHandle.addEventListener("pointerup", (event) => {
-            const activePointerDrag = state.pointerDrag;
-            if (!activePointerDrag || activePointerDrag.panelId !== panelId) {
-              return;
-            }
-            finishPointerPanelDrag(panelId, false);
-            event.preventDefault();
-          });
-
-          dragHandle.addEventListener("pointercancel", () => {
-            finishPointerPanelDrag(panelId, true);
-          });
-
-          dragHandle.addEventListener("lostpointercapture", () => {
-            finishPointerPanelDrag(panelId, true);
-          });
-
-          dragHandle.addEventListener("keydown", (event) => {
-            const key = event.key;
-            if (key === " " || key === "Enter") {
-              event.preventDefault();
-              if (state.draggedPanelId !== panelId) {
-                clearDragState();
-                startKeyboardPanelDrag(panelId);
-                return;
-              }
-              commitPanelDrop(state.dropTargetPanelId);
-              return;
-            }
-
-            if (key === "Escape" && state.draggedPanelId === panelId) {
-              event.preventDefault();
-              clearDragState();
-              announcePanelReorderStatus("Panel reorder cancelled.");
-              return;
-            }
-
-            if ((key === "ArrowUp" || key === "ArrowDown") && state.draggedPanelId === panelId) {
-              event.preventDefault();
-              const nextTarget = moveKeyboardDropTarget(panelId, key === "ArrowUp" ? -1 : 1);
-              setDropTargetPanel(nextTarget);
-              if (nextTarget) {
-                announcePanelReorderStatus(
-                  "Drop target " + nextTarget.replace(/-/g, " ") + ". Press Enter to move the panel.",
-                );
-              }
-            }
-          });
-
-          panel.addEventListener("dragover", (event) => {
-            if (!canDropPanelOnTarget(state.draggedPanelId, panelId)) {
-              return;
-            }
-            event.preventDefault();
-            setDropTargetPanel(panelId);
-            if (event.dataTransfer) {
-              event.dataTransfer.dropEffect = "move";
-            }
-          });
-
-          panel.addEventListener("dragleave", (event) => {
-            if (event.target !== panel) {
-              return;
-            }
-            if (state.dropTargetPanelId === panelId) {
-              setDropTargetPanel(null);
-            }
-          });
-
-          panel.addEventListener("drop", (event) => {
-            if (state.draggedPanelId === null) {
-              return;
-            }
-            if (!canDropPanelOnTarget(state.draggedPanelId, panelId)) {
-              clearDragState();
-              announcePanelReorderStatus("Panel reorder cancelled.");
-              return;
-            }
-            event.preventDefault();
-            commitPanelDrop(panelId);
-          });
-        }
-      }
-
       function wireEvents() {
         const source = new EventSource("/api/events");
         state.connectionPhase = "connecting";
@@ -1344,7 +1336,6 @@ export function renderDashboardBrowserScript(): string {
       });
 
       async function bootstrap() {
-        renderPanelLayout();
         renderLiveState();
         try {
           await refreshStatusAndDoctor();
@@ -1357,7 +1348,6 @@ export function renderDashboardBrowserScript(): string {
         }
 
         renderCommandResult();
-        wirePanelDragAndDrop();
         wireEvents();
         renderEvents();
         renderOperatorTimeline();
