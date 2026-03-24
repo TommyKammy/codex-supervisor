@@ -3,6 +3,7 @@ import { DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW } from "../core/config";
 import {
   findBlockingIssue,
   findHighRiskBlockingAmbiguity,
+  isRecordDoneForSequencing,
   lintExecutionReadyIssueBody,
   parseIssueMetadata,
 } from "../issue-metadata";
@@ -276,7 +277,7 @@ function formatRunnableReadinessReason(
 
   if (metadata.dependsOn.length > 0) {
     const satisfiedDependencies = metadata.dependsOn.filter(
-      (dependencyNumber) => state.issues[String(dependencyNumber)]?.state === "done",
+      (dependencyNumber) => isRecordDoneForSequencing(state.issues[String(dependencyNumber)]),
     );
 
     if (satisfiedDependencies.length > 0) {
@@ -307,7 +308,7 @@ function formatRunnableReadinessReason(
           (right.metadata.executionOrderIndex ?? Number.MAX_SAFE_INTEGER),
       )
       .map(({ issue: predecessorIssue }) => predecessorIssue.number)
-      .filter((predecessorNumber) => state.issues[String(predecessorNumber)]?.state === "done");
+      .filter((predecessorNumber) => isRecordDoneForSequencing(state.issues[String(predecessorNumber)]));
 
     if (clearedPredecessors.length > 0) {
       reasons.push(`execution_order_satisfied:${clearedPredecessors.join("|")}`);

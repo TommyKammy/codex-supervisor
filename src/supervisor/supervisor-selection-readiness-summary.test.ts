@@ -247,3 +247,79 @@ Execution order: 3 of 3`,
     "selection_reason=ready execution_ready=yes depends_on=91|92:done execution_order=150/3 predecessors=91|92:done retry_state=fresh",
   ]);
 });
+
+test("buildReadinessSummary keeps downstream siblings blocked while predecessor final evaluation is unresolved", async () => {
+  const config = createConfig();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "91": createRecord({
+        issue_number: 91,
+        state: "done",
+        local_review_head_sha: "head-91",
+        pre_merge_evaluation_outcome: null,
+      }),
+    },
+  };
+  const predecessorIssue = createIssue({
+    number: 91,
+    title: "Step 1",
+    body: `## Summary
+Ship the first step.
+
+## Scope
+- finish the predecessor implementation
+
+## Acceptance criteria
+- step one lands before step two
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-readiness-summary.test.ts
+
+Part of: #610
+Execution order: 1 of 2`,
+    state: "CLOSED",
+  });
+  const blockedIssue = createIssue({
+    number: 92,
+    title: "Step 2",
+    body: `## Summary
+Wait for step one final evaluation to resolve.
+
+## Scope
+- continue after the predecessor fully clears
+
+## Acceptance criteria
+- scheduler keeps this blocked until step one final evaluation resolves
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-readiness-summary.test.ts
+
+Part of: #610
+Execution order: 2 of 2`,
+  });
+
+  const summary = await buildReadinessSummary(
+    {
+      listCandidateIssues: async () => [blockedIssue],
+      listAllIssues: async () => [predecessorIssue, blockedIssue],
+    },
+    config,
+    state,
+  );
+
+  assert.deepEqual(summary, {
+    runnableIssues: [],
+    blockedIssues: [
+      {
+        issueNumber: 92,
+        title: "Step 2",
+        blockedBy: "execution order requires #91 first",
+      },
+    ],
+    readinessLines: [
+      "runnable_issues=none",
+      "blocked_issues=#92 blocked_by=execution order requires #91 first",
+    ],
+  });
+});
