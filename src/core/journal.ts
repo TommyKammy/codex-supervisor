@@ -4,10 +4,23 @@ import { GitHubIssue, IssueRunRecord } from "./types";
 import { ensureDir, truncate } from "./utils";
 
 const NOTES_MARKER = "## Codex Working Notes";
-const DURABLE_PATH_TOKEN_PATTERN = /[^\s"'`<>]+/g;
+const DURABLE_PATH_TOKEN_PATTERN =
+  /(?:(?<=["'`])(?:\/[^"'`<>\n]+|[A-Za-z]:[\\/][^"'`<>\n]+)(?=["'`])|(?<![A-Za-z0-9+./\\:-])(?:\/[^\s"'`<>\[\]{}()]+(?:[\\/][^\s"'`<>\[\]{}()]+)*|[A-Za-z]:[\\/][^\s"'`<>\[\]{}()]+(?:[\\/][^\s"'`<>\[\]{}()]+)*))/g;
 const LEADING_PATH_PUNCTUATION = "([{";
 const TRAILING_PATH_PUNCTUATION = ")]},;:!?";
 const REDACTED_LOCAL_PATH = "<redacted-local-path>";
+const NON_PORTABLE_LOCAL_PATH_PREFIXES = [
+  "/home/",
+  "/Users/",
+  "/tmp/",
+  "/var/",
+  "/private/tmp/",
+  "/private/var/",
+  "/run/",
+  "/dev/",
+  "/mnt/",
+  "/Volumes/",
+] as const;
 const HANDOFF_FIELDS = [
   "Hypothesis",
   "What changed",
@@ -266,9 +279,8 @@ function normalizeWorkspaceAbsolutePath(candidate: string, workspacePath: string
 function isNonPortableLocalAbsolutePath(candidate: string): boolean {
   const normalizedCandidate = candidate.replace(/\\/g, "/");
   return (
-    normalizedCandidate.startsWith("/home/") ||
-    normalizedCandidate.startsWith("/Users/") ||
-    /^[A-Za-z]:\/Users\//.test(normalizedCandidate)
+    NON_PORTABLE_LOCAL_PATH_PREFIXES.some((prefix) => normalizedCandidate.startsWith(prefix)) ||
+    /^[A-Za-z]:\//.test(normalizedCandidate)
   );
 }
 

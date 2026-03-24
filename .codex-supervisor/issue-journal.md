@@ -5,58 +5,38 @@
 - Branch: codex/issue-950
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: repairing_ci
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 87a943ee2a2a5661838536742176c5faf7595a81
+- Current phase: addressing_review
+- Attempt count: 4 (implementation=2, repair=2)
+- Last head SHA: ab75cec48da893569361eafcb70952f1867c4957
 - Blocked reason: none
-- Last failure signature: build (ubuntu-latest):fail|build (macos-latest):fail
+- Last failure signature: PRRT_kwDORgvdZ852hV_K|PRRT_kwDORgvdZ852hV_L
 - Repeated failure signature count: 1
-- Updated at: 2026-03-24T19:23:37.098Z
+- Updated at: 2026-03-24T19:54:36.607Z
 
 ## Latest Codex Summary
-Reproduced the failing CI compile step locally with `npx tsc --noEmit`, which failed because [`src/journal.test.ts`](src/journal.test.ts) used the invalid `FailureContextCategory` literal `"verification"`. Updated the regression test to use the existing `"manual"` category, then reran focused verification.
+Addressing the remaining review feedback in `src/core/journal.ts`. The durable journal sanitizer now targets inline absolute-path substrings such as `path=<redacted-local-path>` and Markdown links, and it broadens non-portable local-root detection while preserving in-repo paths as repo-relative text.
 
-`npm run verify:paths` also exposed a remaining durable path leak in this journal summary: it still linked to [`issue-journal.md`](.codex-supervisor/issue-journal.md) via a workstation-local absolute path. Normalized that link to a repo-relative reference and reran the focused checks successfully.
+Added focused regressions in `src/journal.test.ts` for inline assignments, Markdown links, quoted spaced paths, and broader local absolute roots. I also normalized tracked sample-path literals in `src/journal.test.ts` and this journal so the durable-path policy check passes again.
 
-Pushed the CI repair to `codex/issue-950`. `gh pr checks 965` now shows the GitHub build jobs rerunning on the updated PR head.
-
-Summary: Reproduced the CI `tsc` failure, fixed the invalid test category literal, normalized the remaining journal path leak, reran focused verification locally, and pushed the repair for CI rerun.
-State hint: waiting_ci
+Summary: Implemented the review fixes for journal path normalization, added focused regression coverage, normalized the tracked durable text, and reran the focused verification set successfully.
+State hint: addressing_review
 Blocked reason: none
-Tests: `npx tsc --noEmit`; `npx tsx --test src/journal.test.ts`; `npx tsx --test src/workstation-local-path-detector.test.ts`; `npm run verify:paths`
-Next action: Wait for PR #965 build checks to complete on the current branch head, then address any remaining review feedback if it appears.
+Tests: `npx tsx --test src/journal.test.ts`; `npx tsc --noEmit`; `npx tsx --test src/workstation-local-path-detector.test.ts`; `npm run verify:paths`
+Next action: Commit and push the review fix to PR #965, then resolve the remaining automated review threads.
 Failure signature: none
 
 ## Active Failure Context
-- Category: checks
-- Summary: PR #965 checks are rerunning after the CI repair push.
-- Command or source: gh pr checks
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/965
-- Details:
-  - build (ubuntu-latest) (pending)
-  - build (macos-latest) (pending)
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the failing CI signal was a narrow TypeScript regression in the new journal test, and the branch also still carried one durable absolute-path leak inside the committed issue journal summary.
-- What changed: changed the regression test failure-context category from the invalid `"verification"` literal to `"manual"`, normalized the lingering repo-local absolute journal link to a repo-relative link, reran the focused verification set, and pushed the CI repair to the PR branch.
+- Hypothesis: the two review threads are valid, and the current patch should be ready to land once the PR branch is updated with the now-green focused verification set.
+- What changed: patched `src/core/journal.ts` to sanitize inline absolute-path substrings and broader local roots, added focused regression tests in `src/journal.test.ts`, and normalized tracked durable-path text in fixtures and this journal so the focused verification set passes.
 - Current blocker: none.
-- Next exact step: wait for PR #965 build checks to finish on the current branch head, then address any remaining review feedback if needed.
+- Next exact step: commit and push the review fix, then resolve the remaining automated review threads on PR #965.
 - Verification gap: none.
-- Files touched: `src/journal.test.ts`, `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low; the repair only changes a test fixture/category literal and normalizes journal text.
-- Last focused command: `gh pr checks 965`
-- Last focused failure: `npm run verify:paths` initially failed because `## Latest Codex Summary` still contained a workstation-local absolute path to `.codex-supervisor/issue-journal.md`.
-- Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/965
-- Last focused commands:
-```bash
-npx tsc --noEmit
-npx tsx --test src/journal.test.ts
-npx tsx --test src/workstation-local-path-detector.test.ts
-npm run verify:paths
-git push
-gh pr view 965 --json headRefOid,headRefName,isDraft,state,url
-gh pr checks 965
-```
+- Files touched: `src/core/journal.ts`, `src/journal.test.ts`, `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; the change only affects journal path normalization heuristics, regression fixtures, and durable notes.
+- Last focused command: `npx tsx --test src/workstation-local-path-detector.test.ts`
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
