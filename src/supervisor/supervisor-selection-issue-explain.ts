@@ -2,6 +2,7 @@ import { GitHubClient } from "../github";
 import {
   findBlockingIssue,
   findHighRiskBlockingAmbiguity,
+  isRecordDoneForSequencing,
   lintExecutionReadyIssueBody,
   parseIssueMetadata,
 } from "../issue-metadata";
@@ -358,7 +359,7 @@ export function formatSelectionReason(
   const dependencyStatus =
     metadata.dependsOn.length === 0
       ? "none"
-      : `${metadata.dependsOn.join("|")}:${metadata.dependsOn.every((dependencyNumber) => state.issues[String(dependencyNumber)]?.state === "done") ? "done" : "pending"}`;
+      : `${metadata.dependsOn.join("|")}:${metadata.dependsOn.every((dependencyNumber) => isRecordDoneForSequencing(state.issues[String(dependencyNumber)])) ? "done" : "pending"}`;
 
   let executionOrderStatus = "none";
   let predecessorStatus = "none";
@@ -385,7 +386,7 @@ export function formatSelectionReason(
 
     if (predecessors.length > 0) {
       predecessorStatus = `${predecessors.join("|")}:${
-        predecessors.every((predecessorNumber) => state.issues[String(predecessorNumber)]?.state === "done")
+        predecessors.every((predecessorNumber) => isRecordDoneForSequencing(state.issues[String(predecessorNumber)]))
           ? "done"
           : "pending"
       }`;

@@ -1,4 +1,4 @@
-import { GitHubIssue, SupervisorStateFile } from "../core/types";
+import { GitHubIssue, IssueRunRecord, SupervisorStateFile } from "../core/types";
 import { parseIssueMetadata } from "./issue-metadata-parser";
 
 export { parseIssueMetadata } from "./issue-metadata-parser";
@@ -44,6 +44,24 @@ export interface ParentIssueClosureCandidate {
   childIssues: GitHubIssue[];
 }
 
+export function isRecordDoneForSequencing(record: Pick<
+  IssueRunRecord,
+  "state" | "local_review_head_sha" | "pre_merge_evaluation_outcome"
+> | null | undefined): boolean {
+  if (!record || record.state !== "done") {
+    return false;
+  }
+
+  if (record.local_review_head_sha === null && record.pre_merge_evaluation_outcome == null) {
+    return true;
+  }
+
+  return (
+    record.pre_merge_evaluation_outcome === "mergeable" ||
+    record.pre_merge_evaluation_outcome === "follow_up_eligible"
+  );
+}
+
 export function findBlockingIssue(
   issue: GitHubIssue,
   issues: GitHubIssue[],
@@ -67,7 +85,7 @@ export function findBlockingIssue(
     }
 
     const dependencyRecord = state.issues[String(dependencyNumber)];
-    if (!dependencyRecord || dependencyRecord.state !== "done") {
+    if (!isRecordDoneForSequencing(dependencyRecord)) {
       return {
         issue: dependencyIssue,
         reason: `depends on #${dependencyNumber}`,
@@ -106,7 +124,7 @@ export function findBlockingIssue(
     }
 
     const predecessorRecord = state.issues[String(predecessor.issue.number)];
-    if (!predecessorRecord || predecessorRecord.state !== "done") {
+    if (!isRecordDoneForSequencing(predecessorRecord)) {
       return {
         issue: predecessor.issue,
         reason: `execution order requires #${predecessor.issue.number} first`,

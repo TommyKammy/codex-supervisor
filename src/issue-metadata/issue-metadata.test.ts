@@ -1,13 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  findBlockingIssue,
   findHighRiskBlockingAmbiguity,
   findParentIssuesReadyToClose,
   lintExecutionReadyIssueBody,
   parseIssueMetadata,
   validateIssueMetadataSyntax,
 } from "./issue-metadata";
-import { GitHubIssue } from "../core/types";
+import { GitHubIssue, SupervisorStateFile } from "../core/types";
+import { createRecord } from "../supervisor/supervisor-test-helpers";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return {
@@ -53,6 +55,62 @@ test("findParentIssuesReadyToClose treats both parent metadata formats as the sa
       },
     ],
   );
+});
+
+test("findBlockingIssue keeps downstream execution order blocked until final evaluation resolves", () => {
+  const predecessor = createIssue({
+    number: 41,
+    title: "Step 1",
+    state: "CLOSED",
+    body: `## Summary
+Ship step 1.
+
+## Scope
+- finish the first sibling
+
+## Acceptance criteria
+- step 2 does not start until step 1 fully clears
+
+## Verification
+- npx tsx --test src/issue-metadata/issue-metadata.test.ts
+
+Part of: #400
+Execution order: 1 of 2`,
+  });
+  const downstream = createIssue({
+    number: 42,
+    title: "Step 2",
+    body: `## Summary
+Ship step 2 after step 1.
+
+## Scope
+- continue the execution-order chain
+
+## Acceptance criteria
+- step 2 waits for step 1 final evaluation
+
+## Verification
+- npx tsx --test src/issue-metadata/issue-metadata.test.ts
+
+Part of: #400
+Execution order: 2 of 2`,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "41": createRecord({
+        issue_number: 41,
+        state: "done",
+        local_review_head_sha: "head-41",
+        pre_merge_evaluation_outcome: null,
+      }),
+    },
+  };
+
+  assert.deepEqual(findBlockingIssue(downstream, [predecessor, downstream], state), {
+    issue: predecessor,
+    reason: "execution order requires #41 first",
+  });
 });
 
 test("parseIssueMetadata accepts both execution order metadata formats", () => {
