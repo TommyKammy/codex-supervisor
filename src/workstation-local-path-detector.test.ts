@@ -72,4 +72,11 @@ test("workstation-local path detector flags tracked durable artifacts and allows
     0,
     `expected explicit exclusion to pass\nstdout:\n${allowedResult.stdout}\nstderr:\n${allowedResult.stderr}`,
   );
+
+  const normalizedAllowedResult = runDetector(repoPath, "--workspace", repoPath, "--exclude-path", "./docs/guide.md");
+  assert.equal(
+    normalizedAllowedResult.status,
+    0,
+    `expected normalized explicit exclusion to pass\nstdout:\n${normalizedAllowedResult.stdout}\nstderr:\n${normalizedAllowedResult.stderr}`,
+  );
 });

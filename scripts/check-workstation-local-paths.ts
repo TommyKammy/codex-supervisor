@@ -85,7 +85,8 @@ function parseArgs(argv: string[]): Args {
 }
 
 function normalizeRepoRelativePath(filePath: string): string {
-  return filePath.replaceAll(path.sep, "/");
+  const slashNormalized = filePath.replace(/\\/g, "/");
+  return path.posix.normalize(slashNormalized).replace(/^(?:\.\/)+/, "");
 }
 
 function gitTrackedFiles(workspacePath: string): string[] {
