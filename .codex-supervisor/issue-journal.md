@@ -1,55 +1,72 @@
-# Issue #925: Post-merge audit analysis: summarize recurring review, recovery, and failure patterns
+# Issue #926: Post-merge promotion candidates: surface shared-memory and guardrail suggestions from recurring patterns
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/925
-- Branch: codex/issue-925
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/926
+- Branch: codex/issue-926
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 9b9d7f7f963ce985ad04a08087779eac75b33c12
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: f43049f1222be02f076db6de85664316205dc7a2
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ852YBEc
+- Last failure signature: PRRT_kwDORgvdZ852Y1vo|PRRT_kwDORgvdZ852Y1vy|PRRT_kwDORgvdZ852Y1v7
 - Repeated failure signature count: 1
-- Updated at: 2026-03-24T10:38:34Z
+- Updated at: 2026-03-24T11:22:58.998Z
 
 ## Latest Codex Summary
-I addressed the open CodeRabbit review on PR [#941](https://github.com/TommyKammy/codex-supervisor/pull/941) by making `summarizePostMergeAuditPatterns` tolerate persisted root-cause summaries that omit `findingsCount` or `findingKeys`. The repair is committed as `9b9d7f7` (`Handle missing audit finding metadata`) and pushed to `codex/issue-925`, so the PR head now includes the defensive defaults plus the malformed-artifact regression test.
+Addressed the three open CodeRabbit review threads on PR #943 in [src/supervisor/post-merge-audit-summary.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-926/src/supervisor/post-merge-audit-summary.ts) by bumping the summary schema version to `2`, deriving review-backed promotion candidate keys from the canonical pattern key so severity-distinct patterns stay unique, and preserving all review finding keys instead of truncating them before candidate generation.
 
-Focused verification for this repair is green: `npx tsx --test src/supervisor/post-merge-audit-summary.test.ts` and `npm run build`.
+I updated the focused summary assertions in [src/supervisor/post-merge-audit-summary.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-926/src/supervisor/post-merge-audit-summary.test.ts), added a regression that covers duplicate summaries across severities plus 4+ supporting finding keys, and bumped the CLI runtime DTO expectation in [src/supervisor/post-merge-audit-summary-runtime.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-926/src/supervisor/post-merge-audit-summary-runtime.test.ts).
 
-Summary: Committed and pushed the PR #941 review repair for missing root-cause finding metadata in post-merge audit summaries
+Verification ran clean in this worktree:
+- `npx tsx --test src/supervisor/post-merge-audit-summary.test.ts`
+- `npx tsx --test src/supervisor/post-merge-audit-summary-runtime.test.ts`
+- `npx tsx --test src/**/*.test.ts`
+- `npm run build`
+
+Local workspace still has untracked `.codex-supervisor/replay/`, which I left alone.
+
+Summary: Fixed the three outstanding PR #943 review threads by versioning the summary DTO, making review-derived candidate keys severity-stable, and preserving full finding-key traceability with regression coverage.
 State hint: addressing_review
 Blocked reason: none
-Tests: `npx tsx --test src/supervisor/post-merge-audit-summary.test.ts`; `npm run build`
-Next action: monitor PR #941 for CI or reviewer follow-up on commit `9b9d7f7`
+Tests: npx tsx --test src/supervisor/post-merge-audit-summary.test.ts; npx tsx --test src/supervisor/post-merge-audit-summary-runtime.test.ts; npx tsx --test src/**/*.test.ts; npm run build
+Next action: Commit the review fixes, push `codex/issue-926`, and update PR #943.
 Failure signature: none
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: Resolved locally; the three automated PR #943 review threads were addressed in code and tests.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/943#discussion_r2980798199
+- Details:
+  - Bumped `POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION` to `2` and updated focused/runtime assertions so the new required `promotionCandidates` field is versioned correctly.
+  - Switched review-derived `guardrail` and `shared_memory` candidate keys to `slugify(pattern.key)` so the severity embedded in the canonical pattern key prevents collisions.
+  - Removed the `.slice(0, 3)` truncation on `exampleFindingKeys` and added a regression that proves 4 supporting finding keys survive into both `reviewPatterns` and `promotionCandidates`.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: persisted post-merge audit artifacts already captured the raw review, recovery, and failure signals needed for recurring-pattern analysis, but there was no typed aggregate that operators could query without manually inspecting individual JSON files.
-- What changed: repaired the `summarizePostMergeAuditPatterns` review-pattern reducer so persisted artifacts missing `findingsCount` or `findingKeys` no longer throw during aggregation; defaulted those fields to `0` and `[]` at read time and added a regression test that deletes both keys from a persisted root-cause summary before summarization.
+- Hypothesis: the remaining PR #943 review risk was confined to DTO contract/versioning and traceability details rather than the overall promotion-candidate feature shape.
+- What changed: bumped the post-merge audit summary schema version to `2`, made review-derived promotion candidate keys derive from the canonical severity-aware review pattern key, removed the premature truncation of review finding keys, and added focused regression coverage for duplicate summary/severity splits plus 4-key traceability.
 - Current blocker: none.
-- Next exact step: monitor PR #941 for any follow-up after the pushed repair commit `9b9d7f7`.
-- Verification gap: none for the repair; focused test coverage and a clean TypeScript build both passed after the change.
-- Files touched: `src/supervisor/post-merge-audit-summary.ts`, `src/supervisor/post-merge-audit-summary.test.ts`, `.codex-supervisor/issue-journal.md`
+- Next exact step: commit these review fixes, push `codex/issue-926`, and update PR #943 so the review threads can be resolved.
+- Verification gap: none; focused tests, the full `src/**/*.test.ts` suite, and `npm run build` all passed after the review fixes.
+- Files touched: `src/supervisor/post-merge-audit-summary.ts`, `src/supervisor/post-merge-audit-summary.test.ts`, `src/supervisor/post-merge-audit-summary-runtime.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: low; reverting would only remove a read-only analysis surface and leave the persisted audit artifacts intact.
-- Last focused command: `gh pr view 941 --json number,url,headRefName,headRefOid,isDraft`
-- Last focused failure: `npm run build` initially failed because the new regression test deleted typed properties via a direct `Record<string, unknown>` cast; resolved by casting through `unknown` before deleting the fields.
-- Draft PR: #941 https://github.com/TommyKammy/codex-supervisor/pull/941
+- Last focused command: `npm run build`
+- Last focused failure: none.
+- Draft PR: #943 https://github.com/TommyKammy/codex-supervisor/pull/943
 - Last focused commands:
 ```bash
+git status --short
+rg -n "POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION|promotionCandidates|exampleFindingKeys|buildReviewPatternKey|guardrail:|shared_memory:" src/supervisor/post-merge-audit-summary.ts src/supervisor/post-merge-audit-summary.test.ts src/supervisor/post-merge-audit-summary-runtime.test.ts
+sed -n '1,260p' src/supervisor/post-merge-audit-summary.ts
+sed -n '1,340p' src/supervisor/post-merge-audit-summary.test.ts
+sed -n '1,120p' src/supervisor/post-merge-audit-summary-runtime.test.ts
 npx tsx --test src/supervisor/post-merge-audit-summary.test.ts
+npx tsx --test src/supervisor/post-merge-audit-summary-runtime.test.ts
+npx tsx --test src/**/*.test.ts
 npm run build
 date -u +"%Y-%m-%dT%H:%M:%SZ"
-git diff -- src/supervisor/post-merge-audit-summary.ts src/supervisor/post-merge-audit-summary.test.ts .codex-supervisor/issue-journal.md
-git add src/supervisor/post-merge-audit-summary.ts src/supervisor/post-merge-audit-summary.test.ts .codex-supervisor/issue-journal.md
-git commit -m "Handle missing audit finding metadata"
-git push origin codex/issue-925
-gh pr view 941 --json number,url,headRefName,headRefOid,isDraft
+git status --short
 ```
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.

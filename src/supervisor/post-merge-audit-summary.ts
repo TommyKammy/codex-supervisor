@@ -6,7 +6,7 @@ import type { ActionableSeverity, LocalReviewRootCauseSummary } from "../local-r
 import type { PostMergeAuditArtifact } from "./post-merge-audit-artifact";
 import { postMergeAuditArtifactDir } from "./post-merge-audit-artifact";
 
-export const POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION = 1;
+export const POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION = 2;
 
 export interface PostMergeAuditReviewPatternDto {
   key: string;
@@ -40,6 +40,22 @@ export interface PostMergeAuditRecoveryPatternDto {
   latestRecoveredAt: string | null;
 }
 
+export type PostMergeAuditPromotionCategoryDto = "shared_memory" | "guardrail" | "checklist" | "documentation";
+
+export interface PostMergeAuditPromotionCandidateDto {
+  key: string;
+  category: PostMergeAuditPromotionCategoryDto;
+  title: string;
+  summary: string;
+  rationale: string;
+  sourcePatternKeys: string[];
+  supportingIssueNumbers: number[];
+  supportingFindingKeys: string[];
+  advisoryOnly: true;
+  autoApply: false;
+  autoCreateFollowUpIssue: false;
+}
+
 export interface PostMergeAuditPatternSummaryDto {
   schemaVersion: typeof POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION;
   generatedAt: string;
@@ -52,6 +68,7 @@ export interface PostMergeAuditPatternSummaryDto {
   reviewPatterns: PostMergeAuditReviewPatternDto[];
   failurePatterns: PostMergeAuditFailurePatternDto[];
   recoveryPatterns: PostMergeAuditRecoveryPatternDto[];
+  promotionCandidates: PostMergeAuditPromotionCandidateDto[];
 }
 
 function normalizeText(value: string): string {
@@ -177,6 +194,116 @@ function normalizeRecoveryKey(reason: string): string {
   return reason.split(":")[0]!.trim();
 }
 
+function shouldPromoteReviewPattern(pattern: Pick<PostMergeAuditReviewPatternDto, "artifactCount">): boolean {
+  return pattern.artifactCount >= 2;
+}
+
+function shouldPromoteFailurePattern(pattern: Pick<PostMergeAuditFailurePatternDto, "artifactCount">): boolean {
+  return pattern.artifactCount >= 2;
+}
+
+function shouldPromoteRecoveryPattern(pattern: Pick<PostMergeAuditRecoveryPatternDto, "artifactCount">): boolean {
+  return pattern.artifactCount >= 2;
+}
+
+function createReviewPromotionCandidates(
+  pattern: PostMergeAuditReviewPatternDto,
+): PostMergeAuditPromotionCandidateDto[] {
+  if (!shouldPromoteReviewPattern(pattern)) {
+    return [];
+  }
+
+  const summaryLabel = pattern.summary.replace(/\.$/u, "");
+  return [
+    {
+      key: `guardrail:${slugify(pattern.key)}`,
+      category: "guardrail",
+      title: `Promote guardrail for ${summaryLabel}`,
+      summary: `Recurring review pattern: ${pattern.summary}`,
+      rationale: `This ${pattern.severity}-severity review pattern recurred across ${pattern.artifactCount} post-merge audits.`,
+      sourcePatternKeys: [pattern.key],
+      supportingIssueNumbers: [...pattern.exampleIssueNumbers],
+      supportingFindingKeys: [...pattern.exampleFindingKeys],
+      advisoryOnly: true,
+      autoApply: false,
+      autoCreateFollowUpIssue: false,
+    },
+    {
+      key: `shared_memory:${slugify(pattern.key)}`,
+      category: "shared_memory",
+      title: `Promote shared memory for ${summaryLabel}`,
+      summary: `Capture the recurring lesson behind: ${pattern.summary}`,
+      rationale: `The same review lesson appeared in ${pattern.artifactCount} merged issues and should stay queryable for future sessions.`,
+      sourcePatternKeys: [pattern.key],
+      supportingIssueNumbers: [...pattern.exampleIssueNumbers],
+      supportingFindingKeys: [...pattern.exampleFindingKeys],
+      advisoryOnly: true,
+      autoApply: false,
+      autoCreateFollowUpIssue: false,
+    },
+  ];
+}
+
+function createFailurePromotionCandidates(
+  pattern: PostMergeAuditFailurePatternDto,
+): PostMergeAuditPromotionCandidateDto[] {
+  if (!shouldPromoteFailurePattern(pattern)) {
+    return [];
+  }
+
+  const summary = pattern.summary ?? "Recurring post-merge failure pattern.";
+  const category: PostMergeAuditPromotionCategoryDto =
+    pattern.blockedReason === "requirements" ? "documentation" : "checklist";
+
+  return [
+    {
+      key: `${category}:${slugify(pattern.key)}`,
+      category,
+      title:
+        category === "documentation"
+          ? `Document recurring failure pattern ${pattern.key}`
+          : `Add checklist coverage for recurring failure pattern ${pattern.key}`,
+      summary,
+      rationale: `The same failure pattern recurred across ${pattern.artifactCount} post-merge audits with ${pattern.repeatedCount} total repeats.`,
+      sourcePatternKeys: [pattern.key],
+      supportingIssueNumbers: [...pattern.exampleIssueNumbers],
+      supportingFindingKeys: [],
+      advisoryOnly: true,
+      autoApply: false,
+      autoCreateFollowUpIssue: false,
+    },
+  ];
+}
+
+function createRecoveryPromotionCandidates(
+  pattern: PostMergeAuditRecoveryPatternDto,
+): PostMergeAuditPromotionCandidateDto[] {
+  if (!shouldPromoteRecoveryPattern(pattern)) {
+    return [];
+  }
+
+  return [
+    {
+      key: `documentation:${pattern.key}`,
+      category: "documentation",
+      title: `Document recovery workflow for ${pattern.key}`,
+      summary: pattern.reason,
+      rationale: `Operators recovered this way in ${pattern.artifactCount} post-merge audits, so the workflow is a documentation candidate.`,
+      sourcePatternKeys: [pattern.key],
+      supportingIssueNumbers: [...pattern.exampleIssueNumbers],
+      supportingFindingKeys: [],
+      advisoryOnly: true,
+      autoApply: false,
+      autoCreateFollowUpIssue: false,
+    },
+  ];
+}
+
+function comparePromotionCategory(left: PostMergeAuditPromotionCategoryDto, right: PostMergeAuditPromotionCategoryDto): number {
+  const order: PostMergeAuditPromotionCategoryDto[] = ["guardrail", "shared_memory", "checklist", "documentation"];
+  return order.indexOf(left) - order.indexOf(right);
+}
+
 export async function summarizePostMergeAuditPatterns(
   config: Pick<SupervisorConfig, "localReviewArtifactDir" | "repoSlug">,
 ): Promise<PostMergeAuditPatternSummaryDto> {
@@ -284,6 +411,64 @@ export async function summarizePostMergeAuditPatterns(
     }
   }
 
+  const summarizedReviewPatterns = [...reviewPatterns.values()]
+    .map((pattern) => ({
+      key: pattern.key,
+      summary: pattern.summary,
+      category: pattern.category,
+      severity: pattern.severity,
+      artifactCount: pattern.artifactNumbers.size,
+      evidenceCount: pattern.evidenceCount,
+      exampleIssueNumbers: [...pattern.artifactNumbers].sort(compareNumbersAscending),
+      exampleFindingKeys: [...pattern.findingKeys].sort(compareStringsAscending),
+    }))
+    .sort((left, right) =>
+      right.artifactCount - left.artifactCount ||
+      right.evidenceCount - left.evidenceCount ||
+      compareStringsAscending(left.key, right.key));
+
+  const summarizedFailurePatterns = [...failurePatterns.values()]
+    .map((pattern) => ({
+      key: pattern.key,
+      category: pattern.category,
+      failureKind: pattern.failureKind,
+      blockedReason: pattern.blockedReason,
+      summary: pattern.summary,
+      artifactCount: pattern.artifactNumbers.size,
+      repeatedCount: pattern.repeatedCount,
+      exampleIssueNumbers: [...pattern.artifactNumbers].sort(compareNumbersAscending),
+      lastSeenAt: pattern.lastSeenAt,
+    }))
+    .sort((left, right) =>
+      right.artifactCount - left.artifactCount ||
+      right.repeatedCount - left.repeatedCount ||
+      compareNullableDescending(left.lastSeenAt, right.lastSeenAt) ||
+      compareStringsAscending(left.key, right.key));
+
+  const summarizedRecoveryPatterns = [...recoveryPatterns.values()]
+    .map((pattern) => ({
+      key: pattern.key,
+      reason: pattern.reason,
+      artifactCount: pattern.artifactNumbers.size,
+      occurrenceCount: pattern.occurrenceCount,
+      exampleIssueNumbers: [...pattern.artifactNumbers].sort(compareNumbersAscending),
+      latestRecoveredAt: pattern.latestRecoveredAt,
+    }))
+    .sort((left, right) =>
+      right.artifactCount - left.artifactCount ||
+      right.occurrenceCount - left.occurrenceCount ||
+      compareNullableDescending(left.latestRecoveredAt, right.latestRecoveredAt) ||
+      compareStringsAscending(left.key, right.key));
+
+  const promotionCandidates = [
+    ...summarizedReviewPatterns.flatMap((pattern) => createReviewPromotionCandidates(pattern)),
+    ...summarizedFailurePatterns.flatMap((pattern) => createFailurePromotionCandidates(pattern)),
+    ...summarizedRecoveryPatterns.flatMap((pattern) => createRecoveryPromotionCandidates(pattern)),
+  ].sort((left, right) =>
+    comparePromotionCategory(left.category, right.category) ||
+    right.supportingIssueNumbers.length - left.supportingIssueNumbers.length ||
+    compareStringsAscending(left.key, right.key));
+
   return {
     schemaVersion: POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION,
     generatedAt: nowIso(),
@@ -293,52 +478,10 @@ export async function summarizePostMergeAuditPatterns(
     autoCreateFollowUpIssues: false,
     artifactsAnalyzed: artifacts.length,
     artifactsSkipped: skippedCount,
-    reviewPatterns: [...reviewPatterns.values()]
-      .map((pattern) => ({
-        key: pattern.key,
-        summary: pattern.summary,
-        category: pattern.category,
-        severity: pattern.severity,
-        artifactCount: pattern.artifactNumbers.size,
-        evidenceCount: pattern.evidenceCount,
-        exampleIssueNumbers: [...pattern.artifactNumbers].sort(compareNumbersAscending),
-        exampleFindingKeys: [...pattern.findingKeys].sort(compareStringsAscending).slice(0, 3),
-      }))
-      .sort((left, right) =>
-        right.artifactCount - left.artifactCount ||
-        right.evidenceCount - left.evidenceCount ||
-        compareStringsAscending(left.key, right.key)),
-    failurePatterns: [...failurePatterns.values()]
-      .map((pattern) => ({
-        key: pattern.key,
-        category: pattern.category,
-        failureKind: pattern.failureKind,
-        blockedReason: pattern.blockedReason,
-        summary: pattern.summary,
-        artifactCount: pattern.artifactNumbers.size,
-        repeatedCount: pattern.repeatedCount,
-        exampleIssueNumbers: [...pattern.artifactNumbers].sort(compareNumbersAscending),
-        lastSeenAt: pattern.lastSeenAt,
-      }))
-      .sort((left, right) =>
-        right.artifactCount - left.artifactCount ||
-        right.repeatedCount - left.repeatedCount ||
-        compareNullableDescending(left.lastSeenAt, right.lastSeenAt) ||
-        compareStringsAscending(left.key, right.key)),
-    recoveryPatterns: [...recoveryPatterns.values()]
-      .map((pattern) => ({
-        key: pattern.key,
-        reason: pattern.reason,
-        artifactCount: pattern.artifactNumbers.size,
-        occurrenceCount: pattern.occurrenceCount,
-        exampleIssueNumbers: [...pattern.artifactNumbers].sort(compareNumbersAscending),
-        latestRecoveredAt: pattern.latestRecoveredAt,
-      }))
-      .sort((left, right) =>
-        right.artifactCount - left.artifactCount ||
-        right.occurrenceCount - left.occurrenceCount ||
-        compareNullableDescending(left.latestRecoveredAt, right.latestRecoveredAt) ||
-        compareStringsAscending(left.key, right.key)),
+    reviewPatterns: summarizedReviewPatterns,
+    failurePatterns: summarizedFailurePatterns,
+    recoveryPatterns: summarizedRecoveryPatterns,
+    promotionCandidates,
   };
 }
 
