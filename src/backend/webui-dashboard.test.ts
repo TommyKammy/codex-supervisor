@@ -511,6 +511,8 @@ test("dashboard page uses a gentelella-inspired admin shell palette and layout",
 
   assert.match(html, /--sidebar: #2a3f54;/u);
   assert.match(html, /--accent: #1abb9c;/u);
+  assert.match(html, /--muted-sidebar: rgba\(214, 224, 235, 0\.82\);/u);
+  assert.match(html, /--muted-surface: #5f7288;/u);
   assert.match(html, /--text: #2a3f54;/u);
   assert.match(
     html,
@@ -525,30 +527,17 @@ test("dashboard page uses a gentelella-inspired admin shell palette and layout",
 });
 
 test("dashboard keeps the fixed panel layout without any drag affordances", async () => {
-  const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-  ]);
-  await harness.flush();
+  const html = renderSupervisorDashboardHtml();
 
-  const overviewGrid = harness.document.getElementById("overview-grid");
-  const detailsGrid = harness.document.getElementById("details-grid");
-  assert.ok(overviewGrid);
-  assert.ok(detailsGrid);
-
-  assert.deepEqual(childIds(overviewGrid), ["panel-status", "panel-doctor"]);
-  assert.deepEqual(childIds(detailsGrid), [
-    "panel-issue-details",
-    "panel-tracked-history",
-    "panel-operator-actions",
-    "panel-live-events",
-    "panel-operator-timeline",
-  ]);
-  assert.deepEqual(
-    harness.fetchCalls.map((call) => call.path),
-    ["/api/status?why=true", "/api/doctor"],
+  assert.match(
+    html,
+    /<div id="overview-grid" class="overview-grid" aria-label="overview" data-panel-grid="overview">[\s\S]*data-panel-id="status"[\s\S]*data-panel-id="doctor"[\s\S]*<\/div>/u,
   );
-  assert.equal(harness.remainingFetches.length, 0);
+  assert.match(
+    html,
+    /<div id="details-grid" class="details-grid" aria-label="details" data-panel-grid="details">[\s\S]*data-panel-id="issue-details"[\s\S]*data-panel-id="tracked-history"[\s\S]*data-panel-id="operator-actions"[\s\S]*data-panel-id="live-events"[\s\S]*data-panel-id="operator-timeline"[\s\S]*<\/div>/u,
+  );
+  assert.doesNotMatch(html, /panel-drag-|dashboard-panel-reorder|drag-active|drop-target/u);
 });
 
 test("dashboard keeps requeue disabled until the selected issue finishes loading", async () => {

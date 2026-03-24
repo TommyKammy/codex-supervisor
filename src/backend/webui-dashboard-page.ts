@@ -21,7 +21,8 @@ export function renderSupervisorDashboardPage(): string {
         --sidebar: #2a3f54;
         --sidebar-deep: #1d2b38;
         --sidebar-text: rgba(233, 239, 245, 0.92);
-        --sidebar-muted: rgba(203, 214, 226, 0.68);
+        --muted-sidebar: rgba(214, 224, 235, 0.82);
+        --muted-surface: #5f7288;
         --topbar: rgba(255, 255, 255, 0.92);
         --surface: #ffffff;
         --surface-soft: #fafbfd;
@@ -29,7 +30,6 @@ export function renderSupervisorDashboardPage(): string {
         --border: #e3e8ef;
         --border-strong: #d1d9e6;
         --text: #2a3f54;
-        --muted: #73879c;
         --accent: #1abb9c;
         --accent-strong: #169f84;
         --ok: #1d8f74;
@@ -97,7 +97,7 @@ export function renderSupervisorDashboardPage(): string {
       .section-kicker,
       .panel-header h2,
       .row-label {
-        color: var(--muted);
+        color: var(--muted-surface);
       }
 
       .brand-title {
@@ -115,12 +115,12 @@ export function renderSupervisorDashboardPage(): string {
       .panel-subtitle,
       .action-card p {
         margin: 0;
-        color: var(--muted);
+        color: var(--muted-surface);
         line-height: 1.55;
       }
 
       .brand-note {
-        color: var(--sidebar-muted);
+        color: var(--muted-sidebar);
       }
 
       .nav-block {
@@ -148,7 +148,7 @@ export function renderSupervisorDashboardPage(): string {
       }
 
       .nav-item small {
-        color: var(--sidebar-muted);
+        color: var(--muted-sidebar);
       }
 
       .workspace-card {
@@ -165,11 +165,11 @@ export function renderSupervisorDashboardPage(): string {
       }
 
       .workspace-card p {
-        color: var(--sidebar-muted);
+        color: var(--muted-sidebar);
       }
 
       .sidebar-footer {
-        color: var(--sidebar-muted);
+        color: var(--muted-sidebar);
         font-size: 0.82rem;
       }
 
@@ -205,7 +205,7 @@ export function renderSupervisorDashboardPage(): string {
 
       .topbar-title p {
         margin: 0;
-        color: var(--muted);
+        color: var(--muted-surface);
       }
 
       .topbar-meta {
@@ -219,7 +219,7 @@ export function renderSupervisorDashboardPage(): string {
         border: 1px solid var(--border);
         border-radius: 999px;
         background: var(--surface);
-        color: var(--muted);
+        color: var(--muted-surface);
         font-size: 0.9rem;
       }
 
@@ -281,7 +281,7 @@ export function renderSupervisorDashboardPage(): string {
       }
 
       .summary-list li {
-        color: var(--muted);
+        color: var(--muted-surface);
       }
 
       .summary-list strong {
@@ -304,7 +304,7 @@ export function renderSupervisorDashboardPage(): string {
       }
 
       .stat-label {
-        color: var(--muted);
+        color: var(--muted-surface);
       }
 
       .stat-card strong {
@@ -434,7 +434,7 @@ export function renderSupervisorDashboardPage(): string {
 
       .panel-empty-state,
       .hint {
-        color: var(--muted);
+        color: var(--muted-surface);
       }
 
       .stack,
@@ -580,7 +580,7 @@ export function renderSupervisorDashboardPage(): string {
       }
 
       .detail-item {
-        color: var(--muted);
+        color: var(--muted-surface);
         font-size: 0.92rem;
         line-height: 1.45;
       }
@@ -609,7 +609,7 @@ export function renderSupervisorDashboardPage(): string {
         flex-wrap: wrap;
         gap: 8px;
         margin-bottom: 6px;
-        color: var(--muted);
+        color: var(--muted-surface);
         font-size: 0.82rem;
       }
 
