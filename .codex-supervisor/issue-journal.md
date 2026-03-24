@@ -24,13 +24,13 @@
 - Hypothesis: the repo had a typed pre-merge evaluation contract, but no separate typed post-merge audit contract for non-gating learning outcomes, recurring-pattern summaries, or promotion candidates.
 - What changed: added focused regression coverage in `src/local-review/post-merge-audit.test.ts`; introduced a dedicated `src/local-review/post-merge-audit.ts` helper plus new typed models in `src/local-review/types.ts` for advisory-only post-merge outcomes, recurring-pattern summaries, and promotion candidates; documented the non-gating contract in `src/local-review/artifacts.ts` and tightened `src/local-review/artifacts.test.ts`.
 - Current blocker: none.
-- Next exact step: review the diff, commit the post-merge audit contract change, and open or update the branch PR if needed.
+- Next exact step: monitor draft PR #936, address review feedback if any arrives, and promote it once ready.
 - Verification gap: none locally; focused post-merge audit coverage, adjacent local-review tests, `npm run build`, and the full test suite are green in this workspace.
 - Files touched: `src/local-review/types.ts`, `src/local-review/post-merge-audit.ts`, `src/local-review/post-merge-audit.test.ts`, `src/local-review/artifacts.ts`, `src/local-review/artifacts.test.ts`, `src/local-review/index.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: low; reverting would remove the typed post-merge audit contract and the explicit non-gating documentation needed for later reporting and promotion work.
 - Last focused command: `npx tsx --test src/**/*.test.ts`
 - Last focused failure: none
-- Draft PR: none
+- Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/936
 - Last focused commands:
 ```bash
 sed -n '1,240p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-923/AGENTS.generated.md
