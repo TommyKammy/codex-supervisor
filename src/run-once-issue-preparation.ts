@@ -28,6 +28,7 @@ import {
 import { shouldPreserveNoPrFailureTracking } from "./no-pull-request-state";
 import { runLocalCiGate, type LocalCiCommandRunner } from "./local-ci";
 import { writeSupervisorCycleDecisionSnapshot as writeSupervisorCycleDecisionSnapshotImpl } from "./supervisor/supervisor-cycle-snapshot";
+import { writePreMergeAssessmentSnapshot as writePreMergeAssessmentSnapshotImpl } from "./supervisor/pre-merge-assessment-snapshot";
 import {
   executionMetricsRetentionRootPath,
   syncExecutionMetricsRunSummarySafely,
@@ -107,6 +108,16 @@ interface PrepareIssueExecutionContextArgs {
     record: IssueRunRecord;
     workspacePath: string;
     workspaceStatus: WorkspaceStatus;
+    pr: GitHubPullRequest | null;
+    checks: PullRequestCheck[];
+    reviewThreads: ReviewThread[];
+  }) => Promise<string>;
+  writePreMergeAssessmentSnapshot?: (args: {
+    config: SupervisorConfig;
+    capturedAt: string;
+    issue: GitHubIssue;
+    record: IssueRunRecord;
+    workspacePath: string;
     pr: GitHubPullRequest | null;
     checks: PullRequestCheck[];
     reviewThreads: ReviewThread[];
@@ -259,6 +270,8 @@ async function hydratePullRequestContext(
   const getWorkspaceStatus = args.getWorkspaceStatus ?? getWorkspaceStatusImpl;
   const writeSupervisorCycleDecisionSnapshot =
     args.writeSupervisorCycleDecisionSnapshot ?? writeSupervisorCycleDecisionSnapshotImpl;
+  const writePreMergeAssessmentSnapshot =
+    args.writePreMergeAssessmentSnapshot ?? writePreMergeAssessmentSnapshotImpl;
   const now = args.now ?? nowIso;
 
   let nextWorkspaceStatus = args.workspaceStatus;
@@ -292,13 +305,24 @@ async function hydratePullRequestContext(
     if (!resolvedPr) {
       // No current or historical PR for this branch; continue with normal branch/PR flow.
     } else if (resolvedPr.mergedAt || resolvedPr.state === "MERGED") {
+      const capturedAt = now();
       await writeSupervisorCycleDecisionSnapshot({
         config: args.config,
-        capturedAt: now(),
+        capturedAt,
         issue: args.issue,
         record,
         workspacePath: args.workspacePath,
         workspaceStatus: nextWorkspaceStatus,
+        pr: resolvedPr,
+        checks: [],
+        reviewThreads: [],
+      });
+      await writePreMergeAssessmentSnapshot({
+        config: args.config,
+        capturedAt,
+        issue: args.issue,
+        record,
+        workspacePath: args.workspacePath,
         pr: resolvedPr,
         checks: [],
         reviewThreads: [],
@@ -328,13 +352,24 @@ async function hydratePullRequestContext(
       });
       return { kind: "restart", recoveryEvents: [recoveryEvent] };
     } else if (resolvedPr.state === "CLOSED") {
+      const capturedAt = now();
       await writeSupervisorCycleDecisionSnapshot({
         config: args.config,
-        capturedAt: now(),
+        capturedAt,
         issue: args.issue,
         record,
         workspacePath: args.workspacePath,
         workspaceStatus: nextWorkspaceStatus,
+        pr: resolvedPr,
+        checks: [],
+        reviewThreads: [],
+      });
+      await writePreMergeAssessmentSnapshot({
+        config: args.config,
+        capturedAt,
+        issue: args.issue,
+        record,
+        workspacePath: args.workspacePath,
         pr: resolvedPr,
         checks: [],
         reviewThreads: [],
@@ -428,13 +463,24 @@ async function hydratePullRequestContext(
     reviewThreads = await args.github.getUnresolvedReviewThreads(pr.number);
   }
 
+  const capturedAt = now();
   await writeSupervisorCycleDecisionSnapshot({
     config: args.config,
-    capturedAt: now(),
+    capturedAt,
     issue: args.issue,
     record,
     workspacePath: args.workspacePath,
     workspaceStatus: nextWorkspaceStatus,
+    pr,
+    checks,
+    reviewThreads,
+  });
+  await writePreMergeAssessmentSnapshot({
+    config: args.config,
+    capturedAt,
+    issue: args.issue,
+    record,
+    workspacePath: args.workspacePath,
     pr,
     checks,
     reviewThreads,

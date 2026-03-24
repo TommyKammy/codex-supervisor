@@ -194,6 +194,11 @@ test("prepareIssueExecutionContext prepares workspace, journal, memory, and head
     recordState: IssueRunRecord["state"];
     workspaceHead: string;
   }> = [];
+  const preMergeSnapshots: Array<{
+    pr: GitHubPullRequest | null;
+    checks: { name: string; state: string; bucket: string }[];
+    recordState: IssueRunRecord["state"];
+  }> = [];
 
   const result = await prepareIssueExecutionContext({
     github: {
@@ -247,6 +252,14 @@ test("prepareIssueExecutionContext prepares workspace, journal, memory, and head
       });
       return "/tmp/workspaces/issue-240/.codex-supervisor/replay/decision-cycle-snapshot.json";
     },
+    writePreMergeAssessmentSnapshot: async ({ pr, checks, record: snapshotRecord }) => {
+      preMergeSnapshots.push({
+        pr,
+        checks,
+        recordState: snapshotRecord.state,
+      });
+      return "/tmp/workspaces/issue-240/.codex-supervisor/pre-merge/assessment-snapshot.json";
+    },
   });
 
   assert.equal(typeof result, "object");
@@ -269,6 +282,13 @@ test("prepareIssueExecutionContext prepares workspace, journal, memory, and head
       checks: [],
       recordState: "planning",
       workspaceHead: "workspace-head-240",
+    },
+  ]);
+  assert.deepEqual(preMergeSnapshots, [
+    {
+      pr: null,
+      checks: [],
+      recordState: "planning",
     },
   ]);
 });
@@ -314,6 +334,7 @@ test("prepareIssueExecutionContext records the workspace restore source for late
     }),
     getWorkspaceStatus: async () => workspaceStatus,
     writeSupervisorCycleDecisionSnapshot: async () => "/tmp/workspaces/issue-240/.codex-supervisor/replay/decision-cycle-snapshot.json",
+    writePreMergeAssessmentSnapshot: async () => "/tmp/workspaces/issue-240/.codex-supervisor/pre-merge/assessment-snapshot.json",
   });
 
   assert.ok(result && !isRestartRunOnce(result) && typeof result !== "string");
@@ -374,6 +395,7 @@ test("prepareIssueExecutionContext preserves last_error for repeated no-PR failu
     }),
     getWorkspaceStatus: async () => createWorkspaceStatus(),
     writeSupervisorCycleDecisionSnapshot: async () => "/tmp/workspaces/issue-240/.codex-supervisor/replay/decision-cycle-snapshot.json",
+    writePreMergeAssessmentSnapshot: async () => "/tmp/workspaces/issue-240/.codex-supervisor/pre-merge/assessment-snapshot.json",
   });
 
   assert.ok(result && !isRestartRunOnce(result) && typeof result !== "string");
@@ -445,6 +467,7 @@ test("prepareIssueExecutionContext preserves restore metadata after refreshing w
       replaySnapshots.push(workspaceStatus);
       return "/tmp/workspaces/issue-240/.codex-supervisor/replay/decision-cycle-snapshot.json";
     },
+    writePreMergeAssessmentSnapshot: async () => "/tmp/workspaces/issue-240/.codex-supervisor/pre-merge/assessment-snapshot.json",
   });
 
   assert.ok(result && !isRestartRunOnce(result) && typeof result !== "string");
