@@ -70,18 +70,58 @@ export function hasProcessedReviewThread(
 
 export function localReviewBlocksReady(
   config: SupervisorConfig,
-  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation">,
+  record: Pick<
+    IssueRunRecord,
+    | "local_review_head_sha"
+    | "local_review_findings_count"
+    | "local_review_recommendation"
+    | "pre_merge_evaluation_outcome"
+  >,
   pr: GitHubPullRequest,
 ): boolean {
-  return config.localReviewPolicy === "block_ready" && localReviewHasActionableFindings(record, pr);
+  if (config.localReviewPolicy === "block_ready") {
+    return localReviewHasActionableFindings(record, pr);
+  }
+
+  if (config.localReviewPolicy !== "block_merge") {
+    return false;
+  }
+
+  if (record.local_review_head_sha !== pr.headRefOid) {
+    return true;
+  }
+
+  return (
+    record.pre_merge_evaluation_outcome == null ||
+    record.pre_merge_evaluation_outcome === "fix_blocked" ||
+    record.pre_merge_evaluation_outcome === "manual_review_blocked"
+  );
 }
 
 export function localReviewBlocksMerge(
   config: SupervisorConfig,
-  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation">,
+  record: Pick<
+    IssueRunRecord,
+    | "local_review_head_sha"
+    | "local_review_findings_count"
+    | "local_review_recommendation"
+    | "pre_merge_evaluation_outcome"
+  >,
   pr: GitHubPullRequest,
 ): boolean {
-  return !pr.isDraft && config.localReviewPolicy === "block_merge" && localReviewHasActionableFindings(record, pr);
+  if (pr.isDraft || config.localReviewPolicy !== "block_merge") {
+    return false;
+  }
+
+  if (record.local_review_head_sha !== pr.headRefOid) {
+    return true;
+  }
+
+  return (
+    record.pre_merge_evaluation_outcome == null ||
+    record.pre_merge_evaluation_outcome === "fix_blocked" ||
+    record.pre_merge_evaluation_outcome === "manual_review_blocked"
+  );
 }
 
 export function localReviewHighSeverityNeedsRetry(

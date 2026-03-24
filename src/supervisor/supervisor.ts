@@ -783,8 +783,15 @@ export class Supervisor {
 
     if (nextRecord.state === "ready_to_merge" && !options.dryRun) {
       const refreshedPr = await this.github.getPullRequest(pr.number);
-      await this.github.enableAutoMerge(refreshedPr.number, refreshedPr.headRefOid);
-      nextRecord = this.stateStore.touch(nextRecord, { state: "merging" });
+      if (localReviewBlocksMerge(this.config, nextRecord, refreshedPr)) {
+        nextRecord = this.stateStore.touch(nextRecord, {
+          state: "blocked",
+          blocked_reason: "verification",
+        });
+      } else {
+        await this.github.enableAutoMerge(refreshedPr.number, refreshedPr.headRefOid);
+        nextRecord = this.stateStore.touch(nextRecord, { state: "merging" });
+      }
       state.issues[String(nextRecord.issue_number)] = nextRecord;
     }
 

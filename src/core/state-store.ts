@@ -60,6 +60,10 @@ function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
     local_review_verified_findings_count: value.local_review_verified_findings_count ?? 0,
     local_review_recommendation: value.local_review_recommendation ?? null,
     local_review_degraded: value.local_review_degraded ?? false,
+    pre_merge_evaluation_outcome: value.pre_merge_evaluation_outcome ?? null,
+    pre_merge_must_fix_count: value.pre_merge_must_fix_count ?? 0,
+    pre_merge_manual_review_count: value.pre_merge_manual_review_count ?? 0,
+    pre_merge_follow_up_count: value.pre_merge_follow_up_count ?? 0,
     last_local_review_signature: value.last_local_review_signature ?? null,
     repeated_local_review_signature_count: value.repeated_local_review_signature_count ?? 0,
     external_review_head_sha: value.external_review_head_sha ?? null,
@@ -421,6 +425,16 @@ export class StateStore {
         hasOwn(patch, "local_review_degraded")
           ? patch.local_review_degraded ?? false
           : record.local_review_degraded ?? false,
+      pre_merge_evaluation_outcome:
+        hasOwn(patch, "pre_merge_evaluation_outcome")
+          ? patch.pre_merge_evaluation_outcome ?? null
+          : record.pre_merge_evaluation_outcome ?? null,
+      pre_merge_must_fix_count:
+        patch.pre_merge_must_fix_count ?? record.pre_merge_must_fix_count ?? 0,
+      pre_merge_manual_review_count:
+        patch.pre_merge_manual_review_count ?? record.pre_merge_manual_review_count ?? 0,
+      pre_merge_follow_up_count:
+        patch.pre_merge_follow_up_count ?? record.pre_merge_follow_up_count ?? 0,
       last_local_review_signature:
         hasOwn(patch, "last_local_review_signature")
           ? patch.last_local_review_signature ?? null
