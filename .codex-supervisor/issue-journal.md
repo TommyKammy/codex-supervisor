@@ -1,50 +1,33 @@
-# Issue #950: Issue journal normalization: redact or normalize local absolute paths before writing durable output
+# Issue #951: Local CI path enforcement: include `verify:paths` in the repo-owned pre-PR verification contract
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/950
-- Branch: codex/issue-950
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/951
+- Branch: codex/issue-951
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 4 (implementation=2, repair=2)
-- Last head SHA: ab75cec48da893569361eafcb70952f1867c4957
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 6117c1536c66a05b3e5dc3276688089929ead602
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ852hV_K|PRRT_kwDORgvdZ852hV_L
-- Repeated failure signature count: 1
-- Updated at: 2026-03-24T19:54:36.607Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-24T20:31:46.764Z
 
 ## Latest Codex Summary
-Addressing the remaining review feedback in `src/core/journal.ts`. The durable journal sanitizer now targets inline absolute-path substrings such as `path=<redacted-local-path>` and Markdown links, and it broadens non-portable local-root detection while preserving in-repo paths as repo-relative text.
-
-Added focused regressions in `src/journal.test.ts` for inline assignments, Markdown links, quoted spaced paths, and broader local absolute roots. I also normalized tracked sample-path literals in `src/journal.test.ts` and this journal so the durable-path policy check passes again.
-
-Committed the implementation fix, refreshed this journal handoff in follow-up commits, and pushed the updates to `codex/issue-950`, updating PR #965 with the repaired sanitizer, regression coverage, and current local status.
-
-Summary: Implemented and pushed the review fixes for journal path normalization, added focused regression coverage, normalized the tracked durable text, synced the journal handoff, and reran the focused verification set successfully.
-State hint: waiting_ci
-Blocked reason: none
-Tests: `npx tsx --test src/journal.test.ts`; `npx tsc --noEmit`; `npx tsx --test src/workstation-local-path-detector.test.ts`; `npm run verify:paths`
-Next action: Wait for PR #965 checks on the latest pushed branch head, then resolve the remaining automated review threads if the remote build stays green.
-Failure signature: none
+- Added a repo-owned `verify:pre-pr` contract that runs `verify:paths` before `build` and `test`, added a focused package-script regression test, refreshed stale source-layout and prompt assertions so the clean-tree contract passes, and verified `npm run verify:pre-pr` end to end.
 
 ## Active Failure Context
-- Category: checks
-- Summary: PR #965 checks are pending on the latest pushed branch head.
-- Command or source: `gh pr checks 965`
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/965
-- Details:
-  - build (ubuntu-latest) (pending)
-  - build (macos-latest) (pending)
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the two review threads are valid, and the pushed patch should satisfy them unless CI exposes a platform-specific edge case.
-- What changed: patched `src/core/journal.ts` to sanitize inline absolute-path substrings and broader local roots, added focused regression tests in `src/journal.test.ts`, normalized tracked durable-path text in fixtures and this journal, committed the implementation fix plus journal handoff updates, and pushed them to the PR branch.
+- Hypothesis: issue #951 is satisfied by exposing a canonical repo-owned `verify:pre-pr` script that starts with `verify:paths`, then preserving the clean-tree pass path by fixing stale test expectations uncovered by the broadened contract.
+- What changed: added `verify:pre-pr` to `package.json`, added `src/pre-pr-verification-contract.test.ts` to lock the contract shape, updated `src/family-directory-layout.test.ts` to the current checked-in source layout, and refreshed the stale verification-policy assertion in `src/turn-execution-orchestration.test.ts`.
 - Current blocker: none.
-- Next exact step: monitor PR #965 checks for the latest pushed branch head, then resolve the automated review threads if the branch stays green.
+- Next exact step: commit the local checkpoint for issue #951 and push/update the branch or draft PR as needed.
 - Verification gap: none.
-- Files touched: `src/core/journal.ts`, `src/journal.test.ts`, `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low; the change only affects journal path normalization heuristics, regression fixtures, and durable notes.
-- Last focused command: `gh pr checks 965`
+- Files touched: `package.json`, `src/pre-pr-verification-contract.test.ts`, `src/family-directory-layout.test.ts`, `src/turn-execution-orchestration.test.ts`, `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; the functional change is limited to the repo-owned pre-PR contract, and the other edits only refresh stale test expectations so the clean tree passes.
+- Last focused command: `npm run verify:pre-pr`
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
