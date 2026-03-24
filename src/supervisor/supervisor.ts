@@ -208,9 +208,9 @@ function parseGitStatusPorcelainV1Paths(statusOutput: string): string[][] {
     }
 
     const statusCode = field.slice(0, 2);
-    const paths = [field.slice(3).trim()].filter((entry) => entry.length > 0);
+    const paths = [field.slice(3)].filter((entry) => entry.length > 0);
     if (statusCode.includes("R") || statusCode.includes("C")) {
-      const pairedPath = fields[index + 1]?.trim() ?? "";
+      const pairedPath = fields[index + 1] ?? "";
       if (pairedPath.length > 0) {
         paths.push(pairedPath);
         index += 1;
