@@ -1,68 +1,49 @@
-# Issue #926: Post-merge promotion candidates: surface shared-memory and guardrail suggestions from recurring patterns
+# Issue #927: Post-merge audit reporting: expose learning and promotion-candidate summaries to operators
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/926
-- Branch: codex/issue-926
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/927
+- Branch: codex/issue-927
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: f43049f1222be02f076db6de85664316205dc7a2
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: b9b8a5dd126403a3902abcb04ac3c44775750b01
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ852Y1vo|PRRT_kwDORgvdZ852Y1vy|PRRT_kwDORgvdZ852Y1v7
-- Repeated failure signature count: 1
-- Updated at: 2026-03-24T11:22:58.998Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-24T11:54:02.506Z
 
 ## Latest Codex Summary
-Addressed the three open CodeRabbit review threads on PR #943 in [src/supervisor/post-merge-audit-summary.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-926/src/supervisor/post-merge-audit-summary.ts) by bumping the summary schema version to `2`, deriving review-backed promotion candidate keys from the canonical pattern key so severity-distinct patterns stay unique, and preserving all review finding keys instead of truncating them before candidate generation.
-
-I updated the focused summary assertions in [src/supervisor/post-merge-audit-summary.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-926/src/supervisor/post-merge-audit-summary.test.ts), added a regression that covers duplicate summaries across severities plus 4+ supporting finding keys, and bumped the CLI runtime DTO expectation in [src/supervisor/post-merge-audit-summary-runtime.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-926/src/supervisor/post-merge-audit-summary-runtime.test.ts).
-
-Verification ran clean in this worktree:
-- `npx tsx --test src/supervisor/post-merge-audit-summary.test.ts`
-- `npx tsx --test src/supervisor/post-merge-audit-summary-runtime.test.ts`
-- `npx tsx --test src/**/*.test.ts`
-- `npm run build`
-
-Local workspace still has untracked `.codex-supervisor/replay/`, which I left alone.
-
-Summary: Fixed the three outstanding PR #943 review threads by versioning the summary DTO, making review-derived candidate keys severity-stable, and preserving full finding-key traceability with regression coverage.
-State hint: addressing_review
-Blocked reason: none
-Tests: npx tsx --test src/supervisor/post-merge-audit-summary.test.ts; npx tsx --test src/supervisor/post-merge-audit-summary-runtime.test.ts; npx tsx --test src/**/*.test.ts; npm run build
-Next action: Commit the review fixes, push `codex/issue-926`, and update PR #943.
-Failure signature: none
+- Added a focused Web/API regression test proving the operator-facing post-merge audit summary was not exposed through the HTTP server: `GET /api/post-merge-audits/summary` returned `404`.
+- Fixed the missing read-only route in the WebUI HTTP server so operators can query the advisory post-merge audit summary DTO without changing merge or scheduler behavior.
+- Local verification required restoring the expected toolchain with `npm ci`; after that, the full `src/**/*.test.ts` suite and `npm run build` both passed.
 
 ## Active Failure Context
-- Category: review
-- Summary: Resolved locally; the three automated PR #943 review threads were addressed in code and tests.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/943#discussion_r2980798199
-- Details:
-  - Bumped `POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION` to `2` and updated focused/runtime assertions so the new required `promotionCandidates` field is versioned correctly.
-  - Switched review-derived `guardrail` and `shared_memory` candidate keys to `slugify(pattern.key)` so the severity embedded in the canonical pattern key prevents collisions.
-  - Removed the `.slice(0, 3)` truncation on `exampleFindingKeys` and added a regression that proves 4 supporting finding keys survive into both `reviewPatterns` and `promotionCandidates`.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining PR #943 review risk was confined to DTO contract/versioning and traceability details rather than the overall promotion-candidate feature shape.
-- What changed: bumped the post-merge audit summary schema version to `2`, made review-derived promotion candidate keys derive from the canonical severity-aware review pattern key, removed the premature truncation of review finding keys, and added focused regression coverage for duplicate summary/severity splits plus 4-key traceability.
+- Hypothesis: the remaining gap for issue #927 was not the summary DTO itself but the lack of an operator-facing Web/API reporting surface for the already-generated advisory post-merge audit summary.
+- What changed: added a focused HTTP server regression test for `GET /api/post-merge-audits/summary`, implemented the missing read-only route in the WebUI server, and verified the route returns the existing advisory summary DTO through the supervisor service boundary.
 - Current blocker: none.
-- Next exact step: commit these review fixes, push `codex/issue-926`, and update PR #943 so the review threads can be resolved.
-- Verification gap: none; focused tests, the full `src/**/*.test.ts` suite, and `npm run build` all passed after the review fixes.
-- Files touched: `src/supervisor/post-merge-audit-summary.ts`, `src/supervisor/post-merge-audit-summary.test.ts`, `src/supervisor/post-merge-audit-summary-runtime.test.ts`, `.codex-supervisor/issue-journal.md`
-- Rollback concern: low; reverting would only remove a read-only analysis surface and leave the persisted audit artifacts intact.
+- Next exact step: commit the Web/API reporting fix on `codex/issue-927`, then decide whether to open or update the draft PR for this issue branch.
+- Verification gap: none after installing dependencies locally with `npm ci`; focused HTTP-server coverage, the full `src/**/*.test.ts` suite, and `npm run build` all passed.
+- Files touched: `src/backend/supervisor-http-server.ts`, `src/backend/supervisor-http-server.test.ts`, `.codex-supervisor/issue-journal.md`
+- Rollback concern: low; reverting would only remove the read-only operator reporting route while leaving the underlying post-merge audit artifacts and CLI summary intact.
 - Last focused command: `npm run build`
-- Last focused failure: none.
-- Draft PR: #943 https://github.com/TommyKammy/codex-supervisor/pull/943
+- Last focused failure: `GET /api/post-merge-audits/summary` returned `404` before the route was added; local build initially failed because `tsc` and `playwright-core` were unavailable until `npm ci` restored dependencies.
+- Draft PR: none
 - Last focused commands:
 ```bash
-git status --short
-rg -n "POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION|promotionCandidates|exampleFindingKeys|buildReviewPatternKey|guardrail:|shared_memory:" src/supervisor/post-merge-audit-summary.ts src/supervisor/post-merge-audit-summary.test.ts src/supervisor/post-merge-audit-summary-runtime.test.ts
-sed -n '1,260p' src/supervisor/post-merge-audit-summary.ts
-sed -n '1,340p' src/supervisor/post-merge-audit-summary.test.ts
-sed -n '1,120p' src/supervisor/post-merge-audit-summary-runtime.test.ts
-npx tsx --test src/supervisor/post-merge-audit-summary.test.ts
-npx tsx --test src/supervisor/post-merge-audit-summary-runtime.test.ts
+git status --short --branch
+sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-927/AGENTS.generated.md
+sed -n '1,240p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-927/context-index.md
+sed -n '1,260p' .codex-supervisor/issue-journal.md
+rg -n "summarize-post-merge-audits|queryPostMergeAuditSummary|postMergeAuditSummary|renderPostMergeAuditPatternSummaryDto" src
+sed -n '1,260p' src/backend/supervisor-http-server.ts
+sed -n '1,320p' src/backend/supervisor-http-server.test.ts
+npx tsx --test src/backend/supervisor-http-server.test.ts
+npm ci
 npx tsx --test src/**/*.test.ts
 npm run build
 date -u +"%Y-%m-%dT%H:%M:%SZ"
