@@ -45,7 +45,7 @@ import { getWorkspaceStatus, pushBranch } from "./core/workspace";
 import { AgentRunner, createCodexAgentRunner } from "./supervisor/agent-runner";
 import {
   executionMetricsRetentionRootPath,
-  syncExecutionMetricsRunSummary,
+  syncExecutionMetricsRunSummarySafely,
 } from "./supervisor/execution-metrics-run-summary";
 
 export {
@@ -463,11 +463,12 @@ export async function executeCodexTurnPhase(
           });
           state.issues[String(record.issue_number)] = record;
           await stateStore.save(state);
-          await syncExecutionMetricsRunSummary({
+          await syncExecutionMetricsRunSummarySafely({
             previousRecord: args.context.record,
             nextRecord: record,
             issue,
             retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
+            warningContext: "persisting",
           });
           await syncJournal(record);
           return {
@@ -548,12 +549,13 @@ export async function executeCodexTurnPhase(
       });
       state.issues[String(record.issue_number)] = record;
       await stateStore.save(state);
-      await syncExecutionMetricsRunSummary({
+      await syncExecutionMetricsRunSummarySafely({
         previousRecord: args.context.record,
         nextRecord: record,
         issue,
         pullRequest: pr,
         retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
+        warningContext: "persisting",
       });
       await syncJournal(record);
 

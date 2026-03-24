@@ -30,7 +30,7 @@ import { runLocalCiGate, type LocalCiCommandRunner } from "./local-ci";
 import { writeSupervisorCycleDecisionSnapshot as writeSupervisorCycleDecisionSnapshotImpl } from "./supervisor/supervisor-cycle-snapshot";
 import {
   executionMetricsRetentionRootPath,
-  syncExecutionMetricsRunSummary,
+  syncExecutionMetricsRunSummarySafely,
 } from "./supervisor/execution-metrics-run-summary";
 
 export type IssueJournalSync = (record: IssueRunRecord) => Promise<void>;
@@ -317,13 +317,14 @@ async function hydratePullRequestContext(
       args.state.issues[String(doneRecord.issue_number)] = doneRecord;
       args.state.activeIssueNumber = null;
       await args.stateStore.save(args.state);
-      await syncExecutionMetricsRunSummary({
+      await syncExecutionMetricsRunSummarySafely({
         previousRecord: record,
         nextRecord: doneRecord,
         issue: args.issue,
         pullRequest: resolvedPr,
         recoveryEvents: [recoveryEvent],
         retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
+        warningContext: "persisting",
       });
       return { kind: "restart", recoveryEvents: [recoveryEvent] };
     } else if (resolvedPr.state === "CLOSED") {
@@ -357,12 +358,13 @@ async function hydratePullRequestContext(
       args.state.issues[String(blockedRecord.issue_number)] = blockedRecord;
       args.state.activeIssueNumber = null;
       await args.stateStore.save(args.state);
-      await syncExecutionMetricsRunSummary({
+      await syncExecutionMetricsRunSummarySafely({
         previousRecord: record,
         nextRecord: blockedRecord,
         issue: args.issue,
         pullRequest: resolvedPr,
         retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
+        warningContext: "persisting",
       });
       await args.syncJournal(blockedRecord);
       return `Issue #${blockedRecord.issue_number} blocked because PR #${resolvedPr.number} was closed without merge.`;
@@ -399,11 +401,12 @@ async function hydratePullRequestContext(
       });
       args.state.issues[String(blockedRecord.issue_number)] = blockedRecord;
       await args.stateStore.save(args.state);
-      await syncExecutionMetricsRunSummary({
+      await syncExecutionMetricsRunSummarySafely({
         previousRecord: record,
         nextRecord: blockedRecord,
         issue: args.issue,
         retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
+        warningContext: "persisting",
       });
       await args.syncJournal(blockedRecord);
       return `Issue #${blockedRecord.issue_number} blocked: ${blockedRecord.last_error}`;
