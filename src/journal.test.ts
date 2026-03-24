@@ -144,7 +144,7 @@ test("syncIssueJournal normalizes absolute local paths before writing durable co
       journal_path: journalPath,
       last_codex_summary: `Summary: Reproduced in ${repoFilePath} with extra context from ${hostOnlyPath}`,
       last_failure_context: {
-        category: "verification",
+        category: "manual",
         summary: `Path leak persisted through ${repoFilePath}`,
         signature: "journal-path-leak",
         command: `cat ${repoFilePath} ${hostOnlyPath}`,
