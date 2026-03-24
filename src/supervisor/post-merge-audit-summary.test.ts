@@ -242,6 +242,46 @@ test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and 
   assert.equal(summary.recoveryPatterns[0]?.key, "merged_pr_convergence");
   assert.equal(summary.recoveryPatterns[0]?.artifactCount, 2);
   assert.equal(summary.recoveryPatterns[0]?.occurrenceCount, 2);
+  assert.deepEqual(
+    summary.promotionCandidates.map((candidate) => ({
+      key: candidate.key,
+      category: candidate.category,
+      sourcePatternKeys: candidate.sourcePatternKeys,
+      supportingIssueNumbers: candidate.supportingIssueNumbers,
+    })),
+    [
+      {
+        key: "guardrail:correctness:retry-path-reused-stale-review-context-after-the-head-changed",
+        category: "guardrail",
+        sourcePatternKeys: ["correctness:medium:retry-path-reused-stale-review-context-after-the-head-changed"],
+        supportingIssueNumbers: [102, 103],
+      },
+      {
+        key: "shared_memory:correctness:retry-path-reused-stale-review-context-after-the-head-changed",
+        category: "shared_memory",
+        sourcePatternKeys: ["correctness:medium:retry-path-reused-stale-review-context-after-the-head-changed"],
+        supportingIssueNumbers: [102, 103],
+      },
+      {
+        key: "checklist:review-stale-context",
+        category: "checklist",
+        sourcePatternKeys: ["review:stale-context"],
+        supportingIssueNumbers: [102, 103],
+      },
+      {
+        key: "documentation:merged_pr_convergence",
+        category: "documentation",
+        sourcePatternKeys: ["merged_pr_convergence"],
+        supportingIssueNumbers: [102, 103],
+      },
+    ],
+  );
+  assert.equal(summary.promotionCandidates[0]?.advisoryOnly, true);
+  assert.equal(summary.promotionCandidates[0]?.autoApply, false);
+  assert.equal(summary.promotionCandidates[0]?.autoCreateFollowUpIssue, false);
+  assert.deepEqual(summary.promotionCandidates[0]?.supportingFindingKeys, [
+    "src/supervisor.ts|210|214|retry path|stale context",
+  ]);
 });
 
 test("summarizePostMergeAuditPatterns tolerates root-cause summaries without finding metadata", async () => {

@@ -48,6 +48,7 @@ test("runSupervisorCommand renders a structured post-merge audit summary result"
           reviewPatterns: [],
           failurePatterns: [],
           recoveryPatterns: [],
+          promotionCandidates: [],
         }),
       },
       writeStdout: (line) => {
@@ -69,5 +70,6 @@ test("runSupervisorCommand renders a structured post-merge audit summary result"
     reviewPatterns: [],
     failurePatterns: [],
     recoveryPatterns: [],
+    promotionCandidates: [],
   });
 });
