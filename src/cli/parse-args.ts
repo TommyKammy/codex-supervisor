@@ -24,6 +24,7 @@ export function parseArgs(argv: string[]): CliOptions {
       token === "status" ||
       token === "requeue" ||
       token === "rollup-execution-metrics" ||
+      token === "summarize-post-merge-audits" ||
       token === "prune-orphaned-workspaces" ||
       token === "reset-corrupt-json-state" ||
       token === "explain" ||

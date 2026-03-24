@@ -15,6 +15,7 @@ import type {
 } from "../core/types";
 import { createConfig as createTurnConfig, createIssue, createPullRequest, createRecord } from "../turn-execution-test-helpers";
 import type { AgentRunner, AgentTurnRequest } from "./agent-runner";
+import { postMergeAuditArtifactPath } from "./post-merge-audit-artifact";
 
 interface ExecutionMetricsRunSummary {
   schemaVersion: 4;
@@ -256,6 +257,8 @@ async function readExecutionMetricsRunSummary(workspacePath: string): Promise<Ex
 
 test("prepareIssueExecutionContext writes a run summary artifact for done outcomes", async () => {
   const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "execution-metrics-done-"));
+  const reviewDir = await fs.mkdtemp(path.join(os.tmpdir(), "execution-metrics-done-reviews-"));
+  const config = createPreparationConfig({ localReviewArtifactDir: reviewDir });
   const record = createPreparationRecord(workspacePath);
   const state = createState(record);
   const mergedPr = createPreparationPullRequest({
@@ -275,7 +278,7 @@ test("prepareIssueExecutionContext writes a run summary artifact for done outcom
         throw new Error("unexpected createPullRequest call");
       },
     },
-    config: createPreparationConfig(),
+    config,
     stateStore: {
       touch(currentRecord, patch) {
         return {
@@ -330,6 +333,28 @@ test("prepareIssueExecutionContext writes a run summary artifact for done outcom
       timeToLatestRecoveryMs: null,
     },
   });
+
+  const postMergeAuditPath = postMergeAuditArtifactPath({
+    config,
+    issueNumber: 240,
+    headSha: "merged-head-191",
+  });
+  const postMergeAudit = JSON.parse(await fs.readFile(postMergeAuditPath, "utf8")) as {
+    schemaVersion: number;
+    issueNumber: number;
+    artifacts: { executionMetricsSummaryPath: string | null };
+    pullRequest: { number: number; headRefOid: string };
+    executionMetrics: { terminalState: string } | null;
+    completion: { terminalState: string; lastRecoveryReason: string | null };
+  };
+  assert.equal(postMergeAudit.schemaVersion, 1);
+  assert.equal(postMergeAudit.issueNumber, 240);
+  assert.equal(postMergeAudit.pullRequest.number, 191);
+  assert.equal(postMergeAudit.pullRequest.headRefOid, "merged-head-191");
+  assert.equal(postMergeAudit.executionMetrics?.terminalState, "done");
+  assert.equal(postMergeAudit.completion.terminalState, "done");
+  assert.match(postMergeAudit.completion.lastRecoveryReason ?? "", /merged_pr_convergence/u);
+  assert.equal(postMergeAudit.artifacts.executionMetricsSummaryPath, executionMetricsRunSummaryPath(workspacePath));
 });
 
 test("executeCodexTurnPhase writes a run summary artifact for blocked outcomes", async () => {
