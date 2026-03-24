@@ -189,6 +189,7 @@ function createStubService(args?: {
   statusWhyCalls?: boolean[];
   explainCalls?: number[];
   issueLintCalls?: number[];
+  postMergeAuditSummaryCalls?: number;
   setupReadinessCalls?: number;
   setupReadinessReport?: SetupReadinessReport;
   setupConfigPreviewCalls?: Array<string | null>;
@@ -517,6 +518,25 @@ function createStubService(args?: {
         repairGuidance: [],
       };
     },
+    queryPostMergeAuditSummary: async () => {
+      if (args) {
+        args.postMergeAuditSummaryCalls = (args.postMergeAuditSummaryCalls ?? 0) + 1;
+      }
+      return {
+        schemaVersion: 2,
+        advisoryOnly: true,
+        autoApplyGuardrails: false,
+        autoCreateFollowUpIssues: false,
+        generatedAt: "2026-03-24T12:00:00Z",
+        artifactDir: "/tmp/post-merge-audits",
+        artifactsAnalyzed: 3,
+        artifactsSkipped: 1,
+        reviewPatterns: [],
+        failurePatterns: [],
+        recoveryPatterns: [],
+        promotionCandidates: [],
+      };
+    },
     queryDoctor: async () => doctorDiagnostics,
     querySetupReadiness: async () => {
       if (args) {
@@ -548,9 +568,15 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
   const statusWhyCalls: boolean[] = [];
   const explainCalls: number[] = [];
   const issueLintCalls: number[] = [];
-  const serviceCallCounts = { setupReadinessCalls: 0 };
+  const serviceArgs = {
+    statusWhyCalls,
+    explainCalls,
+    issueLintCalls,
+    postMergeAuditSummaryCalls: 0,
+    setupReadinessCalls: 0,
+  };
   const server = createSupervisorHttpServer({
-    service: createStubService({ statusWhyCalls, explainCalls, issueLintCalls, setupReadinessCalls: 0 }),
+    service: createStubService(serviceArgs),
   });
   t.after(async () => {
     await closeServer(server);
@@ -626,6 +652,24 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
     },
     candidateDiscoverySummary: "candidate_discovery fetch_window=100 strategy=paginated",
     candidateDiscoveryWarning: null,
+  });
+
+  const postMergeAuditSummaryResponse = await readJson({ server, path: "/api/post-merge-audits/summary" });
+  assert.equal(postMergeAuditSummaryResponse.statusCode, 200);
+  assert.equal(serviceArgs.postMergeAuditSummaryCalls, 1);
+  assert.deepEqual(postMergeAuditSummaryResponse.body, {
+    schemaVersion: 2,
+    advisoryOnly: true,
+    autoApplyGuardrails: false,
+    autoCreateFollowUpIssues: false,
+    generatedAt: "2026-03-24T12:00:00Z",
+    artifactDir: "/tmp/post-merge-audits",
+    artifactsAnalyzed: 3,
+    artifactsSkipped: 1,
+    reviewPatterns: [],
+    failurePatterns: [],
+    recoveryPatterns: [],
+    promotionCandidates: [],
   });
 
   const setupReadinessResponse = await readJson({ server, path: "/api/setup-readiness" });

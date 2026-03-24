@@ -138,6 +138,15 @@ async function handleRequest(
     return;
   }
 
+  if (pathname === "/api/post-merge-audits/summary") {
+    if (!service.queryPostMergeAuditSummary) {
+      writeJson(response, 404, { error: "Not found." });
+      return;
+    }
+    writeJson(response, 200, await service.queryPostMergeAuditSummary());
+    return;
+  }
+
   if (pathname === "/api/setup-readiness") {
     if (!service.querySetupReadiness) {
       writeJson(response, 404, { error: "Not found." });
