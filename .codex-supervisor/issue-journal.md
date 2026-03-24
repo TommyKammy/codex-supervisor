@@ -24,13 +24,13 @@
 - Hypothesis: stale no-PR branch classification was counting supervisor-owned replay output under `.codex-supervisor/replay/` as a meaningful local change, and stale reconciliation was treating `already_satisfied_on_main` as a manual-stop condition instead of a clean convergence.
 - What changed: added focused regression coverage in `src/supervisor/supervisor-stale-no-pr-branch-state.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, and `src/supervisor/supervisor-execution-orchestration.test.ts`; updated `src/supervisor/supervisor.ts` so the stale no-PR classifier ignores the issue journal plus `.codex-supervisor/replay/**`; updated `src/recovery-reconciliation.ts` so `already_satisfied_on_main` converges to `done` and clears stale no-PR recovery tracking; normalized `src/supervisor/supervisor-test-helpers.ts` so default test records include `stale_stabilizing_no_pr_recovery_count: 0`.
 - Current blocker: none.
-- Next exact step: commit the #937 replay-artifact stale-convergence fix on `codex/issue-937`, then open or update a draft PR if none exists yet.
+- Next exact step: monitor draft PR #945, address any review feedback, and keep `.codex-supervisor/replay/` untracked while the supervisor-owned artifact handling fix bakes.
 - Verification gap: none for the targeted stale no-PR path; focused stale branch-state, reconciliation, and orchestration tests plus `npm run build` are green after restoring local dev dependencies with `npm install`.
 - Files touched: `src/recovery-reconciliation.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-stale-no-pr-branch-state.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts`, `src/supervisor/supervisor-test-helpers.ts`, `.codex-supervisor/issue-journal.md`, `package-lock.json`
 - Rollback concern: low; reverting would restore the stale replay-artifact misclassification and the incorrect manual-review convergence path for already-landed no-PR recovery.
 - Last focused command: `npm run build`
 - Last focused failure: `npm run build` initially failed with `sh: 1: tsc: not found`; resolved by running `npm install` and rerunning the build successfully.
-- Draft PR: none
+- Draft PR: https://github.com/TommyKammy/codex-supervisor/pull/945
 - Last focused commands:
 ```bash
 sed -n '1,240p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-937/AGENTS.generated.md
@@ -47,6 +47,8 @@ npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts
 npx tsx --test src/supervisor/supervisor-stale-no-pr-branch-state.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts
 npm install
 npm run build
+git push -u origin codex/issue-937
+gh pr create --draft --base main --head codex/issue-937 --title "Fix stale already-landed no-PR replay convergence" --body "<summary omitted>"
 ```
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
