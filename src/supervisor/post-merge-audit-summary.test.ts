@@ -224,7 +224,7 @@ test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and 
 
   const summary = await summarizePostMergeAuditPatterns(config);
 
-  assert.equal(summary.schemaVersion, 1);
+  assert.equal(summary.schemaVersion, 2);
   assert.equal(summary.advisoryOnly, true);
   assert.equal(summary.autoApplyGuardrails, false);
   assert.equal(summary.autoCreateFollowUpIssues, false);
@@ -251,13 +251,13 @@ test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and 
     })),
     [
       {
-        key: "guardrail:correctness:retry-path-reused-stale-review-context-after-the-head-changed",
+        key: "guardrail:correctness-medium-retry-path-reused-stale-review-context-after-the-head-changed",
         category: "guardrail",
         sourcePatternKeys: ["correctness:medium:retry-path-reused-stale-review-context-after-the-head-changed"],
         supportingIssueNumbers: [102, 103],
       },
       {
-        key: "shared_memory:correctness:retry-path-reused-stale-review-context-after-the-head-changed",
+        key: "shared_memory:correctness-medium-retry-path-reused-stale-review-context-after-the-head-changed",
         category: "shared_memory",
         sourcePatternKeys: ["correctness:medium:retry-path-reused-stale-review-context-after-the-head-changed"],
         supportingIssueNumbers: [102, 103],
@@ -281,6 +281,169 @@ test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and 
   assert.equal(summary.promotionCandidates[0]?.autoCreateFollowUpIssue, false);
   assert.deepEqual(summary.promotionCandidates[0]?.supportingFindingKeys, [
     "src/supervisor.ts|210|214|retry path|stale context",
+  ]);
+});
+
+test("summarizePostMergeAuditPatterns keeps review promotion candidate keys unique per severity and preserves full finding traceability", async () => {
+  const reviewDir = await fs.mkdtemp(path.join(os.tmpdir(), "post-merge-audit-summary-"));
+  const config = createConfig({
+    localReviewArtifactDir: reviewDir,
+    repoSlug: "owner/repo",
+  });
+  const artifactDir = postMergeAuditArtifactDir(config);
+  const repeatedSummary = "Review loop reused stale context after the head changed.";
+
+  await fs.mkdir(artifactDir, { recursive: true });
+  await writeJsonAtomic(
+    path.join(artifactDir, "issue-201-head-merged-head.json"),
+    createPostMergeArtifact({
+      issueNumber: 201,
+      localReview: {
+        summaryPath: null,
+        findingsPath: null,
+        runAt: "2026-03-24T13:00:00Z",
+        recommendation: "changes_requested",
+        degraded: false,
+        findingsCount: 4,
+        rootCauseCount: 2,
+        maxSeverity: "high",
+        verifiedFindingsCount: 0,
+        verifiedMaxSeverity: "none",
+        artifact: createLocalReviewArtifact({
+          issueNumber: 201,
+          prNumber: 201,
+          branch: "codex/issue-201",
+          headSha: "merged-head-201",
+          findingsCount: 4,
+          rootCauseCount: 2,
+          maxSeverity: "high",
+          rootCauseSummaries: [
+            {
+              summary: repeatedSummary,
+              severity: "medium",
+              category: "correctness",
+              file: "src/supervisor.ts",
+              start: 210,
+              end: 214,
+              roles: ["reviewer"],
+              findingsCount: 2,
+              findingKeys: ["medium-finding-d", "medium-finding-b"],
+            },
+            {
+              summary: repeatedSummary,
+              severity: "high",
+              category: "correctness",
+              file: "src/supervisor.ts",
+              start: 220,
+              end: 224,
+              roles: ["reviewer"],
+              findingsCount: 2,
+              findingKeys: ["high-finding-d", "high-finding-b"],
+            },
+          ],
+        }),
+      },
+      failureTaxonomy: {
+        latestFailure: null,
+        latestRecovery: null,
+        staleStabilizingNoPrRecoveryCount: 0,
+      },
+    }),
+  );
+  await writeJsonAtomic(
+    path.join(artifactDir, "issue-202-head-merged-head.json"),
+    createPostMergeArtifact({
+      issueNumber: 202,
+      localReview: {
+        summaryPath: null,
+        findingsPath: null,
+        runAt: "2026-03-24T14:00:00Z",
+        recommendation: "changes_requested",
+        degraded: false,
+        findingsCount: 4,
+        rootCauseCount: 2,
+        maxSeverity: "high",
+        verifiedFindingsCount: 0,
+        verifiedMaxSeverity: "none",
+        artifact: createLocalReviewArtifact({
+          issueNumber: 202,
+          prNumber: 202,
+          branch: "codex/issue-202",
+          headSha: "merged-head-202",
+          findingsCount: 4,
+          rootCauseCount: 2,
+          maxSeverity: "high",
+          rootCauseSummaries: [
+            {
+              summary: repeatedSummary,
+              severity: "medium",
+              category: "correctness",
+              file: "src/supervisor.ts",
+              start: 210,
+              end: 214,
+              roles: ["reviewer"],
+              findingsCount: 2,
+              findingKeys: ["medium-finding-c", "medium-finding-a"],
+            },
+            {
+              summary: repeatedSummary,
+              severity: "high",
+              category: "correctness",
+              file: "src/supervisor.ts",
+              start: 220,
+              end: 224,
+              roles: ["reviewer"],
+              findingsCount: 2,
+              findingKeys: ["high-finding-c", "high-finding-a"],
+            },
+          ],
+        }),
+      },
+      failureTaxonomy: {
+        latestFailure: null,
+        latestRecovery: null,
+        staleStabilizingNoPrRecoveryCount: 0,
+      },
+    }),
+  );
+
+  const summary = await summarizePostMergeAuditPatterns(config);
+
+  assert.deepEqual(
+    summary.reviewPatterns.map((pattern) => pattern.key),
+    [
+      "correctness:high:review-loop-reused-stale-context-after-the-head-changed",
+      "correctness:medium:review-loop-reused-stale-context-after-the-head-changed",
+    ],
+  );
+
+  const reviewCandidateKeys = summary.promotionCandidates
+    .filter((candidate) => candidate.category === "guardrail" || candidate.category === "shared_memory")
+    .map((candidate) => candidate.key);
+  assert.equal(new Set(reviewCandidateKeys).size, reviewCandidateKeys.length);
+  assert.deepEqual(reviewCandidateKeys, [
+    "guardrail:correctness-high-review-loop-reused-stale-context-after-the-head-changed",
+    "guardrail:correctness-medium-review-loop-reused-stale-context-after-the-head-changed",
+    "shared_memory:correctness-high-review-loop-reused-stale-context-after-the-head-changed",
+    "shared_memory:correctness-medium-review-loop-reused-stale-context-after-the-head-changed",
+  ]);
+
+  const mediumPattern = summary.reviewPatterns.find((pattern) => pattern.severity === "medium");
+  assert.deepEqual(mediumPattern?.exampleFindingKeys, [
+    "medium-finding-a",
+    "medium-finding-b",
+    "medium-finding-c",
+    "medium-finding-d",
+  ]);
+
+  const mediumGuardrailCandidate = summary.promotionCandidates.find(
+    (candidate) => candidate.key === "guardrail:correctness-medium-review-loop-reused-stale-context-after-the-head-changed",
+  );
+  assert.deepEqual(mediumGuardrailCandidate?.supportingFindingKeys, [
+    "medium-finding-a",
+    "medium-finding-b",
+    "medium-finding-c",
+    "medium-finding-d",
   ]);
 });
 

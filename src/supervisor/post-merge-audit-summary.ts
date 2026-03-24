@@ -6,7 +6,7 @@ import type { ActionableSeverity, LocalReviewRootCauseSummary } from "../local-r
 import type { PostMergeAuditArtifact } from "./post-merge-audit-artifact";
 import { postMergeAuditArtifactDir } from "./post-merge-audit-artifact";
 
-export const POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION = 1;
+export const POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION = 2;
 
 export interface PostMergeAuditReviewPatternDto {
   key: string;
@@ -216,7 +216,7 @@ function createReviewPromotionCandidates(
   const summaryLabel = pattern.summary.replace(/\.$/u, "");
   return [
     {
-      key: `guardrail:${slugify(pattern.category ?? "uncategorized")}:${slugify(pattern.summary)}`,
+      key: `guardrail:${slugify(pattern.key)}`,
       category: "guardrail",
       title: `Promote guardrail for ${summaryLabel}`,
       summary: `Recurring review pattern: ${pattern.summary}`,
@@ -229,7 +229,7 @@ function createReviewPromotionCandidates(
       autoCreateFollowUpIssue: false,
     },
     {
-      key: `shared_memory:${slugify(pattern.category ?? "uncategorized")}:${slugify(pattern.summary)}`,
+      key: `shared_memory:${slugify(pattern.key)}`,
       category: "shared_memory",
       title: `Promote shared memory for ${summaryLabel}`,
       summary: `Capture the recurring lesson behind: ${pattern.summary}`,
@@ -420,7 +420,7 @@ export async function summarizePostMergeAuditPatterns(
       artifactCount: pattern.artifactNumbers.size,
       evidenceCount: pattern.evidenceCount,
       exampleIssueNumbers: [...pattern.artifactNumbers].sort(compareNumbersAscending),
-      exampleFindingKeys: [...pattern.findingKeys].sort(compareStringsAscending).slice(0, 3),
+      exampleFindingKeys: [...pattern.findingKeys].sort(compareStringsAscending),
     }))
     .sort((left, right) =>
       right.artifactCount - left.artifactCount ||
