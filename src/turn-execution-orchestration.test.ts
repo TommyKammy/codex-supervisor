@@ -351,6 +351,6 @@ test("prepareCodexTurnPrompt computes change classes for start prompts", async (
 
   assert.deepEqual(prepared.turnContext.changeClasses, ["docs", "tests"]);
   const prompt = buildCodexPrompt(prepared.turnContext);
-  assert.match(prompt, /Computed change classes: docs, tests/);
+  assert.match(prompt, /Deterministic changed-file classes: docs, tests/);
   assert.match(prompt, /Verification intensity: focused/);
 });
