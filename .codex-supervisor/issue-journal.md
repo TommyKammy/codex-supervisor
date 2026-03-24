@@ -5,16 +5,29 @@
 - Branch: codex/issue-938
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 1f68f280a6e8ae44c558ccc09a96bd42e652cbf9
+- Current phase: stabilizing
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: eacef0c87bca5db490b37e0cd1dc21c273c1620c
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-24T08:54:02.143Z
+- Updated at: 2026-03-24T09:17:17Z
 
 ## Latest Codex Summary
-- Reproduced the UI/manual-verification stall as a draft PR path: a `block_merge` local-review outcome of `manual_review_blocked` stayed in `draft_pr` with no explicit manual block, so the issue looked active instead of clearly blocked.
+Updated the late-stage manual-verification path so a current-head `manual_review_blocked` outcome now converges to an explicit `state=blocked` / `blocked_reason=manual_review` instead of lingering in `draft_pr`. The change is in [post-turn-pull-request.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-938/src/post-turn-pull-request.ts), [pull-request-state.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-938/src/pull-request-state.ts), and [review-handling.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-938/src/review-handling.ts). I also added focused regressions in [post-turn-pull-request.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-938/src/post-turn-pull-request.test.ts) and [pull-request-state-policy.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-938/src/pull-request-state-policy.test.ts), updated the journal, and committed the checkpoint as `eacef0c` (`Block manual-review-gated draft PRs explicitly`).
+
+Verification here:
+`npx tsx --test src/post-turn-pull-request.test.ts src/pull-request-state-policy.test.ts`
+`npx tsx --test src/post-turn-pull-request.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-selection-status-active-status.test.ts src/supervisor/supervisor-status-rendering.test.ts`
+`npm run build`
+`node dist/index.js status --config <temp>/supervisor.config.json`
+
+Summary: Explicitly block manual-review-gated draft/current-head PR states, confirm the supervisor-level reconciliation/status slice stays green, and verify the built CLI now renders `state=blocked` with `blocked_reason=manual_review`
+State hint: stabilizing
+Blocked reason: none
+Tests: `npx tsx --test src/post-turn-pull-request.test.ts src/pull-request-state-policy.test.ts`; `npx tsx --test src/post-turn-pull-request.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-selection-status-active-status.test.ts src/supervisor/supervisor-status-rendering.test.ts`; `npm run build`; `node dist/index.js status --config <temp>/supervisor.config.json`
+Next action: push `codex/issue-938` and open the draft PR for commit `eacef0c`
+Failure signature: none
 
 ## Active Failure Context
 - None recorded.
@@ -24,31 +37,24 @@
 - Hypothesis: `manual_review_blocked` was typed and surfaced in pre-merge artifacts, but the draft-PR lifecycle still treated it like a runnable late-stage state, leaving `state=draft_pr` and `blocked_reason=null` instead of recording an explicit manual-review block.
 - What changed: added a focused reproducer in `src/post-turn-pull-request.test.ts` for a draft PR whose local review requires manual verification; added state-policy coverage in `src/pull-request-state-policy.test.ts`; introduced `localReviewRequiresManualReview()` in `src/review-handling.ts`; updated `src/post-turn-pull-request.ts` and `src/pull-request-state.ts` so current-head `manual_review_blocked` outcomes converge to `state=blocked` with `blocked_reason=manual_review` and do not promote draft PRs to ready.
 - Current blocker: none.
-- Next exact step: run a slightly broader supervisor-adjacent verification slice, then commit this reproducer-plus-fix checkpoint and open/update the draft PR if needed.
-- Verification gap: broader reconciliation/status integration coverage still worth running, but the focused reproducer and state-policy regression tests are green locally.
+- Next exact step: push `codex/issue-938` and open the draft PR from `eacef0c`, then let the supervisor observe the explicit `manual_review` blocked state through normal PR/status flows.
+- Verification gap: acceptance-level merge/manual-close convergence is still exercised by existing reconciliation coverage rather than a new end-to-end CLI script, but the targeted reconciliation/status tests and a real built `status --config` invocation are green locally.
 - Files touched: `src/post-turn-pull-request.ts`, `src/post-turn-pull-request.test.ts`, `src/pull-request-state.ts`, `src/pull-request-state-policy.test.ts`, `src/review-handling.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: low; reverting would restore the ambiguous draft/manual-verification stall and make UI-heavy issues look runnable when they actually need operator verification.
-- Last focused command: `npx tsx --test src/post-turn-pull-request.test.ts src/pull-request-state-policy.test.ts`
-- Last focused failure: reproduced before the fix as `draft_pr-manual-review-stall`
+- Last focused command: `node dist/index.js status --config <temp>/supervisor.config.json`
+- Last focused failure: none
 - Draft PR: none
 - Last focused commands:
 ```bash
-sed -n '1,240p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-938/AGENTS.generated.md
-sed -n '1,240p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-938/context-index.md
-sed -n '1,320p' .codex-supervisor/issue-journal.md
 git status --short
-rg -n "manual verification|manual_review|manual_review_blocked|blocked_reason|draft_pr|pr_open|visual verification|browser verification" src docs README.md
-sed -n '620,820p' src/supervisor/supervisor-recovery-reconciliation.test.ts
-sed -n '634,860p' src/recovery-reconciliation.ts
-sed -n '1051,1225p' src/recovery-reconciliation.ts
-sed -n '1,90p' src/review-handling.ts
-sed -n '80,150p' src/review-handling.ts
-sed -n '430,520p' src/pull-request-state.ts
-sed -n '569,720p' src/pull-request-state.ts
-sed -n '240,560p' src/post-turn-pull-request.ts
-sed -n '220,360p' src/post-turn-pull-request.test.ts
-npx tsx --test src/post-turn-pull-request.test.ts
-npx tsx --test src/post-turn-pull-request.test.ts src/pull-request-state-policy.test.ts
+git branch -vv
+gh pr list --head codex/issue-938 --json number,title,state,isDraft,url
+sed -n '1,260p' src/supervisor/supervisor-recovery-reconciliation.test.ts
+sed -n '240,380p' src/supervisor/supervisor-selection-status-active-status.test.ts
+sed -n '1,220p' src/supervisor/supervisor-status-rendering.test.ts
+npx tsx --test src/post-turn-pull-request.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-selection-status-active-status.test.ts src/supervisor/supervisor-status-rendering.test.ts
+npm run build
+node dist/index.js status --config <temp>/supervisor.config.json
 ```
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
