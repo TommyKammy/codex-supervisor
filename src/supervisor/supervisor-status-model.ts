@@ -15,6 +15,7 @@ import {
   formatRetrySummaryLine,
   type SupervisorIssueActivityContextDto,
 } from "./supervisor-operator-activity-context";
+import { formatPreMergeEvaluationStatusLine } from "./supervisor-pre-merge-evaluation";
 
 type ReviewThreadClassifier = (config: SupervisorConfig, reviewThreads: ReviewThread[]) => ReviewThread[];
 type PendingReviewThreadClassifier = (
@@ -89,6 +90,11 @@ export function buildDetailedStatusSummaryLines(args: BuildDetailedStatusSummary
 
   if (handoffSummary) {
     lines.push(`handoff_summary=${truncate(sanitizeStatusValue(handoffSummary), 200)}`);
+  }
+
+  const preMergeEvaluationLine = formatPreMergeEvaluationStatusLine(activityContext?.preMergeEvaluation ?? null);
+  if (preMergeEvaluationLine) {
+    lines.push(preMergeEvaluationLine);
   }
 
   if (localReviewRoutingSummary) {

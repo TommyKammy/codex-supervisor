@@ -183,6 +183,7 @@ test("statusReport exposes typed active-issue and selection summary fields along
       verificationPolicySummary: null,
       durableGuardrailSummary: null,
       externalReviewFollowUpSummary: null,
+      preMergeEvaluation: null,
       localCiStatus: null,
       latestRecovery: null,
       retryContext: {
@@ -330,6 +331,7 @@ Expose typed operator-facing issue detail fields.
     verificationPolicySummary: null,
     durableGuardrailSummary: null,
     externalReviewFollowUpSummary: null,
+    preMergeEvaluation: null,
     localCiStatus: {
       outcome: "failed",
       summary: "Configured local CI command failed before marking PR #58 ready.",
@@ -446,6 +448,7 @@ test("status surfaces repeated stale cleanup risk before the stale recovery loop
     verificationPolicySummary: null,
     durableGuardrailSummary: null,
     externalReviewFollowUpSummary: null,
+    preMergeEvaluation: null,
     localCiStatus: null,
     latestRecovery: null,
     retryContext: {

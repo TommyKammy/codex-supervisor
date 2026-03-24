@@ -20,6 +20,7 @@ import {
   loadStatusChangedFiles,
 } from "./supervisor-status-rendering";
 import { maybeBuildIssueActivityContext, type SupervisorIssueActivityContextDto } from "./supervisor-operator-activity-context";
+import { loadPreMergeEvaluationDto } from "./supervisor-pre-merge-evaluation";
 
 export interface ActiveStatusGitHub {
   resolvePullRequestForBranch(branchName: string, pullRequestNumber?: number | null): Promise<GitHubPullRequest | null>;
@@ -66,6 +67,7 @@ export async function loadActiveIssueStatusSnapshot(args: {
   let externalReviewFollowUpSummary: string | null = null;
   let executionMetricsSummaryLines: string[] = [];
   let warningMessage: string | null = null;
+  let preMergeEvaluation = null;
 
   if (args.activeRecord.journal_path) {
     try {
@@ -99,6 +101,11 @@ export async function loadActiveIssueStatusSnapshot(args: {
       activeRecord: args.activeRecord,
       currentHeadSha: pr?.headRefOid ?? args.activeRecord.last_head_sha,
     });
+    preMergeEvaluation = await loadPreMergeEvaluationDto({
+      config: args.config,
+      record: args.activeRecord,
+      pr,
+    });
     executionMetricsSummaryLines = await loadExecutionMetricsSummaryLines(args.activeRecord.workspace);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -119,6 +126,7 @@ export async function loadActiveIssueStatusSnapshot(args: {
       verificationPolicySummary,
       durableGuardrailSummary,
       externalReviewFollowUpSummary,
+      preMergeEvaluation,
     }),
     handoffSummary,
     localReviewRoutingSummary,

@@ -156,6 +156,15 @@ function createPullRequest(overrides: Partial<GitHubPullRequest> = {}): GitHubPu
   };
 }
 
+async function writeLocalReviewArtifact(args: {
+  summaryPath: string;
+  artifact: Record<string, unknown>;
+}): Promise<void> {
+  await fs.mkdir(path.dirname(args.summaryPath), { recursive: true });
+  await fs.writeFile(args.summaryPath, "# local review\n", "utf8");
+  await fs.writeFile(`${args.summaryPath.slice(0, -3)}.json`, `${JSON.stringify(args.artifact, null, 2)}\n`, "utf8");
+}
+
 test("summarizeSupervisorStatusRecords selects the active, latest, and latest recovery records", () => {
   const activeRecord = createRecord({
     issue_number: 58,
@@ -360,4 +369,104 @@ test("loadActiveIssueStatusSnapshot aggregates journal and GitHub warnings", asy
   assert.equal(snapshot.handoffSummary, null);
   assert.deepEqual(snapshot.executionMetricsSummaryLines, []);
   assert.match(snapshot.warningMessage ?? "", /pull request lookup failed/);
+});
+
+test("loadActiveIssueStatusSnapshot exposes typed pre-merge final evaluation context", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "selection-status-pre-merge-"));
+  const workspace = path.join(tempDir, "workspace");
+  const summaryPath = path.join(tempDir, "reviews", "owner-repo", "issue-58", "head-deadbeef.md");
+
+  try {
+    await fs.mkdir(workspace, { recursive: true });
+    await writeLocalReviewArtifact({
+      summaryPath,
+      artifact: {
+        issueNumber: 58,
+        prNumber: 58,
+        branch: "codex/issue-58",
+        headSha: "deadbeef",
+        ranAt: "2026-03-24T00:11:00Z",
+        confidenceThreshold: 0.7,
+        reviewerThresholds: {
+          generic: { confidenceThreshold: 0.7, minimumSeverity: "low" },
+          specialist: { confidenceThreshold: 0.7, minimumSeverity: "low" },
+        },
+        roles: ["reviewer"],
+        autoDetectedRoles: [],
+        summary: "Local review found follow-up eligible residuals.",
+        recommendation: "changes_requested",
+        degraded: false,
+        findingsCount: 1,
+        rootCauseCount: 1,
+        maxSeverity: "medium",
+        actionableFindings: [],
+        rootCauseSummaries: [],
+        verification: {
+          required: false,
+          summary: "No high-severity findings required verification.",
+          recommendation: "ready",
+          degraded: false,
+          findingsCount: 0,
+          verifiedFindingsCount: 0,
+          verifiedMaxSeverity: "none",
+          findings: [],
+        },
+        verifiedFindings: [],
+        finalEvaluation: {
+          outcome: "follow_up_eligible",
+          residualFindings: [],
+          mustFixCount: 0,
+          manualReviewCount: 0,
+          followUpCount: 1,
+        },
+        guardrailProvenance: {
+          verifier: { committedPath: null, committedCount: 0 },
+          externalReview: { committedPath: null, committedCount: 0, runtimeSources: [] },
+        },
+        roleReports: [],
+        verifierReport: null,
+      },
+    });
+
+    const snapshot = await loadActiveIssueStatusSnapshot({
+      config: createConfig({ localReviewArtifactDir: path.join(tempDir, "reviews") }),
+      activeRecord: createRecord({
+        workspace,
+        local_review_summary_path: summaryPath,
+        local_review_head_sha: "deadbeef",
+        local_review_run_at: "2026-03-24T00:11:00Z",
+      }),
+      github: {
+        async getIssue() {
+          return createIssue();
+        },
+        async resolvePullRequestForBranch() {
+          return createPullRequest({
+            headRefOid: "deadbeef",
+          });
+        },
+        async getChecks() {
+          return [];
+        },
+        async getUnresolvedReviewThreads() {
+          return [];
+        },
+      },
+    });
+
+    assert.deepEqual(snapshot.activityContext?.preMergeEvaluation, {
+      status: "follow_up_eligible",
+      outcome: "follow_up_eligible",
+      reason: "follow_up_candidates=1",
+      headStatus: "current",
+      summaryPath: "owner-repo/issue-58/head-deadbeef.md",
+      artifactPath: "owner-repo/issue-58/head-deadbeef.json",
+      ranAt: "2026-03-24T00:11:00Z",
+      mustFixCount: 0,
+      manualReviewCount: 0,
+      followUpCount: 1,
+    });
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
 });
