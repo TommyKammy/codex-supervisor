@@ -18,11 +18,11 @@ Installed the missing local dev dependencies with `npm install`, which restored 
 
 The prior full-suite blocker turned out to be a stale expected-file allowlist in [src/external-review/external-review-family-layout.test.ts](/home/tommy/Dev/codex-supervisor-self-worktrees/issue-919/src/external-review/external-review-family-layout.test.ts), not a sequencing regression. I updated that test to include the two current runtime modules (`external-review-miss-digest.ts` and `external-review-prevention-targets.ts`), and the full `npx tsx --test src/**/*.test.ts` run now passes.
 
-Summary: Sequencing remains blocked on unresolved final evaluation as intended, local build/test verification is clean, and the stale external-review layout test was synchronized so the repo suite passes again
+Summary: Sequencing remains blocked on unresolved final evaluation as intended, local build/test verification is clean, and the draft PR is open with the stale external-review layout test synchronized so the repo suite passes again
 State hint: draft_pr
 Blocked reason: none
 Tests: `npm install`; `npx tsx --test src/issue-metadata/issue-metadata.test.ts src/supervisor/supervisor-selection-readiness-summary.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts`; `npm run build`; `npx tsx --test src/external-review/external-review-family-layout.test.ts`; `npx tsx --test src/**/*.test.ts`
-Next action: Commit the stale layout-test sync, push `codex/issue-919`, and open a draft PR
+Next action: Monitor draft PR #934 and address any CI or review feedback
 Failure signature: none
 
 ## Active Failure Context
@@ -33,13 +33,13 @@ Failure signature: none
 - Hypothesis: sequencing currently treats `record.state === "done"` as sufficient, so downstream siblings become runnable before the predecessor's pre-merge final evaluation resolves.
 - What changed: added focused regressions in `src/issue-metadata/issue-metadata.test.ts` and `src/supervisor/supervisor-selection-readiness-summary.test.ts`; introduced `isRecordDoneForSequencing()` in `src/issue-metadata/issue-metadata.ts`; updated `findBlockingIssue()`, readiness summaries, and selection/explain formatting to require a resolved final-evaluation outcome (`mergeable` or `follow_up_eligible`) before a predecessor counts as cleared; installed local dependencies; and synchronized `src/external-review/external-review-family-layout.test.ts` with the current runtime modules so the full suite passes again.
 - Current blocker: none.
-- Next exact step: commit the layout-test sync, push `codex/issue-919`, and open a draft PR for the sequencing fix.
+- Next exact step: monitor draft PR #934, then address any CI or review feedback if it appears.
 - Verification gap: none locally; focused sequencing tests, `npm run build`, the external-review layout test, and the full test suite are green in this workspace.
 - Files touched: `src/issue-metadata/issue-metadata.ts`, `src/issue-metadata/issue-metadata.test.ts`, `src/supervisor/supervisor-selection-readiness-summary.ts`, `src/supervisor/supervisor-selection-readiness-summary.test.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/external-review/external-review-family-layout.test.ts`, `.codex-supervisor/issue-journal.md`
 - Rollback concern: low to moderate; reverting would let downstream sibling work start while the predecessor is still pending or blocked in final evaluation, and diagnostics would again disagree with actual sequencing behavior.
 - Last focused command: `npx tsx --test src/**/*.test.ts`
 - Last focused failure: none
-- Draft PR: none
+- Draft PR: #934 (`https://github.com/TommyKammy/codex-supervisor/pull/934`)
 - Last focused commands:
 ```bash
 sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-919/AGENTS.generated.md
@@ -55,6 +55,8 @@ npm run build
 npm install
 npx tsx --test src/external-review/external-review-family-layout.test.ts
 npx tsx --test src/**/*.test.ts
+git push -u origin codex/issue-919
+gh pr create --draft --base main --head codex/issue-919 --title "Keep downstream sibling work blocked until final eval resolves" --body ...
 ```
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
