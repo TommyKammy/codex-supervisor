@@ -211,6 +211,32 @@ test("classifyStaleStabilizingNoPrBranchState ignores supervisor-owned replay ar
   assert.equal(result, "already_satisfied_on_main");
 });
 
+test("classifyStaleStabilizingNoPrBranchState ignores exact supervisor-owned replay artifact paths in the base diff", async () => {
+  const { repoPath, rootPath } = await createRepositoryWithOrigin();
+  const journalPath = path.join(repoPath, ".codex-supervisor", "issue-journal.md");
+  const replayArtifactPath = path.join(repoPath, ".codex-supervisor", "replay", "decision-cycle-snapshot.json");
+
+  await fs.mkdir(path.dirname(replayArtifactPath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n");
+  await fs.writeFile(replayArtifactPath, "{\n  \"kind\": \"replay\"\n}\n");
+  await runCommand("git", ["-C", repoPath, "add", journalPath, replayArtifactPath]);
+  await runCommand("git", ["-C", repoPath, "commit", "-m", "add replay artifact"]);
+
+  const supervisor = new Supervisor(
+    createConfig({
+      repoPath,
+      workspaceRoot: rootPath,
+    }),
+  );
+
+  const result = await classifyStaleStabilizingNoPrBranchState(supervisor, {
+    workspace: repoPath,
+    journal_path: journalPath,
+  });
+
+  assert.equal(result, "already_satisfied_on_main");
+});
+
 test("classifyStaleStabilizingNoPrBranchState preserves leading whitespace in porcelain paths", async () => {
   const { repoPath, rootPath } = await createRepositoryWithOrigin();
   const journalPath = path.join(repoPath, ".codex-supervisor", "issue-journal.md");
@@ -224,6 +250,38 @@ test("classifyStaleStabilizingNoPrBranchState preserves leading whitespace in po
   await fs.mkdir(path.dirname(misleadingReplayLikePath), { recursive: true });
   await fs.writeFile(journalPath, "# local journal\n");
   await fs.writeFile(misleadingReplayLikePath, "{\n  \"kind\": \"not-supervisor-owned\"\n}\n");
+
+  const supervisor = new Supervisor(
+    createConfig({
+      repoPath,
+      workspaceRoot: rootPath,
+    }),
+  );
+
+  const result = await classifyStaleStabilizingNoPrBranchState(supervisor, {
+    workspace: repoPath,
+    journal_path: journalPath,
+  });
+
+  assert.equal(result, "recoverable");
+});
+
+test("classifyStaleStabilizingNoPrBranchState preserves leading whitespace in base diff paths", async () => {
+  const { repoPath, rootPath } = await createRepositoryWithOrigin();
+  const journalPath = path.join(repoPath, ".codex-supervisor", "issue-journal.md");
+  const misleadingReplayLikePath = path.join(
+    repoPath,
+    " .codex-supervisor",
+    "replay",
+    "decision-cycle-snapshot.json",
+  );
+
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.mkdir(path.dirname(misleadingReplayLikePath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n");
+  await fs.writeFile(misleadingReplayLikePath, "{\n  \"kind\": \"not-supervisor-owned\"\n}\n");
+  await runCommand("git", ["-C", repoPath, "add", journalPath, misleadingReplayLikePath]);
+  await runCommand("git", ["-C", repoPath, "commit", "-m", "add misleading replay-like path"]);
 
   const supervisor = new Supervisor(
     createConfig({
