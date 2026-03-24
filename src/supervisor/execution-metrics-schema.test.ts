@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import {
   EXECUTION_METRICS_RUN_SUMMARY_SCHEMA_VERSION,
+  EXECUTION_METRICS_RUN_SUMMARY_TOP_LEVEL_KEYS,
   validateExecutionMetricsRunSummary,
 } from "./execution-metrics-schema";
 import {
@@ -15,86 +16,48 @@ import {
 } from "./execution-metrics-run-summary";
 
 test("validateExecutionMetricsRunSummary accepts the versioned contract and rejects unsupported schema versions", () => {
-  assert.deepEqual(
-    validateExecutionMetricsRunSummary({
-      schemaVersion: EXECUTION_METRICS_RUN_SUMMARY_SCHEMA_VERSION,
-      issueNumber: 892,
-      terminalState: "done",
-      terminalOutcome: {
-        category: "completed",
-        reason: "merged",
-      },
-      issueCreatedAt: "2026-03-24T03:55:00Z",
-      startedAt: "2026-03-24T03:59:00Z",
-      prCreatedAt: "2026-03-24T03:59:30Z",
-      prMergedAt: "2026-03-24T03:59:45Z",
-      finishedAt: "2026-03-24T04:00:00Z",
-      runDurationMs: 60000,
-      issueLeadTimeMs: 300000,
-      issueToPrCreatedMs: 270000,
-      prOpenDurationMs: 15000,
-      reviewMetrics: {
-        classification: "configured_bot_threads",
-        iterationCount: 2,
-        totalCount: 3,
-        totalCountKind: "actionable_thread_instances",
-      },
-      failureMetrics: {
-        classification: "latest_failure",
-        category: "review",
-        failureKind: "command_error",
-        blockedReason: "verification",
-        occurrenceCount: 2,
-        lastOccurredAt: "2026-03-24T03:59:00Z",
-      },
-      recoveryMetrics: {
-        classification: "latest_recovery",
-        reason: "operator_requeue",
-        occurrenceCount: 1,
-        lastRecoveredAt: "2026-03-24T03:59:30Z",
-        timeToLatestRecoveryMs: 30000,
-      },
-    }),
-    {
-      schemaVersion: EXECUTION_METRICS_RUN_SUMMARY_SCHEMA_VERSION,
-      issueNumber: 892,
-      terminalState: "done",
-      terminalOutcome: {
-        category: "completed",
-        reason: "merged",
-      },
-      issueCreatedAt: "2026-03-24T03:55:00Z",
-      startedAt: "2026-03-24T03:59:00Z",
-      prCreatedAt: "2026-03-24T03:59:30Z",
-      prMergedAt: "2026-03-24T03:59:45Z",
-      finishedAt: "2026-03-24T04:00:00Z",
-      runDurationMs: 60000,
-      issueLeadTimeMs: 300000,
-      issueToPrCreatedMs: 270000,
-      prOpenDurationMs: 15000,
-      reviewMetrics: {
-        classification: "configured_bot_threads",
-        iterationCount: 2,
-        totalCount: 3,
-        totalCountKind: "actionable_thread_instances",
-      },
-      failureMetrics: {
-        classification: "latest_failure",
-        category: "review",
-        failureKind: "command_error",
-        blockedReason: "verification",
-        occurrenceCount: 2,
-        lastOccurredAt: "2026-03-24T03:59:00Z",
-      },
-      recoveryMetrics: {
-        classification: "latest_recovery",
-        reason: "operator_requeue",
-        occurrenceCount: 1,
-        lastRecoveredAt: "2026-03-24T03:59:30Z",
-        timeToLatestRecoveryMs: 30000,
-      },
+  const summary = {
+    schemaVersion: EXECUTION_METRICS_RUN_SUMMARY_SCHEMA_VERSION,
+    issueNumber: 892,
+    terminalState: "done",
+    terminalOutcome: {
+      category: "completed",
+      reason: "merged",
     },
-  );
+    issueCreatedAt: "2026-03-24T03:55:00Z",
+    startedAt: "2026-03-24T03:59:00Z",
+    prCreatedAt: "2026-03-24T03:59:30Z",
+    prMergedAt: "2026-03-24T03:59:45Z",
+    finishedAt: "2026-03-24T04:00:00Z",
+    runDurationMs: 60000,
+    issueLeadTimeMs: 300000,
+    issueToPrCreatedMs: 270000,
+    prOpenDurationMs: 15000,
+    reviewMetrics: {
+      classification: "configured_bot_threads",
+      iterationCount: 2,
+      totalCount: 3,
+      totalCountKind: "actionable_thread_instances",
+    },
+    failureMetrics: {
+      classification: "latest_failure",
+      category: "review",
+      failureKind: "command_error",
+      blockedReason: "verification",
+      occurrenceCount: 2,
+      lastOccurredAt: "2026-03-24T03:59:00Z",
+    },
+    recoveryMetrics: {
+      classification: "latest_recovery",
+      reason: "operator_requeue",
+      occurrenceCount: 1,
+      lastRecoveredAt: "2026-03-24T03:59:30Z",
+      timeToLatestRecoveryMs: 30000,
+    },
+  } as const;
+
+  assert.deepEqual(validateExecutionMetricsRunSummary(summary), summary);
+  assert.deepEqual(Object.keys(summary).sort(), [...EXECUTION_METRICS_RUN_SUMMARY_TOP_LEVEL_KEYS].sort());
 
   assert.throws(
     () =>
@@ -120,6 +83,13 @@ test("validateExecutionMetricsRunSummary accepts the versioned contract and reje
         recoveryMetrics: null,
       }),
     /schemaVersion must be 4/u,
+  );
+
+  const { reviewMetrics, ...summaryWithoutReviewMetrics } = summary;
+  void reviewMetrics;
+  assert.throws(
+    () => validateExecutionMetricsRunSummary(summaryWithoutReviewMetrics),
+    /summary must contain schemaVersion, issueNumber, terminalState, terminalOutcome, issueCreatedAt, startedAt, prCreatedAt, prMergedAt, finishedAt, runDurationMs, issueLeadTimeMs, issueToPrCreatedMs, prOpenDurationMs, reviewMetrics, failureMetrics, and recoveryMetrics\./u,
   );
 });
 
