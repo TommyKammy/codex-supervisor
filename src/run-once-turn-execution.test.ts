@@ -650,6 +650,185 @@ test("executeCodexTurnPhase routes start and resume turns through the shared age
   assert.equal(requests[1]?.sessionId, "session-existing");
 });
 
+test("executeCodexTurnPhase keeps local-CI blocked outcomes isolated from execution-metrics write failures", async () => {
+  const consoleWarnings: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    consoleWarnings.push(args);
+  };
+
+  try {
+    const config = createConfig({ localCiCommand: "npm run ci:local" });
+    const issue: GitHubIssue = createIssue({ title: "Keep local CI blocked despite metrics failures" });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: 102,
+      issues: {
+        "102": createRecord({
+          state: "implementing",
+          implementation_attempt_count: 1,
+          workspace: "/tmp/workspaces/issue-102",
+          journal_path: "/tmp/workspaces/issue-102/.codex-supervisor/issue-journal.md",
+          updated_at: "not-an-iso-timestamp",
+        }),
+      },
+    };
+    let recoverCalls = 0;
+    let recoveredError: unknown = null;
+    let journalReads = 0;
+
+    const result = await executeCodexTurnPhase({
+      config,
+      stateStore: {
+        touch: (record, patch) => ({ ...record, ...patch, updated_at: "2026-03-24T03:10:00Z" }),
+        save: async () => undefined,
+      },
+      github: {
+        resolvePullRequestForBranch: async () => null,
+        createPullRequest: async () => {
+          throw new Error("unexpected createPullRequest call");
+        },
+        getChecks: async () => [],
+        getUnresolvedReviewThreads: async () => [],
+        getExternalReviewSurface: async () => {
+          throw new Error("unexpected getExternalReviewSurface call");
+        },
+      },
+      context: {
+        state,
+        record: state.issues["102"]!,
+        issue,
+        previousCodexSummary: null,
+        previousError: null,
+        workspacePath: "/tmp/workspaces/issue-102",
+        journalPath: "/tmp/workspaces/issue-102/.codex-supervisor/issue-journal.md",
+        syncJournal: async () => undefined,
+        memoryArtifacts: {
+          alwaysReadFiles: [],
+          onDemandFiles: [],
+          contextIndexPath: "/tmp/context-index.md",
+          agentsPath: "/tmp/AGENTS.generated.md",
+        },
+        workspaceStatus: {
+          branch: "codex/issue-102",
+          headSha: "head-102",
+          hasUncommittedChanges: false,
+          baseAhead: 1,
+          baseBehind: 0,
+          remoteBranchExists: true,
+          remoteAhead: 0,
+          remoteBehind: 0,
+        },
+        pr: null,
+        checks: [],
+        reviewThreads: [],
+        options: { dryRun: false },
+      },
+      acquireSessionLock: async () => null,
+      classifyFailure: () => "command_error",
+      buildCodexFailureContext: (category, summary, details) => ({
+        category,
+        summary,
+        signature: `${category}:${summary}`,
+        command: null,
+        details,
+        url: null,
+        updated_at: "2026-03-24T03:10:00Z",
+      }),
+      applyFailureSignature: (_record, failureContext) => ({
+        last_failure_signature: failureContext?.signature ?? null,
+        repeated_failure_signature_count: failureContext ? 1 : 0,
+      }),
+      normalizeBlockerSignature: () => null,
+      isVerificationBlockedMessage: () => false,
+      derivePullRequestLifecycleSnapshot: () => {
+        throw new Error("unexpected derivePullRequestLifecycleSnapshot call");
+      },
+      inferStateWithoutPullRequest: () => "implementing",
+      blockedReasonFromReviewState: () => null,
+      recoverUnexpectedCodexTurnFailure: async ({ error, record }) => {
+        recoverCalls += 1;
+        recoveredError = error;
+        return record;
+      },
+      getWorkspaceStatus: async () => ({
+        branch: "codex/issue-102",
+        headSha: "head-102",
+        hasUncommittedChanges: false,
+        baseAhead: 1,
+        baseBehind: 0,
+        remoteBranchExists: true,
+        remoteAhead: 0,
+        remoteBehind: 0,
+      }),
+      pushBranch: async () => undefined,
+      readIssueJournal: async () => {
+        journalReads += 1;
+        return journalReads === 1
+          ? [
+              "## Codex Working Notes",
+              "### Current Handoff",
+              "- Hypothesis: fail local CI before opening a pull request.",
+            ].join("\n")
+          : [
+              "## Codex Working Notes",
+              "### Current Handoff",
+              "- Hypothesis: fail local CI before opening a pull request.",
+              "- What changed: local CI blocked the run before PR creation.",
+            ].join("\n");
+      },
+      runLocalCiCommand: async () => {
+        throw new Error("Command failed: sh -lc +1 args\nexitCode=1\nlocal ci failed");
+      },
+      agentRunner: createSuccessfulAgentRunner(async () => ({
+        exitCode: 0,
+        sessionId: "session-102",
+        supervisorMessage: [
+          "Summary: implementation complete",
+          "State hint: stabilizing",
+          "Blocked reason: none",
+          "Tests: not run",
+          "Failure signature: none",
+          "Next action: publish the PR",
+        ].join("\n"),
+        stderr: "",
+        stdout: "",
+        structuredResult: {
+          summary: "implementation complete",
+          stateHint: "stabilizing",
+          blockedReason: null,
+          failureSignature: null,
+          nextAction: "publish the PR",
+          tests: "not run",
+        },
+        failureKind: null,
+        failureContext: null,
+      })),
+    });
+
+    assert.deepEqual(result, {
+      kind: "returned",
+      message: "Local CI gate blocked pull request creation for issue #102.",
+    });
+    assert.equal(recoverCalls, 0, String(recoveredError));
+    assert.equal(state.issues["102"]?.state, "blocked");
+    assert.equal(state.issues["102"]?.blocked_reason, "verification");
+    assert.equal(state.issues["102"]?.last_failure_signature, "local-ci-gate-failed");
+    assert.equal(consoleWarnings.length, 1);
+    assert.match(
+      String(consoleWarnings[0]?.[0] ?? ""),
+      /Failed to write execution metrics run summary while persisting issue #102\./,
+    );
+    assert.deepEqual(consoleWarnings[0]?.[1], {
+      issueNumber: 102,
+      terminalState: "blocked",
+      updatedAt: "2026-03-24T03:10:00Z",
+    });
+    assert.match(String(consoleWarnings[0]?.[2] ?? ""), /startedAt must be an ISO-8601 timestamp/u);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
 test("executeCodexTurnPhase falls back to a fresh start when the agent runner cannot resume", async () => {
   const requests: AgentTurnRequest[] = [];
   let sessionLockCalls = 0;

@@ -12,7 +12,7 @@ import {
 import { nowIso, truncate } from "../core/utils";
 import {
   executionMetricsRetentionRootPath,
-  syncExecutionMetricsRunSummary,
+  syncExecutionMetricsRunSummarySafely,
 } from "./execution-metrics-run-summary";
 
 type AuthFailureGitHub = Pick<GitHubClient, "authStatus">;
@@ -167,25 +167,14 @@ export async function recoverUnexpectedCodexTurnFailure(args: {
     state.activeIssueNumber = null;
   }
   await stateStore.save(state);
-  try {
-    await syncExecutionMetricsRunSummary({
-      previousRecord: record,
-      nextRecord: updated,
-      issue,
-      pullRequest: pr,
-      retentionRootPath: executionMetricsRetentionRootPath(config.stateFile),
-    });
-  } catch (metricsError) {
-    console.warn(
-      `Failed to write execution metrics run summary while recovering issue #${record.issue_number}.`,
-      {
-        issueNumber: updated.issue_number,
-        terminalState: updated.state,
-        updatedAt: updated.updated_at,
-      },
-      metricsError,
-    );
-  }
+  await syncExecutionMetricsRunSummarySafely({
+    previousRecord: record,
+    nextRecord: updated,
+    issue,
+    pullRequest: pr,
+    retentionRootPath: executionMetricsRetentionRootPath(config.stateFile),
+    warningContext: "recovering",
+  });
 
   try {
     await journalSync(updated);

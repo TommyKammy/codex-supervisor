@@ -82,3 +82,24 @@ export async function syncExecutionMetricsRunSummary(args: {
   }
   return artifactPath;
 }
+
+export async function syncExecutionMetricsRunSummarySafely(
+  args: Parameters<typeof syncExecutionMetricsRunSummary>[0] & {
+    warningContext: string;
+  },
+): Promise<string | null> {
+  try {
+    return await syncExecutionMetricsRunSummary(args);
+  } catch (metricsError) {
+    console.warn(
+      `Failed to write execution metrics run summary while ${args.warningContext} issue #${args.previousRecord.issue_number}.`,
+      {
+        issueNumber: args.previousRecord.issue_number,
+        terminalState: args.nextRecord.state,
+        updatedAt: args.nextRecord.updated_at,
+      },
+      metricsError,
+    );
+    return null;
+  }
+}
