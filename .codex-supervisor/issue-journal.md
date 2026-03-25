@@ -1,36 +1,36 @@
-# Issue #957: WebUI can falsely report loop mode is off while supervisor loop is running
+# Issue #958: CodeRabbit starter profile bug: replace the shipped live repoSlug with a fail-fast placeholder
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/957
-- Branch: codex/issue-957
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/958
+- Branch: codex/issue-958
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
+- Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: e2ade43f36c3b5cfe705d591323d546467d23180
+- Last head SHA: 0b34911e3926f11cb2fcb44f41948f5c34404657
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-25T01:37:13.000Z
+- Updated at: 2026-03-25T02:16:59.825Z
 
 ## Latest Codex Summary
-- Reproduced the false WebUI loop-off state with focused dashboard tests, then replaced the hardcoded shell copy with typed rendering driven by a new `loopRuntime` status field.
-- Added a long-lived supervisor loop-runtime lock held for the lifetime of the `loop` command and inspected that lock from `statusReport` so `/api/status` reports live loop state without guessing from issue selection.
-- Focused verification passed for the dashboard, supervisor status, CLI runtime, HTTP, service, browser smoke, and build paths after restoring local dependencies with `npm ci`.
+- Reproduced the CodeRabbit starter-profile bug with a focused shipped-config regression: `src/config.test.ts` failed because `supervisor.config.coderabbit.json` still used the syntactically valid placeholder `OWNER/REPO`, which does not fail fast at config load.
+- Replaced the shipped CodeRabbit `repoSlug` with the intentionally non-loadable placeholder `REPLACE_WITH_OWNER_AND_REPO` and aligned README/getting-started/configuration docs in English and Japanese to describe the profile as a starting point that must be customized before use.
+- Focused verification passed with `npx tsx --test src/config.test.ts`, and `npm run build` passed after restoring local tool dependencies with `npm ci`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the dashboard shell hardcoded loop-off copy instead of rendering from a typed live runtime signal, so the UI could contradict a running supervisor loop between refreshes.
-- What changed: added `src/supervisor/supervisor-loop-runtime-state.ts` to manage and inspect a long-lived loop-runtime lock; exposed `loopRuntime` on `SupervisorStatusDto`; held the runtime lock for the lifetime of the `loop` CLI command; replaced hardcoded dashboard loop-off shell copy with typed elements rendered from `/api/status`; added focused regressions for loop-running and loop-off dashboard states plus a supervisor status-runtime regression.
+- Hypothesis: the shipped CodeRabbit starter profile still allowed a syntactically valid `repoSlug`, so copying it without customization could pass config parsing instead of failing fast and forcing the operator to set the managed repository explicitly.
+- What changed: added a focused shipped-config regression in `src/config.test.ts`; changed `supervisor.config.coderabbit.json` to use the invalid placeholder `REPLACE_WITH_OWNER_AND_REPO`; updated `README.md`, `docs/getting-started.md`, `docs/configuration.md`, `docs/getting-started.ja.md`, and `docs/README.ja.md` so the starter profile is described as a starting point that must be customized before first run.
 - Current blocker: none.
-- Next exact step: stage the loop-runtime/dashboard changes, commit them on `codex/issue-957`, and continue with broader verification or PR prep.
-- Verification gap: none in the requested scope after restoring local dependencies with `npm ci`.
-- Files touched: `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard-browser-logic.ts`, `src/backend/webui-dashboard-browser-script.ts`, `src/backend/webui-dashboard-browser-smoke.test.ts`, `src/backend/webui-dashboard-page.ts`, `src/backend/webui-dashboard-panel-layout.ts`, `src/backend/webui-dashboard.test.ts`, `src/cli/supervisor-runtime.test.ts`, `src/cli/supervisor-runtime.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`, `src/supervisor/supervisor-loop-controller.ts`, `src/supervisor/supervisor-loop-runtime-state.ts`, `src/supervisor/supervisor-service.test.ts`, `src/supervisor/supervisor-status-report.ts`, `src/supervisor/supervisor.ts`, `.codex-supervisor/issue-journal.md`.
-- Rollback concern: moderate; the runtime lock is intentionally long-lived for `loop` processes, so regressions would most likely show up as false loop-running state or loop startup refusal if the lock path/cleanup behavior is wrong.
-- Last focused command: `npx tsx --test src/backend/webui-dashboard-browser-smoke.test.ts`
-- PR status: no PR opened from `codex/issue-957` yet in this turn.
+- Next exact step: stage the starter-profile/doc updates, commit them on `codex/issue-958`, and open or update the branch PR if needed.
+- Verification gap: none in the requested local scope after rerunning the focused config test and build.
+- Files touched: `src/config.test.ts`, `supervisor.config.coderabbit.json`, `README.md`, `docs/getting-started.md`, `docs/configuration.md`, `docs/getting-started.ja.md`, `docs/README.ja.md`, `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; the change is limited to starter-profile defaults, docs, and a focused regression test.
+- Last focused command: `npx tsx --test src/config.test.ts`
+- PR status: no PR opened from `codex/issue-958` yet in this turn.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.

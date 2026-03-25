@@ -725,6 +725,23 @@ test("shipped config profiles declare the intended review bot logins", async () 
   }
 });
 
+test("shipped CodeRabbit starter profile uses a fail-fast repoSlug placeholder", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  const profilePath = path.join(rootDir, "supervisor.config.coderabbit.json");
+  const raw = JSON.parse(await fs.readFile(profilePath, "utf8")) as { repoSlug?: unknown };
+  const repoSlug = raw.repoSlug;
+
+  if (typeof repoSlug !== "string") {
+    assert.fail("supervisor.config.coderabbit.json should define repoSlug as a string");
+  }
+  assert.notEqual(repoSlug, "TommyKammy/codex-supervisor");
+  assert.match(
+    repoSlug,
+    /^[^/]+$/u,
+    "supervisor.config.coderabbit.json should force operators to replace repoSlug before loadConfig accepts it",
+  );
+});
+
 test("repo gitignore ignores .DS_Store without hiding host-specific coderabbit config", async (t) => {
   const rootDir = path.resolve(__dirname, "..");
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-gitignore-"));

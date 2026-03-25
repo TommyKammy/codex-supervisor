@@ -10,7 +10,7 @@ Start from [supervisor.config.example.json](../supervisor.config.example.json), 
 - [supervisor.config.codex.json](../supervisor.config.codex.json)
 - [supervisor.config.coderabbit.json](../supervisor.config.coderabbit.json)
 
-`supervisor.config.json` is always the active file that the supervisor loads. The shipped provider profiles are complete templates, so you can either copy one over `supervisor.config.json` or copy its `reviewBotLogins` into your existing `supervisor.config.json` and keep your other edits.
+`supervisor.config.json` is always the active file that the supervisor loads. The shipped provider profiles are starting points, so you can either copy one over `supervisor.config.json` and customize it for your repo or copy its `reviewBotLogins` into your existing `supervisor.config.json` and keep your other edits.
 
 Requirements:
 
@@ -48,6 +48,7 @@ Each shipped profile only covers supervisor-side expectations. You still need th
 ### CodeRabbit profile
 
 - Supervisor-side: use `supervisor.config.coderabbit.json`, which tracks both `coderabbitai` and `coderabbitai[bot]`, waits up to 30 minutes after a CodeRabbit `Rate limit exceeded` warning before continuing, applies an initial startup grace period after required checks turn green, re-arms that same grace period when the latest earlier CodeRabbit signal was only a draft skip and the PR later becomes ready for review, and then applies a short settled wait after a fresh CodeRabbit current-head observation.
+- Starter-profile note: the shipped CodeRabbit profile uses an intentionally non-loadable `repoSlug` placeholder so copying it without customization fails fast instead of silently targeting another repository.
 - Tuning: `configuredBotInitialGraceWaitSeconds` controls both the initial startup grace period and the draft-skip re-wait window. The default is `90`, and practical tuning can extend into the 60-120 second range. `configuredBotSettledWaitSeconds` controls the later post-activity quiet period. The default is `5`, which preserves current behavior after CodeRabbit begins reviewing the current head.
 - Provider-side: install CodeRabbit. Add `.coderabbit.yaml` only when you intentionally want repo-specific CodeRabbit behavior; it is not required just to make the supervisor wait through temporary rate limits.
 - Operator note: during the initial startup grace, `status` shows `configured_bot_initial_grace_wait status=active provider=coderabbit pause_reason=awaiting_initial_provider_activity recent_observation=required_checks_green ... configured_wait_seconds=90 wait_until=...`. That means required checks just turned green, CodeRabbit has not yet produced a current-head signal, and the supervisor is intentionally holding merge progression for the configured startup window.

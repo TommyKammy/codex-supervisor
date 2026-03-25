@@ -1,6 +1,6 @@
 {
   "repoPath": "/absolute/path/to/managed-repo",
-  "repoSlug": "OWNER/REPO",
+  "repoSlug": "REPLACE_WITH_OWNER_AND_REPO",
   "defaultBranch": "main",
   "workspaceRoot": "/absolute/path/to/worktrees",
   "stateBackend": "json",

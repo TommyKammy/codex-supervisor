@@ -80,7 +80,7 @@ cp supervisor.config.example.json supervisor.config.json
 - [supervisor.config.codex.json](../supervisor.config.codex.json)
 - [supervisor.config.coderabbit.json](../supervisor.config.coderabbit.json)
 
-選んだ profile を `supervisor.config.json` に丸ごとコピーしてもよいですし、`reviewBotLogins` だけを手元の active config に移しても構いません。
+選んだ profile を `supervisor.config.json` に starting point として丸ごとコピーしてもよいですし、`reviewBotLogins` だけを手元の active config に移しても構いません。
 
 初回起動前に最低限設定する値:
 
@@ -89,6 +89,8 @@ cp supervisor.config.example.json supervisor.config.json
 - `workspaceRoot`
 - `codexBinary`
 - 利用する review provider に応じた設定
+
+`supervisor.config.coderabbit.json` は、customize せずにそのまま読み込ませないために、意図的に `repoSlug` を無効な placeholder にしてあります。初回起動前に対象 repo の値へ置き換えてください。
 
 config の全項目、model policy、durable memory、provider guidance は [Configuration reference](./configuration.md) を参照してください。
 
