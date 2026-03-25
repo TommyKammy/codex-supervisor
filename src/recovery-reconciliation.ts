@@ -10,7 +10,7 @@ import { inspectFileLock } from "./core/lock";
 import { RecoveryEvent } from "./run-once-cycle-prelude";
 import { StateStore } from "./core/state-store";
 import { GitHubIssue, IssueRunRecord, PullRequestCheck, ReviewThread, RunState, SupervisorConfig, SupervisorStateFile } from "./core/types";
-import { hoursSince, nowIso } from "./core/utils";
+import { hoursSince, nowIso, truncate } from "./core/utils";
 import { branchNameForIssue, cleanupWorkspace, isSafeCleanupTarget } from "./core/workspace";
 import {
   executionMetricsRetentionRootPath,
@@ -29,6 +29,7 @@ import {
   getStaleStabilizingNoPrRecoveryCount,
   STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
 } from "./no-pull-request-state";
+import { applyFailureSignature } from "./supervisor/supervisor-failure-helpers";
 
 const OWNER_GUARDED_ACTIVE_STATES = new Set<RunState>([
   "planning",
@@ -891,6 +892,20 @@ export async function reconcileStaleFailedIssueStates(
       checks: PullRequestCheck[],
       reviewThreads: ReviewThread[],
     ) => IssueRunRecord["state"];
+    inferFailureContext: (
+      config: SupervisorConfig,
+      record: IssueRunRecord,
+      pr: GitHubIssue extends never ? never : NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
+      checks: PullRequestCheck[],
+      reviewThreads: ReviewThread[],
+    ) => IssueRunRecord["last_failure_context"];
+    blockedReasonForLifecycleState: (
+      config: SupervisorConfig,
+      record: IssueRunRecord,
+      pr: GitHubIssue extends never ? never : NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
+      checks: PullRequestCheck[],
+      reviewThreads: ReviewThread[],
+    ) => IssueRunRecord["blocked_reason"];
     isOpenPullRequest: (
       pr: NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
     ) => boolean;
@@ -929,30 +944,45 @@ export async function reconcileStaleFailedIssueStates(
 
     const checks = await github.getChecks(pr.number);
     const reviewThreads = await github.getUnresolvedReviewThreads(pr.number);
-    const nextState = deps.inferStateFromPullRequest(config, record, pr, checks, reviewThreads);
+    const reviewWaitPatch = deps.syncReviewWaitWindow(record, pr);
+    const copilotReviewRequestObservationPatch = deps.syncCopilotReviewRequestObservation(config, record, pr);
+    const copilotReviewTimeoutPatch = deps.syncCopilotReviewTimeoutState(config, record, pr);
+    const recordForState: IssueRunRecord = {
+      ...record,
+      pr_number: pr.number,
+      last_head_sha: pr.headRefOid,
+      ...reviewWaitPatch,
+      ...copilotReviewRequestObservationPatch,
+      ...copilotReviewTimeoutPatch,
+    };
+    const nextState = deps.inferStateFromPullRequest(config, recordForState, pr, checks, reviewThreads);
 
-    if (nextState === "blocked" || nextState === "failed") {
+    if (nextState === "failed") {
       continue;
     }
 
+    const failureContext =
+      nextState === "blocked" ? deps.inferFailureContext(config, recordForState, pr, checks, reviewThreads) : null;
     const recoveryEvent = buildTrackedPrResumeRecoveryEvent(record, pr, nextState);
     const patch: Partial<IssueRunRecord> = {
       state: nextState,
-      last_error: null,
+      last_error: nextState === "blocked" && failureContext ? truncate(failureContext.summary, 1000) : null,
       last_failure_kind: null,
-      last_failure_context: null,
+      last_failure_context: failureContext,
       last_blocker_signature: null,
-      last_failure_signature: null,
-      blocked_reason: null,
+      ...applyFailureSignature(record, failureContext),
+      blocked_reason:
+        nextState === "blocked"
+          ? deps.blockedReasonForLifecycleState(config, recordForState, pr, checks, reviewThreads)
+          : null,
       repeated_blocker_count: 0,
-      repeated_failure_signature_count: 0,
       timeout_retry_count: 0,
       blocked_verification_retry_count: 0,
       pr_number: pr.number,
       last_head_sha: pr.headRefOid,
-      ...deps.syncReviewWaitWindow(record, pr),
-      ...deps.syncCopilotReviewRequestObservation(config, record, pr),
-      ...deps.syncCopilotReviewTimeoutState(config, record, pr),
+      ...reviewWaitPatch,
+      ...copilotReviewRequestObservationPatch,
+      ...copilotReviewTimeoutPatch,
     };
 
     const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));

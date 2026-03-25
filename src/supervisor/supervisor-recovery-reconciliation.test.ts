@@ -14,6 +14,7 @@ import {
   reconcileStaleActiveIssueReservation,
   reconcileTrackedMergedButOpenIssues,
 } from "../recovery-reconciliation";
+import { createPullRequest } from "../pull-request-state-test-helpers";
 import { shouldAutoRetryHandoffMissing } from "./supervisor-execution-policy";
 import { createConfig, createRecord, executionReadyBody } from "./supervisor-test-helpers";
 
@@ -1406,6 +1407,8 @@ test("reconcileStaleFailedIssueStates records a recovery reason when a tracked P
     [issue],
     {
       inferStateFromPullRequest: () => "addressing_review",
+      inferFailureContext: () => null,
+      blockedReasonForLifecycleState: () => null,
       isOpenPullRequest: () => true,
       syncReviewWaitWindow: () => ({}),
       syncCopilotReviewRequestObservation: () => ({}),
@@ -1424,5 +1427,219 @@ test("reconcileStaleFailedIssueStates records a recovery reason when a tracked P
     "tracked_pr_head_advanced: resumed issue #366 from failed to addressing_review after tracked PR #191 advanced from head-old-191 to head-new-191",
   );
   assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+});
+
+test("reconcileStaleFailedIssueStates reclassifies stale failed tracked PRs to blocked manual_review state", async () => {
+  const config = createConfig();
+  const failureContext = {
+    category: "review" as const,
+    summary: "Manual review is required before the PR can proceed.",
+    signature: "manual-review:thread-1",
+    command: null,
+    details: ["thread=thread-1"],
+    url: "https://example.test/pr/191#discussion_r1",
+    updated_at: "2026-03-13T00:25:00Z",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "366": createRecord({
+        state: "failed",
+        pr_number: 191,
+        last_head_sha: "head-191",
+        last_error: "Stopped after repeated test failures.",
+        last_failure_kind: "codex_failed",
+        last_failure_context: {
+          category: "codex",
+          summary: "The build failed repeatedly.",
+          signature: "tests:red",
+          command: "npm test",
+          details: ["suite=supervisor"],
+          url: null,
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "tests:red",
+        repeated_failure_signature_count: 3,
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: 366,
+    title: "Recovery issue",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:21:00Z",
+    url: "https://example.test/issues/366",
+    state: "OPEN",
+  };
+  const pr = createPullRequest({
+    number: 191,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/191",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-191",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  await reconcileStaleFailedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      inferStateFromPullRequest: () => "blocked",
+      inferFailureContext: () => failureContext,
+      blockedReasonForLifecycleState: () => "manual_review",
+      isOpenPullRequest: () => true,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: () => ({}),
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "blocked");
+  assert.equal(updated.blocked_reason, "manual_review");
+  assert.equal(updated.last_error, failureContext.summary);
+  assert.deepEqual(updated.last_failure_context, failureContext);
+  assert.equal(updated.last_failure_signature, failureContext.signature);
+  assert.equal(updated.repeated_failure_signature_count, 1);
+  assert.equal(updated.last_failure_kind, null);
+  assert.equal(
+    updated.last_recovery_reason,
+    "tracked_pr_lifecycle_recovered: resumed issue #366 from failed to blocked using fresh tracked PR #191 facts at head head-191",
+  );
+  assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+});
+
+test("reconcileStaleFailedIssueStates reclassifies stale failed tracked PRs to blocked verification state", async () => {
+  const config = createConfig();
+  const failureContext = {
+    category: "review" as const,
+    summary: "Local review found high-severity issues. Manual attention is required before the PR can proceed.",
+    signature: "local-review:high-severity",
+    command: null,
+    details: ["severity=high"],
+    url: null,
+    updated_at: "2026-03-13T00:25:00Z",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "366": createRecord({
+        state: "failed",
+        pr_number: 191,
+        last_head_sha: "head-191",
+        last_error: "Stopped after repeated test failures.",
+        last_failure_kind: "codex_failed",
+        timeout_retry_count: 2,
+        blocked_verification_retry_count: 2,
+        last_failure_signature: "tests:red",
+        repeated_failure_signature_count: 3,
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: 366,
+    title: "Recovery issue",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:21:00Z",
+    url: "https://example.test/issues/366",
+    state: "OPEN",
+  };
+  const pr = createPullRequest({
+    number: 191,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/191",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-191",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  await reconcileStaleFailedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      inferStateFromPullRequest: () => "blocked",
+      inferFailureContext: () => failureContext,
+      blockedReasonForLifecycleState: () => "verification",
+      isOpenPullRequest: () => true,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: () => ({}),
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "blocked");
+  assert.equal(updated.blocked_reason, "verification");
+  assert.equal(updated.last_error, failureContext.summary);
+  assert.deepEqual(updated.last_failure_context, failureContext);
+  assert.equal(updated.last_failure_signature, failureContext.signature);
+  assert.equal(updated.repeated_failure_signature_count, 1);
+  assert.equal(updated.timeout_retry_count, 0);
+  assert.equal(updated.blocked_verification_retry_count, 0);
+  assert.equal(updated.last_failure_kind, null);
   assert.equal(saveCalls, 1);
 });
