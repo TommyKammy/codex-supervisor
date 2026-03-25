@@ -37,13 +37,13 @@ Failure signature: PRRT_kwDORgvdZ852o6R_
 - Hypothesis: bounded tracked-merged-but-open reconciliation still restarted from the front when the persisted cursor issue dropped out of the current PR-bearing set, because the resume helper only rotated when it found the exact saved issue number.
 - What changed: updated `orderTrackedMergedButOpenRecordsForResume()` in `src/recovery-reconciliation.ts` to resume from the next higher issue number when the saved cursor record is no longer present, and added a focused regression in `src/supervisor/supervisor-recovery-reconciliation.test.ts` that proves a bounded sweep skips earlier records in that case instead of re-scanning from the front.
 - Current blocker: none.
-- Next exact step: commit this review fix, push `codex/issue-973`, and resolve the CodeRabbit thread on PR #987 if the remote diff matches the local verification.
+- Next exact step: monitor PR #987 for any follow-up CI or human review after pushing commit `7b6293e` and resolving the CodeRabbit thread.
 - Verification gap: none in the requested local scope after rerunning `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts` and `npm run build`.
 - Files touched: `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `.codex-supervisor/issue-journal.md`.
 - Rollback concern: low; the change only adjusts the internal rotation point for tracked merged-but-open reconciliation when the saved cursor record disappears, and leaves the existing full-pass and per-cycle budget semantics intact.
-- Last focused command: `npm run build`
+- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ852o6R_`
 - Exact failure reproduced: with `maxRecords=1`, a saved cursor at issue #366 and current PR-bearing records for issues #365 and #367 caused the helper to restart at #365 instead of resuming at #367 after #366 dropped out of the tracked set.
-- Commands run: `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm run build`.
-- PR status: draft PR #987 (`https://github.com/TommyKammy/codex-supervisor/pull/987`); one CodeRabbit review thread is locally addressed and pending push.
+- Commands run: `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm run build`; `git commit -m "Fix reconciliation resume fallback cursor"`; `git push origin codex/issue-973`; `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ852o6R_`.
+- PR status: draft PR #987 (`https://github.com/TommyKammy/codex-supervisor/pull/987`); the previously open CodeRabbit thread is resolved after pushing commit `7b6293e`.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
