@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { writeJsonAtomic } from "../core/utils";
 import { createConfig } from "../turn-execution-test-helpers";
 import type { LocalReviewArtifact } from "../local-review/types";
+import { createArtifactTestPaths } from "./artifact-test-helpers";
 import type { PostMergeAuditArtifact } from "./post-merge-audit-artifact";
 import { postMergeAuditArtifactDir } from "./post-merge-audit-artifact";
 import {
@@ -148,7 +148,7 @@ function createPostMergeArtifact(overrides: Partial<PostMergeAuditArtifact> = {}
 }
 
 test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and recovery patterns from persisted artifacts", async () => {
-  const reviewDir = await fs.mkdtemp(path.join(os.tmpdir(), "post-merge-audit-summary-"));
+  const { reviewDir } = await createArtifactTestPaths("post-merge-audit-summary");
   const config = createConfig({
     localReviewArtifactDir: reviewDir,
     repoSlug: "owner/repo",
@@ -322,7 +322,7 @@ test("validatePostMergeAuditPatternSummary rejects unsupported schema versions a
 });
 
 test("summarizePostMergeAuditPatterns keeps review promotion candidate keys unique per severity and preserves full finding traceability", async () => {
-  const reviewDir = await fs.mkdtemp(path.join(os.tmpdir(), "post-merge-audit-summary-"));
+  const { reviewDir } = await createArtifactTestPaths("post-merge-audit-summary");
   const config = createConfig({
     localReviewArtifactDir: reviewDir,
     repoSlug: "owner/repo",
@@ -485,7 +485,7 @@ test("summarizePostMergeAuditPatterns keeps review promotion candidate keys uniq
 });
 
 test("summarizePostMergeAuditPatterns tolerates root-cause summaries without finding metadata", async () => {
-  const reviewDir = await fs.mkdtemp(path.join(os.tmpdir(), "post-merge-audit-summary-"));
+  const { reviewDir } = await createArtifactTestPaths("post-merge-audit-summary");
   const config = createConfig({
     localReviewArtifactDir: reviewDir,
     repoSlug: "owner/repo",

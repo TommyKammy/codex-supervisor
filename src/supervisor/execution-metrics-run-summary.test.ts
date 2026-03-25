@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { prepareIssueExecutionContext } from "../run-once-issue-preparation";
@@ -15,6 +14,7 @@ import type {
 } from "../core/types";
 import { createConfig as createTurnConfig, createIssue, createPullRequest, createRecord } from "../turn-execution-test-helpers";
 import type { AgentRunner, AgentTurnRequest } from "./agent-runner";
+import { createArtifactTestPaths } from "./artifact-test-helpers";
 import { postMergeAuditArtifactPath } from "./post-merge-audit-artifact";
 
 interface ExecutionMetricsRunSummary {
@@ -256,8 +256,7 @@ async function readExecutionMetricsRunSummary(workspacePath: string): Promise<Ex
 }
 
 test("prepareIssueExecutionContext writes a run summary artifact for done outcomes", async () => {
-  const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "execution-metrics-done-"));
-  const reviewDir = await fs.mkdtemp(path.join(os.tmpdir(), "execution-metrics-done-reviews-"));
+  const { workspacePath, reviewDir } = await createArtifactTestPaths("execution-metrics-done");
   const config = createPreparationConfig({ localReviewArtifactDir: reviewDir });
   const record = createPreparationRecord(workspacePath);
   const state = createState(record);
@@ -358,7 +357,7 @@ test("prepareIssueExecutionContext writes a run summary artifact for done outcom
 });
 
 test("executeCodexTurnPhase writes a run summary artifact for blocked outcomes", async () => {
-  const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "execution-metrics-blocked-"));
+  const { workspacePath } = await createArtifactTestPaths("execution-metrics-blocked");
   const record = createRecord({
     issue_number: 102,
     state: "implementing",
@@ -541,7 +540,7 @@ test("executeCodexTurnPhase writes a run summary artifact for blocked outcomes",
 });
 
 test("executeCodexTurnPhase writes a run summary artifact for failed outcomes", async () => {
-  const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "execution-metrics-failed-"));
+  const { workspacePath } = await createArtifactTestPaths("execution-metrics-failed");
   const record = createRecord({
     issue_number: 103,
     state: "implementing",
