@@ -92,11 +92,18 @@ export function renderDashboardBrowserScript(): string {
         loopStateSummary: document.getElementById("loop-state-summary"),
         overviewHeadline: document.getElementById("overview-headline"),
         overviewDetail: document.getElementById("overview-detail"),
+        overviewWarning: document.getElementById("overview-warning"),
         nextIssueTitle: document.getElementById("next-issue-title"),
         nextIssueDetail: document.getElementById("next-issue-detail"),
         primaryActionTitle: document.getElementById("primary-action-title"),
         primaryActionDetail: document.getElementById("primary-action-detail"),
         attentionList: document.getElementById("attention-list"),
+        focusBreadcrumb: document.getElementById("focus-breadcrumb"),
+        heroBadgeRow: document.getElementById("hero-badge-row"),
+        heroReason: document.getElementById("hero-reason"),
+        heroPrimaryButton: document.getElementById("hero-primary-button"),
+        heroSecondaryButton: document.getElementById("hero-secondary-button"),
+        heroTertiaryButton: document.getElementById("hero-tertiary-button"),
         selectedIssueHeading: document.getElementById("selected-issue-heading"),
         selectedIssueDetail: document.getElementById("selected-issue-detail"),
         selectedIssueSummaryMetrics: document.getElementById("selected-issue-summary-metrics"),
@@ -115,7 +122,7 @@ export function renderDashboardBrowserScript(): string {
         statusMetrics: document.getElementById("status-metrics"),
         statusWorkflow: document.getElementById("status-workflow"),
         statusLines: document.getElementById("status-lines"),
-        statusWarning: document.getElementById("status-warning"),
+        statusPanelWarning: document.getElementById("status-panel-warning"),
         trackedHistorySummary: document.getElementById("tracked-history-summary"),
         trackedHistoryLines: document.getElementById("tracked-history-lines"),
         trackedHistoryToggle: document.getElementById("tracked-history-toggle"),
@@ -429,6 +436,7 @@ export function renderDashboardBrowserScript(): string {
         renderOverviewSummary();
         renderPrimaryActionSummary();
         renderAttentionSummary();
+        renderHeroSummary();
       }
 
       function describeLoopRuntime(loopRuntime) {
@@ -482,11 +490,74 @@ export function renderDashboardBrowserScript(): string {
         setText(elements.overviewDetail, overview.detail);
       }
 
+      function setWarningMessage(message, tone) {
+        const targets = [elements.overviewWarning, elements.statusPanelWarning];
+        for (const target of targets) {
+          if (!target) {
+            continue;
+          }
+          setText(target, message);
+          target.classList.remove("danger");
+          if (tone === "fail") {
+            target.classList.add("danger");
+          }
+        }
+      }
+
       function renderNextIssueSummary() {
         const nextIssue = buildNextIssueSummary(state.status);
         setText(elements.selectedIssueBadge, nextIssue.issueNumber === null ? "none" : formatIssueRef(nextIssue.issueNumber));
         setText(elements.nextIssueTitle, nextIssue.title);
         setText(elements.nextIssueDetail, nextIssue.detail);
+      }
+
+      function readLoopBadgeLabel(status) {
+        const loopRuntime = describeLoopRuntime(status && status.loopRuntime);
+        if (loopRuntime.chipLabel === "loop running") {
+          return "Loop mode: running";
+        }
+        if (loopRuntime.chipLabel === "loop off") {
+          return "Loop mode: off";
+        }
+        return "Loop mode: unknown";
+      }
+
+      function readTrackedIssue(issueNumber) {
+        const trackedIssues = Array.isArray(state.status && state.status.trackedIssues) ? state.status.trackedIssues : [];
+        return trackedIssues.find((trackedIssue) => trackedIssue.issueNumber === issueNumber) || null;
+      }
+
+      function hasHeroIssueFocus(nextIssue) {
+        return (state.explain && typeof state.explain.issueNumber === "number") || nextIssue.issueNumber !== null;
+      }
+
+      function getHeroPrimaryActionConfig(nextIssue) {
+        const doctorStatus = typeof state.doctor?.overallStatus === "string" ? state.doctor.overallStatus.toLowerCase() : "";
+        const needsFreshRefresh =
+          !state.hasSuccessfulRefresh || state.refreshPhase === "failed" || state.connectionPhase === "reconnecting";
+
+        if (needsFreshRefresh) {
+          return { mode: "refresh", label: "Refresh Dashboard" };
+        }
+        if (doctorStatus === "fail") {
+          return { mode: "doctor", label: "Open Environment Checks" };
+        }
+        if (hasHeroIssueFocus(nextIssue)) {
+          return { mode: "issue", label: "Open Issue Details" };
+        }
+        return { mode: "queue", label: "Open Queue Details" };
+      }
+
+      function getHeroSecondaryActionConfig(nextIssue) {
+        if (hasHeroIssueFocus(nextIssue)) {
+          return { mode: "issue", label: "Open Issue Details" };
+        }
+        return { mode: "queue", label: "Open Queue Details" };
+      }
+
+      function getFocusedIssueNumber() {
+        const nextIssue = buildNextIssueSummary(state.status);
+        return state.selectedIssueNumber ?? nextIssue.issueNumber ?? state.loadedIssueNumber;
       }
 
       function renderPrimaryActionSummary() {
@@ -517,6 +588,117 @@ export function renderDashboardBrowserScript(): string {
           const entry = document.createElement("li");
           entry.textContent = item;
           elements.attentionList.appendChild(entry);
+        }
+      }
+
+      function renderHeroSummary() {
+        const nextIssue = buildNextIssueSummary(state.status);
+        const overview = buildOverviewSummary({
+          status: state.status,
+          doctor: state.doctor,
+          connectionPhase: state.connectionPhase,
+          refreshPhase: state.refreshPhase,
+          hasSuccessfulRefresh: state.hasSuccessfulRefresh,
+        });
+        const action = buildPrimaryActionSummary({
+          status: state.status,
+          doctor: state.doctor,
+          connectionPhase: state.connectionPhase,
+          refreshPhase: state.refreshPhase,
+          hasSuccessfulRefresh: state.hasSuccessfulRefresh,
+        });
+        const attentionItems = buildAttentionItems({
+          status: state.status,
+          doctor: state.doctor,
+          connectionPhase: state.connectionPhase,
+          refreshPhase: state.refreshPhase,
+          hasSuccessfulRefresh: state.hasSuccessfulRefresh,
+        });
+        const freshnessLabel = describeFreshnessState({
+          connectionPhase: state.connectionPhase,
+          refreshPhase: state.refreshPhase,
+          hasSuccessfulRefresh: state.hasSuccessfulRefresh,
+        });
+        const explain = state.explain;
+        const lint = state.issueLint;
+        const primaryActionConfig = getHeroPrimaryActionConfig(nextIssue);
+        const secondaryActionConfig = getHeroSecondaryActionConfig(nextIssue);
+
+        if (elements.focusBreadcrumb) {
+          const breadcrumb = state.issueLoadError
+            ? "Current Focus > Load failed"
+            : explain
+              ? "Current Focus > Issue " + formatIssueRef(explain.issueNumber)
+              : nextIssue.issueNumber !== null
+                ? "Current Focus > " + nextIssue.stateLabel + " " + formatIssueRef(nextIssue.issueNumber)
+                : "Current Focus > Waiting for an issue";
+          setText(elements.focusBreadcrumb, breadcrumb);
+        }
+
+        if (elements.heroReason) {
+          const reason =
+            explain && Array.isArray(explain.reasons) && explain.reasons.length > 0
+              ? explain.reasons.join(" | ")
+              : attentionItems[0] || "No immediate attention items are reported.";
+          setText(elements.heroReason, "Reason: " + reason);
+        }
+
+        if (elements.heroBadgeRow) {
+          elements.heroBadgeRow.innerHTML = "";
+
+          if (state.issueLoadError) {
+            appendChip(elements.heroBadgeRow, "Load failed", "fail");
+            appendChip(elements.heroBadgeRow, "Checks: unavailable", "warn");
+          } else if (explain) {
+            const trackedIssue = readTrackedIssue(explain.issueNumber);
+            appendChip(elements.heroBadgeRow, trackedIssue ? trackedIssue.state : "untracked", trackedIssue ? toneForStatus(trackedIssue.state) : "info");
+            appendChip(elements.heroBadgeRow, explain.runnable ? "Runnable" : "Needs review", explain.runnable ? "ok" : "warn");
+            appendChip(
+              elements.heroBadgeRow,
+              "Checks: " + (lint ? (lint.executionReady ? "ready" : "needs review") : "loading"),
+              lint ? (lint.executionReady ? "ok" : "warn") : "info",
+            );
+            appendChip(
+              elements.heroBadgeRow,
+              "Recovery: " + (explain.latestRecoverySummary ? "recent" : "quiet"),
+              explain.latestRecoverySummary ? "warn" : "ok",
+            );
+            appendChip(elements.heroBadgeRow, readLoopBadgeLabel(state.status), "info");
+            appendChip(elements.heroBadgeRow, freshnessLabel, toneForStatus(freshnessLabel));
+            appendChip(elements.heroBadgeRow, state.refreshPhase, toneForStatus(state.refreshPhase));
+          } else if (nextIssue.issueNumber !== null) {
+            appendChip(elements.heroBadgeRow, nextIssue.stateLabel, nextIssue.stateLabel === "Blocked issue" ? "warn" : "info");
+            appendChip(elements.heroBadgeRow, "Checks: pending", "info");
+            appendChip(elements.heroBadgeRow, "Recovery: quiet", "ok");
+            appendChip(elements.heroBadgeRow, readLoopBadgeLabel(state.status), "info");
+            appendChip(elements.heroBadgeRow, freshnessLabel, toneForStatus(freshnessLabel));
+            appendChip(elements.heroBadgeRow, state.refreshPhase, toneForStatus(state.refreshPhase));
+          } else {
+            appendChip(elements.heroBadgeRow, "Waiting for focus", "info");
+            appendChip(elements.heroBadgeRow, readLoopBadgeLabel(state.status), "info");
+            appendChip(elements.heroBadgeRow, freshnessLabel, toneForStatus(freshnessLabel));
+            appendChip(elements.heroBadgeRow, state.refreshPhase, toneForStatus(state.refreshPhase));
+          }
+        }
+
+        if (elements.overviewWarning) {
+          const heroWarning =
+            state.issueLoadError ||
+            (state.status && state.status.warning ? state.status.warning.message : "") ||
+            overview.detail;
+          setText(elements.overviewWarning, heroWarning);
+        }
+
+        if (elements.heroPrimaryButton) {
+          setText(elements.heroPrimaryButton, primaryActionConfig.label);
+        }
+
+        if (elements.heroSecondaryButton) {
+          setText(elements.heroSecondaryButton, secondaryActionConfig.label);
+        }
+
+        if (elements.heroTertiaryButton) {
+          setText(elements.heroTertiaryButton, "More Actions");
         }
       }
 
@@ -552,6 +734,7 @@ export function renderDashboardBrowserScript(): string {
             ["retry", "Load the issue again after the backend error is resolved."],
             ["requeue", "Requeue stays disabled until the issue details load successfully."],
           ]);
+          renderHeroSummary();
           return;
         }
 
@@ -599,6 +782,7 @@ export function renderDashboardBrowserScript(): string {
             ["reasons", (explain.reasons || []).join(" | ") || "none"],
             ["repair guidance", lint ? (lint.repairGuidance || []).join(" | ") || "none" : "loading"],
           ]);
+          renderHeroSummary();
           return;
         }
 
@@ -613,6 +797,7 @@ export function renderDashboardBrowserScript(): string {
             nextIssue.detail,
           );
           appendDetailSection(elements.selectedIssueSummaryNotes, "What this means", [["next step", nextIssue.detail]]);
+          renderHeroSummary();
           return;
         }
 
@@ -629,6 +814,7 @@ export function renderDashboardBrowserScript(): string {
         appendDetailSection(elements.selectedIssueSummaryNotes, "What to expect", [
           ["summary", "This area highlights the selected issue, readiness, blockers, and recent context."],
         ]);
+        renderHeroSummary();
       }
 
       function formatLatestRecovery(activityContext, fallbackSummary) {
@@ -780,8 +966,7 @@ export function renderDashboardBrowserScript(): string {
         const reconciliationPhase = status.reconciliationPhase || "steady";
         setText(elements.statusReconciliation, reconciliationPhase);
         elements.statusReconciliation.className = "metric " + metricClass(reconciliationPhase);
-        setText(elements.statusWarning, status.warning ? status.warning.message : "");
-        elements.statusWarning?.classList.remove("danger");
+        setWarningMessage(status.warning ? status.warning.message : "", "");
         if (elements.statusMetrics) {
           elements.statusMetrics.innerHTML = "";
           appendMetricTile(
@@ -1182,6 +1367,24 @@ export function renderDashboardBrowserScript(): string {
         }
       }
 
+      async function openFocusedIssueDetails() {
+        openDetailsSection();
+        const issueNumberToLoad = getFocusedIssueNumber();
+        if (issueNumberToLoad === null) {
+          return;
+        }
+        const shouldLoadIssue =
+          state.loadedIssueNumber !== issueNumberToLoad || state.explain === null || state.issueLoadError !== null;
+        if (!shouldLoadIssue) {
+          return;
+        }
+        try {
+          await loadIssue(issueNumberToLoad);
+        } catch (error) {
+          setText(elements.issueSummary, error instanceof Error ? error.message : String(error));
+        }
+      }
+
       function buildInFlightCommandResult(label) {
         return {
           action: label,
@@ -1294,8 +1497,7 @@ export function renderDashboardBrowserScript(): string {
 
       function reportRefreshError(error) {
         const message = error instanceof Error ? error.message : String(error);
-        setText(elements.statusWarning, message);
-        elements.statusWarning?.classList.add("danger");
+        setWarningMessage(message, "fail");
         pushEvent({
           type: "dashboard.refresh.error",
           family: "dashboard",
@@ -1621,6 +1823,40 @@ export function renderDashboardBrowserScript(): string {
           path: "/api/commands/reset-corrupt-json-state",
           body: {},
         });
+      });
+
+      elements.heroPrimaryButton?.addEventListener("click", async () => {
+        const nextIssue = buildNextIssueSummary(state.status);
+        const primaryActionConfig = getHeroPrimaryActionConfig(nextIssue);
+        if (primaryActionConfig.mode === "refresh") {
+          try {
+            await refreshStatusAndDoctor();
+          } catch (error) {
+            reportRefreshError(error);
+          }
+          return;
+        }
+
+        if (primaryActionConfig.mode === "issue") {
+          await openFocusedIssueDetails();
+          return;
+        }
+
+        openDetailsSection();
+      });
+
+      elements.heroSecondaryButton?.addEventListener("click", async () => {
+        const nextIssue = buildNextIssueSummary(state.status);
+        const secondaryActionConfig = getHeroSecondaryActionConfig(nextIssue);
+        if (secondaryActionConfig.mode === "issue") {
+          await openFocusedIssueDetails();
+          return;
+        }
+        openDetailsSection();
+      });
+
+      elements.heroTertiaryButton?.addEventListener("click", () => {
+        openDetailsSection();
       });
 
       async function bootstrap() {

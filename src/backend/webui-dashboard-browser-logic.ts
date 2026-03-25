@@ -624,6 +624,8 @@ export function buildAttentionItems(args: {
   const blockedIssues = Array.isArray(args.status?.blockedIssues) ? args.status.blockedIssues : [];
   const runnableIssues = Array.isArray(args.status?.runnableIssues) ? args.status.runnableIssues : [];
   const doctorChecks = Array.isArray(args.doctor?.checks) ? args.doctor.checks : [];
+  const statusWarning = args.status?.warning?.message ?? null;
+  const reconciliationWarning = args.status?.reconciliationWarning ?? null;
   const failingChecks = doctorChecks.filter((check) => {
     const value = typeof check.status === "string" ? check.status.toLowerCase() : "";
     return value === "fail" || value === "warn";
@@ -653,8 +655,12 @@ export function buildAttentionItems(args: {
     items.push((check.name || "check") + ": " + (check.summary || check.status || "needs attention"));
   }
 
-  if (args.status?.warning?.message) {
-    items.push(args.status.warning.message);
+  if (statusWarning) {
+    items.push(statusWarning);
+  }
+
+  if (reconciliationWarning && reconciliationWarning !== statusWarning) {
+    items.push(reconciliationWarning);
   }
 
   if (items.length === 0) {
