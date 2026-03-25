@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import http from "node:http";
 import test from "node:test";
-import { chromium, type Browser, type Page } from "playwright-core";
+import { chromium, type Browser, type Dialog, type Page } from "playwright-core";
 import type { DoctorDiagnostics } from "../doctor";
 import type { SetupConfigUpdateResult } from "../setup-config-write";
 import type { SetupReadinessReport } from "../setup-readiness";
@@ -179,7 +179,8 @@ function resolveChromeExecutable(): string {
 
 async function waitForCodeText(page: Page, id: string, pattern: RegExp): Promise<void> {
   await page.waitForFunction(
-    ([elementId, source, flags]) => {
+    (args: string[]) => {
+      const [elementId, source, flags] = args;
       const element = document.getElementById(elementId);
       return !!element && new RegExp(source, flags).test(element.textContent ?? "");
     },
@@ -231,7 +232,7 @@ test("browser smoke runs a confirmed safe command through the dashboard", async 
 
   const port = await listen(server);
   const page = await browser.newPage();
-  page.on("dialog", async (dialog) => {
+  page.on("dialog", async (dialog: Dialog) => {
     await dialog.accept();
   });
   await page.goto(`http://127.0.0.1:${port}/`);

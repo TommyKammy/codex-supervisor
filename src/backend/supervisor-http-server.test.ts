@@ -1380,13 +1380,14 @@ test("createSupervisorHttpServer falls back to dashboard HTML when setup readine
   if (!address || typeof address === "string") {
     throw new Error("Expected server to listen on an ephemeral port.");
   }
+  const port = address.port;
 
   async function readHtml(path: string): Promise<string> {
     const response = await new Promise<http.IncomingMessage>((resolve, reject) => {
       const request = http.request(
         {
           host: "127.0.0.1",
-          port: address.port,
+          port,
           path,
           method: "GET",
           agent: false,
