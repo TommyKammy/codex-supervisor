@@ -195,7 +195,11 @@ function isIgnoredSupervisorArtifactPath(
 ): boolean {
   return relativePath === journalRelativePath
     || relativePath === ".codex-supervisor/replay"
-    || relativePath.startsWith(".codex-supervisor/replay/");
+    || relativePath.startsWith(".codex-supervisor/replay/")
+    || relativePath === ".codex-supervisor/pre-merge"
+    || relativePath.startsWith(".codex-supervisor/pre-merge/")
+    || relativePath === ".codex-supervisor/execution-metrics"
+    || relativePath.startsWith(".codex-supervisor/execution-metrics/");
 }
 
 function parseGitStatusPorcelainV1Paths(statusOutput: string): string[][] {

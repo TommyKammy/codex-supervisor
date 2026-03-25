@@ -583,7 +583,7 @@ test("runOnce preserves stale no-PR recovery tracking across a successful no-PR 
   );
 });
 
-test("runOnce converges a stale no-PR issue to done when only the journal and replay artifacts differ from origin/main", async () => {
+test("runOnce converges a stale no-PR issue to done when only supervisor-owned worktree artifacts differ from origin/main", async () => {
   const fixture = await createSupervisorFixture({
     codexScriptLines: [
       "#!/bin/sh",
@@ -598,12 +598,23 @@ test("runOnce converges a stale no-PR issue to done when only the journal and re
   const workspace = path.join(fixture.workspaceRoot, `issue-${issueNumber}`);
   const journalPath = path.join(workspace, ".codex-supervisor", "issue-journal.md");
   const replayArtifactPath = path.join(workspace, ".codex-supervisor", "replay", "decision-cycle-snapshot.json");
+  const preMergeArtifactPath = path.join(workspace, ".codex-supervisor", "pre-merge", "assessment-snapshot.json");
+  const executionMetricsArtifactPath = path.join(
+    workspace,
+    ".codex-supervisor",
+    "execution-metrics",
+    "run-summary.json",
+  );
 
   git(["clone", fixture.repoPath, workspace]);
   git(["checkout", "-b", branch], workspace);
   await fs.mkdir(path.dirname(replayArtifactPath), { recursive: true });
+  await fs.mkdir(path.dirname(preMergeArtifactPath), { recursive: true });
+  await fs.mkdir(path.dirname(executionMetricsArtifactPath), { recursive: true });
   await fs.writeFile(journalPath, "# local journal\n", "utf8");
   await fs.writeFile(replayArtifactPath, "{\n  \"kind\": \"replay\"\n}\n", "utf8");
+  await fs.writeFile(preMergeArtifactPath, "{\n  \"kind\": \"pre-merge\"\n}\n", "utf8");
+  await fs.writeFile(executionMetricsArtifactPath, "{\n  \"kind\": \"execution-metrics\"\n}\n", "utf8");
 
   const state: SupervisorStateFile = {
     activeIssueNumber: issueNumber,
