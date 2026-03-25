@@ -72,6 +72,12 @@ function createStubService(args?: { pruneCalls?: number[] }): SupervisorService 
       cadenceDiagnostics: doctorDiagnostics.cadenceDiagnostics,
       candidateDiscoverySummary: null,
       candidateDiscovery: null,
+      loopRuntime: {
+        state: "off",
+        pid: null,
+        startedAt: null,
+        detail: null,
+      },
       activeIssue: null,
       selectionSummary: {
         selectedIssueNumber: null,
@@ -365,6 +371,12 @@ function createFirstRunSetupService(args: {
       cadenceDiagnostics: doctorDiagnostics.cadenceDiagnostics,
       candidateDiscoverySummary: null,
       candidateDiscovery: null,
+      loopRuntime: {
+        state: "off",
+        pid: null,
+        startedAt: null,
+        detail: null,
+      },
       activeIssue: null,
       selectionSummary: {
         selectedIssueNumber: null,

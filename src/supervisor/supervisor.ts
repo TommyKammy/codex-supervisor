@@ -135,6 +135,7 @@ import {
   type SupervisorRecoveryAction,
 } from "./supervisor-mutation-report";
 import { buildTrackedIssueDtos, renderSupervisorStatusDto, SupervisorStatusDto } from "./supervisor-status-report";
+import { acquireSupervisorLoopRuntimeLock, readSupervisorLoopRuntime } from "./supervisor-loop-runtime-state";
 import {
   clearCurrentReconciliationPhase,
   readCurrentReconciliationPhase,
@@ -440,6 +441,10 @@ export class Supervisor {
     } catch {
       return this.config.pollIntervalSeconds * 1000;
     }
+  }
+
+  async acquireLoopRuntimeLock(): Promise<LockHandle> {
+    return acquireSupervisorLoopRuntimeLock(this.config.stateFile);
   }
 
   private lockPath(kind: "issues" | "sessions" | "supervisor", key: string): string {
@@ -952,6 +957,7 @@ export class Supervisor {
     const cadenceDiagnostics = summarizeCadenceDiagnostics(this.config);
     const candidateDiscoverySummary = formatCandidateDiscoveryBehaviorLine(this.config);
     const localCiContract = summarizeLocalCiContract(this.config);
+    const loopRuntime = await readSupervisorLoopRuntime(this.config.stateFile);
     const gsdSummary = await describeGsdIntegration(this.config);
     const statusRecords = summarizeSupervisorStatusRecords(state);
     const trackedIssues = buildTrackedIssueDtos(state);
@@ -995,6 +1001,7 @@ export class Supervisor {
           candidateDiscoverySummary,
           candidateDiscovery,
           localCiContract,
+          loopRuntime,
           activeIssue: null,
           selectionSummary: options.why ? await buildSelectionSummary(this.github, this.config, state) : null,
           trackedIssues,
@@ -1016,6 +1023,7 @@ export class Supervisor {
           candidateDiscoverySummary,
           candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
           localCiContract,
+          loopRuntime,
           activeIssue: null,
           selectionSummary: null,
           trackedIssues,
@@ -1075,6 +1083,7 @@ export class Supervisor {
       candidateDiscoverySummary,
       candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
       localCiContract,
+      loopRuntime,
       activeIssue: {
         issueNumber: statusRecords.activeRecord.issue_number,
         state: statusRecords.activeRecord.state,

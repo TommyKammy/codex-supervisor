@@ -241,29 +241,38 @@ export async function runSupervisorCommand(
     return;
   }
 
-  while (!shouldStop) {
-    try {
-      const message = await runSupervisorCycle(cycleController!, "loop", { dryRun: options.dryRun });
-      writeStdout(`${new Date().toISOString()} ${message}`);
-      if (isCorruptJsonFailClosedMessage(message)) {
-        shouldStop = true;
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.stack ?? error.message : String(error);
-      writeStderr(`${new Date().toISOString()} loop-error ${message}`);
-    }
+  const loopRuntimeLock = await cycleController!.acquireLoopRuntimeLock();
+  if (!loopRuntimeLock.acquired) {
+    throw new Error(`Cannot start supervisor loop: ${loopRuntimeLock.reason ?? "loop runtime unavailable"}`);
+  }
 
-    if (!shouldStop) {
-      const pollIntervalMs = await service.pollIntervalMs();
-      if (shouldStop) {
-        break;
-      }
-      sleepController = new AbortController();
+  try {
+    while (!shouldStop) {
       try {
-        await sleep(pollIntervalMs, sleepController.signal);
-      } finally {
-        sleepController = null;
+        const message = await runSupervisorCycle(cycleController!, "loop", { dryRun: options.dryRun });
+        writeStdout(`${new Date().toISOString()} ${message}`);
+        if (isCorruptJsonFailClosedMessage(message)) {
+          shouldStop = true;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        writeStderr(`${new Date().toISOString()} loop-error ${message}`);
+      }
+
+      if (!shouldStop) {
+        const pollIntervalMs = await service.pollIntervalMs();
+        if (shouldStop) {
+          break;
+        }
+        sleepController = new AbortController();
+        try {
+          await sleep(pollIntervalMs, sleepController.signal);
+        } finally {
+          sleepController = null;
+        }
       }
     }
+  } finally {
+    await loopRuntimeLock.release();
   }
 }

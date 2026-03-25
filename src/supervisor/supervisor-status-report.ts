@@ -3,6 +3,7 @@ import { sanitizeStatusValue } from "./supervisor-status-rendering";
 import { truncate } from "../core/utils";
 import type { BlockedReason, RunState, SupervisorStateFile } from "../core/types";
 import type { SupervisorIssueActivityContextDto } from "./supervisor-operator-activity-context";
+import type { SupervisorLoopRuntimeDto } from "./supervisor-loop-runtime-state";
 import type {
   SupervisorBlockedIssueDto,
   SupervisorCandidateDiscoveryDto,
@@ -39,6 +40,7 @@ export interface SupervisorStatusDto {
   candidateDiscoverySummary?: string | null;
   candidateDiscovery: SupervisorCandidateDiscoveryDto | null;
   localCiContract?: LocalCiContractSummary;
+  loopRuntime: SupervisorLoopRuntimeDto;
   activeIssue: SupervisorActiveIssueDto | null;
   selectionSummary: SupervisorSelectionSummaryDto | null;
   trackedIssues: SupervisorTrackedIssueDto[];

@@ -406,6 +406,12 @@ function createStubService(args?: {
           observedMatchingOpenIssues: null,
           warning: null,
         },
+        loopRuntime: {
+          state: "off",
+          pid: null,
+          startedAt: null,
+          detail: null,
+        },
         activeIssue: null,
         selectionSummary: {
           selectedIssueNumber: null,
@@ -610,6 +616,12 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
       truncated: false,
       observedMatchingOpenIssues: null,
       warning: null,
+    },
+    loopRuntime: {
+      state: "off",
+      pid: null,
+      startedAt: null,
+      detail: null,
     },
     activeIssue: null,
     selectionSummary: {

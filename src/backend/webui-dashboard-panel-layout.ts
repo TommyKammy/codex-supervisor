@@ -93,7 +93,7 @@ export const DASHBOARD_PANEL_REGISTRY = [
                 </div>
                 <div class="chip-row">
                   <span class="chip info">web mode</span>
-                  <span class="chip ok">loop off</span>
+                  <span id="status-loop-chip" class="chip info">loop status pending</span>
                 </div>
               </div>
               <div id="status-metrics" class="metric-grid">

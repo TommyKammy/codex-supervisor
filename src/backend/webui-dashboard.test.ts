@@ -254,6 +254,12 @@ function jsonResponse(body: unknown, statusCode = 200): MockResponseLike {
 function createStatus(args: {
   selectedIssueNumber?: number | null;
   includeWhyLines?: boolean;
+  loopRuntime?: {
+    state: "running" | "off" | "unknown";
+    pid: number | null;
+    startedAt: string | null;
+    detail: string | null;
+  } | null;
   trackedIssues?: Array<{
     issueNumber: number;
     state: string;
@@ -290,6 +296,13 @@ function createStatus(args: {
     trackedIssues: args.trackedIssues ?? [],
     runnableIssues: args.runnableIssues ?? [],
     blockedIssues: args.blockedIssues ?? [],
+    loopRuntime:
+      args.loopRuntime ?? {
+        state: "off",
+        pid: null,
+        startedAt: null,
+        detail: null,
+      },
     reconciliationPhase: null,
     warning: null,
     detailedStatusLines: [],
@@ -473,9 +486,9 @@ test("dashboard page frames the hero and both panel groups with labeled section 
 
   assert.match(html, /<div class="app-shell">[\s\S]*<aside class="sidebar">[\s\S]*<main class="content" data-dashboard-root>/u);
   assert.match(html, /<header class="topbar">[\s\S]*<h1>Operator dashboard<\/h1>[\s\S]*Layout: fixed admin dashboard/u);
-  assert.match(html, /Mode: web only \(loop off\)/u);
+  assert.match(html, /id="loop-mode-badge"/u);
   assert.match(html, /<section class="hero">[\s\S]*<article class="hero-card">[\s\S]*<aside class="summary-card">/u);
-  assert.match(html, /Loop mode is off on this host/u);
+  assert.match(html, /id="loop-state-summary"/u);
   assert.match(
     html,
     /<section class="stats-grid" aria-label="live summary">[\s\S]*id="connection-state"[\s\S]*id="freshness-state"[\s\S]*id="selected-issue-badge"[\s\S]*id="last-refresh-badge"/u,
@@ -595,6 +608,66 @@ test("dashboard derives the selected issue from typed status fields without pars
   assert.equal(issueNumberInput.value, "42");
   assert.match(statusWorkflow.textContent, /Execute/u);
   assert.match(statusWorkflow.textContent, /#42/u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard does not claim loop mode is off while typed runtime status reports the loop is running", async () => {
+  const harness = createDashboardHarness([
+    {
+      path: "/api/status?why=true",
+      response: jsonResponse(
+        createStatus({
+          selectedIssueNumber: 42,
+          loopRuntime: {
+            state: "running",
+            pid: 4242,
+            startedAt: "2026-03-25T00:00:00.000Z",
+            detail: "pid 4242",
+          },
+        }),
+      ),
+    },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+  ]);
+  await harness.flush();
+
+  const loopModeBadge = harness.document.getElementById("loop-mode-badge");
+  const loopStateSummary = harness.document.getElementById("loop-state-summary");
+  assert.ok(loopModeBadge);
+  assert.ok(loopStateSummary);
+
+  assert.match(loopModeBadge.textContent, /loop running/u);
+  assert.doesNotMatch(loopModeBadge.textContent, /loop off/u);
+  assert.match(loopStateSummary.textContent, /Loop mode is running on this host/u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard renders the loop-off presentation only when typed runtime status reports loop off", async () => {
+  const harness = createDashboardHarness([
+    {
+      path: "/api/status?why=true",
+      response: jsonResponse(
+        createStatus({
+          loopRuntime: {
+            state: "off",
+            pid: null,
+            startedAt: null,
+            detail: null,
+          },
+        }),
+      ),
+    },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+  ]);
+  await harness.flush();
+
+  const loopModeBadge = harness.document.getElementById("loop-mode-badge");
+  const loopStateSummary = harness.document.getElementById("loop-state-summary");
+  assert.ok(loopModeBadge);
+  assert.ok(loopStateSummary);
+
+  assert.match(loopModeBadge.textContent, /loop off/u);
+  assert.match(loopStateSummary.textContent, /Loop mode is off on this host/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 
