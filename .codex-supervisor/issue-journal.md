@@ -1,45 +1,38 @@
-# Issue #1010: Done-workspace cleanup observability: preserve recovery events for tracked background cleanup
+# Issue #1011: Execution-safety docs guard: extend orphan-cleanup negative wording checks across every contract doc
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1010
-- Branch: codex/issue-1010
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1011
+- Branch: codex/issue-1011
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: draft_pr
-- Attempt count: 4 (implementation=4, repair=0)
-- Last head SHA: e897abe850e1faa1fdbd9ef09ad0ca01e7b172c4
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 73565d4059f646b6289e12b159abc678be3c1523
 - Blocked reason: none
-- Last failure signature: stale-stabilizing-no-pr-recovery-loop
+- Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-25T17:44:06Z
+- Updated at: 2026-03-25T17:54:10.160Z
 
 ## Latest Codex Summary
-Published branch `codex/issue-1010` and opened draft PR [#1028](https://github.com/TommyKammy/codex-supervisor/pull/1028) from the verified checkpoint headed by `e897abe` (`Align cleanup tests with runOnce orchestration`).
-
-The implementation and focused verification from the prior checkpoint remain unchanged: `npx tsx --test src/recovery-reconciliation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts` and `npm run build` both passed before opening the PR. The worktree still has untracked local supervisor artifacts under `.codex-supervisor/pre-merge/` and `.codex-supervisor/replay/`, which I left untouched.
-
-Summary: Opened draft PR `#1028` from the verified issue-1010 checkpoint and refreshed the issue journal for PR handoff
-State hint: draft_pr
-Blocked reason: none
-Tests: not rerun this turn; prior checkpoint verification still stands with `npx tsx --test src/recovery-reconciliation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts` and `npm run build`
-Next action: monitor PR `#1028` and address CI or review feedback if any appears
-Failure signature: none
+- Tightened `src/execution-safety-docs.test.ts` so the orphan-cleanup negative wording guard now applies across `README.md`, `docs/architecture.md`, `docs/getting-started.md`, and `docs/configuration.md` instead of only checking `docs/configuration.md`.
+- Reproduced the gap first by running `npx tsx --test src/execution-safety-docs.test.ts`, then added the narrowest failing assertion and refined the regex to reject only wording that positively implies automatic/background orphan pruning without flagging compliant `background_prune=false` or `does not ... background cleanup` text.
+- Installed repo dependencies with `npm install` because the first `npm run build` failed with `tsc: not found`; after that, both the focused test and `npm run build` passed locally.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `cleanupExpiredDoneWorkspaces()` still performed tracked done-workspace deletion, but it dropped those cleanups on the floor by returning `[]`, so `runOnceCyclePrelude()` and `runOnce()` had nothing operator-visible to surface.
-- What changed: added a focused direct regression for `cleanupExpiredDoneWorkspaces()` recovery-event emission, tightened the existing `runOnce` cleanup regression to require the recovery log in the returned message, and updated `cleanupExpiredDoneWorkspaces()` to return `done_workspace_cleanup` recovery events whenever a tracked done workspace is actually cleaned.
-- Current blocker: none locally; draft PR `#1028` is open and the verified implementation checkpoint is published.
-- Next exact step: watch PR `#1028` for CI or review feedback and respond if needed.
-- Verification gap: none for the requested local commands; this turn did not change implementation files.
-- Files touched: `src/recovery-reconciliation.ts`; `src/recovery-reconciliation.test.ts`; `src/supervisor/supervisor-execution-cleanup.test.ts`; `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low; runtime behavior only changes recovery-event reporting for tracked done-workspace cleanup, and the new tests pin the intended operator-visible output.
+- Hypothesis: the execution-safety docs suite covered orphan-cleanup positive wording across all contract docs, but its negative wording guard only protected `docs/configuration.md`, leaving the other contract docs unpinned against accidental wording drift toward automatic/background orphan pruning.
+- What changed: extended the negative orphan-pruning wording assertion in `src/execution-safety-docs.test.ts` so every relevant contract doc is checked, while keeping the existing architecture-specific stale-cleanup guard and the configuration-specific explicit eligibility contract assertion.
+- Current blocker: none locally.
+- Next exact step: commit the focused test-only checkpoint on `codex/issue-1011`, then open or update a draft PR for this branch if requested by the supervisor flow.
+- Verification gap: none for the requested local commands after installing dependencies.
+- Files touched: `src/execution-safety-docs.test.ts`; `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; the change only tightens doc-contract tests and does not affect runtime behavior.
 - Last focused command: `npm run build`
-- Exact failure reproduced: before this checkpoint `cleanupExpiredDoneWorkspaces()` removed tracked done workspaces but returned no recovery events, and `runOnce({ dryRun: true })` therefore returned only `No matching open issue found.` instead of a prefixed recovery log for the cleanup.
-- Commands run: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `npx tsx --test src/recovery-reconciliation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts`; `sed -n '852,980p' src/supervisor/supervisor-execution-cleanup.test.ts`; `sed -n '1172,1288p' src/supervisor/supervisor-execution-cleanup.test.ts`; `rg -n "restart|merged PR|tracked PR already merged|merging" src/supervisor/supervisor.ts src/supervisor -g '!dist'`; `sed -n '480,560p' src/supervisor/supervisor.ts`; `sed -n '1400,1505p' src/supervisor/supervisor.ts`; `sed -n '1,260p' src/run-once-cycle-prelude.ts`; `sed -n '1,320p' src/run-once-issue-selection.ts`; `sed -n '320,620p' src/run-once-issue-selection.ts`; `npx tsx --test src/supervisor/supervisor-execution-cleanup.test.ts`; `npx tsx --test src/recovery-reconciliation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts`; `npm run build`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `git log --oneline --decorate -5`; `gh pr status`; `git diff -- .codex-supervisor/issue-journal.md`; `git diff --stat origin/main...HEAD`; `git branch -vv`; `git push -u origin codex/issue-1010`; `gh pr create --draft --base main --head codex/issue-1010 --title "Issue #1010: preserve recovery events for tracked done-workspace cleanup" ...`; `gh pr view 1028 --json number,url,state,isDraft,headRefName,baseRefName`.
-- PR status: draft PR `#1028` is open at `https://github.com/TommyKammy/codex-supervisor/pull/1028`.
+- Exact failure reproduced: before the checkpoint, `npx tsx --test src/execution-safety-docs.test.ts` passed even though only `docs/configuration.md` had a negative orphan-cleanup wording assertion; `README.md`, `docs/architecture.md`, and `docs/getting-started.md` had no equivalent regression guard.
+- Commands run: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1011/AGENTS.generated.md`; `sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1011/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg -n "orphan|cleanup|prun|background|automatic" src/execution-safety-docs.test.ts src -g '!dist'`; `sed -n '1,260p' src/execution-safety-docs.test.ts`; `sed -n '1,260p' README.md`; `sed -n '1,260p' docs/getting-started.md`; `sed -n '1,260p' docs/architecture.md`; `sed -n '1,260p' docs/configuration.md`; `npx tsx --test src/execution-safety-docs.test.ts`; `rg -n "orphan|prune|background|automatic|done workspace|tracked done" README.md docs/architecture.md docs/getting-started.md docs/configuration.md`; `nl -ba src/execution-safety-docs.test.ts | sed -n '105,175p'`; `npm run build`; `npm install`; `git diff -- src/execution-safety-docs.test.ts .codex-supervisor/issue-journal.md`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `gh pr status`; `rg -n -i "automatic orphan|orphan.*automatic|background orphan" docs/configuration.md README.md docs/getting-started.md docs/architecture.md`; `node - <<'NODE' ... NODE`.
+- PR status: none for `codex/issue-1011` yet from this workspace.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
