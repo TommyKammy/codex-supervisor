@@ -481,26 +481,22 @@ test("dashboard shell renders panels from the typed default layout in the curren
   );
 });
 
-test("dashboard page frames the hero and both panel groups with labeled section chrome", () => {
+test("dashboard page frames a summary-first shell and a collapsible details area", () => {
   const html = renderSupervisorDashboardHtml();
 
-  assert.match(html, /<div class="app-shell">[\s\S]*<aside class="sidebar">[\s\S]*<main class="content" data-dashboard-root>/u);
-  assert.match(html, /<header class="topbar">[\s\S]*<h1>Operator dashboard<\/h1>[\s\S]*Layout: fixed admin dashboard/u);
+  assert.match(html, /<main class="page-shell" data-dashboard-root>[\s\S]*<header class="masthead">[\s\S]*<h1>Operator dashboard<\/h1>/u);
+  assert.match(html, /<aside class="side-nav">[\s\S]*id="nav-panel-operator-actions"[\s\S]*Operator timeline/u);
   assert.match(html, /id="loop-mode-badge"/u);
-  assert.match(html, /<section class="hero">[\s\S]*<article class="hero-card">[\s\S]*<aside class="summary-card">/u);
+  assert.match(html, /<section class="summary-grid" aria-label="summary">[\s\S]*id="overview-headline"[\s\S]*id="primary-action-title"[\s\S]*id="selected-issue-badge"[\s\S]*id="attention-list"/u);
   assert.match(html, /id="loop-state-summary"/u);
+  assert.match(html, /<section class="issue-summary-card" aria-labelledby="selected-issue-heading">[\s\S]*id="selected-issue-summary-metrics"[\s\S]*id="selected-issue-summary-notes"/u);
   assert.match(
     html,
-    /<section class="stats-grid" aria-label="live summary">[\s\S]*id="connection-state"[\s\S]*id="freshness-state"[\s\S]*id="selected-issue-badge"[\s\S]*id="last-refresh-badge"/u,
-  );
-  assert.match(html, /id="status-workflow"/u);
-  assert.match(
-    html,
-    /<section class="dashboard-section" aria-labelledby="overview-heading">[\s\S]*<p class="section-kicker">Overview lane<\/p>[\s\S]*<h2 id="overview-heading">Operational snapshot<\/h2>[\s\S]*<div id="overview-grid" class="overview-grid" aria-label="overview" data-panel-grid="overview">/u,
+    /<details id="details-disclosure" class="details-disclosure">[\s\S]*<div class="details-body">[\s\S]*<h2 id="overview-heading">Advanced queue context<\/h2>[\s\S]*<div id="overview-grid" class="overview-grid" aria-label="overview" data-panel-grid="overview">/u,
   );
   assert.match(
     html,
-    /<section class="dashboard-section" aria-labelledby="details-heading">[\s\S]*<p class="section-kicker">Workbench lane<\/p>[\s\S]*<h2 id="details-heading">Issue workbench<\/h2>[\s\S]*<div id="details-grid" class="details-grid" aria-label="details" data-panel-grid="details">/u,
+    /<h2 id="details-heading">Detailed operator view<\/h2>[\s\S]*<div id="details-grid" class="details-grid" aria-label="details" data-panel-grid="details">/u,
   );
 });
 
@@ -522,21 +518,15 @@ test("dashboard page includes reduced-motion-safe fixed-layout styles", () => {
   assert.match(html, /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*transition-duration: 0\.01ms/u);
 });
 
-test("dashboard page uses a gentelella-inspired admin shell palette and layout", () => {
+test("dashboard page uses a clean summary-first palette and retains the fixed details layout", () => {
   const html = renderSupervisorDashboardHtml();
 
-  assert.match(html, /--sidebar: #2a3f54;/u);
   assert.match(html, /--accent: #1abb9c;/u);
-  assert.match(html, /--muted-sidebar: rgba\(214, 224, 235, 0\.82\);/u);
-  assert.match(html, /--muted-surface: #5f7288;/u);
-  assert.match(html, /--text: #2a3f54;/u);
+  assert.match(html, /--muted: #5f7288;/u);
+  assert.match(html, /--text: #233647;/u);
   assert.match(
     html,
-    /\.app-shell \{[\s\S]*grid-template-columns: 280px minmax\(0, 1fr\);/u,
-  );
-  assert.match(
-    html,
-    /\.sidebar \{[\s\S]*linear-gradient\(180deg, var\(--sidebar\) 0%, var\(--sidebar-deep\) 100%\);/u,
+    /\.summary-grid \{[\s\S]*grid-template-columns: minmax\(0, 1\.3fr\) repeat\(3, minmax\(0, 1fr\)\);/u,
   );
   assert.match(html, /#panel-issue-details \{[\s\S]*grid-column: span 7;/u);
   assert.match(html, /#panel-tracked-history \{[\s\S]*grid-column: span 5;/u);

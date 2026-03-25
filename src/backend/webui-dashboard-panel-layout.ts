@@ -81,8 +81,8 @@ export const DASHBOARD_PANEL_REGISTRY = [
   renderDashboardPanelShell({
     id: "status",
     section: "overview",
-    title: "Status",
-    subtitle: "Supervisor selection, readiness, and reconciliation at a glance.",
+    title: "Queue details",
+    subtitle: "Advanced queue signals, workflow state, and supervisor reasoning.",
     iconMarkup: renderPanelIcon("◔"),
     headerMetaMarkup: '<span id="status-warning" class="hint"></span>',
     bodyClassName: "stack",
@@ -121,8 +121,8 @@ export const DASHBOARD_PANEL_REGISTRY = [
   renderDashboardPanelShell({
     id: "doctor",
     section: "overview",
-    title: "Doctor",
-    subtitle: "Environment checks that gate safe supervisor execution.",
+    title: "Environment checks",
+    subtitle: "Detailed diagnostics for dependencies that gate safe execution.",
     iconMarkup: renderPanelIcon("✚"),
     headerMetaMarkup: '<span id="doctor-overall" class="metric">…</span>',
     bodyClassName: "stack",
@@ -137,7 +137,7 @@ export const DASHBOARD_PANEL_REGISTRY = [
     id: "issue-details",
     section: "details",
     title: "Issue details",
-    subtitle: "Typed issue context and lint results for the current selection.",
+    subtitle: "Typed issue context and issue checks for a selected issue.",
     iconMarkup: renderPanelIcon("#"),
     headerMetaMarkup: '<span id="issue-summary" class="hint">No issue loaded.</span>',
     bodyClassName: "stack",
@@ -170,8 +170,8 @@ export const DASHBOARD_PANEL_REGISTRY = [
   renderDashboardPanelShell({
     id: "tracked-history",
     section: "details",
-    title: "Tracked history",
-    subtitle: "Current tracked issues in a compact queue view.",
+    title: "Queue",
+    subtitle: "Tracked issues and optional done history from the supervisor queue.",
     iconMarkup: renderPanelIcon("◎"),
     headerMetaMarkup: '<span id="tracked-history-summary" class="hint">Waiting for tracked history…</span>',
     headerActionMarkup: '<button type="button" id="tracked-history-toggle">Show done issues</button>',
@@ -186,43 +186,43 @@ export const DASHBOARD_PANEL_REGISTRY = [
   renderDashboardPanelShell({
     id: "operator-actions",
     section: "details",
-    title: "Operator actions",
-    subtitle: "Existing safe command endpoints without changing backend semantics.",
+    title: "Secondary actions",
+    subtitle: "Requeue and maintenance actions that should stay out of the default view.",
     iconMarkup: renderPanelIcon("⌘"),
     headerMetaMarkup: '<span id="command-status" class="hint">No command run yet.</span>',
     bodyClassName: "stack",
     bodyMarkup: `              <div class="action-grid action-grid-large">
                 <div class="action-card action-card-large">
                   <span class="action-icon" aria-hidden="true">▶</span>
-                  <span class="action-kicker">Cycle</span>
+                  <span class="action-kicker">Testing</span>
                   <strong>Run once</strong>
-                  <p>Trigger one safe supervisor cycle through <code>/api/commands/run-once</code>.</p>
+                  <p>Use a single safe cycle for testing or a manual check when loop mode is not running.</p>
                   <button type="button" id="run-once-button">Run once</button>
                 </div>
                 <div class="action-card action-card-large">
                   <span class="action-icon" aria-hidden="true">↺</span>
                   <span class="action-kicker">Issue</span>
                   <strong>Requeue issue</strong>
-                  <p>Requeue the selected issue only after issue details are loaded.</p>
+                  <p>Requeue the selected issue after you confirm the issue details in this section.</p>
                   <button type="button" id="requeue-button">Requeue selected issue</button>
                 </div>
                 <div class="action-card action-card-large">
                   <span class="action-icon" aria-hidden="true">✦</span>
-                  <span class="action-kicker">Cleanup</span>
+                  <span class="action-kicker">Maintenance</span>
                   <strong>Prune orphaned workspaces</strong>
-                  <p>Requires confirm before calling <code>/api/commands/prune-orphaned-workspaces</code>.</p>
+                  <p>Requires confirmation before calling <code>/api/commands/prune-orphaned-workspaces</code>.</p>
                   <button type="button" id="prune-workspaces-button">Confirm and prune</button>
                 </div>
                 <div class="action-card action-card-large">
                   <span class="action-icon" aria-hidden="true">⌁</span>
                   <span class="action-kicker">Recovery</span>
                   <strong>Reset corrupt JSON state</strong>
-                  <p>Requires confirm before calling <code>/api/commands/reset-corrupt-json-state</code>.</p>
+                  <p>Requires confirmation before calling <code>/api/commands/reset-corrupt-json-state</code>.</p>
                   <button type="button" id="reset-json-state-button">Confirm and reset</button>
                 </div>
               </div>
               <div class="row">
-                <div class="row-label">Command result</div>
+                <div class="row-label">Command result JSON</div>
                 <pre id="command-result" class="code">Structured command result JSON appears here.</pre>
               </div>`,
   }),
