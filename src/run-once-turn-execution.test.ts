@@ -785,10 +785,19 @@ test("executeCodexTurnPhase writes a durable interrupted-turn marker before runT
     })(),
     agentRunner: createSuccessfulAgentRunner(async () => {
       const rawMarker = await fs.readFile(markerPath, "utf8");
-      const marker = JSON.parse(rawMarker) as { issueNumber: number; state: string; startedAt: string };
+      const marker = JSON.parse(rawMarker) as {
+        issueNumber: number;
+        state: string;
+        startedAt: string;
+        journalFingerprint: { exists: boolean; sha256: string | null } | null;
+      };
       assert.equal(marker.issueNumber, 102);
       assert.equal(marker.state, "implementing");
       assert.match(marker.startedAt, /^20/);
+      assert.deepEqual(marker.journalFingerprint, {
+        exists: false,
+        sha256: null,
+      });
       markerSeenDuringRun = true;
       return {
         exitCode: 0,

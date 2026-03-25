@@ -30,7 +30,12 @@ import {
   STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
 } from "./no-pull-request-state";
 import { applyFailureSignature } from "./supervisor/supervisor-failure-helpers";
-import { clearInterruptedTurnMarker, readInterruptedTurnMarker } from "./interrupted-turn-marker";
+import {
+  captureIssueJournalFingerprint,
+  clearInterruptedTurnMarker,
+  readInterruptedTurnMarker,
+  sameIssueJournalFingerprint,
+} from "./interrupted-turn-marker";
 
 const OWNER_GUARDED_ACTIVE_STATES = new Set<RunState>([
   "planning",
@@ -109,9 +114,24 @@ function needsRecordUpdate(record: IssueRunRecord, patch: Partial<IssueRunRecord
   return false;
 }
 
-function hasDurableTurnUpdateSince(record: Pick<IssueRunRecord, "updated_at">, startedAt: string): boolean {
+async function hasDurableTurnUpdateSince(
+  record: Pick<IssueRunRecord, "journal_path" | "updated_at">,
+  marker: {
+    startedAt: string;
+    journalFingerprint: import("./interrupted-turn-marker").InterruptedTurnMarker["journalFingerprint"];
+  },
+): Promise<boolean> {
+  if (record.journal_path && marker.journalFingerprint) {
+    const currentJournalFingerprint = await captureIssueJournalFingerprint(record.journal_path);
+    if (!currentJournalFingerprint.exists) {
+      return false;
+    }
+
+    return !sameIssueJournalFingerprint(currentJournalFingerprint, marker.journalFingerprint);
+  }
+
   const updatedAtMs = Date.parse(record.updated_at);
-  const startedAtMs = Date.parse(startedAt);
+  const startedAtMs = Date.parse(marker.startedAt);
   if (!Number.isFinite(updatedAtMs) || !Number.isFinite(startedAtMs)) {
     return false;
   }
@@ -1293,7 +1313,7 @@ export async function reconcileStaleActiveIssueReservation(args: {
   if (
     interruptedTurnMarker &&
     interruptedTurnMarker.issueNumber === record.issue_number &&
-    !hasDurableTurnUpdateSince(record, interruptedTurnMarker.startedAt)
+    !(await hasDurableTurnUpdateSince(record, interruptedTurnMarker))
   ) {
     const failureContext = {
       category: "blocked" as const,

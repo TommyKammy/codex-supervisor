@@ -48,6 +48,7 @@ import {
   syncExecutionMetricsRunSummarySafely,
 } from "./supervisor/execution-metrics-run-summary";
 import {
+  captureIssueJournalFingerprint,
   clearInterruptedTurnMarker,
   writeInterruptedTurnMarker,
 } from "./interrupted-turn-marker";
@@ -307,10 +308,12 @@ export async function executeCodexTurnPhase(
       });
       record = preparedTurn.record;
       const { turnContext, reviewThreadsToProcess } = preparedTurn;
+      const preRunJournalFingerprint = await captureIssueJournalFingerprint(journalPath);
       await writeInterruptedTurnMarker({
         workspacePath,
         issueNumber: record.issue_number,
         state: record.state,
+        journalFingerprint: preRunJournalFingerprint,
       });
       turnMarkerWritten = true;
       const turnResult = await agentRunner.runTurn(turnContext);

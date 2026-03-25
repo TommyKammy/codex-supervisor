@@ -21,7 +21,7 @@ import {
   executionReadyBody,
   git,
 } from "./supervisor-test-helpers";
-import { interruptedTurnMarkerPath } from "../interrupted-turn-marker";
+import { captureIssueJournalFingerprint, interruptedTurnMarkerPath } from "../interrupted-turn-marker";
 
 test("runOnce records timeout bookkeeping when Codex exits non-zero", async () => {
   const fixture = await createSupervisorFixture({
@@ -557,6 +557,7 @@ test("runOnce blocks an interrupted active turn before selecting the next runnab
   await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
   await fs.mkdir(path.dirname(interruptedJournalPath), { recursive: true });
   await fs.writeFile(interruptedJournalPath, "# issue journal\n", "utf8");
+  const initialJournalFingerprint = await captureIssueJournalFingerprint(interruptedJournalPath);
   await fs.writeFile(
     interruptedTurnMarkerPath(interruptedWorkspace),
     `${JSON.stringify(
@@ -564,6 +565,7 @@ test("runOnce blocks an interrupted active turn before selecting the next runnab
         issueNumber: interruptedIssueNumber,
         state: "implementing",
         startedAt: "2026-03-26T00:05:00.000Z",
+        journalFingerprint: initialJournalFingerprint,
       },
       null,
       2,
@@ -631,6 +633,126 @@ test("runOnce blocks an interrupted active turn before selecting the next runnab
     interruptedRecord.last_error ?? "",
     /Codex started a turn for issue #91 but no durable handoff was recorded before the process exited\./,
   );
+  await assert.rejects(fs.access(interruptedTurnMarkerPath(interruptedWorkspace)));
+});
+
+test("runOnce clears a stale interrupted-turn marker when the journal changed after the turn began", async () => {
+  const fixture = await createSupervisorFixture();
+  const interruptedIssueNumber = 91;
+  const nextIssueNumber = 92;
+  const interruptedBranch = branchName(fixture.config, interruptedIssueNumber);
+  const nextBranch = branchName(fixture.config, nextIssueNumber);
+  const interruptedWorkspace = path.join(fixture.workspaceRoot, `issue-${interruptedIssueNumber}`);
+  const interruptedJournalPath = path.join(interruptedWorkspace, ".codex-supervisor", "issue-journal.md");
+  const state: SupervisorStateFile = {
+    activeIssueNumber: interruptedIssueNumber,
+    issues: {
+      [String(interruptedIssueNumber)]: createRecord({
+        issue_number: interruptedIssueNumber,
+        state: "implementing",
+        branch: interruptedBranch,
+        workspace: interruptedWorkspace,
+        journal_path: interruptedJournalPath,
+        pr_number: null,
+        codex_session_id: "stale-session",
+        blocked_reason: null,
+        last_error: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+        updated_at: "2026-03-26T00:00:00.000Z",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  await fs.mkdir(path.dirname(interruptedJournalPath), { recursive: true });
+  await fs.writeFile(interruptedJournalPath, "# issue journal\n", "utf8");
+  const initialJournalFingerprint = await captureIssueJournalFingerprint(interruptedJournalPath);
+  await fs.writeFile(
+    interruptedTurnMarkerPath(interruptedWorkspace),
+    `${JSON.stringify(
+      {
+        issueNumber: interruptedIssueNumber,
+        state: "implementing",
+        startedAt: "2026-03-26T00:05:00.000Z",
+        journalFingerprint: initialJournalFingerprint,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  await fs.writeFile(
+    interruptedJournalPath,
+    [
+      "# issue journal",
+      "",
+      "## Codex Working Notes",
+      "### Current Handoff",
+      "- Hypothesis: recovery should see the durable journal update.",
+      "- What changed: Codex already wrote the handoff before the process exited.",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  const interruptedIssue: GitHubIssue = {
+    number: interruptedIssueNumber,
+    title: "Interrupted active turn",
+    body: executionReadyBody("Interrupted active turn."),
+    createdAt: "2026-03-26T00:00:00Z",
+    updatedAt: "2026-03-26T00:00:00Z",
+    url: `https://example.test/issues/${interruptedIssueNumber}`,
+    state: "OPEN",
+  };
+  const nextIssue: GitHubIssue = {
+    number: nextIssueNumber,
+    title: "Next runnable issue",
+    body: executionReadyBody("Next runnable issue."),
+    createdAt: "2026-03-26T00:10:00Z",
+    updatedAt: "2026-03-26T00:10:00Z",
+    url: `https://example.test/issues/${nextIssueNumber}`,
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [nextIssue, interruptedIssue],
+    listCandidateIssues: async () => [nextIssue, interruptedIssue],
+    getIssue: async (issueNumber: number) => (issueNumber === nextIssueNumber ? nextIssue : interruptedIssue),
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      assert.equal(branchName, nextBranch);
+      assert.equal(prNumber, null);
+      return null;
+    },
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(
+    message,
+    /recovery issue=#91 reason=stale_state_cleanup: cleared stale active reservation after issue lock and session lock were missing/,
+  );
+  assert.doesNotMatch(message, /interrupted_turn_recovery/);
+  assert.match(message, /Dry run: would invoke Codex for issue #92\./);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const interruptedRecord = persisted.issues[String(interruptedIssueNumber)]!;
+  assert.equal(persisted.activeIssueNumber, nextIssueNumber);
+  assert.equal(interruptedRecord.state, "implementing");
+  assert.equal(interruptedRecord.codex_session_id, null);
+  assert.equal(interruptedRecord.blocked_reason, null);
+  assert.equal(interruptedRecord.last_error, null);
   await assert.rejects(fs.access(interruptedTurnMarkerPath(interruptedWorkspace)));
 });
 
