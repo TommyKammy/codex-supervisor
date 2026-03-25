@@ -5,16 +5,25 @@
 - Branch: codex/issue-1010
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: c6fd74802cab6c8bdbd79af8efcba9c999d8fe5b
+- Current phase: stabilizing
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: b50fadcf299588ab3c39f60f3842c22b9de2a542
 - Blocked reason: none
-- Last failure signature: none
+- Last failure signature: stale-stabilizing-no-pr-recovery-loop
 - Repeated failure signature count: 0
-- Updated at: 2026-03-25T17:29:25.131Z
+- Updated at: 2026-03-25T17:39:41Z
 
 ## Latest Codex Summary
-- None yet.
+Kept the issue-specific recovery-event fix from `b50fadc` intact and repaired the two stale cleanup tests that were blocking the requested verification command.
+
+The failing assertions in `src/supervisor/supervisor-execution-cleanup.test.ts` were expecting an older orchestration path: one expected a second `listAllIssues()` pass after active merged-PR convergence, and the other expected broad merged-PR reconciliation to run before early runnable-issue reservation when no issue is active. I updated those tests to match the current `runOnce` control flow, then reran the requested file-level tests and `npm run build`.
+
+Summary: Preserved the done-workspace cleanup recovery-event fix, aligned stale cleanup tests with current supervisor orchestration, updated the issue journal, and restored the branch to a reviewable verified checkpoint.
+State hint: stabilizing
+Blocked reason: none
+Tests: `npx tsx --test src/recovery-reconciliation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts` passed; `npm run build` passed
+Next action: commit the cleanup-test repair checkpoint and open or update the issue PR if needed
+Failure signature: none
 
 ## Active Failure Context
 - None recorded.
@@ -23,14 +32,14 @@
 ### Current Handoff
 - Hypothesis: `cleanupExpiredDoneWorkspaces()` still performed tracked done-workspace deletion, but it dropped those cleanups on the floor by returning `[]`, so `runOnceCyclePrelude()` and `runOnce()` had nothing operator-visible to surface.
 - What changed: added a focused direct regression for `cleanupExpiredDoneWorkspaces()` recovery-event emission, tightened the existing `runOnce` cleanup regression to require the recovery log in the returned message, and updated `cleanupExpiredDoneWorkspaces()` to return `done_workspace_cleanup` recovery events whenever a tracked done workspace is actually cleaned.
-- Current blocker: the requested file-level test command still has two unrelated pre-existing failures in `src/supervisor/supervisor-execution-cleanup.test.ts` (`runOnce releases the current issue lock before restarting after a merged PR`, `runOnce reconciles inactive merging records whose tracked PR already merged`).
-- Next exact step: decide whether to repair those unrelated red tests on this branch so the full requested verification command can pass, then commit the issue #1010 cleanup-observability checkpoint.
-- Verification gap: issue-specific regressions pass and `npm run build` passes after `npm ci`, but `npx tsx --test src/recovery-reconciliation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts` still fails because of the two unrelated cleanup-test regressions above.
+- Current blocker: none locally; the requested verification now passes.
+- Next exact step: commit the repaired cleanup-test expectations so the branch head reflects a green checkpoint.
+- Verification gap: none for the requested local commands.
 - Files touched: `src/recovery-reconciliation.ts`; `src/recovery-reconciliation.test.ts`; `src/supervisor/supervisor-execution-cleanup.test.ts`; `.codex-supervisor/issue-journal.md`.
 - Rollback concern: low; runtime behavior only changes recovery-event reporting for tracked done-workspace cleanup, and the new tests pin the intended operator-visible output.
 - Last focused command: `npm run build`
 - Exact failure reproduced: before this checkpoint `cleanupExpiredDoneWorkspaces()` removed tracked done workspaces but returned no recovery events, and `runOnce({ dryRun: true })` therefore returned only `No matching open issue found.` instead of a prefixed recovery log for the cleanup.
-- Commands run: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1010/AGENTS.generated.md`; `sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1010/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg -n "cleanupExpiredDoneWorkspaces|done workspace|recovery event|recoveryEvents|orphan-prune|tracked done-workspace|cleanupExpired" src -g '!dist'`; `sed -n '1,260p' src/recovery-reconciliation.ts`; `sed -n '1,260p' src/supervisor/supervisor-execution-cleanup.test.ts`; `sed -n '1240,1475p' src/recovery-reconciliation.ts`; `sed -n '1,240p' src/recovery-reconciliation.test.ts`; `rg -n "cleanupExpiredDoneWorkspaces|done workspace|recoveryEvents|formatRecoveryLog|prependRecoveryLog" src/supervisor/supervisor-execution-cleanup.test.ts src/recovery-reconciliation.test.ts src/run-once-cycle-prelude.test.ts src/supervisor/supervisor.ts -g '!dist'`; `sed -n '430,620p' src/supervisor/supervisor-execution-cleanup.test.ts`; `sed -n '1,220p' src/run-once-cycle-prelude.ts`; `sed -n '640,780p' src/recovery-reconciliation.ts`; `npx tsx --test src/recovery-reconciliation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts`; `rg -n "function buildRecoveryEvent|const recoveryEvent = buildRecoveryEvent|formatRecoveryLog|prependRecoveryLog|applyRecoveryEvent" src/recovery-reconciliation.ts src/supervisor/supervisor.ts src -g '!dist'`; `sed -n '487,525p' src/recovery-reconciliation.ts`; `git diff -- src/recovery-reconciliation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts`; `npx tsx --test --test-name-pattern "cleanupExpiredDoneWorkspaces returns recovery events for tracked done workspace deletions|runOnce still cleans tracked done workspaces under the done-workspace policy" src/recovery-reconciliation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts`; `rg -n "cleanupRecordWorkspace\\(" src/recovery-reconciliation.ts src -g '!dist'`; `sed -n '1,220p' src/core/workspace.ts`; `git diff -- src/recovery-reconciliation.ts src/recovery-reconciliation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts`; `npm run build`; `test -d node_modules && echo present || echo missing`; `npm ci`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`.
+- Commands run: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `npx tsx --test src/recovery-reconciliation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts`; `sed -n '852,980p' src/supervisor/supervisor-execution-cleanup.test.ts`; `sed -n '1172,1288p' src/supervisor/supervisor-execution-cleanup.test.ts`; `rg -n "restart|merged PR|tracked PR already merged|merging" src/supervisor/supervisor.ts src/supervisor -g '!dist'`; `sed -n '480,560p' src/supervisor/supervisor.ts`; `sed -n '1400,1505p' src/supervisor/supervisor.ts`; `sed -n '1,260p' src/run-once-cycle-prelude.ts`; `sed -n '1,320p' src/run-once-issue-selection.ts`; `sed -n '320,620p' src/run-once-issue-selection.ts`; `npx tsx --test src/supervisor/supervisor-execution-cleanup.test.ts`; `npx tsx --test src/recovery-reconciliation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts`; `npm run build`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`.
 - PR status: no issue-specific PR update yet in this turn.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.

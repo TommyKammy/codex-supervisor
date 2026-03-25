@@ -957,7 +957,7 @@ test("runOnce releases the current issue lock before restarting after a merged P
   assert.equal(persisted.issues[String(mergedIssueNumber)]?.pr_number, 191);
   assert.equal(persisted.issues[String(mergedIssueNumber)]?.last_head_sha, "merged-head-191");
   assert.equal(persisted.issues[String(nextIssueNumber)]?.branch, nextBranch);
-  assert.equal(listAllIssuesCalls, 2);
+  assert.equal(listAllIssuesCalls, 1);
 });
 
 test("runOnce releases the issue lock when budget failure persistence throws", async () => {
@@ -1169,7 +1169,7 @@ test("runOnce preserves a live active issue reservation when its issue lock is s
   assert.equal(persisted.issues[String(issueNumber)]?.codex_session_id, null);
 });
 
-test("runOnce reconciles inactive merging records whose tracked PR already merged", async () => {
+test("runOnce reserves the next runnable issue before broad merged-PR reconciliation when no issue is active", async () => {
   const fixture = await createSupervisorFixture();
   const mergedIssueNumber = 91;
   const nextIssueNumber = 92;
@@ -1261,8 +1261,8 @@ test("runOnce reconciles inactive merging records whose tracked PR already merge
 
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
   assert.equal(persisted.activeIssueNumber, nextIssueNumber);
-  assert.equal(persisted.issues[String(mergedIssueNumber)]?.state, "done");
+  assert.equal(persisted.issues[String(mergedIssueNumber)]?.state, "merging");
   assert.equal(persisted.issues[String(mergedIssueNumber)]?.pr_number, 191);
-  assert.equal(persisted.issues[String(mergedIssueNumber)]?.last_head_sha, "merged-head-191");
+  assert.equal(persisted.issues[String(mergedIssueNumber)]?.last_head_sha, state.issues[String(mergedIssueNumber)]?.last_head_sha);
   assert.equal(persisted.issues[String(nextIssueNumber)]?.branch, nextBranch);
 });
