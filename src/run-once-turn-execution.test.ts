@@ -1,10 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { executeCodexTurnPhase } from "./run-once-turn-execution";
 import { FailureContextCategory, GitHubIssue, GitHubPullRequest, IssueRunRecord, SupervisorStateFile } from "./core/types";
 import { createConfig, createIssue, createPullRequest, createRecord, createReviewThread } from "./turn-execution-test-helpers";
 import { AgentRunner, AgentTurnRequest } from "./supervisor/agent-runner";
+import { interruptedTurnMarkerPath } from "./interrupted-turn-marker";
 
 function createSuccessfulAgentRunner(
   impl: (request: AgentTurnRequest) => ReturnType<AgentRunner["runTurn"]>,
@@ -648,6 +650,176 @@ test("executeCodexTurnPhase routes start and resume turns through the shared age
   assert.equal(requests[0]?.kind, "start");
   assert.equal(requests[1]?.kind, "resume");
   assert.equal(requests[1]?.sessionId, "session-existing");
+});
+
+test("executeCodexTurnPhase writes a durable interrupted-turn marker before runTurn and clears it after success", async () => {
+  const workspacePath = await fs.mkdtemp(path.join("/tmp", "codex-turn-marker-"));
+  const markerPath = interruptedTurnMarkerPath(workspacePath);
+  const issue: GitHubIssue = createIssue({ title: "Persist interrupted turn marker" });
+  const pr: GitHubPullRequest = createPullRequest({ title: "Interrupted turn marker lifecycle" });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "implementing",
+        codex_session_id: null,
+        workspace: workspacePath,
+        journal_path: path.join(workspacePath, ".codex-supervisor", "issue-journal.md"),
+      }),
+    },
+  };
+  let markerSeenDuringRun = false;
+
+  const result = await executeCodexTurnPhase({
+    config: createConfig(),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: "2026-03-26T01:00:01.000Z" }),
+      save: async () => undefined,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => pr,
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      previousCodexSummary: null,
+      previousError: null,
+      workspacePath,
+      journalPath: path.join(workspacePath, ".codex-supervisor", "issue-journal.md"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      workspaceStatus: {
+        branch: "codex/issue-102",
+        headSha: "head-a",
+        hasUncommittedChanges: false,
+        baseAhead: 0,
+        baseBehind: 0,
+        remoteBranchExists: true,
+        remoteAhead: 0,
+        remoteBehind: 0,
+      },
+      pr,
+      checks: [],
+      reviewThreads: [],
+      options: { dryRun: false },
+    },
+    acquireSessionLock: async () => null,
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-03-26T01:00:01.000Z",
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    normalizeBlockerSignature: () => null,
+    isVerificationBlockedMessage: () => false,
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "stabilizing",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    inferStateWithoutPullRequest: () => "stabilizing",
+    blockedReasonFromReviewState: () => null,
+    recoverUnexpectedCodexTurnFailure: async () => {
+      throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+    },
+    getWorkspaceStatus: async () => ({
+      branch: "codex/issue-102",
+      headSha: "head-a",
+      hasUncommittedChanges: false,
+      baseAhead: 0,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    }),
+    pushBranch: async () => {
+      throw new Error("unexpected pushBranch call");
+    },
+    readIssueJournal: (() => {
+      let readCount = 0;
+      return async () => {
+        readCount += 1;
+        return readCount === 1
+          ? "## Codex Working Notes\n### Current Handoff\n- Hypothesis: persist an interrupted-turn marker.\n"
+          : [
+              "## Codex Working Notes",
+              "### Current Handoff",
+              "- Hypothesis: persist an interrupted-turn marker.",
+              "- What changed: wrote the marker lifecycle regression coverage.",
+            ].join("\n");
+      };
+    })(),
+    agentRunner: createSuccessfulAgentRunner(async () => {
+      const rawMarker = await fs.readFile(markerPath, "utf8");
+      const marker = JSON.parse(rawMarker) as { issueNumber: number; state: string; startedAt: string };
+      assert.equal(marker.issueNumber, 102);
+      assert.equal(marker.state, "implementing");
+      assert.match(marker.startedAt, /^20/);
+      markerSeenDuringRun = true;
+      return {
+        exitCode: 0,
+        sessionId: "session-marker",
+        supervisorMessage: [
+          "Summary: completed successfully",
+          "State hint: stabilizing",
+          "Blocked reason: none",
+          "Tests: not run",
+          "Failure signature: none",
+          "Next action: continue",
+        ].join("\n"),
+        stderr: "",
+        stdout: "",
+        structuredResult: {
+          summary: "completed successfully",
+          stateHint: "stabilizing",
+          blockedReason: null,
+          failureSignature: null,
+          nextAction: "continue",
+          tests: "not run",
+        },
+        failureKind: null,
+        failureContext: null,
+      };
+    }),
+  });
+
+  assert.equal(result.kind, "completed");
+  assert.equal(markerSeenDuringRun, true);
+  await assert.rejects(fs.access(markerPath));
 });
 
 test("executeCodexTurnPhase keeps local-CI blocked outcomes isolated from execution-metrics write failures", async () => {

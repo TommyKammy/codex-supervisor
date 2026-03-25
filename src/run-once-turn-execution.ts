@@ -47,6 +47,10 @@ import {
   executionMetricsRetentionRootPath,
   syncExecutionMetricsRunSummarySafely,
 } from "./supervisor/execution-metrics-run-summary";
+import {
+  clearInterruptedTurnMarker,
+  writeInterruptedTurnMarker,
+} from "./interrupted-turn-marker";
 
 export {
   handlePostTurnPullRequestTransitionsPhase,
@@ -253,6 +257,7 @@ export async function executeCodexTurnPhase(
   const { config, stateStore, github } = args;
   const { state, issue, previousCodexSummary, previousError, workspacePath, journalPath, syncJournal, memoryArtifacts, options } = args.context;
   let { record, workspaceStatus, pr, checks, reviewThreads } = args.context;
+  let turnMarkerWritten = false;
 
   try {
     if (options.dryRun) {
@@ -302,6 +307,12 @@ export async function executeCodexTurnPhase(
       });
       record = preparedTurn.record;
       const { turnContext, reviewThreadsToProcess } = preparedTurn;
+      await writeInterruptedTurnMarker({
+        workspacePath,
+        issueNumber: record.issue_number,
+        state: record.state,
+      });
+      turnMarkerWritten = true;
       const turnResult = await agentRunner.runTurn(turnContext);
       const structuredResult = agentRunner.capabilities.supportsStructuredResult ? turnResult.structuredResult : null;
       const hintedState = structuredResult?.stateHint ?? null;
@@ -586,5 +597,16 @@ export async function executeCodexTurnPhase(
       kind: "returned",
       message: `Recovered from unexpected Codex turn failure for issue #${record.issue_number}.`,
     };
+  } finally {
+    if (turnMarkerWritten) {
+      try {
+        await clearInterruptedTurnMarker(workspacePath);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(
+          `Failed to clear interrupted turn marker for issue #${record.issue_number} in ${workspacePath}: ${message}`,
+        );
+      }
+    }
   }
 }

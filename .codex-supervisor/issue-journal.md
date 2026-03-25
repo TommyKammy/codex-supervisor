@@ -1,36 +1,36 @@
-# Issue #1007: Journal durability: write issue journals atomically to avoid handoff corruption on interruption
+# Issue #1008: Interrupted turn recovery: detect and reconcile in-progress Codex turns that end without a durable handoff
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1007
-- Branch: codex/issue-1007
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1008
+- Branch: codex/issue-1008
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 2bf4803c0e3c41b562f65b97583ca65a322586fd
+- Last head SHA: dba48aa4f32fa5c40b1d27f87618fdfb941e568d
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-25T16:20:21Z
+- Updated at: 2026-03-25T16:30:48.470Z
 
 ## Latest Codex Summary
-- Reproduced that `syncIssueJournal` wrote directly to `.codex-supervisor/issue-journal.md`, added a focused regression that asserts the journal is staged through a temp file and renamed into place, and switched journal persistence to the shared atomic write helper. Focused tests and `npm run build` now pass.
+- None yet.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `src/core/journal.ts` is the only journal writer and its direct `fs.writeFile(journalPath, nextContent, "utf8")` call is what can leave a truncated handoff behind if the process is interrupted mid-write.
-- What changed: added a focused regression in `src/journal.test.ts` that mocks `fs.writeFile` and `fs.rename` to prove `syncIssueJournal` stages through a temp file before replacing the live journal. Added `writeFileAtomic` in `src/core/utils.ts`, kept `writeJsonAtomic` on the same helper, and switched `syncIssueJournal` to that atomic path without changing journal content or interfaces.
+- Hypothesis: restart ambiguity comes from the gap between `prepareCodexTurnPrompt` and the first durable post-turn write; if the process exits there, the supervisor only sees missing locks and cannot distinguish an interrupted turn from a stale reservation.
+- What changed: added a narrow workspace marker in `src/interrupted-turn-marker.ts`, wrote it immediately before `agentRunner.runTurn`, cleared it after known completion paths in `src/run-once-turn-execution.ts`, taught `reconcileStaleActiveIssueReservation` in `src/recovery-reconciliation.ts` to convert an unconsumed marker into an explicit blocked `handoff_missing` recovery, ignored the marker in `src/supervisor/supervisor.ts` workspace-drift checks, and added focused regressions in `src/run-once-turn-execution.test.ts` and `src/supervisor/supervisor-execution-orchestration.test.ts`.
 - Current blocker: none.
-- Next exact step: commit the journal atomic-write change on `codex/issue-1007`, then open or update a draft PR if one does not already exist for this branch.
-- Verification gap: none after `npx tsx --test src/journal.test.ts src/core/utils.test.ts` and `npm run build`.
-- Files touched: `src/core/journal.ts`; `src/core/utils.ts`; `src/journal.test.ts`; `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low; journal output bytes are unchanged, and the runtime change is limited to writing the file through a temp path and atomic rename.
+- Next exact step: review the diff for naming and recovery-message precision, then commit the interrupted-turn recovery slice on `codex/issue-1008`.
+- Verification gap: none after `npx tsx --test src/run-once-turn-execution.test.ts src/supervisor/supervisor-execution-orchestration.test.ts` and `npm run build`.
+- Files touched: `src/interrupted-turn-marker.ts`; `src/run-once-turn-execution.ts`; `src/recovery-reconciliation.ts`; `src/supervisor/supervisor.ts`; `src/run-once-turn-execution.test.ts`; `src/supervisor/supervisor-execution-orchestration.test.ts`; `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; the runtime change is limited to a supervisor-owned marker file plus restart reconciliation, but stale-marker handling now influences active-issue recovery and should not be partially reverted.
 - Last focused command: `npm run build`
-- Exact failure reproduced: `npx tsx --test src/journal.test.ts` failed with `AssertionError [ERR_ASSERTION]: Expected "actual" to be strictly unequal to: '<redacted-local-path>'`, confirming that `syncIssueJournal` wrote directly to the live journal path instead of staging through a temp file.
-- Commands run: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg -n "issue-journal|journal|writeFile|rename|writeJsonAtomic|atomic" src test -g'*.ts'`; `sed -n '1,260p' src/core/utils.ts`; `rg --files src | rg 'journal|utils|state-store'`; `git diff -- src/core/utils.ts src/core/utils.test.ts .codex-supervisor/issue-journal.md`; `sed -n '1,280p' src/core/journal.ts`; `sed -n '1,320p' src/journal.test.ts`; `rg -n "syncIssueJournal|readIssueJournal|issueJournalPath|writeFile\\(|appendFile\\(|rename\\(" src/core src -g'*.ts'`; `sed -n '480,540p' src/core/journal.ts`; `sed -n '320,520p' src/journal.test.ts`; `npx tsx --test src/journal.test.ts`; `rg -n "mock\\.method|t\\.mock|import .*mock.*node:test|spyOn" src -g'*.test.ts'`; `sed -n '1,220p' src/core/utils.test.ts`; `npx tsx --test src/journal.test.ts`; `git diff --check -- src/core/journal.ts src/core/utils.ts src/journal.test.ts`; `test -d node_modules && echo node_modules-present || echo node_modules-missing`; `test -f package-lock.json && echo lock-present || echo lock-missing`; `sed -n '1,220p' package.json`; `npm ci`; `npx tsx --test src/journal.test.ts src/core/utils.test.ts`; `npm run build`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `git status --short`.
+- Exact failure reproduced: an active issue with missing issue/session locks and a persisted `turn-in-progress` marker was previously reconciled as generic stale cleanup, which silently dropped the fact that Codex had started without leaving a durable handoff.
+- Commands run: `sed -n '1,240p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1008/AGENTS.generated.md`; `sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1008/context-index.md`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `sed -n '1,260p' src/run-once-turn-execution.test.ts`; `sed -n '1,320p' src/supervisor/supervisor-execution-orchestration.test.ts`; `rg -n "executeCodexTurnPhase|recoverUnexpectedCodexTurnFailure|codex_session_id|structuredResult|supervisorMessage|runTurn\\(" src/run-once-turn-execution.ts src/supervisor -g'*.ts'`; `sed -n '1,340p' src/run-once-turn-execution.ts`; `sed -n '430,820p' src/supervisor/supervisor-execution-orchestration.test.ts`; `sed -n '1,260p' src/core/types.ts`; `sed -n '120,260p' src/supervisor/supervisor-failure-helpers.ts`; `sed -n '1,340p' src/turn-execution-orchestration.ts`; `sed -n '340,760p' src/run-once-turn-execution.ts`; `sed -n '1233,1415p' src/recovery-reconciliation.ts`; `sed -n '1,180p' src/supervisor/supervisor-execution-policy.ts`; `sed -n '1,260p' src/turn-execution-failure-helpers.ts`; `sed -n '180,230p' src/supervisor/supervisor.ts`; `sed -n '1,220p' src/core/utils.ts`; `sed -n '1010,1115p' src/supervisor/supervisor-execution-cleanup.test.ts`; `sed -n '1115,1185p' src/supervisor/supervisor-execution-cleanup.test.ts`; `npm exec tsc -- --noEmit`; `npx tsx --test src/run-once-turn-execution.test.ts`; `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts`; `test -d node_modules && echo node_modules-present || echo node_modules-missing`; `test -f package-lock.json && echo lock-present || echo lock-missing`; `sed -n '1,220p' package.json`; `npm ci`; `npx tsx --test src/run-once-turn-execution.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`; `npm run build`; `git diff --check -- src/interrupted-turn-marker.ts src/run-once-turn-execution.ts src/recovery-reconciliation.ts src/supervisor/supervisor.ts src/run-once-turn-execution.test.ts src/supervisor/supervisor-execution-orchestration.test.ts .codex-supervisor/issue-journal.md`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`.
 - PR status: none yet on this branch.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
