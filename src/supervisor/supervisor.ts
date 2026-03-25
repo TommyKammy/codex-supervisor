@@ -196,6 +196,7 @@ function isIgnoredSupervisorArtifactPath(
   journalRelativePath: string,
 ): boolean {
   return relativePath === journalRelativePath
+    || relativePath === ".codex-supervisor/turn-in-progress.json"
     || relativePath === ".codex-supervisor/replay"
     || relativePath.startsWith(".codex-supervisor/replay/")
     || relativePath === ".codex-supervisor/pre-merge"

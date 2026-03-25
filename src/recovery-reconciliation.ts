@@ -30,6 +30,12 @@ import {
   STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
 } from "./no-pull-request-state";
 import { applyFailureSignature } from "./supervisor/supervisor-failure-helpers";
+import {
+  captureIssueJournalFingerprint,
+  clearInterruptedTurnMarker,
+  readInterruptedTurnMarker,
+  sameIssueJournalFingerprint,
+} from "./interrupted-turn-marker";
 
 const OWNER_GUARDED_ACTIVE_STATES = new Set<RunState>([
   "planning",
@@ -106,6 +112,31 @@ function needsRecordUpdate(record: IssueRunRecord, patch: Partial<IssueRunRecord
   }
 
   return false;
+}
+
+async function hasDurableTurnUpdateSince(
+  record: Pick<IssueRunRecord, "journal_path" | "updated_at">,
+  marker: {
+    startedAt: string;
+    journalFingerprint: import("./interrupted-turn-marker").InterruptedTurnMarker["journalFingerprint"];
+  },
+): Promise<boolean> {
+  if (record.journal_path && marker.journalFingerprint) {
+    const currentJournalFingerprint = await captureIssueJournalFingerprint(record.journal_path);
+    if (!currentJournalFingerprint.exists) {
+      return false;
+    }
+
+    return !sameIssueJournalFingerprint(currentJournalFingerprint, marker.journalFingerprint);
+  }
+
+  const updatedAtMs = Date.parse(record.updated_at);
+  const startedAtMs = Date.parse(marker.startedAt);
+  if (!Number.isFinite(updatedAtMs) || !Number.isFinite(startedAtMs)) {
+    return false;
+  }
+
+  return updatedAtMs >= startedAtMs;
 }
 
 async function cleanupRecordWorkspace(config: SupervisorConfig, record: IssueRunRecord): Promise<void> {
@@ -1278,6 +1309,51 @@ export async function reconcileStaleActiveIssueReservation(args: {
             : "issue lock and session lock were missing";
   }
 
+  const interruptedTurnMarker = await readInterruptedTurnMarker(record.workspace);
+  if (
+    interruptedTurnMarker &&
+    interruptedTurnMarker.issueNumber === record.issue_number &&
+    !(await hasDurableTurnUpdateSince(record, interruptedTurnMarker))
+  ) {
+    const failureContext = {
+      category: "blocked" as const,
+      summary: `Codex started a turn for issue #${record.issue_number} but no durable handoff was recorded before the process exited.`,
+      signature: "handoff-missing",
+      command: null,
+      details: [
+        `started_at=${interruptedTurnMarker.startedAt}`,
+        "Update the Codex Working Notes section before ending the turn.",
+      ],
+      url: null,
+      updated_at: nowIso(),
+    };
+    const recoveryEvent = buildRecoveryEvent(
+      record.issue_number,
+      `interrupted_turn_recovery: blocked issue #${record.issue_number} after an in-progress Codex turn ended without a durable handoff`,
+    );
+    const patch: Partial<IssueRunRecord> = {
+      state: "blocked",
+      codex_session_id: null,
+      last_error: truncate(failureContext.summary, 1000),
+      last_failure_kind: null,
+      last_failure_context: failureContext,
+      ...applyFailureSignature(record, failureContext),
+      blocked_reason: "handoff_missing",
+      last_blocker_signature: null,
+      repeated_blocker_count: 0,
+      stale_stabilizing_no_pr_recovery_count: 0,
+    };
+    args.state.issues[String(record.issue_number)] = args.stateStore.touch(
+      record,
+      applyRecoveryEvent(patch, recoveryEvent),
+    );
+    args.state.activeIssueNumber = null;
+    await args.stateStore.save(args.state);
+    await clearInterruptedTurnMarker(record.workspace);
+    recoveryEvents.push(recoveryEvent);
+    return recoveryEvents;
+  }
+
   const matchedPullRequest =
     record.state === "stabilizing" && args.resolvePullRequestForBranch
       ? await args.resolvePullRequestForBranch(record.branch, record.pr_number)
@@ -1368,6 +1444,9 @@ export async function reconcileStaleActiveIssueReservation(args: {
   );
   args.state.activeIssueNumber = null;
   await args.stateStore.save(args.state);
+  if (interruptedTurnMarker) {
+    await clearInterruptedTurnMarker(record.workspace);
+  }
   recoveryEvents.push(recoveryEvent);
   return recoveryEvents;
 }
