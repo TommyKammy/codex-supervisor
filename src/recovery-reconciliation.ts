@@ -746,12 +746,18 @@ export async function reconcileTrackedMergedButOpenIssues(
     targetPrNumber?: number | null;
     waitStep?: string | null;
   }) => Promise<void>) | null = null,
+  options: {
+    onlyIssueNumber?: number | null;
+  } = {},
 ): Promise<RecoveryEvent[]> {
   let changed = false;
   const recoveryEvents: RecoveryEvent[] = [];
   const issueByNumber = new Map(issues.map((issue) => [issue.number, issue]));
+  const records = options.onlyIssueNumber === undefined || options.onlyIssueNumber === null
+    ? Object.values(state.issues)
+    : [state.issues[String(options.onlyIssueNumber)]].filter((record): record is IssueRunRecord => record !== undefined);
 
-  for (const record of Object.values(state.issues)) {
+  for (const record of records) {
     if (record.pr_number === null) {
       continue;
     }

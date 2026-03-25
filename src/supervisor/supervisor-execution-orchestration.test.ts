@@ -703,6 +703,128 @@ test("runOnce converges a stale no-PR issue to done when only supervisor-owned w
   assert.equal(record.stale_stabilizing_no_pr_recovery_count, 0);
 });
 
+test("runOnce converges an active merged issue before unrelated tracked-PR reconciliation work", async () => {
+  const fixture = await createSupervisorFixture({
+    codexScriptLines: [
+      "#!/bin/sh",
+      "set -eu",
+      "echo unexpected codex invocation >&2",
+      "exit 99",
+      "",
+    ],
+  });
+  const activeIssueNumber = 91;
+  const unrelatedIssueNumber = 92;
+  const activeBranch = branchName(fixture.config, activeIssueNumber);
+  const unrelatedBranch = branchName(fixture.config, unrelatedIssueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber,
+    issues: {
+      [String(unrelatedIssueNumber)]: createRecord({
+        issue_number: unrelatedIssueNumber,
+        state: "waiting_ci",
+        branch: unrelatedBranch,
+        pr_number: 192,
+        codex_session_id: null,
+      }),
+      [String(activeIssueNumber)]: createRecord({
+        issue_number: activeIssueNumber,
+        state: "merging",
+        branch: activeBranch,
+        pr_number: 191,
+        codex_session_id: "thread-merged-active",
+        blocked_reason: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const activeIssue: GitHubIssue = {
+    number: activeIssueNumber,
+    title: "Converge active merged issue first",
+    body: executionReadyBody("Converge the active merged issue before broad reconciliation."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:21:00Z",
+    url: `https://example.test/issues/${activeIssueNumber}`,
+    state: "CLOSED",
+  };
+  const unrelatedIssue: GitHubIssue = {
+    number: unrelatedIssueNumber,
+    title: "Slow unrelated reconciliation target",
+    body: executionReadyBody("Stay unrelated to the active merged issue."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${unrelatedIssueNumber}`,
+    state: "OPEN",
+  };
+  const mergedPr: GitHubPullRequest = {
+    number: 191,
+    title: "Merged implementation",
+    url: "https://example.test/pr/191",
+    state: "MERGED",
+    createdAt: "2026-03-13T00:10:00Z",
+    isDraft: false,
+    reviewDecision: "APPROVED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: activeBranch,
+    headRefOid: "merged-head-191",
+    mergedAt: "2026-03-13T00:20:00Z",
+  };
+
+  const prLookups: number[] = [];
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [activeIssue, unrelatedIssue],
+    listCandidateIssues: async () => [],
+    getIssue: async (issueNumber: number) => {
+      if (issueNumber === activeIssueNumber) {
+        return activeIssue;
+      }
+      if (issueNumber === unrelatedIssueNumber) {
+        return unrelatedIssue;
+      }
+      throw new Error(`unexpected getIssue call for #${issueNumber}`);
+    },
+    resolvePullRequestForBranch: async () => {
+      throw new Error("unexpected resolvePullRequestForBranch call");
+    },
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async (prNumber: number) => {
+      prLookups.push(prNumber);
+      if (prNumber === mergedPr.number) {
+        return mergedPr;
+      }
+      throw new Error(`unrelated reconciliation touched PR #${prNumber} before active merged convergence`);
+    },
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: false });
+  assert.match(
+    message,
+    /recovery issue=#91 reason=merged_pr_convergence: tracked PR #191 merged; marked issue #91 done/,
+  );
+  assert.deepEqual(prLookups, [191]);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const activeRecord = persisted.issues[String(activeIssueNumber)]!;
+  const unrelatedRecord = persisted.issues[String(unrelatedIssueNumber)]!;
+  assert.equal(persisted.activeIssueNumber, null);
+  assert.equal(activeRecord.state, "done");
+  assert.equal(activeRecord.pr_number, 191);
+  assert.equal(activeRecord.last_head_sha, "merged-head-191");
+  assert.equal(unrelatedRecord.state, "waiting_ci");
+});
+
 test("runOnce returns no matching issue when no runnable candidate is available", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {

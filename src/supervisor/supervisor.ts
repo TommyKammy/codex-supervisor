@@ -1348,7 +1348,7 @@ export class Supervisor {
       }),
       handleAuthFailure: (state) => handleAuthFailure(this.github, this.stateStore, state),
       listAllIssues: () => this.github.listAllIssues(),
-      reconcileTrackedMergedButOpenIssues: (state, issues, updateReconciliationProgress) =>
+      reconcileTrackedMergedButOpenIssues: (state, issues, updateReconciliationProgress, options) =>
         reconcileTrackedMergedButOpenIssues(
           this.github,
           this.stateStore,
@@ -1356,6 +1356,7 @@ export class Supervisor {
           this.config,
           issues,
           updateReconciliationProgress,
+          options,
         ),
       reconcileMergedIssueClosures: (state, issues) =>
         reconcileMergedIssueClosures(this.github, this.stateStore, state, this.config, issues),
