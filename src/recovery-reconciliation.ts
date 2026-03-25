@@ -157,13 +157,16 @@ function orderTrackedMergedButOpenRecordsForResume(
   }
 
   const resumeIndex = records.findIndex((record) => record.issue_number === lastProcessedIssueNumber);
-  if (resumeIndex === -1) {
+  const nextIndex = resumeIndex !== -1
+    ? resumeIndex + 1
+    : records.findIndex((record) => record.issue_number > lastProcessedIssueNumber);
+  if (nextIndex === -1 || nextIndex >= records.length) {
     return records;
   }
 
   return [
-    ...records.slice(resumeIndex + 1),
-    ...records.slice(0, resumeIndex + 1),
+    ...records.slice(nextIndex),
+    ...records.slice(0, nextIndex),
   ];
 }
 

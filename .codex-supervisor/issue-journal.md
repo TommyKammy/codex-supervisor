@@ -5,41 +5,45 @@
 - Branch: codex/issue-973
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: bd8c38915038f07bb14d95f5187550f5c2e03606
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: 0908cf364bd6f1a63a49d6efd5b16a8e82e3e0ea
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-25T07:45:18.650Z
+- Last failure signature: PRRT_kwDORgvdZ852o6R_
+- Repeated failure signature count: 1
+- Updated at: 2026-03-25T07:59:55.950Z
 
 ## Latest Codex Summary
-Implemented tracked-merged-but-open resume persistence in commit `bd8c389` and opened draft PR #987.
+Pushed `codex/issue-973` and opened draft PR [#987](https://github.com/TommyKammy/codex-supervisor/pull/987). I also updated the issue journal handoff to record the pushed branch, PR state, and next stabilizing action, then committed that journal-only follow-up as `0908cf3`.
 
-The fix adds an internal `reconciliation_state.tracked_merged_but_open_last_processed_issue_number` cursor, persists it through JSON and SQLite state backends, and uses it to rotate `reconcileTrackedMergedButOpenIssues()` so bounded sweeps resume from the next tracked PR-bearing record on the next cycle. I added a focused two-cycle regression for the resume behavior plus state-store round-trip tests for the persisted cursor, and updated the issue journal working notes.
+Tracked worktree files are clean; only the existing local `.codex-supervisor/pre-merge/` and `.codex-supervisor/replay/` directories remain untracked.
 
-Summary: Persisted tracked merged-but-open reconciliation progress across cycles, added focused resume regressions plus state persistence tests, pushed `codex/issue-973`, and opened draft PR #987.
+Summary: Pushed the issue branch, opened draft PR #987, updated the journal handoff, and pushed the journal-only follow-up commit `0908cf3`.
 State hint: pr_open
 Blocked reason: none
-Tests: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts --test-name-pattern "resumes from persisted progress in the next cycle"`; `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts --test-name-pattern "resumes from persisted progress in the next cycle|stops after the per-cycle budget and defers remaining records"`; `npx tsx --test src/core/state-store.test.ts --test-name-pattern "tracked merged reconciliation resume progress"`; `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/core/state-store.test.ts --test-name-pattern "tracked merged reconciliation resume progress|resumes from persisted progress in the next cycle|runOnceCyclePrelude"`; `npm ci`; `npm run build`
-Next action: monitor draft PR #987 and address CI or review feedback if it arrives
-Failure signature: none
+Tests: Not rerun after the journal-only handoff update; prior verified set remains `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`, `npx tsx --test src/core/state-store.test.ts --test-name-pattern "tracked merged reconciliation resume progress"`, and `npm run build`
+Next action: Monitor draft PR #987 and address CI or review feedback if it arrives
+Failure signature: PRRT_kwDORgvdZ852o6R_
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/987#discussion_r2986444251
+- Details:
+  - src/recovery-reconciliation.ts:166 _⚠️ Potential issue_ | _🟡 Minor_ **Don't restart from the front when the cursor record disappears.** If the persisted issue drops out of the PR-bearing set between cycles (for example, stale-branch cleanup cleared `pr_number`), `resumeIndex === -1` sends the sweep back to the front. Under a small `maxRecords`, that re-scans earlier records and delays the remaining tail even though the next record after the old cursor is still well-defined by issue number. <details> <summary>♻️ Proposed fix</summary> ```diff function orderTrackedMergedButOpenRecordsForResume( records: IssueRunRecord[], lastProcessedIssueNumber: number | null, ): IssueRunRecord[] { if (records.length <= 1 || lastProcessedIssueNumber === null) { return records; } const resumeIndex = records.findIndex((record) => record.issue_number === lastProcessedIssueNumber); - if (resumeIndex === -1) { + const nextIndex = + resumeIndex !== -1 + ? resumeIndex + 1 + : records.findIndex((record) => record.issue_number > lastProcessedIssueNumber); + if (nextIndex === -1 || nextIndex >= records.length) { return records; } return [ - ...records.slice(resumeIndex + 1), - ...records.slice(0, resumeIndex + 1), + ...records.slice(nextIndex), + ...records.slice(0, nextIndex), ]; } ``` </details> <!-- suggestion_start --> <details> <summary>📝 Committable suggestion</summary> > ‼️ **IMPORTANT** > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements. ```suggestion const resumeIndex = records.findIndex((record) => record.issue_number === lastProcessedIssueNumber); const nextIndex = resumeIndex !== -1 ? resumeIndex + 1 : records.findIndex((record) => record.issue_number > lastProcessedIssueNumber); if (nextIndex === -1 || nextIndex >= records.length) { return records; } return [ ...records.slice(nextIndex), ...records.slice(0, nextIndex), ``` </details> <!-- suggestion_end --> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In `@src/recovery-reconciliation.ts` around lines 159 - 166, When resumeIndex === -1 in the rotation logic (computed from records.findIndex((record) => record.issue_number === lastProcessedIssueNumber)), don't fall back to starting at the front; instead locate the first record whose issue_number is greater than lastProcessedIssueNumber (e.g., records.findIndex(r => r.issue_number > lastProcessedIssueNumber)) and rotate from that index so the sweep resumes at the next logical issue; if that secondary search also yields -1 (cursor is beyond the current tail) just return records unchanged. This change keeps the pointer semantics based on issue_number and prevents re-scanning earlier records when the persisted cursor record has been removed. ``` </details> <!-- fingerprinting:phantom:medusa:grasshopper --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: bounded tracked-merged-but-open reconciliation forgot its place whenever a cycle processed only still-open tracked PRs, because no record mutated and no resume cursor was persisted.
-- What changed: added a focused two-cycle regression in `src/supervisor/supervisor-recovery-reconciliation.test.ts`; persisted `reconciliation_state.tracked_merged_but_open_last_processed_issue_number` in `src/core/types.ts` and `src/core/state-store.ts`; taught `reconcileTrackedMergedButOpenIssues()` in `src/recovery-reconciliation.ts` to rotate the next sweep from the last processed tracked issue and clear the cursor after a full pass; pushed `codex/issue-973`; and opened draft PR #987.
+- Hypothesis: bounded tracked-merged-but-open reconciliation still restarted from the front when the persisted cursor issue dropped out of the current PR-bearing set, because the resume helper only rotated when it found the exact saved issue number.
+- What changed: updated `orderTrackedMergedButOpenRecordsForResume()` in `src/recovery-reconciliation.ts` to resume from the next higher issue number when the saved cursor record is no longer present, and added a focused regression in `src/supervisor/supervisor-recovery-reconciliation.test.ts` that proves a bounded sweep skips earlier records in that case instead of re-scanning from the front.
 - Current blocker: none.
-- Next exact step: monitor draft PR #987 and address CI or review feedback if it arrives.
-- Verification gap: none in the requested local scope after rerunning the focused reconciliation/prelude tests, the state-store resume persistence tests, and `npm run build`.
-- Files touched: `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/core/state-store.ts`, `src/core/state-store.test.ts`, `src/core/types.ts`, `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low; the change only adds an internal reconciliation cursor and uses it to resume the bounded tracked merged-but-open sweep without changing recovery semantics for the records themselves.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-973 --title "Issue #973: preserve tracked merged reconciliation progress" ...`
-- Exact failure reproduced: with `maxRecords=1`, cycle 1 looked up tracked PR #191, observed it still open, saved nothing, and cycle 2 looked up #191 again instead of resuming at tracked PR #192.
-- Commands run: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts --test-name-pattern "resumes from persisted progress in the next cycle"`; `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts --test-name-pattern "resumes from persisted progress in the next cycle|stops after the per-cycle budget and defers remaining records"`; `npx tsx --test src/core/state-store.test.ts --test-name-pattern "tracked merged reconciliation resume progress"`; `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/core/state-store.test.ts --test-name-pattern "tracked merged reconciliation resume progress|resumes from persisted progress in the next cycle|runOnceCyclePrelude"`; `npm ci`; `npm run build`; `git push -u origin codex/issue-973`; `gh pr create --draft --base main --head codex/issue-973 --title "Issue #973: preserve tracked merged reconciliation progress" ...`.
-- PR status: draft PR #987 (`https://github.com/TommyKammy/codex-supervisor/pull/987`).
+- Next exact step: commit this review fix, push `codex/issue-973`, and resolve the CodeRabbit thread on PR #987 if the remote diff matches the local verification.
+- Verification gap: none in the requested local scope after rerunning `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts` and `npm run build`.
+- Files touched: `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; the change only adjusts the internal rotation point for tracked merged-but-open reconciliation when the saved cursor record disappears, and leaves the existing full-pass and per-cycle budget semantics intact.
+- Last focused command: `npm run build`
+- Exact failure reproduced: with `maxRecords=1`, a saved cursor at issue #366 and current PR-bearing records for issues #365 and #367 caused the helper to restart at #365 instead of resuming at #367 after #366 dropped out of the tracked set.
+- Commands run: `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm run build`.
+- PR status: draft PR #987 (`https://github.com/TommyKammy/codex-supervisor/pull/987`); one CodeRabbit review thread is locally addressed and pending push.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
