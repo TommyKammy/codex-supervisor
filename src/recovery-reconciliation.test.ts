@@ -104,6 +104,71 @@ test("orphan prune evaluation stays available when done-workspace cleanup is dis
   assert.equal(git(repoPath, ["branch", "--list", orphanBranch]), "");
 });
 
+test("runtime done-workspace cleanup preserves orphan workspaces until an operator explicitly prunes them", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-recovery-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const stateFile = path.join(root, "state.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  git(repoPath, ["init", "-b", "main"]);
+  await fs.writeFile(path.join(repoPath, "README.md"), "# fixture\n", "utf8");
+  git(repoPath, ["add", "README.md"]);
+  git(repoPath, ["commit", "-m", "seed"]);
+
+  const orphanIssueNumber = 202;
+  const orphanBranch = "codex/issue-202";
+  const orphanWorkspace = path.join(workspaceRoot, `issue-${orphanIssueNumber}`);
+  git(repoPath, ["worktree", "add", "-b", orphanBranch, orphanWorkspace, "HEAD"]);
+
+  const oldTime = new Date("2026-03-01T00:00:00.000Z");
+  await fs.utimes(orphanWorkspace, oldTime, oldTime);
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+    stateFile,
+    cleanupDoneWorkspacesAfterHours: 0,
+    maxDoneWorkspaces: 0,
+    cleanupOrphanedWorkspacesAfterHours: 24,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+
+  assert.deepEqual(await cleanupExpiredDoneWorkspaces(config, state), []);
+  await fs.access(orphanWorkspace);
+  assert.match(git(repoPath, ["branch", "--list", orphanBranch]), new RegExp(orphanBranch));
+
+  assert.deepEqual(
+    await pruneOrphanedWorkspacesForOperator(config, state),
+    {
+      action: "prune-orphaned-workspaces",
+      outcome: "completed",
+      summary: "Pruned 1 orphaned workspace(s); skipped 0 orphaned workspace(s).",
+      pruned: [
+        {
+          issueNumber: orphanIssueNumber,
+          workspaceName: `issue-${orphanIssueNumber}`,
+          workspacePath: orphanWorkspace,
+          branch: orphanBranch,
+          modifiedAt: oldTime.toISOString(),
+          reason: "safe orphaned git worktree",
+        },
+      ],
+      skipped: [],
+    },
+  );
+
+  await assert.rejects(fs.access(orphanWorkspace));
+  assert.equal(git(repoPath, ["branch", "--list", orphanBranch]), "");
+});
+
 test("orphan prune inspection fails fast on invalid orphan cleanup grace config", async () => {
   const config = createConfig({
     workspaceRoot: path.join(os.tmpdir(), "codex-supervisor-missing-workspaces"),
