@@ -1,36 +1,45 @@
-# Issue #997: Orphan cleanup visibility: surface the effective orphan policy clearly in docs and diagnostics
+# Issue #999: Workspace restore robustness: replace brittle remote-branch stderr matching with machine-checkable existence checks
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/997
-- Branch: codex/issue-997
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/999
+- Branch: codex/issue-999
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 5378f1b825431b461700acb7db4f2424add27b0d
+- Current phase: stabilizing
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: e7ccdfb890c75d10964c73d6e844c1b1b601ec1b
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-25T14:19:22.744Z
+- Updated at: 2026-03-25T14:45:41Z
 
 ## Latest Codex Summary
-- Added an explicit `doctor_orphan_policy` diagnostic line so operators can see the effective orphan cleanup mode and grace window directly in `doctor`, aligned the orphan-cleanup docs to point at that line, and removed stale negative-grace guidance that no longer matches config validation.
+Replaced the brittle missing-remote-branch handling in [workspace.ts](src/core/workspace.ts) with a machine-checkable `git ls-remote --exit-code --heads origin <branch>` check before fetch. If the branch is absent, restore now deletes any stale `refs/remotes/origin/<branch>` ref and cleanly bootstraps from `origin/main` instead of depending on one exact `git fetch` stderr string.
+
+Added a focused regression in [workspace.test.ts](src/core/workspace.test.ts) that simulates alternate missing-branch stderr wording and proves `ensureWorkspace` still takes the non-fatal bootstrap path. I also updated [issue-journal.md](.codex-supervisor/issue-journal.md) with the reproduced failure, commands run, and next action. Commit: `e146e9e`.
+
+Summary: Replaced stderr-based remote branch detection in workspace restore with `ls-remote` existence checks, added a focused regression test, updated the issue journal, and committed the fix as `e146e9e`.
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/core/workspace.test.ts src/doctor.test.ts`; `npm ci`; `npm run build`
+Next action: Open or update the draft PR for `codex/issue-999` and push commit `e146e9e` for CI
+Failure signature: none
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the current branch already enforced explicit-only orphan cleanup, but operators still had to infer that policy indirectly from candidate listings and scattered doc text instead of a single diagnostic line.
-- What changed: added `doctor_orphan_policy mode=explicit_only background_prune=false operator_prune=true grace_hours=... preserved=locked,recent,unsafe_target` to the rendered `doctor` output, added focused coverage in `src/doctor.test.ts`, and updated `README.md`, `docs/getting-started.md`, and `docs/configuration.md` to point operators at that line and match the validated non-negative grace contract.
+- Hypothesis: `ensureWorkspace` treated a missing remote issue branch as a special case only when `git fetch` stderr matched one exact English substring, so alternate Git error wording turned an expected bootstrap path into a hard failure.
+- What changed: added `originBranchExists()` in `src/core/workspace.ts` to check `git ls-remote --exit-code --heads origin <branch>` before fetching the remote tracking ref; if the branch is absent, restore now deletes any stale `refs/remotes/origin/<branch>` ref and falls back to `origin/<defaultBranch>` without parsing stderr text. Added a focused regression test in `src/core/workspace.test.ts` that intercepts only the issue-branch fetch and returns alternate missing-branch stderr to prove the bootstrap path remains non-fatal.
 - Current blocker: none.
-- Next exact step: monitor draft PR `#1018` for CI or review feedback and address anything that comes back.
-- Verification gap: none locally after installing locked dependencies with `npm ci`; `npx tsx --test src/doctor.test.ts src/getting-started-docs.test.ts src/readme-docs.test.ts` and `npm run build` both passed.
-- Files touched: `src/doctor.ts`; `src/doctor.test.ts`; `src/getting-started-docs.test.ts`; `README.md`; `docs/getting-started.md`; `docs/configuration.md`; `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low; changes are limited to operator-facing diagnostics, docs, and focused tests.
-- Last focused command: `npm run build`
-- Exact failure reproduced: not a runtime prune bug on current `main`; the issue reproduced as a visibility gap where `doctor` listed orphan candidates but did not render the effective orphan cleanup policy directly, while docs still included stale negative-grace guidance.
-- Commands run: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg -n "orphan|cleanup.*policy|effective orphan|doctor|status" src README.md docs`; `rg --files src docs | rg "doctor|readme-docs|getting-started-docs|status|runtime|config|orphan|cleanup|prune"`; `git log --oneline --decorate -n 12 -- src/doctor.ts src/doctor.test.ts README.md docs/getting-started.md src/core/config.ts docs/configuration.md`; `sed -n '1,260p' src/doctor.ts`; `sed -n '1,260p' src/doctor.test.ts`; `sed -n '80,170p' README.md`; `sed -n '150,210p' docs/getting-started.md`; `sed -n '118,145p' docs/configuration.md`; `rg -n "orphan" src/doctor.ts src/core/types.ts src/recovery-reconciliation.ts src/supervisor/supervisor-status-report.ts src/supervisor/supervisor-status-rendering.ts`; `sed -n '260,520p' src/doctor.ts`; `sed -n '1,260p' src/core/types.ts`; `rg -n "renderDoctorReport|doctor_candidate_discovery|doctor_check|doctor_detail|doctor_posture" src/doctor.ts`; `sed -n '520,760p' src/doctor.ts`; `sed -n '1,220p' src/readme-docs.test.ts`; `sed -n '1,220p' src/getting-started-docs.test.ts`; `sed -n '1,260p' src/recovery-reconciliation.ts`; `rg -n "cleanupOrphanedWorkspacesAfterHours|orphanedWorkspaceGracePeriodHours|prune-orphaned-workspaces" src/recovery-reconciliation.ts src/core/config.ts src/cli/supervisor-runtime.ts src/supervisor/supervisor.ts`; `sed -n '1,260p' src/cli/supervisor-runtime.test.ts`; `sed -n '560,610p' src/core/config.ts`; `rg -n "cleanupOrphanedWorkspacesAfterHours|negative.*orphan|orphan.*disable|nonnegative" src/config.test.ts src/core/config-local-review-model-routing.test.ts src/recovery-reconciliation.test.ts`; `sed -n '1,260p' src/config.test.ts`; `git show --stat --summary 2fba051`; `git show 2fba051 -- src/core/config.ts src/config.test.ts docs/configuration.md src/recovery-reconciliation.ts`; `rg -n "effective orphan|orphan policy|workspace cleanup contract|background orphan cleanup|explicit-only|background-enabled|disabled" src docs README.md`; `git show 1d75a2b -- README.md docs/getting-started.md docs/configuration.md src/doctor.ts src/doctor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `rg -n "DoctorDiagnostics|doctorReport\\(|renderDoctorReport\\(|queryDoctor|doctor diagnostics|candidateDiscoverySummary" src`; `sed -n '1240,1315p' src/supervisor/supervisor.ts`; `sed -n '1,220p' src/supervisor/supervisor-service.ts`; `git diff -- src/doctor.ts src/doctor.test.ts README.md docs/getting-started.md docs/configuration.md src/getting-started-docs.test.ts`; `npx tsx --test src/doctor.test.ts src/getting-started-docs.test.ts src/readme-docs.test.ts`; `npm run build`; `test -d node_modules && echo present || echo missing`; `test -f package-lock.json && echo lock-present || echo lock-missing`; `cat package.json`; `npm ci`; `npm run build`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`.
-- PR status: draft PR open at `https://github.com/TommyKammy/codex-supervisor/pull/1018` on head `78f897ad249f12078e6f98383e2cf64be6a16951`.
+- Next exact step: monitor draft PR `#1019` for CI and review feedback, then address any failures or review comments that come back.
+- Verification gap: none locally after `npm ci`; `npx tsx --test src/core/workspace.test.ts src/doctor.test.ts` and `npm run build` both passed.
+- Files touched: `src/core/workspace.ts`; `src/core/workspace.test.ts`; `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; changes are limited to workspace restore branch detection and one focused regression test.
+- Last focused command: `npx tsx --test src/core/workspace.test.ts src/doctor.test.ts`
+- Exact failure reproduced: before the fix, the new regression test failed with `Error: fatal: remote branch codex/issue-724 not found` because `fetchIssueRemoteTrackingRef()` only recognized `couldn't find remote ref refs/heads/<branch>` as the non-fatal missing-branch case.
+- Commands run: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `git log --oneline --decorate -n 5`; `gh pr status`; `git branch -vv`; `git remote -v`; `git push -u origin codex/issue-999`; `gh pr create --draft --base main --head codex/issue-999 --title "Issue #999: Fix workspace restore remote branch detection" --body ...`; `gh pr view 1019 --json url,isDraft,headRefName,baseRefName,mergeStateStatus`; `git add .codex-supervisor/issue-journal.md`; `git commit -m "Update issue 999 journal after draft PR"`; `git push`; `gh pr view 1019 --json url,isDraft,mergeStateStatus,headRefOid`; `npx tsx --test src/core/workspace.test.ts src/doctor.test.ts`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`.
+- PR status: draft PR open at `https://github.com/TommyKammy/codex-supervisor/pull/1019` on head `e7ccdfb890c75d10964c73d6e844c1b1b601ec1b`; current merge state status `UNSTABLE` pending CI.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.

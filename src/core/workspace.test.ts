@@ -66,6 +66,50 @@ async function git(cwd: string, ...args: string[]): Promise<void> {
   await execFileAsync("git", ["-C", cwd, ...args]);
 }
 
+async function withFakeGitFetch<T>(
+  branch: string,
+  stderrMessage: string,
+  callback: () => Promise<T>,
+): Promise<T> {
+  const fakeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-fake-git-"));
+  const fakeGitPath = path.join(fakeRoot, "git");
+  const realGitPath = (await execFileAsync("bash", ["-lc", "command -v git"])).stdout.trim();
+  const targetFetchRefspec = `+refs/heads/${branch}:refs/remotes/origin/${branch}`;
+
+  await fs.writeFile(
+    fakeGitPath,
+    `#!/bin/sh
+REAL_GIT=${JSON.stringify(realGitPath)}
+git_c_arg_1=
+git_c_arg_2=
+if [ "$1" = "-C" ]; then
+  git_c_arg_1="$1"
+  git_c_arg_2="$2"
+  shift
+  shift
+fi
+if [ "$#" -eq 3 ] && [ "$1" = "fetch" ] && [ "$2" = "origin" ] && [ "$3" = "${targetFetchRefspec}" ]; then
+  printf '%s\\n' ${JSON.stringify(stderrMessage)} >&2
+  exit 128
+fi
+if [ -n "$git_c_arg_1" ]; then
+  exec "$REAL_GIT" "$git_c_arg_1" "$git_c_arg_2" "$@"
+fi
+exec "$REAL_GIT" "$@"
+`,
+    { mode: 0o755 },
+  );
+
+  const originalPath = process.env.PATH ?? "";
+  process.env.PATH = `${fakeRoot}:${originalPath}`;
+  try {
+    return await callback();
+  } finally {
+    process.env.PATH = originalPath;
+    await fs.rm(fakeRoot, { recursive: true, force: true });
+  }
+}
+
 async function createRepositoryFixture(): Promise<SupervisorConfig> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-workspace-"));
   const originPath = path.join(root, "origin.git");
@@ -130,4 +174,20 @@ test("ensureWorkspace reports when a recreated workspace discovers an existing r
   assert.equal(ensured.workspacePath, path.join(config.workspaceRoot, `issue-${issueNumber}`));
   assert.equal(ensured.restore.source, "remote_branch");
   assert.equal(ensured.restore.ref, `origin/${branch}`);
+});
+
+test("ensureWorkspace treats a missing remote branch as bootstrap even when fetch stderr wording differs", async () => {
+  const config = await createRepositoryFixture();
+  const issueNumber = 724;
+  const branch = `${config.branchPrefix}${issueNumber}`;
+
+  const ensured = await withFakeGitFetch(
+    branch,
+    `fatal: remote branch ${branch} not found`,
+    async () => ensureWorkspace(config, issueNumber, branch),
+  );
+
+  assert.equal(ensured.workspacePath, path.join(config.workspaceRoot, `issue-${issueNumber}`));
+  assert.equal(ensured.restore.source, "bootstrap_default_branch");
+  assert.equal(ensured.restore.ref, `origin/${config.defaultBranch}`);
 });
