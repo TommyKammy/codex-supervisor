@@ -837,7 +837,7 @@ test("executeCodexTurnPhase writes a durable interrupted-turn marker before runT
 
     assert.equal(result.kind, "completed");
     assert.equal(markerSeenDuringRun, true);
-    await assert.rejects(fs.access(markerPath));
+    await assert.rejects(fs.access(markerPath), { code: "ENOENT" });
   });
 });
 
@@ -853,7 +853,8 @@ test("withTempWorkspace removes the interrupted-turn workspace when the test bod
     /intentional test failure/,
   );
 
-  await assert.rejects(fs.access(workspacePath));
+  assert.ok(workspacePath, "Expected temp workspace path to be captured");
+  await assert.rejects(fs.access(workspacePath), { code: "ENOENT" });
 });
 
 test("executeCodexTurnPhase keeps local-CI blocked outcomes isolated from execution-metrics write failures", async () => {
