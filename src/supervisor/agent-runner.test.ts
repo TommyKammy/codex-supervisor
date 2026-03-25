@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import type {
   BlockedReason,
@@ -106,6 +109,41 @@ function createTurnResult(overrides: Partial<AgentTurnResult> = {}): AgentTurnRe
     failureKind: null,
     failureContext: null,
     ...overrides,
+  };
+}
+
+async function writeExecutableScript(filePath: string, content: string): Promise<void> {
+  await fs.writeFile(filePath, content, "utf8");
+  await fs.chmod(filePath, 0o755);
+}
+
+function createStartTurnContext(config: SupervisorConfig): StartAgentTurnContext {
+  return {
+    kind: "start",
+    config,
+    workspacePath: "/tmp/workspace",
+    state: "repairing_ci",
+    record: null,
+    repoSlug: config.repoSlug,
+    issue: {
+      number: 102,
+      title: "Normalize the shared agent turn context",
+      body: "",
+      createdAt: "2026-03-16T00:00:00Z",
+      updatedAt: "2026-03-16T00:00:00Z",
+      url: "https://example.test/issues/102",
+    },
+    branch: "codex/issue-102",
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspace/.codex-supervisor/issue-journal.md",
+    journalExcerpt: null,
+    failureContext: null,
+    previousSummary: null,
+    previousError: null,
   };
 }
 
@@ -488,6 +526,141 @@ test("createCodexAgentRunner normalizes Codex execution errors into the shared f
   assert.equal(result.failureKind, "timeout");
   assert.equal(result.failureContext?.category, "codex");
   assert.match(result.failureContext?.details[0] ?? "", /Command timed out after 1800000ms/);
+});
+
+test("createCodexAgentRunner preserves bounded noisy stderr for real non-zero Codex subprocess exits", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "agent-runner-test-"));
+  const workspacePath = path.join(root, "workspace");
+  const codexBinary = path.join(root, "fake-codex.sh");
+  await fs.mkdir(workspacePath, { recursive: true });
+
+  await writeExecutableScript(
+    codexBinary,
+    `#!/bin/sh
+exec "${process.execPath}" -e '
+const fs = require("node:fs");
+const args = process.argv.slice(1);
+let out = "";
+const writeStderr = (chunk) =>
+  new Promise((resolve, reject) => {
+    process.stderr.write(chunk, (error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(undefined);
+    });
+  });
+for (let i = 0; i < args.length; i += 1) {
+  if (args[i] === "-o") {
+    out = args[i + 1] || "";
+    i += 1;
+  }
+}
+fs.writeFileSync(out, [
+  "Summary: noisy non-zero subprocess",
+  "State hint: failed",
+  "Failure signature: real-noisy-exit",
+  "Next action: inspect bounded stderr",
+].join("\\n"));
+(async () => {
+  await writeStderr("stderr-prefix\\n");
+  for (let i = 0; i < 200; i += 1) {
+    await writeStderr("e".repeat(1000));
+  }
+  await writeStderr("\\nstderr-suffix\\n");
+  process.exit(1);
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+' "$@"
+`,
+  );
+
+  const config = createConfig({ codexBinary });
+  const runner = createCodexAgentRunner({ config });
+  const result = await runner.runTurn({
+    ...createStartTurnContext(config),
+    workspacePath,
+  });
+
+  assert.equal(result.failureKind, "codex_exit");
+  assert.match(result.stderr, /stderr-prefix/);
+  assert.match(result.stderr, /stderr-suffix/);
+  assert.match(result.stderr, /\n\.\.\.\n/);
+  assert.match(result.failureContext?.details[0] ?? "", /stderr-prefix/);
+  assert.match(result.failureContext?.details[0] ?? "", /stderr-suffix/);
+  assert.match(result.failureContext?.details[0] ?? "", /\n\.\.\.\n/);
+});
+
+test("createCodexAgentRunner preserves timeout summaries for real noisy Codex subprocess timeouts", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "agent-runner-test-"));
+  const workspacePath = path.join(root, "workspace");
+  const codexBinary = path.join(root, "fake-codex-timeout.sh");
+  await fs.mkdir(workspacePath, { recursive: true });
+
+  await writeExecutableScript(
+    codexBinary,
+    `#!/bin/sh
+exec "${process.execPath}" -e '
+const fs = require("node:fs");
+const args = process.argv.slice(1);
+let out = "";
+const writeStderr = (chunk) =>
+  new Promise((resolve, reject) => {
+    process.stderr.write(chunk, (error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(undefined);
+    });
+  });
+for (let i = 0; i < args.length; i += 1) {
+  if (args[i] === "-o") {
+    out = args[i + 1] || "";
+    i += 1;
+  }
+}
+fs.writeFileSync(out, "Summary: noisy timeout subprocess\\nState hint: failed\\n");
+process.on("SIGTERM", () => {
+  void (async () => {
+    await writeStderr("timeout-prefix\\n");
+    for (let i = 0; i < 200; i += 1) {
+      await writeStderr("t".repeat(1000));
+    }
+    await writeStderr("\\ntimeout-suffix\\n");
+    process.exit(0);
+  })().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+});
+setInterval(() => {}, 1000);
+' "$@"
+`,
+  );
+
+  const config = createConfig({
+    codexBinary,
+    codexExecTimeoutMinutes: 0.001,
+  });
+  const runner = createCodexAgentRunner({ config });
+  const result = await runner.runTurn({
+    ...createStartTurnContext(config),
+    workspacePath,
+  });
+
+  assert.equal(result.failureKind, "timeout");
+  assert.match(result.stderr, /Command timed out after 60ms:/);
+  assert.match(result.stderr, /timeout-prefix/);
+  assert.match(result.stderr, /timeout-suffix/);
+  assert.match(result.stderr, /\n\.\.\.\n/);
+  assert.match(result.failureContext?.details[0] ?? "", /Command timed out after 60ms:/);
+  assert.match(result.failureContext?.details[0] ?? "", /timeout-prefix/);
+  assert.match(result.failureContext?.details[0] ?? "", /timeout-suffix/);
+  assert.match(result.failureContext?.details[0] ?? "", /\n\.\.\.\n/);
 });
 
 test("createCodexAgentRunner preserves timeout summaries when non-zero Codex stderr is still noisy after bounded capture", async () => {
