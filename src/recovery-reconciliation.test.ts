@@ -250,6 +250,43 @@ test("orphan prune inspection fails fast on invalid orphan cleanup grace config"
   );
 });
 
+test("orphan prune inspection rejects orphan cleanup grace values that become invalid after config load", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-recovery-config-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(path.join(root, "repo"), { recursive: true });
+  await fs.mkdir(path.join(root, "workspaces"), { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: "./repo",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      cleanupOrphanedWorkspacesAfterHours: 24,
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+  config.cleanupOrphanedWorkspacesAfterHours = -1;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+
+  await assert.rejects(
+    inspectOrphanedWorkspacePruneCandidates(config, state),
+    /Invalid config field: cleanupOrphanedWorkspacesAfterHours/,
+  );
+});
+
 test("orphan prune runtime rejects orphan cleanup grace values that become invalid after config load", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-recovery-config-"));
   t.after(async () => {
