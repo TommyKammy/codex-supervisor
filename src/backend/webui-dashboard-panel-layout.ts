@@ -88,7 +88,7 @@ export const DASHBOARD_PANEL_REGISTRY = [
     title: "Queue details",
     subtitle: "Advanced queue signals, workflow state, and supervisor reasoning.",
     iconMarkup: renderPanelIcon("◔"),
-    headerMetaMarkup: '<span id="status-warning" class="hint"></span>',
+    headerMetaMarkup: '<span id="status-panel-warning" class="hint"></span>',
     bodyClassName: "stack",
     bodyMarkup: `              <div class="status-hero">
                 <div>

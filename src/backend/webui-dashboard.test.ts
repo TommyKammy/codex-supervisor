@@ -484,12 +484,18 @@ test("dashboard shell renders panels from the typed default layout in the curren
 test("dashboard page frames a summary-first shell and a collapsible details area", () => {
   const html = renderSupervisorDashboardHtml();
 
-  assert.match(html, /<main class="page-shell" data-dashboard-root>[\s\S]*<header class="masthead">[\s\S]*<h1>Operator dashboard<\/h1>/u);
+  assert.match(
+    html,
+    /<main class="page-shell" data-dashboard-root>[\s\S]*<header class="masthead">[\s\S]*id="summary-top"[\s\S]*codex-supervisor[\s\S]*id="repo-slug-value"[\s\S]*id="connection-state-pill"[\s\S]*id="last-refresh-pill"[\s\S]*<div class="app-layout">[\s\S]*<aside class="side-nav">/u,
+  );
   assert.match(html, /<aside class="side-nav">[\s\S]*id="nav-panel-operator-actions"[\s\S]*Operator timeline/u);
   assert.match(html, /id="loop-mode-badge"/u);
-  assert.match(html, /<section class="summary-grid" aria-label="summary">[\s\S]*id="overview-headline"[\s\S]*id="primary-action-title"[\s\S]*id="selected-issue-badge"[\s\S]*id="attention-list"/u);
+  assert.match(
+    html,
+    /<section class="focus-hero" aria-labelledby="selected-issue-heading">[\s\S]*id="focus-breadcrumb"[\s\S]*id="selected-issue-heading"[\s\S]*id="hero-badge-row"[\s\S]*id="hero-primary-button"[\s\S]*id="hero-secondary-button"[\s\S]*id="hero-tertiary-button"[\s\S]*id="overview-warning"[\s\S]*id="overview-headline"[\s\S]*id="primary-action-title"[\s\S]*id="selected-issue-badge"[\s\S]*id="attention-list"/u,
+  );
   assert.match(html, /id="loop-state-summary"/u);
-  assert.match(html, /<section class="issue-summary-card" aria-labelledby="selected-issue-heading">[\s\S]*id="selected-issue-summary-metrics"[\s\S]*id="selected-issue-summary-notes"/u);
+  assert.match(html, /id="selected-issue-summary-metrics"[\s\S]*id="selected-issue-summary-notes"/u);
   assert.match(
     html,
     /<details id="details-disclosure" class="details-disclosure">[\s\S]*<div class="details-body">[\s\S]*<h2 id="overview-heading">Advanced queue context<\/h2>[\s\S]*<div id="overview-grid" class="overview-grid" aria-label="overview" data-panel-grid="overview">/u,
@@ -498,6 +504,68 @@ test("dashboard page frames a summary-first shell and a collapsible details area
     html,
     /<h2 id="details-heading">Detailed operator view<\/h2>[\s\S]*<div id="details-grid" class="details-grid" aria-label="details" data-panel-grid="details">/u,
   );
+  assert.match(html, /<footer class="dashboard-footer">[\s\S]*id="repo-path-value"[\s\S]*id="workspace-root-value"/u);
+});
+
+test("dashboard page renders repository identity from setup readiness data", () => {
+  const html = renderSupervisorDashboardHtml({
+    kind: "setup_readiness",
+    ready: true,
+    overallStatus: "configured",
+    configPath: "/tmp/supervisor.config.json",
+    fields: [
+      {
+        key: "repoSlug",
+        label: "Repository slug",
+        state: "configured",
+        value: "owner/<repo>\"",
+        message: "Repository slug is configured.",
+        required: true,
+        metadata: { source: "config", editable: true, valueType: "repo_slug" },
+      },
+      {
+        key: "repoPath",
+        label: "Repository path",
+        state: "configured",
+        value: "/Users/<example>/dev/\"repo",
+        message: "Repository path is configured.",
+        required: true,
+        metadata: { source: "config", editable: true, valueType: "directory_path" },
+      },
+      {
+        key: "workspaceRoot",
+        label: "Workspace root",
+        state: "configured",
+        value: "/Users/example/dev/work\"trees",
+        message: "Workspace root is configured.",
+        required: true,
+        metadata: { source: "config", editable: true, valueType: "directory_path" },
+      },
+    ],
+    blockers: [],
+    hostReadiness: {
+      overallStatus: "pass",
+      checks: [],
+    },
+    providerPosture: {
+      profile: "codex",
+      provider: "codex",
+      reviewers: ["codex"],
+      signalSource: "reviewBotLogins",
+      configured: true,
+      summary: "Review provider posture uses codex via reviewBotLogins.",
+    },
+    trustPosture: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: null,
+      summary: "Trusted inputs with unsandboxed autonomous execution.",
+    },
+  });
+
+  assert.match(html, /id="repo-slug-value" class="masthead-repo">owner\/&lt;repo&gt;&quot;</u);
+  assert.match(html, /id="repo-path-value" class="context-path">\/Users\/&lt;example&gt;\/dev\/&quot;repo</u);
+  assert.match(html, /id="workspace-root-value" class="context-path">\/Users\/example\/dev\/work&quot;trees</u);
 });
 
 test("dashboard page renders sidebar links from the panel registry", () => {
@@ -534,10 +602,9 @@ test("dashboard page uses a clean summary-first palette and retains the fixed de
   assert.match(html, /--accent: #1abb9c;/u);
   assert.match(html, /--muted: #5f7288;/u);
   assert.match(html, /--text: #233647;/u);
-  assert.match(
-    html,
-    /\.summary-grid \{[\s\S]*grid-template-columns: minmax\(0, 1\.3fr\) repeat\(3, minmax\(0, 1fr\)\);/u,
-  );
+  assert.match(html, /\.focus-hero \{[\s\S]*display: grid;[\s\S]*gap: 20px;/u);
+  assert.match(html, /\.masthead \{[\s\S]*border-bottom: 1px solid/u);
+  assert.match(html, /\.side-nav-card \{[\s\S]*border-right: 1px solid/u);
   assert.match(html, /#panel-issue-details \{[\s\S]*grid-column: span 7;/u);
   assert.match(html, /#panel-tracked-history \{[\s\S]*grid-column: span 5;/u);
 });
@@ -845,6 +912,69 @@ test("dashboard lets operators inspect typed runnable and blocked issues without
   assert.equal(harness.remainingFetches.length, 0);
 });
 
+test("dashboard folds current state into hero badges and action buttons", async () => {
+  const harness = createDashboardHarness([
+    {
+      path: "/api/status?why=true",
+      response: jsonResponse(
+        createStatus({
+          selectedIssueNumber: 42,
+          runnableIssues: [{ issueNumber: 42, title: "Ready issue", readiness: "execution_ready" }],
+        }),
+      ),
+    },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    { path: "/api/issues/42/explain", response: jsonResponse(createExplain(42)) },
+    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
+  ]);
+  await harness.flush();
+
+  const heroBadgeRow = harness.document.getElementById("hero-badge-row");
+  const heroPrimaryButton = harness.document.getElementById("hero-primary-button");
+  const heroSecondaryButton = harness.document.getElementById("hero-secondary-button");
+  assert.ok(heroBadgeRow);
+  assert.ok(heroPrimaryButton);
+  assert.ok(heroSecondaryButton);
+
+  const badgeText = joinChildText(heroBadgeRow);
+  assert.match(badgeText, /Runnable/u);
+  assert.match(badgeText, /Checks: ready/u);
+  assert.match(badgeText, /Recovery: quiet/u);
+  assert.match(badgeText, /Loop mode: off/u);
+  assert.match(badgeText, /fresh/u);
+  assert.match(badgeText, /idle/u);
+  assert.match(heroPrimaryButton.textContent, /Open Issue Details/u);
+  assert.match(heroSecondaryButton.textContent, /Open Issue Details/u);
+});
+
+test("dashboard hero issue-details action loads focused issue details when needed", async () => {
+  const harness = createDashboardHarness([
+    {
+      path: "/api/status?why=true",
+      response: jsonResponse(
+        createStatus({
+          runnableIssues: [{ issueNumber: 42, title: "Ready issue", readiness: "execution_ready" }],
+        }),
+      ),
+    },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    { path: "/api/issues/42/explain", response: jsonResponse(createExplain(42)) },
+    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
+  ]);
+  await harness.flush();
+
+  const heroSecondaryButton = harness.document.getElementById("hero-secondary-button");
+  const issueSummary = harness.document.getElementById("issue-summary");
+  assert.ok(heroSecondaryButton);
+  assert.ok(issueSummary);
+
+  await heroSecondaryButton.dispatch("click");
+  await harness.flush();
+
+  assert.match(issueSummary.textContent, /#42 Issue 42/u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
 test("dashboard keeps requeue disabled after an issue load fails", async () => {
   const harness = createDashboardHarness([
     { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
@@ -914,14 +1044,18 @@ test("dashboard next state prefers stale-data recovery over stale selected issue
   await harness.flush();
 
   const primaryActionTitle = harness.document.getElementById("primary-action-title");
+  const heroPrimaryButton = harness.document.getElementById("hero-primary-button");
   const eventSource = MockEventSource.instances[0];
   assert.ok(primaryActionTitle);
+  assert.ok(heroPrimaryButton);
   assert.ok(eventSource);
   assert.match(primaryActionTitle.textContent, /Execute the selected issue/u);
+  assert.match(heroPrimaryButton.textContent, /Open Issue Details/u);
 
   await eventSource.dispatch("error");
 
   assert.match(primaryActionTitle.textContent, /Recover dashboard freshness/u);
+  assert.match(heroPrimaryButton.textContent, /Refresh Dashboard/u);
 });
 
 test("dashboard renders typed issue activity context without scraping legacy summary lines", async () => {
@@ -1195,7 +1329,7 @@ test("dashboard preserves a successful command result when the refresh step fail
   const runOnceButton = harness.document.getElementById("run-once-button");
   const commandStatus = harness.document.getElementById("command-status");
   const commandResult = harness.document.getElementById("command-result");
-  const statusWarning = harness.document.getElementById("status-warning");
+  const statusWarning = harness.document.getElementById("overview-warning");
   const refreshState = harness.document.getElementById("refresh-state");
   const freshnessState = harness.document.getElementById("freshness-state");
   assert.ok(runOnceButton);

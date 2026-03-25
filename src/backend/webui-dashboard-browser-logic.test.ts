@@ -76,6 +76,40 @@ test("buildStatusLines summarizes tracked history as a count instead of dumping 
   ]);
 });
 
+test("buildAttentionItems includes reconciliation warnings without duplicating status warnings", () => {
+  assert.deepEqual(
+    buildAttentionItems({
+      status: {
+        blockedIssues: [],
+        runnableIssues: [],
+        warning: { message: "status warning" },
+        reconciliationWarning: "reconciliation warning",
+      },
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    ["status warning", "reconciliation warning"],
+  );
+
+  assert.deepEqual(
+    buildAttentionItems({
+      status: {
+        blockedIssues: [],
+        runnableIssues: [],
+        warning: { message: "same warning" },
+        reconciliationWarning: "same warning",
+      },
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    ["same warning"],
+  );
+});
+
 test("formatTrackedIssues defaults to non-done history and can reveal done issues when requested", () => {
   assert.deepEqual(
     formatTrackedIssues({

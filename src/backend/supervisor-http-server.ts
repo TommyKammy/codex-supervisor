@@ -63,6 +63,19 @@ export function createSupervisorHttpServer(options: CreateSupervisorHttpServerOp
   return server;
 }
 
+async function readDashboardSetupReadiness(
+  service: Pick<SupervisorService, "querySetupReadiness">,
+): Promise<Awaited<ReturnType<NonNullable<SupervisorService["querySetupReadiness"]>>> | null> {
+  if (!service.querySetupReadiness) {
+    return null;
+  }
+  try {
+    return await service.querySetupReadiness();
+  } catch {
+    return null;
+  }
+}
+
 async function handleRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
@@ -112,8 +125,12 @@ async function handleRequest(
   }
 
   if (pathname === "/" || pathname === "/index.html") {
-    const setupReadiness = service.querySetupReadiness ? await service.querySetupReadiness() : null;
-    writeHtml(response, 200, setupReadiness && !setupReadiness.ready ? renderSupervisorSetupHtml() : renderSupervisorDashboardHtml());
+    const setupReadiness = await readDashboardSetupReadiness(service);
+    writeHtml(
+      response,
+      200,
+      setupReadiness && !setupReadiness.ready ? renderSupervisorSetupHtml() : renderSupervisorDashboardHtml(setupReadiness),
+    );
     return;
   }
 
@@ -123,7 +140,8 @@ async function handleRequest(
   }
 
   if (pathname === "/dashboard") {
-    writeHtml(response, 200, renderSupervisorDashboardHtml());
+    const setupReadiness = await readDashboardSetupReadiness(service);
+    writeHtml(response, 200, renderSupervisorDashboardHtml(setupReadiness));
     return;
   }
 

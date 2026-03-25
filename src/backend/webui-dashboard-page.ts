@@ -1,5 +1,6 @@
 import { renderDashboardBrowserScript } from "./webui-dashboard-browser-script";
 import { type DashboardPanelDefinition, type DashboardPanelId, listDashboardPanels } from "./webui-dashboard-panel-layout";
+import type { SetupReadinessFieldKey, SetupReadinessReport } from "../setup-readiness";
 
 function renderDashboardPanelSection(section: "overview" | "details"): string {
   return listDashboardPanels(section)
@@ -9,6 +10,15 @@ function renderDashboardPanelSection(section: "overview" | "details"): string {
 
 function toTitleCase(value: string): string {
   return value.replace(/\b([a-z])/gu, (match) => match.toUpperCase());
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/gu, "&amp;")
+    .replace(/</gu, "&lt;")
+    .replace(/>/gu, "&gt;")
+    .replace(/"/gu, "&quot;")
+    .replace(/'/gu, "&#39;");
 }
 
 const panelNavIcons: Record<DashboardPanelId, string> = {
@@ -53,7 +63,49 @@ ${listDashboardPanels("details")
         </nav>`;
 }
 
-export function renderSupervisorDashboardPage(): string {
+function readSetupFieldValue(
+  report: SetupReadinessReport | null | undefined,
+  key: SetupReadinessFieldKey,
+): string | null {
+  if (!report || !Array.isArray(report.fields)) {
+    return null;
+  }
+  const field = report.fields.find((candidate) => candidate.key === key);
+  return typeof field?.value === "string" && field.value.trim() !== "" ? field.value : null;
+}
+
+function readRepoContext(report: SetupReadinessReport | null | undefined): {
+  repoSlug: string | null;
+  repoPath: string | null;
+  workspaceRoot: string | null;
+} {
+  return {
+    repoSlug: readSetupFieldValue(report, "repoSlug"),
+    repoPath: readSetupFieldValue(report, "repoPath"),
+    workspaceRoot: readSetupFieldValue(report, "workspaceRoot"),
+  };
+}
+
+function renderDashboardFooter(report: SetupReadinessReport | null | undefined): string {
+  const { repoPath, workspaceRoot } = readRepoContext(report);
+  return `<footer class="dashboard-footer">
+          <div class="footer-path-group">
+            <span class="eyebrow">Local path</span>
+            <code id="repo-path-value" class="context-path">${escapeHtml(repoPath ?? "Not configured")}</code>
+          </div>
+          <div class="footer-path-group">
+            <span class="eyebrow">Workspace root</span>
+            <code id="workspace-root-value" class="context-path">${escapeHtml(workspaceRoot ?? "Not configured")}</code>
+          </div>
+        </footer>`;
+}
+
+function renderHeaderRepoSlug(report: SetupReadinessReport | null | undefined): string {
+  const { repoSlug } = readRepoContext(report);
+  return escapeHtml(repoSlug ?? "Repository unavailable");
+}
+
+export function renderSupervisorDashboardPage(setupReadiness?: SetupReadinessReport | null): string {
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -63,6 +115,8 @@ export function renderSupervisorDashboardPage(): string {
     <style>
       :root {
         color-scheme: light;
+        --frame-header-height: 74px;
+        --sidebar-width: 236px;
         --bg: #f3f5f8;
         --surface: #ffffff;
         --surface-soft: #f7fafc;
@@ -98,32 +152,35 @@ export function renderSupervisorDashboardPage(): string {
       }
 
       .page-shell {
-        width: min(1380px, calc(100vw - 32px));
-        margin: 0 auto;
-        padding: 24px 0 40px;
+        min-height: 100vh;
       }
 
       .app-layout {
         display: grid;
-        grid-template-columns: 220px minmax(0, 1fr);
-        gap: 20px;
+        grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+        gap: 0;
         align-items: start;
+        min-height: calc(100vh - var(--frame-header-height));
       }
 
       .side-nav {
         position: sticky;
-        top: 24px;
+        top: var(--frame-header-height);
+        align-self: start;
+        height: calc(100vh - var(--frame-header-height));
       }
 
       .side-nav-card {
         display: grid;
         gap: 16px;
-        padding: 18px 16px;
-        border: 1px solid var(--border);
-        border-radius: var(--radius-md);
-        background: rgba(255, 255, 255, 0.92);
-        box-shadow: var(--shadow-sm);
-        backdrop-filter: blur(10px);
+        height: 100%;
+        padding: 24px 20px 28px;
+        border: 0;
+        border-right: 1px solid rgba(200, 211, 223, 0.72);
+        border-radius: 0;
+        background: rgba(255, 255, 255, 0.84);
+        box-shadow: none;
+        backdrop-filter: blur(14px);
       }
 
       .side-nav-section {
@@ -196,8 +253,27 @@ export function renderSupervisorDashboardPage(): string {
       }
 
       .masthead {
-        gap: 14px;
-        margin-bottom: 18px;
+        position: sticky;
+        top: 0;
+        z-index: 40;
+        border-bottom: 1px solid rgba(200, 211, 223, 0.72);
+        background: rgba(248, 251, 253, 0.92);
+        backdrop-filter: blur(14px);
+      }
+
+      .repo-context-card {
+        display: none;
+      }
+
+      .context-path {
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--text);
+        font: 0.86rem/1.55 "Consolas", "SFMono-Regular", monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
       }
 
       .masthead-bar,
@@ -214,25 +290,54 @@ export function renderSupervisorDashboardPage(): string {
         display: flex;
         flex-wrap: wrap;
         justify-content: space-between;
-        align-items: end;
+        align-items: center;
         gap: 14px;
-        padding: 20px 22px;
+        min-height: var(--frame-header-height);
+        padding: 14px 28px;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        background: transparent;
       }
 
-      .masthead-copy {
-        display: grid;
-        gap: 6px;
+      .masthead-brand {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
       }
 
       .masthead-copy h1,
       .section-header h2,
-      .issue-summary-card h2 {
+      .focus-hero h2 {
         margin: 0;
         letter-spacing: -0.03em;
       }
 
-      .masthead-copy h1 {
-        font-size: clamp(2rem, 4vw, 2.7rem);
+      .masthead-brand-icon {
+        display: inline-grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 10px;
+        background: rgba(26, 187, 156, 0.12);
+        color: var(--accent-strong);
+        font-weight: 700;
+      }
+
+      .masthead-brand-name {
+        font-size: 1rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+
+      .masthead-divider {
+        color: var(--border-strong);
+      }
+
+      .masthead-repo {
+        font-size: 0.98rem;
+        font-weight: 700;
       }
 
       .masthead-copy p,
@@ -255,6 +360,122 @@ export function renderSupervisorDashboardPage(): string {
         gap: 10px;
       }
 
+      .page-stack {
+        min-width: 0;
+        padding: 34px 36px 40px;
+      }
+
+      .focus-hero {
+        display: grid;
+        gap: 20px;
+        margin-bottom: 12px;
+        padding: 2px 0 0;
+      }
+
+      .hero-breadcrumb {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.88rem;
+      }
+
+      .focus-hero-copy {
+        display: grid;
+        gap: 10px;
+        max-width: 980px;
+      }
+
+      .focus-hero h2 {
+        font-size: clamp(2rem, 3.5vw, 3rem);
+        line-height: 1.05;
+      }
+
+      .hero-reason {
+        margin: 0;
+        color: var(--text);
+        font-size: 0.98rem;
+        line-height: 1.6;
+      }
+
+      .hero-badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        max-width: 960px;
+      }
+
+      .hero-action-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .hero-primary-button,
+      .hero-secondary-button,
+      .hero-tertiary-button {
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .hero-primary-button {
+        padding: 12px 20px;
+        border: 0;
+        border-radius: 999px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+        color: #fff;
+        box-shadow: 0 12px 24px rgba(26, 187, 156, 0.2);
+      }
+
+      .hero-primary-button:hover,
+      .hero-secondary-button:hover,
+      .hero-tertiary-button:hover {
+        filter: brightness(1.03);
+      }
+
+      .hero-secondary-button,
+      .hero-tertiary-button {
+        padding: 12px 16px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: #fff;
+        color: var(--text);
+      }
+
+      .hero-warning {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.5;
+        max-width: 920px;
+      }
+
+      .dashboard-footer {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+        margin-top: 20px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+      }
+
+      .footer-path-group {
+        display: grid;
+        gap: 6px;
+        min-width: min(320px, 100%);
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
       .topbar-pill,
       .summary-pill,
       .chip {
@@ -269,24 +490,6 @@ export function renderSupervisorDashboardPage(): string {
         font-size: 0.86rem;
       }
 
-      .summary-grid {
-        display: grid;
-        grid-template-columns: minmax(0, 1.3fr) repeat(3, minmax(0, 1fr));
-        gap: 16px;
-        margin-bottom: 16px;
-      }
-
-      .summary-card {
-        min-width: 0;
-        padding: 20px;
-      }
-
-      .summary-card-primary {
-        background:
-          linear-gradient(180deg, rgba(26, 187, 156, 0.08), rgba(26, 187, 156, 0)),
-          var(--surface);
-      }
-
       .summary-headline {
         margin: 0;
         font-size: clamp(1.5rem, 2.4vw, 2.1rem);
@@ -294,47 +497,12 @@ export function renderSupervisorDashboardPage(): string {
         letter-spacing: -0.04em;
       }
 
-      .summary-detail {
-        font-size: 0.98rem;
-      }
-
-      .summary-banner {
-        gap: 10px;
-      }
-
-      .summary-pills {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-      }
-
-      .summary-list {
-        gap: 10px;
-        margin: 0;
-        padding-left: 18px;
-      }
-
-      .summary-list li {
-        color: var(--text);
-        line-height: 1.45;
-      }
-
-      .summary-list li::marker {
-        color: var(--accent);
-      }
-
-      .action-copy {
-        display: grid;
-        gap: 8px;
-      }
-
+      .summary-detail,
+      .summary-pills,
+      .summary-list,
+      .action-copy,
       .action-note {
-        padding: 12px 14px;
-        border: 1px dashed var(--border-strong);
-        border-radius: var(--radius-sm);
-        background: var(--surface-soft);
-        color: var(--muted);
-        line-height: 1.5;
+        display: none;
       }
 
       .action-copy strong,
@@ -504,6 +672,8 @@ export function renderSupervisorDashboardPage(): string {
 
       .details-disclosure {
         overflow: hidden;
+        border-radius: 18px;
+        box-shadow: none;
       }
 
       .details-disclosure summary {
@@ -530,6 +700,7 @@ export function renderSupervisorDashboardPage(): string {
         display: grid;
         gap: 18px;
         padding: 18px;
+        background: rgba(255, 255, 255, 0.92);
       }
 
       .section-header {
@@ -552,6 +723,7 @@ export function renderSupervisorDashboardPage(): string {
       .panel {
         min-width: 0;
         overflow: hidden;
+        box-shadow: none;
       }
 
       .panel-shell {
@@ -926,9 +1098,9 @@ export function renderSupervisorDashboardPage(): string {
       }
 
       @media (max-width: 1220px) {
-        .summary-grid,
         .issue-summary-grid,
-        .overview-grid {
+        .overview-grid,
+        .details-grid {
           grid-template-columns: 1fr;
         }
 
@@ -947,8 +1119,7 @@ export function renderSupervisorDashboardPage(): string {
 
       @media (max-width: 980px) {
         .page-shell {
-          width: min(100vw - 24px, 100%);
-          padding-top: 16px;
+          width: 100%;
         }
 
         .app-layout {
@@ -957,12 +1128,20 @@ export function renderSupervisorDashboardPage(): string {
 
         .side-nav {
           position: static;
+          height: auto;
         }
 
-        .summary-grid,
         .details-grid,
         .workflow-rail {
           grid-template-columns: 1fr;
+        }
+
+        .masthead-bar {
+          padding-inline: 18px;
+        }
+
+        .page-stack {
+          padding: 24px 18px 28px;
         }
 
         #panel-issue-details,
@@ -988,100 +1167,79 @@ export function renderSupervisorDashboardPage(): string {
   </head>
   <body>
     <main class="page-shell" data-dashboard-root>
+      <header class="masthead">
+        <div id="summary-top" class="masthead-bar">
+          <div class="masthead-brand">
+            <span class="masthead-brand-icon" aria-hidden="true">C</span>
+            <span class="masthead-brand-name">codex-supervisor</span>
+            <span class="masthead-divider" aria-hidden="true">|</span>
+            <strong id="repo-slug-value" class="masthead-repo">${renderHeaderRepoSlug(setupReadiness)}</strong>
+          </div>
+          <div class="masthead-meta">
+            <div id="connection-state-pill" class="topbar-pill info">Connection: connecting</div>
+            <div id="loop-mode-badge" class="topbar-pill info">Mode: local WebUI</div>
+            <div id="last-refresh-pill" class="topbar-pill info">Last updated: never</div>
+          </div>
+        </div>
+      </header>
       <div class="app-layout">
         <aside class="side-nav">
 ${renderDetailsMenu()}
         </aside>
         <div class="page-stack">
-        <header class="masthead">
-          <div id="summary-top" class="masthead-bar">
-            <div class="masthead-copy">
-              <p class="eyebrow">codex-supervisor</p>
-              <h1>Operator dashboard</h1>
-              <p>See the current supervisor state first, then open details only when you need them.</p>
-            </div>
-            <div class="masthead-meta">
-              <div id="loop-mode-badge" class="topbar-pill info">Mode: local WebUI</div>
-              <div id="connection-state-pill" class="topbar-pill info">Connection: connecting</div>
-              <div id="last-refresh-pill" class="topbar-pill info">Last updated: never</div>
-            </div>
+        <section class="focus-hero" aria-labelledby="selected-issue-heading">
+          <p id="focus-breadcrumb" class="hero-breadcrumb">Current Focus &gt; Waiting for an issue</p>
+          <div class="focus-hero-copy">
+            <h2 id="selected-issue-heading">No issue loaded</h2>
+            <p id="selected-issue-detail" class="section-lead">The selected or next runnable issue will appear here with a short summary.</p>
+            <p id="hero-reason" class="hero-reason">Reason: No immediate attention items are reported.</p>
           </div>
-        </header>
-
-        <section class="summary-grid" aria-label="summary">
-          <article class="summary-card summary-card-primary">
-            <p class="section-kicker">Current status</p>
-            <div class="summary-banner">
-              <h2 id="overview-headline" class="summary-headline">Loading supervisor status</h2>
-              <p id="overview-detail" class="summary-detail">The dashboard is collecting the latest state. This may take a few seconds.</p>
-            </div>
-            <div class="summary-pills">
-              <span id="loop-state-summary" class="summary-pill info">Loop status is loading</span>
-              <span id="freshness-state" class="summary-pill info">awaiting refresh</span>
-              <span id="refresh-state" class="summary-pill info">idle</span>
-            </div>
-            <div class="summary-inline">
-              <div class="summary-inline-block">
-                <span class="eyebrow">Connection</span>
-                <strong id="connection-state" class="live-value">connecting</strong>
-              </div>
-              <div class="summary-inline-block">
-                <span class="eyebrow">Last updated</span>
-                <strong id="last-refresh-badge">never</strong>
-              </div>
-            </div>
-            <div id="status-warning" class="hint"></div>
-          </article>
-
-          <article class="summary-card">
-            <p class="section-kicker">Next state</p>
-            <div class="action-copy">
-              <strong id="primary-action-title">Observe and refresh</strong>
-              <p id="primary-action-detail">The queue is quiet right now, so the next supervisor state is observation and refresh.</p>
-            </div>
-          </article>
-
-          <article class="summary-card">
-            <p class="section-kicker">Next issue</p>
-            <div class="issue-summary-copy">
-              <strong id="selected-issue-badge">none</strong>
-              <p id="next-issue-title">No issue is selected yet.</p>
-              <p id="next-issue-detail">When the supervisor surfaces a selected or runnable issue, it will appear here first.</p>
-            </div>
-          </article>
-
-          <article class="summary-card">
-            <p class="section-kicker">Why this state</p>
+          <div id="hero-badge-row" class="hero-badge-row">
+            <span class="summary-pill info">Issue state is loading</span>
+          </div>
+          <div class="hero-action-row">
+            <button type="button" id="hero-primary-button" class="hero-primary-button">Refresh Dashboard</button>
+            <button type="button" id="hero-secondary-button" class="hero-secondary-button">Open Issue Details</button>
+            <button type="button" id="hero-tertiary-button" class="hero-tertiary-button">More Actions</button>
+          </div>
+          <p id="overview-warning" class="hero-warning hint"></p>
+          <div class="sr-only">
+            <strong id="overview-headline" class="summary-headline">Loading supervisor status</strong>
+            <p id="overview-detail" class="summary-detail">The dashboard is collecting the latest state. This may take a few seconds.</p>
+            <span id="loop-state-summary" class="summary-pill info">Loop status is loading</span>
+            <span id="freshness-state" class="summary-pill info">awaiting refresh</span>
+            <span id="refresh-state" class="summary-pill info">idle</span>
+            <strong id="primary-action-title">Observe and refresh</strong>
+            <p id="primary-action-detail">The queue is quiet right now, so the next supervisor state is observation and refresh.</p>
+            <strong id="selected-issue-badge">none</strong>
+            <p id="next-issue-title">No issue is selected yet.</p>
+            <p id="next-issue-detail">When the supervisor surfaces a selected or runnable issue, it will appear here first.</p>
             <ul id="attention-list" class="summary-list">
               <li>No immediate attention items are reported.</li>
             </ul>
-          </article>
-        </section>
-
-        <section class="issue-summary-card" aria-labelledby="selected-issue-heading">
-          <div class="section-header">
-            <p class="section-kicker">Issue summary</p>
-            <h2 id="selected-issue-heading">No issue loaded</h2>
-            <p id="selected-issue-detail" class="section-lead">The selected or next runnable issue will appear here with a short summary.</p>
           </div>
-          <div class="issue-summary-grid">
-            <div id="selected-issue-summary-metrics" class="metric-grid">
-              <div class="metric-tile panel-empty-state">Load an issue or wait for the selected issue summary.</div>
-            </div>
-            <div id="selected-issue-summary-notes" class="detail-grid">
-              <div class="detail-card">
-                <h3>What to expect</h3>
-                <div class="detail-list">
-                  <div class="detail-item">This area highlights the selected issue, readiness, blockers, and recent context.</div>
-                </div>
+          <div id="selected-issue-summary-metrics" class="sr-only">
+            <div class="metric-tile panel-empty-state">Load an issue or wait for the selected issue summary.</div>
+          </div>
+          <div id="selected-issue-summary-notes" class="sr-only">
+            <div class="detail-card">
+              <h3>What to expect</h3>
+              <div class="detail-list">
+                <div class="detail-item">This area highlights the selected issue, readiness, blockers, and recent context.</div>
               </div>
             </div>
+          </div>
+          <div class="sr-only">
+            <span class="eyebrow">Connection</span>
+            <strong id="connection-state" class="live-value">connecting</strong>
+            <span class="eyebrow">Last updated</span>
+            <strong id="last-refresh-badge">never</strong>
           </div>
         </section>
 
         <details id="details-disclosure" class="details-disclosure">
           <summary>
-            <span>Open details</span>
+            <span>Details &amp; Diagnostics</span>
             <span class="hint">Queue, diagnostics, issue loading, and maintenance actions</span>
           </summary>
           <div class="details-body">
@@ -1108,6 +1266,8 @@ ${renderDashboardPanelSection("details")}
             </section>
           </div>
         </details>
+
+${renderDashboardFooter(setupReadiness)}
         </div>
       </div>
     </main>

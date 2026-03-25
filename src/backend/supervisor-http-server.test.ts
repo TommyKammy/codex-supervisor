@@ -191,6 +191,7 @@ function createStubService(args?: {
   issueLintCalls?: number[];
   postMergeAuditSummaryCalls?: number;
   setupReadinessCalls?: number;
+  setupReadinessError?: Error;
   setupReadinessReport?: SetupReadinessReport;
   setupConfigPreviewCalls?: Array<string | null>;
   setupConfigPreview?: SetupConfigPreview;
@@ -233,6 +234,19 @@ function createStubService(args?: {
     configPath: "/tmp/supervisor.config.json",
     fields: [
       {
+        key: "repoPath",
+        label: "Repository path",
+        state: "configured",
+        value: "/tmp/repo",
+        message: "Repository path is configured.",
+        required: true,
+        metadata: {
+          source: "config",
+          editable: true,
+          valueType: "directory_path",
+        },
+      },
+      {
         key: "repoSlug",
         label: "Repository slug",
         state: "configured",
@@ -243,6 +257,19 @@ function createStubService(args?: {
           source: "config",
           editable: true,
           valueType: "repo_slug",
+        },
+      },
+      {
+        key: "workspaceRoot",
+        label: "Workspace root",
+        state: "configured",
+        value: "/tmp/worktrees",
+        message: "Workspace root is configured.",
+        required: true,
+        metadata: {
+          source: "config",
+          editable: true,
+          valueType: "directory_path",
         },
       },
       {
@@ -548,6 +575,9 @@ function createStubService(args?: {
       if (args) {
         args.setupReadinessCalls = (args.setupReadinessCalls ?? 0) + 1;
       }
+      if (args?.setupReadinessError) {
+        throw args.setupReadinessError;
+      }
       return setupReadinessReport;
     },
     querySetupConfigPreview: async ({ reviewProviderProfile }) => {
@@ -693,6 +723,19 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
     configPath: "/tmp/supervisor.config.json",
     fields: [
       {
+        key: "repoPath",
+        label: "Repository path",
+        state: "configured",
+        value: "/tmp/repo",
+        message: "Repository path is configured.",
+        required: true,
+        metadata: {
+          source: "config",
+          editable: true,
+          valueType: "directory_path",
+        },
+      },
+      {
         key: "repoSlug",
         label: "Repository slug",
         state: "configured",
@@ -703,6 +746,19 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
           source: "config",
           editable: true,
           valueType: "repo_slug",
+        },
+      },
+      {
+        key: "workspaceRoot",
+        label: "Workspace root",
+        state: "configured",
+        value: "/tmp/worktrees",
+        message: "Workspace root is configured.",
+        required: true,
+        metadata: {
+          source: "config",
+          editable: true,
+          valueType: "directory_path",
         },
       },
       {
@@ -1060,6 +1116,19 @@ test("createSupervisorHttpServer accepts narrow setup config writes and returns 
       configPath: "/tmp/supervisor.config.json",
       fields: [
         {
+          key: "repoPath",
+          label: "Repository path",
+          state: "configured",
+          value: "/tmp/repo",
+          message: "Repository path is configured.",
+          required: true,
+          metadata: {
+            source: "config",
+            editable: true,
+            valueType: "directory_path",
+          },
+        },
+        {
           key: "repoSlug",
           label: "Repository slug",
           state: "configured",
@@ -1070,6 +1139,19 @@ test("createSupervisorHttpServer accepts narrow setup config writes and returns 
             source: "config",
             editable: true,
             valueType: "repo_slug",
+          },
+        },
+        {
+          key: "workspaceRoot",
+          label: "Workspace root",
+          state: "configured",
+          value: "/tmp/worktrees",
+          message: "Workspace root is configured.",
+          required: true,
+          metadata: {
+            source: "config",
+            editable: true,
+            valueType: "directory_path",
           },
         },
         {
@@ -1204,9 +1286,12 @@ test("createSupervisorHttpServer serves a dashboard shell with only the safe ope
   assert.match(html, /\/api\/commands\/requeue/u);
   assert.match(html, /\/api\/commands\/prune-orphaned-workspaces/u);
   assert.match(html, /\/api\/commands\/reset-corrupt-json-state/u);
+  assert.match(html, /id="repo-slug-value" class="masthead-repo">owner\/repo</u);
+  assert.match(html, /id="repo-path-value" class="context-path">\/tmp\/repo</u);
+  assert.match(html, /id="workspace-root-value" class="context-path">\/tmp\/worktrees</u);
   assert.doesNotMatch(html, /\/api\/commands\/loop/u);
   assert.match(html, /load issue details/iu);
-  assert.match(html, /operator actions/iu);
+  assert.match(html, /secondary actions/iu);
   assert.match(html, /confirm/i);
   assert.match(html, /command result/iu);
   assert.match(html, /live events/iu);
@@ -1263,12 +1348,72 @@ test("createSupervisorHttpServer serves a dedicated setup shell and keeps the da
   const setupHtml = await readHtml("/setup");
   const dashboardHtml = await readHtml("/dashboard");
 
-  assert.equal(serviceCallCounts.setupReadinessCalls, 1);
+  assert.equal(serviceCallCounts.setupReadinessCalls, 2);
   assert.match(rootHtml, /<title>codex-supervisor setup<\/title>/i);
   assert.match(rootHtml, /data-setup-root/u);
   assert.match(rootHtml, /\/api\/setup-readiness/u);
   assert.doesNotMatch(rootHtml, /\/api\/status\?why=true/u);
   assert.match(setupHtml, /<title>codex-supervisor setup<\/title>/i);
+  assert.match(dashboardHtml, /<title>codex-supervisor operator dashboard<\/title>/i);
+  assert.match(dashboardHtml, /data-dashboard-root/u);
+  assert.match(dashboardHtml, /id="repo-slug-value" class="masthead-repo">owner\/repo</u);
+});
+
+test("createSupervisorHttpServer falls back to dashboard HTML when setup readiness cannot be queried", async (t) => {
+  const serviceArgs = {
+    setupReadinessCalls: 0,
+    setupReadinessError: new Error("setup readiness unavailable"),
+  };
+  const server = createSupervisorHttpServer({
+    service: createStubService(serviceArgs),
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Expected server to listen on an ephemeral port.");
+  }
+  const port = address.port;
+
+  async function readHtml(path: string): Promise<string> {
+    const response = await new Promise<http.IncomingMessage>((resolve, reject) => {
+      const request = http.request(
+        {
+          host: "127.0.0.1",
+          port,
+          path,
+          method: "GET",
+          agent: false,
+        },
+        resolve,
+      );
+      request.on("error", reject);
+      request.end();
+    });
+
+    let html = "";
+    response.setEncoding("utf8");
+    for await (const chunk of response) {
+      html += chunk;
+    }
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers["content-type"], "text/html; charset=utf-8");
+    return html;
+  }
+
+  const rootHtml = await readHtml("/");
+  const dashboardHtml = await readHtml("/dashboard");
+
+  assert.equal(serviceArgs.setupReadinessCalls, 2);
+  assert.match(rootHtml, /<title>codex-supervisor operator dashboard<\/title>/i);
+  assert.match(rootHtml, /data-dashboard-root/u);
   assert.match(dashboardHtml, /<title>codex-supervisor operator dashboard<\/title>/i);
   assert.match(dashboardHtml, /data-dashboard-root/u);
 });
@@ -1281,7 +1426,47 @@ test("createSupervisorHttpServer keeps root on the operator dashboard after setu
       ready: true,
       overallStatus: "configured",
       configPath: "/tmp/supervisor.config.json",
-      fields: [],
+      fields: [
+        {
+          key: "repoSlug",
+          label: "Repository slug",
+          state: "configured",
+          value: "owner/repo",
+          message: "Repository slug is configured.",
+          required: true,
+          metadata: {
+            source: "config",
+            editable: true,
+            valueType: "repo_slug",
+          },
+        },
+        {
+          key: "repoPath",
+          label: "Repository path",
+          state: "configured",
+          value: "/tmp/repo",
+          message: "Repository path is configured.",
+          required: true,
+          metadata: {
+            source: "config",
+            editable: true,
+            valueType: "directory_path",
+          },
+        },
+        {
+          key: "workspaceRoot",
+          label: "Workspace root",
+          state: "configured",
+          value: "/tmp/worktrees",
+          message: "Workspace root is configured.",
+          required: true,
+          metadata: {
+            source: "config",
+            editable: true,
+            valueType: "directory_path",
+          },
+        },
+      ],
       blockers: [],
       hostReadiness: {
         overallStatus: "pass",
@@ -1345,6 +1530,7 @@ test("createSupervisorHttpServer keeps root on the operator dashboard after setu
   assert.equal(response.statusCode, 200);
   assert.match(html, /<title>codex-supervisor operator dashboard<\/title>/i);
   assert.match(html, /data-dashboard-root/u);
+  assert.match(html, /id="repo-slug-value" class="masthead-repo">owner\/repo</u);
   assert.doesNotMatch(html, /data-setup-root/u);
 });
 
