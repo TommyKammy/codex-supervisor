@@ -50,8 +50,10 @@ export interface RestartRunOnce {
 
 type IssueSelectionResult = ReadyIssueContext | RestartRunOnce | string;
 
-type IssueSelectionGitHub = Pick<GitHubClient, "listCandidateIssues" | "getIssue">;
-type IssueSelectionStateStore = Pick<StateStore, "save" | "touch">;
+type IssueSelectionCandidateGitHub = Pick<GitHubClient, "listCandidateIssues">;
+type IssueSelectionGitHub = IssueSelectionCandidateGitHub & Pick<GitHubClient, "getIssue">;
+type IssueSelectionSaveStateStore = Pick<StateStore, "save">;
+type IssueSelectionStateStore = IssueSelectionSaveStateStore & Pick<StateStore, "touch">;
 
 type IssueJournalContext = Pick<IssueRunRecord, "workspace" | "journal_path">;
 
@@ -76,6 +78,15 @@ interface ResolveRunnableIssueContextArgs {
   acquireIssueLock?: (record: IssueRunRecord) => Promise<LockHandle>;
   ensureRecordJournalContext?: (record: IssueRunRecord) => Promise<IssueJournalContext>;
   syncIssueJournal?: (args: SyncIssueJournalArgs) => Promise<void>;
+  emitEvent?: SupervisorEventSink;
+}
+
+interface ReserveRunnableIssueSelectionArgs {
+  github: Pick<IssueSelectionGitHub, "listCandidateIssues">;
+  config: SupervisorConfig;
+  stateStore: Pick<IssueSelectionStateStore, "save">;
+  state: SupervisorStateFile;
+  currentRecord: IssueRunRecord | null;
   emitEvent?: SupervisorEventSink;
 }
 
@@ -213,9 +224,9 @@ async function defaultEnsureRecordJournalContext(
 }
 
 async function selectIssueRecord(
-  github: IssueSelectionGitHub,
+  github: IssueSelectionCandidateGitHub,
   config: SupervisorConfig,
-  stateStore: IssueSelectionStateStore,
+  stateStore: IssueSelectionSaveStateStore,
   state: SupervisorStateFile,
   currentRecord: IssueRunRecord | null,
 ): Promise<SelectedIssueRecord | string> {
@@ -262,6 +273,34 @@ async function selectIssueRecord(
     record,
     persistReservation: false,
   };
+}
+
+export async function reserveRunnableIssueSelection(
+  args: ReserveRunnableIssueSelectionArgs,
+): Promise<IssueRunRecord | null> {
+  const { github, config, stateStore, state, currentRecord, emitEvent } = args;
+  const selectedRecord = await selectIssueRecord(github, config, stateStore, state, currentRecord);
+  if (typeof selectedRecord === "string") {
+    return null;
+  }
+
+  const { record, persistReservation } = selectedRecord;
+  if (!persistReservation) {
+    return record;
+  }
+
+  const previousIssueNumber = state.activeIssueNumber;
+  state.activeIssueNumber = record.issue_number;
+  state.issues[String(record.issue_number)] = record;
+  await stateStore.save(state);
+  emitSupervisorEvent(emitEvent, buildActiveIssueChangedEvent({
+    issueNumber: record.issue_number,
+    previousIssueNumber,
+    nextIssueNumber: record.issue_number,
+    reason: "reserved_for_cycle",
+    at: record.updated_at,
+  }));
+  return record;
 }
 
 export async function resolveRunnableIssueContext(

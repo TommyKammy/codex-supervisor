@@ -1,38 +1,38 @@
-# Issue #974: Reconciliation stall isolation: keep slow unrelated GitHub fetches from delaying active merged-issue convergence
+# Issue #975: Selected runnable issue can starve behind repeated reconciliation before claim
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/974
-- Branch: codex/issue-974
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/975
+- Branch: codex/issue-975
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 7113d23f46334b956f09389af118b7916f52b36b
+- Last head SHA: 2af9471670be918fcc0d160ad6ac0d1cb5f03473
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-25T08:30:49.696Z
+- Updated at: 2026-03-25T09:05:11.094Z
 
 ## Latest Codex Summary
-- Isolated active merged-issue convergence from unrelated tracked-PR fetches by widening the prelude fast path in `src/run-once-cycle-prelude.ts` to cover any active issue with a tracked PR, not just `merging`, and added a focused orchestration regression for an active `waiting_ci` issue in `src/supervisor/supervisor-execution-orchestration.test.ts`.
-- Local verification passed for `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-cycle-prelude.test.ts src/github/github-transport.test.ts src/supervisor/supervisor-execution-orchestration.test.ts` and `npm run build` after installing missing dev dependencies with `npm install`.
-- Pushed commit `9adc05c` to `origin/codex/issue-974` and opened draft PR [#988](https://github.com/TommyKammy/codex-supervisor/pull/988).
+- Reserved runnable issues before the broad reconciliation sweep so `runOnce()` can claim and start selected work without touching unrelated tracked PRs first.
+- Added a focused orchestration regression covering a runnable selection with `activeIssueNumber=null` and an unrelated tracked PR that would previously have been reconciled before claim.
+- Local verification passed for `npx tsx --test src/run-once-issue-selection.test.ts`, `npx tsx --test src/run-once-cycle-prelude.test.ts`, `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts`, and `npm run build` after installing missing dev dependencies with `npm install`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: active merged issues outside the `merging` state were still falling back to the full tracked-merged reconciliation sweep, so a slow unrelated `getPullRequestIfExists()` call could delay convergence even though the active issue already had a tracked merged PR.
-- What changed: widened the isolated active reconciliation fast path in `src/run-once-cycle-prelude.ts` from `activeRecord.state === "merging"` to any non-null active record with `pr_number !== null`, and added a focused regression in `src/supervisor/supervisor-execution-orchestration.test.ts` that covers an active `waiting_ci` issue whose merged PR must converge before an unrelated tracked PR is fetched.
+- Hypothesis: when `activeIssueNumber` is still `null`, the prelude can spend a full cycle in unrelated reconciliation before the selected runnable issue is ever reserved, so repeated runs can keep restarting broad reconciliation without ever claiming the chosen work.
+- What changed: added `reserveRunnableIssueSelection()` in `src/run-once-issue-selection.ts`, invoked it from `src/supervisor/supervisor.ts` before the broad prelude reconciliation, and taught `src/run-once-cycle-prelude.ts` to return early once a runnable issue has been reserved so the normal issue phase can claim/start it immediately. Added a focused regression in `src/supervisor/supervisor-execution-orchestration.test.ts` that throws if unrelated tracked-PR reconciliation runs before the selected runnable issue is claimed.
 - Current blocker: none.
-- Next exact step: monitor draft PR #988 for CI or review feedback and address follow-up issues if they appear.
-- Verification gap: none in the requested local scope after rerunning `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-cycle-prelude.test.ts src/github/github-transport.test.ts src/supervisor/supervisor-execution-orchestration.test.ts` and `npm run build`.
-- Files touched: `src/run-once-cycle-prelude.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts`, `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low; the change only affects reconciliation scheduling for the active issue by isolating its tracked-PR convergence ahead of the broader tracked-PR sweep, and leaves underlying GitHub fetch semantics unchanged.
+- Next exact step: review the diff, commit the runnable-reservation fast path on `codex/issue-975`, and open or update a draft PR if needed.
+- Verification gap: none in the requested local scope after rerunning `npx tsx --test src/run-once-issue-selection.test.ts`, `npx tsx --test src/run-once-cycle-prelude.test.ts`, `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts`, and `npm run build`.
+- Files touched: `src/run-once-issue-selection.ts`, `src/run-once-cycle-prelude.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts`, `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; the change only reorders the reservation boundary so runnable work is claimed before unrelated reconciliation, while leaving the existing selection logic and reconciliation behavior intact for later cycles.
 - Last focused command: `npm run build`
-- Exact failure reproduced: with active issue #92 in `waiting_ci`, unrelated issue #91 also carrying a tracked PR, and the active PR #192 already merged, `runOnce()` fetched unrelated PR #191 first and threw `unrelated reconciliation touched PR #191 before active merged convergence`.
-- Commands run: `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts --test-name-pattern "runOnce converges an active merged waiting_ci issue before unrelated tracked-PR reconciliation work"`; `npx tsx --test src/run-once-cycle-prelude.test.ts`; `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-cycle-prelude.test.ts src/github/github-transport.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`; `npm install`; `npm run build`; `git commit -m "Isolate active merged reconciliation from unrelated fetches"`; `git push -u origin codex/issue-974`; `gh pr create --draft --base main --head codex/issue-974 --title "Isolate active merged reconciliation from unrelated fetches" --body ...`.
-- PR status: draft PR #988 (`https://github.com/TommyKammy/codex-supervisor/pull/988`).
+- Exact failure reproduced: with `activeIssueNumber=null`, runnable issue #91 returned from `listCandidateIssues()`, and unrelated issue #92 already tracking PR #192, `runOnce()` hit broad tracked-PR reconciliation before claim; the focused regression throws `unrelated reconciliation touched PR #192 before selected issue #91 was claimed` unless the runnable issue is reserved first.
+- Commands run: `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts --test-name-pattern "runOnce reserves a runnable issue before unrelated tracked-PR reconciliation work"`; `npx tsx --test src/run-once-issue-selection.test.ts`; `npx tsx --test src/run-once-cycle-prelude.test.ts`; `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts`; `npm run build`; `npm install`; `npm run build`.
+- PR status: none.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.

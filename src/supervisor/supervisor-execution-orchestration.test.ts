@@ -260,6 +260,84 @@ test("runOnce dry-run selects an issue and hydrates workspace and PR context bef
   assert.equal(reviewThreadCalls, 1);
 });
 
+test("runOnce reserves a runnable issue before unrelated tracked-PR reconciliation work", async () => {
+  const fixture = await createSupervisorFixture();
+  const selectedIssueNumber = 91;
+  const unrelatedIssueNumber = 92;
+  const selectedBranch = branchName(fixture.config, selectedIssueNumber);
+  const unrelatedBranch = branchName(fixture.config, unrelatedIssueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(unrelatedIssueNumber)]: createRecord({
+        issue_number: unrelatedIssueNumber,
+        state: "waiting_ci",
+        branch: unrelatedBranch,
+        pr_number: 192,
+        codex_session_id: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const selectedIssue: GitHubIssue = {
+    number: selectedIssueNumber,
+    title: "Reserve the next runnable issue before broad reconciliation",
+    body: executionReadyBody("Reserve the runnable issue before unrelated reconciliation."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${selectedIssueNumber}`,
+    state: "OPEN",
+  };
+  const unrelatedIssue: GitHubIssue = {
+    number: unrelatedIssueNumber,
+    title: "Slow unrelated reconciliation target",
+    body: executionReadyBody("Remain unrelated to the selected runnable issue."),
+    createdAt: "2026-03-13T00:05:00Z",
+    updatedAt: "2026-03-13T00:05:00Z",
+    url: `https://example.test/issues/${unrelatedIssueNumber}`,
+    state: "OPEN",
+  };
+
+  let selectedIssueFetched = false;
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [selectedIssue, unrelatedIssue],
+    listCandidateIssues: async () => [selectedIssue],
+    getIssue: async (issueNumber: number) => {
+      assert.equal(issueNumber, selectedIssueNumber);
+      selectedIssueFetched = true;
+      return selectedIssue;
+    },
+    resolvePullRequestForBranch: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async (prNumber: number) => {
+      throw new Error(
+        `unrelated reconciliation touched PR #${prNumber} before selected issue #${selectedIssueNumber} was claimed`,
+      );
+    },
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(message, /Dry run: would invoke Codex for issue #91\./);
+  assert.equal(selectedIssueFetched, true);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  assert.equal(persisted.activeIssueNumber, selectedIssueNumber);
+  assert.equal(persisted.issues[String(selectedIssueNumber)]?.state, "reproducing");
+  assert.equal(persisted.issues[String(unrelatedIssueNumber)]?.state, "waiting_ci");
+  assert.equal(persisted.issues[String(unrelatedIssueNumber)]?.pr_number, 192);
+});
+
 test("prepareIssueExecutionContext blocks PR publication when configured local CI fails before draft PR creation", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.localCiCommand = "npm run ci:local";
