@@ -4,6 +4,7 @@ import {
   emitSupervisorEvent,
   type SupervisorEventSink,
 } from "./supervisor/supervisor-events";
+import type { ReconciliationProgressUpdate } from "./supervisor/supervisor-reconciliation-phase";
 
 export interface RecoveryEvent {
   issueNumber: number;
@@ -22,17 +23,21 @@ export interface RunOnceCyclePreludeAuthFailure {
   recoveryEvents: RecoveryEvent[];
 }
 
+type ReconciliationProgressPatch = Partial<Omit<ReconciliationProgressUpdate, "phase">>;
+
 interface RunOnceCyclePreludeArgs {
   stateStore: Pick<{ load(): Promise<SupervisorStateFile> }, "load">;
   carryoverRecoveryEvents: RecoveryEvent[];
   emitEvent?: SupervisorEventSink;
   setReconciliationPhase?: (phase: string | null) => Promise<void>;
+  setReconciliationProgress?: (progress: ReconciliationProgressUpdate | null) => Promise<void>;
   reconcileStaleActiveIssueReservation: (state: SupervisorStateFile) => Promise<RecoveryEvent[]>;
   handleAuthFailure: (state: SupervisorStateFile) => Promise<string | null>;
   listAllIssues: () => Promise<GitHubIssue[]>;
   reconcileTrackedMergedButOpenIssues: (
     state: SupervisorStateFile,
     issues: GitHubIssue[],
+    updateReconciliationProgress: (patch: ReconciliationProgressPatch) => Promise<void>,
   ) => Promise<RecoveryEvent[]>;
   reconcileMergedIssueClosures: (
     state: SupervisorStateFile,
@@ -41,6 +46,7 @@ interface RunOnceCyclePreludeArgs {
   reconcileStaleFailedIssueStates: (
     state: SupervisorStateFile,
     issues: GitHubIssue[],
+    updateReconciliationProgress: (patch: ReconciliationProgressPatch) => Promise<void>,
   ) => Promise<void>;
   reconcileRecoverableBlockedIssueStates: (
     state: SupervisorStateFile,
@@ -58,7 +64,32 @@ export async function runOnceCyclePrelude(
 ): Promise<RunOnceCyclePreludeResult | RunOnceCyclePreludeAuthFailure> {
   const state = await args.stateStore.load();
   const recoveryEvents: RecoveryEvent[] = [...args.carryoverRecoveryEvents];
-  const setReconciliationPhase = args.setReconciliationPhase ?? (async () => {});
+  let currentReconciliationProgress: ReconciliationProgressUpdate | null = null;
+  const setReconciliationProgress = async (progress: ReconciliationProgressUpdate | null) => {
+    currentReconciliationProgress = progress;
+    if (args.setReconciliationProgress) {
+      await args.setReconciliationProgress(progress);
+      return;
+    }
+    await (args.setReconciliationPhase ?? (async () => {}))(progress?.phase ?? null);
+  };
+  const setReconciliationPhase = async (phase: string) => {
+    await setReconciliationProgress({
+      phase,
+      targetIssueNumber: null,
+      targetPrNumber: null,
+      waitStep: null,
+    });
+  };
+  const updateReconciliationProgress = async (patch: ReconciliationProgressPatch) => {
+    if (currentReconciliationProgress === null) {
+      return;
+    }
+    await setReconciliationProgress({
+      ...currentReconciliationProgress,
+      ...patch,
+    });
+  };
   const emitRecoveryEvents = (events: RecoveryEvent[]) => {
     for (const event of events) {
       emitSupervisorEvent(args.emitEvent, buildRecoverySupervisorEvent(event));
@@ -83,7 +114,7 @@ export async function runOnceCyclePrelude(
     const issues = await args.listAllIssues();
 
     await setReconciliationPhase("tracked_merged_but_open_issues");
-    const trackedMergedEvents = await args.reconcileTrackedMergedButOpenIssues(state, issues);
+    const trackedMergedEvents = await args.reconcileTrackedMergedButOpenIssues(state, issues, updateReconciliationProgress);
     recoveryEvents.push(...trackedMergedEvents);
     emitRecoveryEvents(trackedMergedEvents);
 
@@ -93,7 +124,7 @@ export async function runOnceCyclePrelude(
     emitRecoveryEvents(mergedIssueClosureEvents);
 
     await setReconciliationPhase("stale_failed_issue_states");
-    await args.reconcileStaleFailedIssueStates(state, issues);
+    await args.reconcileStaleFailedIssueStates(state, issues, updateReconciliationProgress);
 
     await setReconciliationPhase("recoverable_blocked_issue_states");
     const recoverableBlockedEvents = await args.reconcileRecoverableBlockedIssueStates(state, issues);
@@ -113,6 +144,6 @@ export async function runOnceCyclePrelude(
       recoveryEvents,
     };
   } finally {
-    await setReconciliationPhase(null);
+    await setReconciliationProgress(null);
   }
 }

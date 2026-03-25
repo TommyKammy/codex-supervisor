@@ -1063,6 +1063,55 @@ test("status surfaces the current reconciliation phase only while reconciliation
   assert.doesNotMatch(afterReconciliation, /reconciliation_phase=/);
 });
 
+test("statusReport exposes typed reconciliation target and wait-step context while reconciliation is in progress", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  fixture.config.configuredReviewProviders = [
+    {
+      kind: "coderabbit",
+      reviewerLogins: ["coderabbitai"],
+      signalSource: "review_threads",
+    },
+  ];
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  await writeCurrentReconciliationPhase(fixture.config, {
+    phase: "stale_failed_issue_states",
+    targetIssueNumber: 58,
+    targetPrNumber: 91,
+    waitStep: "configured_bot_initial_grace_wait",
+  });
+
+  const report = await supervisor.statusReport();
+  assert.deepEqual(report.reconciliationProgress, {
+    phase: "stale_failed_issue_states",
+    startedAt: report.reconciliationProgress?.startedAt ?? null,
+    targetIssueNumber: 58,
+    targetPrNumber: 91,
+    waitStep: "configured_bot_initial_grace_wait",
+  });
+  assert.equal(report.reconciliationPhase, "stale_failed_issue_states");
+
+  const status = await supervisor.status();
+  assert.match(status, /reconciliation_phase=stale_failed_issue_states/);
+  assert.match(
+    status,
+    /reconciliation_progress phase=stale_failed_issue_states target_issue=#58 target_pr=#91 wait_step=configured_bot_initial_grace_wait/,
+  );
+});
+
 test("status emits a warning only after reconciliation exceeds the long-running threshold", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {

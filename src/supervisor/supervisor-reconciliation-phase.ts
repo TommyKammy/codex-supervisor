@@ -6,11 +6,24 @@ import type { SupervisorConfig } from "../core/types";
 interface ReconciliationPhaseSnapshot {
   phase: string;
   startedAt: string;
+  targetIssueNumber?: number | null;
+  targetPrNumber?: number | null;
+  waitStep?: string | null;
 }
 
 export interface CurrentReconciliationPhaseSnapshot {
   phase: string;
   startedAt: string | null;
+  targetIssueNumber: number | null;
+  targetPrNumber: number | null;
+  waitStep: string | null;
+}
+
+export interface ReconciliationProgressUpdate {
+  phase: string;
+  targetIssueNumber?: number | null;
+  targetPrNumber?: number | null;
+  waitStep?: string | null;
 }
 
 export function reconciliationPhasePath(config: Pick<SupervisorConfig, "repoPath">): string {
@@ -19,12 +32,23 @@ export function reconciliationPhasePath(config: Pick<SupervisorConfig, "repoPath
 
 export async function writeCurrentReconciliationPhase(
   config: Pick<SupervisorConfig, "repoPath">,
-  phase: string,
+  progress: string | ReconciliationProgressUpdate,
 ): Promise<void> {
   const snapshotPath = reconciliationPhasePath(config);
   await ensureDir(path.dirname(snapshotPath));
   const startedAt = (await readCurrentReconciliationPhaseSnapshot(config))?.startedAt ?? new Date(Date.now()).toISOString();
-  await fs.writeFile(snapshotPath, `${JSON.stringify({ phase, startedAt } satisfies ReconciliationPhaseSnapshot)}\n`, "utf8");
+  const nextProgress = typeof progress === "string" ? { phase: progress } : progress;
+  await fs.writeFile(
+    snapshotPath,
+    `${JSON.stringify({
+      phase: nextProgress.phase,
+      startedAt,
+      targetIssueNumber: nextProgress.targetIssueNumber ?? null,
+      targetPrNumber: nextProgress.targetPrNumber ?? null,
+      waitStep: nextProgress.waitStep ?? null,
+    } satisfies ReconciliationPhaseSnapshot)}\n`,
+    "utf8",
+  );
 }
 
 export async function clearCurrentReconciliationPhase(
@@ -58,6 +82,9 @@ export async function readCurrentReconciliationPhaseSnapshot(
     return {
       phase: parsed.phase,
       startedAt: typeof parsed.startedAt === "string" && parsed.startedAt.length > 0 ? parsed.startedAt : null,
+      targetIssueNumber: typeof parsed.targetIssueNumber === "number" ? parsed.targetIssueNumber : null,
+      targetPrNumber: typeof parsed.targetPrNumber === "number" ? parsed.targetPrNumber : null,
+      waitStep: typeof parsed.waitStep === "string" && parsed.waitStep.length > 0 ? parsed.waitStep : null,
     };
   } catch (error) {
     if (
