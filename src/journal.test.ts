@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import test, { mock } from "node:test";
 import { syncIssueJournal } from "./core/journal";
 import { GitHubIssue, IssueRunRecord } from "./core/types";
 
@@ -472,4 +472,48 @@ test("syncIssueJournal preserves a replaced failure signature when the summary i
   assert.ok(renderedSummary.length <= 4000);
   assert.match(renderedSummary, /Failure signature: PRRT_kwDORgvdZ852E4Jy$/);
   assert.doesNotMatch(renderedSummary, /Failure signature: stale-footer/);
+});
+
+test("syncIssueJournal writes through a temp file before atomically replacing the journal", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-atomic-write-"));
+  const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
+  const writeTargets: string[] = [];
+  const renameTargets: Array<{ from: string; to: string }> = [];
+  const originalWriteFile = fs.writeFile.bind(fs);
+  const originalRename = fs.rename.bind(fs);
+  const writeFileMock = mock.method(
+    fs,
+    "writeFile",
+    async (...args: Parameters<typeof fs.writeFile>) => {
+      writeTargets.push(String(args[0]));
+      return originalWriteFile(...args);
+    },
+  );
+  const renameMock = mock.method(
+    fs,
+    "rename",
+    async (...args: Parameters<typeof fs.rename>) => {
+      renameTargets.push({ from: String(args[0]), to: String(args[1]) });
+      return originalRename(...args);
+    },
+  );
+  t.after(() => {
+    writeFileMock.mock.restore();
+    renameMock.mock.restore();
+  });
+
+  await syncIssueJournal({
+    issue,
+    record: createRecord({ workspace: tempDir, journal_path: journalPath }),
+    journalPath,
+  });
+
+  assert.equal(writeTargets.length, 1);
+  assert.notEqual(writeTargets[0], journalPath);
+  assert.match(path.basename(writeTargets[0] ?? ""), /^issue-journal\.md\.tmp(\.|$)/);
+  assert.deepEqual(renameTargets, [{ from: writeTargets[0] ?? "", to: journalPath }]);
+  assert.deepEqual(
+    (await fs.readdir(path.dirname(journalPath))).sort(),
+    ["issue-journal.md"],
+  );
 });
