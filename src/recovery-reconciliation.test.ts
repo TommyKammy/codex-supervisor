@@ -10,7 +10,7 @@ import {
   pruneOrphanedWorkspacesForOperator,
 } from "./recovery-reconciliation";
 import { type SupervisorStateFile } from "./core/types";
-import { createConfig } from "./turn-execution-test-helpers";
+import { createConfig, createRecord } from "./turn-execution-test-helpers";
 
 function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, {
@@ -167,6 +167,70 @@ test("runtime done-workspace cleanup preserves orphan workspaces until an operat
 
   await assert.rejects(fs.access(orphanWorkspace));
   assert.equal(git(repoPath, ["branch", "--list", orphanBranch]), "");
+});
+
+test("cleanupExpiredDoneWorkspaces returns recovery events for tracked done workspace deletions", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-recovery-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const stateFile = path.join(root, "state.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  git(repoPath, ["init", "-b", "main"]);
+  await fs.writeFile(path.join(repoPath, "README.md"), "# fixture\n", "utf8");
+  git(repoPath, ["add", "README.md"]);
+  git(repoPath, ["commit", "-m", "seed"]);
+
+  const olderIssueNumber = 203;
+  const newerIssueNumber = 204;
+  const olderBranch = "codex/issue-203";
+  const newerBranch = "codex/issue-204";
+  const olderWorkspace = path.join(workspaceRoot, `issue-${olderIssueNumber}`);
+  const newerWorkspace = path.join(workspaceRoot, `issue-${newerIssueNumber}`);
+  git(repoPath, ["worktree", "add", "-b", olderBranch, olderWorkspace, "HEAD"]);
+  git(repoPath, ["worktree", "add", "-b", newerBranch, newerWorkspace, "HEAD"]);
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+    stateFile,
+    cleanupDoneWorkspacesAfterHours: -1,
+    maxDoneWorkspaces: 1,
+    cleanupOrphanedWorkspacesAfterHours: 24,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(olderIssueNumber)]: createRecord({
+        issue_number: olderIssueNumber,
+        state: "done",
+        branch: olderBranch,
+        workspace: olderWorkspace,
+        updated_at: "2026-03-01T00:00:00Z",
+      }),
+      [String(newerIssueNumber)]: createRecord({
+        issue_number: newerIssueNumber,
+        state: "done",
+        branch: newerBranch,
+        workspace: newerWorkspace,
+        updated_at: "2026-03-02T00:00:00Z",
+      }),
+    },
+  };
+
+  const recoveryEvents = await cleanupExpiredDoneWorkspaces(config, state);
+
+  assert.equal(recoveryEvents.length, 1);
+  assert.equal(recoveryEvents[0]?.issueNumber, olderIssueNumber);
+  assert.match(recoveryEvents[0]?.reason ?? "", /done_workspace_cleanup: removed tracked done workspace for issue #203/);
+  await assert.rejects(fs.access(olderWorkspace));
+  await fs.access(newerWorkspace);
+  assert.equal(git(repoPath, ["branch", "--list", olderBranch]), "");
+  assert.match(git(repoPath, ["branch", "--list", newerBranch]), new RegExp(newerBranch));
 });
 
 test("orphan prune inspection fails fast on invalid orphan cleanup grace config", async () => {
