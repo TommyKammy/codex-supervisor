@@ -230,7 +230,7 @@ test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and 
 
   assert.deepEqual(validatePostMergeAuditPatternSummary(summary), summary);
   assert.deepEqual(Object.keys(summary).sort(), [...POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS].sort());
-  assert.equal(summary.schemaVersion, 2);
+  assert.equal(summary.schemaVersion, 3);
   assert.equal(summary.advisoryOnly, true);
   assert.equal(summary.autoApplyGuardrails, false);
   assert.equal(summary.autoCreateFollowUpIssues, false);
@@ -239,7 +239,7 @@ test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and 
   assert.equal(summary.reviewPatterns.length, 1);
   assert.equal(summary.reviewPatterns[0]?.artifactCount, 2);
   assert.equal(summary.reviewPatterns[0]?.evidenceCount, 4);
-  assert.deepEqual(summary.reviewPatterns[0]?.exampleIssueNumbers, [102, 103]);
+  assert.deepEqual(summary.reviewPatterns[0]?.supportingIssueNumbers, [102, 103]);
   assert.equal(summary.failurePatterns.length, 1);
   assert.equal(summary.failurePatterns[0]?.artifactCount, 2);
   assert.equal(summary.failurePatterns[0]?.repeatedCount, 3);
@@ -292,7 +292,7 @@ test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and 
 
 test("validatePostMergeAuditPatternSummary rejects unsupported schema versions and missing required fields", () => {
   const summary = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt: "2026-03-25T00:00:00Z",
     artifactDir: "/tmp/post-merge",
     advisoryOnly: true,
@@ -310,7 +310,7 @@ test("validatePostMergeAuditPatternSummary rejects unsupported schema versions a
 
   assert.throws(
     () => validatePostMergeAuditPatternSummary({ ...summary, schemaVersion: 1 }),
-    /schemaVersion must be 2\./u,
+    /schemaVersion must be 3\./u,
   );
 
   const { promotionCandidates, ...summaryWithoutPromotionCandidates } = summary;
@@ -466,7 +466,7 @@ test("summarizePostMergeAuditPatterns keeps review promotion candidate keys uniq
   ]);
 
   const mediumPattern = summary.reviewPatterns.find((pattern) => pattern.severity === "medium");
-  assert.deepEqual(mediumPattern?.exampleFindingKeys, [
+  assert.deepEqual(mediumPattern?.supportingFindingKeys, [
     "medium-finding-a",
     "medium-finding-b",
     "medium-finding-c",
@@ -507,5 +507,5 @@ test("summarizePostMergeAuditPatterns tolerates root-cause summaries without fin
   assert.equal(summary.artifactsSkipped, 0);
   assert.equal(summary.reviewPatterns.length, 1);
   assert.equal(summary.reviewPatterns[0]?.evidenceCount, 0);
-  assert.deepEqual(summary.reviewPatterns[0]?.exampleFindingKeys, []);
+  assert.deepEqual(summary.reviewPatterns[0]?.supportingFindingKeys, []);
 });

@@ -523,7 +523,7 @@ function createStubService(args?: {
         args.postMergeAuditSummaryCalls = (args.postMergeAuditSummaryCalls ?? 0) + 1;
       }
       return {
-        schemaVersion: 2,
+        schemaVersion: 3,
         advisoryOnly: true,
         autoApplyGuardrails: false,
         autoCreateFollowUpIssues: false,
@@ -658,7 +658,7 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
   assert.equal(postMergeAuditSummaryResponse.statusCode, 200);
   assert.equal(serviceArgs.postMergeAuditSummaryCalls, 1);
   assert.deepEqual(postMergeAuditSummaryResponse.body, {
-    schemaVersion: 2,
+    schemaVersion: 3,
     advisoryOnly: true,
     autoApplyGuardrails: false,
     autoCreateFollowUpIssues: false,
