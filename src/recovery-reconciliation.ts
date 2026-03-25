@@ -286,6 +286,7 @@ export async function inspectOrphanedWorkspacePruneCandidates(
   state: SupervisorStateFile,
   options: InspectOrphanedWorkspacePruneCandidatesOptions = {},
 ): Promise<OrphanedWorkspacePruneCandidate[]> {
+  const gracePeriodHours = orphanedWorkspaceGracePeriodHours(config);
   const referencedWorkspaces = new Set(
     Object.values(state.issues).map((record) => path.resolve(record.workspace)),
   );
@@ -366,8 +367,7 @@ export async function inspectOrphanedWorkspacePruneCandidates(
       continue;
     }
 
-    const gracePeriodHours = orphanedWorkspaceGracePeriodHours(config);
-    if (modifiedAt && gracePeriodHours >= 0) {
+    if (modifiedAt) {
       const ageMs = now.getTime() - Date.parse(modifiedAt);
       if (ageMs >= 0 && ageMs < gracePeriodHours * 60 * 60 * 1000) {
         candidates.push({
