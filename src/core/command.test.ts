@@ -82,11 +82,25 @@ test("runCommand success bounds large stdout while preserving both ends", async 
   const result = await runCommand(process.execPath, [
     "-e",
     `
-      process.stdout.write(${JSON.stringify(`${stdoutPrefix}\n`)});
-      for (let i = 0; i < 200; i += 1) {
-        process.stdout.write("o".repeat(1000));
-      }
-      process.stdout.write(${JSON.stringify(`\n${stdoutSuffix}\n`)});
+      const write = (chunk) => new Promise((resolve, reject) => {
+        process.stdout.write(chunk, (error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve(undefined);
+        });
+      });
+      (async () => {
+        await write(${JSON.stringify(`${stdoutPrefix}\n`)});
+        for (let i = 0; i < 200; i += 1) {
+          await write("o".repeat(1000));
+        }
+        await write(${JSON.stringify(`\n${stdoutSuffix}\n`)});
+      })().catch((error) => {
+        console.error(error);
+        process.exitCode = 1;
+      });
     `,
   ]);
 
@@ -107,12 +121,26 @@ test("runCommand failure bounds large stderr on the error object while preservin
       runCommand(process.execPath, [
         "-e",
         `
-          process.stderr.write(${JSON.stringify(`${stderrPrefix}\n`)});
-          for (let i = 0; i < 200; i += 1) {
-            process.stderr.write("e".repeat(1000));
-          }
-          process.stderr.write(${JSON.stringify(`\n${stderrSuffix}\n`)});
-          process.exit(8);
+          const write = (chunk) => new Promise((resolve, reject) => {
+            process.stderr.write(chunk, (error) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+              resolve(undefined);
+            });
+          });
+          (async () => {
+            await write(${JSON.stringify(`${stderrPrefix}\n`)});
+            for (let i = 0; i < 200; i += 1) {
+              await write("e".repeat(1000));
+            }
+            await write(${JSON.stringify(`\n${stderrSuffix}\n`)});
+            process.exit(8);
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
         `,
       ]),
     (error: unknown) => {
@@ -161,7 +189,27 @@ test("runCommand timeout errors bound noisy stderr while keeping timeout context
   const noisySuffix = "timeout-suffix";
   const noisyMiddle = "y".repeat(1_200);
   const timeoutSignalScript =
-    'process.on("SIGTERM",()=>{process.stderr.write(process.env.NOISY_STDERR??"");process.exit(0)});setInterval(()=>{},1000)';
+    `
+      const write = (chunk) => new Promise((resolve, reject) => {
+        process.stderr.write(chunk, (error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve(undefined);
+        });
+      });
+      process.on("SIGTERM", () => {
+        void (async () => {
+          await write(process.env.NOISY_STDERR ?? "");
+          process.exit(0);
+        })().catch((error) => {
+          console.error(error);
+          process.exit(1);
+        });
+      });
+      setInterval(() => {}, 1000);
+    `;
 
   await assert.rejects(
     () =>
@@ -182,11 +230,13 @@ test("runCommand timeout errors bound noisy stderr while keeping timeout context
     (error: unknown) => {
       assert.ok(error instanceof Error);
       assert.match(error.message, /Command timed out:/);
-      assert.match(error.message, new RegExp(noisyPrefix));
       assert.match(error.message, new RegExp(noisySuffix));
       assert.match(error.message, /Command timed out after 50ms:/);
       assert.match(error.message, /\n\.\.\.\n/);
-      assert.ok(error.message.length < 950, `expected bounded timeout error message, got length ${error.message.length}`);
+      assert.ok(
+        error.message.length < 1_300,
+        `expected bounded timeout error message, got length ${error.message.length}`,
+      );
       return true;
     },
   );

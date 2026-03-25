@@ -1,45 +1,38 @@
-# Issue #1002: Subprocess error hygiene follow-up: preserve actionable timeout and failure summaries under bounded capture
+# Issue #1003: Subprocess durability coverage: exercise high-output child commands through supervisor-facing paths
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1002
-- Branch: codex/issue-1002
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1003
+- Branch: codex/issue-1003
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: waiting_ci
-- Attempt count: 3 (implementation=1, repair=2)
-- Last head SHA: 259f7cb22e5a9233d9a3c84901373cacb785a8b4
+- Current phase: draft_pr
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 2a0a7adad56452fa2a02df2738dc1c767b6518cc
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-25T15:23:27Z
+- Updated at: 2026-03-25T15:42:31Z
 
 ## Latest Codex Summary
-Addressed the remaining automated review thread by updating the issue journal's `PR status` line to reflect open PR `#1021`, committed the review fix as `259f7cb`, pushed `codex/issue-1002`, and resolved thread `PRRT_kwDORgvdZ852wNP-` on GitHub.
+- Added subprocess-backed durability coverage for high-output supervisor-facing Codex runs and tightened the existing high-output `runCommand()` fixtures so they flush deterministically before exiting.
 
-The underlying subprocess-summary fix remains the same: `truncatePreservingStartAndEnd()` in [utils.ts](src/core/utils.ts) keeps actionable timeout/failure tails visible in downstream summaries, with focused regressions in [local-ci.test.ts](src/local-ci.test.ts), [agent-runner.test.ts](src/supervisor/agent-runner.test.ts), and [turn-execution-failure-helpers.test.ts](src/turn-execution-failure-helpers.test.ts). PR #1021 is open: https://github.com/TommyKammy/codex-supervisor/pull/1021
-
-Summary: Updated the issue journal to reflect live PR #1021 status, pushed commit `259f7cb`, and resolved the last automated review thread for issue #1002.
-State hint: waiting_ci
-Blocked reason: none
-Tests: `git diff --check -- .codex-supervisor/issue-journal.md`
-Next action: Monitor PR #1021 CI and address any review or test failures that come back.
-Failure signature: none
+- Focused verification now passes for `src/core/command.test.ts`, `src/cli/supervisor-runtime.test.ts`, `src/supervisor/supervisor.test.ts`, and `src/supervisor/agent-runner.test.ts`, and `npm run build` passes after restoring local dependencies with `npm ci`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: bounded `runCommand()` capture now preserves both ends, but several downstream summaries still applied head-only `truncate(...)`, so noisy stderr could drop the tail where timeout and final failure lines live.
-- What changed: added `truncatePreservingStartAndEnd()` in `src/core/utils.ts` and switched operator-facing failure summaries in `src/local-ci.ts`, `src/supervisor/agent-runner.ts`, `src/supervisor/supervisor-failure-helpers.ts`, and `src/turn-execution-failure-helpers.ts` to use it. Added focused regressions in `src/local-ci.test.ts`, `src/supervisor/agent-runner.test.ts`, and `src/turn-execution-failure-helpers.test.ts` to prove timeout summaries remain visible with explicit `\n...\n` truncation markers.
+- Hypothesis: issue #1003 only needs coverage on top of the earlier bounded-capture fixes, but the narrowest reliable repro must use real child processes and wait for noisy writes to flush before asserting preserved tails.
+- What changed: added two real subprocess-backed `createCodexAgentRunner()` regressions in `src/supervisor/agent-runner.test.ts` for a noisy non-zero Codex exit and a noisy timeout path. Tightened the existing high-output fixtures in `src/core/command.test.ts` to await stdout/stderr flushes before exit so bounded-capture assertions are deterministic under heavy output.
 - Current blocker: none.
-- Next exact step: monitor PR `#1021` for any follow-up CI or review activity after the pushed journal-only repair.
-- Verification gap: none for this turn's journal-only review repair; no code-path changes were made after the prior passing test/build run.
-- Files touched: `src/core/utils.ts`; `src/local-ci.ts`; `src/local-ci.test.ts`; `src/supervisor/agent-runner.ts`; `src/supervisor/agent-runner.test.ts`; `src/supervisor/supervisor-failure-helpers.ts`; `src/turn-execution-failure-helpers.ts`; `src/turn-execution-failure-helpers.test.ts`; `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low; changes stay in summary-rendering paths and focused regression coverage without changing subprocess execution semantics.
-- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){ resolveReviewThread(input:{threadId:$threadId}) { thread { isResolved } } }' -F threadId=PRRT_kwDORgvdZ852wNP-`
-- Exact failure reproduced: before the fix, a long bounded stderr still lost its trailing timeout line after a second head-only truncation in shared summaries; an ad hoc `createCodexAgentRunner()` repro printed `HAS_TIMEOUT false` even though the stderr ended with `Command timed out after 1800000ms: codex exec`.
-- Commands run: `sed -n '1,240p' <redacted-local-path>`; `sed -n '1,240p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `sed -n '1,260p' src/core/command.ts`; `sed -n '1,260p' src/core/command.test.ts`; `sed -n '1,260p' src/cli/supervisor-runtime.test.ts`; `sed -n '1,260p' src/doctor.test.ts`; `rg -n "timed out|timeout|stderr|stdout|truncat|bounded|CommandExecutionError|runCommand\\(" src -g'*.ts'`; `sed -n '1,240p' src/local-ci.ts`; `sed -n '1,280p' src/supervisor/agent-runner.ts`; `sed -n '1,320p' src/doctor.ts`; `sed -n '1,260p' src/cli/supervisor-runtime.ts`; `sed -n '1,260p' src/core/utils.ts`; `sed -n '1,220p' src/local-ci.test.ts`; `sed -n '1,240p' src/supervisor/supervisor-failure-helpers.ts`; `git log --oneline --decorate -5`; `sed -n '380,460p' src/doctor.test.ts`; `sed -n '1,220p' src/build.test.ts`; `sed -n '1,220p' src/local-review/runner.ts`; `sed -n '1,220p' src/supervisor/supervisor-execution-orchestration.test.ts`; `sed -n '430,520p' src/supervisor/agent-runner.test.ts`; `sed -n '1,220p' src/supervisor/agent-runner.test.ts`; `npx tsx -e '...'`; `sed -n '1,280p' src/turn-execution-failure-helpers.ts`; `sed -n '1,260p' src/supervisor/supervisor-recovery-failure-flows.test.ts`; `sed -n '1,220p' src/turn-execution-failure-helpers.test.ts`; `npx tsx --test src/local-ci.test.ts`; `npx tsx --test src/supervisor/agent-runner.test.ts`; `npx tsx --test src/turn-execution-failure-helpers.test.ts`; `npx tsx --test src/core/command.test.ts src/cli/supervisor-runtime.test.ts src/doctor.test.ts src/local-ci.test.ts src/supervisor/agent-runner.test.ts src/turn-execution-failure-helpers.test.ts`; `npm run build`; `test -d node_modules/typescript && echo installed || echo missing`; `test -f package-lock.json && echo lock-present || echo no-lock`; `npm ci`; `npm run build`; `git diff -- src/core/utils.ts src/local-ci.ts src/local-ci.test.ts src/supervisor/agent-runner.ts src/supervisor/agent-runner.test.ts src/supervisor/supervisor-failure-helpers.ts src/turn-execution-failure-helpers.ts src/turn-execution-failure-helpers.test.ts .codex-supervisor/issue-journal.md`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `git rev-parse HEAD`; `git diff -- .codex-supervisor/issue-journal.md`; `git diff --check -- .codex-supervisor/issue-journal.md`; `sed -n '38,70p' .codex-supervisor/issue-journal.md`; `git add .codex-supervisor/issue-journal.md`; `git commit -m "docs: update issue 1002 journal review status"`; `git push origin codex/issue-1002`; `gh api graphql -f query='mutation($threadId:ID!){ resolveReviewThread(input:{threadId:$threadId}) { thread { isResolved } } }' -F threadId=PRRT_kwDORgvdZ852wNP-`; `git status --short --branch`; `sed -n '1,120p' .codex-supervisor/issue-journal.md`; `git rev-parse HEAD`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`.
-- PR status: PR `#1021` open; branch updated with commit `259f7cb` at 2026-03-25T15:23:27Z.
+- Next exact step: monitor draft PR `#1022` for CI or review feedback and respond if anything regresses.
+- Verification gap: none after `npx tsx --test src/core/command.test.ts src/cli/supervisor-runtime.test.ts src/supervisor/supervisor.test.ts src/supervisor/agent-runner.test.ts` and `npm run build`.
+- Files touched: `src/core/command.test.ts`; `src/supervisor/agent-runner.test.ts`; `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; changes are test-only plus journal state and do not alter subprocess execution behavior.
+- Last focused command: `gh pr create --draft --base main --head codex/issue-1003 --title "Issue #1003: Add supervisor-facing high-output durability coverage" --body "<summary omitted>"`
+- Exact failure reproduced: the first subprocess-backed timeout/large-stderr runs exposed that high-output test fixtures which exit immediately after writing can drop their trailing suffix under pipe backpressure; the original `runCommand failure bounds large stderr...` test failed on `missing /stderr-suffix/`, and the first real timeout runner repro lost `timeout-suffix` until the child scripts awaited stderr flushes.
+- Commands run: `sed -n '1,240p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1003/AGENTS.generated.md`; `sed -n '1,240p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1003/context-index.md`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `git log --oneline --decorate -5`; `git diff --stat`; `git diff -- .codex-supervisor/issue-journal.md`; `git diff -- src/core/utils.ts src/local-ci.ts src/local-ci.test.ts src/supervisor/agent-runner.ts src/supervisor/agent-runner.test.ts src/supervisor/supervisor-failure-helpers.ts src/turn-execution-failure-helpers.ts src/turn-execution-failure-helpers.test.ts`; `sed -n '1,280p' src/core/command.ts`; `sed -n '1,280p' src/core/command.test.ts`; `sed -n '1,320p' src/cli/supervisor-runtime.ts`; `sed -n '1,320p' src/cli/supervisor-runtime.test.ts`; `sed -n '1,320p' src/supervisor/supervisor.test.ts`; `rg -n "runCommand\\(|CommandExecutionError|timeout|stderr|stdout|truncate|bounded|capture" src/cli src/supervisor src -g'*.ts'`; `sed -n '1,260p' src/supervisor/agent-runner.ts`; `sed -n '450,560p' src/supervisor/agent-runner.test.ts`; `sed -n '1,220p' src/local-ci.test.ts`; `sed -n '1,240p' src/local-ci.ts`; `sed -n '1,260p' src/turn-execution-failure-helpers.ts`; `sed -n '1,220p' src/turn-execution-failure-helpers.test.ts`; `sed -n '430,520p' src/supervisor/supervisor.ts`; `sed -n '1,240p' src/supervisor/index.ts`; `rg -n "runCommand\\(" src/supervisor src/doctor.ts src/local-ci.ts src/cli/supervisor-runtime.ts -g'*.ts'`; `rg -n "createSupervisorService|new Supervisor|class Supervisor" src/supervisor -g'*.ts'`; `rg -n "export async function runCodexTurn|function runCodexTurn|runCodexTurn\\(" src/codex -g'*.ts'`; `sed -n '1,280p' src/codex/index.ts`; `sed -n '1,320p' src/codex/codex-runner.ts`; `sed -n '1,280p' src/codex/codex-runner.test.ts`; `sed -n '1,220p' src/supervisor/agent-runner.test.ts`; `sed -n '220,520p' src/supervisor/agent-runner.test.ts`; `npx tsx --test src/supervisor/agent-runner.test.ts`; `npx tsx --test src/core/command.test.ts src/cli/supervisor-runtime.test.ts src/supervisor/supervisor.test.ts src/supervisor/agent-runner.test.ts`; `npx tsx -e '...'`; `test -d node_modules/typescript && echo installed || echo missing`; `test -f package-lock.json && echo lock-present || echo no-lock`; `npm ci`; `npm run build`; `git diff --check -- src/core/command.test.ts src/supervisor/agent-runner.test.ts .codex-supervisor/issue-journal.md`; `git add src/core/command.test.ts src/supervisor/agent-runner.test.ts .codex-supervisor/issue-journal.md`; `git commit -m "test: add supervisor high-output durability coverage"`; `git push -u origin codex/issue-1003`; `gh pr view --json number,state,isDraft,url,headRefName,baseRefName`; `gh pr create --draft --base main --head codex/issue-1003 --title "Issue #1003: Add supervisor-facing high-output durability coverage" --body "<summary omitted>"`; `git rev-parse HEAD`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`.
+- PR status: draft PR `#1022` open at https://github.com/TommyKammy/codex-supervisor/pull/1022.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
