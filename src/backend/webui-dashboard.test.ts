@@ -500,6 +500,16 @@ test("dashboard page frames a summary-first shell and a collapsible details area
   );
 });
 
+test("dashboard page renders sidebar links from the panel registry", () => {
+  const html = renderSupervisorDashboardHtml();
+
+  for (const panel of DASHBOARD_PANEL_REGISTRY) {
+    assert.match(html, new RegExp(`id="nav-panel-${panel.id}"`, "u"));
+    const expectedLabel = panel.title.replace(/\b([a-z])/gu, (match) => match.toUpperCase());
+    assert.match(html, new RegExp(`>${expectedLabel}<`, "u"));
+  }
+});
+
 test("dashboard panel registry exposes a shared shell structure for every panel", () => {
   for (const panel of DASHBOARD_PANEL_REGISTRY) {
     assert.match(panel.markup, /<article id="panel-[^"]+" class="panel" data-panel-id="[^"]+" data-panel-section="[^"]+">[\s\S]*<div class="panel-shell">/u);
@@ -848,10 +858,14 @@ test("dashboard keeps requeue disabled after an issue load fails", async () => {
   const issueForm = harness.document.getElementById("issue-form");
   const issueSummary = harness.document.getElementById("issue-summary");
   const requeueButton = harness.document.getElementById("requeue-button");
+  const selectedIssueHeading = harness.document.getElementById("selected-issue-heading");
+  const selectedIssueDetail = harness.document.getElementById("selected-issue-detail");
   assert.ok(issueNumberInput);
   assert.ok(issueForm);
   assert.ok(issueSummary);
   assert.ok(requeueButton);
+  assert.ok(selectedIssueHeading);
+  assert.ok(selectedIssueDetail);
 
   issueNumberInput.value = "42";
   await issueForm.dispatch("submit", {
@@ -861,7 +875,53 @@ test("dashboard keeps requeue disabled after an issue load fails", async () => {
 
   assert.equal(requeueButton.disabled, true);
   assert.match(issueSummary.textContent, /Explain failed/u);
+  assert.match(selectedIssueHeading.textContent, /#42 could not load/u);
+  assert.match(selectedIssueDetail.textContent, /Explain failed/u);
   assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard opens the details disclosure when a sidebar detail link is selected", async () => {
+  const harness = createDashboardHarness([
+    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+  ]);
+  await harness.flush();
+
+  const detailsDisclosure = harness.document.getElementById("details-disclosure") as FakeElement & { open?: boolean };
+  const navPanelOperatorActions = harness.document.getElementById("nav-panel-operator-actions");
+  assert.ok(detailsDisclosure);
+  assert.ok(navPanelOperatorActions);
+  assert.equal(detailsDisclosure.open, undefined);
+
+  await navPanelOperatorActions.dispatch("click");
+
+  assert.equal(detailsDisclosure.open, true);
+});
+
+test("dashboard next state prefers stale-data recovery over stale selected issue guidance", async () => {
+  const harness = createDashboardHarness([
+    {
+      path: "/api/status?why=true",
+      response: jsonResponse(
+        createStatus({
+          selectedIssueNumber: 42,
+          runnableIssues: [{ issueNumber: 42, title: "Ready issue", readiness: "execution_ready" }],
+        }),
+      ),
+    },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+  ]);
+  await harness.flush();
+
+  const primaryActionTitle = harness.document.getElementById("primary-action-title");
+  const eventSource = MockEventSource.instances[0];
+  assert.ok(primaryActionTitle);
+  assert.ok(eventSource);
+  assert.match(primaryActionTitle.textContent, /Execute the selected issue/u);
+
+  await eventSource.dispatch("error");
+
+  assert.match(primaryActionTitle.textContent, /Recover dashboard freshness/u);
 });
 
 test("dashboard renders typed issue activity context without scraping legacy summary lines", async () => {

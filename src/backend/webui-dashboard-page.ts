@@ -1,10 +1,36 @@
 import { renderDashboardBrowserScript } from "./webui-dashboard-browser-script";
-import { listDashboardPanels } from "./webui-dashboard-panel-layout";
+import { type DashboardPanelDefinition, type DashboardPanelId, listDashboardPanels } from "./webui-dashboard-panel-layout";
 
 function renderDashboardPanelSection(section: "overview" | "details"): string {
   return listDashboardPanels(section)
     .map((panel) => panel.markup)
     .join("\n");
+}
+
+function toTitleCase(value: string): string {
+  return value.replace(/\b([a-z])/gu, (match) => match.toUpperCase());
+}
+
+const panelNavIcons: Record<DashboardPanelId, string> = {
+  status:
+    '<svg viewBox="0 0 16 16" focusable="false"><path d="M3 12h2V6H3zm4 0h2V3H7zm4 0h2V8h-2z"/></svg>',
+  doctor:
+    '<svg viewBox="0 0 16 16" focusable="false"><path d="M7 2h2v3h3v2H9v3H7V7H4V5h3z"/></svg>',
+  "issue-details":
+    '<svg viewBox="0 0 16 16" focusable="false"><path d="M3 2.5h10v11H3zm2 2v1h6v-1zm0 3v1h6v-1zm0 3v1h4v-1z"/></svg>',
+  "tracked-history":
+    '<svg viewBox="0 0 16 16" focusable="false"><path d="M8 2.5a5.5 5.5 0 105.5 5.5h-2A3.5 3.5 0 118 4.5V2.5zm-.5 2h1v4l2.5 1.5-.5.9L7.5 9z"/></svg>',
+  "operator-actions":
+    '<svg viewBox="0 0 16 16" focusable="false"><path d="M6.5 2l1 2.2L10 5l-1.8 1.7.4 2.5L6.5 8.1 4.4 9.2l.4-2.5L3 5l2.5-.8zM11 9h2v5h-2zM3 10h2v4H3z"/></svg>',
+  "live-events":
+    '<svg viewBox="0 0 16 16" focusable="false"><path d="M2.5 8a5.5 5.5 0 1111 0h-2a3.5 3.5 0 10-7 0z"/><circle cx="8" cy="8" r="1.5"/></svg>',
+  "operator-timeline":
+    '<svg viewBox="0 0 16 16" focusable="false"><path d="M4 3.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zm0 6a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM7 5h6v1H7zm0 6h6v1H7z"/></svg>',
+};
+
+function renderPanelNavLink(panel: DashboardPanelDefinition): string {
+  const icon = panelNavIcons[panel.id];
+  return `<a id="nav-panel-${panel.id}" class="side-nav-link" href="#panel-${panel.id}" data-open-details="true"><span class="side-nav-icon" aria-hidden="true">${icon}</span><span>${toTitleCase(panel.title)}</span></a>`;
 }
 
 function renderDetailsMenu(): string {
@@ -17,13 +43,12 @@ function renderDetailsMenu(): string {
           <div class="side-nav-section">
             <p class="eyebrow">Details</p>
             <a id="nav-overview-heading" class="side-nav-link" href="#overview-heading" data-open-details="true"><span class="side-nav-icon" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M8 2.5l5 2v4c0 2.9-2.1 4.7-5 5.5-2.9-.8-5-2.6-5-5.5v-4zm0 2.1L5 5.7v2.8c0 1.8 1.2 3.1 3 3.8 1.8-.7 3-2 3-3.8V5.7zM7.2 7h1.6v2.2H7.2zm0 2.8h1.6v1.2H7.2z"/></svg></span><span>Queue Diagnostics</span></a>
-            <a id="nav-panel-status" class="side-nav-link" href="#panel-status" data-open-details="true"><span class="side-nav-icon" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M3 12h2V6H3zm4 0h2V3H7zm4 0h2V8h-2z"/></svg></span><span>Queue Details</span></a>
-            <a id="nav-panel-doctor" class="side-nav-link" href="#panel-doctor" data-open-details="true"><span class="side-nav-icon" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M7 2h2v3h3v2H9v3H7V7H4V5h3z"/></svg></span><span>Environment Checks</span></a>
-            <a id="nav-panel-issue-details" class="side-nav-link" href="#panel-issue-details" data-open-details="true"><span class="side-nav-icon" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M3 2.5h10v11H3zm2 2v1h6v-1zm0 3v1h6v-1zm0 3v1h4v-1z"/></svg></span><span>Issue Details</span></a>
-            <a id="nav-panel-tracked-history" class="side-nav-link" href="#panel-tracked-history" data-open-details="true"><span class="side-nav-icon" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M8 2.5a5.5 5.5 0 105.5 5.5h-2A3.5 3.5 0 118 4.5V2.5zm-.5 2h1v4l2.5 1.5-.5.9L7.5 9z"/></svg></span><span>Queue</span></a>
-            <a id="nav-panel-operator-actions" class="side-nav-link" href="#panel-operator-actions" data-open-details="true"><span class="side-nav-icon" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M6.5 2l1 2.2L10 5l-1.8 1.7.4 2.5L6.5 8.1 4.4 9.2l.4-2.5L3 5l2.5-.8zM11 9h2v5h-2zM3 10h2v4H3z"/></svg></span><span>Secondary Actions</span></a>
-            <a id="nav-panel-live-events" class="side-nav-link" href="#panel-live-events" data-open-details="true"><span class="side-nav-icon" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M2.5 8a5.5 5.5 0 1111 0h-2a3.5 3.5 0 10-7 0z"/><circle cx="8" cy="8" r="1.5"/></svg></span><span>Live Events</span></a>
-            <a id="nav-panel-operator-timeline" class="side-nav-link" href="#panel-operator-timeline" data-open-details="true"><span class="side-nav-icon" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 3.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zm0 6a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM7 5h6v1H7zm0 6h6v1H7z"/></svg></span><span>Operator Timeline</span></a>
+${listDashboardPanels("overview")
+  .map((panel) => "            " + renderPanelNavLink(panel))
+  .join("\n")}
+${listDashboardPanels("details")
+  .map((panel) => "            " + renderPanelNavLink(panel))
+  .join("\n")}
           </div>
         </nav>`;
 }

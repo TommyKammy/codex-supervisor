@@ -67,6 +67,7 @@ export function renderDashboardBrowserScript(): string {
         doctor: null,
         explain: null,
         issueLint: null,
+        issueLoadError: null,
         commandInFlight: false,
         commandResult: null,
         events: [],
@@ -425,6 +426,9 @@ export function renderDashboardBrowserScript(): string {
         setPillState(elements.refreshState, state.refreshPhase, refreshTone, "summary-pill");
         setText(elements.lastRefreshBadge, formatRefreshTime(state.lastRefreshAt));
         setPillState(elements.lastRefreshPill, "Last updated: " + formatRefreshTime(state.lastRefreshAt), "", "topbar-pill");
+        renderOverviewSummary();
+        renderPrimaryActionSummary();
+        renderAttentionSummary();
       }
 
       function describeLoopRuntime(loopRuntime) {
@@ -486,7 +490,13 @@ export function renderDashboardBrowserScript(): string {
       }
 
       function renderPrimaryActionSummary() {
-        const action = buildPrimaryActionSummary(state.status);
+        const action = buildPrimaryActionSummary({
+          status: state.status,
+          doctor: state.doctor,
+          connectionPhase: state.connectionPhase,
+          refreshPhase: state.refreshPhase,
+          hasSuccessfulRefresh: state.hasSuccessfulRefresh,
+        });
         setText(elements.primaryActionTitle, action.title);
         setText(elements.primaryActionDetail, action.detail);
       }
@@ -524,6 +534,25 @@ export function renderDashboardBrowserScript(): string {
         }
         if (elements.selectedIssueSummaryNotes) {
           elements.selectedIssueSummaryNotes.innerHTML = "";
+        }
+
+        if (state.issueLoadError) {
+          const failedIssueLabel =
+            typeof state.loadedIssueNumber === "number" ? formatIssueRef(state.loadedIssueNumber) : "Requested issue";
+          setText(elements.selectedIssueHeading, failedIssueLabel + " could not load");
+          setText(elements.selectedIssueDetail, state.issueLoadError);
+          appendMetricTile(
+            elements.selectedIssueSummaryMetrics,
+            "Load state",
+            "failed",
+            "fail",
+            "The issue summary could not be loaded from the backend.",
+          );
+          appendDetailSection(elements.selectedIssueSummaryNotes, "What to do next", [
+            ["retry", "Load the issue again after the backend error is resolved."],
+            ["requeue", "Requeue stays disabled until the issue details load successfully."],
+          ]);
+          return;
         }
 
         if (explain) {
@@ -1319,6 +1348,7 @@ export function renderDashboardBrowserScript(): string {
         state.loadedIssueNumber = requestedIssueNumber;
         state.explain = null;
         state.issueLint = null;
+        state.issueLoadError = null;
         renderSelectedIssue();
         setText(elements.issueSummary, "Loading issue...");
         setText(elements.issueExplain, "Loading /api/issues/" + requestedIssueNumber + "/explain...");
@@ -1335,12 +1365,16 @@ export function renderDashboardBrowserScript(): string {
           }
           state.explain = explain;
           state.issueLint = issueLint;
+          state.issueLoadError = null;
           renderSelectedIssue();
           renderIssue();
         } catch (error) {
           if (state.loadedIssueNumber !== requestedIssueNumber) {
             return;
           }
+          state.issueLoadError = error instanceof Error ? error.message : String(error);
+          renderSelectedIssue();
+          renderSelectedIssueSummary();
           throw error;
         }
       }

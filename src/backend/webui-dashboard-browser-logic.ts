@@ -55,6 +55,7 @@ export interface DashboardStatusLike {
   candidateDiscovery?: DashboardCandidateDiscoveryLike | null;
   candidateDiscoverySummary?: string | null;
   reconciliationWarning?: string | null;
+  reconciliationPhase?: string | null;
   loopRuntime?: DashboardLoopRuntimeLike | null;
   warning?: { message?: string | null } | null;
 }
@@ -552,10 +553,38 @@ export function buildNextIssueSummary(status: DashboardStatusLike | null | undef
   };
 }
 
-export function buildPrimaryActionSummary(status: DashboardStatusLike | null | undefined): DashboardNextStateSummary {
-  const selectedIssueNumber = parseSelectedIssueNumber(status);
-  const blockedCount = Array.isArray(status?.blockedIssues) ? status.blockedIssues.length : 0;
-  const runnableCount = Array.isArray(status?.runnableIssues) ? status.runnableIssues.length : 0;
+export function buildPrimaryActionSummary(args: {
+  status: DashboardStatusLike | null | undefined;
+  doctor: DashboardDoctorLike | null | undefined;
+  connectionPhase: DashboardConnectionPhase;
+  refreshPhase: DashboardRefreshPhase;
+  hasSuccessfulRefresh: boolean;
+}): DashboardNextStateSummary {
+  const selectedIssueNumber = parseSelectedIssueNumber(args.status);
+  const blockedCount = Array.isArray(args.status?.blockedIssues) ? args.status.blockedIssues.length : 0;
+  const runnableCount = Array.isArray(args.status?.runnableIssues) ? args.status.runnableIssues.length : 0;
+  const doctorStatus = typeof args.doctor?.overallStatus === "string" ? args.doctor.overallStatus.toLowerCase() : "";
+
+  if (!args.hasSuccessfulRefresh) {
+    return {
+      title: "Wait for the first refresh",
+      detail: "Let the dashboard finish loading before relying on the next supervisor state.",
+    };
+  }
+
+  if (args.refreshPhase === "failed" || args.connectionPhase === "reconnecting") {
+    return {
+      title: "Recover dashboard freshness",
+      detail: "Wait for a healthy refresh before relying on the next supervisor state shown here.",
+    };
+  }
+
+  if (doctorStatus === "fail") {
+    return {
+      title: "Resolve environment checks",
+      detail: "A required dependency is failing, so the supervisor should not advance until checks recover.",
+    };
+  }
 
   if (selectedIssueNumber !== null) {
     return {

@@ -12,6 +12,8 @@ export type DashboardPanelSection = "overview" | "details";
 export interface DashboardPanelDefinition {
   id: DashboardPanelId;
   section: DashboardPanelSection;
+  title: string;
+  subtitle: string;
   markup: string;
 }
 
@@ -53,6 +55,8 @@ function renderDashboardPanelShell(options: DashboardPanelShellOptions): Dashboa
   return {
     id: options.id,
     section: options.section,
+    title: options.title,
+    subtitle: options.subtitle,
     markup: `
         <article id="panel-${options.id}" class="panel" data-panel-id="${options.id}" data-panel-section="${options.section}">
           <div class="panel-shell">

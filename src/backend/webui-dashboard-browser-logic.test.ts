@@ -319,10 +319,53 @@ test("buildOverviewSummary and related beginner-first helpers produce concise En
     },
   );
 
-  assert.deepEqual(buildPrimaryActionSummary({ blockedIssues: [{ issueNumber: 91, blockedBy: "verification" }] }), {
-    title: "Recover blocked work",
-    detail: "The queue has blockers and no runnable issue, so the next supervisor state is recovery-oriented.",
-  });
+  assert.deepEqual(
+    buildPrimaryActionSummary({
+      status: { blockedIssues: [{ issueNumber: 91, blockedBy: "verification" }] },
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    {
+      title: "Recover blocked work",
+      detail: "The queue has blockers and no runnable issue, so the next supervisor state is recovery-oriented.",
+    },
+  );
+
+  assert.deepEqual(
+    buildPrimaryActionSummary({
+      status: {
+        selectionSummary: { selectedIssueNumber: 77 },
+        runnableIssues: [{ issueNumber: 77, title: "Ready issue", readiness: "execution_ready" }],
+      },
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "reconnecting",
+      refreshPhase: "failed",
+      hasSuccessfulRefresh: true,
+    }),
+    {
+      title: "Recover dashboard freshness",
+      detail: "Wait for a healthy refresh before relying on the next supervisor state shown here.",
+    },
+  );
+
+  assert.deepEqual(
+    buildPrimaryActionSummary({
+      status: {
+        selectionSummary: { selectedIssueNumber: 77 },
+        runnableIssues: [{ issueNumber: 77, title: "Ready issue", readiness: "execution_ready" }],
+      },
+      doctor: { overallStatus: "fail", checks: [{ name: "github_auth", status: "fail", summary: "No auth." }] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    {
+      title: "Resolve environment checks",
+      detail: "A required dependency is failing, so the supervisor should not advance until checks recover.",
+    },
+  );
 
   assert.deepEqual(
     buildAttentionItems({
