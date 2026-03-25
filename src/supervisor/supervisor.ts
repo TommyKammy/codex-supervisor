@@ -62,6 +62,7 @@ import {
 } from "../post-turn-pull-request";
 import { buildChecksFailureContext, buildConflictFailureContext } from "../pull-request-failure-context";
 import {
+  reserveRunnableIssueSelection,
   resolveRunnableIssueContext as resolveIssueSelectionContext,
   RestartRunOnce as SelectionRestartRunOnce,
 } from "../run-once-issue-selection";
@@ -1346,6 +1347,17 @@ export class Supervisor {
         classifyStaleStabilizingNoPrBranchState: (record) =>
           this.classifyStaleStabilizingNoPrBranchState(record),
       }),
+      reserveRunnableIssueSelection: async (state) => {
+        const reserved = await reserveRunnableIssueSelection({
+          github: this.github,
+          config: this.config,
+          stateStore: this.stateStore,
+          state,
+          currentRecord: null,
+          emitEvent: this.onEvent,
+        });
+        return reserved !== null;
+      },
       handleAuthFailure: (state) => handleAuthFailure(this.github, this.stateStore, state),
       listAllIssues: () => this.github.listAllIssues(),
       reconcileTrackedMergedButOpenIssues: (state, issues, updateReconciliationProgress, options) =>

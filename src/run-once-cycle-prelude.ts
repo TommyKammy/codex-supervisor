@@ -32,6 +32,7 @@ interface RunOnceCyclePreludeArgs {
   setReconciliationPhase?: (phase: string | null) => Promise<void>;
   setReconciliationProgress?: (progress: ReconciliationProgressUpdate | null) => Promise<void>;
   reconcileStaleActiveIssueReservation: (state: SupervisorStateFile) => Promise<RecoveryEvent[]>;
+  reserveRunnableIssueSelection?: (state: SupervisorStateFile) => Promise<boolean>;
   handleAuthFailure: (state: SupervisorStateFile) => Promise<string | null>;
   listAllIssues: () => Promise<GitHubIssue[]>;
   reconcileTrackedMergedButOpenIssues: (
@@ -111,6 +112,13 @@ export async function runOnceCyclePrelude(
     const staleReservationEvents = await args.reconcileStaleActiveIssueReservation(state);
     recoveryEvents.push(...staleReservationEvents);
     emitRecoveryEvents(staleReservationEvents);
+
+    if (state.activeIssueNumber === null && await args.reserveRunnableIssueSelection?.(state) === true) {
+      return {
+        state,
+        recoveryEvents,
+      };
+    }
 
     const issues = await args.listAllIssues();
 
