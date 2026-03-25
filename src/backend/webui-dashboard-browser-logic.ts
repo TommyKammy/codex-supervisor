@@ -55,7 +55,20 @@ export interface DashboardStatusLike {
   candidateDiscovery?: DashboardCandidateDiscoveryLike | null;
   candidateDiscoverySummary?: string | null;
   reconciliationWarning?: string | null;
+  reconciliationPhase?: string | null;
   loopRuntime?: DashboardLoopRuntimeLike | null;
+  warning?: { message?: string | null } | null;
+}
+
+export interface DashboardDoctorCheckLike {
+  name?: string | null;
+  status?: string | null;
+  summary?: string | null;
+}
+
+export interface DashboardDoctorLike {
+  overallStatus?: string | null;
+  checks?: DashboardDoctorCheckLike[] | null;
 }
 
 export interface DashboardIssueShortcut {
@@ -147,6 +160,24 @@ export interface DashboardTrackedIssueFormatOptions {
 export type DashboardConnectionPhase = "connecting" | "open" | "reconnecting";
 
 export type DashboardRefreshPhase = "idle" | "refreshing" | "failed";
+
+export interface DashboardOverviewSummary {
+  headline: string;
+  detail: string;
+  tone: "ok" | "warn" | "fail" | "info";
+}
+
+export interface DashboardNextIssueSummary {
+  issueNumber: number | null;
+  title: string;
+  detail: string;
+  stateLabel: string;
+}
+
+export interface DashboardNextStateSummary {
+  title: string;
+  detail: string;
+}
 
 interface DashboardTimelineEventLike {
   type?: string | null;
@@ -411,6 +442,226 @@ export function describeCommandSelectionChange(
     return "selected issue unchanged (" + nextRef + ")";
   }
   return "selected issue " + previousRef + " -> " + nextRef;
+}
+
+export function buildOverviewSummary(args: {
+  status: DashboardStatusLike | null | undefined;
+  doctor: DashboardDoctorLike | null | undefined;
+  connectionPhase: DashboardConnectionPhase;
+  refreshPhase: DashboardRefreshPhase;
+  hasSuccessfulRefresh: boolean;
+}): DashboardOverviewSummary {
+  const selectedIssueNumber = parseSelectedIssueNumber(args.status);
+  const runnableIssues = Array.isArray(args.status?.runnableIssues) ? args.status.runnableIssues : [];
+  const blockedIssues = Array.isArray(args.status?.blockedIssues) ? args.status.blockedIssues : [];
+  const doctorStatus = typeof args.doctor?.overallStatus === "string" ? args.doctor.overallStatus.toLowerCase() : "";
+
+  if (!args.hasSuccessfulRefresh) {
+    return {
+      headline: "Loading supervisor status",
+      detail: "The dashboard is collecting the current state. This may take a few seconds.",
+      tone: "info",
+    };
+  }
+
+  if (args.refreshPhase === "failed" || args.connectionPhase === "reconnecting") {
+    return {
+      headline: "Status needs attention",
+      detail: "The dashboard is showing stale data while it retries the latest refresh.",
+      tone: "warn",
+    };
+  }
+
+  if (doctorStatus === "fail") {
+    return {
+      headline: "Environment checks need attention",
+      detail: "A required dependency is failing, so supervisor actions may not be safe yet.",
+      tone: "fail",
+    };
+  }
+
+  if (selectedIssueNumber !== null) {
+    return {
+      headline: "A focused issue is ready to inspect",
+      detail: "Issue " + formatIssueRef(selectedIssueNumber) + " is the current dashboard focus.",
+      tone: "ok",
+    };
+  }
+
+  if (runnableIssues.length > 0) {
+    return {
+      headline: "Runnable work is available",
+      detail: "The supervisor has ready work and can advance on the next safe cycle.",
+      tone: "ok",
+    };
+  }
+
+  if (blockedIssues.length > 0) {
+    return {
+      headline: "Work is currently blocked",
+      detail: "No runnable issue is available right now, so the queue needs unblock or recovery work.",
+      tone: "warn",
+    };
+  }
+
+  return {
+    headline: "Supervisor is idle",
+    detail: "No selected issue or runnable work is currently surfaced in the dashboard.",
+    tone: "info",
+  };
+}
+
+export function buildNextIssueSummary(status: DashboardStatusLike | null | undefined): DashboardNextIssueSummary {
+  const selectedIssueNumber = parseSelectedIssueNumber(status);
+  const runnableIssues = Array.isArray(status?.runnableIssues) ? status.runnableIssues : [];
+  const blockedIssues = Array.isArray(status?.blockedIssues) ? status.blockedIssues : [];
+  const selectedRunnableIssue =
+    selectedIssueNumber === null ? null : runnableIssues.find((issue) => issue.issueNumber === selectedIssueNumber);
+
+  if (selectedIssueNumber !== null) {
+    return {
+      issueNumber: selectedIssueNumber,
+      title: selectedRunnableIssue?.title || "Selected issue",
+      detail: "This is the issue currently surfaced by the supervisor selection logic.",
+      stateLabel: "Selected issue",
+    };
+  }
+
+  if (runnableIssues.length > 0) {
+    return {
+      issueNumber: runnableIssues[0].issueNumber,
+      title: runnableIssues[0].title || "Runnable issue",
+      detail: "This is the next runnable issue available to the supervisor.",
+      stateLabel: "Next runnable issue",
+    };
+  }
+
+  if (blockedIssues.length > 0) {
+    return {
+      issueNumber: blockedIssues[0].issueNumber,
+      title: blockedIssues[0].title || "Blocked issue",
+      detail: "No runnable issue is available, so the queue is waiting on a blocker.",
+      stateLabel: "Blocked issue",
+    };
+  }
+
+  return {
+    issueNumber: null,
+    title: "No issue is selected yet",
+    detail: "When the supervisor surfaces a selected or runnable issue, it will appear here first.",
+    stateLabel: "Next issue",
+  };
+}
+
+export function buildPrimaryActionSummary(args: {
+  status: DashboardStatusLike | null | undefined;
+  doctor: DashboardDoctorLike | null | undefined;
+  connectionPhase: DashboardConnectionPhase;
+  refreshPhase: DashboardRefreshPhase;
+  hasSuccessfulRefresh: boolean;
+}): DashboardNextStateSummary {
+  const selectedIssueNumber = parseSelectedIssueNumber(args.status);
+  const blockedCount = Array.isArray(args.status?.blockedIssues) ? args.status.blockedIssues.length : 0;
+  const runnableCount = Array.isArray(args.status?.runnableIssues) ? args.status.runnableIssues.length : 0;
+  const doctorStatus = typeof args.doctor?.overallStatus === "string" ? args.doctor.overallStatus.toLowerCase() : "";
+
+  if (!args.hasSuccessfulRefresh) {
+    return {
+      title: "Wait for the first refresh",
+      detail: "Let the dashboard finish loading before relying on the next supervisor state.",
+    };
+  }
+
+  if (args.refreshPhase === "failed" || args.connectionPhase === "reconnecting") {
+    return {
+      title: "Recover dashboard freshness",
+      detail: "Wait for a healthy refresh before relying on the next supervisor state shown here.",
+    };
+  }
+
+  if (doctorStatus === "fail") {
+    return {
+      title: "Resolve environment checks",
+      detail: "A required dependency is failing, so the supervisor should not advance until checks recover.",
+    };
+  }
+
+  if (selectedIssueNumber !== null) {
+    return {
+      title: "Execute the selected issue",
+      detail: "The next supervisor state will keep working on " + formatIssueRef(selectedIssueNumber) + ".",
+    };
+  }
+
+  if (blockedCount > 0 && runnableCount === 0) {
+    return {
+      title: "Recover blocked work",
+      detail: "The queue has blockers and no runnable issue, so the next supervisor state is recovery-oriented.",
+    };
+  }
+
+  if (runnableCount > 0) {
+    return {
+      title: "Select the next runnable issue",
+      detail: "The queue has runnable work, so the next supervisor state is issue selection.",
+    };
+  }
+
+  return {
+    title: "Observe and refresh",
+    detail: "The queue is quiet right now, so the next supervisor state is observation and refresh.",
+  };
+}
+
+export function buildAttentionItems(args: {
+  status: DashboardStatusLike | null | undefined;
+  doctor: DashboardDoctorLike | null | undefined;
+  connectionPhase: DashboardConnectionPhase;
+  refreshPhase: DashboardRefreshPhase;
+  hasSuccessfulRefresh: boolean;
+}): string[] {
+  const items: string[] = [];
+  const blockedIssues = Array.isArray(args.status?.blockedIssues) ? args.status.blockedIssues : [];
+  const runnableIssues = Array.isArray(args.status?.runnableIssues) ? args.status.runnableIssues : [];
+  const doctorChecks = Array.isArray(args.doctor?.checks) ? args.doctor.checks : [];
+  const failingChecks = doctorChecks.filter((check) => {
+    const value = typeof check.status === "string" ? check.status.toLowerCase() : "";
+    return value === "fail" || value === "warn";
+  });
+
+  if (!args.hasSuccessfulRefresh) {
+    items.push("The first refresh is still in progress.");
+  }
+
+  if (args.connectionPhase === "reconnecting") {
+    items.push("The live connection is reconnecting.");
+  }
+
+  if (args.refreshPhase === "failed") {
+    items.push("The last refresh failed, so some details may be stale.");
+  }
+
+  if (blockedIssues.length > 0) {
+    items.push(String(blockedIssues.length) + " blocked issue(s) are waiting on follow-up work.");
+  }
+
+  if (runnableIssues.length > 0) {
+    items.push(String(runnableIssues.length) + " runnable issue(s) are available.");
+  }
+
+  for (const check of failingChecks.slice(0, 3)) {
+    items.push((check.name || "check") + ": " + (check.summary || check.status || "needs attention"));
+  }
+
+  if (args.status?.warning?.message) {
+    items.push(args.status.warning.message);
+  }
+
+  if (items.length === 0) {
+    items.push("No immediate attention items are reported.");
+  }
+
+  return items;
 }
 
 export function collectTimelineEventIssueNumbers(event: DashboardTimelineEventLike | null | undefined): number[] {

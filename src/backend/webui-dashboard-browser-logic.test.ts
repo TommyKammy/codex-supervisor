@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildAttentionItems,
+  buildNextIssueSummary,
+  buildOverviewSummary,
+  buildPrimaryActionSummary,
   buildStatusLines,
   collectTimelineEventIssueNumbers,
   collectIssueShortcuts,
@@ -282,6 +286,109 @@ test("describeConnectionHealth normalizes the connected SSE state for operators"
   assert.equal(describeConnectionHealth("connecting"), "connecting");
   assert.equal(describeConnectionHealth("open"), "connected");
   assert.equal(describeConnectionHealth("reconnecting"), "reconnecting");
+});
+
+test("buildOverviewSummary and related beginner-first helpers produce concise English summaries", () => {
+  assert.deepEqual(
+    buildOverviewSummary({
+      status: {
+        selectionSummary: { selectedIssueNumber: 42 },
+        runnableIssues: [{ issueNumber: 42, title: "Fix queue summary", readiness: "execution_ready" }],
+      },
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    {
+      headline: "A focused issue is ready to inspect",
+      detail: "Issue #42 is the current dashboard focus.",
+      tone: "ok",
+    },
+  );
+
+  assert.deepEqual(
+    buildNextIssueSummary({
+      runnableIssues: [{ issueNumber: 77, title: "Ready issue", readiness: "execution_ready" }],
+    }),
+    {
+      issueNumber: 77,
+      title: "Ready issue",
+      detail: "This is the next runnable issue available to the supervisor.",
+      stateLabel: "Next runnable issue",
+    },
+  );
+
+  assert.deepEqual(
+    buildPrimaryActionSummary({
+      status: { blockedIssues: [{ issueNumber: 91, blockedBy: "verification" }] },
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    {
+      title: "Recover blocked work",
+      detail: "The queue has blockers and no runnable issue, so the next supervisor state is recovery-oriented.",
+    },
+  );
+
+  assert.deepEqual(
+    buildPrimaryActionSummary({
+      status: {
+        selectionSummary: { selectedIssueNumber: 77 },
+        runnableIssues: [{ issueNumber: 77, title: "Ready issue", readiness: "execution_ready" }],
+      },
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "reconnecting",
+      refreshPhase: "failed",
+      hasSuccessfulRefresh: true,
+    }),
+    {
+      title: "Recover dashboard freshness",
+      detail: "Wait for a healthy refresh before relying on the next supervisor state shown here.",
+    },
+  );
+
+  assert.deepEqual(
+    buildPrimaryActionSummary({
+      status: {
+        selectionSummary: { selectedIssueNumber: 77 },
+        runnableIssues: [{ issueNumber: 77, title: "Ready issue", readiness: "execution_ready" }],
+      },
+      doctor: { overallStatus: "fail", checks: [{ name: "github_auth", status: "fail", summary: "No auth." }] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    {
+      title: "Resolve environment checks",
+      detail: "A required dependency is failing, so the supervisor should not advance until checks recover.",
+    },
+  );
+
+  assert.deepEqual(
+    buildAttentionItems({
+      status: {
+        blockedIssues: [{ issueNumber: 91, blockedBy: "verification" }],
+        runnableIssues: [{ issueNumber: 77, title: "Ready issue", readiness: "execution_ready" }],
+      },
+      doctor: {
+        overallStatus: "warn",
+        checks: [{ name: "github_auth", status: "warn", summary: "Authentication needs refresh." }],
+      },
+      connectionPhase: "reconnecting",
+      refreshPhase: "failed",
+      hasSuccessfulRefresh: true,
+    }),
+    [
+      "The live connection is reconnecting.",
+      "The last refresh failed, so some details may be stale.",
+      "1 blocked issue(s) are waiting on follow-up work.",
+      "1 runnable issue(s) are available.",
+      "github_auth: Authentication needs refresh.",
+    ],
+  );
 });
 
 test("describeFreshnessState distinguishes fresh, refreshing, stale, and first-load states", () => {

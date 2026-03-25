@@ -1,4 +1,8 @@
 import {
+  buildAttentionItems,
+  buildNextIssueSummary,
+  buildOverviewSummary,
+  buildPrimaryActionSummary,
   buildStatusLines,
   collectTrackedIssues,
   collectIssueShortcuts,
@@ -23,6 +27,10 @@ import {
 } from "./webui-dashboard-browser-logic";
 
 const injectedBrowserLogic = [
+  buildOverviewSummary,
+  buildNextIssueSummary,
+  buildPrimaryActionSummary,
+  buildAttentionItems,
   collectTrackedIssues,
   formatTrackedIssues,
   formatTrackedHistorySummary,
@@ -59,6 +67,7 @@ export function renderDashboardBrowserScript(): string {
         doctor: null,
         explain: null,
         issueLint: null,
+        issueLoadError: null,
         commandInFlight: false,
         commandResult: null,
         events: [],
@@ -73,12 +82,34 @@ export function renderDashboardBrowserScript(): string {
 
       const elements = {
         connectionState: document.getElementById("connection-state"),
+        connectionStatePill: document.getElementById("connection-state-pill"),
         freshnessState: document.getElementById("freshness-state"),
         refreshState: document.getElementById("refresh-state"),
         selectedIssueBadge: document.getElementById("selected-issue-badge"),
         lastRefreshBadge: document.getElementById("last-refresh-badge"),
+        lastRefreshPill: document.getElementById("last-refresh-pill"),
         loopModeBadge: document.getElementById("loop-mode-badge"),
         loopStateSummary: document.getElementById("loop-state-summary"),
+        overviewHeadline: document.getElementById("overview-headline"),
+        overviewDetail: document.getElementById("overview-detail"),
+        nextIssueTitle: document.getElementById("next-issue-title"),
+        nextIssueDetail: document.getElementById("next-issue-detail"),
+        primaryActionTitle: document.getElementById("primary-action-title"),
+        primaryActionDetail: document.getElementById("primary-action-detail"),
+        attentionList: document.getElementById("attention-list"),
+        selectedIssueHeading: document.getElementById("selected-issue-heading"),
+        selectedIssueDetail: document.getElementById("selected-issue-detail"),
+        selectedIssueSummaryMetrics: document.getElementById("selected-issue-summary-metrics"),
+        selectedIssueSummaryNotes: document.getElementById("selected-issue-summary-notes"),
+        detailsDisclosure: document.getElementById("details-disclosure"),
+        navOverviewHeading: document.getElementById("nav-overview-heading"),
+        navPanelStatus: document.getElementById("nav-panel-status"),
+        navPanelDoctor: document.getElementById("nav-panel-doctor"),
+        navPanelIssueDetails: document.getElementById("nav-panel-issue-details"),
+        navPanelTrackedHistory: document.getElementById("nav-panel-tracked-history"),
+        navPanelOperatorActions: document.getElementById("nav-panel-operator-actions"),
+        navPanelLiveEvents: document.getElementById("nav-panel-live-events"),
+        navPanelOperatorTimeline: document.getElementById("nav-panel-operator-timeline"),
         statusReconciliation: document.getElementById("status-reconciliation"),
         statusLoopChip: document.getElementById("status-loop-chip"),
         statusMetrics: document.getElementById("status-metrics"),
@@ -363,6 +394,14 @@ export function renderDashboardBrowserScript(): string {
         element.className = ["live-value", toneClass].filter(Boolean).join(" ");
       }
 
+      function setPillState(element, label, tone, baseClassName) {
+        if (!element) {
+          return;
+        }
+        setText(element, label);
+        element.className = [baseClassName, tone || "info"].filter(Boolean).join(" ");
+      }
+
       function formatRefreshTime(timestamp) {
         return timestamp === null ? "never" : new Date(timestamp).toLocaleTimeString();
       }
@@ -381,9 +420,15 @@ export function renderDashboardBrowserScript(): string {
           state.refreshPhase === "failed" ? "fail" : state.refreshPhase === "refreshing" ? "warn" : "";
 
         setLiveBadgeState(elements.connectionState, connectionLabel, connectionTone);
+        setPillState(elements.connectionStatePill, "Connection: " + connectionLabel, connectionTone, "topbar-pill");
         setLiveBadgeState(elements.freshnessState, freshnessLabel, freshnessTone);
-        setLiveBadgeState(elements.refreshState, state.refreshPhase, refreshTone);
+        setPillState(elements.freshnessState, freshnessLabel, freshnessTone, "summary-pill");
+        setPillState(elements.refreshState, state.refreshPhase, refreshTone, "summary-pill");
         setText(elements.lastRefreshBadge, formatRefreshTime(state.lastRefreshAt));
+        setPillState(elements.lastRefreshPill, "Last updated: " + formatRefreshTime(state.lastRefreshAt), "", "topbar-pill");
+        renderOverviewSummary();
+        renderPrimaryActionSummary();
+        renderAttentionSummary();
       }
 
       function describeLoopRuntime(loopRuntime) {
@@ -414,12 +459,176 @@ export function renderDashboardBrowserScript(): string {
 
       function renderLoopRuntime(status) {
         const loopRuntime = describeLoopRuntime(status && status.loopRuntime);
-        setText(elements.loopModeBadge, loopRuntime.modeBadge);
-        setText(elements.loopStateSummary, loopRuntime.summary);
+        setPillState(elements.loopModeBadge, loopRuntime.modeBadge, loopRuntime.chipTone, "topbar-pill");
+        setPillState(elements.loopStateSummary, loopRuntime.summary, loopRuntime.chipTone, "summary-pill");
         if (elements.statusLoopChip) {
           setText(elements.statusLoopChip, loopRuntime.chipLabel);
           elements.statusLoopChip.className = "chip " + loopRuntime.chipTone;
         }
+      }
+
+      function renderOverviewSummary() {
+        const overview = buildOverviewSummary({
+          status: state.status,
+          doctor: state.doctor,
+          connectionPhase: state.connectionPhase,
+          refreshPhase: state.refreshPhase,
+          hasSuccessfulRefresh: state.hasSuccessfulRefresh,
+        });
+        setText(elements.overviewHeadline, overview.headline);
+        if (elements.overviewHeadline) {
+          elements.overviewHeadline.className = ["summary-headline", overview.tone].filter(Boolean).join(" ");
+        }
+        setText(elements.overviewDetail, overview.detail);
+      }
+
+      function renderNextIssueSummary() {
+        const nextIssue = buildNextIssueSummary(state.status);
+        setText(elements.selectedIssueBadge, nextIssue.issueNumber === null ? "none" : formatIssueRef(nextIssue.issueNumber));
+        setText(elements.nextIssueTitle, nextIssue.title);
+        setText(elements.nextIssueDetail, nextIssue.detail);
+      }
+
+      function renderPrimaryActionSummary() {
+        const action = buildPrimaryActionSummary({
+          status: state.status,
+          doctor: state.doctor,
+          connectionPhase: state.connectionPhase,
+          refreshPhase: state.refreshPhase,
+          hasSuccessfulRefresh: state.hasSuccessfulRefresh,
+        });
+        setText(elements.primaryActionTitle, action.title);
+        setText(elements.primaryActionDetail, action.detail);
+      }
+
+      function renderAttentionSummary() {
+        if (!elements.attentionList) {
+          return;
+        }
+        const items = buildAttentionItems({
+          status: state.status,
+          doctor: state.doctor,
+          connectionPhase: state.connectionPhase,
+          refreshPhase: state.refreshPhase,
+          hasSuccessfulRefresh: state.hasSuccessfulRefresh,
+        });
+        elements.attentionList.innerHTML = "";
+        for (const item of items) {
+          const entry = document.createElement("li");
+          entry.textContent = item;
+          elements.attentionList.appendChild(entry);
+        }
+      }
+
+      function renderSelectedIssueSummary() {
+        if (!elements.selectedIssueHeading || !elements.selectedIssueDetail) {
+          return;
+        }
+
+        const nextIssue = buildNextIssueSummary(state.status);
+        const explain = state.explain;
+        const lint = state.issueLint;
+
+        if (elements.selectedIssueSummaryMetrics) {
+          elements.selectedIssueSummaryMetrics.innerHTML = "";
+        }
+        if (elements.selectedIssueSummaryNotes) {
+          elements.selectedIssueSummaryNotes.innerHTML = "";
+        }
+
+        if (state.issueLoadError) {
+          const failedIssueLabel =
+            typeof state.loadedIssueNumber === "number" ? formatIssueRef(state.loadedIssueNumber) : "Requested issue";
+          setText(elements.selectedIssueHeading, failedIssueLabel + " could not load");
+          setText(elements.selectedIssueDetail, state.issueLoadError);
+          appendMetricTile(
+            elements.selectedIssueSummaryMetrics,
+            "Load state",
+            "failed",
+            "fail",
+            "The issue summary could not be loaded from the backend.",
+          );
+          appendDetailSection(elements.selectedIssueSummaryNotes, "What to do next", [
+            ["retry", "Load the issue again after the backend error is resolved."],
+            ["requeue", "Requeue stays disabled until the issue details load successfully."],
+          ]);
+          return;
+        }
+
+        if (explain) {
+          setText(elements.selectedIssueHeading, formatIssueRef(explain.issueNumber) + " " + explain.title);
+          setText(
+            elements.selectedIssueDetail,
+            explain.runnable
+              ? "This issue is ready to inspect in more detail below."
+              : "This issue is loaded for inspection and may still need follow-up before it is runnable.",
+          );
+          appendMetricTile(
+            elements.selectedIssueSummaryMetrics,
+            "State",
+            explain.state || "unknown",
+            toneForStatus(explain.state),
+            explain.blockedReason && explain.blockedReason !== "none" ? explain.blockedReason : "current issue posture",
+          );
+          appendMetricTile(
+            elements.selectedIssueSummaryMetrics,
+            "Runnable",
+            explain.runnable ? "yes" : "no",
+            explain.runnable ? "ok" : "warn",
+            "Selection reason: " + (explain.selectionReason || "none"),
+          );
+          appendMetricTile(
+            elements.selectedIssueSummaryMetrics,
+            "Checks",
+            lint ? (lint.executionReady ? "ready" : "needs review") : "loading",
+            lint ? (lint.executionReady ? "ok" : "warn") : "info",
+            lint
+              ? (lint.highRiskBlockingAmbiguity || "Issue checks loaded.")
+              : "Issue checks will appear after the current issue finishes loading.",
+          );
+          appendMetricTile(
+            elements.selectedIssueSummaryMetrics,
+            "Recent recovery",
+            explain.latestRecoverySummary ? "recent" : "quiet",
+            explain.latestRecoverySummary ? "warn" : "ok",
+            explain.latestRecoverySummary || explain.failureSummary || "No recent recovery summary.",
+          );
+
+          appendDetailSection(elements.selectedIssueSummaryNotes, "Quick notes", [
+            ["blocked reason", explain.blockedReason],
+            ["reasons", (explain.reasons || []).join(" | ") || "none"],
+            ["repair guidance", lint ? (lint.repairGuidance || []).join(" | ") || "none" : "loading"],
+          ]);
+          return;
+        }
+
+        if (nextIssue.issueNumber !== null) {
+          setText(elements.selectedIssueHeading, nextIssue.stateLabel + " " + formatIssueRef(nextIssue.issueNumber));
+          setText(elements.selectedIssueDetail, nextIssue.title);
+          appendMetricTile(
+            elements.selectedIssueSummaryMetrics,
+            "Issue",
+            formatIssueRef(nextIssue.issueNumber),
+            "info",
+            nextIssue.detail,
+          );
+          appendDetailSection(elements.selectedIssueSummaryNotes, "What this means", [["next step", nextIssue.detail]]);
+          return;
+        }
+
+        setText(elements.selectedIssueHeading, "No issue loaded");
+        setText(
+          elements.selectedIssueDetail,
+          "The selected or next runnable issue will appear here with a short summary.",
+        );
+        if (elements.selectedIssueSummaryMetrics) {
+          elements.selectedIssueSummaryMetrics.appendChild(
+            buildEmptyState("#", "No issue summary yet", "Run one cycle or load an issue from the details section."),
+          );
+        }
+        appendDetailSection(elements.selectedIssueSummaryNotes, "What to expect", [
+          ["summary", "This area highlights the selected issue, readiness, blockers, and recent context."],
+        ]);
       }
 
       function formatLatestRecovery(activityContext, fallbackSummary) {
@@ -564,6 +773,10 @@ export function renderDashboardBrowserScript(): string {
 
         const status = state.status;
         renderLoopRuntime(status);
+        renderOverviewSummary();
+        renderNextIssueSummary();
+        renderPrimaryActionSummary();
+        renderAttentionSummary();
         const reconciliationPhase = status.reconciliationPhase || "steady";
         setText(elements.statusReconciliation, reconciliationPhase);
         elements.statusReconciliation.className = "metric " + metricClass(reconciliationPhase);
@@ -612,6 +825,7 @@ export function renderDashboardBrowserScript(): string {
           }
         }
         renderTrackedHistory();
+        renderSelectedIssueSummary();
       }
 
       function renderTrackedHistory() {
@@ -705,6 +919,8 @@ export function renderDashboardBrowserScript(): string {
           item.appendChild(chips);
           elements.doctorChecks.appendChild(item);
         }
+        renderOverviewSummary();
+        renderAttentionSummary();
       }
 
       function renderIssue() {
@@ -718,6 +934,7 @@ export function renderDashboardBrowserScript(): string {
             elements.issueLint.innerHTML = "";
             elements.issueLint.appendChild(buildEmptyState("!", "No lint posture yet", "Issue lint will appear after an issue is loaded."));
           }
+          renderSelectedIssueSummary();
           return;
         }
 
@@ -793,6 +1010,7 @@ export function renderDashboardBrowserScript(): string {
             (lint.repairGuidance || []).join(" | ") || "none",
           );
         }
+        renderSelectedIssueSummary();
       }
 
       function renderIssueShortcuts() {
@@ -923,7 +1141,6 @@ export function renderDashboardBrowserScript(): string {
       }
 
       function renderSelectedIssue() {
-        setText(elements.selectedIssueBadge, state.selectedIssueNumber ? "#" + state.selectedIssueNumber : "none");
         if (elements.issueNumberInput) {
           if (state.loadedIssueNumber) {
             elements.issueNumberInput.value = String(state.loadedIssueNumber);
@@ -944,6 +1161,8 @@ export function renderDashboardBrowserScript(): string {
         if (elements.resetJsonStateButton) {
           elements.resetJsonStateButton.disabled = state.commandInFlight;
         }
+        renderNextIssueSummary();
+        renderPrimaryActionSummary();
       }
 
       function renderCommandResult() {
@@ -955,6 +1174,12 @@ export function renderDashboardBrowserScript(): string {
 
         setText(elements.commandStatus, state.commandResult.status || state.commandResult.summary || "Command completed.");
         setCode(elements.commandResult, JSON.stringify(state.commandResult, null, 2));
+      }
+
+      function openDetailsSection() {
+        if (elements.detailsDisclosure) {
+          elements.detailsDisclosure.open = true;
+        }
       }
 
       function buildInFlightCommandResult(label) {
@@ -1123,10 +1348,13 @@ export function renderDashboardBrowserScript(): string {
         state.loadedIssueNumber = requestedIssueNumber;
         state.explain = null;
         state.issueLint = null;
+        state.issueLoadError = null;
         renderSelectedIssue();
         setText(elements.issueSummary, "Loading issue...");
         setText(elements.issueExplain, "Loading /api/issues/" + requestedIssueNumber + "/explain...");
         setCode(elements.issueLint, "Loading /api/issues/" + requestedIssueNumber + "/issue-lint...");
+        setText(elements.selectedIssueHeading, "Loading issue " + formatIssueRef(requestedIssueNumber));
+        setText(elements.selectedIssueDetail, "The dashboard is loading the detailed summary for this issue.");
         try {
           const [explain, issueLint] = await Promise.all([
             readJson("/api/issues/" + requestedIssueNumber + "/explain"),
@@ -1137,12 +1365,16 @@ export function renderDashboardBrowserScript(): string {
           }
           state.explain = explain;
           state.issueLint = issueLint;
+          state.issueLoadError = null;
           renderSelectedIssue();
           renderIssue();
         } catch (error) {
           if (state.loadedIssueNumber !== requestedIssueNumber) {
             return;
           }
+          state.issueLoadError = error instanceof Error ? error.message : String(error);
+          renderSelectedIssue();
+          renderSelectedIssueSummary();
           throw error;
         }
       }
@@ -1319,7 +1551,23 @@ export function renderDashboardBrowserScript(): string {
         renderTrackedHistory();
       });
 
+      for (const navigationLink of [
+        elements.navOverviewHeading,
+        elements.navPanelStatus,
+        elements.navPanelDoctor,
+        elements.navPanelIssueDetails,
+        elements.navPanelTrackedHistory,
+        elements.navPanelOperatorActions,
+        elements.navPanelLiveEvents,
+        elements.navPanelOperatorTimeline,
+      ]) {
+        navigationLink?.addEventListener("click", () => {
+          openDetailsSection();
+        });
+      }
+
       elements.runOnceButton?.addEventListener("click", async () => {
+        openDetailsSection();
         await runCommandWithLock({
           label: "run-once",
           path: "/api/commands/run-once",
@@ -1377,6 +1625,11 @@ export function renderDashboardBrowserScript(): string {
 
       async function bootstrap() {
         renderLiveState();
+        renderOverviewSummary();
+        renderNextIssueSummary();
+        renderPrimaryActionSummary();
+        renderAttentionSummary();
+        renderSelectedIssueSummary();
         try {
           await refreshStatusAndDoctor();
           const issueNumberToLoad = state.selectedIssueNumber ?? state.loadedIssueNumber;
