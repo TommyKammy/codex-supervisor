@@ -6,7 +6,7 @@ import type { ActionableSeverity, LocalReviewRootCauseSummary } from "../local-r
 import type { PostMergeAuditArtifact } from "./post-merge-audit-artifact";
 import { postMergeAuditArtifactDir } from "./post-merge-audit-artifact";
 
-export const POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION = 2;
+export const POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION = 3;
 export const POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS = [
   "schemaVersion",
   "generatedAt",
@@ -28,8 +28,8 @@ const POST_MERGE_AUDIT_REVIEW_PATTERN_KEYS = [
   "severity",
   "artifactCount",
   "evidenceCount",
-  "exampleIssueNumbers",
-  "exampleFindingKeys",
+  "supportingIssueNumbers",
+  "supportingFindingKeys",
 ] as const;
 const POST_MERGE_AUDIT_FAILURE_PATTERN_KEYS = [
   "key",
@@ -39,7 +39,7 @@ const POST_MERGE_AUDIT_FAILURE_PATTERN_KEYS = [
   "summary",
   "artifactCount",
   "repeatedCount",
-  "exampleIssueNumbers",
+  "supportingIssueNumbers",
   "lastSeenAt",
 ] as const;
 const POST_MERGE_AUDIT_RECOVERY_PATTERN_KEYS = [
@@ -47,7 +47,7 @@ const POST_MERGE_AUDIT_RECOVERY_PATTERN_KEYS = [
   "reason",
   "artifactCount",
   "occurrenceCount",
-  "exampleIssueNumbers",
+  "supportingIssueNumbers",
   "latestRecoveredAt",
 ] as const;
 const POST_MERGE_AUDIT_PROMOTION_CANDIDATE_KEYS = [
@@ -71,8 +71,8 @@ export interface PostMergeAuditReviewPatternDto {
   severity: ActionableSeverity;
   artifactCount: number;
   evidenceCount: number;
-  exampleIssueNumbers: number[];
-  exampleFindingKeys: string[];
+  supportingIssueNumbers: number[];
+  supportingFindingKeys: string[];
 }
 
 export interface PostMergeAuditFailurePatternDto {
@@ -83,7 +83,7 @@ export interface PostMergeAuditFailurePatternDto {
   summary: string | null;
   artifactCount: number;
   repeatedCount: number;
-  exampleIssueNumbers: number[];
+  supportingIssueNumbers: number[];
   lastSeenAt: string | null;
 }
 
@@ -92,7 +92,7 @@ export interface PostMergeAuditRecoveryPatternDto {
   reason: string;
   artifactCount: number;
   occurrenceCount: number;
-  exampleIssueNumbers: number[];
+  supportingIssueNumbers: number[];
   latestRecoveredAt: string | null;
 }
 
@@ -221,11 +221,14 @@ function expectReviewPattern(value: unknown, index: number): PostMergeAuditRevie
     severity,
     artifactCount: expectSummaryInteger(pattern.artifactCount, `reviewPatterns[${index}].artifactCount`),
     evidenceCount: expectSummaryInteger(pattern.evidenceCount, `reviewPatterns[${index}].evidenceCount`),
-    exampleIssueNumbers: expectIntegerArray(
-      pattern.exampleIssueNumbers,
-      `reviewPatterns[${index}].exampleIssueNumbers`,
+    supportingIssueNumbers: expectIntegerArray(
+      pattern.supportingIssueNumbers,
+      `reviewPatterns[${index}].supportingIssueNumbers`,
     ),
-    exampleFindingKeys: expectStringArray(pattern.exampleFindingKeys, `reviewPatterns[${index}].exampleFindingKeys`),
+    supportingFindingKeys: expectStringArray(
+      pattern.supportingFindingKeys,
+      `reviewPatterns[${index}].supportingFindingKeys`,
+    ),
   };
 }
 
@@ -241,9 +244,9 @@ function expectFailurePattern(value: unknown, index: number): PostMergeAuditFail
     summary: expectNullableSummaryString(pattern.summary, `failurePatterns[${index}].summary`),
     artifactCount: expectSummaryInteger(pattern.artifactCount, `failurePatterns[${index}].artifactCount`),
     repeatedCount: expectSummaryInteger(pattern.repeatedCount, `failurePatterns[${index}].repeatedCount`),
-    exampleIssueNumbers: expectIntegerArray(
-      pattern.exampleIssueNumbers,
-      `failurePatterns[${index}].exampleIssueNumbers`,
+    supportingIssueNumbers: expectIntegerArray(
+      pattern.supportingIssueNumbers,
+      `failurePatterns[${index}].supportingIssueNumbers`,
     ),
     lastSeenAt: expectNullableSummaryString(pattern.lastSeenAt, `failurePatterns[${index}].lastSeenAt`),
   };
@@ -258,9 +261,9 @@ function expectRecoveryPattern(value: unknown, index: number): PostMergeAuditRec
     reason: expectSummaryString(pattern.reason, `recoveryPatterns[${index}].reason`),
     artifactCount: expectSummaryInteger(pattern.artifactCount, `recoveryPatterns[${index}].artifactCount`),
     occurrenceCount: expectSummaryInteger(pattern.occurrenceCount, `recoveryPatterns[${index}].occurrenceCount`),
-    exampleIssueNumbers: expectIntegerArray(
-      pattern.exampleIssueNumbers,
-      `recoveryPatterns[${index}].exampleIssueNumbers`,
+    supportingIssueNumbers: expectIntegerArray(
+      pattern.supportingIssueNumbers,
+      `recoveryPatterns[${index}].supportingIssueNumbers`,
     ),
     latestRecoveredAt: expectNullableSummaryString(
       pattern.latestRecoveredAt,
@@ -510,8 +513,8 @@ function createReviewPromotionCandidates(
       summary: `Recurring review pattern: ${pattern.summary}`,
       rationale: `This ${pattern.severity}-severity review pattern recurred across ${pattern.artifactCount} post-merge audits.`,
       sourcePatternKeys: [pattern.key],
-      supportingIssueNumbers: [...pattern.exampleIssueNumbers],
-      supportingFindingKeys: [...pattern.exampleFindingKeys],
+      supportingIssueNumbers: [...pattern.supportingIssueNumbers],
+      supportingFindingKeys: [...pattern.supportingFindingKeys],
       advisoryOnly: true,
       autoApply: false,
       autoCreateFollowUpIssue: false,
@@ -523,8 +526,8 @@ function createReviewPromotionCandidates(
       summary: `Capture the recurring lesson behind: ${pattern.summary}`,
       rationale: `The same review lesson appeared in ${pattern.artifactCount} merged issues and should stay queryable for future sessions.`,
       sourcePatternKeys: [pattern.key],
-      supportingIssueNumbers: [...pattern.exampleIssueNumbers],
-      supportingFindingKeys: [...pattern.exampleFindingKeys],
+      supportingIssueNumbers: [...pattern.supportingIssueNumbers],
+      supportingFindingKeys: [...pattern.supportingFindingKeys],
       advisoryOnly: true,
       autoApply: false,
       autoCreateFollowUpIssue: false,
@@ -554,7 +557,7 @@ function createFailurePromotionCandidates(
       summary,
       rationale: `The same failure pattern recurred across ${pattern.artifactCount} post-merge audits with ${pattern.repeatedCount} total repeats.`,
       sourcePatternKeys: [pattern.key],
-      supportingIssueNumbers: [...pattern.exampleIssueNumbers],
+      supportingIssueNumbers: [...pattern.supportingIssueNumbers],
       supportingFindingKeys: [],
       advisoryOnly: true,
       autoApply: false,
@@ -578,7 +581,7 @@ function createRecoveryPromotionCandidates(
       summary: pattern.reason,
       rationale: `Operators recovered this way in ${pattern.artifactCount} post-merge audits, so the workflow is a documentation candidate.`,
       sourcePatternKeys: [pattern.key],
-      supportingIssueNumbers: [...pattern.exampleIssueNumbers],
+      supportingIssueNumbers: [...pattern.supportingIssueNumbers],
       supportingFindingKeys: [],
       advisoryOnly: true,
       autoApply: false,
@@ -707,8 +710,8 @@ export async function summarizePostMergeAuditPatterns(
       severity: pattern.severity,
       artifactCount: pattern.artifactNumbers.size,
       evidenceCount: pattern.evidenceCount,
-      exampleIssueNumbers: [...pattern.artifactNumbers].sort(compareNumbersAscending),
-      exampleFindingKeys: [...pattern.findingKeys].sort(compareStringsAscending),
+      supportingIssueNumbers: [...pattern.artifactNumbers].sort(compareNumbersAscending),
+      supportingFindingKeys: [...pattern.findingKeys].sort(compareStringsAscending),
     }))
     .sort((left, right) =>
       right.artifactCount - left.artifactCount ||
@@ -724,7 +727,7 @@ export async function summarizePostMergeAuditPatterns(
       summary: pattern.summary,
       artifactCount: pattern.artifactNumbers.size,
       repeatedCount: pattern.repeatedCount,
-      exampleIssueNumbers: [...pattern.artifactNumbers].sort(compareNumbersAscending),
+      supportingIssueNumbers: [...pattern.artifactNumbers].sort(compareNumbersAscending),
       lastSeenAt: pattern.lastSeenAt,
     }))
     .sort((left, right) =>
@@ -739,7 +742,7 @@ export async function summarizePostMergeAuditPatterns(
       reason: pattern.reason,
       artifactCount: pattern.artifactNumbers.size,
       occurrenceCount: pattern.occurrenceCount,
-      exampleIssueNumbers: [...pattern.artifactNumbers].sort(compareNumbersAscending),
+      supportingIssueNumbers: [...pattern.artifactNumbers].sort(compareNumbersAscending),
       latestRecoveredAt: pattern.latestRecoveredAt,
     }))
     .sort((left, right) =>
