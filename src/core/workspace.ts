@@ -43,35 +43,28 @@ async function remoteTrackingRefExists(gitPath: string, branch: string): Promise
   return result.exitCode === 0;
 }
 
-async function fetchIssueRemoteTrackingRef(repoPath: string, branch: string): Promise<boolean> {
-  const remoteRef = `refs/remotes/origin/${branch}`;
+async function originBranchExists(gitPath: string, branch: string): Promise<boolean> {
   const result = await runCommand(
     "git",
-    ["-C", repoPath, "fetch", "origin", `+refs/heads/${branch}:${remoteRef}`],
-    {
-      allowExitCodes: [0, 128],
-      env: {
-        ...process.env,
-        LC_ALL: "C",
-      },
-    },
+    ["-C", gitPath, "ls-remote", "--exit-code", "--heads", "origin", branch],
+    { allowExitCodes: [0, 2] },
   );
+  return result.exitCode === 0;
+}
 
-  if (result.exitCode === 0) {
-    return true;
+async function fetchIssueRemoteTrackingRef(repoPath: string, branch: string): Promise<boolean> {
+  const remoteRef = `refs/remotes/origin/${branch}`;
+  if (!(await originBranchExists(repoPath, branch))) {
+    await runCommand(
+      "git",
+      ["-C", repoPath, "update-ref", "-d", remoteRef],
+      { allowExitCodes: [0, 1] },
+    );
+    return false;
   }
 
-  const missingRemoteRefMessage = `couldn't find remote ref refs/heads/${branch}`;
-  if (!result.stderr.includes(missingRemoteRefMessage)) {
-    throw new Error(result.stderr.trim() || `git fetch origin ${branch} failed`);
-  }
-
-  await runCommand(
-    "git",
-    ["-C", repoPath, "update-ref", "-d", remoteRef],
-    { allowExitCodes: [0, 1] },
-  );
-  return false;
+  await runCommand("git", ["-C", repoPath, "fetch", "origin", `+refs/heads/${branch}:${remoteRef}`]);
+  return true;
 }
 
 function buildEnsuredWorkspace(
