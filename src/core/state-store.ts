@@ -94,6 +94,16 @@ function normalizeStateForLoad(raw: SupervisorStateFile | null | undefined): Sup
   const issues = Object.fromEntries(
     Object.entries(raw?.issues ?? {}).map(([key, value]) => [key, normalizeIssueRecord(value as IssueRunRecord)]),
   );
+  const reconciliationState = raw?.reconciliation_state
+    && typeof raw.reconciliation_state === "object"
+    && raw.reconciliation_state !== null
+    ? {
+      tracked_merged_but_open_last_processed_issue_number:
+        typeof raw.reconciliation_state.tracked_merged_but_open_last_processed_issue_number === "number"
+          ? raw.reconciliation_state.tracked_merged_but_open_last_processed_issue_number
+          : null,
+    }
+    : undefined;
   const loadFindings = raw?.load_findings?.map((finding) => ({ ...finding }));
   const jsonStateQuarantine = raw?.json_state_quarantine
     ? normalizeJsonStateQuarantine(raw.json_state_quarantine)
@@ -102,6 +112,7 @@ function normalizeStateForLoad(raw: SupervisorStateFile | null | undefined): Sup
   return {
     activeIssueNumber: raw?.activeIssueNumber ?? null,
     issues,
+    ...(reconciliationState ? { reconciliation_state: reconciliationState } : {}),
     ...(loadFindings && loadFindings.length > 0 ? { load_findings: loadFindings } : {}),
     ...(jsonStateQuarantine ? { json_state_quarantine: jsonStateQuarantine } : {}),
   };
@@ -111,10 +122,21 @@ function normalizeStateForSave(raw: SupervisorStateFile | null | undefined): Sup
   const issues = Object.fromEntries(
     Object.entries(raw?.issues ?? {}).map(([key, value]) => [key, normalizeIssueRecord(value as IssueRunRecord)]),
   );
+  const reconciliationState = raw?.reconciliation_state
+    && typeof raw.reconciliation_state === "object"
+    && raw.reconciliation_state !== null
+    ? {
+      tracked_merged_but_open_last_processed_issue_number:
+        typeof raw.reconciliation_state.tracked_merged_but_open_last_processed_issue_number === "number"
+          ? raw.reconciliation_state.tracked_merged_but_open_last_processed_issue_number
+          : null,
+    }
+    : undefined;
 
   return {
     activeIssueNumber: raw?.activeIssueNumber ?? null,
     issues,
+    ...(reconciliationState ? { reconciliation_state: reconciliationState } : {}),
   };
 }
 
@@ -170,6 +192,9 @@ function readSqliteState(db: DatabaseSync): SupervisorStateFile {
   const activeRow = db
     .prepare("SELECT value FROM metadata WHERE key = 'activeIssueNumber'")
     .get() as { value?: string } | undefined;
+  const reconciliationStateRow = db
+    .prepare("SELECT value FROM metadata WHERE key = 'reconciliation_state'")
+    .get() as { value?: string } | undefined;
   const rows = db
     .prepare("SELECT issue_number, record_json FROM issues ORDER BY issue_number ASC")
     .all() as Array<{ issue_number: number; record_json: string }>;
@@ -201,6 +226,21 @@ function readSqliteState(db: DatabaseSync): SupervisorStateFile {
     activeIssueNumber:
       activeRow?.value && activeRow.value.trim() !== "" ? Number.parseInt(activeRow.value, 10) : null,
     issues,
+    ...(reconciliationStateRow?.value
+      ? (() => {
+        try {
+          return {
+            reconciliation_state: normalizeStateForLoad({
+              activeIssueNumber: null,
+              issues: {},
+              reconciliation_state: JSON.parse(reconciliationStateRow.value) as SupervisorStateFile["reconciliation_state"],
+            }).reconciliation_state,
+          };
+        } catch {
+          return {};
+        }
+      })()
+      : {}),
   }, findings);
 }
 
@@ -705,6 +745,18 @@ export class StateStore {
           VALUES (?, ?)
           ON CONFLICT(key) DO UPDATE SET value = excluded.value
         `).run("activeIssueNumber", state.activeIssueNumber === null ? "" : String(state.activeIssueNumber));
+        db.prepare(`
+          INSERT INTO metadata(key, value)
+          VALUES (?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        `).run(
+          "reconciliation_state",
+          JSON.stringify(normalizeStateForSave({
+            activeIssueNumber: null,
+            issues: {},
+            reconciliation_state: state.reconciliation_state,
+          }).reconciliation_state ?? {}),
+        );
 
         const existingIssueNumbers = new Set<number>(
           (
