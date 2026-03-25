@@ -139,15 +139,16 @@ async function hasDurableTurnUpdateSince(
   return updatedAtMs >= startedAtMs;
 }
 
-async function cleanupRecordWorkspace(config: SupervisorConfig, record: IssueRunRecord): Promise<void> {
+async function cleanupRecordWorkspace(config: SupervisorConfig, record: IssueRunRecord): Promise<boolean> {
   if (!isSafeCleanupTarget(config, record.workspace, record.branch)) {
     console.warn(
       `Skipped unsafe cleanup target workspace=${record.workspace} branch=${record.branch} for issue #${record.issue_number}.`,
     );
-    return;
+    return false;
   }
 
   await cleanupWorkspace(config.repoPath, record.workspace, record.branch);
+  return true;
 }
 
 function parseIssueNumberFromWorkspaceName(workspaceName: string): number | null {
@@ -645,6 +646,7 @@ export async function cleanupExpiredDoneWorkspaces(
     return [];
   }
 
+  const recoveryEvents: RecoveryEvent[] = [];
   const doneRecords = Object.values(state.issues)
     .filter((record) => record.state === "done")
     .sort((left, right) => left.updated_at.localeCompare(right.updated_at));
@@ -659,13 +661,18 @@ export async function cleanupExpiredDoneWorkspaces(
     const overflowCount = existingDoneRecords.length - config.maxDoneWorkspaces;
     const overflowRecords = existingDoneRecords.slice(0, overflowCount);
     for (const record of overflowRecords) {
-      await cleanupRecordWorkspace(config, record);
+      if (await cleanupRecordWorkspace(config, record)) {
+        recoveryEvents.push(buildRecoveryEvent(
+          record.issue_number,
+          `done_workspace_cleanup: removed tracked done workspace for issue #${record.issue_number}`,
+        ));
+      }
       cleanedWorkspacePaths.add(record.workspace);
     }
   }
 
   if (config.cleanupDoneWorkspacesAfterHours < 0) {
-    return [];
+    return recoveryEvents;
   }
 
   for (const record of doneRecords) {
@@ -677,10 +684,15 @@ export async function cleanupExpiredDoneWorkspaces(
       continue;
     }
 
-    await cleanupRecordWorkspace(config, record);
+    if (await cleanupRecordWorkspace(config, record)) {
+      recoveryEvents.push(buildRecoveryEvent(
+        record.issue_number,
+        `done_workspace_cleanup: removed tracked done workspace for issue #${record.issue_number}`,
+      ));
+    }
   }
 
-  return [];
+  return recoveryEvents;
 }
 
 export async function reconcileMergedIssueClosures(

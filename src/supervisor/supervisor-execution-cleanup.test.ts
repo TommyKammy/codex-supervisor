@@ -537,7 +537,10 @@ test("runOnce still cleans tracked done workspaces under the done-workspace poli
   };
 
   const message = await supervisor.runOnce({ dryRun: true });
-  assert.equal(message, "No matching open issue found.");
+  assert.match(
+    message,
+    /recovery issue=#91 reason=done_workspace_cleanup: removed tracked done workspace for issue #91; No matching open issue found\./,
+  );
 
   await assert.rejects(fs.access(olderWorkspace));
   await fs.access(newerWorkspace);
