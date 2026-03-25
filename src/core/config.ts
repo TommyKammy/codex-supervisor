@@ -110,6 +110,17 @@ function assertBranchPrefix(value: string, label: string): string {
   return value;
 }
 
+function parseNonNegativeNumberWithDefault(value: unknown, field: string, defaultValue: number): number {
+  if (value === undefined) {
+    return defaultValue;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new Error(`Invalid config field: ${field}`);
+  }
+
+  return value;
+}
+
 const VALID_REASONING_EFFORTS = new Set<ReasoningEffort>(["none", "low", "medium", "high", "xhigh"]);
 const VALID_TRUST_MODES = new Set<TrustMode>(["trusted_repo_and_authors", "untrusted_or_mixed"]);
 const VALID_EXECUTION_SAFETY_MODES = new Set<ExecutionSafetyMode>(["unsandboxed_autonomous", "operator_gated"]);
@@ -572,10 +583,11 @@ function parseSupervisorConfigDocument(raw: Record<string, unknown>, resolvedPat
       typeof raw.cleanupDoneWorkspacesAfterHours === "number" && Number.isFinite(raw.cleanupDoneWorkspacesAfterHours)
         ? raw.cleanupDoneWorkspacesAfterHours
         : 24,
-    cleanupOrphanedWorkspacesAfterHours:
-      typeof raw.cleanupOrphanedWorkspacesAfterHours === "number" && Number.isFinite(raw.cleanupOrphanedWorkspacesAfterHours)
-        ? raw.cleanupOrphanedWorkspacesAfterHours
-        : 24,
+    cleanupOrphanedWorkspacesAfterHours: parseNonNegativeNumberWithDefault(
+      raw.cleanupOrphanedWorkspacesAfterHours,
+      "cleanupOrphanedWorkspacesAfterHours",
+      24,
+    ),
     mergeMethod:
       raw.mergeMethod === "merge" || raw.mergeMethod === "squash" || raw.mergeMethod === "rebase"
         ? raw.mergeMethod

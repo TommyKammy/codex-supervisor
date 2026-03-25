@@ -103,3 +103,19 @@ test("orphan prune evaluation stays available when done-workspace cleanup is dis
   await assert.rejects(fs.access(orphanWorkspace));
   assert.equal(git(repoPath, ["branch", "--list", orphanBranch]), "");
 });
+
+test("orphan prune inspection fails fast on invalid orphan cleanup grace config", async () => {
+  const config = createConfig({
+    workspaceRoot: path.join(os.tmpdir(), "codex-supervisor-missing-workspaces"),
+    cleanupOrphanedWorkspacesAfterHours: -1,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+
+  await assert.rejects(
+    inspectOrphanedWorkspacePruneCandidates(config, state),
+    /Invalid config field: cleanupOrphanedWorkspacesAfterHours/,
+  );
+});

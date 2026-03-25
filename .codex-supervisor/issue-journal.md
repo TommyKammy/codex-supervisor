@@ -1,36 +1,45 @@
-# Issue #994: Orphan cleanup decoupling: evaluate orphan pruning independently from done-workspace cleanup disables
+# Issue #995: Orphan cleanup config safety: replace ambiguous negative grace behavior with explicit validated semantics
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/994
-- Branch: codex/issue-994
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/995
+- Branch: codex/issue-995
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 0953237f3b12bd5124ca00cf39aea04ff4fcb360
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=1, repair=2)
+- Last head SHA: e44e30546993970cbc765a07e141fe69c9448f58
 - Blocked reason: none
 - Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-25T13:25:30.000Z
+- Repeated failure signature count: 1
+- Updated at: 2026-03-25T13:55:44Z
 
 ## Latest Codex Summary
-Pushed `codex/issue-994` to origin and opened draft PR [#1012](https://github.com/TommyKammy/codex-supervisor/pull/1012) for the focused regression-test slice. The branch still only adds test coverage for disabled done-cleanup settings; no runtime behavior changed.
+Corrected the issue journal handoff text so PR `#1013` consistently reflects the live GitHub state for branch `codex/issue-995`, committed the journal-only fix as head `e44e30546993970cbc765a07e141fe69c9448f58`, pushed it, and resolved the remaining CodeRabbit thread `PRRT_kwDORgvdZ852udeJ`.
+
+The PR remains ready (`isDraft=false`). After the fresh push, GitHub has temporarily returned `mergeStateStatus=UNSTABLE` again while mergeability refreshes on the new head, which matches the expected post-push behavior rather than a new review failure.
+
+Summary: Corrected the journal's PR status wording, pushed the journal-only review fix, and resolved the remaining CodeRabbit thread on PR #1013
+State hint: waiting_ci
+Blocked reason: none
+Tests: not run; verified review-fix state with `gh pr view 1013 --json isDraft,mergeStateStatus,headRefOid,url`
+Next action: Wait for PR #1013 checks and mergeability to refresh on head `e44e30546993970cbc765a07e141fe69c9448f58`, then handle any new CI or review signal if it appears
+Failure signature: none
 
 ## Active Failure Context
-- None recorded.
+- None active after resolving review thread `PRRT_kwDORgvdZ852udeJ`; PR #1013 is waiting on post-push check and mergeability refresh for head `e44e30546993970cbc765a07e141fe69c9448f58`.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: after `#998` made orphan cleanup explicit operator work, the remaining risk for `#994` is a regression where disabled done-workspace cleanup settings might still be treated as a global "skip cleanup" gate for orphan evaluation paths.
-- What changed: added `src/recovery-reconciliation.test.ts` with a focused temp-repo regression that first exercises `cleanupExpiredDoneWorkspaces()` under `cleanupDoneWorkspacesAfterHours=-1` and `maxDoneWorkspaces=-1`, then proves `inspectOrphanedWorkspacePruneCandidates()` still reports the orphan candidate and `pruneOrphanedWorkspacesForOperator()` still prunes it. Tightened `src/doctor.test.ts` to use the same disabled-done-cleanup config while still expecting orphan prune candidates in diagnostics.
+- Hypothesis: the CodeRabbit finding was valid because the journal mixed stale PR-state snapshots; the wording fix is now pushed, the thread is resolved, and the only remaining churn is GitHub's normal mergeability refresh on the new head.
+- What changed: updated the journal wording for PR `#1013`, committed it as `e44e30546993970cbc765a07e141fe69c9448f58`, pushed `codex/issue-995`, and resolved review thread `PRRT_kwDORgvdZ852udeJ`.
 - Current blocker: none.
-- Next exact step: wait for review/CI on PR #1012, then address any feedback if it appears.
-- Verification gap: none on the intended slice; `npx tsx --test src/recovery-reconciliation.test.ts src/doctor.test.ts` and `npm run build` are green after installing dev dependencies with `npm ci`.
-- Files touched: `src/recovery-reconciliation.test.ts`, `src/doctor.test.ts`, `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low; this turn only adds regression coverage and does not alter runtime behavior.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-994 --title "Add orphan cleanup disable regression coverage" ...`
-- Exact failure reproduced: verified from current `main`/`#998` that runtime orphan cleanup is already explicit-only, so no implementation bug remained; the actionable gap for `#994` was missing regression coverage for the disabled done-cleanup configuration.
-- Commands run: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short`; `rg -n "cleanupOrphanedWorkspacesAfterHours|done-workspace|orphan|early return|cleanup" src/recovery-reconciliation.ts src/doctor.ts src/doctor.test.ts src/supervisor/supervisor-execution-cleanup.test.ts`; `sed -n '330,460p' src/recovery-reconciliation.ts`; `sed -n '604,652p' src/recovery-reconciliation.ts`; `sed -n '400,860p' src/supervisor/supervisor-execution-cleanup.test.ts`; `sed -n '1,220p' src/doctor.test.ts`; `gh issue view 993 --json number,title,body,state,url`; `gh issue view 994 --json number,title,body,state,url`; `gh pr view 998 --json number,title,body,state,headRefName,baseRefName,url`; `npx tsx --test src/recovery-reconciliation.test.ts src/doctor.test.ts`; `npm ci`; `npm run build`; `git push -u origin codex/issue-994`; `gh pr create --draft --base main --head codex/issue-994 --title "Add orphan cleanup disable regression coverage" ...`; `gh pr view 1012 --json number,state,url,isDraft,headRefName,baseRefName,title`.
-- PR status: draft PR open at `https://github.com/TommyKammy/codex-supervisor/pull/1012`.
+- Next exact step: wait for GitHub to refresh checks and mergeability on PR `#1013`, then react only if new CI or review signal appears.
+- Verification gap: none for this docs-only review fix; the live PR metadata and review-thread resolution were re-queried after the push.
+- Files touched: `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; the behavior change is intentionally narrow to orphan-cleanup config validation and a defensive runtime assertion.
+- Last focused command: `gh pr view 1013 --json isDraft,mergeStateStatus,headRefOid,url`
+- Exact failure reproduced: the journal had conflicting PR-state snapshots across turns; fixing that wording resolved the remaining review thread, and the current `UNSTABLE` status only appeared after pushing the journal sync commit.
+- Commands run: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-995/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-995/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `rg -n "draft PR|ready PR open|PR status|isDraft|UNSTABLE|CLEAN" .codex-supervisor/issue-journal.md`; `gh pr view 1013 --json isDraft,reviewDecision,mergeStateStatus,headRefOid,url`; `git status --short --branch`; `git diff -- .codex-supervisor/issue-journal.md`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `git add .codex-supervisor/issue-journal.md`; `git commit -m "Clarify review journal PR status"`; `git rev-parse HEAD`; `git push origin codex/issue-995`; `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId=PRRT_kwDORgvdZ852udeJ`; `gh pr view 1013 --json isDraft,mergeStateStatus,headRefOid,url`; `git status --short --branch`
+- PR status: ready PR open at `https://github.com/TommyKammy/codex-supervisor/pull/1013`; current GitHub metadata reports `isDraft=false` and `mergeStateStatus=UNSTABLE` on head `e44e30546993970cbc765a07e141fe69c9448f58`.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
