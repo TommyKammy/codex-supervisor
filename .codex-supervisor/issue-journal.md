@@ -1,45 +1,68 @@
-# Issue #1010: Done-workspace cleanup observability: preserve recovery events for tracked background cleanup
+# Issue #1011: Execution-safety docs guard: extend orphan-cleanup negative wording checks across every contract doc
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1010
-- Branch: codex/issue-1010
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1011
+- Branch: codex/issue-1011
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: draft_pr
-- Attempt count: 4 (implementation=4, repair=0)
-- Last head SHA: e897abe850e1faa1fdbd9ef09ad0ca01e7b172c4
+- Current phase: addressing_review
+- Attempt count: 4 (implementation=1, repair=3)
+- Last head SHA: 6af35419ebad08883750173467b12c2e448a8c14
 - Blocked reason: none
-- Last failure signature: stale-stabilizing-no-pr-recovery-loop
-- Repeated failure signature count: 0
-- Updated at: 2026-03-25T17:44:06Z
+- Last failure signature: PRRT_kwDORgvdZ852zXjJ
+- Repeated failure signature count: 1
+- Updated at: 2026-03-25T18:19:30Z
 
 ## Latest Codex Summary
-Published branch `codex/issue-1010` and opened draft PR [#1028](https://github.com/TommyKammy/codex-supervisor/pull/1028) from the verified checkpoint headed by `e897abe` (`Align cleanup tests with runOnce orchestration`).
+Reformatted the embedded review-thread snapshot in [issue-journal.md](.codex-supervisor/issue-journal.md) so the Active Failure Context no longer uses MD038-triggering inline code spans with padded spaces. The underlying review metadata stayed intact; only the markdown presentation changed.
 
-The implementation and focused verification from the prior checkpoint remain unchanged: `npx tsx --test src/recovery-reconciliation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts` and `npm run build` both passed before opening the PR. The worktree still has untracked local supervisor artifacts under `.codex-supervisor/pre-merge/` and `.codex-supervisor/replay/`, which I left untouched.
+Focused verification with `npx markdownlint-cli2 .codex-supervisor/issue-journal.md` still reports the journal's unrelated baseline markdownlint findings, but it no longer reports `MD038`. I committed the repair as `6af3541` (`Fix journal MD038 snapshot`) and pushed it to `origin/codex/issue-1011`; PR `#1029` now points at that head and is `UNSTABLE` while GitHub refreshes checks.
 
-Summary: Opened draft PR `#1028` from the verified issue-1010 checkpoint and refreshed the issue journal for PR handoff
-State hint: draft_pr
+Summary: Reformatted the embedded review snapshot in the issue journal to remove the MD038-triggering inline code padding and pushed commit `6af3541`
+State hint: waiting_ci
 Blocked reason: none
-Tests: not rerun this turn; prior checkpoint verification still stands with `npx tsx --test src/recovery-reconciliation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts` and `npm run build`
-Next action: monitor PR `#1028` and address CI or review feedback if any appears
-Failure signature: none
+Tests: `npx markdownlint-cli2 .codex-supervisor/issue-journal.md` (targeted `MD038` cleared; unrelated baseline journal lint findings remain)
+Next action: Monitor PR `#1029` checks/review state and confirm the MD038 thread clears on the pushed head
+Failure signature: PRRT_kwDORgvdZ852zXjJ
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1029#discussion_r2990101779
+- Details:
+  - `.codex-supervisor/issue-journal.md:33` _⚠️ Potential issue_ | _🟡 Minor_ **Fix markdownlint MD038 in embedded thread snapshot.** Line 33 includes inline code spans with spacing that trips `MD038` (“spaces inside code span elements”). Please normalize those code spans (remove leading/trailing spaces inside backticks) to keep lint clean.
+    <details>
+    <summary>🧰 Tools</summary>
+    <details>
+    <summary>🪛 markdownlint-cli2 (0.21.0)</summary>
+    [warning] 33-33: Spaces inside code span elements (MD038, no-space-in-code)
+    ---
+    [warning] 33-33: Spaces inside code span elements (MD038, no-space-in-code)
+    </details>
+    </details>
+    <details>
+    <summary>🤖 Prompt for AI Agents</summary>
+
+    ```text
+    Verify each finding against the current code and only fix it if needed. In @.codex-supervisor/issue-journal.md at line 33, the MD038 lint error is caused by inline code spans on the embedded thread snapshot that include leading/trailing spaces inside backticks; open the snippet containing the inline code like `automatic(?:ally)? [^.]{0,40}prun` and similar backticked fragments and remove the extra spaces so each code span has no internal padding (e.g., change ` automatic` to `automatic` and ` prun ` to `prun`), ensuring all backticked text in that thread snapshot is normalized and the MD038 warning is resolved.
+    ```
+
+    </details>
+    <!-- fingerprinting:phantom:poseidon:hawk -->
+    <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `cleanupExpiredDoneWorkspaces()` still performed tracked done-workspace deletion, but it dropped those cleanups on the floor by returning `[]`, so `runOnceCyclePrelude()` and `runOnce()` had nothing operator-visible to surface.
-- What changed: added a focused direct regression for `cleanupExpiredDoneWorkspaces()` recovery-event emission, tightened the existing `runOnce` cleanup regression to require the recovery log in the returned message, and updated `cleanupExpiredDoneWorkspaces()` to return `done_workspace_cleanup` recovery events whenever a tracked done workspace is actually cleaned.
-- Current blocker: none locally; draft PR `#1028` is open and the verified implementation checkpoint is published.
-- Next exact step: watch PR `#1028` for CI or review feedback and respond if needed.
-- Verification gap: none for the requested local commands; this turn did not change implementation files.
-- Files touched: `src/recovery-reconciliation.ts`; `src/recovery-reconciliation.test.ts`; `src/supervisor/supervisor-execution-cleanup.test.ts`; `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low; runtime behavior only changes recovery-event reporting for tracked done-workspace cleanup, and the new tests pin the intended operator-visible output.
-- Last focused command: `npm run build`
-- Exact failure reproduced: before this checkpoint `cleanupExpiredDoneWorkspaces()` removed tracked done workspaces but returned no recovery events, and `runOnce({ dryRun: true })` therefore returned only `No matching open issue found.` instead of a prefixed recovery log for the cleanup.
-- Commands run: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `npx tsx --test src/recovery-reconciliation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts`; `sed -n '852,980p' src/supervisor/supervisor-execution-cleanup.test.ts`; `sed -n '1172,1288p' src/supervisor/supervisor-execution-cleanup.test.ts`; `rg -n "restart|merged PR|tracked PR already merged|merging" src/supervisor/supervisor.ts src/supervisor -g '!dist'`; `sed -n '480,560p' src/supervisor/supervisor.ts`; `sed -n '1400,1505p' src/supervisor/supervisor.ts`; `sed -n '1,260p' src/run-once-cycle-prelude.ts`; `sed -n '1,320p' src/run-once-issue-selection.ts`; `sed -n '320,620p' src/run-once-issue-selection.ts`; `npx tsx --test src/supervisor/supervisor-execution-cleanup.test.ts`; `npx tsx --test src/recovery-reconciliation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts`; `npm run build`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `git log --oneline --decorate -5`; `gh pr status`; `git diff -- .codex-supervisor/issue-journal.md`; `git diff --stat origin/main...HEAD`; `git branch -vv`; `git push -u origin codex/issue-1010`; `gh pr create --draft --base main --head codex/issue-1010 --title "Issue #1010: preserve recovery events for tracked done-workspace cleanup" ...`; `gh pr view 1028 --json number,url,state,isDraft,headRefName,baseRefName`.
-- PR status: draft PR `#1028` is open at `https://github.com/TommyKammy/codex-supervisor/pull/1028`.
+- Hypothesis: the code/test change from `641e2bc` already addressed the contract-doc wording gap, and the only remaining review blocker is the journal's embedded prompt snapshot still containing padded inline code spans that trigger `MD038`.
+- What changed: reformatted the Active Failure Context review detail into a multiline block with a fenced prompt snippet so markdownlint no longer sees padded inline code spans on the embedded snapshot line.
+- Current blocker: none locally.
+- Next exact step: monitor PR `#1029` on head `6af3541` and confirm the MD038 review thread clears once GitHub reprocesses the push.
+- Verification gap: full-file markdownlint on the journal still reports unrelated baseline `MD013`, `MD022`, `MD032`, `MD033`, and `MD034` findings, but the targeted `MD038` warning no longer appears.
+- Files touched: `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; the change only reformats the persisted review snapshot for lint hygiene.
+- Last focused command: `gh pr view 1029 --json url,isDraft,headRefName,headRefOid,mergeStateStatus`
+- Exact failure reproduced: the live journal still contained padded inline code spans inside the embedded prompt snapshot on the Active Failure Context line, matching the CodeRabbit `MD038` complaint.
+- Commands run: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1011/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1011/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `nl -ba .codex-supervisor/issue-journal.md | sed -n '24,42p'`; `git status --short --branch`; `rg -n "automatic\\(\\?:ally\\)\\?|prun" .codex-supervisor/issue-journal.md`; `git diff -- .codex-supervisor/issue-journal.md`; `node - <<'NODE' ... NODE`; `npx markdownlint-cli2 .codex-supervisor/issue-journal.md`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `sed -n '1,120p' .codex-supervisor/issue-journal.md`; `git add .codex-supervisor/issue-journal.md`; `git commit -m "Fix journal MD038 snapshot"`; `git rev-parse HEAD`; `git push origin codex/issue-1011`; `gh pr view 1029 --json url,isDraft,headRefName,headRefOid,mergeStateStatus`.
+- PR status: PR `#1029` is open at `https://github.com/TommyKammy/codex-supervisor/pull/1029`, is not a draft, points to head `6af3541`, and currently reports merge state `UNSTABLE`.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.

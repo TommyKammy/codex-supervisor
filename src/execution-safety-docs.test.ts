@@ -7,6 +7,9 @@ async function readDoc(relativePath: string): Promise<string> {
   return fs.readFile(path.join(process.cwd(), relativePath), "utf8");
 }
 
+const forbiddenAutomaticOrphanPruningWording =
+  /automatic orphan(?:ed)? [^.]{0,40}prun|orphan(?:ed)? [^.]{0,40}automatic(?:ally)? [^.]{0,40}prun|background orphan(?:ed)? [^.]{0,40}prun|automatic(?:ally)? [^.]{0,40}prun[^.]{0,40}orphan(?:ed)?|background [^.]{0,40}prun[^.]{0,40}orphan(?:ed)?|prun[^.]{0,40}automatic(?:ally)? [^.]{0,40}orphan(?:ed)?/i;
+
 test("execution-safety docs define the GitHub trust boundary and operator prerequisites", async () => {
   const [readme, architecture, gettingStarted, agentInstructions, issueMetadata, configuration] =
     await Promise.all([
@@ -118,6 +121,20 @@ test("workspace cleanup docs distinguish tracked done cleanup from explicit orph
     readDoc(path.join("docs", "configuration.md")),
   ]);
 
+  for (const sample of [
+    "automatic orphaned workspace pruning",
+    "orphaned workspaces automatically prune in the background",
+    "automatically prune orphaned workspaces after each run",
+    "background prune orphaned workspaces after each run",
+    "prune workspaces automatically when orphaned",
+  ]) {
+    assert.match(
+      sample,
+      forbiddenAutomaticOrphanPruningWording,
+      `expected sample wording to be rejected: ${sample}`,
+    );
+  }
+
   for (const [label, content] of [
     ["README.md", readme],
     ["docs/architecture.md", architecture],
@@ -134,17 +151,17 @@ test("workspace cleanup docs distinguish tracked done cleanup from explicit orph
       /done work(?:tree|space)|tracked done work(?:tree|space)/i,
       `expected ${label} to distinguish tracked done cleanup from orphan cleanup`,
     );
+    assert.doesNotMatch(
+      content,
+      forbiddenAutomaticOrphanPruningWording,
+      `expected ${label} to reject automatic/background orphan pruning wording`,
+    );
   }
 
   assert.doesNotMatch(
     architecture,
     /stale worktree cleanup -> delayed cleanup for `done` issues/i,
     "docs/architecture.md should not equate orphan cleanup with tracked done cleanup",
-  );
-  assert.doesNotMatch(
-    configuration,
-    /automatic orphan(?:ed)? .*prun/i,
-    "docs/configuration.md should not describe orphan cleanup as automatic background pruning",
   );
   assert.match(
     configuration,
