@@ -48,6 +48,14 @@ interface ConfiguredBotRateLimitWaitStatus {
   waitUntil: string | null;
 }
 
+export type GitHubWaitStep =
+  | "configured_bot_rate_limit_wait"
+  | "configured_bot_initial_grace_wait"
+  | "configured_bot_settled_wait"
+  | "copilot_review_propagation_wait"
+  | "copilot_review_requested_wait"
+  | "checks_pending";
+
 function reviewSatisfied(pr: GitHubPullRequest): boolean {
   return (
     (pr.reviewDecision !== "CHANGES_REQUESTED" || pr.configuredBotTopLevelReviewStrength === "nitpick_only") &&
@@ -713,4 +721,47 @@ export function inferStateFromPullRequest(
   }
 
   return "pr_open";
+}
+
+export function inferGitHubWaitStep(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
+): GitHubWaitStep | null {
+  const configuredBotRateLimitWait = determineConfiguredBotRateLimitWait(config, pr);
+  if (configuredBotRateLimitWait.active) {
+    return "configured_bot_rate_limit_wait";
+  }
+
+  if (shouldWaitForConfiguredBotLatestHeadRearm(config, record, pr)) {
+    return "configured_bot_initial_grace_wait";
+  }
+
+  if (shouldWaitForConfiguredBotDraftSkipRearm(config, record, pr)) {
+    return "configured_bot_initial_grace_wait";
+  }
+
+  if (shouldWaitForConfiguredBotInitialGracePeriod(config, pr)) {
+    return "configured_bot_initial_grace_wait";
+  }
+
+  if (shouldWaitForConfiguredBotCurrentHeadQuietPeriod(config, pr)) {
+    return "configured_bot_settled_wait";
+  }
+
+  if (shouldWaitForCopilotReviewPropagation(config, record, pr)) {
+    return "copilot_review_propagation_wait";
+  }
+
+  const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
+  if (copilotReviewPending(config, record, pr) && !copilotTimeout.timedOut) {
+    return "copilot_review_requested_wait";
+  }
+
+  if (summarizeChecks(checks).hasPending) {
+    return "checks_pending";
+  }
+
+  return null;
 }

@@ -741,6 +741,11 @@ export async function reconcileTrackedMergedButOpenIssues(
   state: SupervisorStateFile,
   config: SupervisorConfig,
   issues: GitHubIssue[],
+  updateReconciliationProgress: ((patch: {
+    targetIssueNumber?: number | null;
+    targetPrNumber?: number | null;
+    waitStep?: string | null;
+  }) => Promise<void>) | null = null,
 ): Promise<RecoveryEvent[]> {
   let changed = false;
   const recoveryEvents: RecoveryEvent[] = [];
@@ -750,6 +755,12 @@ export async function reconcileTrackedMergedButOpenIssues(
     if (record.pr_number === null) {
       continue;
     }
+
+    await updateReconciliationProgress?.({
+      targetIssueNumber: record.issue_number,
+      targetPrNumber: record.pr_number,
+      waitStep: null,
+    });
 
     const trackedPullRequest = await github.getPullRequestIfExists(record.pr_number);
     if (trackedPullRequest && !matchesTrackedBranch(record, trackedPullRequest)) {
@@ -923,7 +934,18 @@ export async function reconcileStaleFailedIssueStates(
       record: IssueRunRecord,
       pr: NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
     ) => Partial<IssueRunRecord>;
+    inferGitHubWaitStep?: (
+      config: SupervisorConfig,
+      record: IssueRunRecord,
+      pr: NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
+      checks: PullRequestCheck[],
+    ) => string | null;
   },
+  updateReconciliationProgress: ((patch: {
+    targetIssueNumber?: number | null;
+    targetPrNumber?: number | null;
+    waitStep?: string | null;
+  }) => Promise<void>) | null = null,
 ): Promise<void> {
   let changed = false;
   const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
@@ -932,6 +954,12 @@ export async function reconcileStaleFailedIssueStates(
     if (record.state !== "failed" || record.pr_number === null) {
       continue;
     }
+
+    await updateReconciliationProgress?.({
+      targetIssueNumber: record.issue_number,
+      targetPrNumber: record.pr_number,
+      waitStep: null,
+    });
 
     if (issueStateByNumber.get(record.issue_number) !== "OPEN") {
       continue;
@@ -956,6 +984,12 @@ export async function reconcileStaleFailedIssueStates(
       ...copilotReviewTimeoutPatch,
     };
     const nextState = deps.inferStateFromPullRequest(config, recordForState, pr, checks, reviewThreads);
+    await updateReconciliationProgress?.({
+      waitStep:
+        nextState === "waiting_ci"
+          ? (deps.inferGitHubWaitStep?.(config, recordForState, pr, checks) ?? null)
+          : null,
+    });
 
     if (nextState === "failed") {
       continue;

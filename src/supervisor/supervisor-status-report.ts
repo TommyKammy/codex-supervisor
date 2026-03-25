@@ -33,6 +33,14 @@ export interface SupervisorTrackedIssueDto {
   blockedReason: BlockedReason | null;
 }
 
+export interface SupervisorReconciliationProgressDto {
+  phase: string;
+  startedAt: string | null;
+  targetIssueNumber: number | null;
+  targetPrNumber: number | null;
+  waitStep: string | null;
+}
+
 export interface SupervisorStatusDto {
   gsdSummary: string | null;
   trustDiagnostics?: TrustDiagnosticsSummary | null;
@@ -48,6 +56,7 @@ export interface SupervisorStatusDto {
   blockedIssues: SupervisorBlockedIssueDto[];
   detailedStatusLines: string[];
   reconciliationPhase: string | null;
+  reconciliationProgress?: SupervisorReconciliationProgressDto | null;
   reconciliationWarning: string | null;
   readinessLines: string[];
   whyLines: string[];
@@ -87,6 +96,18 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
     ...(dto.candidateDiscoverySummary ? [dto.candidateDiscoverySummary] : []),
     `local_ci configured=${localCiContract.configured} source=${localCiContract.source} command=${truncate(sanitizeStatusValue(localCiContract.command ?? "none"), 200)} summary=${truncate(sanitizeStatusValue(localCiContract.summary), 200)}`,
     ...(dto.reconciliationPhase === null ? [] : [`reconciliation_phase=${dto.reconciliationPhase}`]),
+    ...(dto.reconciliationProgress === null || dto.reconciliationProgress === undefined
+      ? []
+      : [
+        [
+          "reconciliation_progress",
+          `phase=${dto.reconciliationProgress.phase}`,
+          `target_issue=${dto.reconciliationProgress.targetIssueNumber === null ? "none" : `#${dto.reconciliationProgress.targetIssueNumber}`}`,
+          `target_pr=${dto.reconciliationProgress.targetPrNumber === null ? "none" : `#${dto.reconciliationProgress.targetPrNumber}`}`,
+          `wait_step=${dto.reconciliationProgress.waitStep ?? "none"}`,
+          `started_at=${dto.reconciliationProgress.startedAt ?? "none"}`,
+        ].join(" "),
+      ]),
     ...(dto.reconciliationWarning === null ? [] : [dto.reconciliationWarning]),
     ...dto.readinessLines,
     ...dto.whyLines,

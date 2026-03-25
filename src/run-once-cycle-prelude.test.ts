@@ -217,6 +217,91 @@ test("runOnceCyclePrelude publishes the active reconciliation phase and clears i
   ]);
 });
 
+test("runOnceCyclePrelude publishes reconciliation target updates within a phase", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  const observedProgress: unknown[] = [];
+
+  await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+    },
+    carryoverRecoveryEvents: [],
+    setReconciliationProgress: async (progress) => {
+      observedProgress.push(progress);
+    },
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => [],
+    reconcileTrackedMergedButOpenIssues: async (_loadedState, _loadedIssues, updateReconciliationProgress) => {
+      await updateReconciliationProgress({
+        targetIssueNumber: 77,
+        targetPrNumber: 170,
+      });
+      return [];
+    },
+    reconcileMergedIssueClosures: async () => [],
+    reconcileStaleFailedIssueStates: async () => {},
+    reconcileRecoverableBlockedIssueStates: async () => [],
+    reconcileParentEpicClosures: async () => {},
+    cleanupExpiredDoneWorkspaces: async () => [],
+  });
+
+  assert.deepEqual(observedProgress, [
+    {
+      phase: "stale_active_issue_reservation",
+      targetIssueNumber: null,
+      targetPrNumber: null,
+      waitStep: null,
+    },
+    {
+      phase: "tracked_merged_but_open_issues",
+      targetIssueNumber: null,
+      targetPrNumber: null,
+      waitStep: null,
+    },
+    {
+      phase: "tracked_merged_but_open_issues",
+      targetIssueNumber: 77,
+      targetPrNumber: 170,
+      waitStep: null,
+    },
+    {
+      phase: "merged_issue_closures",
+      targetIssueNumber: null,
+      targetPrNumber: null,
+      waitStep: null,
+    },
+    {
+      phase: "stale_failed_issue_states",
+      targetIssueNumber: null,
+      targetPrNumber: null,
+      waitStep: null,
+    },
+    {
+      phase: "recoverable_blocked_issue_states",
+      targetIssueNumber: null,
+      targetPrNumber: null,
+      waitStep: null,
+    },
+    {
+      phase: "parent_epic_closures",
+      targetIssueNumber: null,
+      targetPrNumber: null,
+      waitStep: null,
+    },
+    {
+      phase: "cleanup_expired_done_workspaces",
+      targetIssueNumber: null,
+      targetPrNumber: null,
+      waitStep: null,
+    },
+    null,
+  ]);
+});
+
 test("runOnceCyclePrelude emits typed recovery events for transport adapters", async () => {
   const state: SupervisorStateFile = {
     activeIssueNumber: null,

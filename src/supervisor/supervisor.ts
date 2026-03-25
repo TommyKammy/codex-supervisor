@@ -22,6 +22,7 @@ import {
   blockedReasonFromReviewState,
   buildCopilotReviewTimeoutFailureContext,
   inferStateFromPullRequest,
+  inferGitHubWaitStep,
   syncCopilotReviewRequestObservation,
   syncCopilotReviewTimeoutState,
   syncReviewWaitWindow,
@@ -968,6 +969,15 @@ export class Supervisor {
     const reconciliationSnapshot = await readCurrentReconciliationPhaseSnapshot(this.config);
     const reconciliationPhase = reconciliationSnapshot?.phase ?? null;
     const reconciliationWarning = buildLongReconciliationWarning(reconciliationSnapshot);
+    const reconciliationProgress = reconciliationSnapshot === null
+      ? null
+      : {
+        phase: reconciliationSnapshot.phase,
+        startedAt: reconciliationSnapshot.startedAt,
+        targetIssueNumber: reconciliationSnapshot.targetIssueNumber,
+        targetPrNumber: reconciliationSnapshot.targetPrNumber,
+        waitStep: reconciliationSnapshot.waitStep,
+      };
 
     if (!statusRecords.activeRecord) {
       const detailedStatusLines = buildDetailedStatusModel({
@@ -1013,6 +1023,7 @@ export class Supervisor {
           blockedIssues: readinessSummary.blockedIssues,
           detailedStatusLines: [...detailedStatusLines, ...stateDiagnosticLines],
           reconciliationPhase,
+          reconciliationProgress,
           reconciliationWarning,
           readinessLines: readinessSummary.readinessLines,
           whyLines,
@@ -1035,6 +1046,7 @@ export class Supervisor {
           blockedIssues: [],
           detailedStatusLines: [...detailedStatusLines, ...stateDiagnosticLines],
           reconciliationPhase,
+          reconciliationProgress,
           reconciliationWarning,
           readinessLines: [],
           whyLines: [],
@@ -1105,6 +1117,7 @@ export class Supervisor {
       blockedIssues: [],
       detailedStatusLines: [...detailedStatusLines, ...summaryLines, ...stateDiagnosticLines],
       reconciliationPhase,
+      reconciliationProgress,
       reconciliationWarning,
       readinessLines: [],
       whyLines: [],
@@ -1335,11 +1348,18 @@ export class Supervisor {
       }),
       handleAuthFailure: (state) => handleAuthFailure(this.github, this.stateStore, state),
       listAllIssues: () => this.github.listAllIssues(),
-      reconcileTrackedMergedButOpenIssues: (state, issues) =>
-        reconcileTrackedMergedButOpenIssues(this.github, this.stateStore, state, this.config, issues),
+      reconcileTrackedMergedButOpenIssues: (state, issues, updateReconciliationProgress) =>
+        reconcileTrackedMergedButOpenIssues(
+          this.github,
+          this.stateStore,
+          state,
+          this.config,
+          issues,
+          updateReconciliationProgress,
+        ),
       reconcileMergedIssueClosures: (state, issues) =>
         reconcileMergedIssueClosures(this.github, this.stateStore, state, this.config, issues),
-      reconcileStaleFailedIssueStates: (state, issues) =>
+      reconcileStaleFailedIssueStates: (state, issues, updateReconciliationProgress) =>
         reconcileStaleFailedIssueStates(this.github, this.stateStore, state, this.config, issues, {
           inferStateFromPullRequest,
           inferFailureContext,
@@ -1348,7 +1368,8 @@ export class Supervisor {
           syncReviewWaitWindow,
           syncCopilotReviewRequestObservation,
           syncCopilotReviewTimeoutState,
-        }),
+          inferGitHubWaitStep,
+        }, updateReconciliationProgress),
       reconcileRecoverableBlockedIssueStates: (state, issues) =>
         reconcileRecoverableBlockedIssueStates(this.stateStore, state, this.config, issues, {
           shouldAutoRetryHandoffMissing,
