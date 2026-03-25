@@ -162,7 +162,7 @@ What to check after `run-once`:
 - the selected issue is the one you expected
 - the issue worktree was created under `workspaceRoot`
 - any restored issue workspace reused the expected local branch first, otherwise the expected remote branch, instead of silently falling back to a fresh bootstrap
-- any untracked orphaned `issue-*` worktree under `workspaceRoot` was not treated like tracked done-workspace cleanup; locked, recent, or manually kept orphan workspaces should be preserved unless you explicitly prune them
+- any untracked orphaned `issue-*` worktree under `workspaceRoot` was not treated like tracked done-workspace cleanup; only orphan candidates marked `locked`, `recent`, or `unsafe_target` should be preserved when you explicitly run `prune-orphaned-workspaces`
 - the issue journal shows a sensible hypothesis, blocker, and next step
 - any opened PR or status transition matches the actual repo state
 
@@ -315,7 +315,7 @@ When should I enable local review?
 Enable it when you want a committed pre-merge review gate or an additional local advisory pass before CI and external reviews. Use the [Local review reference](./local-review.md) for role selection, thresholds, artifacts, and policy choices.
 
 When should orphaned workspaces be cleaned up?
-Treat orphaned `issue-*` worktrees as explicit cleanup work, not as the same thing as delayed cleanup for tracked done workspaces. Preserve orphan workspaces that are locked, recently touched, or intentionally kept for manual recovery, and prune abandoned orphan workspaces only when you have made that operator decision explicitly. The orphan grace setting only controls when `doctor` and `prune-orphaned-workspaces` consider an orphan old enough; it does not make `run-once` prune orphan workspaces in the background.
+Treat orphaned `issue-*` worktrees as explicit cleanup work, not as the same thing as delayed cleanup for tracked done workspaces. The explicit `prune-orphaned-workspaces` action only preserves orphan candidates marked `locked`, `recent`, or `unsafe_target`; there is no separate manual-keep state. The orphan grace setting only controls when `doctor` and `prune-orphaned-workspaces` consider an orphan old enough to avoid the `recent` state; it does not make `run-once` prune orphan workspaces in the background.
 
 What if the backlog order looks wrong?
 Fix `Depends on` and `Execution order` in GitHub. The scheduler pages through the matching open backlog and follows runnable order across that full candidate set, not operator intuition or chat history.

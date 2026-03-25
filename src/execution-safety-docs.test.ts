@@ -126,7 +126,7 @@ test("workspace cleanup docs distinguish tracked done cleanup from explicit orph
   ] as const) {
     assert.match(content, /orphan(?:ed)? work(?:tree|space)/i, `expected ${label} to mention orphan workspaces`);
     assert.match(content, /preserv/i, `expected ${label} to describe preservation rules`);
-    assert.match(content, /lock(?:ed)?|recent|manual(?:ly)? kept/i, `expected ${label} to mention preserve cases`);
+    assert.match(content, /locked|recent|unsafe_target/i, `expected ${label} to mention preserve cases`);
     assert.match(content, /explicit/i, `expected ${label} to require explicit orphan pruning`);
     assert.match(content, /prune/i, `expected ${label} to mention prune expectations`);
     assert.match(
@@ -145,5 +145,10 @@ test("workspace cleanup docs distinguish tracked done cleanup from explicit orph
     configuration,
     /automatic orphan(?:ed)? .*prun/i,
     "docs/configuration.md should not describe orphan cleanup as automatic background pruning",
+  );
+  assert.match(
+    configuration,
+    /cleanupOrphanedWorkspacesAfterHours[\s\S]{0,220}prune-orphaned-workspaces[\s\S]{0,220}locked[\s\S]{0,120}recent[\s\S]{0,120}unsafe_target/i,
+    "docs/configuration.md should define the explicit orphan prune eligibility contract",
   );
 });
