@@ -432,6 +432,56 @@ test("buildDetailedStatusSummaryLines shapes optional summaries and artifact pat
   );
 });
 
+test("buildDetailedStatusModel reports the latest recovery when no active issue is running", () => {
+  const latestRecord = createRecord({
+    issue_number: 92,
+    state: "done",
+    branch: "codex/issue-92",
+    workspace: "/tmp/workspaces/issue-92",
+    updated_at: "2026-03-13T01:20:00Z",
+    last_recovery_reason: null,
+    last_recovery_at: null,
+  });
+  const latestRecoveryRecord = createRecord({
+    issue_number: 91,
+    state: "done",
+    branch: "codex/issue-91",
+    workspace: "/tmp/workspaces/issue-91",
+    updated_at: "2026-03-13T00:20:00Z",
+    last_codex_summary: null,
+    last_recovery_reason: "merged_pr_convergence: tracked PR #191 merged; marked issue #91 done",
+    last_recovery_at: "2026-03-13T00:20:00Z",
+  });
+
+  assert.deepEqual(
+    buildDetailedStatusModel({
+      config: createConfig(),
+      activeRecord: null,
+      latestRecord,
+      latestRecoveryRecord,
+      trackedIssueCount: 2,
+      pr: null,
+      checks: [],
+      reviewThreads: [],
+      manualReviewThreads,
+      configuredBotReviewThreads,
+      pendingBotReviewThreads: () => [],
+      summarizeChecks: () => ({
+        allPassing: true,
+        hasPending: false,
+        hasFailing: false,
+      }),
+      mergeConflictDetected: () => false,
+    }),
+    [
+      "No active issue.",
+      "tracked_issues=2",
+      "latest_record=#92 state=done updated_at=2026-03-13T01:20:00Z",
+      "latest_recovery issue=#91 at=2026-03-13T00:20:00Z reason=merged_pr_convergence detail=tracked PR #191 merged; marked issue #91 done",
+    ],
+  );
+});
+
 test("buildDetailedStatusModel sanitizes failure context summary before emitting it", () => {
   const lines = buildDetailedStatusModel({
     config: createConfig(),
