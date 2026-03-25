@@ -1,38 +1,36 @@
-# Issue #1003: Subprocess durability coverage: exercise high-output child commands through supervisor-facing paths
+# Issue #1004: CLI parser bug: require an explicit file path after --config
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1003
-- Branch: codex/issue-1003
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1004
+- Branch: codex/issue-1004
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: draft_pr
+- Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 2a0a7adad56452fa2a02df2738dc1c767b6518cc
+- Last head SHA: 8cc126660910aff15ef1179ccddfc6e484168a28
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-25T15:42:31Z
+- Updated at: 2026-03-25T15:52:29.413Z
 
 ## Latest Codex Summary
-- Added subprocess-backed durability coverage for high-output supervisor-facing Codex runs and tightened the existing high-output `runCommand()` fixtures so they flush deterministically before exiting.
-
-- Focused verification now passes for `src/core/command.test.ts`, `src/cli/supervisor-runtime.test.ts`, `src/supervisor/supervisor.test.ts`, and `src/supervisor/agent-runner.test.ts`, and `npm run build` passes after restoring local dependencies with `npm ci`.
+- Reproduced the `--config` parser bug with focused `parseArgs` coverage, then tightened parsing so `--config` requires a non-empty non-flag value and fails fast with `The --config flag requires a file path.`. Focused CLI tests and `npm run build` now pass locally.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: issue #1003 only needs coverage on top of the earlier bounded-capture fixes, but the narrowest reliable repro must use real child processes and wait for noisy writes to flush before asserting preserved tails.
-- What changed: added two real subprocess-backed `createCodexAgentRunner()` regressions in `src/supervisor/agent-runner.test.ts` for a noisy non-zero Codex exit and a noisy timeout path. Tightened the existing high-output fixtures in `src/core/command.test.ts` to await stdout/stderr flushes before exit so bounded-capture assertions are deterministic under heavy output.
+- Hypothesis: the CLI parser bug is isolated to `src/cli/parse-args.ts`, where `--config` consumes the next token without validating whether a real file path follows.
+- What changed: added focused regressions in `src/cli/parse-args.test.ts` for `--config` with no value and `--config` followed by another flag, then introduced a small parser helper in `src/cli/parse-args.ts` so `--config` throws `The --config flag requires a file path.` unless the next token is a non-empty non-flag path.
 - Current blocker: none.
-- Next exact step: monitor draft PR `#1022` for CI or review feedback and respond if anything regresses.
-- Verification gap: none after `npx tsx --test src/core/command.test.ts src/cli/supervisor-runtime.test.ts src/supervisor/supervisor.test.ts src/supervisor/agent-runner.test.ts` and `npm run build`.
-- Files touched: `src/core/command.test.ts`; `src/supervisor/agent-runner.test.ts`; `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low; changes are test-only plus journal state and do not alter subprocess execution behavior.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-1003 --title "Issue #1003: Add supervisor-facing high-output durability coverage" --body "<summary omitted>"`
-- Exact failure reproduced: the first subprocess-backed timeout/large-stderr runs exposed that high-output test fixtures which exit immediately after writing can drop their trailing suffix under pipe backpressure; the original `runCommand failure bounds large stderr...` test failed on `missing /stderr-suffix/`, and the first real timeout runner repro lost `timeout-suffix` until the child scripts awaited stderr flushes.
-- Commands run: `sed -n '1,240p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1003/AGENTS.generated.md`; `sed -n '1,240p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1003/context-index.md`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `git log --oneline --decorate -5`; `git diff --stat`; `git diff -- .codex-supervisor/issue-journal.md`; `git diff -- src/core/utils.ts src/local-ci.ts src/local-ci.test.ts src/supervisor/agent-runner.ts src/supervisor/agent-runner.test.ts src/supervisor/supervisor-failure-helpers.ts src/turn-execution-failure-helpers.ts src/turn-execution-failure-helpers.test.ts`; `sed -n '1,280p' src/core/command.ts`; `sed -n '1,280p' src/core/command.test.ts`; `sed -n '1,320p' src/cli/supervisor-runtime.ts`; `sed -n '1,320p' src/cli/supervisor-runtime.test.ts`; `sed -n '1,320p' src/supervisor/supervisor.test.ts`; `rg -n "runCommand\\(|CommandExecutionError|timeout|stderr|stdout|truncate|bounded|capture" src/cli src/supervisor src -g'*.ts'`; `sed -n '1,260p' src/supervisor/agent-runner.ts`; `sed -n '450,560p' src/supervisor/agent-runner.test.ts`; `sed -n '1,220p' src/local-ci.test.ts`; `sed -n '1,240p' src/local-ci.ts`; `sed -n '1,260p' src/turn-execution-failure-helpers.ts`; `sed -n '1,220p' src/turn-execution-failure-helpers.test.ts`; `sed -n '430,520p' src/supervisor/supervisor.ts`; `sed -n '1,240p' src/supervisor/index.ts`; `rg -n "runCommand\\(" src/supervisor src/doctor.ts src/local-ci.ts src/cli/supervisor-runtime.ts -g'*.ts'`; `rg -n "createSupervisorService|new Supervisor|class Supervisor" src/supervisor -g'*.ts'`; `rg -n "export async function runCodexTurn|function runCodexTurn|runCodexTurn\\(" src/codex -g'*.ts'`; `sed -n '1,280p' src/codex/index.ts`; `sed -n '1,320p' src/codex/codex-runner.ts`; `sed -n '1,280p' src/codex/codex-runner.test.ts`; `sed -n '1,220p' src/supervisor/agent-runner.test.ts`; `sed -n '220,520p' src/supervisor/agent-runner.test.ts`; `npx tsx --test src/supervisor/agent-runner.test.ts`; `npx tsx --test src/core/command.test.ts src/cli/supervisor-runtime.test.ts src/supervisor/supervisor.test.ts src/supervisor/agent-runner.test.ts`; `npx tsx -e '...'`; `test -d node_modules/typescript && echo installed || echo missing`; `test -f package-lock.json && echo lock-present || echo no-lock`; `npm ci`; `npm run build`; `git diff --check -- src/core/command.test.ts src/supervisor/agent-runner.test.ts .codex-supervisor/issue-journal.md`; `git add src/core/command.test.ts src/supervisor/agent-runner.test.ts .codex-supervisor/issue-journal.md`; `git commit -m "test: add supervisor high-output durability coverage"`; `git push -u origin codex/issue-1003`; `gh pr view --json number,state,isDraft,url,headRefName,baseRefName`; `gh pr create --draft --base main --head codex/issue-1003 --title "Issue #1003: Add supervisor-facing high-output durability coverage" --body "<summary omitted>"`; `git rev-parse HEAD`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`.
-- PR status: draft PR `#1022` open at https://github.com/TommyKammy/codex-supervisor/pull/1022.
+- Next exact step: commit the parser fix on `codex/issue-1004`, push the branch, and open a draft PR because the branch does not have one yet.
+- Verification gap: none after `npx tsx --test src/cli/parse-args.test.ts src/cli/entrypoint.test.ts` and `npm run build`.
+- Files touched: `src/cli/parse-args.ts`; `src/cli/parse-args.test.ts`; `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; the runtime change is a narrow argument-shape validation on `--config` and the rest is focused test coverage plus journal state.
+- Last focused command: `npm run build`
+- Exact failure reproduced: `npx tsx --test src/cli/parse-args.test.ts` failed with `Missing expected exception.` for both `parseArgs(["status", "--config"])` and `parseArgs(["status", "--config", "--why"])`, confirming that the parser silently accepted missing and flag-shaped config values.
+- Commands run: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1004/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1004/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg -n -e '--config' -e 'config' src/cli src -g'*.ts'`; `rg --files src | rg 'parse-args|entrypoint|cli'`; `git log --oneline --decorate -5`; `sed -n '1,240p' src/cli/parse-args.ts`; `sed -n '1,260p' src/cli/parse-args.test.ts`; `sed -n '1,280p' src/cli/entrypoint.test.ts`; `npx tsx --test src/cli/parse-args.test.ts`; `git diff -- src/cli/parse-args.ts src/cli/parse-args.test.ts`; `npx tsx --test src/cli/parse-args.test.ts src/cli/entrypoint.test.ts`; `gh pr view --json number,state,isDraft,url,headRefName,baseRefName`; `test -f package-lock.json && echo lock-present || echo no-lock`; `test -d node_modules && echo node_modules-present || echo node_modules-missing`; `git status --short`; `npm ci`; `git diff --check -- src/cli/parse-args.ts src/cli/parse-args.test.ts`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `npm run build`.
+- PR status: none yet for `codex/issue-1004`.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
