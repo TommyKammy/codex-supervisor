@@ -9,7 +9,7 @@ import {
   SupervisorStateFile,
   WorkspaceStatus,
 } from "../core/types";
-import { nowIso, truncate } from "../core/utils";
+import { nowIso, truncate, truncatePreservingStartAndEnd } from "../core/utils";
 import {
   executionMetricsRetentionRootPath,
   syncExecutionMetricsRunSummarySafely,
@@ -148,13 +148,13 @@ export async function recoverUnexpectedCodexTurnFailure(args: {
       `pr_number=${pr?.number ?? "none"}`,
       `pr_head=${pr?.headRefOid ?? "none"}`,
       `codex_session_id=${record.codex_session_id ?? "none"}`,
-      truncate(message, 2000) ?? "Unknown failure",
+      truncatePreservingStartAndEnd(message, 2000) ?? "Unknown failure",
     ],
   );
 
   const updated = stateStore.touch(record, {
     state: "failed",
-    last_error: truncate(message),
+    last_error: truncatePreservingStartAndEnd(message),
     last_failure_kind: failureKind,
     last_failure_context: failureContext,
     ...applyFailureSignature(record, failureContext),

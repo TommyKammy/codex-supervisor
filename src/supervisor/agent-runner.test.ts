@@ -490,6 +490,50 @@ test("createCodexAgentRunner normalizes Codex execution errors into the shared f
   assert.match(result.failureContext?.details[0] ?? "", /Command timed out after 1800000ms/);
 });
 
+test("createCodexAgentRunner preserves timeout summaries when non-zero Codex stderr is still noisy after bounded capture", async () => {
+  const runner = createCodexAgentRunner({
+    runCodexTurnImpl: async () => ({
+      exitCode: 1,
+      sessionId: "session-123",
+      lastMessage: "Summary: bounded stderr still needs an actionable summary",
+      stderr: `prefix\n${"x".repeat(5_000)}\nCommand timed out after 1800000ms: codex exec\n`,
+      stdout: "",
+    }),
+  });
+
+  const result = await runner.runTurn({
+    kind: "start",
+    config: createConfig(),
+    workspacePath: "/tmp/workspace",
+    state: "repairing_ci",
+    record: null,
+    repoSlug: "owner/repo",
+    issue: {
+      number: 102,
+      title: "Normalize the shared agent turn context",
+      body: "",
+      createdAt: "2026-03-16T00:00:00Z",
+      updatedAt: "2026-03-16T00:00:00Z",
+      url: "https://example.test/issues/102",
+    },
+    branch: "codex/issue-102",
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspace/.codex-supervisor/issue-journal.md",
+    journalExcerpt: null,
+    failureContext: null,
+    previousSummary: null,
+    previousError: null,
+  });
+
+  assert.equal(result.failureKind, "codex_exit");
+  assert.match(result.failureContext?.details[0] ?? "", /Command timed out after 1800000ms: codex exec/);
+  assert.match(result.failureContext?.details[0] ?? "", /\n\.\.\.\n/);
+});
+
 test("detectCodexCliCapabilities keeps Codex-compatible defaults conservative for non-codex binaries", () => {
   assert.deepEqual(detectCodexCliCapabilities({ codexBinary: "/usr/local/bin/codex" }), {
     supportsResume: true,
