@@ -21,6 +21,29 @@ export function truncate(input: string | null | undefined, maxLength = 4000): st
   return `${input.slice(0, maxLength - 3)}...`;
 }
 
+export function truncatePreservingStartAndEnd(
+  input: string | null | undefined,
+  maxLength = 4000,
+  truncationMarker = "\n...\n",
+): string | null {
+  if (!input) {
+    return null;
+  }
+
+  if (input.length <= maxLength) {
+    return input;
+  }
+
+  if (maxLength <= truncationMarker.length) {
+    return truncationMarker.slice(0, maxLength);
+  }
+
+  const availableLength = maxLength - truncationMarker.length;
+  const prefixLength = Math.ceil(availableLength / 2);
+  const suffixLength = Math.floor(availableLength / 2);
+  return `${input.slice(0, prefixLength)}${truncationMarker}${input.slice(input.length - suffixLength)}`;
+}
+
 export async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> {
   await ensureDir(path.dirname(filePath));
   const tempPath = `${filePath}.tmp`;

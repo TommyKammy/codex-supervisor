@@ -1,36 +1,36 @@
-# Issue #1001: Subprocess capture bounds: add explicit stdout and stderr accumulation limits in runCommand
+# Issue #1002: Subprocess error hygiene follow-up: preserve actionable timeout and failure summaries under bounded capture
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1001
-- Branch: codex/issue-1001
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1002
+- Branch: codex/issue-1002
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
+- Current phase: stabilizing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: de4d74a49b741e75f2c2405646f8c2f61e1e96ea
+- Last head SHA: bcea89a9dbb6c0a6f970e096048a53de4a3dc4ed
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-25T14:59:46Z
+- Updated at: 2026-03-25T15:14:07Z
 
 ## Latest Codex Summary
-- Added bounded stdout/stderr accumulation to `runCommand` using a fixed-size head/tail buffer with a deterministic `\n...\n` truncation marker, and added focused regression tests for oversized stdout and stderr capture.
+- Added head-and-tail truncation for operator-facing subprocess failure summaries so bounded stderr/stdout still keeps actionable timeout and failure lines, and covered the regression in shared failure-context and local CI tests.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `runCommand()` accumulated child `stdout` and `stderr` into unbounded strings, so a noisy subprocess could grow supervisor memory without limit even though the rendered error message was already truncated.
-- What changed: added a 64 KiB bounded capture buffer per stream in `src/core/command.ts` that keeps the earliest output, latest output, and inserts a deterministic `\n...\n` marker once truncation occurs. Existing exit, timeout, and error semantics stay the same; timeout annotations are appended through the same bounded accumulator. Added focused tests in `src/core/command.test.ts` for large successful stdout and large failing stderr captures.
+- Hypothesis: bounded `runCommand()` capture now preserves both ends, but several downstream summaries still applied head-only `truncate(...)`, so noisy stderr could drop the tail where timeout and final failure lines live.
+- What changed: added `truncatePreservingStartAndEnd()` in `src/core/utils.ts` and switched operator-facing failure summaries in `src/local-ci.ts`, `src/supervisor/agent-runner.ts`, `src/supervisor/supervisor-failure-helpers.ts`, and `src/turn-execution-failure-helpers.ts` to use it. Added focused regressions in `src/local-ci.test.ts`, `src/supervisor/agent-runner.test.ts`, and `src/turn-execution-failure-helpers.test.ts` to prove timeout summaries remain visible with explicit `\n...\n` truncation markers.
 - Current blocker: none.
-- Next exact step: monitor draft PR `#1020` for CI and review feedback, then address any failures or comments that come back.
-- Verification gap: none locally after `npm ci`; `npx tsx --test src/core/command.test.ts` and `npm run build` both passed.
-- Files touched: `src/core/command.ts`; `src/core/command.test.ts`; `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low; changes are isolated to subprocess output buffering and focused regression coverage.
+- Next exact step: stage the issue #1002 changes, commit them on `codex/issue-1002`, and open or update the draft PR if needed.
+- Verification gap: none locally after `npm ci`; `npx tsx --test src/core/command.test.ts src/cli/supervisor-runtime.test.ts src/doctor.test.ts src/local-ci.test.ts src/supervisor/agent-runner.test.ts src/turn-execution-failure-helpers.test.ts` and `npm run build` both passed.
+- Files touched: `src/core/utils.ts`; `src/local-ci.ts`; `src/local-ci.test.ts`; `src/supervisor/agent-runner.ts`; `src/supervisor/agent-runner.test.ts`; `src/supervisor/supervisor-failure-helpers.ts`; `src/turn-execution-failure-helpers.ts`; `src/turn-execution-failure-helpers.test.ts`; `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; changes stay in summary-rendering paths and focused regression coverage without changing subprocess execution semantics.
 - Last focused command: `npm run build`
-- Exact failure reproduced: before the fix, the new tests failed because `result.stdout` and `CommandExecutionError.stderr` held the full ~200 KB child output with no truncation marker or bounded length.
-- Commands run: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1001/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1001/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `sed -n '1,260p' src/core/command.ts`; `sed -n '1,320p' src/core/command.test.ts`; `rg -n "TRUNCATION|truncat|bounded|stdout|stderr" src -g'*.ts'`; `rg -n "runCommand\\(" src`; `sed -n '1,220p' src/core/utils.ts`; `sed -n '1,140p' src/local-ci.ts`; `npx tsx --test src/core/command.test.ts`; `git diff -- src/core/command.ts src/core/command.test.ts`; `npm ci`; `npx tsx --test src/core/command.test.ts`; `npm run build`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `git rev-parse HEAD`; `git add src/core/command.ts src/core/command.test.ts .codex-supervisor/issue-journal.md`; `git commit -m "Bound runCommand output capture"`; `gh pr status`; `git branch -vv`; `git remote -v`; `git push -u origin codex/issue-1001`; `gh pr view --json url,isDraft,headRefName,baseRefName,mergeStateStatus`; `gh pr create --draft --base main --head codex/issue-1001 --title "Issue #1001: Bound runCommand output capture" --body ...`; `gh pr view 1020 --json url,isDraft,headRefName,baseRefName,mergeStateStatus,headRefOid`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `git add .codex-supervisor/issue-journal.md`; `git commit -m "Update issue 1001 journal after draft PR"`; `git push`; `git rev-parse HEAD`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`.
-- PR status: draft PR open at `https://github.com/TommyKammy/codex-supervisor/pull/1020` on head `423d85d79819ea86104a02d747fa0ccb2d9506a2`; current merge state status `UNSTABLE` pending CI.
+- Exact failure reproduced: before the fix, a long bounded stderr still lost its trailing timeout line after a second head-only truncation in shared summaries; an ad hoc `createCodexAgentRunner()` repro printed `HAS_TIMEOUT false` even though the stderr ended with `Command timed out after 1800000ms: codex exec`.
+- Commands run: `sed -n '1,240p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1002/AGENTS.generated.md`; `sed -n '1,240p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1002/context-index.md`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `sed -n '1,260p' src/core/command.ts`; `sed -n '1,260p' src/core/command.test.ts`; `sed -n '1,260p' src/cli/supervisor-runtime.test.ts`; `sed -n '1,260p' src/doctor.test.ts`; `rg -n "timed out|timeout|stderr|stdout|truncat|bounded|CommandExecutionError|runCommand\\(" src -g'*.ts'`; `sed -n '1,240p' src/local-ci.ts`; `sed -n '1,280p' src/supervisor/agent-runner.ts`; `sed -n '1,320p' src/doctor.ts`; `sed -n '1,260p' src/cli/supervisor-runtime.ts`; `sed -n '1,260p' src/core/utils.ts`; `sed -n '1,220p' src/local-ci.test.ts`; `sed -n '1,240p' src/supervisor/supervisor-failure-helpers.ts`; `git log --oneline --decorate -5`; `sed -n '380,460p' src/doctor.test.ts`; `sed -n '1,220p' src/build.test.ts`; `sed -n '1,220p' src/local-review/runner.ts`; `sed -n '1,220p' src/supervisor/supervisor-execution-orchestration.test.ts`; `sed -n '430,520p' src/supervisor/agent-runner.test.ts`; `sed -n '1,220p' src/supervisor/agent-runner.test.ts`; `npx tsx -e '...'`; `sed -n '1,280p' src/turn-execution-failure-helpers.ts`; `sed -n '1,260p' src/supervisor/supervisor-recovery-failure-flows.test.ts`; `sed -n '1,220p' src/turn-execution-failure-helpers.test.ts`; `npx tsx --test src/local-ci.test.ts`; `npx tsx --test src/supervisor/agent-runner.test.ts`; `npx tsx --test src/turn-execution-failure-helpers.test.ts`; `npx tsx --test src/core/command.test.ts src/cli/supervisor-runtime.test.ts src/doctor.test.ts src/local-ci.test.ts src/supervisor/agent-runner.test.ts src/turn-execution-failure-helpers.test.ts`; `npm run build`; `test -d node_modules/typescript && echo installed || echo missing`; `test -f package-lock.json && echo lock-present || echo no-lock`; `npm ci`; `npm run build`; `git diff -- src/core/utils.ts src/local-ci.ts src/local-ci.test.ts src/supervisor/agent-runner.ts src/supervisor/agent-runner.test.ts src/supervisor/supervisor-failure-helpers.ts src/turn-execution-failure-helpers.ts src/turn-execution-failure-helpers.test.ts .codex-supervisor/issue-journal.md`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `git rev-parse HEAD`.
+- PR status: none yet for issue #1002.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.

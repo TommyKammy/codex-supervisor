@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import test, { mock } from "node:test";
-import { persistHintedCodexTurnState } from "./turn-execution-failure-helpers";
+import { persistCodexTurnExitFailure, persistHintedCodexTurnState } from "./turn-execution-failure-helpers";
 import { SupervisorStateFile } from "./core/types";
 import { createRecord } from "./turn-execution-test-helpers";
 
@@ -153,4 +153,55 @@ test("persistHintedCodexTurnState continues journal sync when run summary persis
     warnMock.mock.restore();
     writeFileMock.mock.restore();
   }
+});
+
+test("persistCodexTurnExitFailure preserves timeout summaries from bounded Codex output", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 104,
+    issues: {
+      "104": createRecord({
+        issue_number: 104,
+        state: "stabilizing",
+        timeout_retry_count: 0,
+      }),
+    },
+  };
+
+  const updated = await persistCodexTurnExitFailure({
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: "2026-03-24T03:15:00Z" }),
+      save: async () => undefined,
+    },
+    state,
+    record: state.issues["104"]!,
+    issue: { createdAt: "2026-03-24T03:00:00Z" },
+    syncJournal: async () => undefined,
+    issueNumber: 104,
+    codexResult: {
+      lastMessage: "Summary: noisy timeout",
+      stderr: `prefix\n${"x".repeat(5_000)}\nCommand timed out after 1800000ms: codex exec\n`,
+      stdout: "",
+    },
+    classifyFailure: (message) => ((message ?? "").includes("Command timed out after") ? "timeout" : "command_error"),
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-03-24T03:15:00Z",
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: "codex-timeout",
+      repeated_failure_signature_count: 1,
+    }),
+  });
+
+  assert.equal(updated.last_failure_kind, "timeout");
+  assert.equal(updated.timeout_retry_count, 1);
+  assert.match(updated.last_error ?? "", /Command timed out after 1800000ms: codex exec/);
+  assert.match(updated.last_error ?? "", /\n\.\.\.\n/);
+  assert.match(updated.last_failure_context?.details[0] ?? "", /Command timed out after 1800000ms: codex exec/);
+  assert.match(updated.last_failure_context?.details[0] ?? "", /\n\.\.\.\n/);
 });

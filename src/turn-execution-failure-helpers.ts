@@ -1,6 +1,6 @@
 import { StateStore } from "./core/state-store";
 import { CodexTurnResult, FailureContext, GitHubIssue, IssueRunRecord, SupervisorStateFile } from "./core/types";
-import { truncate } from "./core/utils";
+import { truncate, truncatePreservingStartAndEnd } from "./core/utils";
 import { syncExecutionMetricsRunSummarySafely } from "./supervisor/execution-metrics-run-summary";
 
 type TurnExecutionFailureStateStore = Pick<StateStore, "save" | "touch">;
@@ -148,7 +148,7 @@ export async function persistCodexTurnExecutionFailure(args: PersistTurnExecutio
   const failureContext = args.buildCodexFailureContext(
     "codex",
     `Codex turn execution failed for issue #${args.issueNumber}.`,
-    [truncate(message, 2000) ?? "Unknown failure"],
+    [truncatePreservingStartAndEnd(message, 2000) ?? "Unknown failure"],
   );
 
   return persistTurnFailurePatch({
@@ -160,7 +160,7 @@ export async function persistCodexTurnExecutionFailure(args: PersistTurnExecutio
     retentionRootPath: args.retentionRootPath,
     patch: {
       state: "failed",
-      last_error: truncate(message),
+      last_error: truncatePreservingStartAndEnd(message),
       last_failure_kind: failureKind,
       last_failure_context: failureContext,
       ...args.applyFailureSignature(args.record, failureContext),
@@ -178,7 +178,7 @@ export async function persistCodexTurnExitFailure(args: PersistCodexExitFailureA
   const failureContext = args.buildCodexFailureContext(
     "codex",
     `Codex exited non-zero for issue #${args.issueNumber}.`,
-    [truncate(failureOutput, 2000) ?? "Unknown failure output"],
+    [truncatePreservingStartAndEnd(failureOutput, 2000) ?? "Unknown failure output"],
   );
 
   return persistTurnFailurePatch({
@@ -190,7 +190,7 @@ export async function persistCodexTurnExitFailure(args: PersistCodexExitFailureA
     retentionRootPath: args.retentionRootPath,
     patch: {
       state: "failed",
-      last_error: truncate(failureOutput),
+      last_error: truncatePreservingStartAndEnd(failureOutput),
       last_failure_kind: failureKind,
       last_failure_context: failureContext,
       ...args.applyFailureSignature(args.record, failureContext),

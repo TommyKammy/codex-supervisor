@@ -6,7 +6,7 @@ import {
   LocalReviewRepairContext,
   runCodexTurn,
 } from "../codex";
-import { truncate } from "../core/utils";
+import { truncatePreservingStartAndEnd } from "../core/utils";
 import type {
   BlockedReason,
   FailureContext,
@@ -163,7 +163,7 @@ function buildCodexExitFailureContext(
   return buildFailureContextImpl(
     "codex",
     "Codex exited non-zero.",
-    [truncate([message, stderr, stdout].filter(Boolean).join("\n"), 2000) ?? "Unknown failure output"],
+    [truncatePreservingStartAndEnd([message, stderr, stdout].filter(Boolean).join("\n"), 2000) ?? "Unknown failure output"],
   );
 }
 
@@ -218,7 +218,7 @@ export function createCodexAgentRunner(options: CreateCodexAgentRunnerOptions = 
           structuredResult: null,
           failureKind: classifyFailureImpl(message),
           failureContext: buildFailureContextImpl("codex", "Codex turn execution failed.", [
-            truncate(message, 2000) ?? "Unknown failure",
+            truncatePreservingStartAndEnd(message, 2000) ?? "Unknown failure",
           ]),
         };
       }

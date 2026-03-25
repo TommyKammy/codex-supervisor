@@ -1,6 +1,6 @@
 import { runCommand } from "./core/command";
 import { FailureContext, LatestLocalCiResult, SupervisorConfig } from "./core/types";
-import { nowIso, truncate } from "./core/utils";
+import { nowIso, truncate, truncatePreservingStartAndEnd } from "./core/utils";
 
 const LOCAL_CI_COMMAND_TIMEOUT_MS = 5 * 60_000;
 
@@ -27,11 +27,12 @@ function renderFailureOutput(label: "stdout" | "stderr", output: string | undefi
     return null;
   }
 
-  return `${label}:\n${truncate(trimmed, 1500) ?? trimmed}`;
+  return `${label}:\n${truncatePreservingStartAndEnd(trimmed, 1500) ?? trimmed}`;
 }
 
 function buildFailureDetails(error: unknown): string[] {
-  const message = truncate(error instanceof Error ? error.message : String(error), 1500) ?? "unknown error";
+  const message =
+    truncatePreservingStartAndEnd(error instanceof Error ? error.message : String(error), 1500) ?? "unknown error";
   const outputError = error instanceof Error ? (error as ErrorWithOutput) : null;
 
   return [
