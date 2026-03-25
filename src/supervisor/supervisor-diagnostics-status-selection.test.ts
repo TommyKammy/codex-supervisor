@@ -140,6 +140,38 @@ test("statusReport exposes the typed local CI contract summary from config", asy
   assert.match(status, /local_ci configured=true source=config command=npm run ci:local summary=Repo-owned local CI contract is configured\./);
 });
 
+test("statusReport exposes typed loop runtime state from the host runtime marker", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const runtimeLock = await supervisor.acquireLoopRuntimeLock();
+  assert.equal(runtimeLock.acquired, true);
+  t.after(async () => {
+    await runtimeLock.release();
+  });
+
+  const report = await supervisor.statusReport();
+
+  assert.deepEqual(report.loopRuntime, {
+    state: "running",
+    pid: process.pid,
+    startedAt: report.loopRuntime?.startedAt ?? null,
+    detail: "supervisor-loop-runtime",
+  });
+  assert.match(report.loopRuntime?.startedAt ?? "", /^\d{4}-\d{2}-\d{2}T/u);
+});
+
 test("statusReport exposes typed active-issue and selection summary fields alongside legacy lines", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {

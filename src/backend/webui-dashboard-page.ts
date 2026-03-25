@@ -1121,7 +1121,7 @@ export function renderSupervisorDashboardPage(): string {
           <div class="topbar-meta">
             <div class="topbar-pill">Layout: fixed admin dashboard</div>
             <div class="topbar-pill">Surface: local WebUI</div>
-            <div class="topbar-pill">Mode: web only (loop off)</div>
+            <div id="loop-mode-badge" class="topbar-pill">Mode: local WebUI</div>
           </div>
         </header>
 
@@ -1132,7 +1132,7 @@ export function renderSupervisorDashboardPage(): string {
                 <p class="section-kicker">Supervisor workspace</p>
                 <h2>Operational visibility without panel drag-and-drop.</h2>
                 <p>Current health, issue context, and safe actions stay in a predictable layout so repeat visits feel familiar.</p>
-                <div class="loop-off-pill">Loop mode is off on this host</div>
+                <div id="loop-state-summary" class="loop-off-pill">Loop status will appear after the first /api/status refresh</div>
               </div>
             </article>
             <aside class="summary-card">

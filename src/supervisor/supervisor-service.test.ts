@@ -201,6 +201,12 @@ test("createSupervisorService preserves typed operator observability fields on s
   const statusReport: Awaited<ReturnType<StubSupervisor["statusReport"]>> = {
     gsdSummary: null,
     candidateDiscovery: null,
+    loopRuntime: {
+      state: "off",
+      pid: null,
+      startedAt: null,
+      detail: null,
+    },
     localCiContract: {
       configured: true,
       command: "npm run ci:local",

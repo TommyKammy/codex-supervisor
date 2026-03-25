@@ -36,6 +36,13 @@ export interface DashboardCandidateDiscoveryLike {
   warning?: string | null;
 }
 
+export interface DashboardLoopRuntimeLike {
+  state?: "running" | "off" | "unknown" | null;
+  pid?: number | null;
+  startedAt?: string | null;
+  detail?: string | null;
+}
+
 export interface DashboardStatusLike {
   selectionSummary?: DashboardSelectionSummaryLike | null;
   activeIssue?: DashboardActiveIssueLike | null;
@@ -48,6 +55,7 @@ export interface DashboardStatusLike {
   candidateDiscovery?: DashboardCandidateDiscoveryLike | null;
   candidateDiscoverySummary?: string | null;
   reconciliationWarning?: string | null;
+  loopRuntime?: DashboardLoopRuntimeLike | null;
 }
 
 export interface DashboardIssueShortcut {

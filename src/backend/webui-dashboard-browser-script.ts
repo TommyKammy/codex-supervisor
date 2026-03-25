@@ -77,7 +77,10 @@ export function renderDashboardBrowserScript(): string {
         refreshState: document.getElementById("refresh-state"),
         selectedIssueBadge: document.getElementById("selected-issue-badge"),
         lastRefreshBadge: document.getElementById("last-refresh-badge"),
+        loopModeBadge: document.getElementById("loop-mode-badge"),
+        loopStateSummary: document.getElementById("loop-state-summary"),
         statusReconciliation: document.getElementById("status-reconciliation"),
+        statusLoopChip: document.getElementById("status-loop-chip"),
         statusMetrics: document.getElementById("status-metrics"),
         statusWorkflow: document.getElementById("status-workflow"),
         statusLines: document.getElementById("status-lines"),
@@ -383,6 +386,42 @@ export function renderDashboardBrowserScript(): string {
         setText(elements.lastRefreshBadge, formatRefreshTime(state.lastRefreshAt));
       }
 
+      function describeLoopRuntime(loopRuntime) {
+        const runtimeState = loopRuntime && typeof loopRuntime.state === "string" ? loopRuntime.state : "unknown";
+        if (runtimeState === "running") {
+          return {
+            modeBadge: "Mode: web + loop running",
+            summary: "Loop mode is running on this host",
+            chipLabel: "loop running",
+            chipTone: "ok",
+          };
+        }
+        if (runtimeState === "off") {
+          return {
+            modeBadge: "Mode: web only (loop off)",
+            summary: "Loop mode is off on this host",
+            chipLabel: "loop off",
+            chipTone: "ok",
+          };
+        }
+        return {
+          modeBadge: "Mode: local WebUI",
+          summary: "Loop status is unavailable on this host",
+          chipLabel: "loop unknown",
+          chipTone: "info",
+        };
+      }
+
+      function renderLoopRuntime(status) {
+        const loopRuntime = describeLoopRuntime(status && status.loopRuntime);
+        setText(elements.loopModeBadge, loopRuntime.modeBadge);
+        setText(elements.loopStateSummary, loopRuntime.summary);
+        if (elements.statusLoopChip) {
+          setText(elements.statusLoopChip, loopRuntime.chipLabel);
+          elements.statusLoopChip.className = "chip " + loopRuntime.chipTone;
+        }
+      }
+
       function formatLatestRecovery(activityContext, fallbackSummary) {
         const latestRecovery = activityContext && activityContext.latestRecovery;
         if (latestRecovery) {
@@ -524,6 +563,7 @@ export function renderDashboardBrowserScript(): string {
         }
 
         const status = state.status;
+        renderLoopRuntime(status);
         const reconciliationPhase = status.reconciliationPhase || "steady";
         setText(elements.statusReconciliation, reconciliationPhase);
         elements.statusReconciliation.className = "metric " + metricClass(reconciliationPhase);

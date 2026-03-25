@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { LockHandle } from "../core/lock";
 import type { SupervisorConfig } from "../core/types";
 import type { SupervisorIssueLintDto } from "../supervisor/supervisor-selection-issue-lint";
 import type { SupervisorStatusDto } from "../supervisor/supervisor-status-report";
@@ -23,6 +24,12 @@ function createStatusDto(overrides: Partial<SupervisorStatusDto> = {}): Supervis
   return {
     gsdSummary: null,
     candidateDiscovery: null,
+    loopRuntime: {
+      state: "off",
+      pid: null,
+      startedAt: null,
+      detail: null,
+    },
     activeIssue: null,
     selectionSummary: null,
     trackedIssues: [],
@@ -35,6 +42,13 @@ function createStatusDto(overrides: Partial<SupervisorStatusDto> = {}): Supervis
     whyLines: [],
     warning: null,
     ...overrides,
+  };
+}
+
+function createLoopRuntimeLockHandle(): LockHandle {
+  return {
+    acquired: true,
+    release: async () => {},
   };
 }
 
@@ -106,6 +120,7 @@ test("runSupervisorCommand stops the loop after a registered signal and aborts p
         },
       },
       loopController: {
+        acquireLoopRuntimeLock: async () => createLoopRuntimeLockHandle(),
         runCycle: async () => {
           loopRuns += 1;
           return "cycle complete";
@@ -273,6 +288,7 @@ test("runSupervisorCommand re-reads the poll cadence between loop cycles", async
         },
       },
       loopController: {
+        acquireLoopRuntimeLock: async () => createLoopRuntimeLockHandle(),
         runCycle: async () => {
           loopRuns += 1;
           return "cycle complete";
@@ -342,6 +358,7 @@ test("runSupervisorCommand skips sleep when stop is requested while resolving th
         },
       },
       loopController: {
+        acquireLoopRuntimeLock: async () => createLoopRuntimeLockHandle(),
         runCycle: async () => {
           loopRuns += 1;
           return "cycle complete";
@@ -416,6 +433,7 @@ test("runSupervisorCommand stops the loop after a corrupt-json fail-closed block
         },
       },
       loopController: {
+        acquireLoopRuntimeLock: async () => createLoopRuntimeLockHandle(),
         runCycle: async () => {
           loopRuns += 1;
           return "Blocked execution-changing command: corrupted JSON supervisor state detected at /tmp/state.json. Run status, doctor, or reset-corrupt-json-state before retrying.";
