@@ -38,6 +38,7 @@ interface RunOnceCyclePreludeArgs {
     state: SupervisorStateFile,
     issues: GitHubIssue[],
     updateReconciliationProgress: (patch: ReconciliationProgressPatch) => Promise<void>,
+    options?: { onlyIssueNumber?: number | null },
   ) => Promise<RecoveryEvent[]>;
   reconcileMergedIssueClosures: (
     state: SupervisorStateFile,
@@ -114,6 +115,29 @@ export async function runOnceCyclePrelude(
     const issues = await args.listAllIssues();
 
     await setReconciliationPhase("tracked_merged_but_open_issues");
+    const activeRecord =
+      state.activeIssueNumber === null ? null : state.issues[String(state.activeIssueNumber)] ?? null;
+    if (activeRecord?.state === "merging" && activeRecord.pr_number !== null) {
+      const activeMergedEvents = await args.reconcileTrackedMergedButOpenIssues(
+        state,
+        issues,
+        updateReconciliationProgress,
+        { onlyIssueNumber: activeRecord.issue_number },
+      );
+      recoveryEvents.push(...activeMergedEvents);
+      emitRecoveryEvents(activeMergedEvents);
+
+      const activeRecordAfterFastPath = state.issues[String(activeRecord.issue_number)] ?? null;
+      if (activeRecordAfterFastPath?.state === "done") {
+        return {
+          state,
+          recoveryEvents,
+        };
+      }
+
+      await setReconciliationPhase("tracked_merged_but_open_issues");
+    }
+
     const trackedMergedEvents = await args.reconcileTrackedMergedButOpenIssues(state, issues, updateReconciliationProgress);
     recoveryEvents.push(...trackedMergedEvents);
     emitRecoveryEvents(trackedMergedEvents);
