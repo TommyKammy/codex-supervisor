@@ -1,45 +1,45 @@
-# Issue #971: Post-merge fast-path: converge an active merged issue before unrelated broad reconciliation work
+# Issue #972: Reconciliation budgeting: bound tracked-merged-but-open processing per cycle
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/971
-- Branch: codex/issue-971
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/972
+- Branch: codex/issue-972
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: stabilizing
 - Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 7fd4bbc26d20f38b6361b32943997df1a91ccc33
+- Last head SHA: abe52fc6081366bde6fd52a87682e31675a65ef6
 - Blocked reason: none
-- Last failure signature: stale-stabilizing-no-pr-recovery-loop
+- Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-25T06:12:29.422Z
+- Updated at: 2026-03-25T06:57:40.311Z
 
 ## Latest Codex Summary
-Revalidated the active-merged fast-path checkpoint, pushed `codex/issue-971`, and opened draft PR #985 so the merged-issue convergence fix can move through review without waiting in stale stabilizing recovery.
+Bounded tracked merged-but-open reconciliation in [src/recovery-reconciliation.ts](src/recovery-reconciliation.ts) so each cycle now stops after a default cap of PR-bearing records and leaves the rest untouched for later cycles. The focused regression in [src/supervisor/supervisor-recovery-reconciliation.test.ts](src/supervisor/supervisor-recovery-reconciliation.test.ts) proves that once the per-cycle budget is exhausted, remaining merged records are deferred cleanly instead of being processed in the same pass.
 
-The implementation remains the same as commit `7fd4bbc` (`Add active merged issue reconciliation fast-path`): it prioritizes the active `merging` issue in `runOnceCyclePrelude()`, reuses `reconcileTrackedMergedButOpenIssues()` with a single-issue filter, and short-circuits broader reconciliation once that active issue reaches `done`. Focused verification passed again with `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts` and `npm run build`, and the draft PR is https://github.com/TommyKammy/codex-supervisor/pull/985.
+I updated the working notes in [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) and committed the checkpoint as `abe52fc` (`Issue #972: bound tracked merged reconciliation per cycle`). I also had to run `npm ci` first because `npm run build` initially failed with `tsc: not found` due missing `node_modules/`.
 
-Summary: Pushed the active merged-issue fast-path checkpoint and opened draft PR #985 after rerunning the focused tests and build.
+Summary: Added a focused failing regression, bounded tracked-merged-but-open reconciliation per cycle, updated the issue journal, and committed the fix as `abe52fc`.
 State hint: draft_pr
 Blocked reason: none
-Tests: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`; `npm run build`
-Next action: Monitor draft PR #985 for review or CI feedback and address any follow-up changes.
-Failure signature: stale-stabilizing-no-pr-recovery-loop
+Tests: `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm ci`; `npm run build`
+Next action: push `codex/issue-972` and open/update the draft PR for issue #972
+Failure signature: none
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `runOnce()` forced an active `merging` issue to wait for the full `tracked_merged_but_open_issues` sweep, so unrelated tracked PR records could delay or block the active issue from converging to `done` after its PR had already merged.
-- What changed: added an active merged fast-path in `src/run-once-cycle-prelude.ts`, taught `reconcileTrackedMergedButOpenIssues()` to optionally restrict work to a single issue record, and added focused regressions in `src/supervisor/supervisor-execution-orchestration.test.ts` and `src/supervisor/supervisor-recovery-reconciliation.test.ts`.
+- Hypothesis: `reconcileTrackedMergedButOpenIssues()` iterated every tracked PR-bearing record in a single pass, so one large backlog of merged-but-open records could monopolize a reconciliation cycle and delay the rest of the supervisor loop.
+- What changed: added a focused regression in `src/supervisor/supervisor-recovery-reconciliation.test.ts`, then bounded `reconcileTrackedMergedButOpenIssues()` in `src/recovery-reconciliation.ts` with a default per-cycle processed-record cap while leaving remaining records untouched for later cycles.
 - Current blocker: none.
-- Next exact step: monitor draft PR #985 and address review or CI feedback if it arrives.
-- Verification gap: none in the requested local scope after rerunning the focused reconciliation/orchestration tests and the build immediately before opening the draft PR.
-- Files touched: `src/recovery-reconciliation.ts`, `src/run-once-cycle-prelude.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor.ts`, `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low; the change is a narrow sequencing fast-path that reuses the existing tracked merged reconciliation logic and only short-circuits the broader prelude once the active issue has already converged to `done`.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-971 --title "Issue #971: fast-path active merged issue convergence" ...`
-- Exact failure reproduced: `runOnce()` queried unrelated tracked PR reconciliation targets before the active `merging` issue, so an unrelated tracked PR could block the active merged issue from converging to `done`.
-- Commands run: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts`; `npm run build`; `git push -u origin codex/issue-971`; `gh pr create --draft --base main --head codex/issue-971 --title "Issue #971: fast-path active merged issue convergence" ...`.
-- PR status: draft PR #985 (`https://github.com/TommyKammy/codex-supervisor/pull/985`).
+- Next exact step: monitor draft PR #986 and address CI or review feedback if it arrives.
+- Verification gap: none in the requested local scope after rerunning the focused prelude/reconciliation tests and `npm run build`.
+- Files touched: `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; the change only stops the tracked merged-but-open sweep after a bounded number of PR-bearing records and leaves unprocessed records unchanged for later cycles.
+- Last focused command: `gh pr create --draft --base main --head codex/issue-972 --title "Issue #972: bound tracked merged reconciliation per cycle" ...`
+- Exact failure reproduced: `reconcileTrackedMergedButOpenIssues()` looked up both PR #191 and PR #192 in one cycle even when only one record should have been processed before deferring the rest.
+- Commands run: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm ci`; `npm run build`; `git push -u origin codex/issue-972`; `gh pr create --draft --base main --head codex/issue-972 --title "Issue #972: bound tracked merged reconciliation per cycle" ...`.
+- PR status: draft PR #986 (`https://github.com/TommyKammy/codex-supervisor/pull/986`).
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.

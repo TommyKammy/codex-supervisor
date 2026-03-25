@@ -748,19 +748,30 @@ export async function reconcileTrackedMergedButOpenIssues(
   }) => Promise<void>) | null = null,
   options: {
     onlyIssueNumber?: number | null;
+    maxRecords?: number | null;
   } = {},
 ): Promise<RecoveryEvent[]> {
+  const defaultMaxRecordsPerCycle = 25;
+  const maxRecordsPerCycle =
+    typeof options.maxRecords === "number" && Number.isFinite(options.maxRecords) && options.maxRecords >= 1
+      ? Math.floor(options.maxRecords)
+      : defaultMaxRecordsPerCycle;
   let changed = false;
   const recoveryEvents: RecoveryEvent[] = [];
   const issueByNumber = new Map(issues.map((issue) => [issue.number, issue]));
   const records = options.onlyIssueNumber === undefined || options.onlyIssueNumber === null
     ? Object.values(state.issues)
     : [state.issues[String(options.onlyIssueNumber)]].filter((record): record is IssueRunRecord => record !== undefined);
+  let processedRecords = 0;
 
   for (const record of records) {
     if (record.pr_number === null) {
       continue;
     }
+    if (processedRecords >= maxRecordsPerCycle) {
+      break;
+    }
+    processedRecords += 1;
 
     await updateReconciliationProgress?.({
       targetIssueNumber: record.issue_number,

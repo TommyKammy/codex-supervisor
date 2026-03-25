@@ -1211,6 +1211,127 @@ test("reconcileTrackedMergedButOpenIssues can restrict convergence to the active
   ]);
 });
 
+test("reconcileTrackedMergedButOpenIssues stops after the per-cycle budget and defers remaining records", async () => {
+  const firstRecord = createRecord({
+    issue_number: 366,
+    state: "merging",
+    pr_number: 191,
+    blocked_reason: null,
+  });
+  const secondRecord = createRecord({
+    issue_number: 367,
+    state: "waiting_ci",
+    branch: "codex/reopen-issue-367",
+    pr_number: 192,
+    blocked_reason: null,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 366,
+    issues: {
+      "366": firstRecord,
+      "367": secondRecord,
+    },
+  };
+  const firstMergedPr = createPullRequest({
+    number: 191,
+    title: "Merged implementation 191",
+    url: "https://example.test/pr/191",
+    state: "MERGED",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "merged-head-191",
+    mergedAt: "2026-03-13T00:20:00Z",
+  });
+  const secondMergedPr = createPullRequest({
+    number: 192,
+    title: "Merged implementation 192",
+    url: "https://example.test/pr/192",
+    state: "MERGED",
+    headRefName: "codex/reopen-issue-367",
+    headRefOid: "merged-head-192",
+    mergedAt: "2026-03-13T00:22:00Z",
+  });
+  const closedIssues = new Map<number, GitHubIssue>([
+    [366, {
+      number: 366,
+      title: "Merged implementation issue 366",
+      body: "",
+      createdAt: "2026-03-13T00:00:00Z",
+      updatedAt: "2026-03-13T00:21:00Z",
+      url: "https://example.test/issues/366",
+      state: "CLOSED",
+    }],
+    [367, {
+      number: 367,
+      title: "Merged implementation issue 367",
+      body: "",
+      createdAt: "2026-03-13T00:01:00Z",
+      updatedAt: "2026-03-13T00:23:00Z",
+      url: "https://example.test/issues/367",
+      state: "CLOSED",
+    }],
+  ]);
+
+  const prLookups: number[] = [];
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileTrackedMergedButOpenIssues(
+    {
+      getPullRequestIfExists: async (prNumber) => {
+        prLookups.push(prNumber);
+        if (prNumber === 191) {
+          return firstMergedPr;
+        }
+        if (prNumber === 192) {
+          return secondMergedPr;
+        }
+        throw new Error(`unexpected PR lookup #${prNumber}`);
+      },
+      getIssue: async (issueNumber) => {
+        const issue = closedIssues.get(issueNumber);
+        assert.ok(issue, `expected closed issue snapshot for #${issueNumber}`);
+        return issue;
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getChecks: async () => [],
+      getMergedPullRequestsClosingIssue: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore,
+    state,
+    createConfig(),
+    Array.from(closedIssues.values()),
+    null,
+    { maxRecords: 1 },
+  );
+
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(prLookups, [191]);
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(state.issues["366"]?.state, "done");
+  assert.equal(state.issues["367"]?.state, "waiting_ci");
+  assert.equal(state.issues["367"]?.pr_number, 192);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "merged_pr_convergence: tracked PR #191 merged; marked issue #366 done",
+  ]);
+});
+
 test("reconcileTrackedMergedButOpenIssues keeps merged convergence done when audit persistence fails", async () => {
   const artifactRootFile = path.join(
     await fs.mkdtemp(path.join(os.tmpdir(), "reconcile-audit-failure-")),
