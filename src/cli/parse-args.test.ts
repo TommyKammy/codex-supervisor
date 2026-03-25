@@ -209,3 +209,17 @@ test("parseArgs requires an issue number for requeue", () => {
     /The requeue command requires one issue number\./,
   );
 });
+
+test("parseArgs rejects --config without a following path", () => {
+  assert.throws(
+    () => parseArgs(["status", "--config"]),
+    /The --config flag requires a file path\./,
+  );
+});
+
+test("parseArgs rejects --config when the next token is another flag", () => {
+  assert.throws(
+    () => parseArgs(["status", "--config", "--why"]),
+    /The --config flag requires a file path\./,
+  );
+});

@@ -1,5 +1,14 @@
 import { CliOptions } from "../core/types";
 
+function readConfigPath(args: string[]): string {
+  const configPath = args.shift();
+  if (!configPath || configPath.startsWith("-")) {
+    throw new Error("The --config flag requires a file path.");
+  }
+
+  return configPath;
+}
+
 export function parseArgs(argv: string[]): CliOptions {
   const args = [...argv];
   let command: CliOptions["command"] = "run-once";
@@ -44,7 +53,7 @@ export function parseArgs(argv: string[]): CliOptions {
     }
 
     if (token === "--config") {
-      configPath = args.shift();
+      configPath = readConfigPath(args);
       continue;
     }
 
