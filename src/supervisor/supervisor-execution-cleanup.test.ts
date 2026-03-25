@@ -412,7 +412,7 @@ test("runOnce preserves orphaned done worktrees that are no longer referenced by
   const fixture = await createSupervisorFixture();
   fixture.config.maxDoneWorkspaces = 1;
   fixture.config.cleanupDoneWorkspacesAfterHours = -1;
-  fixture.config.cleanupOrphanedWorkspacesAfterHours = -1;
+  fixture.config.cleanupOrphanedWorkspacesAfterHours = 24;
 
   const trackedIssueNumber = 91;
   const orphanIssueNumber = 92;
@@ -477,7 +477,7 @@ test("runOnce still cleans tracked done workspaces under the done-workspace poli
   const fixture = await createSupervisorFixture();
   fixture.config.maxDoneWorkspaces = 1;
   fixture.config.cleanupDoneWorkspacesAfterHours = -1;
-  fixture.config.cleanupOrphanedWorkspacesAfterHours = -1;
+  fixture.config.cleanupOrphanedWorkspacesAfterHours = 24;
 
   const olderIssueNumber = 91;
   const newerIssueNumber = 92;
@@ -549,7 +549,7 @@ test("runOnce ignores non-canonical orphan workspace names", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.maxDoneWorkspaces = 1;
   fixture.config.cleanupDoneWorkspacesAfterHours = -1;
-  fixture.config.cleanupOrphanedWorkspacesAfterHours = -1;
+  fixture.config.cleanupOrphanedWorkspacesAfterHours = 24;
 
   const orphanIssueNumber = 92;
   const orphanBranch = branchName(fixture.config, orphanIssueNumber);
@@ -598,7 +598,7 @@ test("pruneOrphanedWorkspaces skips orphaned worktrees when the orphan issue loc
   const fixture = await createSupervisorFixture();
   fixture.config.maxDoneWorkspaces = 1;
   fixture.config.cleanupDoneWorkspacesAfterHours = -1;
-  fixture.config.cleanupOrphanedWorkspacesAfterHours = -1;
+  fixture.config.cleanupOrphanedWorkspacesAfterHours = 24;
 
   const orphanIssueNumber = 92;
   const orphanBranch = branchName(fixture.config, orphanIssueNumber);
@@ -676,7 +676,7 @@ test("pruneOrphanedWorkspaces returns no candidates when workspaceRoot cannot be
   const fixture = await createSupervisorFixture();
   fixture.config.maxDoneWorkspaces = 1;
   fixture.config.cleanupDoneWorkspacesAfterHours = -1;
-  fixture.config.cleanupOrphanedWorkspacesAfterHours = -1;
+  fixture.config.cleanupOrphanedWorkspacesAfterHours = 24;
 
   const workspaceRootFile = path.join(path.dirname(fixture.stateFile), "workspace-root-file");
   await fs.writeFile(workspaceRootFile, "not a directory\n", "utf8");

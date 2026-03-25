@@ -1,36 +1,36 @@
-# Issue #994: Orphan cleanup decoupling: evaluate orphan pruning independently from done-workspace cleanup disables
+# Issue #995: Orphan cleanup config safety: replace ambiguous negative grace behavior with explicit validated semantics
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/994
-- Branch: codex/issue-994
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/995
+- Branch: codex/issue-995
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 0953237f3b12bd5124ca00cf39aea04ff4fcb360
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 10517a240248bf7b397457a810c4fc6e6f20ce09
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-25T13:25:30.000Z
+- Updated at: 2026-03-25T13:31:07.828Z
 
 ## Latest Codex Summary
-Pushed `codex/issue-994` to origin and opened draft PR [#1012](https://github.com/TommyKammy/codex-supervisor/pull/1012) for the focused regression-test slice. The branch still only adds test coverage for disabled done-cleanup settings; no runtime behavior changed.
+- Reproduced that `loadConfigSummary()` treated `cleanupOrphanedWorkspacesAfterHours: -1` as ready config, which silently disabled recent-workspace protection by making orphan prune age checks always pass. Fixed the config semantics by rejecting negative orphan grace values during config load and failing fast in runtime orphan evaluation if an invalid negative is injected programmatically.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: after `#998` made orphan cleanup explicit operator work, the remaining risk for `#994` is a regression where disabled done-workspace cleanup settings might still be treated as a global "skip cleanup" gate for orphan evaluation paths.
-- What changed: added `src/recovery-reconciliation.test.ts` with a focused temp-repo regression that first exercises `cleanupExpiredDoneWorkspaces()` under `cleanupDoneWorkspacesAfterHours=-1` and `maxDoneWorkspaces=-1`, then proves `inspectOrphanedWorkspacePruneCandidates()` still reports the orphan candidate and `pruneOrphanedWorkspacesForOperator()` still prunes it. Tightened `src/doctor.test.ts` to use the same disabled-done-cleanup config while still expecting orphan prune candidates in diagnostics.
+- Hypothesis: the unsafe behavior lived at config ingestion, where `cleanupOrphanedWorkspacesAfterHours` accepted any finite negative value and later caused orphan prune grace checks to behave like "prune immediately".
+- What changed: added a focused `src/config.test.ts` regression asserting negative orphan grace values are invalid; updated `src/core/config.ts` to reject negative `cleanupOrphanedWorkspacesAfterHours`; hardened `src/recovery-reconciliation.ts` to fail fast on invalid negative runtime values; and updated `src/supervisor/supervisor-execution-cleanup.test.ts` fixtures to use explicit non-negative orphan grace values instead of the old ambiguous `-1`.
 - Current blocker: none.
-- Next exact step: wait for review/CI on PR #1012, then address any feedback if it appears.
-- Verification gap: none on the intended slice; `npx tsx --test src/recovery-reconciliation.test.ts src/doctor.test.ts` and `npm run build` are green after installing dev dependencies with `npm ci`.
-- Files touched: `src/recovery-reconciliation.test.ts`, `src/doctor.test.ts`, `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low; this turn only adds regression coverage and does not alter runtime behavior.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-994 --title "Add orphan cleanup disable regression coverage" ...`
-- Exact failure reproduced: verified from current `main`/`#998` that runtime orphan cleanup is already explicit-only, so no implementation bug remained; the actionable gap for `#994` was missing regression coverage for the disabled done-cleanup configuration.
-- Commands run: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short`; `rg -n "cleanupOrphanedWorkspacesAfterHours|done-workspace|orphan|early return|cleanup" src/recovery-reconciliation.ts src/doctor.ts src/doctor.test.ts src/supervisor/supervisor-execution-cleanup.test.ts`; `sed -n '330,460p' src/recovery-reconciliation.ts`; `sed -n '604,652p' src/recovery-reconciliation.ts`; `sed -n '400,860p' src/supervisor/supervisor-execution-cleanup.test.ts`; `sed -n '1,220p' src/doctor.test.ts`; `gh issue view 993 --json number,title,body,state,url`; `gh issue view 994 --json number,title,body,state,url`; `gh pr view 998 --json number,title,body,state,headRefName,baseRefName,url`; `npx tsx --test src/recovery-reconciliation.test.ts src/doctor.test.ts`; `npm ci`; `npm run build`; `git push -u origin codex/issue-994`; `gh pr create --draft --base main --head codex/issue-994 --title "Add orphan cleanup disable regression coverage" ...`; `gh pr view 1012 --json number,state,url,isDraft,headRefName,baseRefName,title`.
-- PR status: draft PR open at `https://github.com/TommyKammy/codex-supervisor/pull/1012`.
+- Next exact step: commit the validation change, push `codex/issue-995`, and open a draft PR for review.
+- Verification gap: none on the intended slice; `npx tsx --test src/config.test.ts src/doctor.test.ts src/recovery-reconciliation.test.ts` and `npm run build` are green after `npm ci`.
+- Files touched: `src/config.test.ts`, `src/core/config.ts`, `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-execution-cleanup.test.ts`, `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; the behavior change is intentionally narrow to orphan-cleanup config validation and a defensive runtime assertion.
+- Last focused command: `npm run build`
+- Exact failure reproduced: `npx tsx --test src/config.test.ts` failed because `loadConfigSummary()` returned `status === "ready"` for `cleanupOrphanedWorkspacesAfterHours: -1` instead of flagging it as invalid config.
+- Commands run: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-995/AGENTS.generated.md`; `sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-995/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg -n "cleanupOrphanedWorkspacesAfterHours|orphan grace|negative|sentinel|cleanupDoneWorkspacesAfterHours|maxDoneWorkspaces" src`; `sed -n '520,620p' src/core/config.ts`; `sed -n '1,260p' src/config.test.ts`; `sed -n '150,230p' src/recovery-reconciliation.ts`; `sed -n '720,820p' src/supervisor/supervisor-execution-cleanup.test.ts`; `sed -n '100,220p' src/doctor.test.ts`; `sed -n '1,180p' src/recovery-reconciliation.test.ts`; `sed -n '600,670p' src/recovery-reconciliation.ts`; `sed -n '1,140p' src/turn-execution-test-helpers.ts`; `sed -n '400,720p' src/supervisor/supervisor-execution-cleanup.test.ts`; `npx tsx --test src/config.test.ts`; `npx tsx --test src/config.test.ts`; `npx tsx --test src/supervisor/supervisor-execution-cleanup.test.ts`; `npm ci`; `npx tsx --test src/config.test.ts src/doctor.test.ts src/recovery-reconciliation.test.ts`; `npm run build`; `git rev-parse HEAD`; `gh pr view --json number,state,url,isDraft,headRefName,baseRefName,title`.
+- PR status: none yet.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.

@@ -130,6 +130,36 @@ test("loadConfigSummary accepts an explicit safer trust diagnostics posture with
   });
 });
 
+test("loadConfig rejects negative orphan cleanup grace values", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      cleanupOrphanedWorkspacesAfterHours: -1,
+    }),
+    "utf8",
+  );
+
+  const summary = loadConfigSummary(configPath);
+  assert.equal(summary.status, "invalid_config");
+  assert.deepEqual(summary.invalidFields, ["cleanupOrphanedWorkspacesAfterHours"]);
+  assert.match(summary.error ?? "", /Invalid config field: cleanupOrphanedWorkspacesAfterHours/);
+
+  assert.throws(() => loadConfig(configPath), /Invalid config field: cleanupOrphanedWorkspacesAfterHours/);
+});
+
 test("loadConfig still resolves codexBinary when it is an explicit relative path", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
   t.after(async () => {

@@ -187,7 +187,12 @@ interface InspectOrphanedWorkspacePruneCandidatesOptions {
 }
 
 function orphanedWorkspaceGracePeriodHours(config: SupervisorConfig): number {
-  return config.cleanupOrphanedWorkspacesAfterHours ?? 24;
+  const gracePeriodHours = config.cleanupOrphanedWorkspacesAfterHours ?? 24;
+  if (!Number.isFinite(gracePeriodHours) || gracePeriodHours < 0) {
+    throw new Error("Invalid config field: cleanupOrphanedWorkspacesAfterHours");
+  }
+
+  return gracePeriodHours;
 }
 
 function updateLatestModifiedMs(currentModifiedMs: number, candidateModifiedMs: number): number {
