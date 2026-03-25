@@ -145,6 +145,10 @@ test("diagnoseSupervisorHost surfaces orphan prune candidates and representative
   });
 
   const report = renderDoctorReport(diagnostics);
+  assert.match(
+    report,
+    /doctor_orphan_policy mode=explicit_only background_prune=false operator_prune=true grace_hours=24 preserved=locked,recent,unsafe_target/,
+  );
   assert.match(report, /doctor_check name=worktrees status=warn summary=.*orphaned prune candidate/i);
   assert.match(report, /doctor_detail name=worktrees detail=orphan_prune_candidate issue_number=201 eligibility=eligible /);
   assert.match(report, /doctor_detail name=worktrees detail=orphan_prune_candidate issue_number=202 eligibility=locked /);
@@ -357,6 +361,8 @@ test("renderDoctorReport surfaces merge-critical recheck cadence visibility", ()
     },
     candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
     candidateDiscoveryWarning: null,
+    orphanPolicySummary:
+      "doctor_orphan_policy mode=explicit_only background_prune=false operator_prune=true grace_hours=24 preserved=locked,recent,unsafe_target",
     localCiContract: {
       configured: true,
       command: "npm run ci:local",
@@ -368,6 +374,10 @@ test("renderDoctorReport surfaces merge-critical recheck cadence visibility", ()
   const report = renderDoctorReport(diagnostics as Awaited<ReturnType<typeof diagnoseSupervisorHost>>);
 
   assert.match(report, /doctor_cadence poll_interval_seconds=120 merge_critical_recheck_seconds=30 merge_critical_effective_seconds=30 enabled=true/);
+  assert.match(
+    report,
+    /doctor_orphan_policy mode=explicit_only background_prune=false operator_prune=true grace_hours=24 preserved=locked,recent,unsafe_target/,
+  );
   assert.match(report, /doctor_local_ci configured=true source=config command=npm run ci:local summary=Repo-owned local CI contract is configured\./);
 });
 

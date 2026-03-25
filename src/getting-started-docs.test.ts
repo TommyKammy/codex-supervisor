@@ -113,6 +113,15 @@ test("getting-started defines the repo-owned local CI contract for pre-PR verifi
   assert.match(content, /ready-for-review promotion stays blocked/i);
 });
 
+test("getting-started points operators to doctor for the effective orphan cleanup policy", async () => {
+  const content = await readGettingStarted();
+
+  assert.match(content, /doctor_orphan_policy mode=explicit_only/i);
+  assert.match(content, /background_prune=false/i);
+  assert.match(content, /operator_prune=true/i);
+  assert.match(content, /preserved=locked,recent,unsafe_target/i);
+});
+
 test("japanese docs keep overview and getting-started responsibilities separate", async () => {
   const [overview, gettingStarted] = await Promise.all([
     readJapaneseOverview(),

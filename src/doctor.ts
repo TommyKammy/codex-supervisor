@@ -37,6 +37,7 @@ export interface DoctorDiagnostics {
   cadenceDiagnostics: CadenceDiagnosticsSummary;
   candidateDiscoverySummary: string;
   candidateDiscoveryWarning: string | null;
+  orphanPolicySummary?: string;
   localCiContract?: LocalCiContractSummary;
 }
 
@@ -92,6 +93,18 @@ function withDoctorLoadFindings(state: SupervisorStateFile, findings: StateLoadF
 
 function sanitizeDoctorValue(value: string): string {
   return value.replace(/\r?\n/g, "\\n");
+}
+
+function formatOrphanPolicySummary(config: SupervisorConfig): string {
+  const graceHours = config.cleanupOrphanedWorkspacesAfterHours ?? 24;
+  return [
+    "doctor_orphan_policy",
+    "mode=explicit_only",
+    "background_prune=false",
+    "operator_prune=true",
+    `grace_hours=${graceHours}`,
+    "preserved=locked,recent,unsafe_target",
+  ].join(" ");
 }
 
 function overallStatusForChecks(checks: DoctorCheck[]): DoctorCheckStatus {
@@ -507,6 +520,7 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
     cadenceDiagnostics: summarizeCadenceDiagnostics(args.config),
     candidateDiscoverySummary: formatCandidateDiscoveryBehaviorLine(args.config, "doctor_candidate_discovery"),
     candidateDiscoveryWarning,
+    orphanPolicySummary: formatOrphanPolicySummary(args.config),
     localCiContract: summarizeLocalCiContract(args.config),
   };
 }
@@ -578,6 +592,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     `doctor_posture trust_mode=${diagnostics.trustDiagnostics.trustMode} execution_safety_mode=${diagnostics.trustDiagnostics.executionSafetyMode}`,
     `doctor_cadence poll_interval_seconds=${diagnostics.cadenceDiagnostics.pollIntervalSeconds} merge_critical_recheck_seconds=${mergeCriticalRecheckSeconds} merge_critical_effective_seconds=${diagnostics.cadenceDiagnostics.mergeCriticalEffectiveSeconds} enabled=${diagnostics.cadenceDiagnostics.mergeCriticalRecheckEnabled}`,
     diagnostics.candidateDiscoverySummary,
+    ...(diagnostics.orphanPolicySummary ? [diagnostics.orphanPolicySummary] : []),
     `doctor_local_ci configured=${localCiContract.configured} source=${localCiContract.source} command=${sanitizeDoctorValue(localCiContract.command ?? "none")} summary=${sanitizeDoctorValue(localCiContract.summary)}`,
     ...(diagnostics.trustDiagnostics.warning === null
       ? []
