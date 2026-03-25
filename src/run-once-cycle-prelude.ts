@@ -117,7 +117,7 @@ export async function runOnceCyclePrelude(
     await setReconciliationPhase("tracked_merged_but_open_issues");
     const activeRecord =
       state.activeIssueNumber === null ? null : state.issues[String(state.activeIssueNumber)] ?? null;
-    if (activeRecord?.state === "merging" && activeRecord.pr_number !== null) {
+    if (activeRecord !== null && activeRecord.pr_number !== null) {
       const activeMergedEvents = await args.reconcileTrackedMergedButOpenIssues(
         state,
         issues,
