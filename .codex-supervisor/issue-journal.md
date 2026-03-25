@@ -24,11 +24,11 @@
 - Hypothesis: stale no-PR branch classification was only ignoring the issue journal and replay artifacts, so worktree-local supervisor outputs under `.codex-supervisor/pre-merge/` and `.codex-supervisor/execution-metrics/` were being treated as meaningful diffs and incorrectly forcing `recoverable`.
 - What changed: added focused regressions in `src/supervisor/supervisor-stale-no-pr-branch-state.test.ts` and `src/supervisor/supervisor-execution-orchestration.test.ts`, then updated `src/supervisor/supervisor.ts` so stale no-PR branch-state checks ignore `.codex-supervisor/pre-merge/**` and `.codex-supervisor/execution-metrics/**` alongside the journal and replay artifacts.
 - Current blocker: none.
-- Next exact step: commit the focused stale-artifact fix on `codex/issue-960`, then open or update the issue PR if needed and monitor CI.
+- Next exact step: monitor CI and review feedback on draft PR `#982`, then address any reported failures or review comments.
 - Verification gap: none in the requested local scope after rerunning the focused stale-branch, recovery reconciliation, orchestration tests, and build.
 - Files touched: `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-stale-no-pr-branch-state.test.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts`, `.codex-supervisor/issue-journal.md`.
 - Rollback concern: low; the production change only broadens stale-branch ignore handling for known supervisor-owned worktree artifact roots.
 - Last focused command: `npm run build`
-- PR status: none yet for issue #960 on this branch.
+- PR status: draft PR `#982` is open at `https://github.com/TommyKammy/codex-supervisor/pull/982`.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
