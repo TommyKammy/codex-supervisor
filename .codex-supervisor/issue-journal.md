@@ -1,38 +1,38 @@
-# Issue #975: Selected runnable issue can starve behind repeated reconciliation before claim
+# Issue #990: JSON corruption regression: preserve quarantine markers across normal saves until explicit reset
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/975
-- Branch: codex/issue-975
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/990
+- Branch: codex/issue-990
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 2af9471670be918fcc0d160ad6ac0d1cb5f03473
+- Last head SHA: 1f164205eaf4301802f9a5395f1eebce26af8e6f
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-25T09:05:11.094Z
+- Updated at: 2026-03-25T11:29:32.916Z
 
 ## Latest Codex Summary
-- Reserved runnable issues before the broad reconciliation sweep so `runOnce()` can claim and start selected work without touching unrelated tracked PRs first.
-- Added a focused orchestration regression covering a runnable selection with `activeIssueNumber=null` and an unrelated tracked PR that would previously have been reconciled before claim.
-- Local verification passed for `npx tsx --test src/run-once-issue-selection.test.ts`, `npx tsx --test src/run-once-cycle-prelude.test.ts`, `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts`, and `npm run build` after installing missing dev dependencies with `npm install`.
+- Reproduced the regression with a focused `StateStore` test showing that an ordinary JSON `save()` after a quarantined load dropped both `json_state_quarantine` and the persisted `load_findings`.
+- Narrowed the fix to `normalizeStateForSave()` so normal JSON saves preserve the existing quarantine marker and load findings until the explicit `reset-corrupt-json-state` path writes a clean empty state.
+- Local verification passed for `npx tsx --test src/core/state-store.test.ts`, `npx tsx --test src/doctor.test.ts`, `npx tsx --test src/cli/supervisor-runtime.test.ts`, and `npm run build` after installing missing dev dependencies with `npm install`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: when `activeIssueNumber` is still `null`, the prelude can spend a full cycle in unrelated reconciliation before the selected runnable issue is ever reserved, so repeated runs can keep restarting broad reconciliation without ever claiming the chosen work.
-- What changed: added `reserveRunnableIssueSelection()` in `src/run-once-issue-selection.ts`, invoked it from `src/supervisor/supervisor.ts` before the broad prelude reconciliation, and taught `src/run-once-cycle-prelude.ts` to return early once a runnable issue has been reserved so the normal issue phase can claim/start it immediately. Added a focused regression in `src/supervisor/supervisor-execution-orchestration.test.ts` that throws if unrelated tracked-PR reconciliation runs before the selected runnable issue is claimed.
+- Hypothesis: ordinary JSON save normalization was treating the quarantine marker fields as disposable metadata, so any later normal `StateStore.save()` silently cleared the corrupt-state marker and its associated JSON parse finding without going through `reset-corrupt-json-state`.
+- What changed: preserved `load_findings` and `json_state_quarantine` inside `normalizeStateForSave()` and added a focused regression in `src/core/state-store.test.ts` that quarantines invalid JSON, performs a normal save with a regular issue mutation, and asserts the persisted quarantine marker plus parse finding are still present afterward.
 - Current blocker: none.
-- Next exact step: review the diff, commit the runnable-reservation fast path on `codex/issue-975`, and open or update a draft PR if needed.
-- Verification gap: none in the requested local scope after rerunning `npx tsx --test src/run-once-issue-selection.test.ts`, `npx tsx --test src/run-once-cycle-prelude.test.ts`, `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts`, and `npm run build`.
-- Files touched: `src/run-once-issue-selection.ts`, `src/run-once-cycle-prelude.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-execution-orchestration.test.ts`, `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low; the change only reorders the reservation boundary so runnable work is claimed before unrelated reconciliation, while leaving the existing selection logic and reconciliation behavior intact for later cycles.
+- Next exact step: commit the quarantine-persistence fix on `codex/issue-990` and open or update a draft PR if one does not already exist.
+- Verification gap: none in the requested local scope after rerunning `npx tsx --test src/core/state-store.test.ts`, `npx tsx --test src/doctor.test.ts`, `npx tsx --test src/cli/supervisor-runtime.test.ts`, and `npm run build`.
+- Files touched: `src/core/state-store.ts`, `src/core/state-store.test.ts`, `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; the change only widens normal JSON save serialization to keep already-loaded quarantine metadata and findings intact, while the explicit reset path still clears them by saving `emptyState()`.
 - Last focused command: `npm run build`
-- Exact failure reproduced: with `activeIssueNumber=null`, runnable issue #91 returned from `listCandidateIssues()`, and unrelated issue #92 already tracking PR #192, `runOnce()` hit broad tracked-PR reconciliation before claim; the focused regression throws `unrelated reconciliation touched PR #192 before selected issue #91 was claimed` unless the runnable issue is reserved first.
-- Commands run: `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts --test-name-pattern "runOnce reserves a runnable issue before unrelated tracked-PR reconciliation work"`; `npx tsx --test src/run-once-issue-selection.test.ts`; `npx tsx --test src/run-once-cycle-prelude.test.ts`; `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts`; `npm run build`; `npm install`; `npm run build`.
+- Exact failure reproduced: after loading a corrupt `state.json`, the new focused regression performed a normal `StateStore.save()` with a routine issue update and then observed `persisted.json_state_quarantine === undefined`; the failure was `Expected values to be strictly equal: + actual - expected + undefined - '/tmp/.../state.json'`.
+- Commands run: `npx tsx --test src/core/state-store.test.ts --test-name-pattern "StateStore json save preserves quarantine markers after a quarantined load"`; `npx tsx --test src/core/state-store.test.ts`; `npx tsx --test src/doctor.test.ts`; `npx tsx --test src/cli/supervisor-runtime.test.ts`; `npm run build`; `npm install`; `npm run build`; `npx tsx --test src/core/state-store.test.ts`; `npm run build`.
 - PR status: none.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
