@@ -270,6 +270,9 @@ export interface IssueRunRecord {
 export interface SupervisorStateFile {
   activeIssueNumber: number | null;
   issues: Record<string, IssueRunRecord>;
+  reconciliation_state?: {
+    tracked_merged_but_open_last_processed_issue_number?: number | null;
+  };
   load_findings?: StateLoadFinding[];
   json_state_quarantine?: JsonStateQuarantine;
 }

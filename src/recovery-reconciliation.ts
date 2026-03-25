@@ -128,6 +128,45 @@ function parseIssueNumberFromWorkspaceName(workspaceName: string): number | null
   return Number.parseInt(match[1], 10);
 }
 
+function trackedMergedButOpenLastProcessedIssueNumber(state: SupervisorStateFile): number | null {
+  return state.reconciliation_state?.tracked_merged_but_open_last_processed_issue_number ?? null;
+}
+
+function setTrackedMergedButOpenLastProcessedIssueNumber(
+  state: SupervisorStateFile,
+  issueNumber: number | null,
+): boolean {
+  const currentIssueNumber = trackedMergedButOpenLastProcessedIssueNumber(state);
+  if (currentIssueNumber === issueNumber) {
+    return false;
+  }
+
+  state.reconciliation_state = {
+    ...(state.reconciliation_state ?? {}),
+    tracked_merged_but_open_last_processed_issue_number: issueNumber,
+  };
+  return true;
+}
+
+function orderTrackedMergedButOpenRecordsForResume(
+  records: IssueRunRecord[],
+  lastProcessedIssueNumber: number | null,
+): IssueRunRecord[] {
+  if (records.length <= 1 || lastProcessedIssueNumber === null) {
+    return records;
+  }
+
+  const resumeIndex = records.findIndex((record) => record.issue_number === lastProcessedIssueNumber);
+  if (resumeIndex === -1) {
+    return records;
+  }
+
+  return [
+    ...records.slice(resumeIndex + 1),
+    ...records.slice(0, resumeIndex + 1),
+  ];
+}
+
 export type OrphanedWorkspacePruneEligibility = "eligible" | "locked" | "recent" | "unsafe_target";
 
 export interface OrphanedWorkspacePruneCandidate {
@@ -756,22 +795,28 @@ export async function reconcileTrackedMergedButOpenIssues(
     typeof options.maxRecords === "number" && Number.isFinite(options.maxRecords) && options.maxRecords >= 1
       ? Math.floor(options.maxRecords)
       : defaultMaxRecordsPerCycle;
-  let changed = false;
+  let saveNeeded = false;
   const recoveryEvents: RecoveryEvent[] = [];
   const issueByNumber = new Map(issues.map((issue) => [issue.number, issue]));
-  const records = options.onlyIssueNumber === undefined || options.onlyIssueNumber === null
+  const selectedRecords = options.onlyIssueNumber === undefined || options.onlyIssueNumber === null
     ? Object.values(state.issues)
     : [state.issues[String(options.onlyIssueNumber)]].filter((record): record is IssueRunRecord => record !== undefined);
+  const prBearingRecords = selectedRecords.filter((record): record is IssueRunRecord => record.pr_number !== null);
+  const records = options.onlyIssueNumber === undefined || options.onlyIssueNumber === null
+    ? orderTrackedMergedButOpenRecordsForResume(
+      prBearingRecords,
+      trackedMergedButOpenLastProcessedIssueNumber(state),
+    )
+    : prBearingRecords;
   let processedRecords = 0;
+  let lastProcessedIssueNumber: number | null = null;
 
   for (const record of records) {
-    if (record.pr_number === null) {
-      continue;
-    }
     if (processedRecords >= maxRecordsPerCycle) {
       break;
     }
     processedRecords += 1;
+    lastProcessedIssueNumber = record.issue_number;
 
     await updateReconciliationProgress?.({
       targetIssueNumber: record.issue_number,
@@ -779,7 +824,12 @@ export async function reconcileTrackedMergedButOpenIssues(
       waitStep: null,
     });
 
-    const trackedPullRequest = await github.getPullRequestIfExists(record.pr_number);
+    const trackedPrNumber = record.pr_number;
+    if (trackedPrNumber === null) {
+      continue;
+    }
+
+    const trackedPullRequest = await github.getPullRequestIfExists(trackedPrNumber);
     if (trackedPullRequest && !matchesTrackedBranch(record, trackedPullRequest)) {
       if (state.activeIssueNumber === record.issue_number) {
         continue;
@@ -794,7 +844,7 @@ export async function reconcileTrackedMergedButOpenIssues(
         state: record.state === "stabilizing" ? "queued" : record.state,
       }, recoveryEvent));
       state.issues[String(record.issue_number)] = updated;
-      changed = true;
+      saveNeeded = true;
       recoveryEvents.push(recoveryEvent);
       continue;
     }
@@ -827,7 +877,7 @@ export async function reconcileTrackedMergedButOpenIssues(
       if (needsRecordUpdate(record, patch)) {
         const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
         state.issues[String(record.issue_number)] = updated;
-        changed = true;
+        saveNeeded = true;
         recoveryEvents.push(recoveryEvent);
         await syncExecutionMetricsRunSummarySafely({
           previousRecord: record,
@@ -849,7 +899,7 @@ export async function reconcileTrackedMergedButOpenIssues(
       }
       if (state.activeIssueNumber === record.issue_number) {
         state.activeIssueNumber = null;
-        changed = true;
+        saveNeeded = true;
       }
       continue;
     }
@@ -878,7 +928,7 @@ export async function reconcileTrackedMergedButOpenIssues(
     if (state.activeIssueNumber === record.issue_number) {
       state.activeIssueNumber = null;
     }
-    changed = true;
+    saveNeeded = true;
     recoveryEvents.push(recoveryEvent);
     await syncExecutionMetricsRunSummarySafely({
       previousRecord: record,
@@ -899,7 +949,17 @@ export async function reconcileTrackedMergedButOpenIssues(
     });
   }
 
-  if (changed) {
+  if (options.onlyIssueNumber === undefined || options.onlyIssueNumber === null) {
+    const nextLastProcessedIssueNumber =
+      processedRecords === 0 || processedRecords >= records.length
+        ? null
+        : lastProcessedIssueNumber;
+    if (setTrackedMergedButOpenLastProcessedIssueNumber(state, nextLastProcessedIssueNumber)) {
+      saveNeeded = true;
+    }
+  }
+
+  if (saveNeeded) {
     await stateStore.save(state);
   }
 

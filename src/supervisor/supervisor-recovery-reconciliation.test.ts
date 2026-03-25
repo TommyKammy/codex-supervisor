@@ -1332,6 +1332,153 @@ test("reconcileTrackedMergedButOpenIssues stops after the per-cycle budget and d
   ]);
 });
 
+test("reconcileTrackedMergedButOpenIssues resumes from persisted progress in the next cycle", async () => {
+  const firstRecord = createRecord({
+    issue_number: 366,
+    state: "waiting_ci",
+    pr_number: 191,
+    blocked_reason: null,
+  });
+  const secondRecord = createRecord({
+    issue_number: 367,
+    state: "merging",
+    branch: "codex/reopen-issue-367",
+    pr_number: 192,
+    blocked_reason: null,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "366": firstRecord,
+      "367": secondRecord,
+    },
+  };
+  const openPr = createPullRequest({
+    number: 191,
+    title: "Open implementation 191",
+    url: "https://example.test/pr/191",
+    state: "OPEN",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "open-head-191",
+    mergedAt: null,
+  });
+  const mergedPr = createPullRequest({
+    number: 192,
+    title: "Merged implementation 192",
+    url: "https://example.test/pr/192",
+    state: "MERGED",
+    headRefName: "codex/reopen-issue-367",
+    headRefOid: "merged-head-192",
+    mergedAt: "2026-03-13T00:22:00Z",
+  });
+  const closedIssue: GitHubIssue = {
+    number: 367,
+    title: "Merged implementation issue 367",
+    body: "",
+    createdAt: "2026-03-13T00:01:00Z",
+    updatedAt: "2026-03-13T00:23:00Z",
+    url: "https://example.test/issues/367",
+    state: "CLOSED",
+  };
+
+  const prLookups: number[] = [];
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const firstCycleEvents = await reconcileTrackedMergedButOpenIssues(
+    {
+      getPullRequestIfExists: async (prNumber) => {
+        prLookups.push(prNumber);
+        if (prNumber === 191) {
+          return openPr;
+        }
+        if (prNumber === 192) {
+          return mergedPr;
+        }
+        throw new Error(`unexpected PR lookup #${prNumber}`);
+      },
+      getIssue: async (issueNumber) => {
+        assert.equal(issueNumber, 367);
+        return closedIssue;
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getChecks: async () => [],
+      getMergedPullRequestsClosingIssue: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore,
+    state,
+    createConfig(),
+    [closedIssue],
+    null,
+    { maxRecords: 1 },
+  );
+
+  assert.deepEqual(firstCycleEvents, []);
+  assert.deepEqual(prLookups, [191]);
+  assert.equal(saveCalls, 1);
+  assert.equal(state.issues["366"]?.state, "waiting_ci");
+  assert.equal(state.issues["367"]?.state, "merging");
+
+  const secondCycleEvents = await reconcileTrackedMergedButOpenIssues(
+    {
+      getPullRequestIfExists: async (prNumber) => {
+        prLookups.push(prNumber);
+        if (prNumber === 191) {
+          return openPr;
+        }
+        if (prNumber === 192) {
+          return mergedPr;
+        }
+        throw new Error(`unexpected PR lookup #${prNumber}`);
+      },
+      getIssue: async (issueNumber) => {
+        assert.equal(issueNumber, 367);
+        return closedIssue;
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getChecks: async () => [],
+      getMergedPullRequestsClosingIssue: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore,
+    state,
+    createConfig(),
+    [closedIssue],
+    null,
+    { maxRecords: 1 },
+  );
+
+  assert.deepEqual(prLookups, [191, 192]);
+  assert.equal(saveCalls, 2);
+  assert.equal(state.issues["367"]?.state, "done");
+  assert.equal(state.issues["367"]?.last_head_sha, "merged-head-192");
+  assert.deepEqual(secondCycleEvents.map((event) => event.reason), [
+    "merged_pr_convergence: tracked PR #192 merged; marked issue #367 done",
+  ]);
+});
+
 test("reconcileTrackedMergedButOpenIssues keeps merged convergence done when audit persistence fails", async () => {
   const artifactRootFile = path.join(
     await fs.mkdtemp(path.join(os.tmpdir(), "reconcile-audit-failure-")),

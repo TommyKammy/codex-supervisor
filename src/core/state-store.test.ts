@@ -109,6 +109,29 @@ test("StateStore json roundtrip preserves the active reservation and retry count
   });
 });
 
+test("StateStore json roundtrip preserves tracked merged reconciliation resume progress", async () => {
+  await withTempDir(async (dir) => {
+    const store = new StateStore(path.join(dir, "state.json"), { backend: "json" });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: null,
+      issues: {
+        "402": createRecord(402),
+      },
+      reconciliation_state: {
+        tracked_merged_but_open_last_processed_issue_number: 402,
+      },
+    };
+
+    await store.save(state);
+    const loaded = await store.load();
+
+    assert.equal(
+      loaded.reconciliation_state?.tracked_merged_but_open_last_processed_issue_number,
+      402,
+    );
+  });
+});
+
 test("StateStore sqlite roundtrip preserves the active reservation and retry counters", async () => {
   await withTempDir(async (dir) => {
     const store = new StateStore(path.join(dir, "state.sqlite"), { backend: "sqlite" });
@@ -133,6 +156,29 @@ test("StateStore sqlite roundtrip preserves the active reservation and retry cou
     assert.equal(loaded.issues["403"]?.repeated_blocker_count, 2);
     assert.equal(loaded.issues["403"]?.repeated_failure_signature_count, 2);
     assert.equal(loaded.issues["403"]?.blocked_reason, "verification");
+  });
+});
+
+test("StateStore sqlite roundtrip preserves tracked merged reconciliation resume progress", async () => {
+  await withTempDir(async (dir) => {
+    const store = new StateStore(path.join(dir, "state.sqlite"), { backend: "sqlite" });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: null,
+      issues: {
+        "403": createRecord(403),
+      },
+      reconciliation_state: {
+        tracked_merged_but_open_last_processed_issue_number: 403,
+      },
+    };
+
+    await store.save(state);
+    const loaded = await store.load();
+
+    assert.equal(
+      loaded.reconciliation_state?.tracked_merged_but_open_last_processed_issue_number,
+      403,
+    );
   });
 });
 

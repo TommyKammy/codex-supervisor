@@ -1,45 +1,36 @@
-# Issue #972: Reconciliation budgeting: bound tracked-merged-but-open processing per cycle
+# Issue #973: Reconciliation resume: preserve tracked-merged-but-open progress across cycles
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/972
-- Branch: codex/issue-972
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/973
+- Branch: codex/issue-973
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: abe52fc6081366bde6fd52a87682e31675a65ef6
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 93251eaae155c473e64fb0a73e5db69afab3deb4
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-25T06:57:40.311Z
+- Updated at: 2026-03-25T07:25:22.101Z
 
 ## Latest Codex Summary
-Bounded tracked merged-but-open reconciliation in [src/recovery-reconciliation.ts](src/recovery-reconciliation.ts) so each cycle now stops after a default cap of PR-bearing records and leaves the rest untouched for later cycles. The focused regression in [src/supervisor/supervisor-recovery-reconciliation.test.ts](src/supervisor/supervisor-recovery-reconciliation.test.ts) proves that once the per-cycle budget is exhausted, remaining merged records are deferred cleanly instead of being processed in the same pass.
-
-I updated the working notes in [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) and committed the checkpoint as `abe52fc` (`Issue #972: bound tracked merged reconciliation per cycle`). I also had to run `npm ci` first because `npm run build` initially failed with `tsc: not found` due missing `node_modules/`.
-
-Summary: Added a focused failing regression, bounded tracked-merged-but-open reconciliation per cycle, updated the issue journal, and committed the fix as `abe52fc`.
-State hint: draft_pr
-Blocked reason: none
-Tests: `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm ci`; `npm run build`
-Next action: push `codex/issue-972` and open/update the draft PR for issue #972
-Failure signature: none
+- Added persisted tracked-merged-but-open reconciliation resume progress so bounded sweeps can continue from the prior cursor instead of restarting at the first tracked PR-bearing record every cycle. Focused regressions now cover both the cross-cycle resume behavior in `src/supervisor/supervisor-recovery-reconciliation.test.ts` and JSON/SQLite state persistence in `src/core/state-store.test.ts`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `reconcileTrackedMergedButOpenIssues()` iterated every tracked PR-bearing record in a single pass, so one large backlog of merged-but-open records could monopolize a reconciliation cycle and delay the rest of the supervisor loop.
-- What changed: added a focused regression in `src/supervisor/supervisor-recovery-reconciliation.test.ts`, then bounded `reconcileTrackedMergedButOpenIssues()` in `src/recovery-reconciliation.ts` with a default per-cycle processed-record cap while leaving remaining records untouched for later cycles.
+- Hypothesis: bounded tracked-merged-but-open reconciliation forgot its place whenever a cycle processed only still-open tracked PRs, because no record mutated and no resume cursor was persisted.
+- What changed: added a focused two-cycle regression in `src/supervisor/supervisor-recovery-reconciliation.test.ts`; persisted `reconciliation_state.tracked_merged_but_open_last_processed_issue_number` in `src/core/types.ts` and `src/core/state-store.ts`; and taught `reconcileTrackedMergedButOpenIssues()` in `src/recovery-reconciliation.ts` to rotate the next sweep from the last processed tracked issue and clear the cursor after a full pass.
 - Current blocker: none.
-- Next exact step: monitor draft PR #986 and address CI or review feedback if it arrives.
-- Verification gap: none in the requested local scope after rerunning the focused prelude/reconciliation tests and `npm run build`.
-- Files touched: `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low; the change only stops the tracked merged-but-open sweep after a bounded number of PR-bearing records and leaves unprocessed records unchanged for later cycles.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-972 --title "Issue #972: bound tracked merged reconciliation per cycle" ...`
-- Exact failure reproduced: `reconcileTrackedMergedButOpenIssues()` looked up both PR #191 and PR #192 in one cycle even when only one record should have been processed before deferring the rest.
-- Commands run: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm ci`; `npm run build`; `git push -u origin codex/issue-972`; `gh pr create --draft --base main --head codex/issue-972 --title "Issue #972: bound tracked merged reconciliation per cycle" ...`.
-- PR status: draft PR #986 (`https://github.com/TommyKammy/codex-supervisor/pull/986`).
+- Next exact step: commit the checkpoint on `codex/issue-973`, then open or update the draft PR for issue #973.
+- Verification gap: none in the requested local scope after rerunning the focused reconciliation/prelude tests, the state-store resume persistence tests, and `npm run build`.
+- Files touched: `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/core/state-store.ts`, `src/core/state-store.test.ts`, `src/core/types.ts`, `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; the change only adds an internal reconciliation cursor and uses it to resume the bounded tracked merged-but-open sweep without changing recovery semantics for the records themselves.
+- Last focused command: `npm run build`
+- Exact failure reproduced: with `maxRecords=1`, cycle 1 looked up tracked PR #191, observed it still open, saved nothing, and cycle 2 looked up #191 again instead of resuming at tracked PR #192.
+- Commands run: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts --test-name-pattern "resumes from persisted progress in the next cycle"`; `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts --test-name-pattern "resumes from persisted progress in the next cycle|stops after the per-cycle budget and defers remaining records"`; `npx tsx --test src/core/state-store.test.ts --test-name-pattern "tracked merged reconciliation resume progress"`; `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/core/state-store.test.ts --test-name-pattern "tracked merged reconciliation resume progress|resumes from persisted progress in the next cycle|runOnceCyclePrelude"`; `npm ci`; `npm run build`; `npm run build`.
+- PR status: none.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
