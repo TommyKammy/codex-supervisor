@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -46,7 +47,7 @@ export function truncatePreservingStartAndEnd(
 
 export async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> {
   await ensureDir(path.dirname(filePath));
-  const tempPath = `${filePath}.tmp`;
+  const tempPath = `${filePath}.tmp.${randomUUID()}`;
   await fs.writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   await fs.rename(tempPath, filePath);
 }
