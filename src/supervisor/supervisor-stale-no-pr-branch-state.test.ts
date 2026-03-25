@@ -211,6 +211,37 @@ test("classifyStaleStabilizingNoPrBranchState ignores supervisor-owned replay ar
   assert.equal(result, "already_satisfied_on_main");
 });
 
+test("classifyStaleStabilizingNoPrBranchState ignores supervisor-owned pre-merge and execution-metrics artifacts", async () => {
+  const { repoPath, rootPath } = await createRepositoryWithOrigin();
+  const journalPath = path.join(repoPath, ".codex-supervisor", "issue-journal.md");
+  const preMergeArtifactPath = path.join(repoPath, ".codex-supervisor", "pre-merge", "assessment-snapshot.json");
+  const executionMetricsArtifactPath = path.join(
+    repoPath,
+    ".codex-supervisor",
+    "execution-metrics",
+    "run-summary.json",
+  );
+  await fs.mkdir(path.dirname(preMergeArtifactPath), { recursive: true });
+  await fs.mkdir(path.dirname(executionMetricsArtifactPath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n");
+  await fs.writeFile(preMergeArtifactPath, "{\n  \"kind\": \"pre-merge\"\n}\n");
+  await fs.writeFile(executionMetricsArtifactPath, "{\n  \"kind\": \"execution-metrics\"\n}\n");
+
+  const supervisor = new Supervisor(
+    createConfig({
+      repoPath,
+      workspaceRoot: rootPath,
+    }),
+  );
+
+  const result = await classifyStaleStabilizingNoPrBranchState(supervisor, {
+    workspace: repoPath,
+    journal_path: journalPath,
+  });
+
+  assert.equal(result, "already_satisfied_on_main");
+});
+
 test("classifyStaleStabilizingNoPrBranchState ignores exact supervisor-owned replay artifact paths in the base diff", async () => {
   const { repoPath, rootPath } = await createRepositoryWithOrigin();
   const journalPath = path.join(repoPath, ".codex-supervisor", "issue-journal.md");
