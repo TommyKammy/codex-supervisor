@@ -387,6 +387,32 @@ test("StateStore resetCorruptJsonState replaces the quarantine marker with an em
   });
 });
 
+test("StateStore json save preserves quarantine markers after a quarantined load", async () => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.json");
+    await fs.writeFile(statePath, "{not-json}\n", "utf8");
+
+    const store = new StateStore(statePath, { backend: "json" });
+    const quarantinedState = await store.load();
+    const quarantinedFile = quarantinedState.json_state_quarantine?.quarantined_file ?? "";
+    const quarantinedAt = quarantinedState.json_state_quarantine?.quarantined_at ?? "";
+    const quarantineMessage = quarantinedState.load_findings?.[0]?.message ?? "";
+
+    await store.save({
+      ...quarantinedState,
+      issues: {
+        123: store.touch(createRecord(123, { state: "reproducing" }), { state: "implementing" }),
+      },
+    });
+
+    const persisted = JSON.parse(await fs.readFile(statePath, "utf8")) as SupervisorStateFile;
+    assert.equal(persisted.json_state_quarantine?.marker_file, statePath);
+    assert.equal(persisted.json_state_quarantine?.quarantined_file, quarantinedFile);
+    assert.equal(persisted.json_state_quarantine?.quarantined_at, quarantinedAt);
+    assert.equal(persisted.load_findings?.[0]?.message, quarantineMessage);
+  });
+});
+
 test("StateStore resetCorruptJsonState rejects clean JSON state without a quarantine marker", async () => {
   await withTempDir(async (dir) => {
     const statePath = path.join(dir, "state.json");

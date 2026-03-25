@@ -132,11 +132,17 @@ function normalizeStateForSave(raw: SupervisorStateFile | null | undefined): Sup
           : null,
     }
     : undefined;
+  const loadFindings = raw?.load_findings?.map((finding) => ({ ...finding }));
+  const jsonStateQuarantine = raw?.json_state_quarantine
+    ? normalizeJsonStateQuarantine(raw.json_state_quarantine)
+    : undefined;
 
   return {
     activeIssueNumber: raw?.activeIssueNumber ?? null,
     issues,
     ...(reconciliationState ? { reconciliation_state: reconciliationState } : {}),
+    ...(loadFindings && loadFindings.length > 0 ? { load_findings: loadFindings } : {}),
+    ...(jsonStateQuarantine ? { json_state_quarantine: jsonStateQuarantine } : {}),
   };
 }
 
