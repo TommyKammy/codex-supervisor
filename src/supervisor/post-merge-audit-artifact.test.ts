@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { writeJsonAtomic } from "../core/utils";
 import { type LocalReviewArtifact } from "../local-review/types";
 import { createConfig, createFailureContext, createIssue, createPullRequest, createRecord } from "../turn-execution-test-helpers";
+import { createArtifactTestPaths } from "./artifact-test-helpers";
 import { type ExecutionMetricsRunSummaryArtifact } from "./execution-metrics-schema";
 import {
   executionMetricsRunSummaryPath,
@@ -17,9 +17,21 @@ import {
   type PostMergeAuditArtifact,
 } from "./post-merge-audit-artifact";
 
+test("createArtifactTestPaths returns isolated roots for each artifact test setup", async () => {
+  const first = await createArtifactTestPaths("post-merge-audit-isolation");
+  const second = await createArtifactTestPaths("post-merge-audit-isolation");
+  const sentinelPath = path.join(first.reviewDir, "sentinel.txt");
+
+  assert.notEqual(first.rootPath, second.rootPath);
+  assert.notEqual(first.workspacePath, second.workspacePath);
+  assert.notEqual(first.reviewDir, second.reviewDir);
+
+  await fs.writeFile(sentinelPath, "stale artifact", "utf8");
+  await assert.rejects(fs.stat(path.join(second.reviewDir, "sentinel.txt")), { code: "ENOENT" });
+});
+
 test("syncPostMergeAuditArtifact persists a typed completed-work artifact", async () => {
-  const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "post-merge-audit-"));
-  const reviewDir = path.join(os.tmpdir(), "post-merge-audit-reviews");
+  const { workspacePath, reviewDir } = await createArtifactTestPaths("post-merge-audit");
   const config = createConfig({
     localReviewArtifactDir: reviewDir,
     repoSlug: "owner/repo",
@@ -176,8 +188,7 @@ test("syncPostMergeAuditArtifact persists a typed completed-work artifact", asyn
 });
 
 test("syncPostMergeAuditArtifact ignores stale execution metrics summaries", async () => {
-  const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "post-merge-audit-stale-metrics-"));
-  const reviewDir = await fs.mkdtemp(path.join(os.tmpdir(), "post-merge-audit-stale-reviews-"));
+  const { workspacePath, reviewDir } = await createArtifactTestPaths("post-merge-audit-stale-metrics");
   const config = createConfig({
     localReviewArtifactDir: reviewDir,
     repoSlug: "owner/repo",
@@ -248,8 +259,7 @@ test("syncPostMergeAuditArtifact ignores stale execution metrics summaries", asy
 });
 
 test("syncPostMergeAuditArtifactSafely swallows malformed local review artifacts", async () => {
-  const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "post-merge-audit-safe-wrapper-"));
-  const reviewDir = await fs.mkdtemp(path.join(os.tmpdir(), "post-merge-audit-safe-wrapper-reviews-"));
+  const { workspacePath, reviewDir } = await createArtifactTestPaths("post-merge-audit-safe-wrapper");
   const config = createConfig({
     localReviewArtifactDir: reviewDir,
     repoSlug: "owner/repo",
