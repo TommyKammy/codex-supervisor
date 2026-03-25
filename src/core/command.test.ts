@@ -75,6 +75,59 @@ test("runCommand failure errors preserve stdout and stderr on the error object",
   );
 });
 
+test("runCommand success bounds large stdout while preserving both ends", async () => {
+  const stdoutPrefix = "stdout-prefix";
+  const stdoutSuffix = "stdout-suffix";
+
+  const result = await runCommand(process.execPath, [
+    "-e",
+    `
+      process.stdout.write(${JSON.stringify(`${stdoutPrefix}\n`)});
+      for (let i = 0; i < 200; i += 1) {
+        process.stdout.write("o".repeat(1000));
+      }
+      process.stdout.write(${JSON.stringify(`\n${stdoutSuffix}\n`)});
+    `,
+  ]);
+
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, new RegExp(stdoutPrefix));
+  assert.match(result.stdout, new RegExp(stdoutSuffix));
+  assert.match(result.stdout, /\n\.\.\.\n/);
+  assert.ok(result.stdout.length < 70_000, `expected bounded stdout capture, got length ${result.stdout.length}`);
+  assert.equal(result.stderr, "");
+});
+
+test("runCommand failure bounds large stderr on the error object while preserving both ends", async () => {
+  const stderrPrefix = "stderr-prefix";
+  const stderrSuffix = "stderr-suffix";
+
+  await assert.rejects(
+    () =>
+      runCommand(process.execPath, [
+        "-e",
+        `
+          process.stderr.write(${JSON.stringify(`${stderrPrefix}\n`)});
+          for (let i = 0; i < 200; i += 1) {
+            process.stderr.write("e".repeat(1000));
+          }
+          process.stderr.write(${JSON.stringify(`\n${stderrSuffix}\n`)});
+          process.exit(8);
+        `,
+      ]),
+    (error: unknown) => {
+      assert.ok(error instanceof CommandExecutionError);
+      assert.equal(error.exitCode, 8);
+      assert.match(error.stderr, new RegExp(stderrPrefix));
+      assert.match(error.stderr, new RegExp(stderrSuffix));
+      assert.match(error.stderr, /\n\.\.\.\n/);
+      assert.ok(error.stderr.length < 70_000, `expected bounded stderr capture, got length ${error.stderr.length}`);
+      assert.equal(error.stdout, "");
+      return true;
+    },
+  );
+});
+
 test("runCommand timeout errors redact trailing raw arguments", async () => {
   const secretArg = "token=timeout-secret-value";
 

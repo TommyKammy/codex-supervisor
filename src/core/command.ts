@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 
 const COMMAND_ERROR_STDERR_LIMIT = 500;
-const STDERR_TRUNCATION_MARKER = "\n...\n";
+const COMMAND_OUTPUT_CAPTURE_LIMIT = 64 * 1024;
+const OUTPUT_TRUNCATION_MARKER = "\n...\n";
 
 export interface CommandOptions {
   cwd?: string;
@@ -43,10 +44,50 @@ function formatCommandErrorStderr(stderr: string): string | null {
     return trimmed;
   }
 
-  const availableLength = COMMAND_ERROR_STDERR_LIMIT - STDERR_TRUNCATION_MARKER.length;
+  const availableLength = COMMAND_ERROR_STDERR_LIMIT - OUTPUT_TRUNCATION_MARKER.length;
   const prefixLength = Math.ceil(availableLength / 2);
   const suffixLength = Math.floor(availableLength / 2);
-  return `${trimmed.slice(0, prefixLength)}${STDERR_TRUNCATION_MARKER}${trimmed.slice(trimmed.length - suffixLength)}`;
+  return `${trimmed.slice(0, prefixLength)}${OUTPUT_TRUNCATION_MARKER}${trimmed.slice(trimmed.length - suffixLength)}`;
+}
+
+interface BoundedOutputBuffer {
+  head: string;
+  tail: string;
+  truncated: boolean;
+}
+
+function createBoundedOutputBuffer(): BoundedOutputBuffer {
+  return { head: "", tail: "", truncated: false };
+}
+
+function appendBoundedOutput(buffer: BoundedOutputBuffer, chunk: string, limit = COMMAND_OUTPUT_CAPTURE_LIMIT): void {
+  if (chunk.length === 0) {
+    return;
+  }
+
+  const currentLength = buffer.head.length + buffer.tail.length;
+  if (!buffer.truncated && currentLength + chunk.length <= limit) {
+    buffer.head += chunk;
+    return;
+  }
+
+  const availableLength = Math.max(limit - OUTPUT_TRUNCATION_MARKER.length, 0);
+  const headLength = Math.ceil(availableLength / 2);
+  const tailLength = Math.floor(availableLength / 2);
+
+  if (!buffer.truncated) {
+    const combined = `${buffer.head}${buffer.tail}${chunk}`;
+    buffer.head = combined.slice(0, headLength);
+    buffer.tail = tailLength > 0 ? combined.slice(combined.length - tailLength) : "";
+    buffer.truncated = true;
+    return;
+  }
+
+  buffer.tail = tailLength > 0 ? `${buffer.tail}${chunk}`.slice(-tailLength) : "";
+}
+
+function renderBoundedOutput(buffer: BoundedOutputBuffer): string {
+  return buffer.truncated ? `${buffer.head}${OUTPUT_TRUNCATION_MARKER}${buffer.tail}` : buffer.head;
 }
 
 export function renderCommandSummary(command: string, args: string[], visibleArgCount = 2): string {
@@ -72,8 +113,8 @@ export async function runCommand(
       stdio: ["ignore", "pipe", "pipe"],
     });
 
-    let stdout = "";
-    let stderr = "";
+    const stdoutBuffer = createBoundedOutputBuffer();
+    const stderrBuffer = createBoundedOutputBuffer();
     let timeoutHandle: NodeJS.Timeout | undefined;
     let killHandle: NodeJS.Timeout | undefined;
     let settled = false;
@@ -109,11 +150,11 @@ export async function runCommand(
     };
 
     child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
+      appendBoundedOutput(stdoutBuffer, chunk.toString());
     });
 
     child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
+      appendBoundedOutput(stderrBuffer, chunk.toString());
     });
 
     child.on("error", (error) => {
@@ -129,7 +170,11 @@ export async function runCommand(
         timedOut = true;
         const pid = child.pid;
         const timeoutMessage = `Command timed out after ${options.timeoutMs}ms: ${commandSummary}`;
-        stderr += `${stderr.endsWith("\n") || stderr.length === 0 ? "" : "\n"}${timeoutMessage}\n`;
+        const stderr = renderBoundedOutput(stderrBuffer);
+        appendBoundedOutput(
+          stderrBuffer,
+          `${stderr.endsWith("\n") || stderr.length === 0 ? "" : "\n"}${timeoutMessage}\n`,
+        );
 
         if (pid) {
           try {
@@ -161,6 +206,8 @@ export async function runCommand(
 
     child.on("close", (code) => {
       const exitCode = code ?? 1;
+      const stdout = renderBoundedOutput(stdoutBuffer);
+      const stderr = renderBoundedOutput(stderrBuffer);
       if (timedOut) {
         settleReject(
           new CommandExecutionError(
