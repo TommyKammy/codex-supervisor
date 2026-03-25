@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { GitHubIssue, IssueRunRecord } from "./types";
-import { ensureDir, truncate } from "./utils";
+import { ensureDir, truncate, writeFileAtomic } from "./utils";
 
 const NOTES_MARKER = "## Codex Working Notes";
 const DURABLE_PATH_TOKEN_PATTERN =
@@ -515,5 +515,5 @@ export async function syncIssueJournal(args: {
   const notes = existing ? normalizeDurableJournalText(preserveCodexNotes(existing), record.workspace) : null;
   const snapshot = buildSupervisorSnapshot({ issue, record, journalPath });
   const nextContent = `${snapshot}\n${notes ? compactCodexNotes(notes, maxChars) : NOTES_TEMPLATE}`;
-  await fs.writeFile(journalPath, nextContent, "utf8");
+  await writeFileAtomic(journalPath, nextContent);
 }

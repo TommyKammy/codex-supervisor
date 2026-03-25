@@ -45,11 +45,15 @@ export function truncatePreservingStartAndEnd(
   return `${input.slice(0, prefixLength)}${truncationMarker}${input.slice(input.length - suffixLength)}`;
 }
 
-export async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> {
+export async function writeFileAtomic(filePath: string, content: string): Promise<void> {
   await ensureDir(path.dirname(filePath));
   const tempPath = `${filePath}.tmp.${randomUUID()}`;
-  await fs.writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await fs.writeFile(tempPath, content, "utf8");
   await fs.rename(tempPath, filePath);
+}
+
+export async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> {
+  await writeFileAtomic(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 export async function readJsonIfExists<T>(filePath: string): Promise<T | null> {
