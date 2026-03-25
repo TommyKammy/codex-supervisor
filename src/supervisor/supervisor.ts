@@ -1342,6 +1342,8 @@ export class Supervisor {
       reconcileStaleFailedIssueStates: (state, issues) =>
         reconcileStaleFailedIssueStates(this.github, this.stateStore, state, this.config, issues, {
           inferStateFromPullRequest,
+          inferFailureContext,
+          blockedReasonForLifecycleState,
           isOpenPullRequest,
           syncReviewWaitWindow,
           syncCopilotReviewRequestObservation,
