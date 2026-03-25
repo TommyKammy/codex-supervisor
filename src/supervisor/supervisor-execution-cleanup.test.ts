@@ -408,7 +408,7 @@ test("executeCodexTurn ignores a held session lock when the agent runner cannot 
   assert.match(result.message, /Codex turn failed for issue #121/);
 });
 
-test("runOnce prunes orphaned done worktrees that are no longer referenced by state", async () => {
+test("runOnce preserves orphaned done worktrees that are no longer referenced by state until an operator prune", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.maxDoneWorkspaces = 1;
   fixture.config.cleanupDoneWorkspacesAfterHours = -1;
@@ -466,12 +466,83 @@ test("runOnce prunes orphaned done worktrees that are no longer referenced by st
   };
 
   const message = await supervisor.runOnce({ dryRun: true });
-  assert.match(message, new RegExp(`recovery issue=#${orphanIssueNumber} reason=pruned orphaned worktree`));
-  assert.match(message, /No matching open issue found\./);
+  assert.equal(message, "No matching open issue found.");
 
   await fs.access(trackedWorkspace);
-  await assert.rejects(fs.access(orphanWorkspace));
-  assert.match(git(["-C", fixture.repoPath, "branch", "--list", orphanBranch]), /^$/);
+  await fs.access(orphanWorkspace);
+  assert.match(git(["-C", fixture.repoPath, "branch", "--list", orphanBranch]), new RegExp(orphanBranch));
+});
+
+test("runOnce still cleans tracked done workspaces under the done-workspace policy", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.maxDoneWorkspaces = 1;
+  fixture.config.cleanupDoneWorkspacesAfterHours = -1;
+  fixture.config.cleanupOrphanedWorkspacesAfterHours = -1;
+
+  const olderIssueNumber = 91;
+  const newerIssueNumber = 92;
+  const olderBranch = branchName(fixture.config, olderIssueNumber);
+  const newerBranch = branchName(fixture.config, newerIssueNumber);
+  const olderWorkspace = path.join(fixture.workspaceRoot, `issue-${olderIssueNumber}`);
+  const newerWorkspace = path.join(fixture.workspaceRoot, `issue-${newerIssueNumber}`);
+
+  await fs.mkdir(fixture.workspaceRoot, { recursive: true });
+  git(["-C", fixture.repoPath, "worktree", "add", "-b", olderBranch, olderWorkspace, "origin/main"]);
+  git(["-C", fixture.repoPath, "worktree", "add", "-b", newerBranch, newerWorkspace, "origin/main"]);
+
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(olderIssueNumber)]: createRecord({
+        issue_number: olderIssueNumber,
+        state: "done",
+        branch: olderBranch,
+        workspace: olderWorkspace,
+        journal_path: null,
+        updated_at: "2026-03-01T00:00:00Z",
+      }),
+      [String(newerIssueNumber)]: createRecord({
+        issue_number: newerIssueNumber,
+        state: "done",
+        branch: newerBranch,
+        workspace: newerWorkspace,
+        journal_path: null,
+        updated_at: "2026-03-02T00:00:00Z",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [],
+    listCandidateIssues: async () => [],
+    getIssue: async () => {
+      throw new Error("unexpected getIssue call");
+    },
+    resolvePullRequestForBranch: async () => {
+      throw new Error("unexpected resolvePullRequestForBranch call");
+    },
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.equal(message, "No matching open issue found.");
+
+  await assert.rejects(fs.access(olderWorkspace));
+  await fs.access(newerWorkspace);
+  assert.match(git(["-C", fixture.repoPath, "branch", "--list", olderBranch]), /^$/);
+  assert.match(git(["-C", fixture.repoPath, "branch", "--list", newerBranch]), new RegExp(newerBranch));
 });
 
 test("runOnce ignores non-canonical orphan workspace names", async () => {
@@ -523,7 +594,7 @@ test("runOnce ignores non-canonical orphan workspace names", async () => {
   assert.match(git(["-C", fixture.repoPath, "branch", "--list", orphanBranch]), new RegExp(orphanBranch));
 });
 
-test("runOnce skips orphaned worktree pruning when the orphan issue lock is still live", async () => {
+test("pruneOrphanedWorkspaces skips orphaned worktrees when the orphan issue lock is still live", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.maxDoneWorkspaces = 1;
   fixture.config.cleanupDoneWorkspacesAfterHours = -1;
@@ -536,6 +607,8 @@ test("runOnce skips orphaned worktree pruning when the orphan issue lock is stil
 
   await fs.mkdir(fixture.workspaceRoot, { recursive: true });
   git(["-C", fixture.repoPath, "worktree", "add", "-b", orphanBranch, orphanWorkspace, "origin/main"]);
+  const oldTime = new Date("2026-03-01T00:00:00.000Z");
+  await fs.utimes(orphanWorkspace, oldTime, oldTime);
   await fs.mkdir(path.dirname(issueLockPath), { recursive: true });
   await fs.writeFile(
     issueLockPath,
@@ -576,28 +649,30 @@ test("runOnce skips orphaned worktree pruning when the orphan issue lock is stil
     },
   };
 
-  const warnings: string[] = [];
-  const originalWarn = console.warn;
-  console.warn = (message?: unknown, ...args: unknown[]) => {
-    warnings.push([message, ...args].map((value) => String(value)).join(" "));
-  };
-  try {
-    const message = await supervisor.runOnce({ dryRun: true });
-    assert.equal(message, "No matching open issue found.");
-  } finally {
-    console.warn = originalWarn;
-  }
-
-  assert.equal(
-    warnings.some((message) => /issue lock held by pid/.test(message) && message.includes(orphanWorkspace)),
-    true,
-  );
+  const result = await supervisor.pruneOrphanedWorkspaces();
+  assert.deepEqual(result, {
+    action: "prune-orphaned-workspaces",
+    outcome: "completed",
+    summary: "Pruned 0 orphaned workspace(s); skipped 1 orphaned workspace(s).",
+    pruned: [],
+    skipped: [
+      {
+        issueNumber: orphanIssueNumber,
+        workspaceName: `issue-${orphanIssueNumber}`,
+        workspacePath: orphanWorkspace,
+        branch: orphanBranch,
+        modifiedAt: oldTime.toISOString(),
+        eligibility: "locked",
+        reason: `issue lock held by pid ${process.pid}`,
+      },
+    ],
+  });
   await fs.access(orphanWorkspace);
   await fs.access(issueLockPath);
   assert.match(git(["-C", fixture.repoPath, "branch", "--list", orphanBranch]), new RegExp(orphanBranch));
 });
 
-test("runOnce skips orphan cleanup when workspaceRoot cannot be listed", async () => {
+test("pruneOrphanedWorkspaces returns no candidates when workspaceRoot cannot be listed", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.maxDoneWorkspaces = 1;
   fixture.config.cleanupDoneWorkspacesAfterHours = -1;
@@ -636,19 +711,14 @@ test("runOnce skips orphan cleanup when workspaceRoot cannot be listed", async (
     },
   };
 
-  const warnings: string[] = [];
-  const originalWarn = console.warn;
-  console.warn = (message?: unknown, ...args: unknown[]) => {
-    warnings.push([message, ...args].map((value) => String(value)).join(" "));
-  };
-  try {
-    const message = await supervisor.runOnce({ dryRun: true });
-    assert.equal(message, "No matching open issue found.");
-  } finally {
-    console.warn = originalWarn;
-  }
-
-  assert.match(warnings.join("\n"), /Skipped orphaned workspace cleanup: unable to read workspace root/);
+  const result = await supervisor.pruneOrphanedWorkspaces();
+  assert.deepEqual(result, {
+    action: "prune-orphaned-workspaces",
+    outcome: "completed",
+    summary: "Pruned 0 orphaned workspace(s); skipped 0 orphaned workspace(s).",
+    pruned: [],
+    skipped: [],
+  });
 });
 
 test("runOnce preserves recent orphaned worktrees until the orphan age gate expires", async () => {

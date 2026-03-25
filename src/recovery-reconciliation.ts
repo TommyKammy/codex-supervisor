@@ -393,37 +393,6 @@ export async function inspectOrphanedWorkspacePruneCandidates(
   return candidates;
 }
 
-async function cleanupOrphanedIssueWorkspaces(
-  config: SupervisorConfig,
-  state: SupervisorStateFile,
-): Promise<RecoveryEvent[]> {
-  const recoveryEvents: RecoveryEvent[] = [];
-  try {
-    fs.readdirSync(config.workspaceRoot, { withFileTypes: true });
-  } catch (error) {
-    const maybeErr = error as NodeJS.ErrnoException;
-    if (maybeErr.code !== "ENOENT") {
-      console.warn(
-        `Skipped orphaned workspace cleanup: unable to read workspace root ${config.workspaceRoot} (${maybeErr.message}).`,
-      );
-    }
-    return recoveryEvents;
-  }
-
-  const candidates = await inspectOrphanedWorkspacePruneCandidates(config, state);
-  for (const candidate of candidates) {
-    if (candidate.eligibility !== "eligible" || !candidate.branch) {
-      console.warn(`Skipped orphaned workspace cleanup for ${candidate.workspacePath}: ${candidate.reason}`);
-      continue;
-    }
-
-    await cleanupWorkspace(config.repoPath, candidate.workspacePath, candidate.branch);
-    recoveryEvents.push(buildRecoveryEvent(candidate.issueNumber, `pruned orphaned worktree ${candidate.workspaceName}`));
-  }
-
-  return recoveryEvents;
-}
-
 export async function pruneOrphanedWorkspacesForOperator(
   config: SupervisorConfig,
   state: SupervisorStateFile,
@@ -640,8 +609,6 @@ export async function cleanupExpiredDoneWorkspaces(
     return [];
   }
 
-  const recoveryEvents = await cleanupOrphanedIssueWorkspaces(config, state);
-
   const doneRecords = Object.values(state.issues)
     .filter((record) => record.state === "done")
     .sort((left, right) => left.updated_at.localeCompare(right.updated_at));
@@ -662,7 +629,7 @@ export async function cleanupExpiredDoneWorkspaces(
   }
 
   if (config.cleanupDoneWorkspacesAfterHours < 0) {
-    return recoveryEvents;
+    return [];
   }
 
   for (const record of doneRecords) {
@@ -677,7 +644,7 @@ export async function cleanupExpiredDoneWorkspaces(
     await cleanupRecordWorkspace(config, record);
   }
 
-  return recoveryEvents;
+  return [];
 }
 
 export async function reconcileMergedIssueClosures(

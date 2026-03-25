@@ -123,7 +123,7 @@ Workspace cleanup:
 - `cleanupDoneWorkspacesAfterHours`
 - `cleanupOrphanedWorkspacesAfterHours`
 
-`maxDoneWorkspaces` and `cleanupDoneWorkspacesAfterHours` apply to tracked done workspaces. `cleanupOrphanedWorkspacesAfterHours` applies only to automatic orphaned `issue-*` worktree pruning under `workspaceRoot`, with a default 24-hour grace period. An orphaned workspace is an untracked canonical issue workspace that no longer has a live state entry. Preserve orphan workspaces that are locked, recently touched, or intentionally kept for manual recovery. If you want to prune abandoned orphan workspaces more aggressively, treat that as an explicit operator cleanup action rather than an implicit side effect of the done-workspace settings.
+`maxDoneWorkspaces` and `cleanupDoneWorkspacesAfterHours` apply only to tracked done workspaces. `cleanupOrphanedWorkspacesAfterHours` does not enable background orphan cleanup; it defines the age gate used when `doctor` reports orphan prune candidates and when the operator runs `prune-orphaned-workspaces`. An orphaned workspace is an untracked canonical issue workspace that no longer has a live state entry. Preserve orphan workspaces that are locked, recently touched, or intentionally kept for manual recovery. The default orphan grace period is 24 hours. Set `cleanupOrphanedWorkspacesAfterHours` to a negative number to disable the grace window and make eligible orphan candidates immediately prunable when the operator explicitly runs the prune action.
 
 ## Operator Dashboard
 

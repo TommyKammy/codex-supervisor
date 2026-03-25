@@ -141,4 +141,9 @@ test("workspace cleanup docs distinguish tracked done cleanup from explicit orph
     /stale worktree cleanup -> delayed cleanup for `done` issues/i,
     "docs/architecture.md should not equate orphan cleanup with tracked done cleanup",
   );
+  assert.doesNotMatch(
+    configuration,
+    /automatic orphan(?:ed)? .*prun/i,
+    "docs/configuration.md should not describe orphan cleanup as automatic background pruning",
+  );
 });
