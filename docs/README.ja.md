@@ -51,7 +51,7 @@ Not a fit:
    - [supervisor.config.codex.json](../supervisor.config.codex.json)
    - [supervisor.config.coderabbit.json](../supervisor.config.coderabbit.json)
 
-4. `repoPath`、`repoSlug`、`workspaceRoot`、`codexBinary` などを設定します。
+4. `repoPath`、`repoSlug`、`workspaceRoot`、`codexBinary` などを初回実行前に設定します。`supervisor.config.coderabbit.json` は、customize を必須にするため `repoSlug` に無効な placeholder を入れています。
 5. まず `run-once` と `status` で挙動を確認し、その後 `loop` に切り替えます。
 
    local operator dashboard を使う時は同じ config で次を実行します。

@@ -86,7 +86,7 @@ Then choose the review provider profile that matches your PR review flow:
 - [supervisor.config.codex.json](../supervisor.config.codex.json)
 - [supervisor.config.coderabbit.json](../supervisor.config.coderabbit.json)
 
-Either copy one of those files over `supervisor.config.json` or copy only its `reviewBotLogins` into your active config.
+Either copy one of those files over `supervisor.config.json` as a starting point or copy only its `reviewBotLogins` into your active config.
 
 At minimum, set these fields before the first run:
 
@@ -95,6 +95,8 @@ At minimum, set these fields before the first run:
 - `workspaceRoot`
 - `codexBinary`
 - provider-specific review settings you expect the supervisor to watch
+
+The shipped CodeRabbit profile intentionally uses a non-loadable `repoSlug` placeholder so operators must replace it before the first run.
 
 If you need the full field-by-field setup, model policy, durable memory, or provider guidance, use the [Configuration reference](./configuration.md).
 
