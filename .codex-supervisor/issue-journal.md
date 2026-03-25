@@ -14,7 +14,7 @@
 - Updated at: 2026-03-25T03:57:40.423Z
 
 ## Latest Codex Summary
-- Reproduced the stale failed tracked-PR reconciliation gap with focused `failed -> blocked/manual_review` and `failed -> blocked/verification` tests, then updated stale failed PR reconciliation to reuse live PR lifecycle blocker/failure semantics so restarted supervisors reclassify stale failed records into blocked with fresh `blocked_reason` and failure context. Focused reconciliation/policy/status tests and `npm run build` passed after restoring missing local dev dependencies with `npm ci`.
+- Reproduced the stale failed tracked-PR reconciliation gap with focused `failed -> blocked/manual_review` and `failed -> blocked/verification` tests, then updated stale failed PR reconciliation to reuse live PR lifecycle blocker/failure semantics so restarted supervisors reclassify stale failed records into blocked with fresh `blocked_reason` and failure context. Focused reconciliation/policy/status tests and `npm run build` passed after restoring missing local dev dependencies with `npm ci`. Draft PR `#983` is open.
 
 ## Active Failure Context
 - None recorded.
@@ -26,11 +26,11 @@
 - Current blocker: none.
 - Exact failure reproduced: `reconcileStaleFailedIssueStates` left the record in `failed` when the live tracked PR inferred `blocked`, reproducing as `actual=failed expected=blocked` in the new focused recovery reconciliation tests.
 - Commands run: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-selection-status-active-status.test.ts`; `npm ci`; `npm run build`.
-- Next exact step: commit the focused reconciliation fix, then open or update the branch PR for issue #961.
+- Next exact step: monitor CI and review feedback on draft PR `#983`, then address any reported failures or review comments.
 - Verification gap: none in the requested local scope after rerunning the focused reconciliation/policy/status tests and build.
 - Files touched: `src/recovery-reconciliation.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `.codex-supervisor/issue-journal.md`.
 - Rollback concern: low; the change only affects stale failed tracked-PR reconciliation and now aligns that recovery path with the existing live PR lifecycle blocker/failure semantics.
 - Last focused command: `npm run build`
-- PR status: none yet for this branch.
+- PR status: draft PR `#983` is open at `https://github.com/TommyKammy/codex-supervisor/pull/983`.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
