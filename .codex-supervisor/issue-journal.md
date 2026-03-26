@@ -1,49 +1,45 @@
-# Issue #1080: Contain GitHub rate-limit failures without freezing active review progression
+# Issue #1081: Expose GitHub REST and GraphQL rate-limit telemetry in supervisor status surfaces
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1080
-- Branch: codex/issue-1080
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1081
+- Branch: codex/issue-1081
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: waiting_ci
-- Attempt count: 5 (implementation=1, repair=4)
-- Last head SHA: daed23519a5b6009a53f049f8d53bff67d5ec9a6
+- Current phase: addressing_review
+- Attempt count: 5 (implementation=2, repair=3)
+- Last head SHA: be1595c6a214f822447ea09821bb78599e46e5b9
 - Blocked reason: none
 - Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-26T16:34:29Z
+- Repeated failure signature count: 1
+- Updated at: 2026-03-26T17:26:24Z
 
 ## Latest Codex Summary
-Updated [issue-journal.md](.codex-supervisor/issue-journal.md) to reconcile the stale Supervisor Snapshot and clear the last stale active review block for PR `#1086`.
+Updated [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) to match the live `Supervisor.statusReport()` control flow more precisely: the summary now states that GitHub rate-limit telemetry is fetched at the end of each branch after branch-specific reads when present, and explicitly notes that the `inventory_refresh_failure` inactive early-return path has no selection-read step before telemetry.
 
-`#1086` is currently `CLEAN`, both required build jobs are green on head `daed235`, and the only remaining open thread is the stale CodeRabbit comment on this journal. Pushing this journal-only update will intentionally move the PR back to `waiting_ci` while a fresh build run starts, after which that final review thread can be resolved cleanly.
+Sanitized the recorded command log to use `<local-memory>/...` placeholders instead of machine-specific absolute paths, committed the review fix as `be1595c`, pushed `codex/issue-1081`, and resolved review threads `PRRT_kwDORgvdZ853FiOT` and `PRRT_kwDORgvdZ853FiOZ` on PR `#1087`.
 
-Summary: Reconciled the journal state for PR `#1086` so the remaining automated review thread only reflects live status.
+Summary: Clarified the journal’s rate-limit telemetry wording, removed machine-specific paths from the command log, pushed the review fix, and resolved the remaining automated review threads
 State hint: waiting_ci
 Blocked reason: none
-Tests: `git diff --check -- .codex-supervisor/issue-journal.md`; `gh pr checks 1086`; `gh pr view 1086 --json isDraft,mergeStateStatus,reviewDecision,headRefName,headRefOid,url`
-Next action: Push this journal-only reconciliation update, resolve review thread `PRRT_kwDORgvdZ853Eugq`, and watch the fresh build run for PR `#1086`.
+Tests: not run (journal-only review fix)
+Next action: Watch PR #1087 for any follow-up review or CI signal after the journal-only review fix
 Failure signature: none
 
 ## Active Failure Context
-- Category: none
-- Summary: no active failure context expected after this journal-only reconciliation update is pushed and the last stale automated review thread is resolved.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1086
-- Details:
-  - Review thread `PRRT_kwDORgvdZ853Eugq` is the last stale automated comment on PR `#1086`; this update aligns the snapshot, summary, and failure context so the thread can be resolved without changing runtime behavior.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the runtime fix is already complete; the only remaining work is to reconcile the stale journal snapshot, resolve the last automated review thread, and then let the new journal-only CI run settle.
-- What changed: reread the required memory files, verified the remaining CodeRabbit thread against the live PR state, confirmed `#1086` is currently `CLEAN` with green required checks on `daed235`, and rewrote the journal so the snapshot, summary, and failure context agree.
-- Current blocker: no local blocker before push; after the journal-only push, the branch will wait on a fresh CI run.
-- Next exact step: commit and push this journal-only reconciliation update, resolve review thread `PRRT_kwDORgvdZ853Eugq`, then recheck the new build run for PR `#1086`.
-- Verification gap: full `npm test` has not been run; `npm run build` and the focused rate-limit regression suites are green locally.
+- Hypothesis: both open review comments are valid against the committed journal state and only require a journal-only follow-up: tighten the control-flow wording to cover branch-specific status reads accurately and replace machine-specific command paths with stable placeholders.
+- What changed: updated the journal summary to say `Supervisor.statusReport()` fetches rate-limit telemetry at the end of each branch after branch-specific reads when they occur, explicitly called out the `inventory_refresh_failure` inactive early return as a no-selection-read exception, replaced command-log absolute paths with `<local-memory>/...` placeholders, committed the review fix as `be1595c`, pushed `codex/issue-1081`, and resolved review threads `PRRT_kwDORgvdZ853FiOT` plus `PRRT_kwDORgvdZ853FiOZ`.
+- Current blocker: none locally.
+- Next exact step: watch PR `#1087` for any follow-up review or CI signal after the journal-only review fix.
+- Verification gap: no tests were rerun this turn because the fix is journal-only.
 - Files touched: `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low. This turn only edits handoff text in the journal; runtime code and tests are unchanged.
-- Last focused command: `gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{url}}}}}}}' -F owner=TommyKammy -F repo=codex-supervisor -F number=1086`
-- What changed this turn: reread the required memory files, confirmed the last live review thread is `PRRT_kwDORgvdZ853Eugq`, verified that the thread is caused by stale journal state rather than runtime behavior, and updated the journal so the snapshot and active failure context no longer claim review work remains.
-- Exact failure reproduced this turn: stale journal metadata kept `addressing_review` and an active review failure block even though the earlier review-thread cleanup had already finished.
-- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short`; `gh pr checks 1086`; `gh pr view 1086 --json isDraft,mergeStateStatus,reviewDecision,headRefName,headRefOid,url`; `gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{url}}}}}}}' -F owner=TommyKammy -F repo=codex-supervisor -F number=1086`; `git diff -- .codex-supervisor/issue-journal.md`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `rg -n "addressing_review|waiting_ci|pr_open|local_review_fix|repairing_ci|implementing|draft_pr|local_review|stabilizing|blocked|failed" -S .`; `sed -n '180,205p' docs/getting-started.ja.md`; `rg -n 'state: "pr_open"|nextState": "pr_open"|"pr_open"' replay-corpus src docs -g '*.json' -g '*.ts' -g '*.md' | head -n 40`; `apply_patch ...`.
+- Rollback concern: minimal. The change only updates journal wording and command-log placeholders.
+- Last focused command: `gh api graphql -f query='mutation($thread1: ID!, $thread2: ID!) { first: resolveReviewThread(input: {threadId: $thread1}) { thread { id isResolved } } second: resolveReviewThread(input: {threadId: $thread2}) { thread { id isResolved } } }' -F thread1=PRRT_kwDORgvdZ853FiOT -F thread2=PRRT_kwDORgvdZ853FiOZ`
+- What changed this turn: reread the required memory files and journal, confirmed both automated review comments against the live journal content, patched the summary/control-flow wording plus command-log placeholders, committed `be1595c`, pushed `codex/issue-1081`, and resolved the two remaining CodeRabbit threads on PR `#1087`.
+- Exact failure reproduced this turn: journal inspection confirmed that the previous summary wording overstated the inactive-path behavior because `inventory_refresh_failure` skips selection reads before telemetry, and the recorded commands still included machine-specific absolute memory paths.
+- Commands run this turn: `sed -n '1,220p' <local-memory>/TommyKammy-codex-supervisor/issue-1081/AGENTS.generated.md`; `sed -n '1,220p' <local-memory>/TommyKammy-codex-supervisor/issue-1081/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short`; `git diff -- .codex-supervisor/issue-journal.md`; `rg -n "<user-home>/|<redacted-local-path>|statusReport\\(\\) now fetches telemetry after inactive selection reads and active issue status reads|Commands run this turn:" .codex-supervisor/issue-journal.md`; `apply_patch ...`; `rg -n "<user-home>/|<redacted-local-path>|<local-memory>" .codex-supervisor/issue-journal.md`; `git status --short`; `git diff -- .codex-supervisor/issue-journal.md`; `git add .codex-supervisor/issue-journal.md && git commit -m "Clarify issue journal review notes"`; `git rev-parse HEAD`; `git push origin codex/issue-1081`; `gh api graphql -f query='mutation($thread1: ID!, $thread2: ID!) { first: resolveReviewThread(input: {threadId: $thread1}) { thread { id isResolved } } second: resolveReviewThread(input: {threadId: $thread2}) { thread { id isResolved } } }' -F thread1=PRRT_kwDORgvdZ853FiOT -F thread2=PRRT_kwDORgvdZ853FiOZ`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`.
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

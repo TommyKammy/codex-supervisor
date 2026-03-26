@@ -9,6 +9,7 @@ import {
   branchName,
   createRecord,
   createSupervisorFixture,
+  executionReadyBody,
   git,
 } from "./supervisor-test-helpers";
 import {
@@ -179,6 +180,228 @@ test("statusReport exposes the typed local CI contract summary from config", asy
 
   const status = await supervisor.status();
   assert.match(status, /local_ci configured=true source=config command=npm run ci:local summary=Repo-owned local CI contract is configured\./);
+});
+
+test("statusReport exposes GitHub REST and GraphQL rate-limit telemetry in typed and rendered status surfaces", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getRateLimitTelemetry: async () => ({
+      rest: {
+        resource: "core",
+        limit: 5000,
+        remaining: 75,
+        resetAt: "2026-03-27T00:30:00.000Z",
+        state: "low",
+      },
+      graphql: {
+        resource: "graphql",
+        limit: 5000,
+        remaining: 0,
+        resetAt: "2026-03-27T00:15:00.000Z",
+        state: "exhausted",
+      },
+    }),
+  };
+
+  const report = await supervisor.statusReport();
+
+  assert.deepEqual(report.githubRateLimit, {
+    rest: {
+      resource: "core",
+      limit: 5000,
+      remaining: 75,
+      resetAt: "2026-03-27T00:30:00.000Z",
+      state: "low",
+    },
+    graphql: {
+      resource: "graphql",
+      limit: 5000,
+      remaining: 0,
+      resetAt: "2026-03-27T00:15:00.000Z",
+      state: "exhausted",
+    },
+  });
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^github_rate_limit resource=rest status=low remaining=75 limit=5000 reset_at=2026-03-27T00:30:00.000Z$/m,
+  );
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^github_rate_limit resource=graphql status=exhausted remaining=0 limit=5000 reset_at=2026-03-27T00:15:00.000Z$/m,
+  );
+
+  const status = await supervisor.status();
+  assert.match(status, /^github_rate_limit resource=rest status=low remaining=75 limit=5000 reset_at=2026-03-27T00:30:00.000Z$/m);
+  assert.match(status, /^github_rate_limit resource=graphql status=exhausted remaining=0 limit=5000 reset_at=2026-03-27T00:15:00.000Z$/m);
+});
+
+test("statusReport fetches GitHub rate-limit telemetry after inactive selection reads", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const calls: string[] = [];
+  const issue: GitHubIssue = {
+    number: 41,
+    title: "Keep inactive status rate-limit snapshots current",
+    body: executionReadyBody("Fetch rate-limit telemetry after inactive selection reads."),
+    createdAt: "2026-03-27T00:00:00Z",
+    updatedAt: "2026-03-27T00:00:00Z",
+    url: "https://example.test/issues/41",
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => {
+      calls.push("listCandidateIssues");
+      return [issue];
+    },
+    listAllIssues: async () => {
+      calls.push("listAllIssues");
+      return [issue];
+    },
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getRateLimitTelemetry: async () => {
+      calls.push("getRateLimitTelemetry");
+      return {
+        rest: {
+          resource: "core",
+          limit: 5000,
+          remaining: 74,
+          resetAt: "2026-03-27T00:30:00.000Z",
+          state: "low",
+        },
+        graphql: {
+          resource: "graphql",
+          limit: 5000,
+          remaining: 12,
+          resetAt: "2026-03-27T00:15:00.000Z",
+          state: "low",
+        },
+      };
+    },
+  };
+
+  await supervisor.statusReport({ why: true });
+
+  assert.deepEqual(calls, [
+    "listCandidateIssues",
+    "listAllIssues",
+    "listCandidateIssues",
+    "listAllIssues",
+    "listCandidateIssues",
+    "listAllIssues",
+    "getRateLimitTelemetry",
+  ]);
+});
+
+test("statusReport fetches GitHub rate-limit telemetry after active issue reads", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const issueNumber = 58;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "addressing_review",
+        branch: branchName(fixture.config, issueNumber),
+        pr_number: issueNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        blocked_reason: null,
+        last_error: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const calls: string[] = [];
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => {
+      calls.push("getIssue");
+      return {
+        number: issueNumber,
+        title: "Keep active status rate-limit snapshots current",
+        body: executionReadyBody("Fetch rate-limit telemetry after active status reads."),
+        createdAt: "2026-03-27T00:00:00Z",
+        updatedAt: "2026-03-27T00:00:00Z",
+        url: `https://example.test/issues/${issueNumber}`,
+        state: "OPEN",
+      };
+    },
+    resolvePullRequestForBranch: async () => {
+      calls.push("resolvePullRequestForBranch");
+      return {
+        number: issueNumber,
+        title: "Keep active status rate-limit snapshots current",
+        url: `https://example.test/pull/${issueNumber}`,
+        state: "OPEN",
+        createdAt: "2026-03-27T00:00:00Z",
+        updatedAt: "2026-03-27T00:00:00Z",
+        isDraft: false,
+        reviewDecision: null,
+        mergeStateStatus: "CLEAN",
+        headRefName: branchName(fixture.config, issueNumber),
+        headRefOid: "head-58",
+      };
+    },
+    getChecks: async () => {
+      calls.push("getChecks");
+      return [];
+    },
+    getUnresolvedReviewThreads: async () => {
+      calls.push("getUnresolvedReviewThreads");
+      return [];
+    },
+    getRateLimitTelemetry: async () => {
+      calls.push("getRateLimitTelemetry");
+      return {
+        rest: {
+          resource: "core",
+          limit: 5000,
+          remaining: 73,
+          resetAt: "2026-03-27T00:30:00.000Z",
+          state: "low",
+        },
+        graphql: {
+          resource: "graphql",
+          limit: 5000,
+          remaining: 11,
+          resetAt: "2026-03-27T00:15:00.000Z",
+          state: "low",
+        },
+      };
+    },
+  };
+
+  await supervisor.statusReport();
+
+  assert.deepEqual(calls, [
+    "getIssue",
+    "resolvePullRequestForBranch",
+    "getChecks",
+    "getUnresolvedReviewThreads",
+    "getRateLimitTelemetry",
+  ]);
 });
 
 test("statusReport exposes typed loop runtime state from the host runtime marker", async (t) => {

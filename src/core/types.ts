@@ -55,6 +55,21 @@ export interface CadenceDiagnosticsSummary {
   mergeCriticalRecheckEnabled: boolean;
 }
 
+export type GitHubRateLimitBudgetState = "healthy" | "low" | "exhausted";
+
+export interface GitHubRateLimitBudget {
+  resource: string;
+  limit: number;
+  remaining: number;
+  resetAt: string;
+  state: GitHubRateLimitBudgetState;
+}
+
+export interface GitHubRateLimitTelemetry {
+  rest: GitHubRateLimitBudget;
+  graphql: GitHubRateLimitBudget;
+}
+
 export interface CandidateDiscoveryDiagnostics {
   fetchWindow: number;
   observedMatchingOpenIssues: number;
