@@ -3,6 +3,7 @@ import { GitHubClient } from "./github";
 import {
   findBlockingIssue,
   findHighRiskBlockingAmbiguity,
+  isRecordDoneForSequencing,
   lintExecutionReadyIssueBody,
   parseIssueMetadata,
 } from "./issue-metadata";
@@ -90,6 +91,10 @@ interface ReserveRunnableIssueSelectionArgs {
   currentRecord: IssueRunRecord | null;
   emitEvent?: SupervisorEventSink;
 }
+
+type DegradedDependencyCheckResult =
+  | { kind: "ready" }
+  | { kind: "blocked"; reason: string };
 
 function createIssueRecord(config: SupervisorConfig, issueNumber: number): IssueRunRecord {
   const branch = branchNameForIssue(config, issueNumber);
@@ -196,6 +201,43 @@ function buildClarificationFailureContext(
   };
 }
 
+async function evaluateDegradedActiveIssueDependencies(
+  github: Pick<IssueSelectionGitHub, "getIssue">,
+  issue: GitHubIssue,
+  state: SupervisorStateFile,
+): Promise<DegradedDependencyCheckResult> {
+  const metadata = parseIssueMetadata(issue);
+
+  if (metadata.executionOrderIndex !== null && metadata.executionOrderIndex > 1) {
+    return {
+      kind: "blocked",
+      reason:
+        `Full inventory refresh is degraded, so execution-order gating for issue #${issue.number} ` +
+        "requires broad inventory and cannot continue safely.",
+    };
+  }
+
+  for (const dependencyNumber of metadata.dependsOn) {
+    const dependencyIssue = await github.getIssue(dependencyNumber);
+    if (dependencyIssue.state !== "CLOSED") {
+      return {
+        kind: "blocked",
+        reason: `Waiting for depends on #${dependencyNumber} before continuing issue #${issue.number}.`,
+      };
+    }
+
+    const dependencyRecord = state.issues[String(dependencyNumber)];
+    if (!isRecordDoneForSequencing(dependencyRecord)) {
+      return {
+        kind: "blocked",
+        reason: `Waiting for depends on #${dependencyNumber} before continuing issue #${issue.number}.`,
+      };
+    }
+  }
+
+  return { kind: "ready" };
+}
+
 async function defaultAcquireIssueLock(
   config: SupervisorConfig,
   record: IssueRunRecord,
@@ -232,6 +274,13 @@ async function selectIssueRecord(
   currentRecord: IssueRunRecord | null,
 ): Promise<SelectedIssueRecord | string> {
   let record = currentRecord;
+
+  if (state.inventory_refresh_failure !== undefined && record !== null) {
+    return {
+      record,
+      persistReservation: false,
+    };
+  }
 
   if (!record || !isEligibleForSelection(record, config)) {
     const issues = await github.listCandidateIssues();
@@ -475,12 +524,27 @@ export async function resolveRunnableIssueContext(
     const metadata = parseIssueMetadata(issue);
     const hasSequencingConstraints =
       metadata.dependsOn.length > 0 || (metadata.executionOrderIndex !== null && metadata.executionOrderIndex > 1);
-    const shouldBypassCandidateDependencyCheck =
+    const shouldUseDegradedTargetedDependencyCheck =
       state.inventory_refresh_failure !== undefined &&
       currentRecord !== null &&
-      currentRecord.issue_number === record.issue_number &&
-      !hasSequencingConstraints;
-    if (!shouldBypassCandidateDependencyCheck) {
+      currentRecord.issue_number === record.issue_number;
+    if (shouldUseDegradedTargetedDependencyCheck) {
+      const degradedDependencyCheck = hasSequencingConstraints
+        ? await evaluateDegradedActiveIssueDependencies(github, issue, state)
+        : { kind: "ready" } satisfies DegradedDependencyCheckResult;
+      if (degradedDependencyCheck.kind === "blocked") {
+        record = stateStore.touch(record, {
+          state: "queued",
+          last_error: degradedDependencyCheck.reason,
+        });
+        state.issues[String(record.issue_number)] = record;
+        state.activeIssueNumber = null;
+        await stateStore.save(state);
+        shouldReleaseIssueLock = false;
+        await issueLock.release();
+        return { kind: "restart" };
+      }
+    } else {
       const candidateIssues = await github.listCandidateIssues();
       const blockingIssue = findBlockingIssue(issue, candidateIssues, state);
       if (blockingIssue) {
