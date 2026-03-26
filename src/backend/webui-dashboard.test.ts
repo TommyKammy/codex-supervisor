@@ -2473,6 +2473,10 @@ test("setup shell enables launcher-managed restart only when the runtime capabil
   await restartPromise;
   await harness.flush();
 
+  assert.equal(restartButton.disabled, true);
+  await restartButton.dispatch("click");
+  await harness.flush();
+
   assert.deepEqual(
     harness.fetchCalls.map((call) => ({ path: call.path, method: call.method, body: call.body })),
     [

@@ -42,7 +42,7 @@ export function createManagedRestartControllerFromEnv(args: {
       summary: `Managed restart is available through the ${launcher} launcher.`,
     },
     requestRestart: async () => {
-      queueMicrotask(() => {
+      setImmediate(() => {
         void args.requestStop();
       });
       return {

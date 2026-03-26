@@ -46,6 +46,7 @@ export function renderSetupBrowserScript(): string {
       let latestSaveResult = null;
       let saveInFlight = false;
       let restartInFlight = false;
+      let restartRequested = false;
 
       function formatFieldList(fields) {
         const values = Array.isArray(fields) ? fields.filter((field) => typeof field === "string" && field.length > 0) : [];
@@ -273,6 +274,7 @@ export function renderSetupBrowserScript(): string {
         elements.restartButton.disabled = (
           saveInFlight ||
           restartInFlight ||
+          restartRequested ||
           !latestSaveResult ||
           !latestSaveResult.restartRequired ||
           !capability.supported
@@ -281,6 +283,7 @@ export function renderSetupBrowserScript(): string {
 
       function renderRestartOutcome(result) {
         if (!result) {
+          restartRequested = false;
           latestSaveResult = null;
           setText(elements.restartStatus, "No recent save");
           setText(
@@ -320,6 +323,7 @@ export function renderSetupBrowserScript(): string {
           return;
         }
 
+        restartRequested = false;
         setText(elements.restartStatus, "Saved and effective");
         setText(
           elements.restartDetails,
@@ -540,6 +544,7 @@ export function renderSetupBrowserScript(): string {
       async function handleManagedRestartClick() {
         const capability = managedRestartCapability(latestSaveResult || currentReport);
         if (
+          restartRequested ||
           restartInFlight ||
           !latestSaveResult ||
           !latestSaveResult.restartRequired ||
@@ -554,8 +559,10 @@ export function renderSetupBrowserScript(): string {
         setText(elements.restartGuidance, "Requesting launcher-managed restart...");
         try {
           const result = await writeJson("/api/commands/managed-restart", {});
+          restartRequested = true;
           setText(elements.restartGuidance, result.summary || capability.summary);
         } catch (error) {
+          restartRequested = false;
           const message = error instanceof Error ? error.message : String(error);
           setText(elements.restartGuidance, message);
         } finally {

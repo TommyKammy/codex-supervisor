@@ -686,5 +686,6 @@ test("browser smoke enables launcher-managed restart only when capability is pre
   );
 
   assert.equal(restartRequests, 1);
+  assert.equal(await page.isDisabled("#setup-restart-button"), true);
   assert.ok(readinessCalls.length >= 2);
 });
