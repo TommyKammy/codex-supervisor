@@ -980,24 +980,30 @@ export class Supervisor {
     const trackedIssues = buildTrackedIssueDtos(state);
     const inventoryRefreshStatusLine = formatInventoryRefreshStatusLine(state.inventory_refresh_failure);
     const inventoryRefreshWarning = buildInventoryRefreshWarningMessage(state);
-    let githubRateLimit: GitHubRateLimitTelemetry | null = null;
-    let githubRateLimitWarning: string | null = null;
     const githubWithRateLimitTelemetry = this.github as GitHubClient & {
       getRateLimitTelemetry?: () => Promise<GitHubRateLimitTelemetry>;
     };
-    if (typeof githubWithRateLimitTelemetry.getRateLimitTelemetry === "function") {
-      try {
-        githubRateLimit = await githubWithRateLimitTelemetry.getRateLimitTelemetry();
-      } catch (error) {
-        githubRateLimitWarning = error instanceof Error ? error.message : String(error);
+    const loadGitHubRateLimitStatus = async () => {
+      let githubRateLimit: GitHubRateLimitTelemetry | null = null;
+      let githubRateLimitWarning: string | null = null;
+      if (typeof githubWithRateLimitTelemetry.getRateLimitTelemetry === "function") {
+        try {
+          githubRateLimit = await githubWithRateLimitTelemetry.getRateLimitTelemetry();
+        } catch (error) {
+          githubRateLimitWarning = error instanceof Error ? error.message : String(error);
+        }
       }
-    }
-    const githubRateLimitLines = githubRateLimit
-      ? [
-        renderGitHubRateLimitLine("rest", githubRateLimit.rest),
-        renderGitHubRateLimitLine("graphql", githubRateLimit.graphql),
-      ]
-      : [];
+      return {
+        githubRateLimit,
+        githubRateLimitWarning,
+        githubRateLimitLines: githubRateLimit
+          ? [
+            renderGitHubRateLimitLine("rest", githubRateLimit.rest),
+            renderGitHubRateLimitLine("graphql", githubRateLimit.graphql),
+          ]
+          : [],
+      };
+    };
     const reconciliationSnapshot = await readCurrentReconciliationPhaseSnapshot(this.config);
     const reconciliationPhase = reconciliationSnapshot?.phase ?? null;
     const reconciliationWarning = buildLongReconciliationWarning(reconciliationSnapshot);
@@ -1027,18 +1033,19 @@ export class Supervisor {
         summarizeChecks,
         mergeConflictDetected,
       });
-      const inactiveDetailedStatusLines =
-        [
-          ...detailedStatusLines,
-          ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
-          ...githubRateLimitLines,
-        ];
       if (state.inventory_refresh_failure) {
+        const githubRateLimitStatus = await loadGitHubRateLimitStatus();
+        const inactiveDetailedStatusLines =
+          [
+            ...detailedStatusLines,
+            ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
+            ...githubRateLimitStatus.githubRateLimitLines,
+          ];
         return {
           gsdSummary,
           trustDiagnostics,
           cadenceDiagnostics,
-          githubRateLimit,
+          githubRateLimit: githubRateLimitStatus.githubRateLimit,
           candidateDiscoverySummary,
           candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
           localCiContract,
@@ -1058,14 +1065,16 @@ export class Supervisor {
             ? {
               kind: "readiness",
               message: truncate(
-                sanitizeStatusValue([inventoryRefreshWarning, githubRateLimitWarning].filter(Boolean).join(" | ")),
+                sanitizeStatusValue(
+                  [inventoryRefreshWarning, githubRateLimitStatus.githubRateLimitWarning].filter(Boolean).join(" | "),
+                ),
                 200,
               ) ?? "",
             }
-            : githubRateLimitWarning
+            : githubRateLimitStatus.githubRateLimitWarning
               ? {
                 kind: "readiness",
-                message: truncate(sanitizeStatusValue(githubRateLimitWarning), 200) ?? "",
+                message: truncate(sanitizeStatusValue(githubRateLimitStatus.githubRateLimitWarning), 200) ?? "",
               }
               : null,
         };
@@ -1083,17 +1092,25 @@ export class Supervisor {
           candidateDiscoveryDiagnostics,
         );
         const whyLines = options.why ? await buildSelectionWhySummary(this.github, this.config, state) : [];
+        const selectionSummary = options.why ? await buildSelectionSummary(this.github, this.config, state) : null;
+        const githubRateLimitStatus = await loadGitHubRateLimitStatus();
+        const inactiveDetailedStatusLines =
+          [
+            ...detailedStatusLines,
+            ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
+            ...githubRateLimitStatus.githubRateLimitLines,
+          ];
         return {
           gsdSummary,
           trustDiagnostics,
           cadenceDiagnostics,
-          githubRateLimit,
+          githubRateLimit: githubRateLimitStatus.githubRateLimit,
           candidateDiscoverySummary,
           candidateDiscovery,
           localCiContract,
           loopRuntime,
           activeIssue: null,
-          selectionSummary: options.why ? await buildSelectionSummary(this.github, this.config, state) : null,
+          selectionSummary,
           trackedIssues,
           runnableIssues: readinessSummary.runnableIssues,
           blockedIssues: readinessSummary.blockedIssues,
@@ -1107,11 +1124,18 @@ export class Supervisor {
         };
       } catch (error) {
         const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
+        const githubRateLimitStatus = await loadGitHubRateLimitStatus();
+        const inactiveDetailedStatusLines =
+          [
+            ...detailedStatusLines,
+            ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
+            ...githubRateLimitStatus.githubRateLimitLines,
+          ];
         return {
           gsdSummary,
           trustDiagnostics,
           cadenceDiagnostics,
-          githubRateLimit,
+          githubRateLimit: githubRateLimitStatus.githubRateLimit,
           candidateDiscoverySummary,
           candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
           localCiContract,
@@ -1129,7 +1153,10 @@ export class Supervisor {
           whyLines: [],
           warning: {
             kind: "readiness",
-            message: truncate(sanitizeStatusValue([message, githubRateLimitWarning].filter(Boolean).join(" | ")), 200) ?? "",
+            message: truncate(
+              sanitizeStatusValue([message, githubRateLimitStatus.githubRateLimitWarning].filter(Boolean).join(" | ")),
+              200,
+            ) ?? "",
           },
         };
       }
@@ -1168,18 +1195,19 @@ export class Supervisor {
       externalReviewFollowUpSummary: activeStatus.externalReviewFollowUpSummary,
       executionMetricsSummaryLines: activeStatus.executionMetricsSummaryLines,
     });
+    const githubRateLimitStatus = await loadGitHubRateLimitStatus();
     const detailedStatusLinesWithInventory =
       [
         ...detailedStatusLines,
         ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
-        ...githubRateLimitLines,
+        ...githubRateLimitStatus.githubRateLimitLines,
       ];
 
     return {
       gsdSummary,
       trustDiagnostics,
       cadenceDiagnostics,
-      githubRateLimit,
+      githubRateLimit: githubRateLimitStatus.githubRateLimit,
       candidateDiscoverySummary,
       candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
       localCiContract,
@@ -1210,15 +1238,19 @@ export class Supervisor {
           kind: "status",
           message: truncate(
             sanitizeStatusValue(
-              [activeStatus.warningMessage, inventoryRefreshWarning, githubRateLimitWarning].filter(Boolean).join(" | "),
+              [
+                activeStatus.warningMessage,
+                inventoryRefreshWarning,
+                githubRateLimitStatus.githubRateLimitWarning,
+              ].filter(Boolean).join(" | "),
             ),
             200,
           ) ?? "",
         }
-        : githubRateLimitWarning
+        : githubRateLimitStatus.githubRateLimitWarning
           ? {
             kind: "status",
-            message: truncate(sanitizeStatusValue(githubRateLimitWarning), 200) ?? "",
+            message: truncate(sanitizeStatusValue(githubRateLimitStatus.githubRateLimitWarning), 200) ?? "",
           }
           : null,
     };
