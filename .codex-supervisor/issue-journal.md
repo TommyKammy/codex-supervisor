@@ -1,42 +1,36 @@
-# Issue #1069: Persist a last-known-good inventory snapshot for diagnostics and read-only degraded support
+# Issue #1070: Expose inventory degradation provenance and recovery posture to operators
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1069
-- Branch: codex/issue-1069
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1070
+- Branch: codex/issue-1070
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 3 (implementation=1, repair=2)
-- Last head SHA: c302da0f3123dc0f58bbfe6a57b0e39eb7151941
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 8fa62a81c56953abcc4e90be0e2a5a46529b1868
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ853DJPt|PRRT_kwDORgvdZ853DJP1|PRRT_kwDORgvdZ853DJP3
-- Repeated failure signature count: 1
-- Updated at: 2026-03-26T23:00:49Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-26T23:17:49Z
 
 ## Latest Codex Summary
-- Addressed the three remaining PR review findings locally: snapshot normalization now realigns `issue_count`, sqlite loads preserve snapshot-only persisted state, and degraded readiness always emits `selection_reason=inventory_refresh_degraded`. While merging `origin/main`, kept the newer GitHub rate-limit telemetry alongside the issue-1069 inventory snapshot status lines in `Supervisor.statusReport()`.
+- Added structured inventory posture reporting so status and WebUI can distinguish healthy full inventory, targeted degraded reconciliation, and snapshot-only degraded support.
 
 ## Active Failure Context
-- Category: review
-- Summary: 3 unresolved automated review thread(s) were addressed locally and the merged tree now passes focused verification.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1076#discussion_r2995680189
-- Details:
-  - `src/core/state-store.ts`: recompute normalized snapshot `issue_count` from the filtered issue list.
-  - `src/core/state-store.ts`: treat snapshot-only sqlite metadata as persisted state during load.
-  - `src/supervisor/supervisor-selection-readiness-summary.ts`: always emit `selection_reason=inventory_refresh_degraded` on degraded readiness responses.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining review work is limited to these three actionable comments plus base-branch reconciliation. Keeping the last-known-good snapshot strictly non-authoritative remains the central safety constraint.
-- What changed: committed the focused review fixes as `c302da0`, fetched and started merging `origin/main`, and resolved the overlapping `supervisor.ts` status-report paths so the branch keeps both the new GitHub rate-limit reporting from `main` and the inventory snapshot diagnostics from this issue.
+- Hypothesis: operator-facing inventory posture needed a typed status object plus a single explicit posture line so both CLI status and the WebUI can prioritize degraded inventory correctly.
+- What changed: added `InventoryOperatorStatus` helpers, threaded `inventoryStatus` through `statusReport()`, emitted an `inventory_posture=...` line, and taught the dashboard overview/attention helpers to prefer degraded inventory posture over raw runnable counts.
 - Current blocker: none.
-- Next exact step: complete the merge commit, push `codex/issue-1069`, and then let PR #1076 re-run CI on the updated head.
-- Verification gap: full `npm test` has not run; focused review-fix suites and `npm run build` are green on the merged tree.
-- Files touched: `.codex-supervisor/issue-journal.md`; `src/core/state-store.ts`; `src/core/state-store.test.ts`; `src/supervisor/supervisor-selection-readiness-summary.ts`; `src/supervisor/supervisor-selection-readiness-summary.test.ts`; `src/supervisor/supervisor.ts`
-- Rollback concern: moderate. The changes sit in persisted state normalization and degraded status/reporting, so a bad merge could either drop the snapshot fallback or make stale data appear more authoritative than intended.
-- Last focused command: `git merge --no-edit origin/main`
-- What changed this turn: reread the required memory files and review-handling skill, verified the three unresolved review comments against the local code, ran focused tests for the review-fix diff, committed the code/test changes, fetched and merged `origin/main`, resolved the `supervisor.ts` and journal conflicts, and reran focused verification plus a TypeScript build on the merged tree.
-- Exact failure reproduced this turn: before the fixes, snapshot normalization preserved a stale `issue_count`, sqlite could discard snapshot-only metadata on load, and degraded readiness could omit `selection_reason=inventory_refresh_degraded` entirely when no snapshot summary existed.
-- Commands run this turn: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1069/AGENTS.generated.md`; `sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1069/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `sed -n '1,220p' /home/tommy/.codex/plugins/cache/openai-curated/github/96adb50181823339d6e0973d7ce1d567bff204bd/skills/gh-address-comments/SKILL.md`; `git status --short --branch`; `git log --oneline --decorate -n 8`; `sed -n '1,260p' src/core/state-store.ts`; `sed -n '1,260p' src/supervisor/supervisor-selection-readiness-summary.ts`; `sed -n '1,320p' src/core/state-store.test.ts`; `sed -n '1,280p' src/supervisor/supervisor-selection-readiness-summary.test.ts`; `rg -n "loadFromSqlite|last_successful_inventory_snapshot|inventory_refresh_failure|reconciliation_state|hasPersistedState" src/core/state-store.ts`; `sed -n '260,460p' src/core/state-store.ts`; `git fetch origin main`; `git rev-list --left-right --count origin/main...HEAD`; `git diff -- src/core/state-store.ts src/core/state-store.test.ts src/supervisor/supervisor-selection-readiness-summary.ts src/supervisor/supervisor-selection-readiness-summary.test.ts`; `git diff --name-only origin/main...HEAD`; `npx tsx --test src/core/state-store.test.ts`; `npx tsx --test src/supervisor/supervisor-selection-readiness-summary.test.ts`; `git add src/core/state-store.ts src/core/state-store.test.ts src/supervisor/supervisor-selection-readiness-summary.ts src/supervisor/supervisor-selection-readiness-summary.test.ts`; `git commit -m "Address PR feedback for inventory snapshot fallback"`; `git stash push -m "issue-1069-journal" -- .codex-supervisor/issue-journal.md`; `git merge --no-edit origin/main`; `rg -n "^(<<<<<<<|=======|>>>>>>>)" .codex-supervisor/issue-journal.md src/supervisor/supervisor.ts`; `sed -n '1056,1148p' src/supervisor/supervisor.ts`; `sed -n '1240,1270p' src/supervisor/supervisor.ts`; `npx tsx --test src/core/state-store.test.ts src/supervisor/supervisor-selection-readiness-summary.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`
+- Next exact step: commit the inventory posture changes on `codex/issue-1070`, then rerun broader verification once the workspace has a local TypeScript compiler available.
+- Verification gap: `npm run build` cannot complete in this workspace because `tsc` is not installed; focused status and dashboard tests are green.
+- Files touched: `.codex-supervisor/issue-journal.md`; `src/backend/webui-dashboard-browser-logic.test.ts`; `src/backend/webui-dashboard-browser-logic.ts`; `src/inventory-refresh-state.ts`; `src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `src/supervisor/supervisor-status-report.ts`; `src/supervisor/supervisor.ts`
+- Rollback concern: moderate. A bad posture classifier could overstate degraded capabilities and make snapshot-backed readiness look more authoritative than it is.
+- Last focused command: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts`
+- What changed this turn: reread the required memory files and journal, identified that `statusReport()` only exposed inventory degradation as free-form lines and warnings, added focused failing tests for typed posture and dashboard prioritization, implemented typed operator posture/guidance, reran the focused suites, and attempted a broader TypeScript build.
+- Exact failure reproduced this turn: before the fix, `statusReport().inventoryStatus` was undefined and the dashboard overview still reported runnable work as healthy even when inventory refresh was degraded and selection was blocked.
+- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `git log --oneline --decorate -n 12`; `rg -n "inventory_refresh|degraded|last_successful_inventory|snapshot|reconciliation_state|recovery" src test .`; `rg --files src | rg "supervisor|state-store|inventory|diagnostics|webui|status"`; `sed -n '1,260p' src/supervisor/supervisor-status-model.ts`; `sed -n '1,280p' src/supervisor/supervisor-status-rendering.ts`; `sed -n '1,320p' src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `sed -n '1,320p' src/backend/webui-dashboard.test.ts`; `rg -n "inventory_refresh|inventory_snapshot|last_successful_inventory|fallback|degraded" src/supervisor src/backend`; `sed -n '1,260p' src/supervisor/supervisor-status-report.ts`; `sed -n '1,260p' src/backend/webui-dashboard.ts`; `sed -n '1,260p' src/backend/webui-dashboard-browser-logic.ts`; `sed -n '1,360p' src/supervisor/supervisor-selection-readiness-summary.ts`; `sed -n '760,980p' src/backend/webui-dashboard-browser-script.ts`; `rg -n "selectionSummary|warning|inventory_refresh|inventory_snapshot|last-known-good|degraded" src/backend/webui-dashboard-browser-script.ts src/backend/webui-dashboard.test.ts`; `sed -n '640,760p' src/backend/webui-dashboard-browser-script.ts`; `sed -n '980,1080p' src/backend/webui-dashboard-browser-script.ts`; `sed -n '300,420p' src/backend/webui-dashboard.test.ts`; `sed -n '1,240p' src/inventory-refresh-state.ts`; `rg -n "inventory_refresh_failure|last_successful_inventory_snapshot|classification" src/core/types.ts src/core`; `sed -n '1,260p' src/core/types.ts`; `sed -n '980,1115p' src/supervisor/supervisor.ts`; `sed -n '1115,1205p' src/supervisor/supervisor.ts`; `sed -n '1,340p' src/backend/webui-dashboard-browser-logic.test.ts`; `sed -n '340,520p' src/backend/webui-dashboard-browser-logic.test.ts`; `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts`; `npm run build`; `npx tsc -p tsconfig.json`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

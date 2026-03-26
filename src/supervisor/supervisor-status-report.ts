@@ -17,6 +17,7 @@ import type {
   SupervisorSelectionSummaryDto,
 } from "./supervisor-selection-readiness-summary";
 import {
+  type InventoryOperatorStatus,
   formatInventoryRefreshStatusLine,
   formatLastSuccessfulInventorySnapshotStatusLine,
 } from "../inventory-refresh-state";
@@ -56,6 +57,7 @@ export interface SupervisorStatusDto {
   trustDiagnostics?: TrustDiagnosticsSummary | null;
   cadenceDiagnostics?: CadenceDiagnosticsSummary | null;
   githubRateLimit?: GitHubRateLimitTelemetry | null;
+  inventoryStatus?: InventoryOperatorStatus;
   candidateDiscoverySummary?: string | null;
   candidateDiscovery: SupervisorCandidateDiscoveryDto | null;
   localCiContract?: LocalCiContractSummary;

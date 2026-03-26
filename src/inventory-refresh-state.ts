@@ -1,9 +1,40 @@
-import { GitHubIssue, InventoryRefreshFailure, LastSuccessfulInventorySnapshot } from "./core/types";
+import {
+  GitHubIssue,
+  InventoryRefreshFailure,
+  IssueRunRecord,
+  LastSuccessfulInventorySnapshot,
+  SupervisorStateFile,
+} from "./core/types";
 import { nowIso, truncate } from "./core/utils";
 import { isGitHubRateLimitFailure } from "./github/github-transport";
 import { sanitizeStatusValue } from "./supervisor/supervisor-status-rendering";
 
 export const FULL_ISSUE_INVENTORY_SOURCE = "gh issue list";
+
+export type InventoryStatusMode = "healthy" | "degraded";
+export type InventoryStatusPosture =
+  | "fresh_full_inventory"
+  | "targeted_degraded_reconciliation"
+  | "snapshot_support"
+  | "blocked";
+export type InventoryRecoveryState = "healthy" | "partially_degraded" | "blocked";
+
+export interface InventoryOperatorStatus {
+  mode: InventoryStatusMode;
+  posture: InventoryStatusPosture;
+  recoveryState: InventoryRecoveryState;
+  selectionBlocked: boolean;
+  summary: string;
+  recoveryGuidance: string;
+  recoveryActions: string[];
+  lastSuccessfulFullRefreshAt: string | null;
+  failure: {
+    source: string;
+    message: string;
+    recordedAt: string;
+    classification: "rate_limited" | "unknown";
+  } | null;
+}
 
 export function buildInventoryRefreshFailure(error: unknown): InventoryRefreshFailure {
   const message = truncate(error instanceof Error ? error.message : String(error), 500) ?? "Unknown inventory refresh failure.";
@@ -75,5 +106,103 @@ export function formatLastSuccessfulInventorySnapshotStatusLine(
     `recorded_at=${snapshot.recorded_at}`,
     `issue_count=${snapshot.issue_count}`,
     "authority=non_authoritative",
+  ].join(" ");
+}
+
+export function buildInventoryOperatorStatus(args: {
+  state: SupervisorStateFile;
+  activeRecord?: Pick<IssueRunRecord, "pr_number"> | null;
+  trackedRecords?: Array<Pick<IssueRunRecord, "pr_number">>;
+}): InventoryOperatorStatus {
+  const { state, activeRecord = null, trackedRecords = [] } = args;
+  const snapshot = state.last_successful_inventory_snapshot;
+  const failure = state.inventory_refresh_failure;
+  const lastSuccessfulFullRefreshAt = snapshot?.recorded_at ?? null;
+
+  if (!failure) {
+    return {
+      mode: "healthy",
+      posture: "fresh_full_inventory",
+      recoveryState: "healthy",
+      selectionBlocked: false,
+      summary: "Fresh full inventory is available.",
+      recoveryGuidance: "No operator recovery is required.",
+      recoveryActions: [],
+      lastSuccessfulFullRefreshAt,
+      failure: null,
+    };
+  }
+
+  const targetedTrackedPrAvailable =
+    activeRecord?.pr_number !== null && activeRecord?.pr_number !== undefined
+    || trackedRecords.some((record) => record.pr_number !== null && record.pr_number !== undefined);
+  if (targetedTrackedPrAvailable) {
+    return {
+      mode: "degraded",
+      posture: "targeted_degraded_reconciliation",
+      recoveryState: "partially_degraded",
+      selectionBlocked: true,
+      summary: "Full inventory refresh is degraded; targeted reconciliation can continue for tracked pull requests.",
+      recoveryGuidance:
+        "Restore a successful full inventory refresh to resume authoritative queue selection; tracked PR reconciliation can continue meanwhile.",
+      recoveryActions: [
+        "restore_full_inventory_refresh",
+        "continue_targeted_pr_reconciliation",
+      ],
+      lastSuccessfulFullRefreshAt,
+      failure: {
+        source: failure.source,
+        message: failure.message,
+        recordedAt: failure.recorded_at,
+        classification: failure.classification ?? "unknown",
+      },
+    };
+  }
+
+  if (snapshot) {
+    return {
+      mode: "degraded",
+      posture: "snapshot_support",
+      recoveryState: "partially_degraded",
+      selectionBlocked: true,
+      summary: "Full inventory refresh is degraded; using the last-known-good snapshot for diagnostics only.",
+      recoveryGuidance:
+        "Restore a successful full inventory refresh before relying on new queue selection; the snapshot is for degraded diagnostics only.",
+      recoveryActions: ["restore_full_inventory_refresh"],
+      lastSuccessfulFullRefreshAt,
+      failure: {
+        source: failure.source,
+        message: failure.message,
+        recordedAt: failure.recorded_at,
+        classification: failure.classification ?? "unknown",
+      },
+    };
+  }
+
+  return {
+    mode: "degraded",
+    posture: "blocked",
+    recoveryState: "blocked",
+    selectionBlocked: true,
+    summary: "Full inventory refresh is degraded; reconciliation is blocked until a fresh full refresh succeeds.",
+    recoveryGuidance:
+      "Restore a successful full inventory refresh before relying on queue status because no degraded fallback posture is available.",
+    recoveryActions: ["restore_full_inventory_refresh"],
+    lastSuccessfulFullRefreshAt,
+    failure: {
+      source: failure.source,
+      message: failure.message,
+      recordedAt: failure.recorded_at,
+      classification: failure.classification ?? "unknown",
+    },
+  };
+}
+
+export function formatInventoryOperatorPostureLine(status: InventoryOperatorStatus): string {
+  return [
+    `inventory_posture=${status.posture}`,
+    `recovery_state=${status.recoveryState}`,
+    `selection_blocked=${status.selectionBlocked ? "yes" : "no"}`,
+    `last_successful_full_refresh_at=${status.lastSuccessfulFullRefreshAt ?? "none"}`,
   ].join(" ");
 }

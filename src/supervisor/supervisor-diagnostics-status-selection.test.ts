@@ -250,6 +250,87 @@ Depends on: #91`,
   assert.match(status, /^selection_reason=inventory_refresh_degraded$/m);
 });
 
+test("statusReport exposes typed targeted degraded reconciliation posture for operators", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 58,
+    issues: {
+      "58": createRecord({
+        issue_number: 58,
+        state: "reproducing",
+        pr_number: 108,
+        branch: branchName(fixture.config, 58),
+        workspace: path.join(fixture.workspaceRoot, "issue-58"),
+        journal_path: null,
+      }),
+    },
+    inventory_refresh_failure: {
+      source: "gh issue list",
+      message: "secondary rate limit exceeded for the REST API",
+      recorded_at: "2026-03-26T00:10:00Z",
+      classification: "rate_limited",
+    },
+    last_successful_inventory_snapshot: {
+      source: "gh issue list",
+      recorded_at: "2026-03-26T00:05:00Z",
+      issue_count: 1,
+      issues: [{
+        number: 58,
+        title: "Tracked issue remains active",
+        body: executionReadyBody("Keep the tracked issue active while inventory refresh is degraded."),
+        createdAt: "2026-03-26T00:00:00Z",
+        updatedAt: "2026-03-26T00:00:00Z",
+        url: "https://example.test/issues/58",
+        state: "OPEN",
+      }],
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    listCandidateIssues: async () => {
+      throw new Error("unexpected listCandidateIssues call");
+    },
+    listAllIssues: async () => {
+      throw new Error("unexpected listAllIssues call");
+    },
+  };
+
+  const report = await supervisor.statusReport();
+
+  assert.deepEqual(report.inventoryStatus, {
+    mode: "degraded",
+    posture: "targeted_degraded_reconciliation",
+    recoveryState: "partially_degraded",
+    selectionBlocked: true,
+    summary: "Full inventory refresh is degraded; targeted reconciliation can continue for tracked pull requests.",
+    recoveryGuidance:
+      "Restore a successful full inventory refresh to resume authoritative queue selection; tracked PR reconciliation can continue meanwhile.",
+    recoveryActions: [
+      "restore_full_inventory_refresh",
+      "continue_targeted_pr_reconciliation",
+    ],
+    lastSuccessfulFullRefreshAt: "2026-03-26T00:05:00Z",
+    failure: {
+      source: "gh issue list",
+      message: "secondary rate limit exceeded for the REST API",
+      recordedAt: "2026-03-26T00:10:00Z",
+      classification: "rate_limited",
+    },
+  });
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^inventory_posture=targeted_degraded_reconciliation recovery_state=partially_degraded selection_blocked=yes last_successful_full_refresh_at=2026-03-26T00:05:00Z$/m,
+  );
+});
+
 test("statusReport exposes the typed local CI contract summary from config", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {
