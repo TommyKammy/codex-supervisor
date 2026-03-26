@@ -1,0 +1,20 @@
+[Unit]
+Description=codex-supervisor WebUI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__ROOT__
+ExecStart=/bin/bash __ROOT__/scripts/run-web.sh
+Restart=always
+RestartSec=5
+Environment=PATH=__PATH__
+Environment=NODE_BIN=__NODE__
+Environment=NPM_BIN=__NPM__
+Environment=npm_config_yes=true
+Environment=CI=1
+Environment=CODEX_SUPERVISOR_MANAGED_RESTART=1
+Environment=CODEX_SUPERVISOR_MANAGED_RESTART_LAUNCHER=systemd
+[Install]
+WantedBy=default.target

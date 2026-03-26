@@ -18,6 +18,27 @@ The server binds to `127.0.0.1:4310` and serves:
 - typed JSON endpoints for status, doctor, explain, and issue-lint
 - an SSE stream for live supervisor events
 
+## Launcher-managed restart
+
+Managed restart is only meaningful when the WebUI itself runs under a launcher-backed entrypoint that can safely relaunch it.
+
+For direct local sessions such as:
+
+```bash
+node dist/index.js web --config /path/to/supervisor.config.json
+```
+
+the setup flow must stay manual, because the browser should not terminate an unmanaged local process.
+
+If you want launcher-managed restart for the WebUI, use the dedicated WebUI launchers instead of the loop service:
+
+```bash
+./scripts/install-launchd-web.sh
+./scripts/install-systemd-web.sh
+```
+
+Those launchers start `scripts/run-web.sh`, which enables the managed restart capability for launcher-backed WebUI sessions while keeping the existing loop launcher path separate.
+
 ## What the dashboard is for
 
 Use the dashboard when you want:
