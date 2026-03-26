@@ -626,3 +626,65 @@ test("browser smoke reports when a setup save is already effective", async (t) =
   assert.equal(await page.isDisabled("#setup-restart-button"), true);
   assert.ok(readinessCalls.length >= 2);
 });
+
+test("browser smoke enables launcher-managed restart only when capability is present", async (t) => {
+  const updateCalls: Array<unknown> = [];
+  const readinessCalls: number[] = [];
+  let restartRequests = 0;
+  const server = createSupervisorHttpServer({
+    service: createFirstRunSetupService({ updateCalls, readinessCalls }),
+    managedRestart: {
+      capability: {
+        supported: true,
+        launcher: "systemd",
+        summary: "Managed restart is available through the systemd launcher.",
+      },
+      requestRestart: async () => {
+        restartRequests += 1;
+        return {
+          command: "managed-restart",
+          accepted: true,
+          summary: "Managed restart requested through the systemd launcher. This WebUI process will exit for relaunch.",
+        };
+      },
+    },
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  const browser = await launchBrowser();
+  t.after(async () => {
+    await browser.close();
+  });
+
+  const port = await listen(server);
+  const page = await browser.newPage();
+  await page.goto(`http://127.0.0.1:${port}/`);
+
+  await page.waitForSelector("[data-setup-root]");
+  await page.waitForSelector("#setup-input-repoPath");
+  await page.fill("#setup-input-repoPath", "/tmp/repo");
+  await page.selectOption("#setup-input-reviewProvider", "codex");
+  await page.click("#setup-save-button");
+
+  await page.waitForFunction(() => document.getElementById("setup-restart-status")?.textContent === "Restart required");
+  await page.waitForFunction(() => {
+    const button = document.getElementById("setup-restart-button");
+    return button instanceof HTMLButtonElement && button.disabled === false;
+  });
+
+  assert.match(
+    (await page.textContent("#setup-restart-guidance")) ?? "",
+    /Managed restart is available through the systemd launcher\./u,
+  );
+
+  await page.click("#setup-restart-button");
+  await page.waitForFunction(
+    () => document.getElementById("setup-restart-guidance")?.textContent ===
+      "Managed restart requested through the systemd launcher. This WebUI process will exit for relaunch.",
+  );
+
+  assert.equal(restartRequests, 1);
+  assert.ok(readinessCalls.length >= 2);
+});

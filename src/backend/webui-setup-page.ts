@@ -670,7 +670,7 @@ ${renderSetupNavigation()}
                     <p id="setup-restart-details" class="hint">Save typed setup changes to see whether they take effect immediately or require a supervisor restart.</p>
                     <div class="actions">
                       <button id="setup-restart-button" class="button" type="button" disabled>Restart now</button>
-                      <p id="setup-restart-guidance" class="status-note">Restart controls are not available in the setup UI yet.</p>
+                      <p id="setup-restart-guidance" class="status-note">Managed restart becomes available only when this WebUI is running under explicit launcher-backed restart support.</p>
                     </div>
                   </div>
                 </div>

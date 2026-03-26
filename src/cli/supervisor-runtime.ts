@@ -2,6 +2,7 @@ import type { CliOptions, SupervisorConfig } from "../core/types";
 import { createSupervisorHttpServer } from "../backend/supervisor-http-server";
 import { sleep as defaultSleep } from "../core/utils";
 import { ensureGsdInstalled as defaultEnsureGsdInstalled } from "../gsd";
+import { createManagedRestartControllerFromEnv, type ManagedRestartController } from "../managed-restart";
 import { renderDoctorReport } from "../doctor";
 import { renderJsonCorruptStateResetResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderSupervisorExecutionMetricsRollupResultDto } from "../supervisor/supervisor-mutation-report";
@@ -39,7 +40,7 @@ interface SupervisorRuntimeDependencies {
   writeStdout?: (line: string) => void;
   writeStderr?: (line: string) => void;
   registerStopSignals?: (handler: (signal: NodeJS.Signals) => void) => void;
-  createHttpServer?: (service: SupervisorService) => {
+  createHttpServer?: (service: SupervisorService, options?: { managedRestart?: ManagedRestartController | null }) => {
     listen: (port: number, host: string, listeningListener?: () => void) => void;
     once: (event: "error", listener: (error: Error) => void) => void;
     close: (callback: (error?: Error) => void) => void;
@@ -116,7 +117,7 @@ export async function runSupervisorCommand(
     writeStdout = (line) => console.log(line),
     writeStderr = (line) => console.error(line),
     registerStopSignals = registerProcessStopSignals,
-    createHttpServer = (createdService) => createSupervisorHttpServer({ service: createdService }),
+    createHttpServer = (createdService, serverOptions) => createSupervisorHttpServer({ service: createdService, managedRestart: serverOptions?.managedRestart }),
   } = dependencies;
   const cycleController =
     options.command === "run-once" || options.command === "loop"
@@ -199,7 +200,17 @@ export async function runSupervisorCommand(
   }
 
   if (options.command === "web") {
-    const server = createHttpServer(service);
+    const managedRestart = createManagedRestartControllerFromEnv({
+      env: process.env,
+      requestStop: async () => {
+        if (!stopWebServer) {
+          return;
+        }
+        writeStdout(`${new Date().toISOString()} managed restart requested, shutting down WebUI for relaunch`);
+        stopWebServer();
+      },
+    });
+    const server = createHttpServer(service, { managedRestart });
     await new Promise<void>((resolve, reject) => {
       let settled = false;
       const complete = (error?: Error) => {

@@ -1,12 +1,20 @@
 import http from "node:http";
 import { URL } from "node:url";
+import {
+  unavailableManagedRestartCapability,
+  type ManagedRestartCapability,
+  type ManagedRestartController,
+} from "../managed-restart";
 import type { SetupConfigPreviewSelectableReviewProviderProfile } from "../setup-config-preview";
+import type { SetupConfigUpdateResult } from "../setup-config-write";
+import type { SetupReadinessReport } from "../setup-readiness";
 import type { SupervisorEvent, SupervisorService } from "../supervisor";
 import { renderSupervisorDashboardHtml } from "./webui-dashboard";
 import { renderSupervisorSetupHtml } from "./webui-setup";
 
 export interface CreateSupervisorHttpServerOptions {
   service: SupervisorService;
+  managedRestart?: ManagedRestartController | null;
   heartbeatIntervalMs?: number;
   replayBufferSize?: number;
 }
@@ -30,6 +38,14 @@ interface RunOnceCommandResultDto {
   summary: string;
 }
 
+export interface SetupReadinessResponseDto extends SetupReadinessReport {
+  managedRestart: ManagedRestartCapability;
+}
+
+export interface SetupConfigUpdateResponseDto extends SetupConfigUpdateResult {
+  managedRestart: ManagedRestartCapability;
+}
+
 interface BufferedSupervisorEvent {
   id: number;
   event: SupervisorEvent;
@@ -47,7 +63,7 @@ export function createSupervisorHttpServer(options: CreateSupervisorHttpServerOp
   });
   const server = http.createServer(async (request, response) => {
     try {
-      await handleRequest(request, response, options.service, events);
+      await handleRequest(request, response, options.service, events, options.managedRestart ?? null);
     } catch (error) {
       if (error instanceof HttpRequestError) {
         writeJson(response, error.statusCode, { error: error.message });
@@ -81,6 +97,7 @@ async function handleRequest(
   response: http.ServerResponse,
   service: SupervisorService,
   events: SupervisorSseEventStream,
+  managedRestart: ManagedRestartController | null,
 ): Promise<void> {
   const method = request.method ?? "GET";
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -93,7 +110,7 @@ async function handleRequest(
       return;
     }
 
-    await handleCommandRequest(request, response, pathname, service);
+    await handleCommandRequest(request, response, pathname, service, managedRestart);
     return;
   }
 
@@ -110,7 +127,7 @@ async function handleRequest(
     const body = await readJsonBody(request);
     const changes = readSetupConfigChanges(body);
     try {
-      writeJson(response, 200, await service.updateSetupConfig({ changes }));
+      writeJson(response, 200, withManagedRestartCapability(await service.updateSetupConfig({ changes }), managedRestart));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new HttpRequestError(400, message);
@@ -170,7 +187,7 @@ async function handleRequest(
       writeJson(response, 404, { error: "Not found." });
       return;
     }
-    writeJson(response, 200, await service.querySetupReadiness());
+    writeJson(response, 200, withManagedRestartCapability(await service.querySetupReadiness(), managedRestart));
     return;
   }
 
@@ -224,6 +241,7 @@ async function handleCommandRequest(
   response: http.ServerResponse,
   pathname: string,
   service: SupervisorService,
+  managedRestart: ManagedRestartController | null,
 ): Promise<void> {
   if (pathname === "/api/commands/run-once") {
     const body = await readJsonBody(request);
@@ -261,7 +279,27 @@ async function handleCommandRequest(
     return;
   }
 
+  if (pathname === "/api/commands/managed-restart") {
+    await readJsonBody(request);
+    if (!managedRestart?.capability.supported) {
+      writeJson(response, 409, { error: unavailableManagedRestartCapability().summary });
+      return;
+    }
+    writeJson(response, 200, await managedRestart.requestRestart());
+    return;
+  }
+
   writeJson(response, 404, { error: "Not found." });
+}
+
+function withManagedRestartCapability<T extends SetupReadinessReport | SetupConfigUpdateResult>(
+  value: T,
+  managedRestart: ManagedRestartController | null,
+): T & { managedRestart: ManagedRestartCapability } {
+  return {
+    ...value,
+    managedRestart: managedRestart?.capability ?? unavailableManagedRestartCapability(),
+  };
 }
 
 function parseBooleanQueryValue(value: string | null): boolean {
