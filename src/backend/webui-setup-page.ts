@@ -662,6 +662,23 @@ ${renderSetupNavigation()}
               <article class="panel fields-card">
                 <div class="panel-shell">
                   <div class="panel-header">
+                    <h2>Post-save status</h2>
+                    <p class="panel-subtitle">What changed, whether it is already effective, and what the operator should do next.</p>
+                  </div>
+                  <div class="panel-body">
+                    <div id="setup-restart-status" class="metric">No recent save</div>
+                    <p id="setup-restart-details" class="hint">Save typed setup changes to see whether they take effect immediately or require a supervisor restart.</p>
+                    <div class="actions">
+                      <button id="setup-restart-button" class="button" type="button" disabled>Restart now</button>
+                      <p id="setup-restart-guidance" class="status-note">Restart controls are not available in the setup UI yet.</p>
+                    </div>
+                  </div>
+                </div>
+              </article>
+
+              <article class="panel fields-card">
+                <div class="panel-shell">
+                  <div class="panel-header">
                     <h2>Config fields</h2>
                     <p class="panel-subtitle">Full typed field inventory, including optional and non-editable values.</p>
                   </div>

@@ -5,7 +5,7 @@ import test from "node:test";
 import { chromium, type Browser, type Dialog, type Page } from "playwright-core";
 import type { DoctorDiagnostics } from "../doctor";
 import type { SetupConfigUpdateResult } from "../setup-config-write";
-import type { SetupReadinessReport } from "../setup-readiness";
+import type { SetupReadinessFieldKey, SetupReadinessReport } from "../setup-readiness";
 import type { SupervisorService } from "../supervisor";
 import { createSupervisorHttpServer } from "./supervisor-http-server";
 
@@ -254,6 +254,7 @@ test("browser smoke runs a confirmed safe command through the dashboard", async 
 function createFirstRunSetupService(args: {
   updateCalls: Array<unknown>;
   readinessCalls: number[];
+  restartRequired?: boolean;
 }): SupervisorService {
   const doctorDiagnostics: DoctorDiagnostics = {
     overallStatus: "pass",
@@ -451,38 +452,59 @@ function createFirstRunSetupService(args: {
     },
     updateSetupConfig: async (options): Promise<SetupConfigUpdateResult> => {
       args.updateCalls.push(options);
+      const restartRequired = args.restartRequired ?? true;
+      const updatedFields: SetupReadinessFieldKey[] = options.changes.repoPath
+        ? ["repoPath", "reviewProvider"]
+        : ["reviewProvider"];
+      const restartTriggeredByFields: SetupReadinessFieldKey[] = restartRequired ? updatedFields : [];
       readiness = {
         ...readiness,
         ready: true,
         overallStatus: "configured",
-        fields: [
-          {
-            key: "repoPath",
-            label: "Repository path",
-            state: "configured",
-            value: options.changes.repoPath ?? "/tmp/repo",
-            message: "Repository path is configured.",
-            required: true,
-            metadata: {
-              source: "config",
-              editable: true,
-              valueType: "directory_path",
+        fields: options.changes.repoPath
+          ? [
+            {
+              key: "repoPath",
+              label: "Repository path",
+              state: "configured",
+              value: options.changes.repoPath ?? "/tmp/repo",
+              message: "Repository path is configured.",
+              required: true,
+              metadata: {
+                source: "config",
+                editable: true,
+                valueType: "directory_path",
+              },
             },
-          },
-          {
-            key: "reviewProvider",
-            label: "Review provider",
-            state: "configured",
-            value: "chatgpt-codex-connector",
-            message: "Review provider posture is configured.",
-            required: true,
-            metadata: {
-              source: "config",
-              editable: true,
-              valueType: "review_provider",
+            {
+              key: "reviewProvider",
+              label: "Review provider",
+              state: "configured",
+              value: "chatgpt-codex-connector",
+              message: "Review provider posture is configured.",
+              required: true,
+              metadata: {
+                source: "config",
+                editable: true,
+                valueType: "review_provider",
+              },
             },
-          },
-        ],
+          ]
+          : [
+            {
+              key: "reviewProvider",
+              label: "Review provider",
+              state: "configured",
+              value: "chatgpt-codex-connector",
+              message: "Review provider posture is configured.",
+              required: true,
+              metadata: {
+                source: "config",
+                editable: true,
+                valueType: "review_provider",
+              },
+            },
+          ],
         blockers: [],
         providerPosture: {
           profile: "codex",
@@ -498,10 +520,10 @@ function createFirstRunSetupService(args: {
         kind: "setup_config_update",
         configPath: readiness.configPath,
         backupPath: null,
-        updatedFields: ["repoPath", "reviewProvider"],
-        restartRequired: true,
-        restartScope: "supervisor",
-        restartTriggeredByFields: ["repoPath", "reviewProvider"],
+        updatedFields,
+        restartRequired,
+        restartScope: restartRequired ? "supervisor" : null,
+        restartTriggeredByFields,
         document: {
           repoPath: options.changes.repoPath ?? "/tmp/repo",
           reviewBotLogins: ["chatgpt-codex-connector"],
@@ -540,6 +562,7 @@ test("browser smoke completes the first-run setup flow through the narrow config
 
   await page.waitForFunction(() => document.getElementById("setup-save-status")?.textContent === "Saved 2 setup fields.");
   await page.waitForFunction(() => document.getElementById("setup-overall-status")?.textContent === "configured");
+  await page.waitForFunction(() => document.getElementById("setup-restart-status")?.textContent === "Restart required");
   await page.waitForFunction(
     () => document.getElementById("setup-blocker-summary")?.textContent === "No blocking setup conditions remain.",
   );
@@ -554,5 +577,52 @@ test("browser smoke completes the first-run setup flow through the narrow config
   ]);
   assert.equal(await page.textContent("h1"), "First-run setup");
   assert.match((await page.textContent("#setup-provider-posture")) ?? "", /Codex Connector is configured\./u);
+  assert.match(
+    (await page.textContent("#setup-restart-details")) ?? "",
+    /Saved changes to repoPath, reviewProvider require a supervisor restart before they take effect\./u,
+  );
+  assert.equal(await page.isDisabled("#setup-restart-button"), true);
+  assert.ok(readinessCalls.length >= 2);
+});
+
+test("browser smoke reports when a setup save is already effective", async (t) => {
+  const updateCalls: Array<unknown> = [];
+  const readinessCalls: number[] = [];
+  const server = createSupervisorHttpServer({
+    service: createFirstRunSetupService({ updateCalls, readinessCalls, restartRequired: false }),
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  const browser = await launchBrowser();
+  t.after(async () => {
+    await browser.close();
+  });
+
+  const port = await listen(server);
+  const page = await browser.newPage();
+  await page.goto(`http://127.0.0.1:${port}/`);
+
+  await page.waitForSelector("[data-setup-root]");
+  await page.waitForSelector("#setup-input-reviewProvider");
+  await page.selectOption("#setup-input-reviewProvider", "codex");
+  await page.click("#setup-save-button");
+
+  await page.waitForFunction(() => document.getElementById("setup-save-status")?.textContent === "Saved 1 setup field.");
+  await page.waitForFunction(() => document.getElementById("setup-restart-status")?.textContent === "Saved and effective");
+
+  assert.deepEqual(updateCalls, [
+    {
+      changes: {
+        reviewProvider: "codex",
+      },
+    },
+  ]);
+  assert.match(
+    (await page.textContent("#setup-restart-details")) ?? "",
+    /Saved changes to reviewProvider are already effective\. No supervisor restart is required for this save\./u,
+  );
+  assert.equal(await page.isDisabled("#setup-restart-button"), true);
   assert.ok(readinessCalls.length >= 2);
 });
