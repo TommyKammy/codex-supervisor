@@ -5,32 +5,47 @@
 - Branch: codex/issue-1080
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 84fec3deca17014f43931777e142450ceae3caf9
+- Current phase: repairing_ci
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 2f9d5c6f7bfa1510fde21f003f463c695e895e78
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-26T16:11:16Z
+- Last failure signature: build (ubuntu-latest):fail|build (macos-latest):fail
+- Repeated failure signature count: 1
+- Updated at: 2026-03-26T16:18:19Z
 
 ## Latest Codex Summary
-- Added rate-limit-aware inventory containment so `gh issue list` rate-limit failures degrade explicitly, avoid REST fallback hammering, and still allow active tracked review progression.
+Implemented rate-limit containment for broad inventory refreshes. `gh issue list` failures that match GitHub primary or secondary rate limits now degrade explicitly as `classification=rate_limited`, the supervisor status text includes `kind=rate_limited`, and `GitHubClient.listAllIssues()` no longer falls through to paginated REST inventory when the primary inventory payload is already rate-limited. Active tracked PR review progression stays covered under the degraded prelude path.
+
+Added focused regressions for transport classification, prelude degradation, the no-fallback inventory case, and active tracked PR reevaluation under rate limit. The checkpoint is committed as `2f9d5c6` and pushed on `codex/issue-1080`. Draft PR: `#1086` <https://github.com/TommyKammy/codex-supervisor/pull/1086>.
+
+Summary: Contained rate-limited inventory refresh failures by classifying them distinctly, preventing REST fallback hammering, and keeping active review progression available under degraded mode.
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/github/github.test.ts`; `npx tsx --test src/github/github-transport.test.ts src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-pr-review-blockers.test.ts`
+Next action: Extend coverage to any remaining rate-limited hydration paths or move the draft PR into review once that scope is confirmed.
+Failure signature: build (ubuntu-latest):fail|build (macos-latest):fail
 
 ## Active Failure Context
-- None recorded.
+- Category: checks
+- Summary: PR #1086 has failing checks.
+- Command or source: gh pr checks
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1086
+- Details:
+  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23605054238/job/68745400566
+  - build (macos-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23605054238/job/68745400646
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the containment gap is in broad inventory refresh classification and fallback behavior, not active-review reevaluation itself. A rate-limited `gh issue list` failure should degrade immediately and record rate-limited mode explicitly instead of falling through to broader inventory fallback.
-- What changed: added distinct GitHub rate-limit detection in `src/github/github-transport.ts`, taught `src/github/github.ts` not to fall back to paginated REST inventory when the primary `gh issue list` failure is rate-limited, and recorded explicit `classification=rate_limited` inventory degradation in `src/inventory-refresh-state.ts` and state-store normalization.
+- Hypothesis: the remaining CI failure is fixture drift in `src/run-once-cycle-prelude.test.ts`, not a runtime regression in the new rate-limit containment path. The test record still reflects an older `IssueRunRecord` shape.
+- What changed: removed stale `last_run_at` from the rate-limited prelude fixture and added the now-required `last_error: null` field so the test matches the current `IssueRunRecord` contract.
 - Current blocker: none.
-- Next exact step: commit the rate-limit containment checkpoint on `codex/issue-1080`, then decide whether to open a draft PR now or extend coverage into additional rate-limited hydration paths.
-- Verification gap: full `npm test` has not been run; focused rate-limit containment coverage is green.
-- Files touched: `.codex-supervisor/issue-journal.md`; `src/core/state-store.ts`; `src/core/types.ts`; `src/github/github-transport.test.ts`; `src/github/github-transport.ts`; `src/github/github.test.ts`; `src/github/github.ts`; `src/inventory-refresh-state.ts`; `src/run-once-cycle-prelude.test.ts`; `src/supervisor/supervisor-pr-review-blockers.test.ts`.
-- Rollback concern: low. The runtime behavior only changes broad inventory refresh classification and fallback decisions for rate-limited failures; malformed non-rate-limit inventory payloads still use the existing REST fallback path.
-- Last focused command: `npx tsx --test src/github/github.test.ts`
-- What changed this turn: reread the required memory files and journal, traced full inventory refresh through `GitHubClient.listAllIssues()` and `runOnceCyclePrelude()`, reproduced a rate-limited broad refresh with active tracked review context, added the narrow GitHub client regression proving rate-limited `gh issue list` output must not fall through to REST fallback, implemented explicit rate-limit classification, and reran focused supervisor verification.
-- Exact failure reproduced this turn: a full inventory refresh rate-limit failure was not classified distinctly, and the broad refresh path could continue into fallback inventory reads instead of degrading explicitly, obscuring the operator-facing mode during active tracked review progression.
-- Commands run this turn: `sed -n '1,220p' <always-read-memory>`; `sed -n '1,260p' <context-index>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg -n "rate limit|rate-limit|secondary rate|GraphQL|inventory refresh|active review|review progression|hydrate|prelude|GitHub command|GitHub.*fail|refresh" src test`; `rg --files src test | rg "supervisor|review|github|inventory|prelude|hydrate|loop|scheduler"`; `gh pr view --json number,url,isDraft,headRefName,baseRefName,state`; `sed -n '1,260p' src/run-once-cycle-prelude.ts`; `sed -n '1,320p' src/run-once-cycle-prelude.test.ts`; `sed -n '260,620p' src/supervisor/supervisor-pr-review-blockers.test.ts`; `sed -n '1,220p' src/inventory-refresh-state.ts`; `sed -n '1,260p' src/github/github-transport.ts`; `sed -n '1,260p' src/github/github-transport.test.ts`; `sed -n '1,260p' src/core/types.ts`; `rg -n "inventory_refresh_failure|recorded_at|source=gh issue list|buildInventoryRefreshFailure|formatInventoryRefreshStatusLine|isTransientGitHubCommandFailure|rate limit" src`; `sed -n '240,360p' src/run-once-issue-selection.ts`; `sed -n '500,580p' src/run-once-issue-selection.ts`; `sed -n '100,180p' src/supervisor/supervisor-status-report.ts`; `sed -n '180,240p' src/supervisor/supervisor-selection-issue-explain.ts`; `sed -n '1,220p' src/github/github.ts`; `sed -n '220,420p' src/github/github.ts`; `sed -n '420,700p' src/github/github.ts`; `sed -n '420,520p' src/github/github.test.ts`; `sed -n '1,120p' src/github/github.test.ts`; `rg -n "listAllIssues preserves|listAllIssuesViaRestApi|rate limit|rate-limit" src/github/github.test.ts src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-pr-review-blockers.test.ts`; `sed -n '430,640p' src/run-once-cycle-prelude.test.ts`; `sed -n '1,220p' src/core/state-store.ts`; `apply_patch ...`; `npx tsx --test src/github/github-transport.test.ts`; `npx tsx --test src/github/github.test.ts`; `npx tsx --test src/run-once-cycle-prelude.test.ts`; `npx tsx --test src/supervisor/supervisor-pr-review-blockers.test.ts`; `apply_patch ...`; `npx tsx --test src/github/github.test.ts`; `npx tsx --test src/github/github-transport.test.ts src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-pr-review-blockers.test.ts`; `git status --short`; `git diff -- <touched files>`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`.
+- Next exact step: commit the CI repair, push `codex/issue-1080`, and let PR #1086 rerun the build checks against the corrected test fixture.
+- Verification gap: full `npm test` has not been run; `npm run build` and the focused rate-limit regression suites are green locally.
+- Files touched: `.codex-supervisor/issue-journal.md`; `src/run-once-cycle-prelude.test.ts`.
+- Rollback concern: low. This repair only updates test data to match the current persisted record shape; runtime code is unchanged.
+- Last focused command: `npm run build`
+- What changed this turn: reread the required memory files and journal, fetched the failing PR check logs, reproduced the CI TypeScript failure locally after installing dependencies, fixed the stale `IssueRunRecord` fixture fields in the rate-limited prelude regression, and reran the local build plus focused rate-limit verification.
+- Exact failure reproduced this turn: `npm run build` failed with `TS2353` because the fixture still set `last_run_at`, then failed with `TS2741` because the same fixture omitted required `last_error`.
+- Commands run this turn: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1080/AGENTS.generated.md`; `sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1080/context-index.md`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `gh pr checks 1086`; `gh run view 23605054238 --log-failed`; `sed -n '1,240p' package.json`; `sed -n '520,610p' src/run-once-cycle-prelude.test.ts`; `rg -n "type IssueRunRecord|interface IssueRunRecord|IssueRunRecord" src/core src | head -n 40`; `npm run build`; `sed -n '211,280p' src/core/types.ts`; `ls -1`; `test -d node_modules && echo present || echo missing`; `rg -n "last_run_at" src`; `sed -n '1,120p' src/core/state-store.test.ts`; `git diff -- src/run-once-cycle-prelude.test.ts`; `apply_patch ...`; `npm ci`; `npx tsx --test src/github/github-transport.test.ts src/github/github.test.ts src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-pr-review-blockers.test.ts`; `sed -n '510,575p' src/run-once-cycle-prelude.test.ts`; `sed -n '1,90p' src/run-once-cycle-prelude.test.ts`; `apply_patch ...`; `npx tsx --test src/run-once-cycle-prelude.test.ts`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `git status --short`; `git diff -- src/run-once-cycle-prelude.test.ts .codex-supervisor/issue-journal.md`.
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
