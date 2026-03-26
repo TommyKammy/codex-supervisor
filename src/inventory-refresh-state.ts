@@ -1,4 +1,4 @@
-import { InventoryRefreshFailure } from "./core/types";
+import { GitHubIssue, InventoryRefreshFailure, LastSuccessfulInventorySnapshot } from "./core/types";
 import { nowIso, truncate } from "./core/utils";
 import { isGitHubRateLimitFailure } from "./github/github-transport";
 import { sanitizeStatusValue } from "./supervisor/supervisor-status-rendering";
@@ -12,6 +12,18 @@ export function buildInventoryRefreshFailure(error: unknown): InventoryRefreshFa
     message,
     recorded_at: nowIso(),
     ...(isGitHubRateLimitFailure(message) ? { classification: "rate_limited" as const } : {}),
+  };
+}
+
+export function buildLastSuccessfulInventorySnapshot(issues: GitHubIssue[]): LastSuccessfulInventorySnapshot {
+  return {
+    source: FULL_ISSUE_INVENTORY_SOURCE,
+    recorded_at: nowIso(),
+    issue_count: issues.length,
+    issues: issues.map((issue) => ({
+      ...issue,
+      ...(issue.labels ? { labels: issue.labels.map((label) => ({ ...label })) } : {}),
+    })),
   };
 }
 
@@ -47,5 +59,21 @@ export function formatInventoryRefreshStatusLine(
     `source=${sanitizeStatusValue(failure.source)}`,
     `recorded_at=${failure.recorded_at}`,
     `message=${sanitizeStatusValue(failure.message.replace(/\r?\n/g, "\\n"))}`,
+  ].join(" ");
+}
+
+export function formatLastSuccessfulInventorySnapshotStatusLine(
+  snapshot: LastSuccessfulInventorySnapshot | null | undefined,
+): string | null {
+  if (!snapshot) {
+    return null;
+  }
+
+  return [
+    "inventory_snapshot=last_known_good",
+    `source=${sanitizeStatusValue(snapshot.source)}`,
+    `recorded_at=${snapshot.recorded_at}`,
+    `issue_count=${snapshot.issue_count}`,
+    "authority=non_authoritative",
   ].join(" ");
 }

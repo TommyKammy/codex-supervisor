@@ -16,7 +16,10 @@ import type {
   SupervisorRunnableIssueDto,
   SupervisorSelectionSummaryDto,
 } from "./supervisor-selection-readiness-summary";
-import { formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
+import {
+  formatInventoryRefreshStatusLine,
+  formatLastSuccessfulInventorySnapshotStatusLine,
+} from "../inventory-refresh-state";
 
 export interface SupervisorStatusWarningDto {
   kind: "readiness" | "status";
@@ -135,6 +138,11 @@ export function buildInventoryRefreshWarningMessage(state: SupervisorStateFile):
   const line = formatInventoryRefreshStatusLine(state.inventory_refresh_failure);
   if (line === null) {
     return null;
+  }
+
+  const snapshotLine = formatLastSuccessfulInventorySnapshotStatusLine(state.last_successful_inventory_snapshot);
+  if (snapshotLine) {
+    return `Full inventory refresh is degraded. Using the last-known-good snapshot for diagnostics only. ${line} ${snapshotLine}`;
   }
 
   return `Full inventory refresh is degraded. ${line}`;

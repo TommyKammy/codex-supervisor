@@ -153,6 +153,103 @@ test("status reports degraded full inventory refresh and suppresses readiness se
   assert.match(status, /^readiness_warning=Full inventory refresh is degraded\./m);
 });
 
+test("status reports last-known-good inventory snapshot diagnostics during degraded mode without re-enabling selection", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "91": createRecord({
+        issue_number: 91,
+        state: "done",
+        branch: branchName(fixture.config, 91),
+        workspace: path.join(fixture.workspaceRoot, "issue-91"),
+        journal_path: null,
+      }),
+    },
+    inventory_refresh_failure: {
+      source: "gh issue list",
+      message: "Failed to parse JSON from gh issue list: Unexpected token ] in JSON at position 1",
+      recorded_at: "2026-03-26T00:10:00Z",
+    },
+    last_successful_inventory_snapshot: {
+      source: "gh issue list",
+      recorded_at: "2026-03-26T00:05:00Z",
+      issue_count: 2,
+      issues: [
+        {
+          number: 91,
+          title: "Already completed prerequisite",
+          body: "## Summary\nCompleted prerequisite.",
+          createdAt: "2026-03-26T00:00:00Z",
+          updatedAt: "2026-03-26T00:00:00Z",
+          url: "https://example.test/issues/91",
+          state: "CLOSED",
+        },
+        {
+          number: 92,
+          title: "Snapshot-only runnable candidate",
+          body: `## Summary
+Use the last-known-good snapshot for degraded diagnostics.
+
+## Scope
+- report snapshot-backed readiness details without re-enabling selection
+
+## Acceptance criteria
+- status stays non-authoritative while showing snapshot-derived readiness
+
+## Verification
+- npm test -- src/supervisor/supervisor-diagnostics-status-selection.test.ts
+
+Depends on: #91`,
+          createdAt: "2026-03-26T00:01:00Z",
+          updatedAt: "2026-03-26T00:01:00Z",
+          url: "https://example.test/issues/92",
+          state: "OPEN",
+        },
+      ],
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => {
+      throw new Error("unexpected listCandidateIssues call");
+    },
+    listAllIssues: async () => {
+      throw new Error("unexpected listAllIssues call");
+    },
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport({ why: true });
+
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^inventory_snapshot=last_known_good source=gh issue list recorded_at=2026-03-26T00:05:00Z issue_count=2 authority=non_authoritative$/m,
+  );
+  assert.deepEqual(report.runnableIssues, [{
+    issueNumber: 92,
+    title: "Snapshot-only runnable candidate",
+    readiness: "execution_ready+depends_on_satisfied:91",
+  }]);
+  assert.equal(report.selectionSummary, null);
+  assert.match(report.warning?.message ?? "", /last-known-good snapshot/i);
+
+  const status = await supervisor.status({ why: true });
+  assert.match(
+    status,
+    /^inventory_snapshot=last_known_good source=gh issue list recorded_at=2026-03-26T00:05:00Z issue_count=2 authority=non_authoritative$/m,
+  );
+  assert.match(status, /^runnable_issues=#92 ready=execution_ready\+depends_on_satisfied:91$/m);
+  assert.match(status, /^selection_reason=inventory_refresh_degraded$/m);
+});
+
 test("statusReport exposes the typed local CI contract summary from config", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {

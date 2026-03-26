@@ -223,6 +223,13 @@ export interface InventoryRefreshFailure {
   classification?: "rate_limited";
 }
 
+export interface LastSuccessfulInventorySnapshot {
+  source: string;
+  recorded_at: string;
+  issue_count: number;
+  issues: GitHubIssue[];
+}
+
 export interface IssueRunRecord {
   issue_number: number;
   state: RunState;
@@ -298,6 +305,7 @@ export interface SupervisorStateFile {
     tracked_merged_but_open_last_processed_issue_number?: number | null;
   };
   inventory_refresh_failure?: InventoryRefreshFailure;
+  last_successful_inventory_snapshot?: LastSuccessfulInventorySnapshot;
   load_findings?: StateLoadFinding[];
   json_state_quarantine?: JsonStateQuarantine;
 }
