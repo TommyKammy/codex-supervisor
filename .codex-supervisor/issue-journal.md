@@ -1,38 +1,38 @@
-# Issue #1053: Restyle the setup shell to match the dashboard-grade admin layout
+# Issue #1054: Return restart requirements from typed setup config writes
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1053
-- Branch: codex/issue-1053
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1054
+- Branch: codex/issue-1054
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
+- Current phase: implementing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 45773f144b3302ac37d287ba1845a6af491ae7dd
+- Last head SHA: d2488cb1b1da430e3202f355ce44ab979dfa203a
 - Blocked reason: none
-- Last failure signature: none
+- Last failure signature: setup-config-update-missing-restart-metadata
 - Repeated failure signature count: 0
-- Updated at: 2026-03-26T06:44:57.215Z
+- Updated at: 2026-03-26T16:10:55+09:00
 
 ## Latest Codex Summary
-- Added a focused setup-shell structure regression test that reproduces the missing dashboard-grade frame on `/setup`.
-- Restyled `src/backend/webui-setup-page.ts` to reuse the dashboard admin shell language with a masthead, sticky sidebar, shared card treatment, stable progress/guided-config/diagnostics sections, and a dashboard-style footer while keeping the existing setup ids and save/readiness behavior.
-- Focused setup WebUI tests, the dedicated setup HTTP route test, and `npm run build` now pass locally.
+- Added restart metadata to typed setup config writes so the response now reports `restartRequired`, `restartScope`, and `restartTriggeredByFields` based on semantic field changes rather than raw requested fields.
+- Classified all supported typed setup fields as requiring a supervisor restart when their effective configured value changes under the current architecture, while preserving no-op writes as `restartRequired: false`.
+- Tightened focused tests in `src/config.test.ts` and `src/backend/supervisor-http-server.test.ts`, updated setup-shell/browser fixtures to the new response shape, and verified the contract with focused tests plus `npm run build`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the `/setup` shell feels like a separate low-fidelity page because it uses a bespoke stacked layout instead of the dashboard's admin frame vocabulary, so reusing the dashboard shell structure should improve hierarchy without changing the typed setup flow.
-- What changed: added a focused structure assertion in `src/backend/webui-dashboard.test.ts`; rebuilt `src/backend/webui-setup-page.ts` around a dashboard-grade masthead/sidebar/content/footer shell and reorganized setup content into progress, guided config, and diagnostics sections while preserving the existing `setup-*` ids and browser-script contract.
+- Hypothesis: typed setup config writes already know which fields were requested, and because the supervisor loads config at process startup, the write response can deterministically flag restart-required semantic changes without introducing any restart behavior.
+- What changed: extended `SetupConfigUpdateResult` in `src/setup-config-write.ts` with `restartRequired`, `restartScope`, and `restartTriggeredByFields`; classified semantic field changes against the current config summary so no-op writes stay restart-free; added focused restart/no-restart tests in `src/config.test.ts`; added API coverage in `src/backend/supervisor-http-server.test.ts`; and updated setup-shell/browser fixtures in `src/backend/webui-dashboard.test.ts` and `src/backend/webui-dashboard-browser-smoke.test.ts`.
 - Current blocker: none locally.
-- Next exact step: compare `/setup` and `/dashboard` in a local browser and refine any visual polish before moving the draft PR toward review.
-- Verification gap: none in the requested local scope after focused setup WebUI verification and a successful local build.
-- Files touched: `src/backend/webui-dashboard.test.ts`, `src/backend/webui-setup-page.ts`, `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low; the change is presentational and structural, but future edits should preserve the existing `setup-*` ids because the setup browser script still binds directly to them.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-1053 --title "Restyle the setup shell to match the dashboard" ...`
-- Exact failure reproduced: `renderSupervisorSetupHtml()` rendered a standalone `.shell`/`.hero` page without the dashboard-style `page-shell`, `masthead`, `app-layout`, `side-nav`, or stable setup section anchors, so `/setup` looked and read like a separate lower-fidelity surface.
-- Commands run: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1053/AGENTS.generated.md`; `sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1053/context-index.md`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg --files | rg 'setup|dashboard|webui|ui|app'`; `rg -n "setup" src .`; `rg -n "dashboard" src .`; `sed -n '1,260p' src/backend/webui-setup-page.ts`; `sed -n '1660,1825p' src/backend/webui-dashboard.test.ts`; `sed -n '1,220p' src/backend/webui-dashboard-page.ts`; `sed -n '260,520p' src/backend/webui-setup-page.ts`; `rg -n "renderSupervisorSetup|setup page|setup shell" src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts src/backend/webui-setup.ts src/backend/webui-setup-page.ts`; `sed -n '430,540p' src/backend/webui-dashboard.test.ts`; `rg -n "setup-" src/backend/webui-setup-browser-script.ts`; `sed -n '1,260p' src/backend/webui-setup-browser-script.ts`; `npx tsx --test src/backend/webui-dashboard.test.ts --test-name-pattern "setup page reuses the dashboard-grade admin shell with stable setup sections"`; `rg -n "masthead|topbar|dashboard-footer|overview-grid|details-grid|eyebrow" src/backend/webui-dashboard-page.ts`; `sed -n '220,520p' src/backend/webui-dashboard-page.ts`; `sed -n '1120,1285p' src/backend/webui-dashboard-page.ts`; `npx tsx --test src/backend/webui-dashboard.test.ts --test-name-pattern "setup page reuses the dashboard-grade admin shell with stable setup sections|setup shell loads typed setup readiness without mixing in dashboard status endpoints|setup shell saves through the narrow setup config API and revalidates readiness after the write"`; `npx tsx --test src/backend/supervisor-http-server.test.ts --test-name-pattern "serves a dedicated setup shell and keeps the dashboard on its own route"`; `sed -n '1,220p' package.json`; `ls package-lock.json npm-shrinkwrap.json pnpm-lock.yaml yarn.lock`; `npm ci`; `npm run build`; `git add src/backend/webui-setup-page.ts src/backend/webui-dashboard.test.ts .codex-supervisor/issue-journal.md`; `git commit -m "Restyle the setup shell to match the dashboard"`; `gh pr status`; `git push -u origin codex/issue-1053`; `gh pr create --draft --base main --head codex/issue-1053 --title "Restyle the setup shell to match the dashboard" ...`.
-- PR status: draft PR open at `https://github.com/TommyKammy/codex-supervisor/pull/1057`.
+- Next exact step: stage the typed setup config contract changes, create a checkpoint commit on `codex/issue-1054`, and open or update the draft PR once the branch diff is ready.
+- Verification gap: none in the requested local scope after focused setup-config tests, API response coverage, setup-shell contract coverage, and a successful local build.
+- Files touched: `src/setup-config-write.ts`, `src/config.test.ts`, `src/backend/supervisor-http-server.test.ts`, `src/backend/webui-dashboard.test.ts`, `src/backend/webui-dashboard-browser-smoke.test.ts`, `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low; the change is API-contract-only, but future work should preserve the semantic no-op detection so the browser can distinguish restart-needed changes from harmless rewrites.
+- Last focused command: `npm run build`
+- Exact failure reproduced: `updateSetupConfig()` returned only `updatedFields` and refreshed readiness, so typed `/api/setup-config` saves provided no deterministic restart metadata and could not distinguish restart-required semantic changes from no-op writes.
+- Commands run: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1054/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1054/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg -n "setup_config_update|setup-config|restartRequired|restartScope|typed setup" src .`; `rg --files | rg 'setup|config|supervisor-http|webui-setup|typed'`; `sed -n '1,280p' src/setup-config-write.ts`; `sed -n '1,260p' src/config.test.ts`; `sed -n '1030,1145p' src/backend/supervisor-http-server.test.ts`; `sed -n '1,220p' src/supervisor/supervisor-service.ts`; `sed -n '1,260p' src/supervisor/supervisor.ts`; `sed -n '1320,1365p' src/supervisor/supervisor.ts`; `sed -n '334,470p' src/core/config.ts`; `sed -n '1,260p' src/setup-readiness.ts`; `rg -n "restartScope|restartRequired|restart" src`; `sed -n '180,230p' src/backend/supervisor-http-server.test.ts`; `sed -n '560,620p' src/backend/supervisor-http-server.test.ts`; `sed -n '930,1035p' src/config.test.ts`; `sed -n '470,525p' src/backend/webui-dashboard-browser-smoke.test.ts`; `sed -n '1915,1955p' src/backend/webui-dashboard.test.ts`; `rg -n "updatedFields|restartRequired|restartScope|setup_config_update" src/backend/webui-setup-browser-script.ts src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts`; `sed -n '390,510p' src/backend/webui-setup-browser-script.ts`; `npx tsx --test src/config.test.ts --test-name-pattern "updateSetupConfig preserves unrelated fields, writes a backup, and refreshes readiness|updateSetupConfig reports no restart requirement when a typed setup write is a no-op"`; `sed -n '1,220p' src/core/review-providers.ts`; `sed -n '1,180p' src/backend/webui-dashboard-browser-smoke.test.ts`; `sed -n '1,130p' src/backend/supervisor-http-server.test.ts`; `npx tsx --test src/backend/supervisor-http-server.test.ts --test-name-pattern "accepts narrow setup config writes and returns refreshed readiness|surfaces no-op setup config writes without a restart requirement"`; `npx tsx --test src/backend/webui-dashboard.test.ts --test-name-pattern "setup shell saves through the narrow setup config API and revalidates readiness after the write"`; `npm run build`; `sed -n '1,220p' package.json`; `ls -1 node_modules/typescript node_modules/.bin/tsc package-lock.json`; `npm ci`; `npm run build`; `git status --short`; `git diff -- src/setup-config-write.ts src/config.test.ts src/backend/supervisor-http-server.test.ts src/backend/webui-dashboard.test.ts src/backend/webui-dashboard-browser-smoke.test.ts`; `date -Iseconds`.
+- PR status: none yet for `codex/issue-1054`.
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local replay output, not part of the fix.
