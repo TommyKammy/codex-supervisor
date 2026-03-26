@@ -41,3 +41,12 @@ test("CI workflow runs the focused malformed-inventory regression suite on Ubunt
     /-\s*if:\s*matrix\.os == 'ubuntu-latest'\s*run:\s*npm run test:malformed-inventory-regressions(?:\s|$)/,
   );
 });
+
+test("CI workflow runs the focused managed-restart regression suite on Ubuntu pull request jobs", async () => {
+  const workflow = await fs.readFile(workflowPath, "utf8");
+
+  assert.match(
+    workflow,
+    /-\s*if:\s*matrix\.os == 'ubuntu-latest'\s*run:\s*npm run test:managed-restart-regressions(?:\s|$)/,
+  );
+});
