@@ -1,49 +1,47 @@
-# Issue #1080: Contain GitHub rate-limit failures without freezing active review progression
+# Issue #1081: Expose GitHub REST and GraphQL rate-limit telemetry in supervisor status surfaces
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1080
-- Branch: codex/issue-1080
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1081
+- Branch: codex/issue-1081
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: waiting_ci
-- Attempt count: 5 (implementation=1, repair=4)
-- Last head SHA: daed23519a5b6009a53f049f8d53bff67d5ec9a6
+- Current phase: stabilizing
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: b729d0ed2fd92c99d7cc9b9b24273e30fed7f4cb
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-26T16:34:29Z
+- Updated at: 2026-03-26T16:58:29.099Z
 
 ## Latest Codex Summary
-Updated [issue-journal.md](.codex-supervisor/issue-journal.md) to reconcile the stale Supervisor Snapshot and clear the last stale active review block for PR `#1086`.
+Added typed GitHub rate-limit telemetry to the supervisor status path. `GitHubClient` now reads `gh api rate_limit` once and maps both REST/core and GraphQL budgets into a typed DTO, and `statusReport()` includes both the structured `githubRateLimit` field and rendered `github_rate_limit` lines in detailed status output. The main changes are in [types.ts](src/core/types.ts), [github.ts](src/github/github.ts), [supervisor-status-report.ts](src/supervisor/supervisor-status-report.ts), and [supervisor.ts](src/supervisor/supervisor.ts).
 
-`#1086` is currently `CLEAN`, both required build jobs are green on head `daed235`, and the only remaining open thread is the stale CodeRabbit comment on this journal. Pushing this journal-only update will intentionally move the PR back to `waiting_ci` while a fresh build run starts, after which that final review thread can be resolved cleanly.
+I added focused regression coverage for both the client parser and the status DTO/rendering behavior in [github.test.ts](src/github/github.test.ts) and [supervisor-diagnostics-status-selection.test.ts](src/supervisor/supervisor-diagnostics-status-selection.test.ts). I also updated the issue journal at [issue-journal.md](.codex-supervisor/issue-journal.md).
 
-Summary: Reconciled the journal state for PR `#1086` so the remaining automated review thread only reflects live status.
-State hint: waiting_ci
+Tests run: `npx tsx --test src/github/github.test.ts --test-name-pattern="fetches REST and GraphQL rate-limit telemetry"`; `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts --test-name-pattern="GitHub REST and GraphQL rate-limit telemetry"`; `npm run build`.
+
+Summary: Added GitHub REST/GraphQL rate-limit telemetry to supervisor status DTOs and rendered status lines, with focused client and status regression tests.
+State hint: implementing
 Blocked reason: none
-Tests: `git diff --check -- .codex-supervisor/issue-journal.md`; `gh pr checks 1086`; `gh pr view 1086 --json isDraft,mergeStateStatus,reviewDecision,headRefName,headRefOid,url`
-Next action: Push this journal-only reconciliation update, resolve review thread `PRRT_kwDORgvdZ853Eugq`, and watch the fresh build run for PR `#1086`.
+Tests: `npx tsx --test src/github/github.test.ts --test-name-pattern="fetches REST and GraphQL rate-limit telemetry"`; `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts --test-name-pattern="GitHub REST and GraphQL rate-limit telemetry"`; `npm run build`
+Next action: Review the diff and commit this focused status-telemetry slice if it looks correct.
 Failure signature: none
 
 ## Active Failure Context
-- Category: none
-- Summary: no active failure context expected after this journal-only reconciliation update is pushed and the last stale automated review thread is resolved.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1086
-- Details:
-  - Review thread `PRRT_kwDORgvdZ853Eugq` is the last stale automated comment on PR `#1086`; this update aligns the snapshot, summary, and failure context so the thread can be resolved without changing runtime behavior.
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the runtime fix is already complete; the only remaining work is to reconcile the stale journal snapshot, resolve the last automated review thread, and then let the new journal-only CI run settle.
-- What changed: reread the required memory files, verified the remaining CodeRabbit thread against the live PR state, confirmed `#1086` is currently `CLEAN` with green required checks on `daed235`, and rewrote the journal so the snapshot, summary, and failure context agree.
-- Current blocker: no local blocker before push; after the journal-only push, the branch will wait on a fresh CI run.
-- Next exact step: commit and push this journal-only reconciliation update, resolve review thread `PRRT_kwDORgvdZ853Eugq`, then recheck the new build run for PR `#1086`.
-- Verification gap: full `npm test` has not been run; `npm run build` and the focused rate-limit regression suites are green locally.
-- Files touched: `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low. This turn only edits handoff text in the journal; runtime code and tests are unchanged.
-- Last focused command: `gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{url}}}}}}}' -F owner=TommyKammy -F repo=codex-supervisor -F number=1086`
-- What changed this turn: reread the required memory files, confirmed the last live review thread is `PRRT_kwDORgvdZ853Eugq`, verified that the thread is caused by stale journal state rather than runtime behavior, and updated the journal so the snapshot and active failure context no longer claim review work remains.
-- Exact failure reproduced this turn: stale journal metadata kept `addressing_review` and an active review failure block even though the earlier review-thread cleanup had already finished.
-- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short`; `gh pr checks 1086`; `gh pr view 1086 --json isDraft,mergeStateStatus,reviewDecision,headRefName,headRefOid,url`; `gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{url}}}}}}}' -F owner=TommyKammy -F repo=codex-supervisor -F number=1086`; `git diff -- .codex-supervisor/issue-journal.md`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `rg -n "addressing_review|waiting_ci|pr_open|local_review_fix|repairing_ci|implementing|draft_pr|local_review|stabilizing|blocked|failed" -S .`; `sed -n '180,205p' docs/getting-started.ja.md`; `rg -n 'state: "pr_open"|nextState": "pr_open"|"pr_open"' replay-corpus src docs -g '*.json' -g '*.ts' -g '*.md' | head -n 40`; `apply_patch ...`.
+- Hypothesis: the missing work for this issue was narrow status-surface wiring, not broader supervisor flow changes; a single lightweight `gh api rate_limit` read can provide both REST and GraphQL budgets without adding a high-churn request pattern.
+- What changed: added typed GitHub rate-limit budget types, implemented `GitHubClient.getRateLimitTelemetry()`, threaded the telemetry into `Supervisor.statusReport()`, and rendered `github_rate_limit` lines for both REST and GraphQL in detailed status output.
+- Current blocker: none locally.
+- Next exact step: review the diff, then commit this telemetry slice once satisfied with the focused verification coverage.
+- Verification gap: full `npm test` has not been run this turn; focused GitHub/status telemetry suites and `npm run build` are green.
+- Files touched: `src/core/types.ts`; `src/github/github.ts`; `src/github/github.test.ts`; `src/supervisor/supervisor-status-report.ts`; `src/supervisor/supervisor.ts`; `src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low to medium. Status-reporting now performs an extra `gh api rate_limit` read; if that proves too noisy in practice, the fetch point or warning behavior may need adjustment.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts --test-name-pattern="GitHub REST and GraphQL rate-limit telemetry"`
+- What changed this turn: reproduced the missing DTO/rendering behavior with a focused failing status test, implemented the telemetry fetch/render path, added a GitHub client parser regression test, and reran focused verification plus a TypeScript build.
+- Exact failure reproduced this turn: `statusReport()` returned `githubRateLimit === undefined` and rendered no `github_rate_limit` lines even when the GitHub client exposed REST/GraphQL budget data.
+- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg -n "rate.?limit|graphql|rest" src test docs -g '*.ts' -g '*.tsx' -g '*.md'`; `rg -n "status surface|status dto|status output|SupervisorStatus|status" src test -g '*.ts' -g '*.tsx'`; `rg --files src test`; `sed -n '1,260p' src/supervisor/supervisor-status-model.ts`; `sed -n '1,320p' src/supervisor/supervisor-detailed-status-assembly.ts`; `sed -n '1,340p' src/supervisor/supervisor-status-rendering.ts`; `sed -n '1,260p' src/supervisor/supervisor-status-report.ts`; `rg -n "rate_limit|rateLimit|remaining|resetAt|x-ratelimit|resources" src/core src/github src/supervisor -g '*.ts'`; `sed -n '1,320p' src/core/types.ts`; `sed -n '1,260p' src/supervisor/supervisor-status-model-supervisor.test.ts`; `sed -n '1,420p' src/supervisor/supervisor-status-rendering-supervisor.test.ts`; `sed -n '260,420p' src/core/types.ts`; `sed -n '1,260p' src/supervisor/supervisor-selection-status.ts`; `sed -n '1,340p' src/supervisor/index.ts`; `rg -n "queryStatus\\(|SupervisorStatusDto|detailedStatusLines|renderSupervisorStatusDto|build.*StatusDto|status dto" src/supervisor src/backend src/cli -g '*.ts'`; `sed -n '1,360p' src/supervisor/supervisor-service.ts`; `sed -n '1,340p' src/cli/supervisor-runtime.ts`; `sed -n '940,1185p' src/supervisor/supervisor.ts`; `sed -n '1,260p' src/github/github.ts`; `sed -n '1,340p' src/supervisor/supervisor-selection-active-status.ts`; `sed -n '1,260p' src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `rg -n "renderSupervisorStatusDto|SupervisorStatusDto|rate limit telemetry|rate_limit" src/*test.ts src/supervisor -g '*.test.ts' -g '*.ts'`; `cat package.json`; `npm test -- --test-name-pattern="GitHub REST and GraphQL rate-limit telemetry"`; `ls`; `test -d node_modules && echo yes || echo no`; `test -f package-lock.json && echo yes || echo no`; `npm ci`; `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts --test-name-pattern="GitHub REST and GraphQL rate-limit telemetry"`; `node -e 'console.log(new Date(1774572300*1000).toISOString()); console.log(new Date(1774572000*1000).toISOString())'`; `npx tsx --test src/github/github.test.ts --test-name-pattern="fetches REST and GraphQL rate-limit telemetry"`; `npm run build`; `git status --short`; `git diff -- src/core/types.ts src/github/github.ts src/github/github.test.ts src/supervisor/supervisor-status-report.ts src/supervisor/supervisor.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `apply_patch ...`.
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

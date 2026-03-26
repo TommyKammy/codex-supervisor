@@ -181,6 +181,69 @@ test("statusReport exposes the typed local CI contract summary from config", asy
   assert.match(status, /local_ci configured=true source=config command=npm run ci:local summary=Repo-owned local CI contract is configured\./);
 });
 
+test("statusReport exposes GitHub REST and GraphQL rate-limit telemetry in typed and rendered status surfaces", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getRateLimitTelemetry: async () => ({
+      rest: {
+        resource: "core",
+        limit: 5000,
+        remaining: 75,
+        resetAt: "2026-03-27T00:30:00.000Z",
+        state: "low",
+      },
+      graphql: {
+        resource: "graphql",
+        limit: 5000,
+        remaining: 0,
+        resetAt: "2026-03-27T00:15:00.000Z",
+        state: "exhausted",
+      },
+    }),
+  };
+
+  const report = await supervisor.statusReport();
+
+  assert.deepEqual(report.githubRateLimit, {
+    rest: {
+      resource: "core",
+      limit: 5000,
+      remaining: 75,
+      resetAt: "2026-03-27T00:30:00.000Z",
+      state: "low",
+    },
+    graphql: {
+      resource: "graphql",
+      limit: 5000,
+      remaining: 0,
+      resetAt: "2026-03-27T00:15:00.000Z",
+      state: "exhausted",
+    },
+  });
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^github_rate_limit resource=rest status=low remaining=75 limit=5000 reset_at=2026-03-27T00:30:00.000Z$/m,
+  );
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^github_rate_limit resource=graphql status=exhausted remaining=0 limit=5000 reset_at=2026-03-27T00:15:00.000Z$/m,
+  );
+
+  const status = await supervisor.status();
+  assert.match(status, /^github_rate_limit resource=rest status=low remaining=75 limit=5000 reset_at=2026-03-27T00:30:00.000Z$/m);
+  assert.match(status, /^github_rate_limit resource=graphql status=exhausted remaining=0 limit=5000 reset_at=2026-03-27T00:15:00.000Z$/m);
+});
+
 test("statusReport exposes typed loop runtime state from the host runtime marker", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {

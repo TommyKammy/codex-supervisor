@@ -2,6 +2,8 @@ import {
   CandidateDiscoveryDiagnostics,
   GitHubIssue,
   GitHubPullRequest,
+  GitHubRateLimitBudget,
+  GitHubRateLimitTelemetry,
   IssueComment,
   IssueRunRecord,
   PullRequestReview,
@@ -43,6 +45,20 @@ interface GitHubRestIssue {
 
 interface GitHubSearchIssuesResponse {
   items: GitHubRestIssue[];
+}
+
+interface GitHubRateLimitResourcePayload {
+  limit: number;
+  remaining: number;
+  reset: number;
+  resource: string;
+}
+
+interface GitHubRateLimitResponse {
+  resources?: {
+    core?: GitHubRateLimitResourcePayload;
+    graphql?: GitHubRateLimitResourcePayload;
+  };
 }
 
 export class GitHubClient {
@@ -106,6 +122,41 @@ export class GitHubClient {
         message: truncate(error instanceof Error ? error.message : String(error), 500),
       };
     }
+  }
+
+  private classifyRateLimitBudget(limit: number, remaining: number): GitHubRateLimitBudget["state"] {
+    if (remaining <= 0) {
+      return "exhausted";
+    }
+
+    return remaining / Math.max(limit, 1) <= 0.1 ? "low" : "healthy";
+  }
+
+  private mapRateLimitBudget(
+    resource: GitHubRateLimitResourcePayload | undefined,
+    fallbackResource: "core" | "graphql",
+  ): GitHubRateLimitBudget {
+    if (!resource) {
+      throw new Error(`GitHub rate_limit response omitted ${fallbackResource} budget data.`);
+    }
+
+    return {
+      resource: resource.resource || fallbackResource,
+      limit: resource.limit,
+      remaining: resource.remaining,
+      resetAt: new Date(resource.reset * 1000).toISOString(),
+      state: this.classifyRateLimitBudget(resource.limit, resource.remaining),
+    };
+  }
+
+  async getRateLimitTelemetry(): Promise<GitHubRateLimitTelemetry> {
+    const result = await this.runGhCommand(["api", "rate_limit"]);
+    const payload = parseJson<GitHubRateLimitResponse>(result.stdout, "gh api rate_limit");
+
+    return {
+      rest: this.mapRateLimitBudget(payload.resources?.core, "core"),
+      graphql: this.mapRateLimitBudget(payload.resources?.graphql, "graphql"),
+    };
   }
 
   async listAllIssues(): Promise<GitHubIssue[]> {

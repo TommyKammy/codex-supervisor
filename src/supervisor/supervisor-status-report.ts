@@ -1,4 +1,10 @@
-import type { CadenceDiagnosticsSummary, LocalCiContractSummary, TrustDiagnosticsSummary } from "../core/types";
+import type {
+  CadenceDiagnosticsSummary,
+  GitHubRateLimitBudget,
+  GitHubRateLimitTelemetry,
+  LocalCiContractSummary,
+  TrustDiagnosticsSummary,
+} from "../core/types";
 import { sanitizeStatusValue } from "./supervisor-status-rendering";
 import { truncate } from "../core/utils";
 import type { BlockedReason, RunState, SupervisorStateFile } from "../core/types";
@@ -46,6 +52,7 @@ export interface SupervisorStatusDto {
   gsdSummary: string | null;
   trustDiagnostics?: TrustDiagnosticsSummary | null;
   cadenceDiagnostics?: CadenceDiagnosticsSummary | null;
+  githubRateLimit?: GitHubRateLimitTelemetry | null;
   candidateDiscoverySummary?: string | null;
   candidateDiscovery: SupervisorCandidateDiscoveryDto | null;
   localCiContract?: LocalCiContractSummary;
@@ -62,6 +69,10 @@ export interface SupervisorStatusDto {
   readinessLines: string[];
   whyLines: string[];
   warning: SupervisorStatusWarningDto | null;
+}
+
+export function renderGitHubRateLimitLine(resource: "rest" | "graphql", budget: GitHubRateLimitBudget): string {
+  return `github_rate_limit resource=${resource} status=${budget.state} remaining=${budget.remaining} limit=${budget.limit} reset_at=${budget.resetAt}`;
 }
 
 export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {

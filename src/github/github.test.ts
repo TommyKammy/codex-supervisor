@@ -219,6 +219,52 @@ test("GitHubClient fetches the newest unresolved review thread comments", async 
   assert.equal(threads[0]?.comments.nodes.at(-1)?.author?.typeName, "Bot");
 });
 
+test("GitHubClient fetches REST and GraphQL rate-limit telemetry from a single rate_limit response", async () => {
+  const config = createConfig();
+  const client = new GitHubClient(config, async (_command, args) => {
+    assert.deepEqual(args, ["api", "rate_limit"]);
+    return {
+      exitCode: 0,
+      stdout: JSON.stringify({
+        resources: {
+          core: {
+            limit: 5000,
+            remaining: 5000,
+            reset: 1774572300,
+            resource: "core",
+          },
+          graphql: {
+            limit: 5000,
+            remaining: 250,
+            reset: 1774572000,
+            resource: "graphql",
+          },
+        },
+      }),
+      stderr: "",
+    };
+  });
+
+  const telemetry = await client.getRateLimitTelemetry();
+
+  assert.deepEqual(telemetry, {
+    rest: {
+      resource: "core",
+      limit: 5000,
+      remaining: 5000,
+      resetAt: "2026-03-27T00:45:00.000Z",
+      state: "healthy",
+    },
+    graphql: {
+      resource: "graphql",
+      limit: 5000,
+      remaining: 250,
+      resetAt: "2026-03-27T00:40:00.000Z",
+      state: "low",
+    },
+  });
+});
+
 test("GitHubClient falls back from gh pr checks to statusCheckRollup", async () => {
   const config = createConfig();
   const client = new GitHubClient(config, async (_command, args) => {
