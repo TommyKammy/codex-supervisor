@@ -1,36 +1,36 @@
-# Issue #1068: Restrict degraded inventory fallback to targeted non-authoritative reconciliations
+# Issue #1077: Replace setup reconnect real sleeps with deterministic timer control
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1068
-- Branch: codex/issue-1068
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1077
+- Branch: codex/issue-1077
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: draft_pr
+- Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 2d45ec1f7efb036e2d4f12ea3fe7811cfe1a80c7
+- Last head SHA: 7a1261897a3e30640fbe6735c87fe32a1ab0cb06
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-26T14:35:08Z
+- Updated at: 2026-03-26T15:21:19Z
 
 ## Latest Codex Summary
-- Tightened degraded inventory handling at the active-issue selection boundary. `resolveRunnableIssueContext` now keeps a degraded cycle pinned to the already-active record instead of broad candidate discovery, uses fresh targeted `getIssue()` reads to recheck explicit `Depends on:` constraints, and refuses to continue execution-order constrained issues while full inventory refresh is degraded because that would require broad inventory authority.
-- Added focused unit coverage in `src/run-once-issue-selection.test.ts` for both sides of the boundary: targeted dependency rechecks are still allowed without `listCandidateIssues()`, while execution-order constrained active issues are requeued with an explicit degraded-state warning instead of consulting backlog inventory.
-- Local verification now passes after bootstrapping the worktree with `npm ci`: focused degraded-inventory tests pass and `npm run build` succeeds.
+- Replaced the setup-shell reconnect test's real 75 ms sleeps with deterministic harness timer advancement, pushed `codex/issue-1077`, and opened draft PR #1084 after focused backend WebUI verification.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the real authority leak was not in `runOnceCyclePrelude`; it was in active-issue selection, where degraded cycles could still fall back to `listCandidateIssues()` for active records with sequencing metadata. Restricting degraded mode at that boundary should satisfy the issue without weakening the existing active-PR targeted reconciliation path.
-- What changed: added `evaluateDegradedActiveIssueDependencies()` in `src/run-once-issue-selection.ts`; degraded cycles now reuse the current active record without broad candidate discovery; explicit dependency checks in degraded mode use targeted `getIssue()` reads plus tracked-record completion state; execution-order constrained active issues now requeue with an explicit degraded warning instead of consulting broad inventory.
+- Hypothesis: the only product-risky behavior here is test harness timing. The reconnect flow can stay unchanged if the setup-page harness exposes deterministic timer control for the poll loop.
+- What changed: added a small manual timer controller to `src/backend/webui-dashboard.test.ts`, wired `createSetupHarness()` to use it, exposed `harness.advanceTime(ms)`, and updated the setup reconnect test to advance 50 ms polling intervals instead of sleeping in wall-clock time.
 - Current blocker: none.
-- Next exact step: watch draft PR #1075 CI and extend coverage only if a review signal finds another degraded-inventory authority leak.
-- Verification gap: full `npm test` has not been run yet; focused degraded-inventory coverage and `npm run build` are green.
-- Files touched: `.codex-supervisor/issue-journal.md`; `src/run-once-issue-selection.ts`; `src/run-once-issue-selection.test.ts`.
-- Rollback concern: low. The behavior change is localized to degraded active-issue selection and only narrows when broad inventory can be consulted.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-1068 --title "Issue #1068: restrict degraded inventory fallback" --body ...`
-- What changed this turn: reread the required memory files and journal, traced degraded inventory behavior through `runOnceCyclePrelude`, `resolveRunnableIssueContext`, and supervisor tests, reproduced the broad candidate-inventory leak with a new focused unit test, changed degraded active-issue selection to stay on the current record and use targeted dependency fetches only, added a second unit test proving execution-order constrained issues are explicitly requeued while degraded, installed local dependencies with `npm ci`, reran focused tests plus build verification, committed the change as `6464b87`, pushed `codex/issue-1068`, and opened draft PR #1075.
-- Exact failure reproduced this turn: before the fix, degraded active-issue handling still called `listCandidateIssues()` for sequencing checks instead of staying on targeted `getIssue()` reads; the new focused test in `src/run-once-issue-selection.test.ts` caught that path directly.
-- Commands run this turn: `sed -n '1,220p' <always-read-memory>`; `sed -n '1,260p' <context-index>`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg -n "degraded|inventory refresh|reconciliation|targeted|authoritative" src`; `sed -n '430,660p' src/run-once-cycle-prelude.test.ts`; `sed -n '1,260p' src/run-once-cycle-prelude.ts`; `sed -n '260,540p' src/supervisor/supervisor-pr-review-blockers.test.ts`; `sed -n '1,260p' src/recovery-reconciliation.ts`; `sed -n '1,360p' src/run-once-issue-selection.ts`; `sed -n '1,860p' src/run-once-issue-selection.test.ts`; `sed -n '1,220p' src/issue-metadata/issue-metadata.ts`; `apply_patch ...`; `npx tsx --test src/run-once-issue-selection.test.ts`; `npx tsx --test src/supervisor/supervisor-pr-review-blockers.test.ts`; `npx tsx --test src/run-once-issue-selection.test.ts src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-pr-review-blockers.test.ts`; `test -d node_modules && echo present || echo missing`; `test -f package-lock.json && echo package-lock || echo no-lock`; `npm ci`; `npm run build`; `git rev-parse HEAD`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `git add .codex-supervisor/issue-journal.md src/run-once-issue-selection.ts src/run-once-issue-selection.test.ts`; `git commit -m "Restrict degraded inventory fallback"`; `git push -u origin codex/issue-1068`; `gh pr create --draft --base main --head codex/issue-1068 --title "Issue #1068: restrict degraded inventory fallback" --body ...`.
+- Next exact step: watch draft PR #1084 CI and only widen verification if review or CI finds another timing-dependent WebUI test path.
+- Verification gap: full `npm test` has not been run; focused backend WebUI reconnect and setup/server coverage are green.
+- Files touched: `.codex-supervisor/issue-journal.md`; `src/backend/webui-dashboard.test.ts`.
+- Rollback concern: low. The change is test-only and limited to how the setup harness schedules reconnect polling.
+- Last focused command: `gh pr create --draft --base main --head codex/issue-1077 --title "Issue #1077: replace setup reconnect sleeps with timer control" --body ...`
+- What changed this turn: reread the required memory files and journal, traced the setup reconnect test and the setup-page browser poll loop, reproduced that the focused reconnect test still depended on two real `setTimeout(..., 75)` waits, added a manual timer controller to the dashboard/setup HTML harness, updated the reconnect test to advance deterministic timer state across the `reconnecting -> unavailable -> ready` sequence, reran focused backend WebUI verification, committed the change as `7a12618`, pushed `codex/issue-1077`, and opened draft PR #1084.
+- Exact failure reproduced this turn: `src/backend/webui-dashboard.test.ts` used wall-clock sleeps to let the setup reconnect polling loop advance between readiness responses, making the reconnect-state assertions depend on scheduler timing instead of harness-controlled time.
+- Commands run this turn: `sed -n '1,220p' <always-read-memory>`; `sed -n '1,260p' <context-index>`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg -n "setTimeout\\(.*75|reconnect|reconnecting|unavailable|ready" webui src test .`; `rg --files . | rg "setup-shell|dashboard|harness|timer|vitest|playwright|webui"`; `rg -n "setTimeout\\(|75\\)|reconnect|reconnecting|unavailable|ready|advance.*timer|clock|fake.*timer" src/backend`; `sed -n '1,260p' src/backend/webui-dashboard.test.ts`; `sed -n '1,260p' src/backend/restartable-webui-shell-service.test.ts`; `sed -n '2280,2875p' src/backend/webui-dashboard.test.ts`; `sed -n '260,520p' src/backend/webui-dashboard.test.ts`; `sed -n '1,220p' src/backend/webui-setup-browser-script.ts`; `sed -n '220,430p' src/backend/webui-setup-browser-script.ts`; `node --test src/backend/webui-dashboard.test.ts`; `npx tsx --test src/backend/webui-dashboard.test.ts`; `rg -n "create(Html|Setup|Dashboard)Harness|flush\\(|setTimeout\\(|clearTimeout\\(" src/backend/webui-dashboard.test.ts`; `apply_patch ...`; `npx tsx --test src/backend/webui-dashboard.test.ts`; `rg -n "await new Promise\\(\\(resolve\\) => setTimeout\\(resolve, 75\\)\\)" src/backend/webui-dashboard.test.ts src/backend`; `git diff -- src/backend/webui-dashboard.test.ts`; `git rev-parse HEAD`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `npx tsx --test src/backend/restartable-webui-shell-service.test.ts src/backend/supervisor-http-server.test.ts`; `git add .codex-supervisor/issue-journal.md src/backend/webui-dashboard.test.ts`; `git commit -m "Replace setup reconnect sleeps with timer control"`; `git push -u origin codex/issue-1077`; `gh pr view --json number,url,isDraft,headRefName,baseRefName,state`; `gh pr create --draft --base main --head codex/issue-1077 --title "Issue #1077: replace setup reconnect sleeps with timer control" --body ...`.
+### Scratchpad
+- Keep this section short. The supervisor may compact older notes automatically.
