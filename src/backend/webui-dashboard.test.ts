@@ -507,6 +507,24 @@ test("dashboard page frames a summary-first shell and a collapsible details area
   assert.match(html, /<footer class="dashboard-footer">[\s\S]*id="repo-path-value"[\s\S]*id="workspace-root-value"/u);
 });
 
+test("setup page reuses the dashboard-grade admin shell with stable setup sections", () => {
+  const html = renderSupervisorSetupHtml();
+
+  assert.match(
+    html,
+    /<main class="page-shell" data-setup-root>[\s\S]*<header class="masthead">[\s\S]*First-run setup[\s\S]*<div class="app-layout">[\s\S]*<aside class="side-nav">/u,
+  );
+  assert.match(
+    html,
+    /<aside class="side-nav">[\s\S]*href="#setup-progress"[\s\S]*href="#setup-guided-config"[\s\S]*href="#setup-diagnostics"/u,
+  );
+  assert.match(
+    html,
+    /id="setup-progress"[\s\S]*id="setup-readiness-card"[\s\S]*id="setup-blockers-card"[\s\S]*id="setup-guided-config"[\s\S]*id="setup-diagnostics"[\s\S]*id="setup-host-checks-card"/u,
+  );
+  assert.match(html, /<footer class="dashboard-footer">[\s\S]*id="repo-path-value"[\s\S]*id="workspace-root-value"/u);
+});
+
 test("dashboard page renders repository identity from setup readiness data", () => {
   const html = renderSupervisorDashboardHtml({
     kind: "setup_readiness",
