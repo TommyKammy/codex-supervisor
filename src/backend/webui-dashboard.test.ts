@@ -944,7 +944,8 @@ test("dashboard folds current state into hero badges and action buttons", async 
   assert.match(badgeText, /fresh/u);
   assert.match(badgeText, /idle/u);
   assert.match(heroPrimaryButton.textContent, /Open Issue Details/u);
-  assert.match(heroSecondaryButton.textContent, /Open Issue Details/u);
+  assert.equal(heroSecondaryButton.textContent, "");
+  assert.equal(heroSecondaryButton.classList.contains("is-hidden"), true);
 });
 
 test("dashboard hero issue-details action loads focused issue details when needed", async () => {
@@ -963,12 +964,16 @@ test("dashboard hero issue-details action loads focused issue details when neede
   ]);
   await harness.flush();
 
+  const heroPrimaryButton = harness.document.getElementById("hero-primary-button");
   const heroSecondaryButton = harness.document.getElementById("hero-secondary-button");
   const issueSummary = harness.document.getElementById("issue-summary");
+  assert.ok(heroPrimaryButton);
   assert.ok(heroSecondaryButton);
   assert.ok(issueSummary);
+  assert.equal(heroSecondaryButton.textContent, "");
+  assert.equal(heroSecondaryButton.classList.contains("is-hidden"), true);
 
-  await heroSecondaryButton.dispatch("click");
+  await heroPrimaryButton.dispatch("click");
   await harness.flush();
 
   assert.match(issueSummary.textContent, /#42 Issue 42/u);

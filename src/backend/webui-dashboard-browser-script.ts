@@ -550,9 +550,20 @@ export function renderDashboardBrowserScript(): string {
 
       function getHeroSecondaryActionConfig(nextIssue) {
         if (hasHeroIssueFocus(nextIssue)) {
-          return { mode: "issue", label: "Open Issue Details" };
+          return { mode: "queue", label: "", hidden: true };
         }
-        return { mode: "queue", label: "Open Queue Details" };
+        return { mode: "queue", label: "Open Queue Details", hidden: false };
+      }
+
+      function setButtonVisibility(element, hidden) {
+        if (!element) {
+          return;
+        }
+        if (hidden) {
+          element.classList.add("is-hidden");
+          return;
+        }
+        element.classList.remove("is-hidden");
       }
 
       function getFocusedIssueNumber() {
@@ -694,6 +705,7 @@ export function renderDashboardBrowserScript(): string {
         }
 
         if (elements.heroSecondaryButton) {
+          setButtonVisibility(elements.heroSecondaryButton, secondaryActionConfig.hidden === true);
           setText(elements.heroSecondaryButton, secondaryActionConfig.label);
         }
 
@@ -1848,6 +1860,9 @@ export function renderDashboardBrowserScript(): string {
       elements.heroSecondaryButton?.addEventListener("click", async () => {
         const nextIssue = buildNextIssueSummary(state.status);
         const secondaryActionConfig = getHeroSecondaryActionConfig(nextIssue);
+        if (secondaryActionConfig.hidden) {
+          return;
+        }
         if (secondaryActionConfig.mode === "issue") {
           await openFocusedIssueDetails();
           return;

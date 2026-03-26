@@ -441,6 +441,10 @@ export function renderSupervisorDashboardPage(setupReadiness?: SetupReadinessRep
         color: var(--text);
       }
 
+      .hero-secondary-button.is-hidden {
+        display: none;
+      }
+
       .hero-warning {
         margin: 0;
         color: var(--muted);
@@ -1199,7 +1203,7 @@ ${renderDetailsMenu()}
           </div>
           <div class="hero-action-row">
             <button type="button" id="hero-primary-button" class="hero-primary-button">Refresh Dashboard</button>
-            <button type="button" id="hero-secondary-button" class="hero-secondary-button">Open Issue Details</button>
+            <button type="button" id="hero-secondary-button" class="hero-secondary-button"></button>
             <button type="button" id="hero-tertiary-button" class="hero-tertiary-button">More Actions</button>
           </div>
           <p id="overview-warning" class="hero-warning hint"></p>
