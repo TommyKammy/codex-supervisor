@@ -353,7 +353,7 @@ export function renderSetupBrowserScript(): string {
           try {
             const report = await refreshSetupReadiness();
             const capability = managedRestartCapability(report);
-            if (capability.state === "reconnecting") {
+            if (capability.state !== "ready") {
               setText(elements.restartGuidance, capability.summary);
               await delay(reconnectPollIntervalMs);
               continue;

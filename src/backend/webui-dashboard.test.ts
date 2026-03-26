@@ -2553,6 +2553,7 @@ test("setup shell refreshes readiness after launcher-managed restart until the w
   const setupReadinessRefreshResponse = createDeferred<MockResponseLike>();
   const managedRestartResponse = createDeferred<MockResponseLike>();
   const reconnectingReadinessResponse = createDeferred<MockResponseLike>();
+  const unavailableReadinessResponse = createDeferred<MockResponseLike>();
   const reconnectedReadinessResponse = createDeferred<MockResponseLike>();
   const harness = createSetupHarness([
     {
@@ -2630,6 +2631,10 @@ test("setup shell refreshes readiness after launcher-managed restart until the w
     {
       path: "/api/setup-readiness",
       response: reconnectingReadinessResponse.promise,
+    },
+    {
+      path: "/api/setup-readiness",
+      response: unavailableReadinessResponse.promise,
     },
     {
       path: "/api/setup-readiness",
@@ -2802,6 +2807,49 @@ test("setup shell refreshes readiness after launcher-managed restart until the w
   await new Promise((resolve) => setTimeout(resolve, 75));
   await harness.flush();
 
+  unavailableReadinessResponse.resolve(jsonResponse({
+    kind: "setup_readiness",
+    managedRestart: {
+      supported: false,
+      launcher: null,
+      state: "unavailable",
+      summary: "Managed restart is temporarily unavailable while the worker is still reconnecting.",
+    },
+    ready: false,
+    overallStatus: "missing",
+    configPath: "/tmp/supervisor.config.json",
+    fields: [],
+    blockers: [],
+    hostReadiness: { overallStatus: "pass", checks: [] },
+    providerPosture: {
+      profile: "codex",
+      provider: "codex",
+      reviewers: ["chatgpt-codex-connector"],
+      signalSource: "review_bot_logins",
+      configured: true,
+      summary: "Codex Connector is configured.",
+    },
+    trustPosture: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: null,
+      summary: "Trusted inputs with unsandboxed autonomous execution.",
+    },
+    localCiContract: {
+      configured: false,
+      command: null,
+      source: "config",
+      summary: "No repo-owned local CI contract is configured.",
+    },
+  }));
+  await harness.flush();
+
+  assert.match(restartStatus.textContent ?? "", /Restart required/u);
+  assert.match(restartGuidance.textContent ?? "", /temporarily unavailable while the worker is still reconnecting/u);
+
+  await new Promise((resolve) => setTimeout(resolve, 75));
+  await harness.flush();
+
   reconnectedReadinessResponse.resolve(jsonResponse({
     kind: "setup_readiness",
     managedRestart: {
@@ -2860,6 +2908,7 @@ test("setup shell refreshes readiness after launcher-managed restart until the w
       },
       { path: "/api/setup-readiness", method: "GET", body: null },
       { path: "/api/commands/managed-restart", method: "POST", body: JSON.stringify({}) },
+      { path: "/api/setup-readiness", method: "GET", body: null },
       { path: "/api/setup-readiness", method: "GET", body: null },
       { path: "/api/setup-readiness", method: "GET", body: null },
     ],
