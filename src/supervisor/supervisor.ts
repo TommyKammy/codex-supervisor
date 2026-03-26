@@ -1406,6 +1406,7 @@ export class Supervisor {
       },
       handleAuthFailure: (state) => handleAuthFailure(this.github, this.stateStore, state),
       listAllIssues: () => this.github.listAllIssues(),
+      getIssueForParentEpicClosureFallback: (issueNumber) => this.github.getIssue(issueNumber),
       reconcileTrackedMergedButOpenIssues: (state, issues, updateReconciliationProgress, options) =>
         reconcileTrackedMergedButOpenIssues(
           this.github,
