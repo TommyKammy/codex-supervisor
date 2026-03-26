@@ -595,6 +595,154 @@ test("resolveRunnableIssueContext reuses the current reserved issue instead of c
   assert.equal(savedStates.length, 0);
 });
 
+test("resolveRunnableIssueContext uses targeted dependency reads instead of broad candidate inventory when full inventory refresh is degraded", async () => {
+  const config = createConfig();
+  const issue: GitHubIssue = {
+    number: 96,
+    title: "Constrained active issue",
+    body: `## Summary
+Continue only after the dependency closes.
+
+## Scope
+- resume the active tracked issue safely
+
+## Acceptance criteria
+- degrade safely
+
+## Verification
+- npm test -- src/run-once-issue-selection.test.ts
+
+Depends on: #95`,
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/96",
+    state: "OPEN",
+  };
+  const dependencyIssue: GitHubIssue = {
+    number: 95,
+    title: "Dependency issue",
+    body: executionReadyBody("Close me first."),
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/95",
+    state: "CLOSED",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 96,
+    inventory_refresh_failure: {
+      source: "gh issue list",
+      message: "Failed to parse JSON from gh issue list.",
+      recorded_at: "2026-03-26T00:00:00Z",
+    },
+    issues: {
+      "95": createRecord(95, { state: "done" }),
+      "96": createRecord(96),
+    },
+  };
+  const savedStates: SupervisorStateFile[] = [];
+  const requestedIssueNumbers: number[] = [];
+  let listCandidateIssuesCalls = 0;
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => {
+        listCandidateIssuesCalls += 1;
+        throw new Error("unexpected broad candidate inventory read");
+      },
+      getIssue: async (issueNumber) => {
+        requestedIssueNumbers.push(issueNumber);
+        return issueNumber === 95 ? dependencyIssue : issue;
+      },
+    },
+    config,
+    stateStore: createTouchStateStore(savedStates),
+    state,
+    currentRecord: state.issues["96"] ?? null,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {},
+    }),
+  });
+
+  assert.ok(typeof result !== "string");
+  assert.equal(result.kind, "ready");
+  assert.equal(result.record.issue_number, 96);
+  assert.deepEqual(requestedIssueNumbers, [96, 95]);
+  assert.equal(listCandidateIssuesCalls, 0);
+  assert.equal(savedStates.length, 0);
+});
+
+test("resolveRunnableIssueContext requeues degraded active issues that still require broad execution-order inventory", async () => {
+  const config = createConfig();
+  const issue: GitHubIssue = {
+    number: 97,
+    title: "Execution-order constrained issue",
+    body: `## Summary
+Do not continue me while broad inventory is degraded.
+
+## Scope
+- stay safely paused
+
+## Acceptance criteria
+- execution order does not rely on cached backlog ordering
+
+## Verification
+- npm test -- src/run-once-issue-selection.test.ts
+
+Part of: #150
+Execution order: 2 of 3`,
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/97",
+    state: "OPEN",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 97,
+    inventory_refresh_failure: {
+      source: "gh issue list",
+      message: "Failed to parse JSON from gh issue list.",
+      recorded_at: "2026-03-26T00:00:00Z",
+    },
+    issues: {
+      "97": createRecord(97),
+    },
+  };
+  const savedStates: SupervisorStateFile[] = [];
+  let released = false;
+  let listCandidateIssuesCalls = 0;
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => {
+        listCandidateIssuesCalls += 1;
+        throw new Error("unexpected broad candidate inventory read");
+      },
+      getIssue: async () => issue,
+    },
+    config,
+    stateStore: createTouchStateStore(savedStates),
+    state,
+    currentRecord: state.issues["97"] ?? null,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {
+        released = true;
+      },
+    }),
+  });
+
+  assert.deepEqual(result, { kind: "restart" });
+  assert.equal(released, true);
+  assert.equal(listCandidateIssuesCalls, 0);
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(state.issues["97"]?.state, "queued");
+  assert.match(
+    state.issues["97"]?.last_error ?? "",
+    /Full inventory refresh is degraded, so execution-order gating for issue #97 requires broad inventory and cannot continue safely/,
+  );
+  assert.equal(savedStates.length, 1);
+});
+
 test("resolveRunnableIssueContext restarts closed issues instead of handing them off as ready", async () => {
   const config = createConfig();
   const selectedIssue: GitHubIssue = {
