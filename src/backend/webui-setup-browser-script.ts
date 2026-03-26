@@ -43,7 +43,10 @@ export function renderSetupBrowserScript(): string {
         { value: "coderabbit", label: "CodeRabbit" },
       ];
       let currentReport = null;
+      let latestSaveResult = null;
       let saveInFlight = false;
+      let restartInFlight = false;
+      let restartRequested = false;
 
       function formatFieldList(fields) {
         const values = Array.isArray(fields) ? fields.filter((field) => typeof field === "string" && field.length > 0) : [];
@@ -241,9 +244,7 @@ export function renderSetupBrowserScript(): string {
         if (elements.saveButton) {
           elements.saveButton.disabled = disabled;
         }
-        if (elements.restartButton) {
-          elements.restartButton.disabled = true;
-        }
+        syncRestartButton();
         for (const field of editableFields(currentReport || {})) {
           const input = document.getElementById("setup-input-" + field.key);
           if (input) {
@@ -252,42 +253,92 @@ export function renderSetupBrowserScript(): string {
         }
       }
 
+      function managedRestartCapability(source) {
+        const capability = source && source.managedRestart && typeof source.managedRestart === "object"
+          ? source.managedRestart
+          : null;
+        return capability && capability.supported === true
+          ? capability
+          : (capability || {
+            supported: false,
+            launcher: null,
+            summary: "Managed restart is unavailable because this WebUI process was not started with explicit launcher-backed restart support.",
+          });
+      }
+
+      function syncRestartButton() {
+        if (!elements.restartButton) {
+          return;
+        }
+        const capability = managedRestartCapability(latestSaveResult || currentReport);
+        elements.restartButton.disabled = (
+          saveInFlight ||
+          restartInFlight ||
+          restartRequested ||
+          !latestSaveResult ||
+          !latestSaveResult.restartRequired ||
+          !capability.supported
+        );
+      }
+
       function renderRestartOutcome(result) {
         if (!result) {
+          restartRequested = false;
+          latestSaveResult = null;
           setText(elements.restartStatus, "No recent save");
           setText(
             elements.restartDetails,
             "Save typed setup changes to see whether they take effect immediately or require a supervisor restart.",
           );
-          setText(elements.restartGuidance, "Restart controls are not available in the setup UI yet.");
+          setText(elements.restartGuidance, managedRestartCapability(currentReport).summary);
+          syncRestartButton();
           return;
         }
 
+        latestSaveResult = result;
+        const capability = managedRestartCapability(result);
         const changedFields = formatFieldList(result.restartTriggeredByFields && result.restartTriggeredByFields.length > 0
           ? result.restartTriggeredByFields
           : result.updatedFields);
         if (result.restartRequired) {
           setText(elements.restartStatus, "Restart required");
-          setText(
-            elements.restartDetails,
-            "Saved changes to " +
-              changedFields +
-              " require a supervisor restart before they take effect. Restart now is not available in the setup UI yet. Restart the supervisor manually and then refresh this page.",
-          );
-          setText(elements.restartGuidance, "Manual next step: restart the supervisor process, then refresh /setup.");
+          if (capability.supported) {
+            setText(
+              elements.restartDetails,
+              "Saved changes to " +
+                changedFields +
+                " require a supervisor restart before they take effect. Restart now will exit this launcher-managed WebUI so it can be relaunched safely.",
+            );
+            setText(elements.restartGuidance, capability.summary);
+          } else {
+            setText(
+              elements.restartDetails,
+              "Saved changes to " +
+                changedFields +
+                " require a supervisor restart before they take effect. Restart now is unavailable for this unmanaged WebUI session. Restart the supervisor manually and then refresh this page.",
+            );
+            setText(elements.restartGuidance, "Manual next step: restart the supervisor process, then refresh /setup.");
+          }
+          syncRestartButton();
           return;
         }
 
+        restartRequested = false;
         setText(elements.restartStatus, "Saved and effective");
         setText(
           elements.restartDetails,
           "Saved changes to " + changedFields + " are already effective. No supervisor restart is required for this save.",
         );
-        setText(elements.restartGuidance, "Restart controls remain disabled because this save is already effective.");
+        setText(
+          elements.restartGuidance,
+          capability.supported ? capability.summary : "Restart controls remain disabled because this save is already effective.",
+        );
+        syncRestartButton();
       }
 
       function renderSetup(report) {
         renderForm(report);
+        syncRestartButton();
         setText(
           elements.overallStatus,
           report.ready ? "configured" : report.overallStatus,
@@ -450,6 +501,11 @@ export function renderSetupBrowserScript(): string {
       async function refreshSetupReadiness() {
         const report = await readJson("/api/setup-readiness");
         renderSetup(report);
+        if (!latestSaveResult) {
+          renderRestartOutcome(null);
+        } else {
+          syncRestartButton();
+        }
         return report;
       }
 
@@ -485,14 +541,46 @@ export function renderSetupBrowserScript(): string {
         }
       }
 
+      async function handleManagedRestartClick() {
+        const capability = managedRestartCapability(latestSaveResult || currentReport);
+        if (
+          restartRequested ||
+          restartInFlight ||
+          !latestSaveResult ||
+          !latestSaveResult.restartRequired ||
+          !capability.supported
+        ) {
+          syncRestartButton();
+          return;
+        }
+
+        restartInFlight = true;
+        syncRestartButton();
+        setText(elements.restartGuidance, "Requesting launcher-managed restart...");
+        try {
+          const result = await writeJson("/api/commands/managed-restart", {});
+          restartRequested = true;
+          setText(elements.restartGuidance, result.summary || capability.summary);
+        } catch (error) {
+          restartRequested = false;
+          const message = error instanceof Error ? error.message : String(error);
+          setText(elements.restartGuidance, message);
+        } finally {
+          restartInFlight = false;
+          syncRestartButton();
+        }
+      }
+
       async function bootstrap() {
         if (elements.form) {
           elements.form.addEventListener("submit", handleSetupSubmit);
         }
+        if (elements.restartButton) {
+          elements.restartButton.addEventListener("click", handleManagedRestartClick);
+        }
         setSaveStatus("Loading setup readiness...");
         try {
           await refreshSetupReadiness();
-          renderRestartOutcome(null);
           setSaveStatus("Edit the setup fields and save changes to revalidate readiness.");
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -505,7 +593,6 @@ export function renderSetupBrowserScript(): string {
             [{ title: message, tone: "blocker", meta: [], notes: [] }],
             "No setup blockers reported.",
           );
-          renderRestartOutcome(null);
           setSaveStatus("Setup readiness failed to load.");
         }
       }

@@ -9,6 +9,12 @@ import { buildActiveIssueChangedEvent, type SupervisorEvent, type SupervisorEven
 import type { SupervisorService } from "../supervisor";
 import { createSupervisorHttpServer } from "./supervisor-http-server";
 
+const unavailableManagedRestart = {
+  supported: false,
+  launcher: null,
+  summary: "Managed restart is unavailable because this WebUI process was not started with explicit launcher-backed restart support.",
+};
+
 async function readJson(args: {
   server: http.Server;
   path: string;
@@ -721,6 +727,7 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
   assert.equal(setupReadinessResponse.statusCode, 200);
   assert.deepEqual(setupReadinessResponse.body, {
     kind: "setup_readiness",
+    managedRestart: unavailableManagedRestart,
     ready: false,
     overallStatus: "missing",
     configPath: "/tmp/supervisor.config.json",
@@ -1098,6 +1105,7 @@ test("createSupervisorHttpServer accepts narrow setup config writes and returns 
   ]);
   assert.deepEqual(response.body, {
     kind: "setup_config_update",
+    managedRestart: unavailableManagedRestart,
     configPath: "/tmp/supervisor.config.json",
     backupPath: "/tmp/supervisor.config.json.bak",
     updatedFields: ["reviewProvider"],
@@ -1215,6 +1223,81 @@ test("createSupervisorHttpServer accepts narrow setup config writes and returns 
   });
 });
 
+test("createSupervisorHttpServer only accepts managed restart commands when launcher support is available", async (t) => {
+  let restartRequests = 0;
+  const server = createSupervisorHttpServer({
+    service: createStubService(),
+    managedRestart: {
+      capability: {
+        supported: true,
+        launcher: "systemd",
+        summary: "Managed restart is available through the systemd launcher.",
+      },
+      requestRestart: async () => {
+        restartRequests += 1;
+        return {
+          command: "managed-restart",
+          accepted: true,
+          summary: "Managed restart requested through the systemd launcher. This WebUI process will exit for relaunch.",
+        };
+      },
+    },
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const readinessResponse = await readJson({ server, path: "/api/setup-readiness" });
+  assert.equal(readinessResponse.statusCode, 200);
+  assert.match(JSON.stringify(readinessResponse.body), /"launcher":"systemd"/u);
+
+  const restartResponse = await readJson({
+    server,
+    path: "/api/commands/managed-restart",
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  assert.equal(restartResponse.statusCode, 200);
+  assert.deepEqual(restartResponse.body, {
+    command: "managed-restart",
+    accepted: true,
+    summary: "Managed restart requested through the systemd launcher. This WebUI process will exit for relaunch.",
+  });
+  assert.equal(restartRequests, 1);
+});
+
+test("createSupervisorHttpServer rejects managed restart commands for unmanaged WebUI sessions", async (t) => {
+  const server = createSupervisorHttpServer({
+    service: createStubService(),
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const restartResponse = await readJson({
+    server,
+    path: "/api/commands/managed-restart",
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  assert.equal(restartResponse.statusCode, 409);
+  assert.deepEqual(restartResponse.body, {
+    error: unavailableManagedRestart.summary,
+  });
+});
+
 test("createSupervisorHttpServer surfaces no-op setup config writes without a restart requirement", async (t) => {
   const server = createSupervisorHttpServer({
     service: createStubService({
@@ -1286,6 +1369,7 @@ test("createSupervisorHttpServer surfaces no-op setup config writes without a re
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.body, {
     kind: "setup_config_update",
+    managedRestart: unavailableManagedRestart,
     configPath: "/tmp/supervisor.config.json",
     backupPath: "/tmp/supervisor.config.json.bak",
     updatedFields: ["reviewProvider"],
