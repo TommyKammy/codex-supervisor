@@ -378,6 +378,84 @@ test("GitHubClient listCandidateIssues preserves small backlogs without extra pa
   assert.deepEqual(issues.map((issue) => issue.number), [11, 12]);
 });
 
+test("GitHubClient listAllIssues falls back to paginated API inventory when gh issue list JSON is malformed", async () => {
+  const config = createConfig();
+  const backlog: Array<{
+    number: number;
+    title: string;
+    body: string | null;
+    created_at: string;
+    updated_at: string;
+    html_url: string;
+    state: string;
+    labels: Array<{ name: string }>;
+    pull_request?: unknown;
+  }> = Array.from({ length: 101 }, (_value, index) => ({
+    number: 500 - index,
+    title: `Issue ${500 - index}`,
+    body: index % 2 === 0 ? `Body ${500 - index}` : null,
+    created_at: `2026-03-${String((index % 28) + 1).padStart(2, "0")}T00:00:00Z`,
+    updated_at: `2026-03-${String((index % 28) + 1).padStart(2, "0")}T12:00:00Z`,
+    html_url: `https://example.test/issues/${500 - index}`,
+    state: index % 3 === 0 ? "closed" : "open",
+    labels: [{ name: `label-${index % 5}` }],
+  }));
+  let issueListCalls = 0;
+  let fallbackPageCalls = 0;
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "issue" && args[1] === "list") {
+      issueListCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: "[{\"number\":500,\"title\":\"bad\njson\"}]",
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "repos/owner/repo/issues") {
+      fallbackPageCalls += 1;
+      const page = Number(args.find((arg) => arg.startsWith("page="))?.slice("page=".length) ?? "1");
+      const perPage = Number(args.find((arg) => arg.startsWith("per_page="))?.slice("per_page=".length) ?? "100");
+      const start = (page - 1) * perPage;
+      const pageItems = backlog.slice(start, start + perPage);
+      if (page === 2) {
+        pageItems.splice(1, 0, {
+          number: 999,
+          title: "Pull request row",
+          body: null,
+          created_at: "2026-03-31T00:00:00Z",
+          updated_at: "2026-03-31T00:00:00Z",
+          html_url: "https://example.test/pull/999",
+          state: "open",
+          labels: [],
+          pull_request: {},
+        });
+      }
+
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify(pageItems),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const issues = await client.listAllIssues();
+
+  assert.equal(issueListCalls, 1);
+  assert.equal(fallbackPageCalls, 2);
+  assert.equal(issues.length, 101);
+  assert.deepEqual(issues.slice(0, 3).map((issue) => issue.number), [500, 499, 498]);
+  assert.deepEqual(issues.slice(-3).map((issue) => issue.number), [402, 401, 400]);
+  assert.equal(issues[0]?.body, "Body 500");
+  assert.equal(issues[1]?.body, "");
+  assert.equal(issues[0]?.state, "CLOSED");
+  assert.equal(issues[1]?.state, "OPEN");
+  assert.ok(!issues.some((issue) => issue.number === 999));
+});
+
 test("GitHubClient createPullRequest recovers when the first open-branch lookup misses the new PR", async () => {
   const config = createConfig();
   const createdPr = createPullRequest();

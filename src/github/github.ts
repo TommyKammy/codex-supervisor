@@ -26,6 +26,7 @@ export type { GitHubCommandRunner } from "./github-transport";
 
 const POST_CREATE_PR_LOOKUP_RETRY_LIMIT = 2;
 const POST_CREATE_PR_LOOKUP_BASE_DELAY_MS = 200;
+const FULL_ISSUE_INVENTORY_PAGE_SIZE = 100;
 
 interface GitHubRestIssue {
   number: number;
@@ -107,19 +108,23 @@ export class GitHubClient {
   }
 
   async listAllIssues(): Promise<GitHubIssue[]> {
-    const result = await this.runGhCommand([
-      "issue",
-      "list",
-      "--repo",
-      this.config.repoSlug,
-      "--state",
-      "all",
-      "--limit",
-      "500",
-      "--json",
-      "number,title,body,createdAt,updatedAt,url,labels,state",
-    ]);
-    return parseJson<GitHubIssue[]>(result.stdout, "gh issue list");
+    try {
+      const result = await this.runGhCommand([
+        "issue",
+        "list",
+        "--repo",
+        this.config.repoSlug,
+        "--state",
+        "all",
+        "--limit",
+        "500",
+        "--json",
+        "number,title,body,createdAt,updatedAt,url,labels,state",
+      ]);
+      return parseJson<GitHubIssue[]>(result.stdout, "gh issue list");
+    } catch (error) {
+      return this.listAllIssuesViaRestApi(error);
+    }
   }
 
   private candidateDiscoveryPageSize(): number {
@@ -178,6 +183,53 @@ export class GitHubClient {
     return issues
       .map((issue) => this.mapRestIssue(issue))
       .filter((issue): issue is GitHubIssue => issue !== null);
+  }
+
+  private async listAllIssuesViaRestApi(cause: unknown): Promise<GitHubIssue[]> {
+    try {
+      const { owner, repo } = this.repoOwnerAndName();
+      const issues: GitHubIssue[] = [];
+
+      for (let page = 1; ; page += 1) {
+        const result = await this.runGhCommand([
+          "api",
+          `repos/${owner}/${repo}/issues`,
+          "--method",
+          "GET",
+          "-f",
+          "state=all",
+          "-f",
+          `per_page=${FULL_ISSUE_INVENTORY_PAGE_SIZE}`,
+          "-f",
+          `page=${page}`,
+        ]);
+        const pageResponse = parseJson<GitHubRestIssue[]>(
+          result.stdout,
+          `gh api repos/${owner}/${repo}/issues page=${page}`,
+        );
+        const pageIssues = pageResponse
+          .map((issue) => this.mapRestIssue(issue))
+          .filter((issue): issue is GitHubIssue => issue !== null);
+
+        issues.push(...pageIssues);
+        if (pageResponse.length < FULL_ISSUE_INVENTORY_PAGE_SIZE) {
+          break;
+        }
+      }
+
+      return issues;
+    } catch (fallbackError) {
+      const primaryMessage = cause instanceof Error ? cause.message : String(cause);
+      const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+      throw new Error(
+        [
+          "Failed to load full issue inventory.",
+          `Primary transport: ${primaryMessage}`,
+          `Fallback transport: ${fallbackMessage}`,
+        ].join("\n"),
+        { cause: fallbackError },
+      );
+    }
   }
 
   private buildCandidateSearchQuery(): string {
