@@ -16,11 +16,12 @@ import {
   PullRequestStatusCheckRollupResponse,
 } from "./github-hydration";
 import { GitHubPullRequestHydrator } from "./github-pull-request-hydrator";
-import { GitHubTransport } from "./github-transport";
+import { GitHubTransport, isGitHubRateLimitFailure } from "./github-transport";
 import type { GitHubCommandRunner } from "./github-transport";
 import { parseJson, truncate } from "../core/utils";
 
 export { isTransientGitHubCommandFailure } from "./github-transport";
+export { isGitHubRateLimitFailure } from "./github-transport";
 export { inferCopilotReviewLifecycle } from "./github-review-signals";
 export type { GitHubCommandRunner } from "./github-transport";
 
@@ -123,6 +124,16 @@ export class GitHubClient {
     try {
       return parseJson<GitHubIssue[]>(result.stdout, "gh issue list");
     } catch (error) {
+      const primaryFailureMessage = [
+        error instanceof Error ? error.message : String(error),
+        result.stderr.trim(),
+        result.stdout.trim(),
+      ]
+        .filter(Boolean)
+        .join("\n");
+      if (isGitHubRateLimitFailure(primaryFailureMessage)) {
+        throw new Error(primaryFailureMessage);
+      }
       return this.listAllIssuesViaRestApi(error);
     }
   }
