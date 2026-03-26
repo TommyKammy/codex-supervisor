@@ -33,6 +33,7 @@ interface Deferred<T> {
 const unavailableManagedRestart = {
   supported: false,
   launcher: null,
+  state: "unavailable",
   summary: "Managed restart is unavailable because this WebUI process was not started with explicit launcher-backed restart support.",
 };
 
@@ -444,6 +445,8 @@ function createHtmlHarness(
     document,
     EventSource: MockEventSource,
     fetch,
+    setTimeout,
+    clearTimeout,
     window: {
       confirm: options.confirm ?? (() => true),
       localStorage: options.localStorage ?? new FakeStorage(),
@@ -2281,6 +2284,7 @@ test("setup shell enables launcher-managed restart only when the runtime capabil
   const setupConfigResponse = createDeferred<MockResponseLike>();
   const setupReadinessRefreshResponse = createDeferred<MockResponseLike>();
   const managedRestartResponse = createDeferred<MockResponseLike>();
+  const reconnectedReadinessResponse = createDeferred<MockResponseLike>();
   const harness = createSetupHarness([
     {
       path: "/api/setup-readiness",
@@ -2289,6 +2293,7 @@ test("setup shell enables launcher-managed restart only when the runtime capabil
         managedRestart: {
           supported: true,
           launcher: "systemd",
+          state: "ready",
           summary: "Managed restart is available through the systemd launcher.",
         },
         ready: false,
@@ -2353,6 +2358,10 @@ test("setup shell enables launcher-managed restart only when the runtime capabil
       body: JSON.stringify({}),
       response: managedRestartResponse.promise,
     },
+    {
+      path: "/api/setup-readiness",
+      response: reconnectedReadinessResponse.promise,
+    },
   ]);
   await harness.flush();
 
@@ -2374,6 +2383,7 @@ test("setup shell enables launcher-managed restart only when the runtime capabil
     managedRestart: {
       supported: true,
       launcher: "systemd",
+      state: "ready",
       summary: "Managed restart is available through the systemd launcher.",
     },
     configPath: "/tmp/supervisor.config.json",
@@ -2390,6 +2400,7 @@ test("setup shell enables launcher-managed restart only when the runtime capabil
       managedRestart: {
         supported: true,
         launcher: "systemd",
+        state: "ready",
         summary: "Managed restart is available through the systemd launcher.",
       },
       ready: false,
@@ -2427,6 +2438,7 @@ test("setup shell enables launcher-managed restart only when the runtime capabil
     managedRestart: {
       supported: true,
       launcher: "systemd",
+      state: "ready",
       summary: "Managed restart is available through the systemd launcher.",
     },
     ready: true,
@@ -2468,13 +2480,46 @@ test("setup shell enables launcher-managed restart only when the runtime capabil
   managedRestartResponse.resolve(jsonResponse({
     command: "managed-restart",
     accepted: true,
-    summary: "Managed restart requested through the systemd launcher. This WebUI process will exit for relaunch.",
+    summary: "Managed restart requested through the systemd launcher. The worker is reconnecting while this WebUI shell stays available.",
   }));
   await restartPromise;
   await harness.flush();
 
-  assert.equal(restartButton.disabled, true);
-  await restartButton.dispatch("click");
+  reconnectedReadinessResponse.resolve(jsonResponse({
+    kind: "setup_readiness",
+    managedRestart: {
+      supported: true,
+      launcher: "systemd",
+      state: "ready",
+      summary: "Managed restart is available through the systemd launcher.",
+    },
+    ready: true,
+    overallStatus: "configured",
+    configPath: "/tmp/supervisor.config.json",
+    fields: [],
+    blockers: [],
+    hostReadiness: { overallStatus: "pass", checks: [] },
+    providerPosture: {
+      profile: "codex",
+      provider: "codex",
+      reviewers: ["chatgpt-codex-connector"],
+      signalSource: "review_bot_logins",
+      configured: true,
+      summary: "Codex Connector is configured.",
+    },
+    trustPosture: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: null,
+      summary: "Trusted inputs with unsandboxed autonomous execution.",
+    },
+    localCiContract: {
+      configured: false,
+      command: null,
+      source: "config",
+      summary: "No repo-owned local CI contract is configured.",
+    },
+  }));
   await harness.flush();
 
   assert.deepEqual(
@@ -2492,11 +2537,381 @@ test("setup shell enables launcher-managed restart only when the runtime capabil
       },
       { path: "/api/setup-readiness", method: "GET", body: null },
       { path: "/api/commands/managed-restart", method: "POST", body: JSON.stringify({}) },
+      { path: "/api/setup-readiness", method: "GET", body: null },
     ],
   );
   assert.match(
     restartGuidance.textContent ?? "",
-    /Managed restart requested through the systemd launcher\. This WebUI process will exit for relaunch\./u,
+    /Managed restart is available through the systemd launcher\./u,
+  );
+  assert.equal(restartButton.disabled, true);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("setup shell refreshes readiness after launcher-managed restart until the worker reconnects", async () => {
+  const setupConfigResponse = createDeferred<MockResponseLike>();
+  const setupReadinessRefreshResponse = createDeferred<MockResponseLike>();
+  const managedRestartResponse = createDeferred<MockResponseLike>();
+  const reconnectingReadinessResponse = createDeferred<MockResponseLike>();
+  const unavailableReadinessResponse = createDeferred<MockResponseLike>();
+  const reconnectedReadinessResponse = createDeferred<MockResponseLike>();
+  const harness = createSetupHarness([
+    {
+      path: "/api/setup-readiness",
+      response: jsonResponse({
+        kind: "setup_readiness",
+        managedRestart: {
+          supported: true,
+          launcher: "systemd",
+          state: "ready",
+          summary: "Managed restart is available through the systemd launcher.",
+        },
+        ready: false,
+        overallStatus: "missing",
+        configPath: "/tmp/supervisor.config.json",
+        fields: [
+          {
+            key: "reviewProvider",
+            label: "Review provider",
+            state: "missing",
+            value: null,
+            message: "Configure at least one review provider before first-run setup is complete.",
+            required: true,
+            metadata: {
+              source: "config",
+              editable: true,
+              valueType: "review_provider",
+            },
+          },
+        ],
+        blockers: [],
+        hostReadiness: { overallStatus: "pass", checks: [] },
+        providerPosture: {
+          profile: "none",
+          provider: "none",
+          reviewers: [],
+          signalSource: "none",
+          configured: false,
+          summary: "No review provider is configured.",
+        },
+        trustPosture: {
+          trustMode: "trusted_repo_and_authors",
+          executionSafetyMode: "unsandboxed_autonomous",
+          warning: null,
+          summary: "Trusted inputs with unsandboxed autonomous execution.",
+        },
+        localCiContract: {
+          configured: false,
+          command: null,
+          source: "config",
+          summary: "No repo-owned local CI contract is configured.",
+        },
+      }),
+    },
+    {
+      path: "/api/setup-config",
+      method: "POST",
+      body: JSON.stringify({
+        changes: {
+          reviewProvider: "codex",
+        },
+      }),
+      response: setupConfigResponse.promise,
+    },
+    {
+      path: "/api/setup-readiness",
+      response: setupReadinessRefreshResponse.promise,
+    },
+    {
+      path: "/api/commands/managed-restart",
+      method: "POST",
+      body: JSON.stringify({}),
+      response: managedRestartResponse.promise,
+    },
+    {
+      path: "/api/setup-readiness",
+      response: reconnectingReadinessResponse.promise,
+    },
+    {
+      path: "/api/setup-readiness",
+      response: unavailableReadinessResponse.promise,
+    },
+    {
+      path: "/api/setup-readiness",
+      response: reconnectedReadinessResponse.promise,
+    },
+  ]);
+  await harness.flush();
+
+  const reviewProviderInput = harness.document.getElementById("setup-input-reviewProvider");
+  const setupForm = harness.document.getElementById("setup-form");
+  const restartButton = harness.document.getElementById("setup-restart-button");
+  const restartStatus = harness.document.getElementById("setup-restart-status");
+  const restartDetails = harness.document.getElementById("setup-restart-details");
+  const restartGuidance = harness.document.getElementById("setup-restart-guidance");
+  assert.ok(reviewProviderInput);
+  assert.ok(setupForm);
+  assert.ok(restartButton);
+  assert.ok(restartStatus);
+  assert.ok(restartDetails);
+  assert.ok(restartGuidance);
+
+  reviewProviderInput.value = "codex";
+  const submitPromise = setupForm.dispatch("submit", { preventDefault() {} });
+  await harness.flush();
+
+  setupConfigResponse.resolve(jsonResponse({
+    kind: "setup_config_update",
+    managedRestart: {
+      supported: true,
+      launcher: "systemd",
+      state: "ready",
+      summary: "Managed restart is available through the systemd launcher.",
+    },
+    configPath: "/tmp/supervisor.config.json",
+    backupPath: null,
+    updatedFields: ["reviewProvider"],
+    restartRequired: true,
+    restartScope: "supervisor",
+    restartTriggeredByFields: ["reviewProvider"],
+    document: {
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    },
+    readiness: {
+      kind: "setup_readiness",
+      managedRestart: {
+        supported: true,
+        launcher: "systemd",
+        state: "ready",
+        summary: "Managed restart is available through the systemd launcher.",
+      },
+      ready: false,
+      overallStatus: "missing",
+      configPath: "/tmp/supervisor.config.json",
+      fields: [],
+      blockers: [],
+      hostReadiness: { overallStatus: "pass", checks: [] },
+      providerPosture: {
+        profile: "codex",
+        provider: "codex",
+        reviewers: ["chatgpt-codex-connector"],
+        signalSource: "review_bot_logins",
+        configured: true,
+        summary: "Codex Connector is configured.",
+      },
+      trustPosture: {
+        trustMode: "trusted_repo_and_authors",
+        executionSafetyMode: "unsandboxed_autonomous",
+        warning: null,
+        summary: "Trusted inputs with unsandboxed autonomous execution.",
+      },
+      localCiContract: {
+        configured: false,
+        command: null,
+        source: "config",
+        summary: "No repo-owned local CI contract is configured.",
+      },
+    },
+  }));
+  await harness.flush();
+
+  setupReadinessRefreshResponse.resolve(jsonResponse({
+    kind: "setup_readiness",
+    managedRestart: {
+      supported: true,
+      launcher: "systemd",
+      state: "ready",
+      summary: "Managed restart is available through the systemd launcher.",
+    },
+    ready: true,
+    overallStatus: "configured",
+    configPath: "/tmp/supervisor.config.json",
+    fields: [],
+    blockers: [],
+    hostReadiness: { overallStatus: "pass", checks: [] },
+    providerPosture: {
+      profile: "codex",
+      provider: "codex",
+      reviewers: ["chatgpt-codex-connector"],
+      signalSource: "review_bot_logins",
+      configured: true,
+      summary: "Codex Connector is configured.",
+    },
+    trustPosture: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: null,
+      summary: "Trusted inputs with unsandboxed autonomous execution.",
+    },
+    localCiContract: {
+      configured: false,
+      command: null,
+      source: "config",
+      summary: "No repo-owned local CI contract is configured.",
+    },
+  }));
+
+  await submitPromise;
+  await harness.flush();
+
+  const restartPromise = restartButton.dispatch("click");
+  await harness.flush();
+  managedRestartResponse.resolve(jsonResponse({
+    command: "managed-restart",
+    accepted: true,
+    summary: "Managed restart requested through the systemd launcher. The worker is reconnecting while this WebUI shell stays available.",
+  }));
+  await restartPromise;
+  await harness.flush();
+
+  reconnectingReadinessResponse.resolve(jsonResponse({
+    kind: "setup_readiness",
+    managedRestart: {
+      supported: true,
+      launcher: "systemd",
+      state: "reconnecting",
+      summary: "Managed restart is reconnecting the worker through the systemd launcher while this WebUI shell stays available.",
+    },
+    ready: true,
+    overallStatus: "configured",
+    configPath: "/tmp/supervisor.config.json",
+    fields: [],
+    blockers: [],
+    hostReadiness: { overallStatus: "pass", checks: [] },
+    providerPosture: {
+      profile: "codex",
+      provider: "codex",
+      reviewers: ["chatgpt-codex-connector"],
+      signalSource: "review_bot_logins",
+      configured: true,
+      summary: "Codex Connector is configured.",
+    },
+    trustPosture: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: null,
+      summary: "Trusted inputs with unsandboxed autonomous execution.",
+    },
+    localCiContract: {
+      configured: false,
+      command: null,
+      source: "config",
+      summary: "No repo-owned local CI contract is configured.",
+    },
+  }));
+  await harness.flush();
+
+  assert.match(restartStatus.textContent ?? "", /Restart required/u);
+  assert.match(restartGuidance.textContent ?? "", /reconnecting the worker/u);
+
+  await new Promise((resolve) => setTimeout(resolve, 75));
+  await harness.flush();
+
+  unavailableReadinessResponse.resolve(jsonResponse({
+    kind: "setup_readiness",
+    managedRestart: {
+      supported: false,
+      launcher: null,
+      state: "unavailable",
+      summary: "Managed restart is temporarily unavailable while the worker is still reconnecting.",
+    },
+    ready: false,
+    overallStatus: "missing",
+    configPath: "/tmp/supervisor.config.json",
+    fields: [],
+    blockers: [],
+    hostReadiness: { overallStatus: "pass", checks: [] },
+    providerPosture: {
+      profile: "codex",
+      provider: "codex",
+      reviewers: ["chatgpt-codex-connector"],
+      signalSource: "review_bot_logins",
+      configured: true,
+      summary: "Codex Connector is configured.",
+    },
+    trustPosture: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: null,
+      summary: "Trusted inputs with unsandboxed autonomous execution.",
+    },
+    localCiContract: {
+      configured: false,
+      command: null,
+      source: "config",
+      summary: "No repo-owned local CI contract is configured.",
+    },
+  }));
+  await harness.flush();
+
+  assert.match(restartStatus.textContent ?? "", /Restart required/u);
+  assert.match(restartGuidance.textContent ?? "", /temporarily unavailable while the worker is still reconnecting/u);
+
+  await new Promise((resolve) => setTimeout(resolve, 75));
+  await harness.flush();
+
+  reconnectedReadinessResponse.resolve(jsonResponse({
+    kind: "setup_readiness",
+    managedRestart: {
+      supported: true,
+      launcher: "systemd",
+      state: "ready",
+      summary: "Managed restart is available through the systemd launcher.",
+    },
+    ready: true,
+    overallStatus: "configured",
+    configPath: "/tmp/supervisor.config.json",
+    fields: [],
+    blockers: [],
+    hostReadiness: { overallStatus: "pass", checks: [] },
+    providerPosture: {
+      profile: "codex",
+      provider: "codex",
+      reviewers: ["chatgpt-codex-connector"],
+      signalSource: "review_bot_logins",
+      configured: true,
+      summary: "Codex Connector is configured.",
+    },
+    trustPosture: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: null,
+      summary: "Trusted inputs with unsandboxed autonomous execution.",
+    },
+    localCiContract: {
+      configured: false,
+      command: null,
+      source: "config",
+      summary: "No repo-owned local CI contract is configured.",
+    },
+  }));
+  await harness.flush();
+
+  assert.match(restartStatus.textContent ?? "", /Saved and effective/u);
+  assert.match(
+    restartDetails.textContent ?? "",
+    /Saved changes to reviewProvider are already effective\..*No supervisor restart is required for this save\./u,
+  );
+  assert.match(restartGuidance.textContent ?? "", /Managed restart is available through the systemd launcher\./u);
+  assert.deepEqual(
+    harness.fetchCalls.map((call) => ({ path: call.path, method: call.method, body: call.body })),
+    [
+      { path: "/api/setup-readiness", method: "GET", body: null },
+      {
+        path: "/api/setup-config",
+        method: "POST",
+        body: JSON.stringify({
+          changes: {
+            reviewProvider: "codex",
+          },
+        }),
+      },
+      { path: "/api/setup-readiness", method: "GET", body: null },
+      { path: "/api/commands/managed-restart", method: "POST", body: JSON.stringify({}) },
+      { path: "/api/setup-readiness", method: "GET", body: null },
+      { path: "/api/setup-readiness", method: "GET", body: null },
+      { path: "/api/setup-readiness", method: "GET", body: null },
+    ],
   );
   assert.equal(harness.remainingFetches.length, 0);
 });
