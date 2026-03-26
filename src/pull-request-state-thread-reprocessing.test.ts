@@ -177,3 +177,80 @@ test("inferStateFromPullRequest blocks a repeatedly unresolved configured bot th
 
   assert.equal(inferStateFromPullRequest(config, record, pr, [], [createReviewThread()]), "blocked");
 });
+
+test("inferStateFromPullRequest allows one same-head follow-up turn after partial configured-bot progress", () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head-a",
+    processed_review_thread_ids: ["thread-1@head-a", "thread-2@head-a"],
+    processed_review_thread_fingerprints: ["thread-1@head-a#comment-1", "thread-2@head-a#comment-2"],
+    review_follow_up_head_sha: "head-a",
+    review_follow_up_remaining: 1,
+  });
+  const pr = createPullRequest({
+    reviewDecision: "CHANGES_REQUESTED",
+    headRefOid: "head-a",
+  });
+  const remainingThread = createReviewThread({
+    id: "thread-2",
+    comments: {
+      nodes: [
+        {
+          id: "comment-2",
+          body: "Still unresolved.",
+          createdAt: "2026-03-11T00:05:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, [], [remainingThread]), "addressing_review");
+});
+
+test("inferStateFromPullRequest still blocks same-head configured bot threads when no follow-up progress was recorded", () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head-a",
+    processed_review_thread_ids: ["thread-1@head-a"],
+    processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
+  });
+  const pr = createPullRequest({
+    reviewDecision: "CHANGES_REQUESTED",
+    headRefOid: "head-a",
+  });
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, [], [createReviewThread()]), "blocked");
+});
+
+test("inferStateFromPullRequest blocks after the one same-head follow-up allowance is exhausted", () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head-a",
+    processed_review_thread_ids: ["thread-1@head-a"],
+    processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+    review_follow_up_head_sha: "head-a",
+    review_follow_up_remaining: 0,
+  });
+  const pr = createPullRequest({
+    reviewDecision: "CHANGES_REQUESTED",
+    headRefOid: "head-a",
+  });
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, [], [createReviewThread()]), "blocked");
+});

@@ -105,6 +105,8 @@ export function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunR
     repeated_blocker_count: 0,
     repeated_failure_signature_count: 0,
     last_head_sha: "head-116",
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
     last_codex_summary: null,
     last_recovery_reason: null,
     last_recovery_at: null,

@@ -257,6 +257,8 @@ export interface IssueRunRecord {
   repeated_failure_signature_count: number;
   stale_stabilizing_no_pr_recovery_count?: number;
   last_head_sha: string | null;
+  review_follow_up_head_sha?: string | null;
+  review_follow_up_remaining?: number;
   workspace_restore_source?: WorkspaceRestoreSource | null;
   workspace_restore_ref?: string | null;
   last_codex_summary: string | null;

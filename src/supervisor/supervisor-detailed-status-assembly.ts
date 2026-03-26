@@ -1,6 +1,10 @@
 import {
   localReviewRetryLoopStalled,
 } from "../review-handling";
+import {
+  actionableBotReviewThreads,
+  configuredBotReviewFollowUpState,
+} from "../review-thread-reporting";
 import { formatWorkspaceRestoreStatusLine } from "../core/workspace";
 import {
   formatRecentRecord,
@@ -207,8 +211,12 @@ export function buildActiveDetailedStatusLines(
       lines.push(`pending_checks=${pendingChecks}`);
     }
     const unresolvedConfiguredBotThreads = unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads));
+    const reviewFollowUpState = configuredBotReviewFollowUpState(activeRecord, pr, unresolvedConfiguredBotThreads);
     lines.push(
       `review_threads bot_pending=${pendingBotReviewThreads(config, activeRecord, pr, reviewThreads).length} bot_unresolved=${unresolvedConfiguredBotThreads.length} manual=${manualReviewThreads(config, reviewThreads).length}`,
+    );
+    lines.push(
+      `review_follow_up state=${reviewFollowUpState} remaining=${activeRecord.review_follow_up_remaining ?? 0} head_sha=${activeRecord.review_follow_up_head_sha ?? "none"} actionable=${actionableBotReviewThreads(config, activeRecord, pr, reviewThreads).length}`,
     );
   }
 

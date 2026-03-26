@@ -6,7 +6,9 @@ import path from "node:path";
 import { buildCodexPrompt } from "./codex";
 import {
   nextProcessedReviewThreadPatch,
+  nextReviewFollowUpPatch,
   prepareCodexTurnPrompt,
+  selectReviewThreadsForTurn,
   shouldResumeAgentTurn,
 } from "./turn-execution-orchestration";
 import { SupervisorStateFile } from "./core/types";
@@ -64,6 +66,87 @@ test("nextProcessedReviewThreadPatch refreshes reprocessed same-head ids to the 
     patch.processed_review_thread_fingerprints[patch.processed_review_thread_fingerprints.length - 1],
     "thread-0@head-a#comment-0",
   );
+});
+
+test("selectReviewThreadsForTurn re-includes same-head configured-bot threads when the follow-up allowance is active", () => {
+  const selected = selectReviewThreadsForTurn({
+    preRunState: "addressing_review",
+    record: {
+      processed_review_thread_ids: ["thread-1@head-a"],
+      processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+      last_head_sha: "head-a",
+      review_follow_up_head_sha: "head-a",
+      review_follow_up_remaining: 1,
+    },
+    pr: createPullRequest({ headRefOid: "head-a" }),
+    reviewThreads: [createReviewThread({ id: "thread-1" })],
+  });
+
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0]?.id, "thread-1");
+});
+
+test("nextReviewFollowUpPatch grants one same-head follow-up after partial configured-bot progress", () => {
+  const patch = nextReviewFollowUpPatch({
+    config: createConfig({ reviewBotLogins: ["copilot-pull-request-reviewer"] }),
+    preRunState: "addressing_review",
+    record: {
+      review_follow_up_head_sha: null,
+      review_follow_up_remaining: 0,
+    },
+    currentPr: { headRefOid: "head-a" },
+    evaluatedReviewHeadSha: "head-a",
+    preRunReviewThreads: [
+      createReviewThread({ id: "thread-1" }),
+      createReviewThread({ id: "thread-2" }),
+    ],
+    postRunReviewThreads: [createReviewThread({ id: "thread-2" })],
+  });
+
+  assert.deepEqual(patch, {
+    review_follow_up_head_sha: "head-a",
+    review_follow_up_remaining: 1,
+  });
+});
+
+test("nextReviewFollowUpPatch does not grant a follow-up when no configured-bot progress was made", () => {
+  const patch = nextReviewFollowUpPatch({
+    config: createConfig({ reviewBotLogins: ["copilot-pull-request-reviewer"] }),
+    preRunState: "addressing_review",
+    record: {
+      review_follow_up_head_sha: null,
+      review_follow_up_remaining: 0,
+    },
+    currentPr: { headRefOid: "head-a" },
+    evaluatedReviewHeadSha: "head-a",
+    preRunReviewThreads: [createReviewThread({ id: "thread-1" })],
+    postRunReviewThreads: [createReviewThread({ id: "thread-1" })],
+  });
+
+  assert.deepEqual(patch, {
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
+  });
+});
+
+test("nextReviewFollowUpPatch exhausts the same-head follow-up after the retry turn runs", () => {
+  const patch = nextReviewFollowUpPatch({
+    config: createConfig({ reviewBotLogins: ["copilot-pull-request-reviewer"] }),
+    preRunState: "addressing_review",
+    record: {
+      review_follow_up_head_sha: "head-a",
+      review_follow_up_remaining: 1,
+    },
+    currentPr: { headRefOid: "head-a" },
+    evaluatedReviewHeadSha: "head-a",
+    preRunReviewThreads: [createReviewThread({ id: "thread-1" })],
+    postRunReviewThreads: [createReviewThread({ id: "thread-1" })],
+  });
+
+  assert.deepEqual(patch, {
+    review_follow_up_head_sha: "head-a",
+    review_follow_up_remaining: 0,
+  });
 });
 
 test("shouldResumeAgentTurn rejects persisted sessions for non-compact resume states", () => {

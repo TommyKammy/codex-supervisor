@@ -98,6 +98,8 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
     repeated_blocker_count: 0,
     repeated_failure_signature_count: 1,
     last_head_sha: "abcdef1",
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
     last_codex_summary: null,
     last_recovery_reason: null,
     last_recovery_at: null,
@@ -201,6 +203,69 @@ test("formatDetailedStatus shows both raw and compressed local review counts", (
   });
 
   assert.match(status, /local_review .*findings=3 .*root_causes=1 .*stalled=no/);
+});
+
+test("formatDetailedStatus shows configured-bot same-head follow-up eligibility and exhaustion", () => {
+  const config = createConfig({ reviewBotLogins: ["copilot-pull-request-reviewer"] });
+  const pr = createPullRequest({
+    reviewDecision: "CHANGES_REQUESTED",
+    headRefOid: "deadbeef",
+  });
+  const reviewThreads = [
+    {
+      id: "thread-1",
+      isResolved: false,
+      isOutdated: false,
+      path: "src/file.ts",
+      line: 1,
+      comments: {
+        nodes: [{
+          id: "comment-1",
+          body: "Still unresolved.",
+          createdAt: "2026-03-11T14:05:00Z",
+          url: "https://example.test/pr/42#discussion_r1",
+          author: { login: "copilot-pull-request-reviewer", typeName: "Bot" },
+        }],
+      },
+    },
+  ];
+
+  const eligibleStatus = formatDetailedStatus({
+    config,
+    activeRecord: createRecord({
+      state: "addressing_review",
+      pr_number: pr.number,
+      review_follow_up_head_sha: "deadbeef",
+      review_follow_up_remaining: 1,
+      processed_review_thread_ids: ["thread-1@deadbeef"],
+      processed_review_thread_fingerprints: ["thread-1@deadbeef#comment-1"],
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr,
+    checks: [],
+    reviewThreads,
+  });
+  assert.match(eligibleStatus, /review_follow_up state=eligible remaining=1 head_sha=deadbeef actionable=1/);
+
+  const exhaustedStatus = formatDetailedStatus({
+    config,
+    activeRecord: createRecord({
+      state: "blocked",
+      blocked_reason: "manual_review",
+      pr_number: pr.number,
+      review_follow_up_head_sha: "deadbeef",
+      review_follow_up_remaining: 0,
+      processed_review_thread_ids: ["thread-1@deadbeef"],
+      processed_review_thread_fingerprints: ["thread-1@deadbeef#comment-1"],
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr,
+    checks: [],
+    reviewThreads,
+  });
+  assert.match(exhaustedStatus, /review_follow_up state=exhausted remaining=0 head_sha=deadbeef actionable=0/);
 });
 
 test("formatDetailedStatus marks stalled local-review repair loops explicitly", () => {

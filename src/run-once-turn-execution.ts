@@ -25,6 +25,7 @@ import {
 } from "./no-pull-request-state";
 import {
   nextProcessedReviewThreadPatch,
+  nextReviewFollowUpPatch,
   prepareCodexTurnPrompt,
   shouldResumeAgentTurn,
 } from "./turn-execution-orchestration";
@@ -513,13 +514,25 @@ export async function executeCodexTurnPhase(
         evaluatedReviewHeadSha,
         reviewThreadsToProcess,
       });
+      const reviewFollowUpPatch = nextReviewFollowUpPatch({
+        config,
+        preRunState,
+        record,
+        currentPr: pr,
+        evaluatedReviewHeadSha,
+        preRunReviewThreads: args.context.reviewThreads,
+        postRunReviewThreads: reviewThreads,
+      });
       const postRunSnapshot = pr
         ? args.derivePullRequestLifecycleSnapshot(
             record,
             pr,
             checks,
             reviewThreads,
-            processedReviewThreadPatch,
+            {
+              ...processedReviewThreadPatch,
+              ...reviewFollowUpPatch,
+            },
           )
         : null;
       const postRunState = postRunSnapshot
@@ -533,6 +546,7 @@ export async function executeCodexTurnPhase(
         ...(postRunSnapshot?.copilotRequestObservationPatch ?? {}),
         ...(postRunSnapshot?.copilotTimeoutPatch ?? {}),
         ...processedReviewThreadPatch,
+        ...reviewFollowUpPatch,
         blocked_verification_retry_count: pr ? 0 : record.blocked_verification_retry_count,
         repeated_blocker_count: 0,
         last_blocker_signature: null,

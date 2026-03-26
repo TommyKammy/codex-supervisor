@@ -30,7 +30,11 @@ export function pendingBotReviewThreads(
   config: SupervisorConfig,
   record: Pick<
     IssueRunRecord,
-    "processed_review_thread_ids" | "processed_review_thread_fingerprints" | "last_head_sha"
+    | "processed_review_thread_ids"
+    | "processed_review_thread_fingerprints"
+    | "last_head_sha"
+    | "review_follow_up_head_sha"
+    | "review_follow_up_remaining"
   >,
   pr: Pick<GitHubPullRequest, "headRefOid">,
   reviewThreads: ReviewThread[],
@@ -38,6 +42,42 @@ export function pendingBotReviewThreads(
   return configuredBotReviewThreads(config, reviewThreads).filter(
     (thread) => !hasProcessedReviewThread(record, pr, thread),
   );
+}
+
+export function configuredBotReviewFollowUpState(
+  record: Pick<IssueRunRecord, "review_follow_up_head_sha" | "review_follow_up_remaining">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  reviewThreads: ReviewThread[],
+): "inactive" | "eligible" | "exhausted" {
+  const unresolvedThreadCount = reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated).length;
+  if (unresolvedThreadCount === 0 || record.review_follow_up_head_sha !== pr.headRefOid) {
+    return "inactive";
+  }
+
+  return (record.review_follow_up_remaining ?? 0) > 0 ? "eligible" : "exhausted";
+}
+
+export function actionableBotReviewThreads(
+  config: SupervisorConfig,
+  record: Pick<
+    IssueRunRecord,
+    | "processed_review_thread_ids"
+    | "processed_review_thread_fingerprints"
+    | "last_head_sha"
+    | "review_follow_up_head_sha"
+    | "review_follow_up_remaining"
+  >,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  reviewThreads: ReviewThread[],
+): ReviewThread[] {
+  const pendingThreads = pendingBotReviewThreads(config, record, pr, reviewThreads);
+  if (pendingThreads.length > 0) {
+    return pendingThreads;
+  }
+
+  return configuredBotReviewFollowUpState(record, pr, configuredBotReviewThreads(config, reviewThreads)) === "eligible"
+    ? configuredBotReviewThreads(config, reviewThreads)
+    : [];
 }
 
 export function buildReviewFailureContext(reviewThreads: ReviewThread[]): FailureContext | null {
@@ -97,7 +137,10 @@ export function buildRequestedChangesFailureContext(
   };
 }
 
-export function buildStalledBotReviewFailureContext(reviewThreads: ReviewThread[]): FailureContext | null {
+export function buildStalledBotReviewFailureContext(
+  reviewThreads: ReviewThread[],
+  mode: "no_progress" | "exhausted_follow_up" = "no_progress",
+): FailureContext | null {
   if (reviewThreads.length === 0) {
     return null;
   }
@@ -110,7 +153,10 @@ export function buildStalledBotReviewFailureContext(reviewThreads: ReviewThread[
 
   return {
     category: "manual",
-    summary: `${reviewThreads.length} configured bot review thread(s) remain unresolved after processing on the current head and now require manual attention.`,
+    summary:
+      mode === "exhausted_follow_up"
+        ? `${reviewThreads.length} configured bot review thread(s) remain unresolved after exhausting the one allowed same-head follow-up repair turn and now require manual attention.`
+        : `${reviewThreads.length} configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.`,
     signature: reviewThreads.map((thread) => `stalled-bot:${thread.id}`).join("|"),
     command: null,
     details,
