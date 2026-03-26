@@ -32,6 +32,10 @@ const POST_CREATE_PR_LOOKUP_BASE_DELAY_MS = 200;
 const FULL_ISSUE_INVENTORY_PAGE_SIZE = 100;
 const PULL_REQUEST_GRAPHQL_SURFACE_CACHE_MAX_ENTRIES = 128;
 
+function looksLikeJsonArrayPayload(raw: string): boolean {
+  return raw.trimStart().startsWith("[");
+}
+
 interface GitHubRestIssue {
   number: number;
   title: string;
@@ -234,8 +238,8 @@ export class GitHubClient {
       ]
         .filter(Boolean)
         .join("\n");
-      if (isGitHubRateLimitFailure(primaryFailureMessage)) {
-        throw new Error(primaryFailureMessage);
+      if (isGitHubRateLimitFailure(primaryFailureMessage) || !looksLikeJsonArrayPayload(result.stdout)) {
+        throw new Error(primaryFailureMessage, { cause: error });
       }
       return this.listAllIssuesViaRestApi(error);
     }

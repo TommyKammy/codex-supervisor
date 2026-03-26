@@ -744,6 +744,41 @@ test("GitHubClient listAllIssues preserves gh issue list transport failures", as
   assert.equal(fallbackPageCalls, 0);
 });
 
+test("GitHubClient listAllIssues does not fall back when gh issue list returns transport-shaped non-JSON output", async () => {
+  const config = createConfig();
+  let issueListCalls = 0;
+  let fallbackPageCalls = 0;
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "issue" && args[1] === "list") {
+      issueListCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: 'Post "https://api.github.com/graphql": read tcp 127.0.0.1:12345->140.82.112.6:443: read: connection reset by peer',
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "repos/owner/repo/issues") {
+      fallbackPageCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: "[]",
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  await assert.rejects(
+    () => client.listAllIssues(),
+    /connection reset by peer/,
+  );
+
+  assert.equal(issueListCalls, 1);
+  assert.equal(fallbackPageCalls, 0);
+});
+
 test("GitHubClient listAllIssues does not fall back to REST pagination when gh issue list output is rate-limited", async () => {
   const config = createConfig();
   let issueListCalls = 0;
@@ -777,6 +812,43 @@ test("GitHubClient listAllIssues does not fall back to REST pagination when gh i
 
   assert.equal(issueListCalls, 1);
   assert.equal(fallbackPageCalls, 0);
+});
+
+test("GitHubClient listAllIssues preserves both primary parse failures and fallback transport failures", async () => {
+  const config = createConfig();
+  let issueListCalls = 0;
+  let fallbackPageCalls = 0;
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "issue" && args[1] === "list") {
+      issueListCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: "[{\"number\":500,\"title\":\"bad\njson\"}]",
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "repos/owner/repo/issues") {
+      fallbackPageCalls += 1;
+      throw new Error("HTTP 502: Bad Gateway");
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  await assert.rejects(
+    () => client.listAllIssues(),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /Failed to load full issue inventory\./);
+      assert.match(error.message, /Primary transport: Failed to parse JSON from gh issue list/);
+      assert.match(error.message, /Fallback transport: HTTP 502: Bad Gateway/);
+      return true;
+    },
+  );
+
+  assert.equal(issueListCalls, 1);
+  assert.equal(fallbackPageCalls, 1);
 });
 
 test("GitHubClient createPullRequest recovers when the first open-branch lookup misses the new PR", async () => {

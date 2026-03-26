@@ -1,36 +1,36 @@
-# Issue #1070: Expose inventory degradation provenance and recovery posture to operators
+# Issue #1071: Harden full inventory transport without collapsing distinct failure classes
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1070
-- Branch: codex/issue-1070
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1071
+- Branch: codex/issue-1071
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 8fa62a81c56953abcc4e90be0e2a5a46529b1868
+- Last head SHA: 04b84401423138628e11decbbc6e2953a4a988d9
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-26T23:17:49Z
+- Updated at: 2026-03-26T23:40:02.105Z
 
 ## Latest Codex Summary
-- Added structured inventory posture reporting so status and WebUI can distinguish healthy full inventory, targeted degraded reconciliation, and snapshot-only degraded support.
+- Hardened `GitHubClient.listAllIssues()` so only malformed JSON-array payloads can use the REST full-inventory fallback; transport-shaped non-JSON output now remains a fatal primary transport failure.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: operator-facing inventory posture needed a typed status object plus a single explicit posture line so both CLI status and the WebUI can prioritize degraded inventory correctly.
-- What changed: added `InventoryOperatorStatus` helpers, threaded `inventoryStatus` through `statusReport()`, emitted an `inventory_posture=...` line, and taught the dashboard overview/attention helpers to prefer degraded inventory posture over raw runnable counts.
+- Hypothesis: `listAllIssues()` was still treating any `gh issue list` parse failure as fallback-eligible, which collapses some primary transport failures into the same path as malformed payloads and can return silent success when the primary transport actually failed.
+- What changed: added a JSON-array shape gate in `GitHubClient.listAllIssues()` so only malformed full-inventory payloads that still look like the expected array output can fall back to REST pagination; transport-shaped non-JSON output now throws the primary failure directly. Added focused regression coverage for transport-shaped stdout staying fatal and for preserving both primary parse failure and fallback transport failure details.
 - Current blocker: none.
-- Next exact step: commit the inventory posture changes on `codex/issue-1070`, then rerun broader verification once the workspace has a local TypeScript compiler available.
-- Verification gap: `npm run build` cannot complete in this workspace because `tsc` is not installed; focused status and dashboard tests are green.
-- Files touched: `.codex-supervisor/issue-journal.md`; `src/backend/webui-dashboard-browser-logic.test.ts`; `src/backend/webui-dashboard-browser-logic.ts`; `src/inventory-refresh-state.ts`; `src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `src/supervisor/supervisor-status-report.ts`; `src/supervisor/supervisor.ts`
-- Rollback concern: moderate. A bad posture classifier could overstate degraded capabilities and make snapshot-backed readiness look more authoritative than it is.
-- Last focused command: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts`
-- What changed this turn: reread the required memory files and journal, identified that `statusReport()` only exposed inventory degradation as free-form lines and warnings, added focused failing tests for typed posture and dashboard prioritization, implemented typed operator posture/guidance, reran the focused suites, and attempted a broader TypeScript build.
-- Exact failure reproduced this turn: before the fix, `statusReport().inventoryStatus` was undefined and the dashboard overview still reported runnable work as healthy even when inventory refresh was degraded and selection was blocked.
-- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `git log --oneline --decorate -n 12`; `rg -n "inventory_refresh|degraded|last_successful_inventory|snapshot|reconciliation_state|recovery" src test .`; `rg --files src | rg "supervisor|state-store|inventory|diagnostics|webui|status"`; `sed -n '1,260p' src/supervisor/supervisor-status-model.ts`; `sed -n '1,280p' src/supervisor/supervisor-status-rendering.ts`; `sed -n '1,320p' src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `sed -n '1,320p' src/backend/webui-dashboard.test.ts`; `rg -n "inventory_refresh|inventory_snapshot|last_successful_inventory|fallback|degraded" src/supervisor src/backend`; `sed -n '1,260p' src/supervisor/supervisor-status-report.ts`; `sed -n '1,260p' src/backend/webui-dashboard.ts`; `sed -n '1,260p' src/backend/webui-dashboard-browser-logic.ts`; `sed -n '1,360p' src/supervisor/supervisor-selection-readiness-summary.ts`; `sed -n '760,980p' src/backend/webui-dashboard-browser-script.ts`; `rg -n "selectionSummary|warning|inventory_refresh|inventory_snapshot|last-known-good|degraded" src/backend/webui-dashboard-browser-script.ts src/backend/webui-dashboard.test.ts`; `sed -n '640,760p' src/backend/webui-dashboard-browser-script.ts`; `sed -n '980,1080p' src/backend/webui-dashboard-browser-script.ts`; `sed -n '300,420p' src/backend/webui-dashboard.test.ts`; `sed -n '1,240p' src/inventory-refresh-state.ts`; `rg -n "inventory_refresh_failure|last_successful_inventory_snapshot|classification" src/core/types.ts src/core`; `sed -n '1,260p' src/core/types.ts`; `sed -n '980,1115p' src/supervisor/supervisor.ts`; `sed -n '1115,1205p' src/supervisor/supervisor.ts`; `sed -n '1,340p' src/backend/webui-dashboard-browser-logic.test.ts`; `sed -n '340,520p' src/backend/webui-dashboard-browser-logic.test.ts`; `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts`; `npm run build`; `npx tsc -p tsconfig.json`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`
+- Next exact step: commit the focused transport hardening checkpoint on `codex/issue-1071`, then continue with any wider inventory-path fallout only if later verification or review finds another failure boundary.
+- Verification gap: `npm test` fails because `tsx` is not installed locally; `npm run build` and `npx tsc -p tsconfig.json` fail because `tsc`/TypeScript is not installed locally. A full `npx tsx --test "src/**/*.test.ts"` sweep also hits unrelated environment/test failures, including missing `playwright-core` and existing repo-structure/build tests.
+- Files touched: `.codex-supervisor/issue-journal.md`; `src/github/github.test.ts`; `src/github/github.ts`
+- Rollback concern: low. The new guard only narrows when the full-inventory fallback is allowed; the main risk is being too strict and surfacing a malformed-but-recoverable payload as fatal.
+- Last focused command: `npx tsx --test src/github/github.test.ts`
+- What changed this turn: reread the required memory files and journal, inspected the full inventory transport path, added a focused failing regression for transport-shaped non-JSON `gh issue list` output, implemented the fallback gate, added a regression for fallback transport failure attribution, reran focused tests, and attempted broader verification.
+- Exact failure reproduced this turn: before the fix, `GitHubClient.listAllIssues()` treated plain-text transport output like `Post "https://api.github.com/graphql": ... connection reset by peer` as a parse failure that could use the REST fallback, so the call succeeded instead of surfacing the fatal primary transport failure.
+- Commands run this turn: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1071/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1071/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg -n "gh issue list|inventory refresh|full inventory|inventory.*transport|fallback|malformed|parse" src test`; `rg --files src test | rg "inventory|refresh|transport|gh|issue.*list|supervisor"`; `git log --oneline --decorate -n 12`; `sed -n '360,820p' src/run-once-cycle-prelude.test.ts`; `rg -n "load full issue inventory|Failed to load full issue inventory|fallback transport|malformed gh issue list JSON|inventory_refresh_failure" src/run-once-cycle-prelude.ts src/supervisor/supervisor.ts src`; `sed -n '1,320p' src/run-once-cycle-prelude.ts`; `sed -n '260,420p' src/github/github.ts`; `sed -n '1,260p' src/github/github-transport.ts`; `sed -n '1,280p' src/github/github-transport.test.ts`; `rg -n "async listAllIssues|listAllIssues\\(" src/github/github.ts src/github`; `sed -n '180,280p' src/github/github.ts`; `sed -n '1,220p' src/inventory-refresh-state.ts`; `sed -n '620,790p' src/github/github.test.ts`; `rg -n "listAllIssuesViaRestApi|Failed to load full issue inventory|Primary transport:|Fallback transport:" src/github/github.test.ts src`; `npx tsx --test src/github/github.test.ts`; `rg -n "transport failure|transient failure|rate limit|Command failed: gh|Command timed out: gh|looks like JSON|parse failure" src/github src`; `sed -n '1,220p' src/github/github.test.ts`; `npx tsx --test src/run-once-cycle-prelude.test.ts`; `npm test`; `npm run build`; `npx tsx --test "src/**/*.test.ts"`; `npx tsc -p tsconfig.json`; `git diff -- src/github/github.ts src/github/github.test.ts .codex-supervisor/issue-journal.md`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
