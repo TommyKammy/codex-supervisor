@@ -558,3 +558,69 @@ test("repo-committed durable external-review guardrails preserve degraded-mode i
     [],
   );
 });
+
+test("repo-committed durable external-review guardrails cover response-flush-before-shutdown safety and explicit shell missing-binary diagnostics", async () => {
+  const repoRoot = path.resolve(__dirname, "..", "..");
+
+  const shutdownPatterns = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: path.join(repoRoot, ".local", "reviews"),
+    branch: "codex/issue-1063",
+    currentHeadSha: "currenthead",
+    changedFiles: ["src/backend/supervisor-http-server.ts"],
+    limit: 10,
+    workspacePath: repoRoot,
+  });
+
+  assert.deepEqual(
+    shutdownPatterns.filter(
+      (pattern) =>
+        pattern.fingerprint === "src/backend/supervisor-http-server.ts|shutdown-must-not-preempt-success-response-flush",
+    ),
+    [
+      {
+        fingerprint: "src/backend/supervisor-http-server.ts|shutdown-must-not-preempt-success-response-flush",
+        reviewerLogin: "coderabbitai",
+        file: "src/backend/supervisor-http-server.ts",
+        line: null,
+        summary:
+          "Flag restart, shutdown, or connection-closing paths that can run before a success response has been fully flushed to the client.",
+        rationale:
+          "When a handler accepts a restart or shutdown command, the process must not close sockets in the same microtask turn if doing so can drop the very success response that told the caller the action was accepted. Schedule termination on a later task boundary or after the response flush is guaranteed.",
+        sourceArtifactPath: "promoted-from-pr-1060",
+        sourceHeadSha: "pr-1060",
+        lastSeenAt: "2026-03-26T00:00:00Z",
+      },
+    ],
+  );
+
+  const shellPatterns = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: path.join(repoRoot, ".local", "reviews"),
+    branch: "codex/issue-1063",
+    currentHeadSha: "currenthead",
+    changedFiles: ["scripts/run-web.sh"],
+    limit: 10,
+    workspacePath: repoRoot,
+  });
+
+  assert.deepEqual(
+    shellPatterns.filter(
+      (pattern) =>
+        pattern.fingerprint === "scripts/run-web.sh|set-euo-command-v-must-preserve-explicit-error-paths",
+    ),
+    [
+      {
+        fingerprint: "scripts/run-web.sh|set-euo-command-v-must-preserve-explicit-error-paths",
+        reviewerLogin: "coderabbitai",
+        file: "scripts/run-web.sh",
+        line: null,
+        summary:
+          "Flag shell scripts running with set -euo pipefail when command substitutions can exit before the script reaches its own explicit missing-binary error handling.",
+        rationale:
+          "Under set -euo pipefail, a failing command substitution can terminate the script before custom validation or diagnostics run. Guard expected lookups such as command -v when the intended behavior is to continue into a controlled error path with a clear user-facing message.",
+        sourceArtifactPath: "promoted-from-pr-1060",
+        sourceHeadSha: "pr-1060",
+        lastSeenAt: "2026-03-26T00:00:00Z",
+      },
+    ],
+  );
+});
