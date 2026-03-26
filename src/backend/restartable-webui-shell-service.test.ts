@@ -192,6 +192,7 @@ test("createRestartableWebUiShellService keys cached reconnect reads by request 
     capability: {
       supported: true,
       launcher: "systemd",
+      state: "ready",
       summary: "Managed restart is available through the systemd launcher.",
     },
   });
@@ -233,6 +234,7 @@ test("createRestartableWebUiShellService restores the shell after a synchronous 
     capability: {
       supported: true,
       launcher: "systemd",
+      state: "ready",
       summary: "Managed restart is available through the systemd launcher.",
     },
   });
@@ -254,6 +256,7 @@ test("createRestartableWebUiShellService isolates synchronous subscriber failure
     capability: {
       supported: true,
       launcher: "systemd",
+      state: "ready",
       summary: "Managed restart is available through the systemd launcher.",
     },
   });

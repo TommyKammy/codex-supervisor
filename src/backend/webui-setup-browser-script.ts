@@ -47,6 +47,8 @@ export function renderSetupBrowserScript(): string {
       let saveInFlight = false;
       let restartInFlight = false;
       let restartRequested = false;
+      let reconnectPollToken = 0;
+      const reconnectPollIntervalMs = 50;
 
       function formatFieldList(fields) {
         const values = Array.isArray(fields) ? fields.filter((field) => typeof field === "string" && field.length > 0) : [];
@@ -262,8 +264,15 @@ export function renderSetupBrowserScript(): string {
           : (capability || {
             supported: false,
             launcher: null,
+            state: "unavailable",
             summary: "Managed restart is unavailable because this WebUI process was not started with explicit launcher-backed restart support.",
           });
+      }
+
+      function delay(ms) {
+        return new Promise((resolve) => {
+          setTimeout(resolve, ms);
+        });
       }
 
       function syncRestartButton() {
@@ -307,7 +316,7 @@ export function renderSetupBrowserScript(): string {
               elements.restartDetails,
               "Saved changes to " +
                 changedFields +
-                " require a supervisor restart before they take effect. Restart now will exit this launcher-managed WebUI so it can be relaunched safely.",
+                " require a supervisor restart before they take effect. Restart now reconnects the worker while this launcher-managed WebUI shell stays available.",
             );
             setText(elements.restartGuidance, capability.summary);
           } else {
@@ -334,6 +343,41 @@ export function renderSetupBrowserScript(): string {
           capability.supported ? capability.summary : "Restart controls remain disabled because this save is already effective.",
         );
         syncRestartButton();
+      }
+
+      async function monitorManagedRestartReconnect() {
+        const pollToken = ++reconnectPollToken;
+        setSaveStatus("Waiting for the restarted worker to reconnect...");
+
+        while (restartRequested && pollToken === reconnectPollToken) {
+          try {
+            const report = await refreshSetupReadiness();
+            const capability = managedRestartCapability(report);
+            if (capability.state === "reconnecting") {
+              setText(elements.restartGuidance, capability.summary);
+              await delay(reconnectPollIntervalMs);
+              continue;
+            }
+
+            if (latestSaveResult && latestSaveResult.restartRequired) {
+              latestSaveResult = {
+                ...latestSaveResult,
+                restartRequired: false,
+                restartScope: null,
+                restartTriggeredByFields: [],
+                managedRestart: capability,
+              };
+            }
+            restartRequested = false;
+            renderRestartOutcome(latestSaveResult);
+            setSaveStatus("Restarted worker reconnected.");
+            return;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setText(elements.restartGuidance, "Waiting for the restarted worker to reconnect: " + message);
+            await delay(reconnectPollIntervalMs);
+          }
+        }
       }
 
       function renderSetup(report) {
@@ -561,6 +605,7 @@ export function renderSetupBrowserScript(): string {
           const result = await writeJson("/api/commands/managed-restart", {});
           restartRequested = true;
           setText(elements.restartGuidance, result.summary || capability.summary);
+          void monitorManagedRestartReconnect();
         } catch (error) {
           restartRequested = false;
           const message = error instanceof Error ? error.message : String(error);

@@ -13,6 +13,7 @@ import { createSupervisorHttpServer } from "./supervisor-http-server";
 const unavailableManagedRestart = {
   supported: false,
   launcher: null,
+  state: "unavailable",
   summary: "Managed restart is unavailable because this WebUI process was not started with explicit launcher-backed restart support.",
 };
 
@@ -1279,6 +1280,7 @@ test("createSupervisorHttpServer only accepts managed restart commands when laun
       capability: {
         supported: true,
         launcher: "systemd",
+        state: "ready",
         summary: "Managed restart is available through the systemd launcher.",
       },
       requestRestart: async () => {
@@ -1375,6 +1377,7 @@ test("createSupervisorHttpServer keeps setup routes reachable while the worker i
     capability: {
       supported: true,
       launcher: "systemd",
+      state: "ready",
       summary: "Managed restart is available through the systemd launcher.",
     },
   });
@@ -1413,6 +1416,7 @@ test("createSupervisorHttpServer keeps setup routes reachable while the worker i
   const restartingReadiness = await readJson({ server, path: "/api/setup-readiness" });
   assert.equal(restartingReadiness.statusCode, 200);
   assert.match(JSON.stringify(restartingReadiness.body), /shell stays available/u);
+  assert.match(JSON.stringify(restartingReadiness.body), /"state":"reconnecting"/u);
   assert.match(JSON.stringify(restartingReadiness.body), /"configPath":"\/tmp\/initial\.config\.json"/u);
 
   releaseRestart();
@@ -1420,6 +1424,7 @@ test("createSupervisorHttpServer keeps setup routes reachable while the worker i
 
   const reloadedReadiness = await readJson({ server, path: "/api/setup-readiness" });
   assert.equal(reloadedReadiness.statusCode, 200);
+  assert.match(JSON.stringify(reloadedReadiness.body), /"state":"ready"/u);
   assert.match(JSON.stringify(reloadedReadiness.body), /"configPath":"\/tmp\/reloaded\.config\.json"/u);
 });
 

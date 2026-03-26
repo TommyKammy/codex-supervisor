@@ -82,12 +82,14 @@ export function createRestartableWebUiShellService(
 
   function markRestarting(): void {
     workerPhase = "restarting";
+    managedRestartCapability.state = "reconnecting";
     managedRestartCapability.summary =
       `Managed restart is reconnecting the worker through the ${baseCapability.launcher ?? "configured"} launcher while this WebUI shell stays available.`;
   }
 
   function markOpen(): void {
     workerPhase = "open";
+    managedRestartCapability.state = "ready";
     managedRestartCapability.summary = baseCapability.summary;
   }
 

@@ -3,6 +3,7 @@ export type ManagedRestartLauncher = "launchd" | "systemd" | "custom";
 export interface ManagedRestartCapability {
   supported: boolean;
   launcher: ManagedRestartLauncher | null;
+  state: "ready" | "reconnecting" | "unavailable";
   summary: string;
 }
 
@@ -21,6 +22,7 @@ export function unavailableManagedRestartCapability(): ManagedRestartCapability 
   return {
     supported: false,
     launcher: null,
+    state: "unavailable",
     summary: "Managed restart is unavailable because this WebUI process was not started with explicit launcher-backed restart support.",
   };
 }
@@ -35,6 +37,7 @@ export function readManagedRestartCapabilityFromEnv(env: NodeJS.ProcessEnv): Man
   return {
     supported: true,
     launcher,
+    state: "ready",
     summary: `Managed restart is available through the ${launcher} launcher.`,
   };
 }

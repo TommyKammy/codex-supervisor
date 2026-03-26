@@ -637,6 +637,7 @@ test("browser smoke enables launcher-managed restart only when capability is pre
       capability: {
         supported: true,
         launcher: "systemd",
+        state: "ready",
         summary: "Managed restart is available through the systemd launcher.",
       },
       requestRestart: async () => {
@@ -644,7 +645,7 @@ test("browser smoke enables launcher-managed restart only when capability is pre
         return {
           command: "managed-restart",
           accepted: true,
-          summary: "Managed restart requested through the systemd launcher. This WebUI process will exit for relaunch.",
+          summary: "Managed restart requested through the systemd launcher. The worker is reconnecting while this WebUI shell stays available.",
         };
       },
     },
@@ -682,7 +683,7 @@ test("browser smoke enables launcher-managed restart only when capability is pre
   await page.click("#setup-restart-button");
   await page.waitForFunction(
     () => document.getElementById("setup-restart-guidance")?.textContent ===
-      "Managed restart requested through the systemd launcher. This WebUI process will exit for relaunch.",
+      "Managed restart requested through the systemd launcher. The worker is reconnecting while this WebUI shell stays available.",
   );
 
   assert.equal(restartRequests, 1);
