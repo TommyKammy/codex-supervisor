@@ -30,6 +30,12 @@ interface Deferred<T> {
   reject(reason?: unknown): void;
 }
 
+interface ManualTimerController {
+  setTimeout(callback: () => void, delay?: number): number;
+  clearTimeout(id: number): void;
+  advanceTime(ms: number): Promise<void>;
+}
+
 const unavailableManagedRestart = {
   supported: false,
   launcher: null,
@@ -258,6 +264,49 @@ function jsonResponse(body: unknown, statusCode = 200): MockResponseLike {
   };
 }
 
+function createManualTimerController(): ManualTimerController {
+  let now = 0;
+  let nextId = 1;
+  const timers = new Map<number, { runAt: number; callback: () => void }>();
+
+  const runDueTimers = async () => {
+    while (true) {
+      const dueTimers = Array.from(timers.entries())
+        .filter(([, timer]) => timer.runAt <= now)
+        .sort((left, right) => left[1].runAt - right[1].runAt || left[0] - right[0]);
+      if (dueTimers.length === 0) {
+        return;
+      }
+      for (const [id, timer] of dueTimers) {
+        if (!timers.delete(id)) {
+          continue;
+        }
+        timer.callback();
+        await flushAsyncWork();
+      }
+    }
+  };
+
+  return {
+    setTimeout(callback: () => void, delay = 0): number {
+      const id = nextId;
+      nextId += 1;
+      timers.set(id, {
+        runAt: now + Math.max(0, Number(delay) || 0),
+        callback,
+      });
+      return id;
+    },
+    clearTimeout(id: number): void {
+      timers.delete(id);
+    },
+    async advanceTime(ms: number): Promise<void> {
+      now += Math.max(0, Number(ms) || 0);
+      await runDueTimers();
+    },
+  };
+}
+
 function createStatus(args: {
   selectedIssueNumber?: number | null;
   includeWhyLines?: boolean;
@@ -392,7 +441,7 @@ function createDashboardHarness(
 
 function createSetupHarness(queue: QueuedFetchResponse[]) {
   const html = renderSupervisorSetupHtml();
-  return createHtmlHarness(html, queue);
+  return createHtmlHarness(html, queue, { manualTimers: createManualTimerController() });
 }
 
 function createHtmlHarness(
@@ -401,6 +450,7 @@ function createHtmlHarness(
   options: {
     confirm?: () => boolean;
     localStorage?: FakeStorage;
+    manualTimers?: ManualTimerController;
   } = {},
 ) {
   MockEventSource.instances.length = 0;
@@ -445,8 +495,8 @@ function createHtmlHarness(
     document,
     EventSource: MockEventSource,
     fetch,
-    setTimeout,
-    clearTimeout,
+    setTimeout: options.manualTimers?.setTimeout ?? setTimeout,
+    clearTimeout: options.manualTimers?.clearTimeout ?? clearTimeout,
     window: {
       confirm: options.confirm ?? (() => true),
       localStorage: options.localStorage ?? new FakeStorage(),
@@ -464,6 +514,10 @@ function createHtmlHarness(
       return MockEventSource.instances[0] ?? null;
     },
     async flush(): Promise<void> {
+      await flushAsyncWork();
+    },
+    async advanceTime(ms: number): Promise<void> {
+      await options.manualTimers?.advanceTime(ms);
       await flushAsyncWork();
     },
   };
@@ -2804,8 +2858,7 @@ test("setup shell refreshes readiness after launcher-managed restart until the w
   assert.match(restartStatus.textContent ?? "", /Restart required/u);
   assert.match(restartGuidance.textContent ?? "", /reconnecting the worker/u);
 
-  await new Promise((resolve) => setTimeout(resolve, 75));
-  await harness.flush();
+  await harness.advanceTime(50);
 
   unavailableReadinessResponse.resolve(jsonResponse({
     kind: "setup_readiness",
@@ -2847,8 +2900,7 @@ test("setup shell refreshes readiness after launcher-managed restart until the w
   assert.match(restartStatus.textContent ?? "", /Restart required/u);
   assert.match(restartGuidance.textContent ?? "", /temporarily unavailable while the worker is still reconnecting/u);
 
-  await new Promise((resolve) => setTimeout(resolve, 75));
-  await harness.flush();
+  await harness.advanceTime(50);
 
   reconnectedReadinessResponse.resolve(jsonResponse({
     kind: "setup_readiness",
