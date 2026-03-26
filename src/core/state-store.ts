@@ -92,6 +92,59 @@ function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
   };
 }
 
+function normalizeLastSuccessfulInventorySnapshot(
+  value: SupervisorStateFile["last_successful_inventory_snapshot"],
+): SupervisorStateFile["last_successful_inventory_snapshot"] {
+  if (
+    !value
+    || typeof value !== "object"
+    || typeof value.source !== "string"
+    || value.source.trim() === ""
+    || typeof value.recorded_at !== "string"
+    || value.recorded_at.trim() === ""
+    || typeof value.issue_count !== "number"
+    || !Number.isInteger(value.issue_count)
+    || value.issue_count < 0
+    || !Array.isArray(value.issues)
+  ) {
+    return undefined;
+  }
+
+  return {
+    source: value.source,
+    recorded_at: value.recorded_at,
+    issue_count: value.issue_count,
+    issues: (value.issues as unknown[])
+      .filter((issue): issue is Record<string, unknown> => isRecord(issue))
+      .filter(
+        (issue) =>
+          typeof issue.number === "number"
+          && Number.isInteger(issue.number)
+          && typeof issue.title === "string"
+          && typeof issue.body === "string"
+          && typeof issue.createdAt === "string"
+          && typeof issue.updatedAt === "string"
+          && typeof issue.url === "string",
+      )
+      .map((issue) => ({
+        number: issue.number as number,
+        title: issue.title as string,
+        body: issue.body as string,
+        createdAt: issue.createdAt as string,
+        updatedAt: issue.updatedAt as string,
+        url: issue.url as string,
+        ...(Array.isArray(issue.labels)
+          ? {
+            labels: (issue.labels as unknown[])
+              .filter((label): label is Record<string, unknown> => isRecord(label) && typeof label.name === "string")
+              .map((label) => ({ name: label.name as string })),
+          }
+          : {}),
+        ...(typeof issue.state === "string" ? { state: issue.state } : {}),
+      })),
+  };
+}
+
 function normalizeStateForLoad(raw: SupervisorStateFile | null | undefined): SupervisorStateFile {
   const issues = Object.fromEntries(
     Object.entries(raw?.issues ?? {}).map(([key, value]) => [key, normalizeIssueRecord(value as IssueRunRecord)]),
@@ -122,6 +175,7 @@ function normalizeStateForLoad(raw: SupervisorStateFile | null | undefined): Sup
       recorded_at: raw.inventory_refresh_failure.recorded_at,
     }
     : undefined;
+  const lastSuccessfulInventorySnapshot = normalizeLastSuccessfulInventorySnapshot(raw?.last_successful_inventory_snapshot);
   const jsonStateQuarantine = raw?.json_state_quarantine
     ? normalizeJsonStateQuarantine(raw.json_state_quarantine)
     : undefined;
@@ -131,6 +185,9 @@ function normalizeStateForLoad(raw: SupervisorStateFile | null | undefined): Sup
     issues,
     ...(reconciliationState ? { reconciliation_state: reconciliationState } : {}),
     ...(inventoryRefreshFailure ? { inventory_refresh_failure: inventoryRefreshFailure } : {}),
+    ...(lastSuccessfulInventorySnapshot
+      ? { last_successful_inventory_snapshot: lastSuccessfulInventorySnapshot }
+      : {}),
     ...(loadFindings && loadFindings.length > 0 ? { load_findings: loadFindings } : {}),
     ...(jsonStateQuarantine ? { json_state_quarantine: jsonStateQuarantine } : {}),
   };
@@ -166,6 +223,7 @@ function normalizeStateForSave(raw: SupervisorStateFile | null | undefined): Sup
       recorded_at: raw.inventory_refresh_failure.recorded_at,
     }
     : undefined;
+  const lastSuccessfulInventorySnapshot = normalizeLastSuccessfulInventorySnapshot(raw?.last_successful_inventory_snapshot);
   const jsonStateQuarantine = raw?.json_state_quarantine
     ? normalizeJsonStateQuarantine(raw.json_state_quarantine)
     : undefined;
@@ -175,6 +233,9 @@ function normalizeStateForSave(raw: SupervisorStateFile | null | undefined): Sup
     issues,
     ...(reconciliationState ? { reconciliation_state: reconciliationState } : {}),
     ...(inventoryRefreshFailure ? { inventory_refresh_failure: inventoryRefreshFailure } : {}),
+    ...(lastSuccessfulInventorySnapshot
+      ? { last_successful_inventory_snapshot: lastSuccessfulInventorySnapshot }
+      : {}),
     ...(loadFindings && loadFindings.length > 0 ? { load_findings: loadFindings } : {}),
     ...(jsonStateQuarantine ? { json_state_quarantine: jsonStateQuarantine } : {}),
   };
@@ -238,6 +299,9 @@ function readSqliteState(db: DatabaseSync): SupervisorStateFile {
   const inventoryRefreshFailureRow = db
     .prepare("SELECT value FROM metadata WHERE key = 'inventory_refresh_failure'")
     .get() as { value?: string } | undefined;
+  const lastSuccessfulInventorySnapshotRow = db
+    .prepare("SELECT value FROM metadata WHERE key = 'last_successful_inventory_snapshot'")
+    .get() as { value?: string } | undefined;
   const rows = db
     .prepare("SELECT issue_number, record_json FROM issues ORDER BY issue_number ASC")
     .all() as Array<{ issue_number: number; record_json: string }>;
@@ -294,6 +358,24 @@ function readSqliteState(db: DatabaseSync): SupervisorStateFile {
               inventory_refresh_failure:
                 JSON.parse(inventoryRefreshFailureRow.value) as SupervisorStateFile["inventory_refresh_failure"],
             }).inventory_refresh_failure,
+          };
+        } catch {
+          return {};
+        }
+      })()
+      : {}),
+    ...(lastSuccessfulInventorySnapshotRow?.value
+      ? (() => {
+        try {
+          return {
+            last_successful_inventory_snapshot: normalizeStateForLoad({
+              activeIssueNumber: null,
+              issues: {},
+              last_successful_inventory_snapshot:
+                JSON.parse(
+                  lastSuccessfulInventorySnapshotRow.value,
+                ) as SupervisorStateFile["last_successful_inventory_snapshot"],
+            }).last_successful_inventory_snapshot,
           };
         } catch {
           return {};
@@ -833,6 +915,18 @@ export class StateStore {
             issues: {},
             inventory_refresh_failure: state.inventory_refresh_failure,
           }).inventory_refresh_failure ?? {}),
+        );
+        db.prepare(`
+          INSERT INTO metadata(key, value)
+          VALUES (?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        `).run(
+          "last_successful_inventory_snapshot",
+          JSON.stringify(normalizeStateForSave({
+            activeIssueNumber: null,
+            issues: {},
+            last_successful_inventory_snapshot: state.last_successful_inventory_snapshot,
+          }).last_successful_inventory_snapshot ?? {}),
         );
 
         const existingIssueNumbers = new Set<number>(

@@ -96,6 +96,7 @@ import {
 } from "./supervisor-execution-policy";
 import {
   buildCandidateDiscoverySummary,
+  buildLastKnownGoodSnapshotReadinessSummary,
   buildReadinessSummary,
   buildSelectionSummary,
   buildSelectionWhySummary,
@@ -130,7 +131,10 @@ import {
   sanitizeStatusValue,
 } from "./supervisor-status-rendering";
 import { buildDetailedStatusModel, buildDetailedStatusSummaryLines } from "./supervisor-status-model";
-import { formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
+import {
+  formatInventoryRefreshStatusLine,
+  formatLastSuccessfulInventorySnapshotStatusLine,
+} from "../inventory-refresh-state";
 import {
   type SupervisorExecutionMetricsRollupResultDto,
   type SupervisorMutationResultDto,
@@ -977,6 +981,9 @@ export class Supervisor {
     const statusRecords = summarizeSupervisorStatusRecords(state);
     const trackedIssues = buildTrackedIssueDtos(state);
     const inventoryRefreshStatusLine = formatInventoryRefreshStatusLine(state.inventory_refresh_failure);
+    const inventorySnapshotStatusLine = formatLastSuccessfulInventorySnapshotStatusLine(
+      state.last_successful_inventory_snapshot,
+    );
     const inventoryRefreshWarning = buildInventoryRefreshWarningMessage(state);
     const reconciliationSnapshot = await readCurrentReconciliationPhaseSnapshot(this.config);
     const reconciliationPhase = reconciliationSnapshot?.phase ?? null;
@@ -1008,8 +1015,14 @@ export class Supervisor {
         mergeConflictDetected,
       });
       const inactiveDetailedStatusLines =
-        inventoryRefreshStatusLine === null ? detailedStatusLines : [...detailedStatusLines, inventoryRefreshStatusLine];
+        [
+          ...detailedStatusLines,
+          ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
+          ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
+        ];
       if (state.inventory_refresh_failure) {
+        const readinessSummary = buildLastKnownGoodSnapshotReadinessSummary(this.config, state);
+        const whyLines = options.why ? await buildSelectionWhySummary(this.github, this.config, state) : [];
         return {
           gsdSummary,
           trustDiagnostics,
@@ -1021,14 +1034,14 @@ export class Supervisor {
           activeIssue: null,
           selectionSummary: null,
           trackedIssues,
-          runnableIssues: [],
-          blockedIssues: [],
+          runnableIssues: readinessSummary?.runnableIssues ?? [],
+          blockedIssues: readinessSummary?.blockedIssues ?? [],
           detailedStatusLines: [...inactiveDetailedStatusLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationProgress,
           reconciliationWarning,
-          readinessLines: [],
-          whyLines: [],
+          readinessLines: readinessSummary?.readinessLines ?? [],
+          whyLines,
           warning: inventoryRefreshWarning
             ? {
               kind: "readiness",
@@ -1134,7 +1147,11 @@ export class Supervisor {
       executionMetricsSummaryLines: activeStatus.executionMetricsSummaryLines,
     });
     const detailedStatusLinesWithInventory =
-      inventoryRefreshStatusLine === null ? detailedStatusLines : [...detailedStatusLines, inventoryRefreshStatusLine];
+      [
+        ...detailedStatusLines,
+        ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
+        ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
+      ];
 
     return {
       gsdSummary,

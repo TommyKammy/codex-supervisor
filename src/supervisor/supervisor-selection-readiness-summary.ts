@@ -23,7 +23,10 @@ import {
   SupervisorStateFile,
 } from "../core/types";
 import { formatSelectionReason } from "./supervisor-selection-issue-explain";
-import { formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
+import {
+  formatInventoryRefreshStatusLine,
+  formatLastSuccessfulInventorySnapshotStatusLine,
+} from "../inventory-refresh-state";
 
 type ReadinessSummaryGitHub =
   Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">
@@ -118,10 +121,14 @@ export async function buildReadinessSummary(
 ): Promise<SupervisorReadinessSummaryDto> {
   const inventoryRefreshStatusLine = formatInventoryRefreshStatusLine(state.inventory_refresh_failure);
   if (inventoryRefreshStatusLine !== null) {
+    const snapshotSummary = buildLastKnownGoodSnapshotReadinessSummary(config, state);
     return {
-      runnableIssues: [],
-      blockedIssues: [],
-      readinessLines: [inventoryRefreshStatusLine],
+      runnableIssues: snapshotSummary?.runnableIssues ?? [],
+      blockedIssues: snapshotSummary?.blockedIssues ?? [],
+      readinessLines: [
+        inventoryRefreshStatusLine,
+        ...(snapshotSummary?.readinessLines ?? []),
+      ],
     };
   }
 
@@ -134,6 +141,37 @@ export async function buildReadinessSummary(
   const candidateDiscoveryWarningLine = formatCandidateDiscoveryStatusLine(diagnostics);
   const candidateIssues = await github.listCandidateIssues();
   const issues = await github.listAllIssues();
+  return buildReadinessSummaryFromIssues(config, state, candidateIssues, issues, candidateDiscoveryWarningLine);
+}
+
+export function buildLastKnownGoodSnapshotReadinessSummary(
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+): SupervisorReadinessSummaryDto | null {
+  const snapshot = state.last_successful_inventory_snapshot;
+  if (!snapshot) {
+    return null;
+  }
+
+  const snapshotStatusLine = formatLastSuccessfulInventorySnapshotStatusLine(snapshot);
+  return buildReadinessSummaryFromIssues(
+    config,
+    state,
+    snapshot.issues,
+    snapshot.issues,
+    null,
+    snapshotStatusLine === null ? [] : [snapshotStatusLine, "selection_reason=inventory_refresh_degraded"],
+  );
+}
+
+function buildReadinessSummaryFromIssues(
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+  candidateIssues: GitHubIssue[],
+  issues: GitHubIssue[],
+  candidateDiscoveryWarningLine: string | null,
+  prefixedReadinessLines: string[] = [],
+): SupervisorReadinessSummaryDto {
   const runnableIssues: SupervisorRunnableIssueDto[] = [];
   const blockedIssues: SupervisorBlockedIssueDto[] = [];
 
@@ -206,6 +244,7 @@ export async function buildReadinessSummary(
     runnableIssues,
     blockedIssues,
     readinessLines: [
+      ...prefixedReadinessLines,
       ...(candidateDiscoveryWarningLine === null ? [] : [candidateDiscoveryWarningLine]),
       `runnable_issues=${runnableIssues.length > 0 ? runnableIssues.map((issue) => `#${issue.issueNumber} ready=${issue.readiness}`).join(",") : "none"}`,
       `blocked_issues=${blockedIssues.length > 0 ? blockedIssues.map((issue) => `#${issue.issueNumber} blocked_by=${issue.blockedBy}`).join("; ") : "none"}`,

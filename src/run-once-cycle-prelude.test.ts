@@ -113,6 +113,7 @@ test("runOnceCyclePrelude loads state and aggregates recovery setup events in or
     "handleAuthFailure",
     "reconcileStaleActiveIssueReservation",
     "listAllIssues",
+    "save",
     "reconcileTrackedMergedButOpenIssues",
     "reconcileMergedIssueClosures",
     "reconcileStaleFailedIssueStates",
@@ -129,6 +130,68 @@ test("runOnceCyclePrelude loads state and aggregates recovery setup events in or
     blockedRecoveryEvent,
     orphanCleanupEvent,
   ]);
+});
+
+test("runOnceCyclePrelude persists the last-known-good inventory snapshot after a successful full inventory refresh", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+    inventory_refresh_failure: {
+      source: "gh issue list",
+      message: "Previous refresh failed",
+      recorded_at: "2026-03-25T00:00:00Z",
+    },
+  };
+  const issues: GitHubIssue[] = [
+    {
+      number: 41,
+      title: "Persist inventory snapshot",
+      body: "## Summary\nPersist the last-known-good full inventory snapshot.",
+      createdAt: "2026-03-26T00:00:00Z",
+      updatedAt: "2026-03-26T00:00:00Z",
+      url: "https://example.test/issues/41",
+      state: "OPEN",
+    },
+    {
+      number: 42,
+      title: "Show stale snapshot status",
+      body: "## Summary\nShow stale snapshot status during degraded mode.",
+      createdAt: "2026-03-26T00:01:00Z",
+      updatedAt: "2026-03-26T00:01:00Z",
+      url: "https://example.test/issues/42",
+      state: "OPEN",
+    },
+  ];
+  const savedStates: SupervisorStateFile[] = [];
+
+  const result = await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+      save: async (nextState) => {
+        savedStates.push(structuredClone(nextState));
+      },
+    },
+    carryoverRecoveryEvents: [],
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => issues,
+    reserveRunnableIssueSelection: async () => false,
+    reconcileTrackedMergedButOpenIssues: async () => [],
+    reconcileMergedIssueClosures: async () => [],
+    reconcileStaleFailedIssueStates: async () => {},
+    reconcileRecoverableBlockedIssueStates: async () => [],
+    reconcileParentEpicClosures: async () => {},
+    cleanupExpiredDoneWorkspaces: async () => [],
+  });
+
+  assert.ok(!("kind" in result));
+  assert.equal(savedStates.length, 1);
+  assert.equal(savedStates[0]?.inventory_refresh_failure, undefined);
+  assert.equal(savedStates[0]?.last_successful_inventory_snapshot?.source, "gh issue list");
+  assert.equal(savedStates[0]?.last_successful_inventory_snapshot?.issue_count, 2);
+  assert.deepEqual(savedStates[0]?.last_successful_inventory_snapshot?.issues, issues);
+  assert.equal(result.state.last_successful_inventory_snapshot?.source, "gh issue list");
+  assert.equal(result.state.last_successful_inventory_snapshot?.issue_count, 2);
 });
 
 test("runOnceCyclePrelude returns auth failures with accumulated recovery events", async () => {
