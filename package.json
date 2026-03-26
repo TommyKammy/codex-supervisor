@@ -12,6 +12,7 @@
     "verify:paths": "tsx scripts/check-workstation-local-paths.ts",
     "verify:pre-pr": "npm run verify:paths && npm run build && npm test",
     "test": "tsx --test \"src/**/*.test.ts\"",
+    "test:managed-restart-regressions": "tsx --test src/managed-restart.test.ts src/backend/supervisor-http-server.test.ts src/backend/webui-dashboard.test.ts src/managed-restart-launcher-assets.test.ts src/ci-workflow.test.ts",
     "test:malformed-inventory-regressions": "tsx --test src/github/github.test.ts src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-pr-review-blockers.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts",
     "test:webui-smoke": "tsx --test src/backend/webui-dashboard-browser-smoke.test.ts",
     "dev": "tsx src/index.ts",

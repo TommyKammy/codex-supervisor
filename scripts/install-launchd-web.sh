@@ -6,7 +6,6 @@ ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PLIST_TEMPLATE="${ROOT}/launchd/io.codex.supervisor.web.plist.template"
 PLIST_TARGET="${HOME}/Library/LaunchAgents/io.codex.supervisor.web.plist"
 LOG_DIR="${ROOT}/.local/logs"
-UID_VALUE="$(id -u)"
 NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
 NPM_BIN="${NPM_BIN:-$(command -v npm || true)}"
 PATH_VALUE="${PATH}"
@@ -20,6 +19,7 @@ if [[ -z "${NODE_BIN}" || -z "${NPM_BIN}" ]]; then
   exit 1
 fi
 
+UID_VALUE="$(id -u)"
 mkdir -p "${HOME}/Library/LaunchAgents" "${LOG_DIR}"
 ROOT_ESCAPED="$(escape_sed_replacement "${ROOT}")"
 PATH_ESCAPED="$(escape_sed_replacement "${PATH_VALUE}")"
