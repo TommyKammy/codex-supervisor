@@ -10,6 +10,7 @@ import type {
   SupervisorRunnableIssueDto,
   SupervisorSelectionSummaryDto,
 } from "./supervisor-selection-readiness-summary";
+import { formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
 
 export interface SupervisorStatusWarningDto {
   kind: "readiness" | "status";
@@ -117,6 +118,15 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
   ];
 
   return [dto.gsdSummary, lines.join("\n")].filter(Boolean).join("\n");
+}
+
+export function buildInventoryRefreshWarningMessage(state: SupervisorStateFile): string | null {
+  const line = formatInventoryRefreshStatusLine(state.inventory_refresh_failure);
+  if (line === null) {
+    return null;
+  }
+
+  return `Full inventory refresh is degraded. ${line}`;
 }
 
 export function buildTrackedIssueDtos(state: SupervisorStateFile): SupervisorTrackedIssueDto[] {

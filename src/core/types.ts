@@ -201,6 +201,12 @@ export interface JsonCorruptStateResetResult {
   quarantinedAt: string | null;
 }
 
+export interface InventoryRefreshFailure {
+  source: string;
+  message: string;
+  recorded_at: string;
+}
+
 export interface IssueRunRecord {
   issue_number: number;
   state: RunState;
@@ -273,6 +279,7 @@ export interface SupervisorStateFile {
   reconciliation_state?: {
     tracked_merged_but_open_last_processed_issue_number?: number | null;
   };
+  inventory_refresh_failure?: InventoryRefreshFailure;
   load_findings?: StateLoadFinding[];
   json_state_quarantine?: JsonStateQuarantine;
 }

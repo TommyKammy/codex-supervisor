@@ -1,5 +1,9 @@
 import { GitHubIssue, SupervisorStateFile } from "./core/types";
 import {
+  buildInventoryRefreshFailure,
+  inventoryRefreshFailureEquals,
+} from "./inventory-refresh-state";
+import {
   buildRecoverySupervisorEvent,
   emitSupervisorEvent,
   type SupervisorEventSink,
@@ -26,7 +30,7 @@ export interface RunOnceCyclePreludeAuthFailure {
 type ReconciliationProgressPatch = Partial<Omit<ReconciliationProgressUpdate, "phase">>;
 
 interface RunOnceCyclePreludeArgs {
-  stateStore: Pick<{ load(): Promise<SupervisorStateFile> }, "load">;
+  stateStore: Pick<{ load(): Promise<SupervisorStateFile>; save(state: SupervisorStateFile): Promise<void> }, "load" | "save">;
   carryoverRecoveryEvents: RecoveryEvent[];
   emitEvent?: SupervisorEventSink;
   setReconciliationPhase?: (phase: string | null) => Promise<void>;
@@ -97,6 +101,22 @@ export async function runOnceCyclePrelude(
       emitSupervisorEvent(args.emitEvent, buildRecoverySupervisorEvent(event));
     }
   };
+  const persistInventoryRefreshFailure = async (
+    nextFailure: SupervisorStateFile["inventory_refresh_failure"] | null,
+  ) => {
+    const currentFailure = state.inventory_refresh_failure;
+    if (inventoryRefreshFailureEquals(currentFailure, nextFailure)) {
+      return;
+    }
+
+    if (nextFailure) {
+      state.inventory_refresh_failure = nextFailure;
+    } else {
+      delete state.inventory_refresh_failure;
+    }
+
+    await args.stateStore.save(state);
+  };
 
   const authFailure = await args.handleAuthFailure(state);
   if (authFailure) {
@@ -113,6 +133,40 @@ export async function runOnceCyclePrelude(
     recoveryEvents.push(...staleReservationEvents);
     emitRecoveryEvents(staleReservationEvents);
 
+    const activeRecord =
+      state.activeIssueNumber === null ? null : state.issues[String(state.activeIssueNumber)] ?? null;
+    let issues: GitHubIssue[] | null = null;
+    try {
+      issues = await args.listAllIssues();
+      await persistInventoryRefreshFailure(null);
+    } catch (error) {
+      await persistInventoryRefreshFailure(buildInventoryRefreshFailure(error));
+      if (activeRecord !== null && activeRecord.pr_number !== null) {
+        await setReconciliationPhase("tracked_merged_but_open_issues");
+        const activeMergedEvents = await args.reconcileTrackedMergedButOpenIssues(
+          state,
+          [],
+          updateReconciliationProgress,
+          { onlyIssueNumber: activeRecord.issue_number },
+        );
+        recoveryEvents.push(...activeMergedEvents);
+        emitRecoveryEvents(activeMergedEvents);
+
+        const activeRecordAfterFastPath = state.issues[String(activeRecord.issue_number)] ?? null;
+        if (activeRecordAfterFastPath?.state === "done") {
+          return {
+            state,
+            recoveryEvents,
+          };
+        }
+      }
+
+      return {
+        state,
+        recoveryEvents,
+      };
+    }
+
     if (state.activeIssueNumber === null && await args.reserveRunnableIssueSelection?.(state) === true) {
       return {
         state,
@@ -120,11 +174,7 @@ export async function runOnceCyclePrelude(
       };
     }
 
-    const issues = await args.listAllIssues();
-
     await setReconciliationPhase("tracked_merged_but_open_issues");
-    const activeRecord =
-      state.activeIssueNumber === null ? null : state.issues[String(state.activeIssueNumber)] ?? null;
     if (activeRecord !== null && activeRecord.pr_number !== null) {
       const activeMergedEvents = await args.reconcileTrackedMergedButOpenIssues(
         state,

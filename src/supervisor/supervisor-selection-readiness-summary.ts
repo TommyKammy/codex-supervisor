@@ -23,6 +23,7 @@ import {
   SupervisorStateFile,
 } from "../core/types";
 import { formatSelectionReason } from "./supervisor-selection-issue-explain";
+import { formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
 
 type ReadinessSummaryGitHub =
   Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">
@@ -115,6 +116,15 @@ export async function buildReadinessSummary(
   state: SupervisorStateFile,
   candidateDiscoveryDiagnostics: CandidateDiscoveryDiagnostics | null | undefined = undefined,
 ): Promise<SupervisorReadinessSummaryDto> {
+  const inventoryRefreshStatusLine = formatInventoryRefreshStatusLine(state.inventory_refresh_failure);
+  if (inventoryRefreshStatusLine !== null) {
+    return {
+      runnableIssues: [],
+      blockedIssues: [],
+      readinessLines: [inventoryRefreshStatusLine],
+    };
+  }
+
   const diagnostics =
     candidateDiscoveryDiagnostics === undefined
       ? typeof github.getCandidateDiscoveryDiagnostics === "function"
@@ -208,6 +218,13 @@ export async function buildSelectionWhySummary(
   config: SupervisorConfig,
   state: SupervisorStateFile,
 ): Promise<string[]> {
+  if (state.inventory_refresh_failure) {
+    return [
+      "selected_issue=none",
+      "selection_reason=inventory_refresh_degraded",
+    ];
+  }
+
   const summary = await buildSelectionSummary(github, config, state);
   return [
     summary.selectedIssueNumber === null ? "selected_issue=none" : `selected_issue=#${summary.selectedIssueNumber}`,
@@ -220,6 +237,13 @@ export async function buildSelectionSummary(
   config: SupervisorConfig,
   state: SupervisorStateFile,
 ): Promise<SupervisorSelectionSummaryDto> {
+  if (state.inventory_refresh_failure) {
+    return {
+      selectedIssueNumber: null,
+      selectionReason: "inventory_refresh_degraded",
+    };
+  }
+
   const candidateIssues = await github.listCandidateIssues();
   const issues = await github.listAllIssues();
 

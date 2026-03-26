@@ -111,6 +111,47 @@ test("status surfaces the default trust posture and execution-safety warning", a
   assert.match(status, /execution_safety_warning=Unsandboxed autonomous execution assumes trusted GitHub-authored inputs\./);
 });
 
+test("status reports degraded full inventory refresh and suppresses readiness selection work", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+    inventory_refresh_failure: {
+      source: "gh issue list",
+      message: "Failed to parse JSON from gh issue list: Unexpected token ] in JSON at position 1",
+      recorded_at: "2026-03-26T00:00:00Z",
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => {
+      throw new Error("unexpected listCandidateIssues call");
+    },
+    listAllIssues: async () => {
+      throw new Error("unexpected listAllIssues call");
+    },
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport({ why: true });
+
+  assert.match(report.detailedStatusLines.join("\n"), /^inventory_refresh=degraded source=gh issue list recorded_at=2026-03-26T00:00:00Z message=Failed to parse JSON from gh issue list: Unexpected token \] in JSON at position 1$/m);
+  assert.equal(report.selectionSummary, null);
+  assert.equal(report.warning?.kind, "readiness");
+  assert.match(report.warning?.message ?? "", /Full inventory refresh is degraded/);
+
+  const status = await supervisor.status({ why: true });
+  assert.match(status, /^inventory_refresh=degraded source=gh issue list recorded_at=2026-03-26T00:00:00Z message=Failed to parse JSON from gh issue list: Unexpected token \] in JSON at position 1$/m);
+  assert.match(status, /^readiness_warning=Full inventory refresh is degraded\./m);
+});
+
 test("statusReport exposes the typed local CI contract summary from config", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {
