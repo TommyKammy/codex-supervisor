@@ -110,38 +110,40 @@ function normalizeLastSuccessfulInventorySnapshot(
     return undefined;
   }
 
+  const issues = (value.issues as unknown[])
+    .filter((issue): issue is Record<string, unknown> => isRecord(issue))
+    .filter(
+      (issue) =>
+        typeof issue.number === "number"
+        && Number.isInteger(issue.number)
+        && typeof issue.title === "string"
+        && typeof issue.body === "string"
+        && typeof issue.createdAt === "string"
+        && typeof issue.updatedAt === "string"
+        && typeof issue.url === "string",
+    )
+    .map((issue) => ({
+      number: issue.number as number,
+      title: issue.title as string,
+      body: issue.body as string,
+      createdAt: issue.createdAt as string,
+      updatedAt: issue.updatedAt as string,
+      url: issue.url as string,
+      ...(Array.isArray(issue.labels)
+        ? {
+          labels: (issue.labels as unknown[])
+            .filter((label): label is Record<string, unknown> => isRecord(label) && typeof label.name === "string")
+            .map((label) => ({ name: label.name as string })),
+        }
+        : {}),
+      ...(typeof issue.state === "string" ? { state: issue.state } : {}),
+    }));
+
   return {
     source: value.source,
     recorded_at: value.recorded_at,
-    issue_count: value.issue_count,
-    issues: (value.issues as unknown[])
-      .filter((issue): issue is Record<string, unknown> => isRecord(issue))
-      .filter(
-        (issue) =>
-          typeof issue.number === "number"
-          && Number.isInteger(issue.number)
-          && typeof issue.title === "string"
-          && typeof issue.body === "string"
-          && typeof issue.createdAt === "string"
-          && typeof issue.updatedAt === "string"
-          && typeof issue.url === "string",
-      )
-      .map((issue) => ({
-        number: issue.number as number,
-        title: issue.title as string,
-        body: issue.body as string,
-        createdAt: issue.createdAt as string,
-        updatedAt: issue.updatedAt as string,
-        url: issue.url as string,
-        ...(Array.isArray(issue.labels)
-          ? {
-            labels: (issue.labels as unknown[])
-              .filter((label): label is Record<string, unknown> => isRecord(label) && typeof label.name === "string")
-              .map((label) => ({ name: label.name as string })),
-          }
-          : {}),
-        ...(typeof issue.state === "string" ? { state: issue.state } : {}),
-      })),
+    issue_count: issues.length,
+    issues,
   };
 }
 
@@ -857,7 +859,13 @@ export class StateStore {
       validateSqliteSchemaVersion(db);
       const currentState = readSqliteState(db);
       const findings = currentState.load_findings ?? [];
-      if (Object.keys(currentState.issues).length > 0 || currentState.activeIssueNumber !== null) {
+      const hasPersistedState =
+        Object.keys(currentState.issues).length > 0
+        || currentState.activeIssueNumber !== null
+        || currentState.reconciliation_state !== undefined
+        || currentState.inventory_refresh_failure !== undefined
+        || currentState.last_successful_inventory_snapshot !== undefined;
+      if (hasPersistedState) {
         return currentState;
       }
 

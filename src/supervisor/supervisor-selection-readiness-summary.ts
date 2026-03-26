@@ -127,6 +127,7 @@ export async function buildReadinessSummary(
       blockedIssues: snapshotSummary?.blockedIssues ?? [],
       readinessLines: [
         inventoryRefreshStatusLine,
+        "selection_reason=inventory_refresh_degraded",
         ...(snapshotSummary?.readinessLines ?? []),
       ],
     };
@@ -160,7 +161,7 @@ export function buildLastKnownGoodSnapshotReadinessSummary(
     snapshot.issues,
     snapshot.issues,
     null,
-    snapshotStatusLine === null ? [] : [snapshotStatusLine, "selection_reason=inventory_refresh_degraded"],
+    snapshotStatusLine === null ? [] : [snapshotStatusLine],
   );
 }
 
