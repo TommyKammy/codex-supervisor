@@ -5,33 +5,42 @@
 - Branch: codex/issue-1063
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 253756be094dd94a942c334cd588131676cb6e55
+- Current phase: stabilizing
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: 45e446be1e6a90c4c1b3edd61ec5fe8b0bb50b95
 - Blocked reason: none
-- Last failure signature: none
+- Last failure signature: stale-stabilizing-no-pr-recovery-loop
 - Repeated failure signature count: 0
-- Updated at: 2026-03-26T12:45:42.900Z
+- Updated at: 2026-03-26T12:52:53.429Z
 
 ## Latest Codex Summary
-- Added two PR #1060 durable external-review guardrails for response-flush-before-shutdown safety and `set -euo pipefail` shell diagnostics, plus a repo-backed loader test that proves those committed patterns stay present.
+Promoted the two generalized PR #1060 learnings into [docs/shared-memory/external-review-guardrails.json](docs/shared-memory/external-review-guardrails.json) and added a repo-backed loader test in [src/external-review/external-review-miss-history.test.ts](src/external-review/external-review-miss-history.test.ts) so the committed shared memory must keep both patterns present. The checkpoint commit remains `45e446b` (`Promote PR 1060 review guardrails`), the branch is now pushed to `origin/codex/issue-1063`, and draft PR #1073 is open: https://github.com/TommyKammy/codex-supervisor/pull/1073
+
+Focused verification still passes with `npx tsx --test src/external-review/external-review-miss-history.test.ts` and `npx tsx src/committed-guardrails-cli.ts check`. Full build verification is still blocked by the local toolchain here: `node_modules` is absent, `npm run build` would still fail because the script expects a locally installed `tsc`, and `npx tsc -p tsconfig.json` still reports that TypeScript is not installed locally.
+
+Summary: Pushed the PR #1060 guardrail promotion checkpoint, opened draft PR #1073, and reconfirmed the focused shared-memory checks while the full TypeScript build remains blocked by missing local dependencies.
+State hint: draft_pr
+Blocked reason: verification
+Tests: `npx tsx --test src/external-review/external-review-miss-history.test.ts`; `npx tsx src/committed-guardrails-cli.ts check`; `npx tsc -p tsconfig.json` failed (`This is not the tsc command you are looking for`; TypeScript not installed locally)
+Next action: restore/install the local project dependencies so `npm run build` can run with a real local `tsc`, then update PR #1073 with full verification if needed
+Failure signature: missing-local-typescript-toolchain
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: issue #1063 only needs a pair of durable external-review patterns plus a repo-backed loader assertion; the right reproducer is a focused test that fails until the committed shared-memory file contains the new PR #1060 promotions.
-- What changed: added a repo-backed test in `src/external-review/external-review-miss-history.test.ts` that asserts the committed workspace guardrails include the generalized shutdown-response-flush and `set -euo pipefail` shell-diagnostic patterns; added those two entries to `docs/shared-memory/external-review-guardrails.json`; normalized the committed guardrail file with the CLI.
-- Current blocker: none on the code change itself. Environment verification is limited because this worktree does not currently have `tsx`/`tsc` available on PATH for npm scripts or a local TypeScript compiler installed for `npx tsc`.
-- Next exact step: commit this shared-memory/test checkpoint on `codex/issue-1063`; if full build verification is required afterward, install project dependencies or run in an environment that has the repo toolchain available.
-- Verification gap: `npm run build` could not complete in this environment because `tsc` was not found, and direct `npx tsc -p tsconfig.json` reported that TypeScript is not installed locally. Focused shared-memory verification passed.
-- Files touched: `docs/shared-memory/external-review-guardrails.json`, `src/external-review/external-review-miss-history.test.ts`, `.codex-supervisor/issue-journal.md`.
+- Hypothesis: issue #1063 is implementation-complete; the remaining work is operational only, namely preserving the coherent checkpoint, keeping the draft PR current, and rerunning the full build once the repo has a local TypeScript toolchain.
+- What changed: pushed `45e446b` to `origin/codex/issue-1063`, opened draft PR #1073, and reran the focused shared-memory verification to confirm the committed guardrail promotions still load and validate cleanly.
+- Current blocker: full build verification only. The code/test changes are stable, but this worktree still lacks local project dependencies, so build commands that expect a locally installed `tsc` cannot run yet.
+- Next exact step: install or restore the repo dependencies in this worktree, rerun `npm run build`, and update draft PR #1073 if any follow-up is needed.
+- Verification gap: focused checks pass, but `npm run build` remains unverified here because there is no local `node_modules`, and `npx tsc -p tsconfig.json` still falls through to the standard "This is not the tsc command you are looking for" error.
+- Files touched: `.codex-supervisor/issue-journal.md`.
 - Rollback concern: low. The change only adds committed guardrail data and a loader test that locks in those exact entries.
-- Last focused command: `npx tsx --test src/external-review/external-review-miss-history.test.ts`
-- What changed this turn: read the required memory/journal files, added the narrow repo-backed reproducer, confirmed it failed because the committed JSON lacked the PR #1060 fingerprints, promoted the two generalized entries into shared memory, and revalidated the committed guardrails with the CLI and focused test.
-- Exact failure reproduced this turn: `npx tsx --test src/external-review/external-review-miss-history.test.ts` initially failed with `AssertionError [ERR_ASSERTION]` because the loader returned `[]` for fingerprint `src/backend/supervisor-http-server.ts|shutdown-must-not-preempt-success-response-flush`, proving the committed guardrails were missing the new durable pattern.
-- Commands run this turn: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1063/AGENTS.generated.md`; `sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1063/context-index.md`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg -n "external-review-guardrails|shared-memory|guardrail" docs src package.json`; `sed -n '1,260p' docs/shared-memory/external-review-guardrails.json`; `sed -n '1,260p' src/committed-guardrails.test.ts`; `sed -n '1,220p' src/committed-guardrails-cli.ts`; `rg -n "loadExternalReviewGuardrails|parseExternalReviewGuardrails|formatCommittedGuardrails rewrites|external-review-guardrails.json" src/committed-guardrails.test.ts src/committed-guardrails.ts src`; `sed -n '260,520p' src/committed-guardrails.test.ts`; `sed -n '1,420p' src/committed-guardrails.ts`; `rg -n "loadCommittedExternalReviewGuardrails|docs/shared-memory/external-review-guardrails.json|committedPath: \"docs/shared-memory/external-review-guardrails.json\"" src`; `sed -n '1,220p' src/external-review/external-review-miss-history.test.ts`; `sed -n '1,220p' src/local-review/result.test.ts`; `sed -n '1,260p' src/verifier-guardrails.test.ts`; `rg -n "repo-backed|current workspace|committed .* includes|loadCommitted.*process.cwd|workspacePath: process.cwd\\(\\)" src`; `sed -n '260,360p' src/verifier-guardrails.test.ts`; `sed -n '220,420p' src/external-review/external-review-miss-history.test.ts`; `sed -n '420,520p' src/external-review/external-review-miss-history.test.ts`; `sed -n '1,220p' src/external-review/external-review-miss-history.ts`; `apply_patch ...`; `npx tsx --test src/external-review/external-review-miss-history.test.ts`; `npm run guardrails:fix`; `npx tsx src/committed-guardrails-cli.ts fix`; `npm run build`; `npx tsx src/committed-guardrails-cli.ts check`; `npx tsc -p tsconfig.json`; `git diff -- docs/shared-memory/external-review-guardrails.json src/external-review/external-review-miss-history.test.ts`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `git status --short --branch`.
-- PR status: no PR yet for `codex/issue-1063`.
+- Last focused command: `npx tsc -p tsconfig.json`
+- What changed this turn: reread the required memory/journal files, confirmed the checkpoint commit was already in place, reran the focused shared-memory test and committed-guardrails validation, pushed `codex/issue-1063` to origin, opened draft PR #1073, and refreshed this journal state.
+- Exact failure reproduced this turn: `npx tsc -p tsconfig.json` still fails with the standard `This is not the tsc command you are looking for` diagnostic, confirming the worktree still does not have a locally installed TypeScript compiler.
+- Commands run this turn: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1063/AGENTS.generated.md`; `sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1063/context-index.md`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `node -p "const p=require('./package.json'); ({build:p.scripts?.build, guardrailsFix:p.scripts?.['guardrails:fix']})"`; `ls -1 node_modules >/dev/null 2>&1; echo $?`; `gh pr view --json number,state,isDraft,headRefName,baseRefName,url`; `npx tsx --version`; `npx tsx --test src/external-review/external-review-miss-history.test.ts`; `npx tsx src/committed-guardrails-cli.ts check`; `npx tsc -p tsconfig.json`; `git branch -vv`; `git log --oneline --decorate -1`; `git diff --stat origin/main...HEAD`; `git push -u origin codex/issue-1063`; `gh pr create --draft --base main --head codex/issue-1063 --title "Promote PR #1060 review guardrails into shared memory" --body ...`; `apply_patch ...`.
+- PR status: draft PR open at https://github.com/TommyKammy/codex-supervisor/pull/1073
 ### Scratchpad
 - Leave `.codex-supervisor/replay/` untracked; it is local
