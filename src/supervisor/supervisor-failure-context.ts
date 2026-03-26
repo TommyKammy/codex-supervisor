@@ -1,6 +1,7 @@
 import { buildChecksFailureContext, buildConflictFailureContext } from "../pull-request-failure-context";
 import { buildCopilotReviewTimeoutFailureContext } from "../pull-request-state";
 import {
+  configuredBotReviewFollowUpState,
   configuredBotReviewThreads,
   buildManualReviewFailureContext,
   buildRequestedChangesFailureContext,
@@ -58,6 +59,10 @@ export function inferFailureContext(
 
       const stalledBotReviewContext = buildStalledBotReviewFailureContext(
         configuredBotReviewThreads(config, reviewThreads),
+        configuredBotReviewFollowUpState(record, pr, configuredBotReviewThreads(config, reviewThreads)) ===
+          "exhausted"
+          ? "exhausted_follow_up"
+          : "no_progress",
       );
       if (stalledBotReviewContext) {
         return stalledBotReviewContext;
@@ -101,6 +106,9 @@ export function inferFailureContext(
 
     const stalledBotReviewContext = buildStalledBotReviewFailureContext(
       configuredBotReviewThreads(config, reviewThreads),
+      configuredBotReviewFollowUpState(record, pr, configuredBotReviewThreads(config, reviewThreads)) === "exhausted"
+        ? "exhausted_follow_up"
+        : "no_progress",
     );
     if (stalledBotReviewContext) {
       return stalledBotReviewContext;

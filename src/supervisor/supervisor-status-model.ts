@@ -22,7 +22,11 @@ type PendingReviewThreadClassifier = (
   config: SupervisorConfig,
   record: Pick<
     IssueRunRecord,
-    "processed_review_thread_ids" | "processed_review_thread_fingerprints" | "last_head_sha"
+    | "processed_review_thread_ids"
+    | "processed_review_thread_fingerprints"
+    | "last_head_sha"
+    | "review_follow_up_head_sha"
+    | "review_follow_up_remaining"
   >,
   pr: Pick<GitHubPullRequest, "headRefOid">,
   reviewThreads: ReviewThread[],

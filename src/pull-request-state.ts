@@ -10,6 +10,7 @@ import {
   summarizeChecks,
 } from "./supervisor/supervisor-reporting";
 import {
+  configuredBotReviewFollowUpState,
   configuredBotReviewThreads,
   manualReviewThreads,
   pendingBotReviewThreads,
@@ -588,14 +589,15 @@ export function inferStateFromPullRequest(
 ): RunState {
   const manualThreads = manualReviewThreads(config, reviewThreads);
   const unresolvedBotThreads = configuredBotReviewThreads(config, reviewThreads);
-  const botThreads = pendingBotReviewThreads(config, record, pr, reviewThreads);
+  const pendingBotThreads = pendingBotReviewThreads(config, record, pr, reviewThreads);
+  const botFollowUpState = configuredBotReviewFollowUpState(record, pr, unresolvedBotThreads);
 
   if (pr.mergedAt || pr.state === "MERGED") {
     return "done";
   }
 
   if (pr.reviewDecision === "CHANGES_REQUESTED") {
-    if (botThreads.length > 0) {
+    if (pendingBotThreads.length > 0 || (botFollowUpState === "eligible" && manualThreads.length === 0)) {
       return "addressing_review";
     }
 
@@ -646,7 +648,7 @@ export function inferStateFromPullRequest(
     return "repairing_ci";
   }
 
-  if (botThreads.length > 0) {
+  if (pendingBotThreads.length > 0 || (botFollowUpState === "eligible" && manualThreads.length === 0)) {
     return "addressing_review";
   }
 

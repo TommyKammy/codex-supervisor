@@ -16,6 +16,7 @@ import {
   processedReviewThreadFingerprintKey,
   processedReviewThreadKey,
 } from "./review-handling";
+import { configuredBotReviewThreads } from "./review-thread-reporting";
 import { IssueJournalSync, MemoryArtifacts } from "./run-once-issue-preparation";
 import { StateStore } from "./core/state-store";
 import {
@@ -56,7 +57,11 @@ export function selectReviewThreadsForTurn(args: {
   preRunState: IssueRunRecord["state"];
   record: Pick<
     IssueRunRecord,
-    "processed_review_thread_ids" | "processed_review_thread_fingerprints" | "last_head_sha"
+    | "processed_review_thread_ids"
+    | "processed_review_thread_fingerprints"
+    | "last_head_sha"
+    | "review_follow_up_head_sha"
+    | "review_follow_up_remaining"
   >;
   pr: GitHubPullRequest | null;
   reviewThreads: ReviewThread[];
@@ -66,7 +71,17 @@ export function selectReviewThreadsForTurn(args: {
   }
 
   const currentPr = args.pr;
-  return args.reviewThreads.filter((thread) => !hasProcessedReviewThread(args.record, currentPr, thread));
+  const pendingThreads = args.reviewThreads.filter((thread) => !hasProcessedReviewThread(args.record, currentPr, thread));
+  if (pendingThreads.length > 0) {
+    return pendingThreads;
+  }
+
+  return (
+    args.record.review_follow_up_head_sha === currentPr.headRefOid &&
+    (args.record.review_follow_up_remaining ?? 0) > 0
+  )
+    ? args.reviewThreads
+    : pendingThreads;
 }
 
 export function shouldResumeAgentTurn(args: {
@@ -259,4 +274,57 @@ export function nextProcessedReviewThreadPatch(args: {
           ).slice(-200)
         : args.record.processed_review_thread_fingerprints,
   };
+}
+
+export function nextReviewFollowUpPatch(args: {
+  config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">;
+  preRunState: IssueRunRecord["state"];
+  record: Pick<IssueRunRecord, "review_follow_up_head_sha" | "review_follow_up_remaining">;
+  currentPr: Pick<GitHubPullRequest, "headRefOid"> | null;
+  evaluatedReviewHeadSha: string;
+  preRunReviewThreads: ReviewThread[];
+  postRunReviewThreads: ReviewThread[];
+}): Pick<IssueRunRecord, "review_follow_up_head_sha" | "review_follow_up_remaining"> {
+  const defaultPatch = { review_follow_up_head_sha: null, review_follow_up_remaining: 0 };
+  if (
+    args.preRunState !== "addressing_review" ||
+    !args.currentPr ||
+    args.currentPr.headRefOid !== args.evaluatedReviewHeadSha
+  ) {
+    return defaultPatch;
+  }
+
+  const unresolvedConfiguredBotThreads = (reviewThreads: ReviewThread[]) =>
+    configuredBotReviewThreads(args.config as SupervisorConfig, reviewThreads).filter(
+      (thread) => !thread.isResolved && !thread.isOutdated,
+    );
+
+  const preRunConfiguredThreads = unresolvedConfiguredBotThreads(args.preRunReviewThreads);
+  const postRunConfiguredThreads = unresolvedConfiguredBotThreads(args.postRunReviewThreads);
+  if (postRunConfiguredThreads.length === 0) {
+    return defaultPatch;
+  }
+
+  if (
+    args.record.review_follow_up_head_sha === args.evaluatedReviewHeadSha &&
+    (args.record.review_follow_up_remaining ?? 0) > 0
+  ) {
+    return {
+      review_follow_up_head_sha: args.evaluatedReviewHeadSha,
+      review_follow_up_remaining: 0,
+    };
+  }
+
+  const preRunIds = new Set(preRunConfiguredThreads.map((thread) => thread.id));
+  const postRunIds = new Set(postRunConfiguredThreads.map((thread) => thread.id));
+  const madeProgress =
+    postRunConfiguredThreads.length < preRunConfiguredThreads.length ||
+    [...preRunIds].some((threadId) => !postRunIds.has(threadId));
+
+  return madeProgress
+    ? {
+        review_follow_up_head_sha: args.evaluatedReviewHeadSha,
+        review_follow_up_remaining: 1,
+      }
+    : defaultPatch;
 }

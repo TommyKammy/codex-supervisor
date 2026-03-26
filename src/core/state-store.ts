@@ -85,6 +85,8 @@ function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
     last_blocker_signature: value.last_blocker_signature ?? null,
     last_failure_signature: value.last_failure_signature ?? null,
     blocked_reason: value.blocked_reason ?? null,
+    review_follow_up_head_sha: value.review_follow_up_head_sha ?? null,
+    review_follow_up_remaining: value.review_follow_up_remaining ?? 0,
     processed_review_thread_ids: value.processed_review_thread_ids ?? [],
     processed_review_thread_fingerprints: value.processed_review_thread_fingerprints ?? [],
   };
@@ -564,6 +566,12 @@ export class StateStore {
         patch.repeated_failure_signature_count ?? record.repeated_failure_signature_count ?? 0,
       stale_stabilizing_no_pr_recovery_count:
         patch.stale_stabilizing_no_pr_recovery_count ?? record.stale_stabilizing_no_pr_recovery_count ?? 0,
+      review_follow_up_head_sha:
+        hasOwn(patch, "review_follow_up_head_sha")
+          ? patch.review_follow_up_head_sha ?? null
+          : record.review_follow_up_head_sha ?? null,
+      review_follow_up_remaining:
+        patch.review_follow_up_remaining ?? record.review_follow_up_remaining ?? 0,
       last_recovery_reason:
         hasOwn(patch, "last_recovery_reason") ? patch.last_recovery_reason ?? null : record.last_recovery_reason ?? null,
       last_recovery_at:

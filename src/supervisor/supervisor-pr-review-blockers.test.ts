@@ -155,7 +155,7 @@ test("runOnce reprocesses a configured bot review thread once after a new PR hea
   });
   assert.match(
     status,
-    /failure_context category=manual summary=1 configured bot review thread\(s\) remain unresolved after processing on the current head and now require manual attention\./,
+    /failure_context category=manual summary=1 configured bot review thread\(s\) remain unresolved after processing on the current head without measurable progress and now require manual attention\./,
   );
   assert.match(
     status,
