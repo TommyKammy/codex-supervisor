@@ -2,6 +2,17 @@
   "version": 1,
   "patterns": [
     {
+      "fingerprint": "src/backend/webui-setup-browser-script.ts|reconnect-or-readiness-polling-must-use-bounded-backoff-under-repeated-failures",
+      "reviewerLogin": "coderabbitai",
+      "file": "src/backend/webui-setup-browser-script.ts",
+      "line": null,
+      "summary": "Flag reconnect or readiness polling loops that keep retrying at a fixed rapid interval after repeated failures or unhealthy responses instead of backing off with an explicit cap.",
+      "rationale": "When a worker or endpoint stays unhealthy, fixed high-frequency polling can keep hammering the same failing path indefinitely. Retry loops should slow down under consecutive failures while keeping the delay bounded so recovery is still detected promptly.",
+      "sourceArtifactPath": "promoted-from-pr-1074",
+      "sourceHeadSha": "pr-1074",
+      "lastSeenAt": "2026-03-27T00:00:00Z"
+    },
+    {
       "fingerprint": "scripts/run-web.sh|set-euo-command-v-must-preserve-explicit-error-paths",
       "reviewerLogin": "coderabbitai",
       "file": "scripts/run-web.sh",

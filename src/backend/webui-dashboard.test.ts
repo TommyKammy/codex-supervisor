@@ -2900,7 +2900,7 @@ test("setup shell refreshes readiness after launcher-managed restart until the w
   assert.match(restartStatus.textContent ?? "", /Restart required/u);
   assert.match(restartGuidance.textContent ?? "", /temporarily unavailable while the worker is still reconnecting/u);
 
-  await harness.advanceTime(50);
+  await harness.advanceTime(100);
 
   reconnectedReadinessResponse.resolve(jsonResponse({
     kind: "setup_readiness",
@@ -2966,6 +2966,236 @@ test("setup shell refreshes readiness after launcher-managed restart until the w
     ],
   );
   assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("setup shell backs off reconnect polling after repeated readiness failures", async () => {
+  const setupConfigResponse = createDeferred<MockResponseLike>();
+  const setupReadinessRefreshResponse = createDeferred<MockResponseLike>();
+  const managedRestartResponse = createDeferred<MockResponseLike>();
+  const harness = createSetupHarness([
+    {
+      path: "/api/setup-readiness",
+      response: jsonResponse({
+        kind: "setup_readiness",
+        managedRestart: {
+          supported: true,
+          launcher: "systemd",
+          state: "ready",
+          summary: "Managed restart is available through the systemd launcher.",
+        },
+        ready: false,
+        overallStatus: "missing",
+        configPath: "/tmp/supervisor.config.json",
+        fields: [
+          {
+            key: "reviewProvider",
+            label: "Review provider",
+            state: "missing",
+            value: null,
+            message: "Configure at least one review provider before first-run setup is complete.",
+            required: true,
+            metadata: {
+              source: "config",
+              editable: true,
+              valueType: "review_provider",
+            },
+          },
+        ],
+        blockers: [],
+        hostReadiness: { overallStatus: "pass", checks: [] },
+        providerPosture: {
+          profile: "none",
+          provider: "none",
+          reviewers: [],
+          signalSource: "none",
+          configured: false,
+          summary: "No review provider is configured.",
+        },
+        trustPosture: {
+          trustMode: "trusted_repo_and_authors",
+          executionSafetyMode: "unsandboxed_autonomous",
+          warning: null,
+          summary: "Trusted inputs with unsandboxed autonomous execution.",
+        },
+        localCiContract: {
+          configured: false,
+          command: null,
+          source: "config",
+          summary: "No repo-owned local CI contract is configured.",
+        },
+      }),
+    },
+    {
+      path: "/api/setup-config",
+      method: "POST",
+      body: JSON.stringify({
+        changes: {
+          reviewProvider: "codex",
+        },
+      }),
+      response: setupConfigResponse.promise,
+    },
+    {
+      path: "/api/setup-readiness",
+      response: setupReadinessRefreshResponse.promise,
+    },
+    {
+      path: "/api/commands/managed-restart",
+      method: "POST",
+      body: JSON.stringify({}),
+      response: managedRestartResponse.promise,
+    },
+    {
+      path: "/api/setup-readiness",
+      response: jsonResponse({ error: "setup reconnect attempt 1 failed" }, 503),
+    },
+    {
+      path: "/api/setup-readiness",
+      response: jsonResponse({ error: "setup reconnect attempt 2 failed" }, 503),
+    },
+    {
+      path: "/api/setup-readiness",
+      response: jsonResponse({ error: "setup reconnect attempt 3 failed" }, 503),
+    },
+    {
+      path: "/api/setup-readiness",
+      response: jsonResponse({ error: "setup reconnect attempt 4 failed" }, 503),
+    },
+  ]);
+  await harness.flush();
+
+  const reviewProviderInput = harness.document.getElementById("setup-input-reviewProvider");
+  const setupForm = harness.document.getElementById("setup-form");
+  const restartButton = harness.document.getElementById("setup-restart-button");
+  const restartGuidance = harness.document.getElementById("setup-restart-guidance");
+  assert.ok(reviewProviderInput);
+  assert.ok(setupForm);
+  assert.ok(restartButton);
+  assert.ok(restartGuidance);
+
+  reviewProviderInput.value = "codex";
+  const submitPromise = setupForm.dispatch("submit", { preventDefault() {} });
+  await harness.flush();
+
+  setupConfigResponse.resolve(jsonResponse({
+    kind: "setup_config_update",
+    managedRestart: {
+      supported: true,
+      launcher: "systemd",
+      state: "ready",
+      summary: "Managed restart is available through the systemd launcher.",
+    },
+    configPath: "/tmp/supervisor.config.json",
+    backupPath: null,
+    updatedFields: ["reviewProvider"],
+    restartRequired: true,
+    restartScope: "supervisor",
+    restartTriggeredByFields: ["reviewProvider"],
+    document: {
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    },
+    readiness: {
+      kind: "setup_readiness",
+      managedRestart: {
+        supported: true,
+        launcher: "systemd",
+        state: "ready",
+        summary: "Managed restart is available through the systemd launcher.",
+      },
+      ready: false,
+      overallStatus: "missing",
+      configPath: "/tmp/supervisor.config.json",
+      fields: [],
+      blockers: [],
+      hostReadiness: { overallStatus: "pass", checks: [] },
+      providerPosture: {
+        profile: "codex",
+        provider: "codex",
+        reviewers: ["chatgpt-codex-connector"],
+        signalSource: "review_bot_logins",
+        configured: true,
+        summary: "Codex Connector is configured.",
+      },
+      trustPosture: {
+        trustMode: "trusted_repo_and_authors",
+        executionSafetyMode: "unsandboxed_autonomous",
+        warning: null,
+        summary: "Trusted inputs with unsandboxed autonomous execution.",
+      },
+      localCiContract: {
+        configured: false,
+        command: null,
+        source: "config",
+        summary: "No repo-owned local CI contract is configured.",
+      },
+    },
+  }));
+  await harness.flush();
+
+  setupReadinessRefreshResponse.resolve(jsonResponse({
+    kind: "setup_readiness",
+    managedRestart: {
+      supported: true,
+      launcher: "systemd",
+      state: "ready",
+      summary: "Managed restart is available through the systemd launcher.",
+    },
+    ready: true,
+    overallStatus: "configured",
+    configPath: "/tmp/supervisor.config.json",
+    fields: [],
+    blockers: [],
+    hostReadiness: { overallStatus: "pass", checks: [] },
+    providerPosture: {
+      profile: "codex",
+      provider: "codex",
+      reviewers: ["chatgpt-codex-connector"],
+      signalSource: "review_bot_logins",
+      configured: true,
+      summary: "Codex Connector is configured.",
+    },
+    trustPosture: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: null,
+      summary: "Trusted inputs with unsandboxed autonomous execution.",
+    },
+    localCiContract: {
+      configured: false,
+      command: null,
+      source: "config",
+      summary: "No repo-owned local CI contract is configured.",
+    },
+  }));
+  await submitPromise;
+  await harness.flush();
+
+  const restartPromise = restartButton.dispatch("click");
+  await harness.flush();
+  managedRestartResponse.resolve(jsonResponse({
+    command: "managed-restart",
+    accepted: true,
+    summary: "Managed restart requested through the systemd launcher. The worker is reconnecting while this WebUI shell stays available.",
+  }));
+  await restartPromise;
+  await harness.flush();
+
+  assert.equal(harness.fetchCalls.filter((call) => call.path === "/api/setup-readiness").length, 3);
+  assert.match(restartGuidance.textContent ?? "", /setup reconnect attempt 1 failed/u);
+
+  await harness.advanceTime(49);
+  assert.equal(harness.fetchCalls.filter((call) => call.path === "/api/setup-readiness").length, 3);
+
+  await harness.advanceTime(1);
+  assert.equal(harness.fetchCalls.filter((call) => call.path === "/api/setup-readiness").length, 4);
+  assert.match(restartGuidance.textContent ?? "", /setup reconnect attempt 2 failed/u);
+
+  await harness.advanceTime(99);
+  assert.equal(harness.fetchCalls.filter((call) => call.path === "/api/setup-readiness").length, 4);
+
+  await harness.advanceTime(1);
+  assert.equal(harness.fetchCalls.filter((call) => call.path === "/api/setup-readiness").length, 5);
+  assert.match(restartGuidance.textContent ?? "", /setup reconnect attempt 3 failed/u);
 });
 
 test("dashboard leaves unrelated later supervisor events unlabeled in the operator timeline", async () => {
