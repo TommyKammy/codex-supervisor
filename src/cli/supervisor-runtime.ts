@@ -1,8 +1,9 @@
 import type { CliOptions, SupervisorConfig } from "../core/types";
+import { createRestartableWebUiShellService } from "../backend/restartable-webui-shell-service";
 import { createSupervisorHttpServer } from "../backend/supervisor-http-server";
 import { sleep as defaultSleep } from "../core/utils";
 import { ensureGsdInstalled as defaultEnsureGsdInstalled } from "../gsd";
-import { createManagedRestartControllerFromEnv, type ManagedRestartController } from "../managed-restart";
+import { readManagedRestartCapabilityFromEnv, type ManagedRestartController } from "../managed-restart";
 import { renderDoctorReport } from "../doctor";
 import { renderJsonCorruptStateResetResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderSupervisorExecutionMetricsRollupResultDto } from "../supervisor/supervisor-mutation-report";
@@ -35,6 +36,7 @@ type SupervisorRuntimeCommand = Extract<
 interface SupervisorRuntimeDependencies {
   service: SupervisorService;
   loopController?: SupervisorLoopController;
+  createWebUiService?: () => SupervisorService | Promise<SupervisorService>;
   ensureGsdInstalled?: (config: SupervisorConfig) => Promise<string | null>;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   writeStdout?: (line: string) => void;
@@ -200,17 +202,16 @@ export async function runSupervisorCommand(
   }
 
   if (options.command === "web") {
-    const managedRestart = createManagedRestartControllerFromEnv({
-      env: process.env,
-      requestStop: async () => {
-        if (!stopWebServer) {
-          return;
-        }
-        writeStdout(`${new Date().toISOString()} managed restart requested, shutting down WebUI for relaunch`);
-        stopWebServer();
-      },
-    });
-    const server = createHttpServer(service, { managedRestart });
+    const managedRestartCapability = readManagedRestartCapabilityFromEnv(process.env);
+    const shellService = managedRestartCapability && dependencies.createWebUiService
+      ? createRestartableWebUiShellService({
+        service,
+        recreateService: dependencies.createWebUiService,
+        capability: managedRestartCapability,
+        writeStdout,
+      })
+      : null;
+    const server = createHttpServer(shellService?.service ?? service, { managedRestart: shellService?.managedRestart ?? null });
     await new Promise<void>((resolve, reject) => {
       let settled = false;
       const complete = (error?: Error) => {

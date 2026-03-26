@@ -7,6 +7,7 @@ import type { SetupConfigPreview } from "../setup-config-preview";
 import type { SetupConfigUpdateResult } from "../setup-config-write";
 import { buildActiveIssueChangedEvent, type SupervisorEvent, type SupervisorEventSink } from "../supervisor";
 import type { SupervisorService } from "../supervisor";
+import { createRestartableWebUiShellService } from "./restartable-webui-shell-service";
 import { createSupervisorHttpServer } from "./supervisor-http-server";
 
 const unavailableManagedRestart = {
@@ -55,6 +56,53 @@ async function readJson(args: {
           } catch (error) {
             reject(error);
           }
+        });
+      },
+    );
+    request.on("error", reject);
+    if (args.body) {
+      request.write(args.body);
+    }
+    request.end();
+  });
+}
+
+async function readText(args: {
+  server: http.Server;
+  path: string;
+  method?: string;
+  body?: string;
+  headers?: http.OutgoingHttpHeaders;
+}): Promise<{ statusCode: number; body: string }> {
+  const address = args.server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Expected server to listen on an ephemeral port.");
+  }
+
+  return await new Promise((resolve, reject) => {
+    const request = http.request(
+      {
+        host: "127.0.0.1",
+        port: address.port,
+        path: args.path,
+        method: args.method ?? "GET",
+        agent: false,
+        headers: {
+          ...(args.body ? { "Content-Length": Buffer.byteLength(args.body) } : {}),
+          ...args.headers,
+        },
+      },
+      (response) => {
+        let payload = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          payload += chunk;
+        });
+        response.on("end", () => {
+          resolve({
+            statusCode: response.statusCode ?? 0,
+            body: payload,
+          });
         });
       },
     );
@@ -1296,6 +1344,83 @@ test("createSupervisorHttpServer rejects managed restart commands for unmanaged 
   assert.deepEqual(restartResponse.body, {
     error: unavailableManagedRestart.summary,
   });
+});
+
+test("createSupervisorHttpServer keeps setup routes reachable while the worker is reconnecting", async (t) => {
+  let recreateCalls = 0;
+  let releaseRestart!: () => void;
+  const restartGate = new Promise<void>((resolve) => {
+    releaseRestart = resolve;
+  });
+  const baseSetupReadiness = await createStubService().querySetupReadiness!();
+  const initialService = createStubService({
+    setupReadinessReport: {
+      ...baseSetupReadiness,
+      configPath: "/tmp/initial.config.json",
+    },
+  });
+  const replacementService = createStubService({
+    setupReadinessReport: {
+      ...(await initialService.querySetupReadiness!()),
+      configPath: "/tmp/reloaded.config.json",
+    },
+  });
+  const shell = createRestartableWebUiShellService({
+    service: initialService,
+    recreateService: async () => {
+      recreateCalls += 1;
+      await restartGate;
+      return replacementService;
+    },
+    capability: {
+      supported: true,
+      launcher: "systemd",
+      summary: "Managed restart is available through the systemd launcher.",
+    },
+  });
+  const server = createSupervisorHttpServer({
+    service: shell.service,
+    managedRestart: shell.managedRestart,
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const initialReadiness = await readJson({ server, path: "/api/setup-readiness" });
+  assert.equal(initialReadiness.statusCode, 200);
+  assert.match(JSON.stringify(initialReadiness.body), /"configPath":"\/tmp\/initial\.config\.json"/u);
+
+  const restartResponse = await readJson({
+    server,
+    path: "/api/commands/managed-restart",
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  assert.equal(restartResponse.statusCode, 200);
+  assert.match(JSON.stringify(restartResponse.body), /shell stays available/u);
+  assert.equal(recreateCalls, 1);
+
+  const setupPage = await readText({ server, path: "/setup" });
+  assert.equal(setupPage.statusCode, 200);
+  assert.match(setupPage.body, /First-run setup/u);
+
+  const restartingReadiness = await readJson({ server, path: "/api/setup-readiness" });
+  assert.equal(restartingReadiness.statusCode, 200);
+  assert.match(JSON.stringify(restartingReadiness.body), /shell stays available/u);
+  assert.match(JSON.stringify(restartingReadiness.body), /"configPath":"\/tmp\/initial\.config\.json"/u);
+
+  releaseRestart();
+  await restartGate;
+
+  const reloadedReadiness = await readJson({ server, path: "/api/setup-readiness" });
+  assert.equal(reloadedReadiness.statusCode, 200);
+  assert.match(JSON.stringify(reloadedReadiness.body), /"configPath":"\/tmp\/reloaded\.config\.json"/u);
 });
 
 test("createSupervisorHttpServer surfaces no-op setup config writes without a restart requirement", async (t) => {
