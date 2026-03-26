@@ -25,7 +25,10 @@ import { loadPreMergeEvaluationDto } from "./supervisor-pre-merge-evaluation";
 export interface ActiveStatusGitHub {
   resolvePullRequestForBranch(branchName: string, pullRequestNumber?: number | null): Promise<GitHubPullRequest | null>;
   getChecks(pullRequestNumber: number): Promise<PullRequestCheck[]>;
-  getUnresolvedReviewThreads(pullRequestNumber: number): Promise<ReviewThread[]>;
+  getUnresolvedReviewThreads(
+    pullRequestNumber: number,
+    options?: { purpose?: "status" | "action"; headSha?: string | null; reviewSurfaceVersion?: string | null },
+  ): Promise<ReviewThread[]>;
 }
 
 export interface ActiveStatusIssueGitHub {
@@ -84,7 +87,13 @@ export async function loadActiveIssueStatusSnapshot(args: {
       : null;
     pr = await args.github.resolvePullRequestForBranch(args.activeRecord.branch, args.activeRecord.pr_number);
     checks = isOpenPullRequest(pr) ? await args.github.getChecks(pr.number) : [];
-    reviewThreads = isOpenPullRequest(pr) ? await args.github.getUnresolvedReviewThreads(pr.number) : [];
+    reviewThreads = isOpenPullRequest(pr)
+      ? await args.github.getUnresolvedReviewThreads(pr.number, {
+          purpose: "status",
+          headSha: pr.headRefOid,
+          reviewSurfaceVersion: pr.updatedAt ?? pr.createdAt,
+        })
+      : [];
     localReviewRoutingSummary = await buildLocalReviewRoutingStatusLine({
       config: args.config,
       activeRecord: args.activeRecord,
