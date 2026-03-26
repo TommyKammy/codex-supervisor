@@ -108,19 +108,19 @@ export class GitHubClient {
   }
 
   async listAllIssues(): Promise<GitHubIssue[]> {
+    const result = await this.runGhCommand([
+      "issue",
+      "list",
+      "--repo",
+      this.config.repoSlug,
+      "--state",
+      "all",
+      "--limit",
+      "500",
+      "--json",
+      "number,title,body,createdAt,updatedAt,url,labels,state",
+    ]);
     try {
-      const result = await this.runGhCommand([
-        "issue",
-        "list",
-        "--repo",
-        this.config.repoSlug,
-        "--state",
-        "all",
-        "--limit",
-        "500",
-        "--json",
-        "number,title,body,createdAt,updatedAt,url,labels,state",
-      ]);
       return parseJson<GitHubIssue[]>(result.stdout, "gh issue list");
     } catch (error) {
       return this.listAllIssuesViaRestApi(error);
