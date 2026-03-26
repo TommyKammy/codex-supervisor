@@ -1113,3 +1113,112 @@ test("runSupervisorCommand still shuts down the WebUI when a signal arrives befo
   assert.match(stdout[1] ?? "", /received SIGTERM, stopping after current cycle/);
   assert.match(stdout[2] ?? "", /received SIGTERM, shutting down WebUI/);
 });
+
+test("runSupervisorCommand keeps the WebUI shell up after a managed restart request until an explicit stop arrives", async (t) => {
+  const stdout: string[] = [];
+  let signalHandler: ((signal: NodeJS.Signals) => void) | undefined;
+  let closeCalls = 0;
+  let recreateCalls = 0;
+
+  const previousManagedRestart = process.env.CODEX_SUPERVISOR_MANAGED_RESTART;
+  const previousManagedRestartLauncher = process.env.CODEX_SUPERVISOR_MANAGED_RESTART_LAUNCHER;
+  process.env.CODEX_SUPERVISOR_MANAGED_RESTART = "1";
+  process.env.CODEX_SUPERVISOR_MANAGED_RESTART_LAUNCHER = "systemd";
+  t.after(() => {
+    if (previousManagedRestart === undefined) {
+      delete process.env.CODEX_SUPERVISOR_MANAGED_RESTART;
+    } else {
+      process.env.CODEX_SUPERVISOR_MANAGED_RESTART = previousManagedRestart;
+    }
+    if (previousManagedRestartLauncher === undefined) {
+      delete process.env.CODEX_SUPERVISOR_MANAGED_RESTART_LAUNCHER;
+    } else {
+      process.env.CODEX_SUPERVISOR_MANAGED_RESTART_LAUNCHER = previousManagedRestartLauncher;
+    }
+  });
+
+  await runSupervisorCommand(
+    { command: "web", dryRun: false, why: false },
+    {
+      service: {
+        config: {} as SupervisorConfig,
+        pollIntervalMs: async () => 50,
+        runOnce: async () => "unused",
+        queryStatus: async () => createStatusDto(),
+        queryExplain: async () => {
+          throw new Error("unexpected queryExplain");
+        },
+        runRecoveryAction: async () => {
+          throw new Error("unexpected runRecoveryAction");
+        },
+        pruneOrphanedWorkspaces: async () => {
+          throw new Error("unexpected pruneOrphanedWorkspaces");
+        },
+        resetCorruptJsonState: async () => {
+          throw new Error("unexpected resetCorruptJsonState");
+        },
+        queryIssueLint: async () => createIssueLintDto(),
+        queryDoctor: async () => {
+          throw new Error("unexpected queryDoctor");
+        },
+      },
+      createWebUiService: async () => {
+        recreateCalls += 1;
+        return {
+          config: {} as SupervisorConfig,
+          pollIntervalMs: async () => 50,
+          runOnce: async () => "unused",
+          queryStatus: async () => createStatusDto(),
+          queryExplain: async () => {
+            throw new Error("unexpected queryExplain");
+          },
+          runRecoveryAction: async () => {
+            throw new Error("unexpected runRecoveryAction");
+          },
+          pruneOrphanedWorkspaces: async () => {
+            throw new Error("unexpected pruneOrphanedWorkspaces");
+          },
+          resetCorruptJsonState: async () => {
+            throw new Error("unexpected resetCorruptJsonState");
+          },
+          queryIssueLint: async () => createIssueLintDto(),
+          queryDoctor: async () => {
+            throw new Error("unexpected queryDoctor");
+          },
+        };
+      },
+      createHttpServer: (_service, options) => ({
+        listen: (_port, _host, listeningListener) => {
+          listeningListener?.();
+          queueMicrotask(async () => {
+            await options?.managedRestart?.requestRestart();
+            setImmediate(() => {
+              signalHandler?.("SIGTERM");
+            });
+          });
+        },
+        once: () => {},
+        close: (callback) => {
+          closeCalls += 1;
+          callback();
+        },
+        address: () => ({ address: "127.0.0.1", family: "IPv4", port: 4310 }),
+      }),
+      writeStdout: (line) => {
+        stdout.push(line);
+      },
+      writeStderr: (line) => {
+        throw new Error(`unexpected stderr: ${line}`);
+      },
+      registerStopSignals: (handler) => {
+        signalHandler = handler;
+      },
+    },
+  );
+
+  assert.equal(closeCalls, 1);
+  assert.equal(recreateCalls, 1);
+  assert.match(stdout[0] ?? "", /WebUI listening on http:\/\/127\.0\.0\.1:4310/);
+  assert.doesNotMatch(stdout.join("\n"), /managed restart requested, shutting down WebUI for relaunch/);
+  assert.match(stdout[1] ?? "", /received SIGTERM, shutting down WebUI/);
+});

@@ -25,22 +25,31 @@ export function unavailableManagedRestartCapability(): ManagedRestartCapability 
   };
 }
 
-export function createManagedRestartControllerFromEnv(args: {
-  env: NodeJS.ProcessEnv;
-  requestStop: () => Promise<void>;
-}): ManagedRestartController | null {
-  const enabled = args.env.CODEX_SUPERVISOR_MANAGED_RESTART;
-  const launcher = parseManagedRestartLauncher(args.env.CODEX_SUPERVISOR_MANAGED_RESTART_LAUNCHER);
+export function readManagedRestartCapabilityFromEnv(env: NodeJS.ProcessEnv): ManagedRestartCapability | null {
+  const enabled = env.CODEX_SUPERVISOR_MANAGED_RESTART;
+  const launcher = parseManagedRestartLauncher(env.CODEX_SUPERVISOR_MANAGED_RESTART_LAUNCHER);
   if (!isExplicitlyEnabled(enabled) || launcher === null) {
     return null;
   }
 
   return {
-    capability: {
-      supported: true,
-      launcher,
-      summary: `Managed restart is available through the ${launcher} launcher.`,
-    },
+    supported: true,
+    launcher,
+    summary: `Managed restart is available through the ${launcher} launcher.`,
+  };
+}
+
+export function createManagedRestartControllerFromEnv(args: {
+  env: NodeJS.ProcessEnv;
+  requestStop: () => Promise<void>;
+}): ManagedRestartController | null {
+  const capability = readManagedRestartCapabilityFromEnv(args.env);
+  if (!capability) {
+    return null;
+  }
+
+  return {
+    capability,
     requestRestart: async () => {
       setImmediate(() => {
         void args.requestStop();
@@ -48,7 +57,7 @@ export function createManagedRestartControllerFromEnv(args: {
       return {
         command: "managed-restart",
         accepted: true,
-        summary: `Managed restart requested through the ${launcher} launcher. This WebUI process will exit for relaunch.`,
+        summary: `Managed restart requested through the ${capability.launcher} launcher. This WebUI process will exit for relaunch.`,
       };
     },
   };

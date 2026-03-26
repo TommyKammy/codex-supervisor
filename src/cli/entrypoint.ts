@@ -36,7 +36,11 @@ export interface CliEntrypointDependencies {
   ) => command is SupervisorRuntimeOptions["command"];
   runSupervisorCommand?: (
     options: SupervisorRuntimeOptions,
-    dependencies: { service: SupervisorService; loopController?: SupervisorLoopController },
+    dependencies: {
+      service: SupervisorService;
+      loopController?: SupervisorLoopController;
+      createWebUiService?: () => SupervisorService;
+    },
   ) => Promise<void>;
   writeStdout?: (line: string) => void;
 }
@@ -97,7 +101,11 @@ export async function runCli(
       why: options.why,
       issueNumber: options.issueNumber,
     },
-    { service, loopController },
+    {
+      service,
+      loopController,
+      createWebUiService: options.command === "web" ? () => buildSupervisorService(options.configPath) : undefined,
+    },
   );
 }
 
