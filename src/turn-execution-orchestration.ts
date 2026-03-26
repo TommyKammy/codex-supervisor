@@ -294,8 +294,13 @@ export function nextReviewFollowUpPatch(args: {
     return defaultPatch;
   }
 
-  const preRunConfiguredThreads = configuredBotReviewThreads(args.config as SupervisorConfig, args.preRunReviewThreads);
-  const postRunConfiguredThreads = configuredBotReviewThreads(args.config as SupervisorConfig, args.postRunReviewThreads);
+  const unresolvedConfiguredBotThreads = (reviewThreads: ReviewThread[]) =>
+    configuredBotReviewThreads(args.config as SupervisorConfig, reviewThreads).filter(
+      (thread) => !thread.isResolved && !thread.isOutdated,
+    );
+
+  const preRunConfiguredThreads = unresolvedConfiguredBotThreads(args.preRunReviewThreads);
+  const postRunConfiguredThreads = unresolvedConfiguredBotThreads(args.postRunReviewThreads);
   if (postRunConfiguredThreads.length === 0) {
     return defaultPatch;
   }

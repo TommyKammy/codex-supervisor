@@ -129,6 +129,29 @@ test("nextReviewFollowUpPatch does not grant a follow-up when no configured-bot 
   });
 });
 
+test("nextReviewFollowUpPatch ignores already-resolved configured-bot threads when evaluating same-head progress", () => {
+  const patch = nextReviewFollowUpPatch({
+    config: createConfig({ reviewBotLogins: ["copilot-pull-request-reviewer"] }),
+    preRunState: "addressing_review",
+    record: {
+      review_follow_up_head_sha: null,
+      review_follow_up_remaining: 0,
+    },
+    currentPr: { headRefOid: "head-a" },
+    evaluatedReviewHeadSha: "head-a",
+    preRunReviewThreads: [
+      createReviewThread({ id: "thread-1", isResolved: true }),
+      createReviewThread({ id: "thread-2" }),
+    ],
+    postRunReviewThreads: [createReviewThread({ id: "thread-2" })],
+  });
+
+  assert.deepEqual(patch, {
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
+  });
+});
+
 test("nextReviewFollowUpPatch exhausts the same-head follow-up after the retry turn runs", () => {
   const patch = nextReviewFollowUpPatch({
     config: createConfig({ reviewBotLogins: ["copilot-pull-request-reviewer"] }),
