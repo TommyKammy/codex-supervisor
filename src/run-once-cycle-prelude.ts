@@ -39,6 +39,7 @@ interface RunOnceCyclePreludeArgs {
   reserveRunnableIssueSelection?: (state: SupervisorStateFile) => Promise<boolean>;
   handleAuthFailure: (state: SupervisorStateFile) => Promise<string | null>;
   listAllIssues: () => Promise<GitHubIssue[]>;
+  getIssueForParentEpicClosureFallback?: (issueNumber: number) => Promise<GitHubIssue>;
   reconcileTrackedMergedButOpenIssues: (
     state: SupervisorStateFile,
     issues: GitHubIssue[],
@@ -63,6 +64,26 @@ interface RunOnceCyclePreludeArgs {
     issues: GitHubIssue[],
   ) => Promise<void>;
   cleanupExpiredDoneWorkspaces: (state: SupervisorStateFile) => Promise<RecoveryEvent[]>;
+}
+
+async function loadTrackedIssuesForParentEpicClosureFallback(
+  state: SupervisorStateFile,
+  getIssue: (issueNumber: number) => Promise<GitHubIssue>,
+): Promise<GitHubIssue[] | null> {
+  const trackedIssueNumbers = Object.keys(state.issues)
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value))
+    .sort((left, right) => left - right);
+
+  if (trackedIssueNumbers.length === 0) {
+    return [];
+  }
+
+  try {
+    return await Promise.all(trackedIssueNumbers.map((issueNumber) => getIssue(issueNumber)));
+  } catch {
+    return null;
+  }
 }
 
 export async function runOnceCyclePrelude(
@@ -151,13 +172,16 @@ export async function runOnceCyclePrelude(
         );
         recoveryEvents.push(...activeMergedEvents);
         emitRecoveryEvents(activeMergedEvents);
+      }
 
-        const activeRecordAfterFastPath = state.issues[String(activeRecord.issue_number)] ?? null;
-        if (activeRecordAfterFastPath?.state === "done") {
-          return {
-            state,
-            recoveryEvents,
-          };
+      if (args.getIssueForParentEpicClosureFallback) {
+        const trackedIssues = await loadTrackedIssuesForParentEpicClosureFallback(
+          state,
+          args.getIssueForParentEpicClosureFallback,
+        );
+        if (trackedIssues !== null) {
+          await setReconciliationPhase("parent_epic_closures");
+          await args.reconcileParentEpicClosures(state, trackedIssues);
         }
       }
 

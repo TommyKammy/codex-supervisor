@@ -513,3 +513,98 @@ test("runOnceCyclePrelude blocks new selection when full inventory refresh is ma
   assert.equal(reserveCalled, false);
   assert.equal(result.state.inventory_refresh_failure?.source, "gh issue list");
 });
+
+test("runOnceCyclePrelude still reconciles parent epic closures from tracked issue snapshots when full inventory refresh is malformed", async () => {
+  const parentIssue: GitHubIssue = {
+    number: 1043,
+    title: "Epic issue",
+    body: "",
+    createdAt: "2026-03-26T00:00:00Z",
+    updatedAt: "2026-03-26T00:00:00Z",
+    url: "https://example.test/issues/1043",
+    state: "OPEN",
+  };
+  const childOne: GitHubIssue = {
+    number: 1044,
+    title: "Child one",
+    body: "Part of: #1043",
+    createdAt: "2026-03-26T00:00:00Z",
+    updatedAt: "2026-03-26T00:00:00Z",
+    url: "https://example.test/issues/1044",
+    state: "CLOSED",
+  };
+  const childTwo: GitHubIssue = {
+    number: 1045,
+    title: "Child two",
+    body: "Part of: #1043",
+    createdAt: "2026-03-26T00:00:00Z",
+    updatedAt: "2026-03-26T00:00:00Z",
+    url: "https://example.test/issues/1045",
+    state: "CLOSED",
+  };
+  const issuesByNumber = new Map([
+    [parentIssue.number, parentIssue],
+    [childOne.number, childOne],
+    [childTwo.number, childTwo],
+  ]);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "1043": {} as never,
+      "1044": {} as never,
+      "1045": {} as never,
+    },
+  };
+  const saveCalls: Array<SupervisorStateFile["inventory_refresh_failure"] | undefined> = [];
+  const fetchedIssueNumbers: number[] = [];
+  const parentEpicClosureCalls: GitHubIssue[][] = [];
+
+  const result = await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+      save: async (nextState) => {
+        saveCalls.push(nextState.inventory_refresh_failure);
+      },
+    },
+    carryoverRecoveryEvents: [],
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => {
+      throw new Error("Failed to load full issue inventory.\nPrimary transport: malformed gh issue list JSON\nFallback transport: malformed REST inventory fallback payload");
+    },
+    getIssueForParentEpicClosureFallback: async (issueNumber) => {
+      fetchedIssueNumbers.push(issueNumber);
+      const issue = issuesByNumber.get(issueNumber);
+      assert.ok(issue);
+      return issue;
+    },
+    reserveRunnableIssueSelection: async () => {
+      throw new Error("unexpected reserveRunnableIssueSelection call");
+    },
+    reconcileTrackedMergedButOpenIssues: async () => {
+      throw new Error("unexpected reconcileTrackedMergedButOpenIssues call");
+    },
+    reconcileMergedIssueClosures: async () => {
+      throw new Error("unexpected reconcileMergedIssueClosures call");
+    },
+    reconcileStaleFailedIssueStates: async () => {
+      throw new Error("unexpected reconcileStaleFailedIssueStates call");
+    },
+    reconcileRecoverableBlockedIssueStates: async () => {
+      throw new Error("unexpected reconcileRecoverableBlockedIssueStates call");
+    },
+    reconcileParentEpicClosures: async (_loadedState, loadedIssues) => {
+      parentEpicClosureCalls.push(loadedIssues);
+    },
+    cleanupExpiredDoneWorkspaces: async () => {
+      throw new Error("unexpected cleanupExpiredDoneWorkspaces call");
+    },
+  });
+
+  assert.ok(!("kind" in result));
+  assert.deepEqual(fetchedIssueNumbers, [1043, 1044, 1045]);
+  assert.deepEqual(parentEpicClosureCalls, [[parentIssue, childOne, childTwo]]);
+  assert.equal(saveCalls.length, 1);
+  assert.equal(result.state.inventory_refresh_failure?.source, "gh issue list");
+  assert.match(result.state.inventory_refresh_failure?.message ?? "", /Fallback transport: malformed REST inventory fallback payload/);
+});
