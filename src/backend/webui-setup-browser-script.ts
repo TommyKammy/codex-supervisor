@@ -48,7 +48,8 @@ export function renderSetupBrowserScript(): string {
       let restartInFlight = false;
       let restartRequested = false;
       let reconnectPollToken = 0;
-      const reconnectPollIntervalMs = 50;
+      const reconnectPollInitialIntervalMs = 50;
+      const reconnectPollMaxIntervalMs = 1000;
 
       function formatFieldList(fields) {
         const values = Array.isArray(fields) ? fields.filter((field) => typeof field === "string" && field.length > 0) : [];
@@ -275,6 +276,11 @@ export function renderSetupBrowserScript(): string {
         });
       }
 
+      function reconnectPollDelayMs(failureCount) {
+        const exponent = Math.max(0, Number(failureCount) || 0);
+        return Math.min(reconnectPollInitialIntervalMs * Math.pow(2, exponent), reconnectPollMaxIntervalMs);
+      }
+
       function syncRestartButton() {
         if (!elements.restartButton) {
           return;
@@ -347,6 +353,7 @@ export function renderSetupBrowserScript(): string {
 
       async function monitorManagedRestartReconnect() {
         const pollToken = ++reconnectPollToken;
+        let unsuccessfulPollCount = 0;
         setSaveStatus("Waiting for the restarted worker to reconnect...");
 
         while (restartRequested && pollToken === reconnectPollToken) {
@@ -355,7 +362,8 @@ export function renderSetupBrowserScript(): string {
             const capability = managedRestartCapability(report);
             if (capability.state !== "ready") {
               setText(elements.restartGuidance, capability.summary);
-              await delay(reconnectPollIntervalMs);
+              await delay(reconnectPollDelayMs(unsuccessfulPollCount));
+              unsuccessfulPollCount += 1;
               continue;
             }
 
@@ -375,7 +383,8 @@ export function renderSetupBrowserScript(): string {
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             setText(elements.restartGuidance, "Waiting for the restarted worker to reconnect: " + message);
-            await delay(reconnectPollIntervalMs);
+            await delay(reconnectPollDelayMs(unsuccessfulPollCount));
+            unsuccessfulPollCount += 1;
           }
         }
       }
