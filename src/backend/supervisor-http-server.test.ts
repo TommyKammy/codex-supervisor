@@ -387,6 +387,9 @@ function createStubService(args?: {
     configPath: "/tmp/supervisor.config.json",
     backupPath: "/tmp/supervisor.config.json.bak",
     updatedFields: ["reviewProvider"],
+    restartRequired: true,
+    restartScope: "supervisor",
+    restartTriggeredByFields: ["reviewProvider"],
     document: {
       repoPath: ".",
       repoSlug: "owner/repo",
@@ -1098,6 +1101,9 @@ test("createSupervisorHttpServer accepts narrow setup config writes and returns 
     configPath: "/tmp/supervisor.config.json",
     backupPath: "/tmp/supervisor.config.json.bak",
     updatedFields: ["reviewProvider"],
+    restartRequired: true,
+    restartScope: "supervisor",
+    restartTriggeredByFields: ["reviewProvider"],
     document: {
       repoPath: ".",
       repoSlug: "owner/repo",
@@ -1198,6 +1204,119 @@ test("createSupervisorHttpServer accepts narrow setup config writes and returns 
         signalSource: "none",
         configured: false,
         summary: "No review provider is configured.",
+      },
+      trustPosture: {
+        trustMode: "trusted_repo_and_authors",
+        executionSafetyMode: "unsandboxed_autonomous",
+        warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+        summary: "Trusted inputs with unsandboxed autonomous execution.",
+      },
+    },
+  });
+});
+
+test("createSupervisorHttpServer surfaces no-op setup config writes without a restart requirement", async (t) => {
+  const server = createSupervisorHttpServer({
+    service: createStubService({
+      setupConfigUpdateResult: {
+        kind: "setup_config_update",
+        configPath: "/tmp/supervisor.config.json",
+        backupPath: "/tmp/supervisor.config.json.bak",
+        updatedFields: ["reviewProvider"],
+        restartRequired: false,
+        restartScope: null,
+        restartTriggeredByFields: [],
+        document: {
+          repoPath: ".",
+          repoSlug: "owner/repo",
+          defaultBranch: "main",
+          workspaceRoot: "/tmp/worktrees",
+          stateFile: "/tmp/state.json",
+          codexBinary: "codex",
+          branchPrefix: "codex/issue-",
+          reviewBotLogins: ["chatgpt-codex-connector"],
+        },
+        readiness: {
+          kind: "setup_readiness",
+          ready: true,
+          overallStatus: "configured",
+          configPath: "/tmp/supervisor.config.json",
+          fields: [],
+          blockers: [],
+          hostReadiness: { overallStatus: "pass", checks: [] },
+          providerPosture: {
+            profile: "codex",
+            provider: "codex",
+            reviewers: ["chatgpt-codex-connector"],
+            signalSource: "review_bot_logins",
+            configured: true,
+            summary: "Codex Connector is configured.",
+          },
+          trustPosture: {
+            trustMode: "trusted_repo_and_authors",
+            executionSafetyMode: "unsandboxed_autonomous",
+            warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+            summary: "Trusted inputs with unsandboxed autonomous execution.",
+          },
+        },
+      },
+    }),
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const response = await readJson({
+    server,
+    path: "/api/setup-config",
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      changes: {
+        reviewProvider: "codex",
+      },
+    }),
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, {
+    kind: "setup_config_update",
+    configPath: "/tmp/supervisor.config.json",
+    backupPath: "/tmp/supervisor.config.json.bak",
+    updatedFields: ["reviewProvider"],
+    restartRequired: false,
+    restartScope: null,
+    restartTriggeredByFields: [],
+    document: {
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "/tmp/worktrees",
+      stateFile: "/tmp/state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    },
+    readiness: {
+      kind: "setup_readiness",
+      ready: true,
+      overallStatus: "configured",
+      configPath: "/tmp/supervisor.config.json",
+      fields: [],
+      blockers: [],
+      hostReadiness: { overallStatus: "pass", checks: [] },
+      providerPosture: {
+        profile: "codex",
+        provider: "codex",
+        reviewers: ["chatgpt-codex-connector"],
+        signalSource: "review_bot_logins",
+        configured: true,
+        summary: "Codex Connector is configured.",
       },
       trustPosture: {
         trustMode: "trusted_repo_and_authors",

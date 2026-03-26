@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { resolveConfigPath } from "./core/config";
+import { loadConfigSummary, resolveConfigPath } from "./core/config";
+import { reviewProviderProfileFromConfig } from "./core/review-providers";
 import { isValidGitRefName, parseJson, writeJsonAtomic } from "./core/utils";
 import type { SetupConfigPreviewSelectableReviewProviderProfile } from "./setup-config-preview";
 import { diagnoseSetupReadiness, type SetupReadinessFieldKey, type SetupReadinessReport } from "./setup-readiness";
@@ -26,6 +27,9 @@ export interface SetupConfigUpdateResult {
   configPath: string;
   backupPath: string | null;
   updatedFields: SetupReadinessFieldKey[];
+  restartRequired: boolean;
+  restartScope: "supervisor" | null;
+  restartTriggeredByFields: SetupReadinessFieldKey[];
   document: Record<string, unknown>;
   readiness: SetupReadinessReport;
 }
@@ -40,6 +44,8 @@ const CONFIGURABLE_FIELDS: SetupReadinessFieldKey[] = [
   "branchPrefix",
   "reviewProvider",
 ];
+
+const RESTART_REQUIRED_FIELDS = new Set<SetupReadinessFieldKey>(CONFIGURABLE_FIELDS);
 
 const REVIEW_PROVIDER_LOGIN_MAP: Record<SetupConfigPreviewSelectableReviewProviderProfile, string[]> = {
   none: [],
@@ -182,10 +188,91 @@ function applySetupChanges(document: Record<string, unknown>, changes: SetupConf
   return nextDocument;
 }
 
+function displayStringValue(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function currentSemanticFieldValue(args: {
+  configSummary: ReturnType<typeof loadConfigSummary>;
+  existingDocument: Record<string, unknown>;
+  field: SetupReadinessFieldKey;
+}): string | null {
+  const { configSummary, existingDocument, field } = args;
+  const resolvedConfig = configSummary.config;
+
+  if (field === "reviewProvider") {
+    if (resolvedConfig !== null) {
+      return reviewProviderProfileFromConfig(resolvedConfig).profile;
+    }
+
+    const reviewBotLogins = Array.isArray(existingDocument.reviewBotLogins)
+      ? existingDocument.reviewBotLogins.filter((value): value is string => typeof value === "string")
+      : [];
+    return reviewProviderProfileFromConfig({
+      reviewBotLogins,
+      configuredReviewProviders: undefined,
+    }).profile;
+  }
+
+  if (resolvedConfig !== null) {
+    return displayStringValue(resolvedConfig[field]);
+  }
+
+  return displayStringValue(existingDocument[field]);
+}
+
+function nextSemanticFieldValue(field: SetupReadinessFieldKey, changes: SetupConfigChanges): string | null {
+  switch (field) {
+    case "repoPath":
+      return changes.repoPath ?? null;
+    case "repoSlug":
+      return changes.repoSlug ?? null;
+    case "defaultBranch":
+      return changes.defaultBranch ?? null;
+    case "workspaceRoot":
+      return changes.workspaceRoot ?? null;
+    case "stateFile":
+      return changes.stateFile ?? null;
+    case "codexBinary":
+      return changes.codexBinary ?? null;
+    case "branchPrefix":
+      return changes.branchPrefix ?? null;
+    case "reviewProvider":
+      return changes.reviewProvider ?? null;
+  }
+}
+
+function determineRestartTriggeredFields(args: {
+  configSummary: ReturnType<typeof loadConfigSummary>;
+  existingDocument: Record<string, unknown>;
+  changes: SetupConfigChanges;
+}): SetupReadinessFieldKey[] {
+  const { configSummary, existingDocument, changes } = args;
+  const updatedFields = CONFIGURABLE_FIELDS.filter((field) => field in changes);
+  return updatedFields.filter((field) => {
+    if (!RESTART_REQUIRED_FIELDS.has(field)) {
+      return false;
+    }
+
+    return currentSemanticFieldValue({ configSummary, existingDocument, field }) !== nextSemanticFieldValue(field, changes);
+  });
+}
+
 export async function updateSetupConfig(args: UpdateSetupConfigArgs): Promise<SetupConfigUpdateResult> {
   const configPath = resolveConfigPath(args.configPath);
   const changes = normalizeSetupChanges(args.changes);
   const existing = await readExistingConfigDocument(configPath);
+  const configSummary = loadConfigSummary(configPath);
+  const restartTriggeredByFields = determineRestartTriggeredFields({
+    configSummary,
+    existingDocument: existing.document,
+    changes,
+  });
   const nextDocument = applySetupChanges(existing.document, changes);
 
   let backupPath: string | null = null;
@@ -203,6 +290,9 @@ export async function updateSetupConfig(args: UpdateSetupConfigArgs): Promise<Se
     configPath,
     backupPath,
     updatedFields: CONFIGURABLE_FIELDS.filter((field) => field in changes),
+    restartRequired: restartTriggeredByFields.length > 0,
+    restartScope: restartTriggeredByFields.length > 0 ? "supervisor" : null,
+    restartTriggeredByFields,
     document: nextDocument,
     readiness,
   };

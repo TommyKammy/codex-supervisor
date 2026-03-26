@@ -499,6 +499,9 @@ function createFirstRunSetupService(args: {
         configPath: readiness.configPath,
         backupPath: null,
         updatedFields: ["repoPath", "reviewProvider"],
+        restartRequired: true,
+        restartScope: "supervisor",
+        restartTriggeredByFields: ["repoPath", "reviewProvider"],
         document: {
           repoPath: options.changes.repoPath ?? "/tmp/repo",
           reviewBotLogins: ["chatgpt-codex-connector"],

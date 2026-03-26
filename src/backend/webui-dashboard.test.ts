@@ -1933,6 +1933,9 @@ test("setup shell saves through the narrow setup config API and revalidates read
     configPath: "/tmp/supervisor.config.json",
     backupPath: null,
     updatedFields: ["repoPath", "reviewProvider"],
+    restartRequired: true,
+    restartScope: "supervisor",
+    restartTriggeredByFields: ["repoPath", "reviewProvider"],
     document: {
       repoPath: "/tmp/repo",
       reviewBotLogins: ["chatgpt-codex-connector"],
