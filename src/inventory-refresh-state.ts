@@ -1,0 +1,43 @@
+import { InventoryRefreshFailure } from "./core/types";
+import { nowIso, truncate } from "./core/utils";
+
+export const FULL_ISSUE_INVENTORY_SOURCE = "gh issue list";
+
+export function buildInventoryRefreshFailure(error: unknown): InventoryRefreshFailure {
+  const message = truncate(error instanceof Error ? error.message : String(error), 500) ?? "Unknown inventory refresh failure.";
+  return {
+    source: FULL_ISSUE_INVENTORY_SOURCE,
+    message,
+    recorded_at: nowIso(),
+  };
+}
+
+export function inventoryRefreshFailureEquals(
+  left: InventoryRefreshFailure | null | undefined,
+  right: InventoryRefreshFailure | null | undefined,
+): boolean {
+  if (!left && !right) {
+    return true;
+  }
+
+  if (!left || !right) {
+    return false;
+  }
+
+  return left.source === right.source && left.message === right.message;
+}
+
+export function formatInventoryRefreshStatusLine(
+  failure: InventoryRefreshFailure | null | undefined,
+): string | null {
+  if (!failure) {
+    return null;
+  }
+
+  return [
+    "inventory_refresh=degraded",
+    `source=${failure.source}`,
+    `recorded_at=${failure.recorded_at}`,
+    `message=${failure.message.replace(/\r?\n/g, "\\n")}`,
+  ].join(" ");
+}

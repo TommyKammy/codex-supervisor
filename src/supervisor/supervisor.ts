@@ -130,13 +130,19 @@ import {
   sanitizeStatusValue,
 } from "./supervisor-status-rendering";
 import { buildDetailedStatusModel, buildDetailedStatusSummaryLines } from "./supervisor-status-model";
+import { formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
 import {
   type SupervisorExecutionMetricsRollupResultDto,
   type SupervisorMutationResultDto,
   type SupervisorOrphanPruneResultDto,
   type SupervisorRecoveryAction,
 } from "./supervisor-mutation-report";
-import { buildTrackedIssueDtos, renderSupervisorStatusDto, SupervisorStatusDto } from "./supervisor-status-report";
+import {
+  buildInventoryRefreshWarningMessage,
+  buildTrackedIssueDtos,
+  renderSupervisorStatusDto,
+  SupervisorStatusDto,
+} from "./supervisor-status-report";
 import { acquireSupervisorLoopRuntimeLock, readSupervisorLoopRuntime } from "./supervisor-loop-runtime-state";
 import {
   clearCurrentReconciliationPhase,
@@ -306,9 +312,10 @@ interface RunOnceReturn {
   message: string;
 }
 
-function formatStatus(record: IssueRunRecord | null): string {
+function formatStatus(record: IssueRunRecord | null, state?: SupervisorStateFile): string {
+  const inventoryRefreshStatusLine = formatInventoryRefreshStatusLine(state?.inventory_refresh_failure);
   if (!record) {
-    return "No active issue.";
+    return inventoryRefreshStatusLine ? `No active issue. ${inventoryRefreshStatusLine}` : "No active issue.";
   }
 
   return [
@@ -318,6 +325,7 @@ function formatStatus(record: IssueRunRecord | null): string {
     `pr=${record.pr_number ?? "none"}`,
     `attempts=${record.attempt_count} impl=${record.implementation_attempt_count} repair=${record.repair_attempt_count}`,
     `workspace=${record.workspace}`,
+    ...(inventoryRefreshStatusLine ? [inventoryRefreshStatusLine] : []),
   ].join(" ");
 }
 
@@ -573,7 +581,7 @@ export class Supervisor {
       await this.stateStore.save(state);
       return {
         kind: "returned",
-        message: `Dry run: would invoke Codex for issue #${record.issue_number}. ${formatStatus(record)}`,
+        message: `Dry run: would invoke Codex for issue #${record.issue_number}. ${formatStatus(record, state)}`,
       };
     }
 
@@ -775,13 +783,13 @@ export class Supervisor {
       });
       record = await this.handlePostTurnMergeAndCompletion(state, issue, postTurn.record, postTurn.pr, options, recoveryEvents);
       await syncJournal(record);
-      return prependRecoveryLog(formatStatus(record), recoveryLog);
+      return prependRecoveryLog(formatStatus(record, state), recoveryLog);
     }
 
     state.issues[String(record.issue_number)] = record;
     await this.stateStore.save(state);
     await syncJournal(record);
-    return prependRecoveryLog(formatStatus(record), recoveryLog);
+    return prependRecoveryLog(formatStatus(record, state), recoveryLog);
   }
 
   private async loadOpenPullRequestSnapshot(prNumber: number): Promise<{
@@ -968,6 +976,8 @@ export class Supervisor {
     const gsdSummary = await describeGsdIntegration(this.config);
     const statusRecords = summarizeSupervisorStatusRecords(state);
     const trackedIssues = buildTrackedIssueDtos(state);
+    const inventoryRefreshStatusLine = formatInventoryRefreshStatusLine(state.inventory_refresh_failure);
+    const inventoryRefreshWarning = buildInventoryRefreshWarningMessage(state);
     const reconciliationSnapshot = await readCurrentReconciliationPhaseSnapshot(this.config);
     const reconciliationPhase = reconciliationSnapshot?.phase ?? null;
     const reconciliationWarning = buildLongReconciliationWarning(reconciliationSnapshot);
@@ -997,6 +1007,36 @@ export class Supervisor {
         summarizeChecks,
         mergeConflictDetected,
       });
+      const inactiveDetailedStatusLines =
+        inventoryRefreshStatusLine === null ? detailedStatusLines : [...detailedStatusLines, inventoryRefreshStatusLine];
+      if (state.inventory_refresh_failure) {
+        return {
+          gsdSummary,
+          trustDiagnostics,
+          cadenceDiagnostics,
+          candidateDiscoverySummary,
+          candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
+          localCiContract,
+          loopRuntime,
+          activeIssue: null,
+          selectionSummary: null,
+          trackedIssues,
+          runnableIssues: [],
+          blockedIssues: [],
+          detailedStatusLines: [...inactiveDetailedStatusLines, ...stateDiagnosticLines],
+          reconciliationPhase,
+          reconciliationProgress,
+          reconciliationWarning,
+          readinessLines: [],
+          whyLines: [],
+          warning: inventoryRefreshWarning
+            ? {
+              kind: "readiness",
+              message: truncate(sanitizeStatusValue(inventoryRefreshWarning), 200) ?? "",
+            }
+            : null,
+        };
+      }
       try {
         const candidateDiscoveryDiagnostics =
           typeof this.github.getCandidateDiscoveryDiagnostics === "function"
@@ -1023,7 +1063,7 @@ export class Supervisor {
           trackedIssues,
           runnableIssues: readinessSummary.runnableIssues,
           blockedIssues: readinessSummary.blockedIssues,
-          detailedStatusLines: [...detailedStatusLines, ...stateDiagnosticLines],
+          detailedStatusLines: [...inactiveDetailedStatusLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationProgress,
           reconciliationWarning,
@@ -1046,7 +1086,7 @@ export class Supervisor {
           trackedIssues,
           runnableIssues: [],
           blockedIssues: [],
-          detailedStatusLines: [...detailedStatusLines, ...stateDiagnosticLines],
+          detailedStatusLines: [...inactiveDetailedStatusLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationProgress,
           reconciliationWarning,
@@ -1093,6 +1133,8 @@ export class Supervisor {
       externalReviewFollowUpSummary: activeStatus.externalReviewFollowUpSummary,
       executionMetricsSummaryLines: activeStatus.executionMetricsSummaryLines,
     });
+    const detailedStatusLinesWithInventory =
+      inventoryRefreshStatusLine === null ? detailedStatusLines : [...detailedStatusLines, inventoryRefreshStatusLine];
 
     return {
       gsdSummary,
@@ -1117,16 +1159,19 @@ export class Supervisor {
       trackedIssues,
       runnableIssues: [],
       blockedIssues: [],
-      detailedStatusLines: [...detailedStatusLines, ...summaryLines, ...stateDiagnosticLines],
+      detailedStatusLines: [...detailedStatusLinesWithInventory, ...summaryLines, ...stateDiagnosticLines],
       reconciliationPhase,
       reconciliationProgress,
       reconciliationWarning,
       readinessLines: [],
       whyLines: [],
-      warning: activeStatus.warningMessage
+      warning: activeStatus.warningMessage || inventoryRefreshWarning
         ? {
           kind: "status",
-          message: truncate(sanitizeStatusValue(activeStatus.warningMessage), 200) ?? "",
+          message: truncate(
+            sanitizeStatusValue([activeStatus.warningMessage, inventoryRefreshWarning].filter(Boolean).join(" | ")),
+            200,
+          ) ?? "",
         }
         : null,
     };

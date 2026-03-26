@@ -29,6 +29,7 @@ import {
 } from "./supervisor-status-rendering";
 import { formatLatestRecoveryStatusLine } from "./supervisor-detailed-status-assembly";
 import { readIssueJournal, summarizeIssueJournalHandoff } from "../core/journal";
+import { formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
 import {
   BlockedReason,
   GitHubIssue,
@@ -57,6 +58,7 @@ export interface SupervisorExplainDto {
   state: RunState | "untracked";
   blockedReason: BlockedReason | "none";
   runnable: boolean;
+  inventoryRefreshSummary?: string | null;
   changeRiskLines: string[];
   externalReviewFollowUpSummary: string | null;
   latestRecoverySummary: string | null;
@@ -186,11 +188,13 @@ export async function buildIssueExplainDto(
   state: SupervisorStateFile,
   issueNumber: number,
 ): Promise<SupervisorExplainDto> {
-  const [issue, issues, candidateIssues] = await Promise.all([
+  const inventoryRefreshDegraded = state.inventory_refresh_failure !== undefined;
+  const [issue, loadedIssues, candidateIssues] = await Promise.all([
     github.getIssue(issueNumber),
-    github.listAllIssues(),
+    inventoryRefreshDegraded ? Promise.resolve(null) : github.listAllIssues(),
     github.listCandidateIssues(),
   ]);
+  const issues = loadedIssues ?? [issue];
   const record = state.issues[String(issue.number)];
   const readiness = lintExecutionReadyIssueBody(issue);
   const clarificationBlock = findHighRiskBlockingAmbiguity(issue);
@@ -198,6 +202,7 @@ export async function buildIssueExplainDto(
   const matchingSkipPrefix = config.skipTitlePrefixes.find((prefix) => issue.title.startsWith(prefix)) ?? null;
   const candidateIssueNumbers = new Set(candidateIssues.map((candidate) => candidate.number));
   const reasons: string[] = [];
+  const inventoryRefreshSummary = formatInventoryRefreshStatusLine(state.inventory_refresh_failure);
   const changeRiskLines = await buildExplainChangeRiskSummary({
     config,
     issue,
@@ -241,6 +246,10 @@ export async function buildIssueExplainDto(
     reasons.push("candidate filtered_by_candidate_list");
   }
 
+  if (inventoryRefreshSummary) {
+    reasons.push("inventory_refresh degraded");
+  }
+
   if (shouldEnforceExecutionReady(record) && !readiness.isExecutionReady) {
     reasons.push(`requirements missing=${formatExecutionReadyMissingFields(readiness.missingRequired)}`);
   }
@@ -275,6 +284,7 @@ export async function buildIssueExplainDto(
     state: record?.state ?? "untracked",
     blockedReason: record?.blocked_reason ?? "none",
     runnable,
+    inventoryRefreshSummary,
     changeRiskLines,
     externalReviewFollowUpSummary,
     latestRecoverySummary,
@@ -290,7 +300,7 @@ export async function buildIssueExplainDto(
         preMergeEvaluation,
       })
       : null,
-    selectionReason: runnable
+    selectionReason: runnable && !inventoryRefreshSummary
       ? formatSelectionReason(issue, issues, state, record, readiness.isExecutionReady, config)
       : null,
     reasons,
@@ -310,6 +320,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     `state=${dto.state}`,
     `blocked_reason=${dto.blockedReason}`,
     `runnable=${dto.runnable ? "yes" : "no"}`,
+    ...(dto.inventoryRefreshSummary ? [dto.inventoryRefreshSummary] : []),
     ...dto.changeRiskLines,
     ...(dto.externalReviewFollowUpSummary ? [dto.externalReviewFollowUpSummary] : []),
     ...(preMergeEvaluationLine ? [preMergeEvaluationLine] : []),

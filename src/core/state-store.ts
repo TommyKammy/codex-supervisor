@@ -105,6 +105,21 @@ function normalizeStateForLoad(raw: SupervisorStateFile | null | undefined): Sup
     }
     : undefined;
   const loadFindings = raw?.load_findings?.map((finding) => ({ ...finding }));
+  const inventoryRefreshFailure = raw?.inventory_refresh_failure
+    && typeof raw.inventory_refresh_failure === "object"
+    && raw.inventory_refresh_failure !== null
+    && typeof raw.inventory_refresh_failure.source === "string"
+    && raw.inventory_refresh_failure.source.trim() !== ""
+    && typeof raw.inventory_refresh_failure.message === "string"
+    && raw.inventory_refresh_failure.message.trim() !== ""
+    && typeof raw.inventory_refresh_failure.recorded_at === "string"
+    && raw.inventory_refresh_failure.recorded_at.trim() !== ""
+    ? {
+      source: raw.inventory_refresh_failure.source,
+      message: raw.inventory_refresh_failure.message,
+      recorded_at: raw.inventory_refresh_failure.recorded_at,
+    }
+    : undefined;
   const jsonStateQuarantine = raw?.json_state_quarantine
     ? normalizeJsonStateQuarantine(raw.json_state_quarantine)
     : undefined;
@@ -113,6 +128,7 @@ function normalizeStateForLoad(raw: SupervisorStateFile | null | undefined): Sup
     activeIssueNumber: raw?.activeIssueNumber ?? null,
     issues,
     ...(reconciliationState ? { reconciliation_state: reconciliationState } : {}),
+    ...(inventoryRefreshFailure ? { inventory_refresh_failure: inventoryRefreshFailure } : {}),
     ...(loadFindings && loadFindings.length > 0 ? { load_findings: loadFindings } : {}),
     ...(jsonStateQuarantine ? { json_state_quarantine: jsonStateQuarantine } : {}),
   };
@@ -133,6 +149,21 @@ function normalizeStateForSave(raw: SupervisorStateFile | null | undefined): Sup
     }
     : undefined;
   const loadFindings = raw?.load_findings?.map((finding) => ({ ...finding }));
+  const inventoryRefreshFailure = raw?.inventory_refresh_failure
+    && typeof raw.inventory_refresh_failure === "object"
+    && raw.inventory_refresh_failure !== null
+    && typeof raw.inventory_refresh_failure.source === "string"
+    && raw.inventory_refresh_failure.source.trim() !== ""
+    && typeof raw.inventory_refresh_failure.message === "string"
+    && raw.inventory_refresh_failure.message.trim() !== ""
+    && typeof raw.inventory_refresh_failure.recorded_at === "string"
+    && raw.inventory_refresh_failure.recorded_at.trim() !== ""
+    ? {
+      source: raw.inventory_refresh_failure.source,
+      message: raw.inventory_refresh_failure.message,
+      recorded_at: raw.inventory_refresh_failure.recorded_at,
+    }
+    : undefined;
   const jsonStateQuarantine = raw?.json_state_quarantine
     ? normalizeJsonStateQuarantine(raw.json_state_quarantine)
     : undefined;
@@ -141,6 +172,7 @@ function normalizeStateForSave(raw: SupervisorStateFile | null | undefined): Sup
     activeIssueNumber: raw?.activeIssueNumber ?? null,
     issues,
     ...(reconciliationState ? { reconciliation_state: reconciliationState } : {}),
+    ...(inventoryRefreshFailure ? { inventory_refresh_failure: inventoryRefreshFailure } : {}),
     ...(loadFindings && loadFindings.length > 0 ? { load_findings: loadFindings } : {}),
     ...(jsonStateQuarantine ? { json_state_quarantine: jsonStateQuarantine } : {}),
   };
@@ -201,6 +233,9 @@ function readSqliteState(db: DatabaseSync): SupervisorStateFile {
   const reconciliationStateRow = db
     .prepare("SELECT value FROM metadata WHERE key = 'reconciliation_state'")
     .get() as { value?: string } | undefined;
+  const inventoryRefreshFailureRow = db
+    .prepare("SELECT value FROM metadata WHERE key = 'inventory_refresh_failure'")
+    .get() as { value?: string } | undefined;
   const rows = db
     .prepare("SELECT issue_number, record_json FROM issues ORDER BY issue_number ASC")
     .all() as Array<{ issue_number: number; record_json: string }>;
@@ -241,6 +276,22 @@ function readSqliteState(db: DatabaseSync): SupervisorStateFile {
               issues: {},
               reconciliation_state: JSON.parse(reconciliationStateRow.value) as SupervisorStateFile["reconciliation_state"],
             }).reconciliation_state,
+          };
+        } catch {
+          return {};
+        }
+      })()
+      : {}),
+    ...(inventoryRefreshFailureRow?.value
+      ? (() => {
+        try {
+          return {
+            inventory_refresh_failure: normalizeStateForLoad({
+              activeIssueNumber: null,
+              issues: {},
+              inventory_refresh_failure:
+                JSON.parse(inventoryRefreshFailureRow.value) as SupervisorStateFile["inventory_refresh_failure"],
+            }).inventory_refresh_failure,
           };
         } catch {
           return {};
@@ -762,6 +813,18 @@ export class StateStore {
             issues: {},
             reconciliation_state: state.reconciliation_state,
           }).reconciliation_state ?? {}),
+        );
+        db.prepare(`
+          INSERT INTO metadata(key, value)
+          VALUES (?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        `).run(
+          "inventory_refresh_failure",
+          JSON.stringify(normalizeStateForSave({
+            activeIssueNumber: null,
+            issues: {},
+            inventory_refresh_failure: state.inventory_refresh_failure,
+          }).inventory_refresh_failure ?? {}),
         );
 
         const existingIssueNumbers = new Set<number>(

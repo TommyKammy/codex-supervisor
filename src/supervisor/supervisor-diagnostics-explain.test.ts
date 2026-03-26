@@ -150,6 +150,45 @@ test("explain reports candidate filtering for a non-candidate issue", async () =
   assert.match(explanation, /^reason_1=candidate filtered_by_candidate_list$/m);
 });
 
+test("explain surfaces degraded full inventory refresh without requiring a fresh full issue list", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+    inventory_refresh_failure: {
+      source: "gh issue list",
+      message: "Failed to parse JSON from gh issue list: Unexpected token ] in JSON at position 1",
+      recorded_at: "2026-03-26T00:00:00Z",
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: 94,
+    title: "Filtered out of candidate selection",
+    body: executionReadyBody("Explain should report degraded full-inventory refresh state."),
+    createdAt: "2026-03-13T00:05:00Z",
+    updatedAt: "2026-03-13T00:05:00Z",
+    url: "https://example.test/issues/94",
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => issue,
+    listAllIssues: async () => {
+      throw new Error("unexpected listAllIssues call");
+    },
+    listCandidateIssues: async () => [],
+  };
+
+  const explanation = await supervisor.explain(94);
+
+  assert.match(explanation, /^inventory_refresh=degraded source=gh issue list recorded_at=2026-03-26T00:00:00Z message=Failed to parse JSON from gh issue list: Unexpected token \] in JSON at position 1$/m);
+  assert.match(explanation, /^reason_1=candidate filtered_by_candidate_list$/m);
+  assert.match(explanation, /^reason_2=inventory_refresh degraded$/m);
+});
+
 test("explain reports retry-budget blockers for verification-blocked issues", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {
