@@ -32,6 +32,8 @@ jobs:
       - id: replay_corpus
         if: matrix.os == 'ubuntu-latest'
         run: npx tsx src/index.ts replay-corpus
+      - if: matrix.os == 'ubuntu-latest'
+        run: npm run test:malformed-inventory-regressions
       - if: ${{ failure() && matrix.os == 'ubuntu-latest' && steps.replay_corpus.outcome == 'failure' }}
         uses: actions/upload-artifact@v4
         with:
