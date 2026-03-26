@@ -198,6 +198,12 @@ interface ReadyIssueContext {
 }
 
 const LONG_RECONCILIATION_WARNING_THRESHOLD_MS = 5 * 60 * 1000;
+const FULL_ISSUE_INVENTORY_REUSE_TTL_MS = 5 * 60 * 1000;
+
+interface CachedFullIssueInventory {
+  issues: GitHubIssue[];
+  fetchedAtMs: number;
+}
 
 function isIgnoredSupervisorArtifactPath(
   relativePath: string,
@@ -426,6 +432,7 @@ export class Supervisor {
   private readonly agentRunner: AgentRunner;
   private readonly onEvent?: SupervisorEventSink;
   private readonly configPath?: string;
+  private cachedFullIssueInventory: CachedFullIssueInventory | null = null;
 
   constructor(
     public readonly config: SupervisorConfig,
@@ -500,6 +507,26 @@ export class Supervisor {
         : "recoverable";
     } catch {
       return "recoverable";
+    }
+  }
+
+  private async listLoopIssueInventory(): Promise<GitHubIssue[]> {
+    const nowMs = Date.now();
+    const cachedInventory = this.cachedFullIssueInventory;
+    if (cachedInventory !== null && nowMs - cachedInventory.fetchedAtMs < FULL_ISSUE_INVENTORY_REUSE_TTL_MS) {
+      return cachedInventory.issues;
+    }
+
+    try {
+      const issues = await this.github.listAllIssues();
+      this.cachedFullIssueInventory = {
+        issues,
+        fetchedAtMs: nowMs,
+      };
+      return issues;
+    } catch (error) {
+      this.cachedFullIssueInventory = null;
+      throw error;
     }
   }
 
@@ -1484,7 +1511,7 @@ export class Supervisor {
         return reserved !== null;
       },
       handleAuthFailure: (state) => handleAuthFailure(this.github, this.stateStore, state),
-      listAllIssues: () => this.github.listAllIssues(),
+      listAllIssues: () => this.listLoopIssueInventory(),
       getIssueForParentEpicClosureFallback: (issueNumber) => this.github.getIssue(issueNumber),
       reconcileTrackedMergedButOpenIssues: (state, issues, updateReconciliationProgress, options) =>
         reconcileTrackedMergedButOpenIssues(

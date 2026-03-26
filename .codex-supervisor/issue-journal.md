@@ -1,45 +1,45 @@
-# Issue #1081: Expose GitHub REST and GraphQL rate-limit telemetry in supervisor status surfaces
+# Issue #1082: Bound full issue inventory refresh cadence and reuse recent inventory results
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1081
-- Branch: codex/issue-1081
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1082
+- Branch: codex/issue-1082
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 5 (implementation=2, repair=3)
-- Last head SHA: be1595c6a214f822447ea09821bb78599e46e5b9
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: fc4a6db902bf5cbfff5a27d668c8800db7d0819b
 - Blocked reason: none
 - Last failure signature: none
-- Repeated failure signature count: 1
-- Updated at: 2026-03-26T17:26:24Z
+- Repeated failure signature count: 0
+- Updated at: 2026-03-26T17:34:26.997Z
 
 ## Latest Codex Summary
-Updated [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) to match the live `Supervisor.statusReport()` control flow more precisely: the summary now states that GitHub rate-limit telemetry is fetched at the end of each branch after branch-specific reads when present, and explicitly notes that the `inventory_refresh_failure` inactive early-return path has no selection-read step before telemetry.
+- Added a supervisor-local 5 minute full-issue-inventory reuse window for the loop prelude so repeated cycles reuse recent `listAllIssues()` results instead of refetching on every cycle. The loop now invalidates the cached inventory on refresh failure and falls back to a fresh fetch after the TTL expires.
 
-Sanitized the recorded command log to use `<local-memory>/...` placeholders instead of machine-specific absolute paths, committed the review fix as `be1595c`, pushed `codex/issue-1081`, and resolved review threads `PRRT_kwDORgvdZ853FiOT` and `PRRT_kwDORgvdZ853FiOZ` on PR `#1087`.
+- Added focused supervisor tests that stub `Date.now()` around the cache helper and prove both boundaries: reuse inside the TTL and refresh after the TTL expires. Verified with `npx tsx --test src/supervisor/supervisor.test.ts` and `npm run build`.
 
-Summary: Clarified the journal’s rate-limit telemetry wording, removed machine-specific paths from the command log, pushed the review fix, and resolved the remaining automated review threads
-State hint: waiting_ci
-Blocked reason: none
-Tests: not run (journal-only review fix)
-Next action: Watch PR #1087 for any follow-up review or CI signal after the journal-only review fix
-Failure signature: none
+- Summary: bounded loop inventory refreshes with a 5 minute TTL and added focused cache-boundary tests
+- State hint: implementing
+- Blocked reason: none
+- Tests: `npx tsx --test --test-name-pattern "listLoopIssueInventory" src/supervisor/supervisor.test.ts`; `npx tsx --test src/supervisor/supervisor.test.ts`; `npm run build`
+- Next action: review whether the 5 minute TTL should remain fixed or become config-derived before opening or updating the PR
+- Failure signature: none
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: both open review comments are valid against the committed journal state and only require a journal-only follow-up: tighten the control-flow wording to cover branch-specific status reads accurately and replace machine-specific command paths with stable placeholders.
-- What changed: updated the journal summary to say `Supervisor.statusReport()` fetches rate-limit telemetry at the end of each branch after branch-specific reads when they occur, explicitly called out the `inventory_refresh_failure` inactive early return as a no-selection-read exception, replaced command-log absolute paths with `<local-memory>/...` placeholders, committed the review fix as `be1595c`, pushed `codex/issue-1081`, and resolved review threads `PRRT_kwDORgvdZ853FiOT` plus `PRRT_kwDORgvdZ853FiOZ`.
+- Hypothesis: the avoidable API pressure comes from `Supervisor.startRunOnceCycle()` always routing the prelude through a fresh `github.listAllIssues()` call, so a supervisor-local cache with a bounded TTL should reduce repeated full inventory reads without changing the loop’s correctness gates.
+- What changed: added `listLoopIssueInventory()` in `src/supervisor/supervisor.ts`, cached successful full inventory reads for 5 minutes, invalidated the cache on refresh failure, and wired only the loop prelude’s `listAllIssues` path through that helper. Added focused tests in `src/supervisor/supervisor.test.ts` that verify reuse at `2026-03-20T00:04:59Z` after an initial fetch at `2026-03-20T00:00:00Z`, and verify a refresh occurs again at `2026-03-20T00:05:01Z`.
 - Current blocker: none locally.
-- Next exact step: watch PR `#1087` for any follow-up review or CI signal after the journal-only review fix.
-- Verification gap: no tests were rerun this turn because the fix is journal-only.
-- Files touched: `.codex-supervisor/issue-journal.md`.
-- Rollback concern: minimal. The change only updates journal wording and command-log placeholders.
-- Last focused command: `gh api graphql -f query='mutation($thread1: ID!, $thread2: ID!) { first: resolveReviewThread(input: {threadId: $thread1}) { thread { id isResolved } } second: resolveReviewThread(input: {threadId: $thread2}) { thread { id isResolved } } }' -F thread1=PRRT_kwDORgvdZ853FiOT -F thread2=PRRT_kwDORgvdZ853FiOZ`
-- What changed this turn: reread the required memory files and journal, confirmed both automated review comments against the live journal content, patched the summary/control-flow wording plus command-log placeholders, committed `be1595c`, pushed `codex/issue-1081`, and resolved the two remaining CodeRabbit threads on PR `#1087`.
-- Exact failure reproduced this turn: journal inspection confirmed that the previous summary wording overstated the inactive-path behavior because `inventory_refresh_failure` skips selection reads before telemetry, and the recorded commands still included machine-specific absolute memory paths.
-- Commands run this turn: `sed -n '1,220p' <local-memory>/TommyKammy-codex-supervisor/issue-1081/AGENTS.generated.md`; `sed -n '1,220p' <local-memory>/TommyKammy-codex-supervisor/issue-1081/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short`; `git diff -- .codex-supervisor/issue-journal.md`; `rg -n "<user-home>/|<redacted-local-path>|statusReport\\(\\) now fetches telemetry after inactive selection reads and active issue status reads|Commands run this turn:" .codex-supervisor/issue-journal.md`; `apply_patch ...`; `rg -n "<user-home>/|<redacted-local-path>|<local-memory>" .codex-supervisor/issue-journal.md`; `git status --short`; `git diff -- .codex-supervisor/issue-journal.md`; `git add .codex-supervisor/issue-journal.md && git commit -m "Clarify issue journal review notes"`; `git rev-parse HEAD`; `git push origin codex/issue-1081`; `gh api graphql -f query='mutation($thread1: ID!, $thread2: ID!) { first: resolveReviewThread(input: {threadId: $thread1}) { thread { id isResolved } } second: resolveReviewThread(input: {threadId: $thread2}) { thread { id isResolved } } }' -F thread1=PRRT_kwDORgvdZ853FiOT -F thread2=PRRT_kwDORgvdZ853FiOZ`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`.
+- Next exact step: commit the loop-inventory cache change, then decide whether to keep the TTL fixed at 5 minutes or derive it from config before opening or updating a PR.
+- Verification gap: I did not run the entire suite because `npm test -- <file>` expands to the repo-wide test glob here; verification so far is the focused supervisor cache tests plus a full TypeScript build.
+- Files touched: `src/supervisor/supervisor.ts`; `src/supervisor/supervisor.test.ts`; `.codex-supervisor/issue-journal.md`.
+- Rollback concern: moderate. A too-long TTL would delay reconciliation of full-inventory-only state changes, so the remaining review question is whether 5 minutes is the right fixed bound.
+- Last focused command: `npm run build`
+- What changed this turn: reread the required memory files and journal, traced the full inventory refresh path to `Supervisor.startRunOnceCycle() -> runOnceCyclePrelude() -> github.listAllIssues()`, added a 5 minute supervisor-local reuse cache plus failure invalidation, replaced the heavier first draft integration test with focused cache-boundary tests on `listLoopIssueInventory()`, installed local dependencies with `npm ci`, and verified the change with focused tests and a full build.
+- Exact failure reproduced this turn: repeated loop cycles would always invoke a fresh full `listAllIssues()` refresh because the prelude path had no reuse policy at all; the focused cache-boundary tests now prove reuse inside the TTL and a new fetch immediately after the TTL boundary.
+- Commands run this turn: `sed -n '1,220p' <local-memory>/TommyKammy-codex-supervisor/issue-1082/AGENTS.generated.md`; `sed -n '1,220p' <local-memory>/TommyKammy-codex-supervisor/issue-1082/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short`; `rg -n "inventory|refresh cadence|full issue inventory|listIssues|issues inventory|refresh" -S .`; `rg --files . | rg "test|spec|__tests__|src|lib"`; `sed -n '1,260p' src/run-once-cycle-prelude.ts`; `sed -n '1,260p' src/run-once-issue-selection.ts`; `sed -n '1,260p' src/run-once-cycle-prelude.test.ts`; `rg -n "listAllIssues\\(|reserveRunnableIssueSelection\\(|runOnceCyclePrelude\\(" src -S`; `sed -n '1,260p' src/run-once-issue-selection.test.ts`; `sed -n '260,520p' src/run-once-issue-selection.ts`; `rg -n "inventory_refresh_failure|activeIssueNumber|pollIntervalSeconds|candidateDiscoveryFetchWindow" src/core/types.ts src/core/state-store.ts src/core/config.ts -S`; `sed -n '240,380p' src/core/types.ts`; `sed -n '1440,1515p' src/supervisor/supervisor.ts`; `rg -n "listAllIssues|startRunOnceCycle|runOnce\\(|pollIntervalSeconds|Date.now|nowIso\\(" src/supervisor/*.test.ts src/*.test.ts -S`; `sed -n '1,260p' src/supervisor/supervisor.test.ts`; `sed -n '1,260p' src/supervisor/supervisor-lifecycle.test.ts`; `sed -n '880,980p' src/supervisor/supervisor-execution-cleanup.test.ts`; `sed -n '1,220p' src/supervisor/supervisor-test-helpers.ts`; `sed -n '1,220p' src/supervisor/index.ts`; `sed -n '1,220p' src/supervisor/supervisor.ts`; `sed -n '220,420p' src/supervisor/supervisor.ts`; `rg -n "class Supervisor|constructor\\(|private readonly github|private .*stateStore|private .*config" src/supervisor/supervisor.ts -S`; `sed -n '423,520p' src/supervisor/supervisor.ts`; `sed -n '1,220p' src/supervisor/supervisor-execution-orchestration.test.ts`; `sed -n '820,910p' src/supervisor/supervisor-execution-orchestration.test.ts`; `apply_patch ...`; `npm test -- src/supervisor/supervisor-execution-orchestration.test.ts`; `sed -n '1,220p' package.json`; `ls -1`; `test -d node_modules && echo yes || echo no`; `npm ci`; `npx tsx --test --test-name-pattern "listLoopIssueInventory" src/supervisor/supervisor.test.ts`; `npx tsx --test src/supervisor/supervisor.test.ts`; `npm run build`; `git diff -- src/supervisor/supervisor.ts src/supervisor/supervisor.test.ts src/supervisor/supervisor-execution-orchestration.test.ts .codex-supervisor/issue-journal.md`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`.
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
