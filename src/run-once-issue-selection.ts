@@ -4,6 +4,7 @@ import {
   findBlockingIssue,
   findHighRiskBlockingAmbiguity,
   lintExecutionReadyIssueBody,
+  parseIssueMetadata,
 } from "./issue-metadata";
 import { issueJournalPath, syncIssueJournal } from "./core/journal";
 import { acquireFileLock, LockHandle } from "./core/lock";
@@ -471,10 +472,14 @@ export async function resolveRunnableIssueContext(
       return { kind: "restart" };
     }
 
+    const metadata = parseIssueMetadata(issue);
+    const hasSequencingConstraints =
+      metadata.dependsOn.length > 0 || (metadata.executionOrderIndex !== null && metadata.executionOrderIndex > 1);
     const shouldBypassCandidateDependencyCheck =
       state.inventory_refresh_failure !== undefined &&
       currentRecord !== null &&
-      currentRecord.issue_number === record.issue_number;
+      currentRecord.issue_number === record.issue_number &&
+      !hasSequencingConstraints;
     if (!shouldBypassCandidateDependencyCheck) {
       const candidateIssues = await github.listCandidateIssues();
       const blockingIssue = findBlockingIssue(issue, candidateIssues, state);

@@ -424,6 +424,128 @@ test("runOnce still reevaluates an active tracked PR into addressing_review when
   );
 });
 
+test("runOnce does not bypass dependency ordering for a constrained active issue when inventory refresh is malformed", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 119;
+  const dependencyNumber = 118;
+  const branch = branchName(fixture.config, issueNumber);
+  const runHeadSha = git(["rev-parse", "HEAD"], fixture.repoPath);
+  const config = createConfig({
+    ...fixture.config,
+    reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "waiting_ci",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: 1040,
+        last_head_sha: runHeadSha,
+      }),
+      [String(dependencyNumber)]: createRecord({
+        issue_number: dependencyNumber,
+        state: "queued",
+        branch: branchName(fixture.config, dependencyNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${dependencyNumber}`),
+        journal_path: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Preserve dependency ordering while inventory refresh is degraded",
+    body: `## Summary
+Preserve dependency ordering while inventory refresh is degraded.
+
+## Scope
+- keep the issue execution-ready
+
+Depends on: #${dependencyNumber}
+
+## Acceptance criteria
+- supervisor does not skip dependency ordering for this active issue
+
+## Verification
+- npm test -- src/supervisor/supervisor-pr-review-blockers.test.ts`,
+    createdAt: "2026-03-26T01:30:00Z",
+    updatedAt: "2026-03-26T01:30:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const blockingDependency: GitHubIssue = {
+    number: dependencyNumber,
+    title: "Dependency still open",
+    body: executionReadyBody("Dependency still open."),
+    createdAt: "2026-03-26T01:20:00Z",
+    updatedAt: "2026-03-26T01:20:00Z",
+    url: `https://example.test/issues/${dependencyNumber}`,
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: 1040,
+    title: "Contain malformed inventory refresh failures",
+    url: "https://example.test/pr/1040",
+    state: "OPEN",
+    createdAt: "2026-03-26T01:57:52Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: runHeadSha,
+    mergedAt: null,
+  };
+
+  const supervisor = new Supervisor(config);
+  let listCandidateIssuesCalls = 0;
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => {
+      throw new Error("Failed to parse JSON from gh issue list: Bad control character in string literal");
+    },
+    listCandidateIssues: async () => {
+      listCandidateIssuesCalls += 1;
+      return [issue, blockingDependency];
+    },
+    getIssue: async (issueNumberToFetch: number) => {
+      if (issueNumberToFetch === issueNumber) {
+        return issue;
+      }
+      if (issueNumberToFetch === dependencyNumber) {
+        return blockingDependency;
+      }
+      throw new Error(`unexpected getIssue call for #${issueNumberToFetch}`);
+    },
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequest: async () => pr,
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  await supervisor.runOnce({ dryRun: true });
+  assert.ok(listCandidateIssuesCalls >= 1);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(record.state, "queued");
+  assert.match(record.last_error ?? "", /Waiting for depends on #118 before continuing issue #119/);
+  assert.equal(persisted.inventory_refresh_failure?.source, "gh issue list");
+});
+
 test("runOnce records verification blocker context when local review blocks merge before a turn", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 118;

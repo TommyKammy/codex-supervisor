@@ -1,5 +1,6 @@
 import { InventoryRefreshFailure } from "./core/types";
 import { nowIso, truncate } from "./core/utils";
+import { sanitizeStatusValue } from "./supervisor/supervisor-status-rendering";
 
 export const FULL_ISSUE_INVENTORY_SOURCE = "gh issue list";
 
@@ -36,8 +37,8 @@ export function formatInventoryRefreshStatusLine(
 
   return [
     "inventory_refresh=degraded",
-    `source=${failure.source}`,
+    `source=${sanitizeStatusValue(failure.source)}`,
     `recorded_at=${failure.recorded_at}`,
-    `message=${failure.message.replace(/\r?\n/g, "\\n")}`,
+    `message=${sanitizeStatusValue(failure.message.replace(/\r?\n/g, "\\n"))}`,
   ].join(" ");
 }
