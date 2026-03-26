@@ -27,13 +27,14 @@ class WebUiWorkerUnavailableError extends Error {
 }
 
 interface RestartableWebUiShellCache {
-  status: SupervisorStatusDto | null;
+  status: Map<boolean, SupervisorStatusDto>;
   doctor: DoctorDiagnostics | null;
   setupReadiness: SetupReadinessReport | null;
-  setupConfigPreview: SetupConfigPreview | null;
+  setupConfigPreview: Map<SetupConfigPreviewSelectableReviewProviderProfile | null, SetupConfigPreview>;
 }
 
-type CachedWorkerRead<K extends keyof RestartableWebUiShellCache> = Exclude<RestartableWebUiShellCache[K], null>;
+type RestartableWebUiShellScalarCacheKey = "doctor" | "setupReadiness";
+type CachedWorkerRead<K extends RestartableWebUiShellScalarCacheKey> = Exclude<RestartableWebUiShellCache[K], null>;
 
 export interface RestartableWebUiShellService extends SupervisorService {
   readonly workerPhase: "open" | "restarting";
@@ -61,18 +62,20 @@ export function createRestartableWebUiShellService(
   const managedRestartCapability: ManagedRestartCapability = { ...baseCapability };
   const eventListeners = new Set<SupervisorEventSink>();
   const cache: RestartableWebUiShellCache = {
-    status: null,
+    status: new Map(),
     doctor: null,
     setupReadiness: null,
-    setupConfigPreview: null,
+    setupConfigPreview: new Map(),
   };
 
   function subscribeToActiveService(service: SupervisorService): SupervisorEventUnsubscribe {
     return service.subscribeEvents?.((event) => {
       for (const listener of eventListeners) {
-        void Promise.resolve(listener(event)).catch((error: unknown) => {
-          console.error(`WebUI shell event subscriber failed for ${event.type}.`, error);
-        });
+        void Promise.resolve()
+          .then(() => listener(event))
+          .catch((error: unknown) => {
+            console.error(`WebUI shell event subscriber failed for ${event.type}.`, error);
+          });
       }
     }) ?? (() => {});
   }
@@ -95,7 +98,8 @@ export function createRestartableWebUiShellService(
 
     markRestarting();
     activeUnsubscribe();
-    restartPromise = Promise.resolve(options.recreateService())
+    restartPromise = Promise.resolve()
+      .then(() => options.recreateService())
       .then((nextService) => {
         activeService = nextService;
         activeUnsubscribe = subscribeToActiveService(activeService);
@@ -115,7 +119,7 @@ export function createRestartableWebUiShellService(
     return restartPromise;
   }
 
-  async function withWorkerReadCache<K extends keyof RestartableWebUiShellCache>(
+  async function withWorkerReadCache<K extends RestartableWebUiShellScalarCacheKey>(
     cacheKey: K,
     load: (service: SupervisorService) => Promise<CachedWorkerRead<K>>,
   ): Promise<CachedWorkerRead<K>> {
@@ -129,6 +133,24 @@ export function createRestartableWebUiShellService(
 
     const value = await load(activeService);
     cache[cacheKey] = value;
+    return value;
+  }
+
+  async function withWorkerReadMapCache<K, V>(
+    cachedValues: Map<K, V>,
+    cacheKey: K,
+    load: (service: SupervisorService) => Promise<V>,
+  ): Promise<V> {
+    if (workerPhase === "restarting") {
+      const cached = cachedValues.get(cacheKey);
+      if (cached !== undefined) {
+        return cached;
+      }
+      throw new WebUiWorkerUnavailableError();
+    }
+
+    const value = await load(activeService);
+    cachedValues.set(cacheKey, value);
     return value;
   }
 
@@ -151,7 +173,7 @@ export function createRestartableWebUiShellService(
       return activeService.runOnce(runOptions);
     },
     queryStatus: async (queryOptions: Pick<CliOptions, "why">) => {
-      const status = await withWorkerReadCache("status", (currentService) => currentService.queryStatus(queryOptions));
+      const status = await withWorkerReadMapCache(cache.status, queryOptions.why, (currentService) => currentService.queryStatus(queryOptions));
       if (workerPhase === "restarting") {
         return {
           ...status,
@@ -225,7 +247,7 @@ export function createRestartableWebUiShellService(
       ? async (previewOptions: {
         reviewProviderProfile?: SetupConfigPreviewSelectableReviewProviderProfile;
       }): Promise<SetupConfigPreview> =>
-        withWorkerReadCache("setupConfigPreview", (currentService) => {
+        withWorkerReadMapCache(cache.setupConfigPreview, previewOptions.reviewProviderProfile ?? null, (currentService) => {
           if (!currentService.querySetupConfigPreview) {
             throw new Error("Missing setup config preview support.");
           }
