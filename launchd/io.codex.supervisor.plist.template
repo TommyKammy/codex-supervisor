@@ -31,10 +31,6 @@
     <string>true</string>
     <key>CI</key>
     <string>1</string>
-    <key>CODEX_SUPERVISOR_MANAGED_RESTART</key>
-    <string>1</string>
-    <key>CODEX_SUPERVISOR_MANAGED_RESTART_LAUNCHER</key>
-    <string>launchd</string>
   </dict>
 </dict>
 </plist>

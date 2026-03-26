@@ -18,8 +18,5 @@ cd "${ROOT}"
 
 export npm_config_yes="${npm_config_yes:-true}"
 export CI="${CI:-1}"
-export CODEX_SUPERVISOR_MANAGED_RESTART="${CODEX_SUPERVISOR_MANAGED_RESTART:-1}"
-export CODEX_SUPERVISOR_MANAGED_RESTART_LAUNCHER="${CODEX_SUPERVISOR_MANAGED_RESTART_LAUNCHER:-custom}"
-
 "${NPM_BIN}" run build
 exec "${NODE_BIN}" "${ROOT}/dist/index.js" loop --config "${CONFIG_PATH}"
