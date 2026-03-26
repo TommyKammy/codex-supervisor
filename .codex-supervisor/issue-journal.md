@@ -1,28 +1,28 @@
-# Issue #1081: Expose GitHub REST and GraphQL rate-limit telemetry in supervisor status surfaces
+# Issue #1082: Bound full issue inventory refresh cadence and reuse recent inventory results
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1081
-- Branch: codex/issue-1081
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1082
+- Branch: codex/issue-1082
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 5 (implementation=2, repair=3)
-- Last head SHA: be1595c6a214f822447ea09821bb78599e46e5b9
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: 722f1a44416a93d5a9a46580ef18c684029fd0f6
 - Blocked reason: none
-- Last failure signature: none
+- Last failure signature: PRRT_kwDORgvdZ853GE78
 - Repeated failure signature count: 1
-- Updated at: 2026-03-26T17:26:24Z
+- Updated at: 2026-03-26T17:56:13.357Z
 
 ## Latest Codex Summary
-Updated [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) to match the live `Supervisor.statusReport()` control flow more precisely: the summary now states that GitHub rate-limit telemetry is fetched at the end of each branch after branch-specific reads when present, and explicitly notes that the `inventory_refresh_failure` inactive early-return path has no selection-read step before telemetry.
+Addressed the remaining CodeRabbit review on draft PR [#1088](https://github.com/TommyKammy/codex-supervisor/pull/1088) by fixing the two journal prose uses of `5-minute TTL`, committing the journal-only wording change as `35eccef`, pushing `codex/issue-1082`, and resolving the review thread through GitHub.
 
-Sanitized the recorded command log to use `<local-memory>/...` placeholders instead of machine-specific absolute paths, committed the review fix as `be1595c`, pushed `codex/issue-1081`, and resolved review threads `PRRT_kwDORgvdZ853FiOT` and `PRRT_kwDORgvdZ853FiOZ` on PR `#1087`.
+I left the existing untracked supervisor runtime artifacts under `.codex-supervisor/` alone. No code paths changed this turn, so verification stayed limited to a whitespace check and a targeted journal-content search after the wording fix.
 
-Summary: Clarified the journal’s rate-limit telemetry wording, removed machine-specific paths from the command log, pushed the review fix, and resolved the remaining automated review threads
-State hint: waiting_ci
+Summary: Pushed a journal-only review fix to PR #1088 and resolved the remaining CodeRabbit thread
+State hint: addressing_review
 Blocked reason: none
-Tests: not run (journal-only review fix)
-Next action: Watch PR #1087 for any follow-up review or CI signal after the journal-only review fix
+Tests: `git diff --check`; `rg -n "5 minute TTL" .codex-supervisor/issue-journal.md`
+Next action: Monitor PR #1088 for follow-up review; if the TTL question resurfaces, decide whether the fixed 5-minute inventory reuse TTL should stay hard-coded or become config-derived
 Failure signature: none
 
 ## Active Failure Context
@@ -30,16 +30,16 @@ Failure signature: none
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: both open review comments are valid against the committed journal state and only require a journal-only follow-up: tighten the control-flow wording to cover branch-specific status reads accurately and replace machine-specific command paths with stable placeholders.
-- What changed: updated the journal summary to say `Supervisor.statusReport()` fetches rate-limit telemetry at the end of each branch after branch-specific reads when they occur, explicitly called out the `inventory_refresh_failure` inactive early return as a no-selection-read exception, replaced command-log absolute paths with `<local-memory>/...` placeholders, committed the review fix as `be1595c`, pushed `codex/issue-1081`, and resolved review threads `PRRT_kwDORgvdZ853FiOT` plus `PRRT_kwDORgvdZ853FiOZ`.
+- Hypothesis: the avoidable API pressure comes from `Supervisor.startRunOnceCycle()` always routing the prelude through a fresh `github.listAllIssues()` call, so a supervisor-local cache with a bounded TTL should reduce repeated full inventory reads without changing the loop’s correctness gates.
+- What changed: added `listLoopIssueInventory()` in `src/supervisor/supervisor.ts`, cached successful full inventory reads for 5 minutes, invalidated the cache on refresh failure, and wired only the loop prelude’s `listAllIssues` path through that helper. Added focused tests in `src/supervisor/supervisor.test.ts` that verify reuse at `2026-03-20T00:04:59Z` after an initial fetch at `2026-03-20T00:00:00Z`, and verify a refresh occurs again at `2026-03-20T00:05:01Z`. Pushed the branch and opened draft PR #1088.
 - Current blocker: none locally.
-- Next exact step: watch PR `#1087` for any follow-up review or CI signal after the journal-only review fix.
-- Verification gap: no tests were rerun this turn because the fix is journal-only.
-- Files touched: `.codex-supervisor/issue-journal.md`.
-- Rollback concern: minimal. The change only updates journal wording and command-log placeholders.
-- Last focused command: `gh api graphql -f query='mutation($thread1: ID!, $thread2: ID!) { first: resolveReviewThread(input: {threadId: $thread1}) { thread { id isResolved } } second: resolveReviewThread(input: {threadId: $thread2}) { thread { id isResolved } } }' -F thread1=PRRT_kwDORgvdZ853FiOT -F thread2=PRRT_kwDORgvdZ853FiOZ`
-- What changed this turn: reread the required memory files and journal, confirmed both automated review comments against the live journal content, patched the summary/control-flow wording plus command-log placeholders, committed `be1595c`, pushed `codex/issue-1081`, and resolved the two remaining CodeRabbit threads on PR `#1087`.
-- Exact failure reproduced this turn: journal inspection confirmed that the previous summary wording overstated the inactive-path behavior because `inventory_refresh_failure` skips selection reads before telemetry, and the recorded commands still included machine-specific absolute memory paths.
-- Commands run this turn: `sed -n '1,220p' <local-memory>/TommyKammy-codex-supervisor/issue-1081/AGENTS.generated.md`; `sed -n '1,220p' <local-memory>/TommyKammy-codex-supervisor/issue-1081/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short`; `git diff -- .codex-supervisor/issue-journal.md`; `rg -n "<user-home>/|<redacted-local-path>|statusReport\\(\\) now fetches telemetry after inactive selection reads and active issue status reads|Commands run this turn:" .codex-supervisor/issue-journal.md`; `apply_patch ...`; `rg -n "<user-home>/|<redacted-local-path>|<local-memory>" .codex-supervisor/issue-journal.md`; `git status --short`; `git diff -- .codex-supervisor/issue-journal.md`; `git add .codex-supervisor/issue-journal.md && git commit -m "Clarify issue journal review notes"`; `git rev-parse HEAD`; `git push origin codex/issue-1081`; `gh api graphql -f query='mutation($thread1: ID!, $thread2: ID!) { first: resolveReviewThread(input: {threadId: $thread1}) { thread { id isResolved } } second: resolveReviewThread(input: {threadId: $thread2}) { thread { id isResolved } } }' -F thread1=PRRT_kwDORgvdZ853FiOT -F thread2=PRRT_kwDORgvdZ853FiOZ`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`.
+- Next exact step: monitor PR #1088 for any follow-up review; if none appears, keep the branch ready while the fixed 5-minute TTL versus config-derived TTL question remains under review.
+- Verification gap: I did not run the entire suite because `npm test -- <file>` expands to the repo-wide test glob here; verification so far is the focused supervisor cache tests plus a full TypeScript build.
+- Files touched: `src/supervisor/supervisor.ts`; `src/supervisor/supervisor.test.ts`; `.codex-supervisor/issue-journal.md`.
+- Rollback concern: moderate. A too-long TTL would delay reconciliation of full-inventory-only state changes, so the remaining review question is whether 5 minutes is the right fixed bound.
+- Last focused command: `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId='PRRT_kwDORgvdZ853GE78'`
+- What changed this turn: reread the required memory files and current journal, accepted the CodeRabbit wording fix, updated the two prose mentions to `5-minute TTL`, committed the journal-only change as `35eccef`, pushed `codex/issue-1082`, and resolved review thread `PRRT_kwDORgvdZ853GE78`.
+- Exact failure reproduced this turn: the only reproducible issue was the journal prose wording in the existing review comment; it is now fixed locally and resolved on the PR.
+- Commands run this turn: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1082/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1082/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short`; `rg -n "5 minute TTL|5-minute TTL" .codex-supervisor/issue-journal.md`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `git diff -- .codex-supervisor/issue-journal.md`; `git diff --check`; `git add .codex-supervisor/issue-journal.md`; `git commit -m "chore: fix issue journal ttl wording"`; `git push origin codex/issue-1082`; `gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -F threadId='PRRT_kwDORgvdZ853GE78'`; `sed -n '1,220p' .codex-supervisor/issue-journal.md`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `git status --short`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
