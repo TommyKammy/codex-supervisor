@@ -471,19 +471,25 @@ export async function resolveRunnableIssueContext(
       return { kind: "restart" };
     }
 
-    const candidateIssues = await github.listCandidateIssues();
-    const blockingIssue = findBlockingIssue(issue, candidateIssues, state);
-    if (blockingIssue) {
-      record = stateStore.touch(record, {
-        state: "queued",
-        last_error: `Waiting for ${blockingIssue.reason} before continuing issue #${record.issue_number}.`,
-      });
-      state.issues[String(record.issue_number)] = record;
-      state.activeIssueNumber = null;
-      await stateStore.save(state);
-      shouldReleaseIssueLock = false;
-      await issueLock.release();
-      return { kind: "restart" };
+    const shouldBypassCandidateDependencyCheck =
+      state.inventory_refresh_failure !== undefined &&
+      currentRecord !== null &&
+      currentRecord.issue_number === record.issue_number;
+    if (!shouldBypassCandidateDependencyCheck) {
+      const candidateIssues = await github.listCandidateIssues();
+      const blockingIssue = findBlockingIssue(issue, candidateIssues, state);
+      if (blockingIssue) {
+        record = stateStore.touch(record, {
+          state: "queued",
+          last_error: `Waiting for ${blockingIssue.reason} before continuing issue #${record.issue_number}.`,
+        });
+        state.issues[String(record.issue_number)] = record;
+        state.activeIssueNumber = null;
+        await stateStore.save(state);
+        shouldReleaseIssueLock = false;
+        await issueLock.release();
+        return { kind: "restart" };
+      }
     }
 
     shouldReleaseIssueLock = false;
