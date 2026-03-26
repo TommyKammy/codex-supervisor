@@ -205,6 +205,7 @@ export interface InventoryRefreshFailure {
   source: string;
   message: string;
   recorded_at: string;
+  classification?: "rate_limited";
 }
 
 export interface IssueRunRecord {

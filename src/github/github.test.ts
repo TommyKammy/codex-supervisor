@@ -487,6 +487,41 @@ test("GitHubClient listAllIssues preserves gh issue list transport failures", as
   assert.equal(fallbackPageCalls, 0);
 });
 
+test("GitHubClient listAllIssues does not fall back to REST pagination when gh issue list output is rate-limited", async () => {
+  const config = createConfig();
+  let issueListCalls = 0;
+  let fallbackPageCalls = 0;
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "issue" && args[1] === "list") {
+      issueListCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: "GraphQL: API rate limit exceeded for user ID 12345",
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "repos/owner/repo/issues") {
+      fallbackPageCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: "[]",
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  await assert.rejects(
+    () => client.listAllIssues(),
+    /API rate limit exceeded/,
+  );
+
+  assert.equal(issueListCalls, 1);
+  assert.equal(fallbackPageCalls, 0);
+});
+
 test("GitHubClient createPullRequest recovers when the first open-branch lookup misses the new PR", async () => {
   const config = createConfig();
   const createdPr = createPullRequest();

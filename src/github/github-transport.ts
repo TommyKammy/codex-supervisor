@@ -52,6 +52,31 @@ export function isTransientGitHubCommandFailure(message: string | null | undefin
   return githubRelated && transientSignal;
 }
 
+export function isGitHubRateLimitFailure(message: string | null | undefined): boolean {
+  if (!message) {
+    return false;
+  }
+
+  const lower = message.toLowerCase();
+  const githubRelated =
+    lower.includes("api.github.com") ||
+    lower.includes("github.com") ||
+    lower.includes("graphql") ||
+    lower.includes("gh ");
+
+  if (!githubRelated) {
+    return false;
+  }
+
+  return (
+    lower.includes("rate limit exceeded") ||
+    lower.includes("secondary rate limit") ||
+    lower.includes("api rate limit exceeded") ||
+    lower.includes("you have exceeded a secondary rate limit") ||
+    lower.includes("was submitted too quickly")
+  );
+}
+
 function sanitizeGhCommandMessage(message: string, args: string[]): string {
   const commandSummary = renderCommandSummary("gh", args);
   return message

@@ -514,6 +514,119 @@ test("runOnceCyclePrelude blocks new selection when full inventory refresh is ma
   assert.equal(result.state.inventory_refresh_failure?.source, "gh issue list");
 });
 
+test("runOnceCyclePrelude records rate-limited inventory refresh failures distinctly while keeping active tracked reconciliation available", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 41,
+    issues: {
+      "41": {
+        issue_number: 41,
+        state: "waiting_ci",
+        branch: "codex/issue-41",
+        pr_number: 141,
+        workspace: "/tmp/workspaces/issue-41",
+        journal_path: null,
+        review_wait_started_at: null,
+        review_wait_head_sha: null,
+        copilot_review_requested_observed_at: null,
+        copilot_review_requested_head_sha: null,
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+        codex_session_id: null,
+        local_review_head_sha: null,
+        local_review_blocker_summary: null,
+        local_review_summary_path: null,
+        local_review_run_at: null,
+        local_review_max_severity: null,
+        local_review_findings_count: 0,
+        local_review_root_cause_count: 0,
+        local_review_verified_max_severity: null,
+        local_review_verified_findings_count: 0,
+        local_review_recommendation: null,
+        local_review_degraded: false,
+        last_local_review_signature: null,
+        repeated_local_review_signature_count: 0,
+        external_review_head_sha: null,
+        external_review_misses_path: null,
+        external_review_matched_findings_count: 0,
+        external_review_near_match_findings_count: 0,
+        external_review_missed_findings_count: 0,
+        attempt_count: 1,
+        implementation_attempt_count: 0,
+        repair_attempt_count: 0,
+        timeout_retry_count: 0,
+        blocked_verification_retry_count: 0,
+        repeated_blocker_count: 0,
+        repeated_failure_signature_count: 0,
+        last_head_sha: null,
+        last_codex_summary: null,
+        last_run_at: "2026-03-26T00:00:00Z",
+        updated_at: "2026-03-26T00:00:00Z",
+        blocked_reason: null,
+        last_failure_kind: null,
+        last_failure_context: null,
+        last_blocker_signature: null,
+        last_failure_signature: null,
+        last_recovery_reason: null,
+        last_recovery_at: null,
+        processed_review_thread_ids: [],
+        processed_review_thread_fingerprints: [],
+      },
+    },
+  };
+  const savedStates: SupervisorStateFile[] = [];
+  let reconcileCallCount = 0;
+
+  const result = await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+      save: async (nextState) => {
+        savedStates.push(JSON.parse(JSON.stringify(nextState)) as SupervisorStateFile);
+      },
+    },
+    carryoverRecoveryEvents: [],
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => {
+      throw new Error(
+        'Command failed: gh issue list --repo owner/repo\nexitCode=1\nHTTP 403: You have exceeded a secondary rate limit. Please wait a few minutes before you try again.',
+      );
+    },
+    reconcileTrackedMergedButOpenIssues: async (_loadedState, loadedIssues, _updateReconciliationProgress, options) => {
+      reconcileCallCount += 1;
+      assert.deepEqual(loadedIssues, []);
+      assert.deepEqual(options, { onlyIssueNumber: 41 });
+      return [];
+    },
+    reserveRunnableIssueSelection: async () => {
+      throw new Error("unexpected reserveRunnableIssueSelection call");
+    },
+    reconcileMergedIssueClosures: async () => {
+      throw new Error("unexpected reconcileMergedIssueClosures call");
+    },
+    reconcileStaleFailedIssueStates: async () => {
+      throw new Error("unexpected reconcileStaleFailedIssueStates call");
+    },
+    reconcileRecoverableBlockedIssueStates: async () => {
+      throw new Error("unexpected reconcileRecoverableBlockedIssueStates call");
+    },
+    reconcileParentEpicClosures: async () => {
+      throw new Error("unexpected reconcileParentEpicClosures call");
+    },
+    cleanupExpiredDoneWorkspaces: async () => {
+      throw new Error("unexpected cleanupExpiredDoneWorkspaces call");
+    },
+  });
+
+  assert.ok(!("kind" in result));
+  assert.equal(reconcileCallCount, 1);
+  assert.equal(savedStates.length, 1);
+  assert.equal(savedStates[0]?.inventory_refresh_failure?.source, "gh issue list");
+  assert.equal(savedStates[0]?.inventory_refresh_failure?.classification, "rate_limited");
+  assert.match(savedStates[0]?.inventory_refresh_failure?.message ?? "", /secondary rate limit/);
+  assert.equal(result.state.inventory_refresh_failure?.classification, "rate_limited");
+});
+
 test("runOnceCyclePrelude still reconciles parent epic closures from tracked issue snapshots when full inventory refresh is malformed", async () => {
   const parentIssue: GitHubIssue = {
     number: 1043,
