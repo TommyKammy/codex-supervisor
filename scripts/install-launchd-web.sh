@@ -7,9 +7,13 @@ PLIST_TEMPLATE="${ROOT}/launchd/io.codex.supervisor.web.plist.template"
 PLIST_TARGET="${HOME}/Library/LaunchAgents/io.codex.supervisor.web.plist"
 LOG_DIR="${ROOT}/.local/logs"
 UID_VALUE="$(id -u)"
-NODE_BIN="${NODE_BIN:-$(command -v node)}"
-NPM_BIN="${NPM_BIN:-$(command -v npm)}"
+NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
+NPM_BIN="${NPM_BIN:-$(command -v npm || true)}"
 PATH_VALUE="${PATH}"
+
+escape_sed_replacement() {
+  printf '%s' "$1" | sed -e 's/[&|\\]/\\&/g'
+}
 
 if [[ -z "${NODE_BIN}" || -z "${NPM_BIN}" ]]; then
   echo "node and npm must be available on PATH" >&2
@@ -17,11 +21,15 @@ if [[ -z "${NODE_BIN}" || -z "${NPM_BIN}" ]]; then
 fi
 
 mkdir -p "${HOME}/Library/LaunchAgents" "${LOG_DIR}"
+ROOT_ESCAPED="$(escape_sed_replacement "${ROOT}")"
+PATH_ESCAPED="$(escape_sed_replacement "${PATH_VALUE}")"
+NODE_ESCAPED="$(escape_sed_replacement "${NODE_BIN}")"
+NPM_ESCAPED="$(escape_sed_replacement "${NPM_BIN}")"
 sed \
-  -e "s|__ROOT__|${ROOT}|g" \
-  -e "s|__PATH__|${PATH_VALUE}|g" \
-  -e "s|__NODE__|${NODE_BIN}|g" \
-  -e "s|__NPM__|${NPM_BIN}|g" \
+  -e "s|__ROOT__|${ROOT_ESCAPED}|g" \
+  -e "s|__PATH__|${PATH_ESCAPED}|g" \
+  -e "s|__NODE__|${NODE_ESCAPED}|g" \
+  -e "s|__NPM__|${NPM_ESCAPED}|g" \
   "${PLIST_TEMPLATE}" > "${PLIST_TARGET}"
 
 launchctl bootout "gui/${UID_VALUE}" "${PLIST_TARGET}" >/dev/null 2>&1 || true

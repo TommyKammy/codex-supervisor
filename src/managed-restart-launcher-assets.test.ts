@@ -23,12 +23,12 @@ test("dedicated WebUI launcher assets enable managed restart for launcher-backed
   ]);
 
   assert.match(runWeb, /dist\/index\.js" web --config/u);
-  assert.match(runWeb, /CODEX_SUPERVISOR_MANAGED_RESTART/u);
+  assert.match(runWeb, /\bCODEX_SUPERVISOR_MANAGED_RESTART(?!_LAUNCHER)\b/u);
   assert.match(runWeb, /CODEX_SUPERVISOR_MANAGED_RESTART_LAUNCHER/u);
 
   assert.match(launchdTemplate, /io\.codex\.supervisor\.web/u);
   assert.match(launchdTemplate, /scripts\/run-web\.sh/u);
-  assert.match(launchdTemplate, /CODEX_SUPERVISOR_MANAGED_RESTART/u);
+  assert.match(launchdTemplate, /\bCODEX_SUPERVISOR_MANAGED_RESTART(?!_LAUNCHER)\b/u);
   assert.match(launchdTemplate, /<string>launchd<\/string>/u);
 
   assert.match(systemdTemplate, /codex-supervisor WebUI/u);

@@ -5,8 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 LOG_DIR="${ROOT}/.local/logs"
 CONFIG_PATH="${CODEX_SUPERVISOR_CONFIG:-${ROOT}/supervisor.config.json}"
-NODE_BIN="${NODE_BIN:-$(command -v node)}"
-NPM_BIN="${NPM_BIN:-$(command -v npm)}"
+NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
+NPM_BIN="${NPM_BIN:-$(command -v npm || true)}"
 
 if [[ -z "${NODE_BIN}" || -z "${NPM_BIN}" ]]; then
   echo "node and npm must be available on PATH" >&2
