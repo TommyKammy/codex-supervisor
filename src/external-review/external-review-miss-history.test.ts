@@ -474,3 +474,87 @@ test("repo-committed durable external-review guardrails prefer the real behavior
     ],
   );
 });
+
+test("repo-committed durable external-review guardrails preserve degraded-mode invariants and scope fallbacks to intended fault classes", async () => {
+  const repoRoot = path.resolve(__dirname, "..", "..");
+
+  const degradedModePatterns = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: path.join(repoRoot, ".local", "reviews"),
+    branch: "codex/issue-1045",
+    currentHeadSha: "currenthead",
+    changedFiles: ["src/supervisor/supervisor-pr-review-blockers.ts"],
+    limit: 10,
+    workspacePath: repoRoot,
+  });
+
+  assert.deepEqual(
+    degradedModePatterns.filter(
+      (pattern) =>
+        pattern.fingerprint
+        === "src/supervisor/supervisor-pr-review-blockers.ts|degraded-mode-shortcuts-must-preserve-dependency-ordering",
+    ),
+    [
+      {
+        fingerprint:
+          "src/supervisor/supervisor-pr-review-blockers.ts|degraded-mode-shortcuts-must-preserve-dependency-ordering",
+        reviewerLogin: "copilot-pull-request-reviewer",
+        file: "src/supervisor/supervisor-pr-review-blockers.ts",
+        line: null,
+        summary:
+          "Flag degraded-mode shortcuts that bypass dependency or execution-order invariants just because a broader inventory refresh is unavailable.",
+        rationale:
+          "A degraded discovery path can narrow how much state is refreshed, but it must still preserve the same dependency and sequencing gates that keep the orchestrator from advancing blocked work.",
+        sourceArtifactPath: "promoted-from-pr-1040",
+        sourceHeadSha: "pr-1040",
+        lastSeenAt: "2026-03-26T00:00:00Z",
+      },
+    ],
+  );
+
+  const fallbackPatterns = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: path.join(repoRoot, ".local", "reviews"),
+    branch: "codex/issue-1045",
+    currentHeadSha: "currenthead",
+    changedFiles: ["src/github/github.ts"],
+    limit: 10,
+    workspacePath: repoRoot,
+  });
+
+  assert.deepEqual(
+    fallbackPatterns.filter(
+      (pattern) => pattern.fingerprint === "src/github/github.ts|fallbacks-must-match-their-intended-fault-class",
+    ),
+    [
+      {
+        fingerprint: "src/github/github.ts|fallbacks-must-match-their-intended-fault-class",
+        reviewerLogin: "copilot-pull-request-reviewer",
+        file: "src/github/github.ts",
+        line: null,
+        summary:
+          "Flag fallback handling that catches unrelated transport or command failures instead of only the fault class the fallback is meant to recover from.",
+        rationale:
+          "Fallbacks stay trustworthy when they recover a specific expected failure mode; catching broader transport failures can silently mask real command or connectivity regressions behind an unrelated recovery path.",
+        sourceArtifactPath: "promoted-from-pr-1041",
+        sourceHeadSha: "pr-1041",
+        lastSeenAt: "2026-03-26T00:00:00Z",
+      },
+    ],
+  );
+
+  const inventoryRefreshCommentPatterns = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: path.join(repoRoot, ".local", "reviews"),
+    branch: "codex/issue-1045",
+    currentHeadSha: "currenthead",
+    changedFiles: ["src/supervisor/supervisor-status-report.ts"],
+    limit: 20,
+    workspacePath: repoRoot,
+  });
+
+  assert.deepEqual(
+    inventoryRefreshCommentPatterns.filter(
+      (pattern) =>
+        pattern.summary.includes("inventory_refresh") || pattern.rationale.includes("inventory_refresh"),
+    ),
+    [],
+  );
+});

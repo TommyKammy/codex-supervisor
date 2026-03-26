@@ -2,15 +2,26 @@
   "version": 1,
   "patterns": [
     {
-      "fingerprint": "src/local-review/prompt.ts|anchor-findings-to-real-boundary",
+      "fingerprint": "src/github/github.ts|fallbacks-must-match-their-intended-fault-class",
       "reviewerLogin": "copilot-pull-request-reviewer",
-      "file": "src/local-review/prompt.ts",
+      "file": "src/github/github.ts",
       "line": null,
-      "summary": "Flag findings or promoted guardrails that anchor to an earlier or adjacent implementation step when the real behavioral boundary is a later transition or invariant.",
-      "rationale": "Guardrails last longer when they point at the decisive boundary under protection instead of a nearby setup location that refactors can move without changing the behavior.",
-      "sourceArtifactPath": "promoted-from-issue-204",
-      "sourceHeadSha": "issue-204",
-      "lastSeenAt": "2026-03-14T00:00:00Z"
+      "summary": "Flag fallback handling that catches unrelated transport or command failures instead of only the fault class the fallback is meant to recover from.",
+      "rationale": "Fallbacks stay trustworthy when they recover a specific expected failure mode; catching broader transport failures can silently mask real command or connectivity regressions behind an unrelated recovery path.",
+      "sourceArtifactPath": "promoted-from-pr-1041",
+      "sourceHeadSha": "pr-1041",
+      "lastSeenAt": "2026-03-26T00:00:00Z"
+    },
+    {
+      "fingerprint": "src/supervisor/supervisor-pr-review-blockers.ts|degraded-mode-shortcuts-must-preserve-dependency-ordering",
+      "reviewerLogin": "copilot-pull-request-reviewer",
+      "file": "src/supervisor/supervisor-pr-review-blockers.ts",
+      "line": null,
+      "summary": "Flag degraded-mode shortcuts that bypass dependency or execution-order invariants just because a broader inventory refresh is unavailable.",
+      "rationale": "A degraded discovery path can narrow how much state is refreshed, but it must still preserve the same dependency and sequencing gates that keep the orchestrator from advancing blocked work.",
+      "sourceArtifactPath": "promoted-from-pr-1040",
+      "sourceHeadSha": "pr-1040",
+      "lastSeenAt": "2026-03-26T00:00:00Z"
     },
     {
       "fingerprint": "src/local-review/index.test.ts|avoid-drift-prone-line-coupling",
@@ -21,6 +32,17 @@
       "rationale": "Source lines drift during refactors. Keep exact line assertions only when the source location itself is the intended contract, such as user-visible diagnostics or mappings.",
       "sourceArtifactPath": "promoted-from-issue-203",
       "sourceHeadSha": "issue-203",
+      "lastSeenAt": "2026-03-14T00:00:00Z"
+    },
+    {
+      "fingerprint": "src/local-review/prompt.ts|anchor-findings-to-real-boundary",
+      "reviewerLogin": "copilot-pull-request-reviewer",
+      "file": "src/local-review/prompt.ts",
+      "line": null,
+      "summary": "Flag findings or promoted guardrails that anchor to an earlier or adjacent implementation step when the real behavioral boundary is a later transition or invariant.",
+      "rationale": "Guardrails last longer when they point at the decisive boundary under protection instead of a nearby setup location that refactors can move without changing the behavior.",
+      "sourceArtifactPath": "promoted-from-issue-204",
+      "sourceHeadSha": "issue-204",
       "lastSeenAt": "2026-03-14T00:00:00Z"
     }
   ]
