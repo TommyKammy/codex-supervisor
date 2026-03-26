@@ -2,6 +2,8 @@ import {
   CandidateDiscoveryDiagnostics,
   GitHubIssue,
   GitHubPullRequest,
+  GitHubRateLimitBudget,
+  GitHubRateLimitTelemetry,
   IssueComment,
   IssueRunRecord,
   PullRequestReview,
@@ -16,17 +18,19 @@ import {
   PullRequestStatusCheckRollupResponse,
 } from "./github-hydration";
 import { GitHubPullRequestHydrator } from "./github-pull-request-hydrator";
-import { GitHubTransport } from "./github-transport";
+import { GitHubTransport, isGitHubRateLimitFailure } from "./github-transport";
 import type { GitHubCommandRunner } from "./github-transport";
 import { parseJson, truncate } from "../core/utils";
 
 export { isTransientGitHubCommandFailure } from "./github-transport";
+export { isGitHubRateLimitFailure } from "./github-transport";
 export { inferCopilotReviewLifecycle } from "./github-review-signals";
 export type { GitHubCommandRunner } from "./github-transport";
 
 const POST_CREATE_PR_LOOKUP_RETRY_LIMIT = 2;
 const POST_CREATE_PR_LOOKUP_BASE_DELAY_MS = 200;
 const FULL_ISSUE_INVENTORY_PAGE_SIZE = 100;
+const PULL_REQUEST_GRAPHQL_SURFACE_CACHE_MAX_ENTRIES = 128;
 
 interface GitHubRestIssue {
   number: number;
@@ -44,9 +48,30 @@ interface GitHubSearchIssuesResponse {
   items: GitHubRestIssue[];
 }
 
+interface GitHubRateLimitResourcePayload {
+  limit: number;
+  remaining: number;
+  reset: number;
+  resource: string;
+}
+
+interface GitHubRateLimitResponse {
+  resources?: {
+    core?: GitHubRateLimitResourcePayload;
+    graphql?: GitHubRateLimitResourcePayload;
+  };
+}
+
+interface PullRequestReviewSurfaceOptions {
+  purpose?: "status" | "action";
+  headSha?: string | null;
+  reviewSurfaceVersion?: string | null;
+}
+
 export class GitHubClient {
   private readonly pullRequestHydrator: GitHubPullRequestHydrator;
   private readonly transport: GitHubTransport;
+  private readonly pullRequestGraphqlSurfaceCache = new Map<string, Promise<unknown>>();
 
   constructor(
     private readonly config: SupervisorConfig,
@@ -75,6 +100,50 @@ export class GitHubClient {
 
   private async runGhCommand(args: string[], options: CommandOptions = {}) {
     return this.transport.run(args, options);
+  }
+
+  private getCachedPullRequestGraphqlSurface<T>(
+    cacheKey: string,
+    fetcher: () => Promise<T>,
+  ): Promise<T> {
+    const cached = this.pullRequestGraphqlSurfaceCache.get(cacheKey) as Promise<T> | undefined;
+    if (cached) {
+      this.pullRequestGraphqlSurfaceCache.delete(cacheKey);
+      this.pullRequestGraphqlSurfaceCache.set(cacheKey, cached);
+      return cached;
+    }
+
+    const promise = fetcher().catch((error) => {
+      this.pullRequestGraphqlSurfaceCache.delete(cacheKey);
+      throw error;
+    });
+    this.pullRequestGraphqlSurfaceCache.set(cacheKey, promise);
+
+    while (this.pullRequestGraphqlSurfaceCache.size > PULL_REQUEST_GRAPHQL_SURFACE_CACHE_MAX_ENTRIES) {
+      const oldestKey = this.pullRequestGraphqlSurfaceCache.keys().next().value;
+      if (!oldestKey) {
+        break;
+      }
+      this.pullRequestGraphqlSurfaceCache.delete(oldestKey);
+    }
+
+    return promise;
+  }
+
+  private maybeGetCachedPullRequestGraphqlSurface<T>(
+    kind: "threads" | "external-review-surface",
+    prNumber: number,
+    options: PullRequestReviewSurfaceOptions,
+    fetcher: () => Promise<T>,
+  ): Promise<T> {
+    if (options.purpose !== "status" || !options.headSha || !options.reviewSurfaceVersion) {
+      return fetcher();
+    }
+
+    return this.getCachedPullRequestGraphqlSurface(
+      `${kind}:${prNumber}:${options.headSha}:${options.reviewSurfaceVersion}`,
+      fetcher,
+    );
   }
 
   private async hydratePullRequestForPurpose(
@@ -107,6 +176,41 @@ export class GitHubClient {
     }
   }
 
+  private classifyRateLimitBudget(limit: number, remaining: number): GitHubRateLimitBudget["state"] {
+    if (remaining <= 0) {
+      return "exhausted";
+    }
+
+    return remaining / Math.max(limit, 1) <= 0.1 ? "low" : "healthy";
+  }
+
+  private mapRateLimitBudget(
+    resource: GitHubRateLimitResourcePayload | undefined,
+    fallbackResource: "core" | "graphql",
+  ): GitHubRateLimitBudget {
+    if (!resource) {
+      throw new Error(`GitHub rate_limit response omitted ${fallbackResource} budget data.`);
+    }
+
+    return {
+      resource: resource.resource || fallbackResource,
+      limit: resource.limit,
+      remaining: resource.remaining,
+      resetAt: new Date(resource.reset * 1000).toISOString(),
+      state: this.classifyRateLimitBudget(resource.limit, resource.remaining),
+    };
+  }
+
+  async getRateLimitTelemetry(): Promise<GitHubRateLimitTelemetry> {
+    const result = await this.runGhCommand(["api", "rate_limit"]);
+    const payload = parseJson<GitHubRateLimitResponse>(result.stdout, "gh api rate_limit");
+
+    return {
+      rest: this.mapRateLimitBudget(payload.resources?.core, "core"),
+      graphql: this.mapRateLimitBudget(payload.resources?.graphql, "graphql"),
+    };
+  }
+
   async listAllIssues(): Promise<GitHubIssue[]> {
     const result = await this.runGhCommand([
       "issue",
@@ -123,6 +227,16 @@ export class GitHubClient {
     try {
       return parseJson<GitHubIssue[]>(result.stdout, "gh issue list");
     } catch (error) {
+      const primaryFailureMessage = [
+        error instanceof Error ? error.message : String(error),
+        result.stderr.trim(),
+        result.stdout.trim(),
+      ]
+        .filter(Boolean)
+        .join("\n");
+      if (isGitHubRateLimitFailure(primaryFailureMessage)) {
+        throw new Error(primaryFailureMessage);
+      }
       return this.listAllIssuesViaRestApi(error);
     }
   }
@@ -677,7 +791,19 @@ export class GitHubClient {
     await this.runGhCommand(args, { allowExitCodes: [0, 1] });
   }
 
-  async getUnresolvedReviewThreads(prNumber: number): Promise<ReviewThread[]> {
+  async getUnresolvedReviewThreads(
+    prNumber: number,
+    options: PullRequestReviewSurfaceOptions = {},
+  ): Promise<ReviewThread[]> {
+    return this.maybeGetCachedPullRequestGraphqlSurface(
+      "threads",
+      prNumber,
+      options,
+      () => this.fetchUnresolvedReviewThreads(prNumber),
+    );
+  }
+
+  private async fetchUnresolvedReviewThreads(prNumber: number): Promise<ReviewThread[]> {
     const { owner, repo } = this.repoOwnerAndName();
 
     const query = `
@@ -752,7 +878,22 @@ export class GitHubClient {
     })).filter((thread) => !thread.isResolved && !thread.isOutdated);
   }
 
-  async getExternalReviewSurface(prNumber: number): Promise<{
+  async getExternalReviewSurface(
+    prNumber: number,
+    options: PullRequestReviewSurfaceOptions = {},
+  ): Promise<{
+    reviews: PullRequestReview[];
+    issueComments: IssueComment[];
+  }> {
+    return this.maybeGetCachedPullRequestGraphqlSurface(
+      "external-review-surface",
+      prNumber,
+      options,
+      () => this.fetchExternalReviewSurface(prNumber),
+    );
+  }
+
+  private async fetchExternalReviewSurface(prNumber: number): Promise<{
     reviews: PullRequestReview[];
     issueComments: IssueComment[];
   }> {

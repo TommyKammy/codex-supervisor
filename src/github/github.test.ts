@@ -219,6 +219,263 @@ test("GitHubClient fetches the newest unresolved review thread comments", async 
   assert.equal(threads[0]?.comments.nodes.at(-1)?.author?.typeName, "Bot");
 });
 
+test("GitHubClient reuses cached unresolved review threads for same-head status reads", async () => {
+  const config = createConfig();
+  let graphqlCalls = 0;
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      graphqlCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewThreads: {
+                  nodes: [
+                    {
+                      id: "thread-1",
+                      isResolved: false,
+                      isOutdated: false,
+                      path: "src/github/github.ts",
+                      line: 803,
+                      comments: {
+                        nodes: [
+                          {
+                            id: "comment-100",
+                            body: "newest retained comment",
+                            createdAt: "2026-03-13T02:24:00Z",
+                            url: "https://example.test/comments/100",
+                            author: {
+                              login: "copilot-pull-request-reviewer",
+                              __typename: "Bot",
+                            },
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const first = await client.getUnresolvedReviewThreads(44, {
+    purpose: "status",
+    headSha: "head-44",
+    reviewSurfaceVersion: "2026-03-13T02:24:00Z",
+  });
+  const second = await client.getUnresolvedReviewThreads(44, {
+    purpose: "status",
+    headSha: "head-44",
+    reviewSurfaceVersion: "2026-03-13T02:24:00Z",
+  });
+
+  assert.equal(first.length, 1);
+  assert.equal(second.length, 1);
+  assert.equal(graphqlCalls, 1);
+});
+
+test("GitHubClient refreshes unresolved review threads when the review surface version changes", async () => {
+  const config = createConfig();
+  let graphqlCalls = 0;
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      graphqlCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewThreads: {
+                  nodes: [],
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  await client.getUnresolvedReviewThreads(44, {
+    purpose: "status",
+    headSha: "head-44",
+    reviewSurfaceVersion: "2026-03-13T02:24:00Z",
+  });
+  await client.getUnresolvedReviewThreads(44, {
+    purpose: "status",
+    headSha: "head-44",
+    reviewSurfaceVersion: "2026-03-13T02:25:00Z",
+  });
+
+  assert.equal(graphqlCalls, 2);
+});
+
+test("GitHubClient reuses cached external review surface for same-head status reads", async () => {
+  const config = createConfig();
+  let graphqlCalls = 0;
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      graphqlCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviews: {
+                  nodes: [
+                    {
+                      id: "review-1",
+                      body: "Looks good.",
+                      submittedAt: "2026-03-13T02:24:00Z",
+                      url: "https://example.test/reviews/1",
+                      state: "COMMENTED",
+                      author: {
+                        login: "copilot-pull-request-reviewer",
+                        __typename: "Bot",
+                      },
+                    },
+                  ],
+                },
+                comments: {
+                  nodes: [
+                    {
+                      id: "comment-1",
+                      body: "Top-level follow-up.",
+                      createdAt: "2026-03-13T02:25:00Z",
+                      url: "https://example.test/comments/1",
+                      author: {
+                        login: "copilot-pull-request-reviewer",
+                        __typename: "Bot",
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const first = await client.getExternalReviewSurface(44, {
+    purpose: "status",
+    headSha: "head-44",
+    reviewSurfaceVersion: "2026-03-13T02:25:00Z",
+  });
+  const second = await client.getExternalReviewSurface(44, {
+    purpose: "status",
+    headSha: "head-44",
+    reviewSurfaceVersion: "2026-03-13T02:25:00Z",
+  });
+
+  assert.equal(first.reviews.length, 1);
+  assert.equal(second.issueComments.length, 1);
+  assert.equal(graphqlCalls, 1);
+});
+
+test("GitHubClient refreshes external review surface for action reads even on the same head", async () => {
+  const config = createConfig();
+  let graphqlCalls = 0;
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      graphqlCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviews: { nodes: [] },
+                comments: { nodes: [] },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  await client.getExternalReviewSurface(44, {
+    purpose: "action",
+    headSha: "head-44",
+    reviewSurfaceVersion: "2026-03-13T02:25:00Z",
+  });
+  await client.getExternalReviewSurface(44, {
+    purpose: "action",
+    headSha: "head-44",
+    reviewSurfaceVersion: "2026-03-13T02:25:00Z",
+  });
+
+  assert.equal(graphqlCalls, 2);
+});
+
+test("GitHubClient fetches REST and GraphQL rate-limit telemetry from a single rate_limit response", async () => {
+  const config = createConfig();
+  const client = new GitHubClient(config, async (_command, args) => {
+    assert.deepEqual(args, ["api", "rate_limit"]);
+    return {
+      exitCode: 0,
+      stdout: JSON.stringify({
+        resources: {
+          core: {
+            limit: 5000,
+            remaining: 5000,
+            reset: 1774572300,
+            resource: "core",
+          },
+          graphql: {
+            limit: 5000,
+            remaining: 250,
+            reset: 1774572000,
+            resource: "graphql",
+          },
+        },
+      }),
+      stderr: "",
+    };
+  });
+
+  const telemetry = await client.getRateLimitTelemetry();
+
+  assert.deepEqual(telemetry, {
+    rest: {
+      resource: "core",
+      limit: 5000,
+      remaining: 5000,
+      resetAt: "2026-03-27T00:45:00.000Z",
+      state: "healthy",
+    },
+    graphql: {
+      resource: "graphql",
+      limit: 5000,
+      remaining: 250,
+      resetAt: "2026-03-27T00:40:00.000Z",
+      state: "low",
+    },
+  });
+});
+
 test("GitHubClient falls back from gh pr checks to statusCheckRollup", async () => {
   const config = createConfig();
   const client = new GitHubClient(config, async (_command, args) => {
@@ -481,6 +738,41 @@ test("GitHubClient listAllIssues preserves gh issue list transport failures", as
   await assert.rejects(
     () => client.listAllIssues(),
     /gh issue list exited with code 1: network timeout/,
+  );
+
+  assert.equal(issueListCalls, 1);
+  assert.equal(fallbackPageCalls, 0);
+});
+
+test("GitHubClient listAllIssues does not fall back to REST pagination when gh issue list output is rate-limited", async () => {
+  const config = createConfig();
+  let issueListCalls = 0;
+  let fallbackPageCalls = 0;
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "issue" && args[1] === "list") {
+      issueListCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: "GraphQL: API rate limit exceeded for user ID 12345",
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "repos/owner/repo/issues") {
+      fallbackPageCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: "[]",
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  await assert.rejects(
+    () => client.listAllIssues(),
+    /API rate limit exceeded/,
   );
 
   assert.equal(issueListCalls, 1);

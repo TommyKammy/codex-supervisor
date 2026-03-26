@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { CommandOptions } from "../core/command";
-import { GitHubTransport, isTransientGitHubCommandFailure } from "./github-transport";
+import { GitHubTransport, isGitHubRateLimitFailure, isTransientGitHubCommandFailure } from "./github-transport";
 
 test("isTransientGitHubCommandFailure matches connection reset GraphQL failures", () => {
   assert.equal(
@@ -12,6 +12,27 @@ test("isTransientGitHubCommandFailure matches connection reset GraphQL failures"
   );
   assert.equal(
     isTransientGitHubCommandFailure("Command failed: gh pr create --repo owner/repo\nexitCode=1\npull request create failed: No commits between main and branch"),
+    false,
+  );
+});
+
+test("isGitHubRateLimitFailure matches primary and secondary GitHub rate-limit failures", () => {
+  assert.equal(
+    isGitHubRateLimitFailure(
+      'Command failed: gh api graphql\nexitCode=1\nGraphQL: API rate limit exceeded for user ID 12345',
+    ),
+    true,
+  );
+  assert.equal(
+    isGitHubRateLimitFailure(
+      'Command failed: gh issue list\nexitCode=1\nHTTP 403: You have exceeded a secondary rate limit. Please wait a few minutes before you try again.',
+    ),
+    true,
+  );
+  assert.equal(
+    isGitHubRateLimitFailure(
+      "Command failed: gh issue list\nexitCode=1\npull request create failed: No commits between main and branch",
+    ),
     false,
   );
 });

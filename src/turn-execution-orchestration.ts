@@ -141,7 +141,11 @@ export async function prepareCodexTurnPrompt(args: {
   ) {
     const currentPr = args.pr!;
     const localReviewSummaryPath = args.record.local_review_summary_path!;
-    const externalReviewSurface = await args.github.getExternalReviewSurface(currentPr.number);
+    const externalReviewSurface = await args.github.getExternalReviewSurface(currentPr.number, {
+      purpose: "status",
+      headSha: currentPr.headRefOid,
+      reviewSurfaceVersion: currentPr.updatedAt ?? currentPr.createdAt,
+    });
     externalReviewMissContext = await writeExternalReviewMissArtifact({
       artifactDir: path.dirname(localReviewSummaryPath),
       issueNumber: args.issue.number,

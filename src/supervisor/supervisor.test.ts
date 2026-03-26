@@ -2,7 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createSupervisorLoopController, createSupervisorService, Supervisor } from "./index";
 import { createConfig } from "./supervisor-test-helpers";
-import { IssueRunRecord, SupervisorStateFile } from "../core/types";
+import { GitHubIssue, IssueRunRecord, SupervisorStateFile } from "../core/types";
+
+async function withStubbedDateNow<T>(nowIso: string, run: () => Promise<T>): Promise<T> {
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse(nowIso);
+  try {
+    return await run();
+  } finally {
+    Date.now = originalDateNow;
+  }
+}
 
 test("supervisor module continues to export the Supervisor class", () => {
   assert.equal(typeof Supervisor, "function");
@@ -98,4 +108,60 @@ test("runOnce preserves carryover recovery context when the restarted cycle exit
   assert.equal(cycleCalls, 2);
   assert.equal(retryCalls, 1);
   assert.equal(issuePhaseCalls, 1);
+});
+
+test("listLoopIssueInventory reuses the recent full issue inventory inside the reuse TTL", async () => {
+  const issue: GitHubIssue = {
+    number: 91,
+    title: "Reuse cached full inventory",
+    body: "",
+    createdAt: "2026-03-20T00:00:00Z",
+    updatedAt: "2026-03-20T00:00:00Z",
+    url: "https://example.test/issues/91",
+    state: "OPEN",
+  };
+  let listAllIssuesCalls = 0;
+  const supervisor = new Supervisor(createConfig());
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listAllIssues: async () => {
+      listAllIssuesCalls += 1;
+      return [issue];
+    },
+  };
+
+  const firstIssues = await withStubbedDateNow("2026-03-20T00:00:00.000Z", async () =>
+    (supervisor as unknown as { listLoopIssueInventory: () => Promise<GitHubIssue[]> }).listLoopIssueInventory());
+  const secondIssues = await withStubbedDateNow("2026-03-20T00:04:59.000Z", async () =>
+    (supervisor as unknown as { listLoopIssueInventory: () => Promise<GitHubIssue[]> }).listLoopIssueInventory());
+
+  assert.deepEqual(firstIssues, [issue]);
+  assert.deepEqual(secondIssues, [issue]);
+  assert.equal(listAllIssuesCalls, 1);
+});
+
+test("listLoopIssueInventory refreshes the full issue inventory after the reuse TTL expires", async () => {
+  const issue: GitHubIssue = {
+    number: 92,
+    title: "Refresh expired full inventory",
+    body: "",
+    createdAt: "2026-03-20T00:00:00Z",
+    updatedAt: "2026-03-20T00:00:00Z",
+    url: "https://example.test/issues/92",
+    state: "OPEN",
+  };
+  let listAllIssuesCalls = 0;
+  const supervisor = new Supervisor(createConfig());
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listAllIssues: async () => {
+      listAllIssuesCalls += 1;
+      return [issue];
+    },
+  };
+
+  await withStubbedDateNow("2026-03-20T00:00:00.000Z", async () =>
+    (supervisor as unknown as { listLoopIssueInventory: () => Promise<GitHubIssue[]> }).listLoopIssueInventory());
+  await withStubbedDateNow("2026-03-20T00:05:01.000Z", async () =>
+    (supervisor as unknown as { listLoopIssueInventory: () => Promise<GitHubIssue[]> }).listLoopIssueInventory());
+
+  assert.equal(listAllIssuesCalls, 2);
 });

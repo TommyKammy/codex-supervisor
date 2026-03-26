@@ -175,6 +175,9 @@ function normalizeStateForLoad(raw: SupervisorStateFile | null | undefined): Sup
       source: raw.inventory_refresh_failure.source,
       message: raw.inventory_refresh_failure.message,
       recorded_at: raw.inventory_refresh_failure.recorded_at,
+      ...(raw.inventory_refresh_failure.classification === "rate_limited"
+        ? { classification: "rate_limited" as const }
+        : {}),
     }
     : undefined;
   const lastSuccessfulInventorySnapshot = normalizeLastSuccessfulInventorySnapshot(raw?.last_successful_inventory_snapshot);
@@ -223,6 +226,9 @@ function normalizeStateForSave(raw: SupervisorStateFile | null | undefined): Sup
       source: raw.inventory_refresh_failure.source,
       message: raw.inventory_refresh_failure.message,
       recorded_at: raw.inventory_refresh_failure.recorded_at,
+      ...(raw.inventory_refresh_failure.classification === "rate_limited"
+        ? { classification: "rate_limited" as const }
+        : {}),
     }
     : undefined;
   const lastSuccessfulInventorySnapshot = normalizeLastSuccessfulInventorySnapshot(raw?.last_successful_inventory_snapshot);

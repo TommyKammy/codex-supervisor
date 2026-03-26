@@ -424,6 +424,146 @@ test("runOnce still reevaluates an active tracked PR into addressing_review when
   );
 });
 
+test("runOnce still reevaluates an active tracked PR into addressing_review when full inventory refresh is rate-limited", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 118;
+  const branch = branchName(fixture.config, issueNumber);
+  const runHeadSha = git(["rev-parse", "HEAD"], fixture.repoPath);
+  const config = createConfig({
+    ...fixture.config,
+    reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "waiting_ci",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: 1040,
+        last_head_sha: runHeadSha,
+        review_wait_started_at: "2026-03-26T01:59:19.611Z",
+        review_wait_head_sha: runHeadSha,
+        provider_success_observed_at: "2026-03-26T01:59:19.611Z",
+        provider_success_head_sha: runHeadSha,
+        merge_readiness_last_evaluated_at: "2026-03-26T01:59:19.611Z",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Contain rate-limited inventory refresh without freezing active review progression",
+    body: executionReadyBody("Contain rate-limited inventory refresh without freezing active review progression."),
+    createdAt: "2026-03-26T01:30:00Z",
+    updatedAt: "2026-03-26T01:30:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: 1040,
+    title: "Contain GitHub rate-limit failures",
+    url: "https://example.test/pr/1040",
+    state: "OPEN",
+    createdAt: "2026-03-26T01:57:52Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: runHeadSha,
+    mergedAt: null,
+    configuredBotCurrentHeadObservedAt: "2026-03-26T02:10:50Z",
+  };
+  const reviewThreads = [
+    createReviewThread({
+      id: "PRRT_kwDORgvdZ85244h5",
+      path: "src/inventory-refresh-state.ts",
+      line: 41,
+      comments: {
+        nodes: [
+          {
+            id: "PRRC_kwDORgvdZ86yVz1P",
+            body: "Escape source and message before rendering this status line.",
+            createdAt: "2026-03-26T02:10:48Z",
+            url: "https://example.test/pr/1040#discussion_r2992061775",
+            author: {
+              login: "coderabbitai",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => {
+      throw new Error(
+        'Command failed: gh issue list --repo owner/repo\nexitCode=1\nHTTP 403: You have exceeded a secondary rate limit. Please wait a few minutes before you try again.',
+      );
+    },
+    listCandidateIssues: async () => {
+      throw new Error("unexpected listCandidateIssues call");
+    },
+    getIssue: async (issueNumberToFetch: number) => {
+      assert.equal(issueNumberToFetch, issueNumber);
+      return issue;
+    },
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      assert.equal(branchName, branch);
+      assert.equal(prNumber, 1040);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 1040);
+      return [
+        { name: "build (ubuntu-latest)", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+        { name: "build (macos-latest)", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+      ];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 1040);
+      return reviewThreads;
+    },
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 1040);
+      return pr;
+    },
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(message, /state=addressing_review/);
+  assert.match(message, /kind=rate_limited/);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(record.state, "addressing_review");
+  assert.equal(record.pr_number, 1040);
+  assert.equal(record.last_head_sha, runHeadSha);
+  assert.deepEqual(record.processed_review_thread_ids, []);
+  assert.deepEqual(record.processed_review_thread_fingerprints, []);
+  assert.equal(persisted.inventory_refresh_failure?.source, "gh issue list");
+  assert.equal(persisted.inventory_refresh_failure?.classification, "rate_limited");
+  assert.match(
+    persisted.inventory_refresh_failure?.message ?? "",
+    /secondary rate limit/,
+  );
+});
+
 test("runOnce does not bypass dependency ordering for a constrained active issue when inventory refresh is malformed", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 119;

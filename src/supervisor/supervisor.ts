@@ -144,6 +144,7 @@ import {
 import {
   buildInventoryRefreshWarningMessage,
   buildTrackedIssueDtos,
+  renderGitHubRateLimitLine,
   renderSupervisorStatusDto,
   SupervisorStatusDto,
 } from "./supervisor-status-report";
@@ -175,6 +176,7 @@ import {
   FailureContext,
   GitHubIssue,
   GitHubPullRequest,
+  GitHubRateLimitTelemetry,
   IssueRunRecord,
   JsonStateQuarantine,
   PullRequestCheck,
@@ -200,6 +202,12 @@ interface ReadyIssueContext {
 }
 
 const LONG_RECONCILIATION_WARNING_THRESHOLD_MS = 5 * 60 * 1000;
+const FULL_ISSUE_INVENTORY_REUSE_TTL_MS = 5 * 60 * 1000;
+
+interface CachedFullIssueInventory {
+  issues: GitHubIssue[];
+  fetchedAtMs: number;
+}
 
 function isIgnoredSupervisorArtifactPath(
   relativePath: string,
@@ -428,6 +436,7 @@ export class Supervisor {
   private readonly agentRunner: AgentRunner;
   private readonly onEvent?: SupervisorEventSink;
   private readonly configPath?: string;
+  private cachedFullIssueInventory: CachedFullIssueInventory | null = null;
 
   constructor(
     public readonly config: SupervisorConfig,
@@ -502,6 +511,26 @@ export class Supervisor {
         : "recoverable";
     } catch {
       return "recoverable";
+    }
+  }
+
+  private async listLoopIssueInventory(): Promise<GitHubIssue[]> {
+    const nowMs = Date.now();
+    const cachedInventory = this.cachedFullIssueInventory;
+    if (cachedInventory !== null && nowMs - cachedInventory.fetchedAtMs < FULL_ISSUE_INVENTORY_REUSE_TTL_MS) {
+      return cachedInventory.issues;
+    }
+
+    try {
+      const issues = await this.github.listAllIssues();
+      this.cachedFullIssueInventory = {
+        issues,
+        fetchedAtMs: nowMs,
+      };
+      return issues;
+    } catch (error) {
+      this.cachedFullIssueInventory = null;
+      throw error;
     }
   }
 
@@ -985,6 +1014,30 @@ export class Supervisor {
       state.last_successful_inventory_snapshot,
     );
     const inventoryRefreshWarning = buildInventoryRefreshWarningMessage(state);
+    const githubWithRateLimitTelemetry = this.github as GitHubClient & {
+      getRateLimitTelemetry?: () => Promise<GitHubRateLimitTelemetry>;
+    };
+    const loadGitHubRateLimitStatus = async () => {
+      let githubRateLimit: GitHubRateLimitTelemetry | null = null;
+      let githubRateLimitWarning: string | null = null;
+      if (typeof githubWithRateLimitTelemetry.getRateLimitTelemetry === "function") {
+        try {
+          githubRateLimit = await githubWithRateLimitTelemetry.getRateLimitTelemetry();
+        } catch (error) {
+          githubRateLimitWarning = error instanceof Error ? error.message : String(error);
+        }
+      }
+      return {
+        githubRateLimit,
+        githubRateLimitWarning,
+        githubRateLimitLines: githubRateLimit
+          ? [
+            renderGitHubRateLimitLine("rest", githubRateLimit.rest),
+            renderGitHubRateLimitLine("graphql", githubRateLimit.graphql),
+          ]
+          : [],
+      };
+    };
     const reconciliationSnapshot = await readCurrentReconciliationPhaseSnapshot(this.config);
     const reconciliationPhase = reconciliationSnapshot?.phase ?? null;
     const reconciliationWarning = buildLongReconciliationWarning(reconciliationSnapshot);
@@ -1014,19 +1067,22 @@ export class Supervisor {
         summarizeChecks,
         mergeConflictDetected,
       });
-      const inactiveDetailedStatusLines =
-        [
-          ...detailedStatusLines,
-          ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
-          ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
-        ];
       if (state.inventory_refresh_failure) {
         const readinessSummary = buildLastKnownGoodSnapshotReadinessSummary(this.config, state);
         const whyLines = options.why ? await buildSelectionWhySummary(this.github, this.config, state) : [];
+        const githubRateLimitStatus = await loadGitHubRateLimitStatus();
+        const inactiveDetailedStatusLines =
+          [
+            ...detailedStatusLines,
+            ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
+            ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
+            ...githubRateLimitStatus.githubRateLimitLines,
+          ];
         return {
           gsdSummary,
           trustDiagnostics,
           cadenceDiagnostics,
+          githubRateLimit: githubRateLimitStatus.githubRateLimit,
           candidateDiscoverySummary,
           candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
           localCiContract,
@@ -1045,9 +1101,19 @@ export class Supervisor {
           warning: inventoryRefreshWarning
             ? {
               kind: "readiness",
-              message: truncate(sanitizeStatusValue(inventoryRefreshWarning), 200) ?? "",
+              message: truncate(
+                sanitizeStatusValue(
+                  [inventoryRefreshWarning, githubRateLimitStatus.githubRateLimitWarning].filter(Boolean).join(" | "),
+                ),
+                200,
+              ) ?? "",
             }
-            : null,
+            : githubRateLimitStatus.githubRateLimitWarning
+              ? {
+                kind: "readiness",
+                message: truncate(sanitizeStatusValue(githubRateLimitStatus.githubRateLimitWarning), 200) ?? "",
+              }
+              : null,
         };
       }
       try {
@@ -1063,16 +1129,26 @@ export class Supervisor {
           candidateDiscoveryDiagnostics,
         );
         const whyLines = options.why ? await buildSelectionWhySummary(this.github, this.config, state) : [];
+        const selectionSummary = options.why ? await buildSelectionSummary(this.github, this.config, state) : null;
+        const githubRateLimitStatus = await loadGitHubRateLimitStatus();
+        const inactiveDetailedStatusLines =
+          [
+            ...detailedStatusLines,
+            ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
+            ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
+            ...githubRateLimitStatus.githubRateLimitLines,
+          ];
         return {
           gsdSummary,
           trustDiagnostics,
           cadenceDiagnostics,
+          githubRateLimit: githubRateLimitStatus.githubRateLimit,
           candidateDiscoverySummary,
           candidateDiscovery,
           localCiContract,
           loopRuntime,
           activeIssue: null,
-          selectionSummary: options.why ? await buildSelectionSummary(this.github, this.config, state) : null,
+          selectionSummary,
           trackedIssues,
           runnableIssues: readinessSummary.runnableIssues,
           blockedIssues: readinessSummary.blockedIssues,
@@ -1086,10 +1162,18 @@ export class Supervisor {
         };
       } catch (error) {
         const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
+        const githubRateLimitStatus = await loadGitHubRateLimitStatus();
+        const inactiveDetailedStatusLines =
+          [
+            ...detailedStatusLines,
+            ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
+            ...githubRateLimitStatus.githubRateLimitLines,
+          ];
         return {
           gsdSummary,
           trustDiagnostics,
           cadenceDiagnostics,
+          githubRateLimit: githubRateLimitStatus.githubRateLimit,
           candidateDiscoverySummary,
           candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
           localCiContract,
@@ -1107,7 +1191,10 @@ export class Supervisor {
           whyLines: [],
           warning: {
             kind: "readiness",
-            message: truncate(message, 200) ?? "",
+            message: truncate(
+              sanitizeStatusValue([message, githubRateLimitStatus.githubRateLimitWarning].filter(Boolean).join(" | ")),
+              200,
+            ) ?? "",
           },
         };
       }
@@ -1146,17 +1233,20 @@ export class Supervisor {
       externalReviewFollowUpSummary: activeStatus.externalReviewFollowUpSummary,
       executionMetricsSummaryLines: activeStatus.executionMetricsSummaryLines,
     });
+    const githubRateLimitStatus = await loadGitHubRateLimitStatus();
     const detailedStatusLinesWithInventory =
       [
         ...detailedStatusLines,
         ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
         ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
+        ...githubRateLimitStatus.githubRateLimitLines,
       ];
 
     return {
       gsdSummary,
       trustDiagnostics,
       cadenceDiagnostics,
+      githubRateLimit: githubRateLimitStatus.githubRateLimit,
       candidateDiscoverySummary,
       candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
       localCiContract,
@@ -1186,11 +1276,22 @@ export class Supervisor {
         ? {
           kind: "status",
           message: truncate(
-            sanitizeStatusValue([activeStatus.warningMessage, inventoryRefreshWarning].filter(Boolean).join(" | ")),
+            sanitizeStatusValue(
+              [
+                activeStatus.warningMessage,
+                inventoryRefreshWarning,
+                githubRateLimitStatus.githubRateLimitWarning,
+              ].filter(Boolean).join(" | "),
+            ),
             200,
           ) ?? "",
         }
-        : null,
+        : githubRateLimitStatus.githubRateLimitWarning
+          ? {
+            kind: "status",
+            message: truncate(sanitizeStatusValue(githubRateLimitStatus.githubRateLimitWarning), 200) ?? "",
+          }
+          : null,
     };
   }
 
@@ -1422,7 +1523,7 @@ export class Supervisor {
         return reserved !== null;
       },
       handleAuthFailure: (state) => handleAuthFailure(this.github, this.stateStore, state),
-      listAllIssues: () => this.github.listAllIssues(),
+      listAllIssues: () => this.listLoopIssueInventory(),
       getIssueForParentEpicClosureFallback: (issueNumber) => this.github.getIssue(issueNumber),
       reconcileTrackedMergedButOpenIssues: (state, issues, updateReconciliationProgress, options) =>
         reconcileTrackedMergedButOpenIssues(

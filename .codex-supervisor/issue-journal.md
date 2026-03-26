@@ -5,32 +5,38 @@
 - Branch: codex/issue-1069
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: b3127d55a8b0077464665bb511c1f14e9e0d703a
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=1, repair=2)
+- Last head SHA: c302da0f3123dc0f58bbfe6a57b0e39eb7151941
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-26T14:47:10.561Z
+- Last failure signature: PRRT_kwDORgvdZ853DJPt|PRRT_kwDORgvdZ853DJP1|PRRT_kwDORgvdZ853DJP3
+- Repeated failure signature count: 1
+- Updated at: 2026-03-26T23:00:49Z
 
 ## Latest Codex Summary
-- None yet.
+- Addressed the three remaining PR review findings locally: snapshot normalization now realigns `issue_count`, sqlite loads preserve snapshot-only persisted state, and degraded readiness always emits `selection_reason=inventory_refresh_degraded`. While merging `origin/main`, kept the newer GitHub rate-limit telemetry alongside the issue-1069 inventory snapshot status lines in `Supervisor.statusReport()`.
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 3 unresolved automated review thread(s) were addressed locally and the merged tree now passes focused verification.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1076#discussion_r2995680189
+- Details:
+  - `src/core/state-store.ts`: recompute normalized snapshot `issue_count` from the filtered issue list.
+  - `src/core/state-store.ts`: treat snapshot-only sqlite metadata as persisted state during load.
+  - `src/supervisor/supervisor-selection-readiness-summary.ts`: always emit `selection_reason=inventory_refresh_degraded` on degraded readiness responses.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: this issue needs a durable state-level full-inventory artifact, not another live degraded fallback. Persisting a last-known-good snapshot on successful refresh and limiting degraded consumers to explicit diagnostics/readiness reporting should satisfy the acceptance criteria without letting stale inventory regain selection authority.
-- What changed: added `last_successful_inventory_snapshot` to supervisor state and state-store normalization; successful `runOnceCyclePrelude()` full refreshes now persist a timestamped, non-authoritative inventory snapshot while clearing `inventory_refresh_failure`; degraded status/report paths now surface snapshot provenance and snapshot-derived readiness lines while keeping `selectionSummary` disabled and `selection_reason=inventory_refresh_degraded`; operator warnings now explicitly call the snapshot diagnostic-only.
+- Hypothesis: the remaining review work is limited to these three actionable comments plus base-branch reconciliation. Keeping the last-known-good snapshot strictly non-authoritative remains the central safety constraint.
+- What changed: committed the focused review fixes as `c302da0`, fetched and started merging `origin/main`, and resolved the overlapping `supervisor.ts` status-report paths so the branch keeps both the new GitHub rate-limit reporting from `main` and the inventory snapshot diagnostics from this issue.
 - Current blocker: none.
-- Next exact step: watch draft PR #1076 CI and extend coverage only if review or CI exposes another path where stale inventory snapshot data could become authoritative.
-- Verification gap: full `npm test` has not been run; focused snapshot/state/status coverage and `npm run build` are green.
-- Files touched: `.codex-supervisor/issue-journal.md`; `src/core/state-store.ts`; `src/core/types.ts`; `src/inventory-refresh-state.ts`; `src/run-once-cycle-prelude.ts`; `src/run-once-cycle-prelude.test.ts`; `src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `src/supervisor/supervisor-selection-readiness-summary.ts`; `src/supervisor/supervisor-status-report.ts`; `src/supervisor/supervisor.ts`.
-- Rollback concern: low to moderate. The state schema and status/readiness plumbing changed, but the new snapshot remains explicitly non-authoritative and only widens degraded diagnostics.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-1069 --title "Issue #1069: persist last-known-good inventory snapshot" --body ...`
-- What changed this turn: reread the required memory files and journal, traced the full-inventory refresh path and degraded status/readiness consumers, added focused tests for successful snapshot persistence and degraded snapshot diagnostics, implemented durable `last_successful_inventory_snapshot` persistence plus sqlite/json normalization, surfaced snapshot provenance and snapshot-derived readiness lines during degraded status reporting without re-enabling live selection, installed local dependencies with `npm ci`, reran focused tests plus build verification, committed the implementation as `1ce55c9`, pushed `codex/issue-1069`, and opened draft PR #1076.
-- Exact failure reproduced this turn: before the fix, successful full inventory refreshes only cleared `inventory_refresh_failure` and discarded the live issue list, and degraded status paths ignored any durable last-known-good inventory diagnostics entirely; the new prelude and status tests captured both missing behaviors.
-- Commands run this turn: `sed -n '1,220p' <always-read-memory>`; `sed -n '1,260p' <context-index>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `rg -n "inventory snapshot|last-known-good|degraded|inventory refresh|full inventory|reconciliation|authoritative|snapshot" src .`; `rg --files src | rg "inventory|refresh|reconciliation|run-once|supervisor-pr-review|state|snapshot"`; `git log --oneline --decorate -n 12`; `sed -n '1,260p' src/run-once-cycle-prelude.ts`; `sed -n '1,260p' src/inventory-refresh-state.ts`; `sed -n '1,260p' src/core/state-store.ts`; `sed -n '1,260p' src/recovery-reconciliation.ts`; `sed -n '1,320p' src/core/types.ts`; `sed -n '1,260p' src/supervisor/supervisor-selection-issue-explain.ts`; `sed -n '1,220p' src/supervisor/supervisor-status-report.ts`; `sed -n '1,260p' src/supervisor/supervisor-status-model.ts`; `sed -n '430,620p' src/run-once-cycle-prelude.test.ts`; `sed -n '1,260p' src/run-once-issue-selection.ts`; `sed -n '1,260p' src/supervisor/supervisor-selection-readiness-summary.ts`; `sed -n '100,210p' src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `sed -n '140,230p' src/supervisor/supervisor-diagnostics-explain.test.ts`; `sed -n '260,380p' src/supervisor/supervisor-pr-review-blockers.test.ts`; `sed -n '920,1185p' src/supervisor/supervisor.ts`; `apply_patch ...`; `npx tsx --test src/run-once-cycle-prelude.test.ts`; `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `test -d node_modules && echo present || echo missing`; `test -f package-lock.json && echo package-lock || echo no-lock`; `npm ci`; `npx tsx --test src/core/state-store.test.ts`; `npm run build`; `git rev-parse HEAD`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`.
+- Next exact step: complete the merge commit, push `codex/issue-1069`, and then let PR #1076 re-run CI on the updated head.
+- Verification gap: full `npm test` has not run; focused review-fix suites and `npm run build` are green on the merged tree.
+- Files touched: `.codex-supervisor/issue-journal.md`; `src/core/state-store.ts`; `src/core/state-store.test.ts`; `src/supervisor/supervisor-selection-readiness-summary.ts`; `src/supervisor/supervisor-selection-readiness-summary.test.ts`; `src/supervisor/supervisor.ts`
+- Rollback concern: moderate. The changes sit in persisted state normalization and degraded status/reporting, so a bad merge could either drop the snapshot fallback or make stale data appear more authoritative than intended.
+- Last focused command: `git merge --no-edit origin/main`
+- What changed this turn: reread the required memory files and review-handling skill, verified the three unresolved review comments against the local code, ran focused tests for the review-fix diff, committed the code/test changes, fetched and merged `origin/main`, resolved the `supervisor.ts` and journal conflicts, and reran focused verification plus a TypeScript build on the merged tree.
+- Exact failure reproduced this turn: before the fixes, snapshot normalization preserved a stale `issue_count`, sqlite could discard snapshot-only metadata on load, and degraded readiness could omit `selection_reason=inventory_refresh_degraded` entirely when no snapshot summary existed.
+- Commands run this turn: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1069/AGENTS.generated.md`; `sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1069/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `sed -n '1,220p' /home/tommy/.codex/plugins/cache/openai-curated/github/96adb50181823339d6e0973d7ce1d567bff204bd/skills/gh-address-comments/SKILL.md`; `git status --short --branch`; `git log --oneline --decorate -n 8`; `sed -n '1,260p' src/core/state-store.ts`; `sed -n '1,260p' src/supervisor/supervisor-selection-readiness-summary.ts`; `sed -n '1,320p' src/core/state-store.test.ts`; `sed -n '1,280p' src/supervisor/supervisor-selection-readiness-summary.test.ts`; `rg -n "loadFromSqlite|last_successful_inventory_snapshot|inventory_refresh_failure|reconciliation_state|hasPersistedState" src/core/state-store.ts`; `sed -n '260,460p' src/core/state-store.ts`; `git fetch origin main`; `git rev-list --left-right --count origin/main...HEAD`; `git diff -- src/core/state-store.ts src/core/state-store.test.ts src/supervisor/supervisor-selection-readiness-summary.ts src/supervisor/supervisor-selection-readiness-summary.test.ts`; `git diff --name-only origin/main...HEAD`; `npx tsx --test src/core/state-store.test.ts`; `npx tsx --test src/supervisor/supervisor-selection-readiness-summary.test.ts`; `git add src/core/state-store.ts src/core/state-store.test.ts src/supervisor/supervisor-selection-readiness-summary.ts src/supervisor/supervisor-selection-readiness-summary.test.ts`; `git commit -m "Address PR feedback for inventory snapshot fallback"`; `git stash push -m "issue-1069-journal" -- .codex-supervisor/issue-journal.md`; `git merge --no-edit origin/main`; `rg -n "^(<<<<<<<|=======|>>>>>>>)" .codex-supervisor/issue-journal.md src/supervisor/supervisor.ts`; `sed -n '1056,1148p' src/supervisor/supervisor.ts`; `sed -n '1240,1270p' src/supervisor/supervisor.ts`; `npx tsx --test src/core/state-store.test.ts src/supervisor/supervisor-selection-readiness-summary.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
