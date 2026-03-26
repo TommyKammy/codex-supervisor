@@ -1912,11 +1912,15 @@ test("setup shell saves through the narrow setup config API and revalidates read
   const setupForm = harness.document.getElementById("setup-form");
   const saveButton = harness.document.getElementById("setup-save-button");
   const saveStatus = harness.document.getElementById("setup-save-status");
+  const restartStatus = harness.document.getElementById("setup-restart-status");
+  const restartDetails = harness.document.getElementById("setup-restart-details");
   assert.ok(repoPathInput);
   assert.ok(reviewProviderInput);
   assert.ok(setupForm);
   assert.ok(saveButton);
   assert.ok(saveStatus);
+  assert.ok(restartStatus);
+  assert.ok(restartDetails);
 
   repoPathInput.value = "/tmp/repo";
   reviewProviderInput.value = "codex";
@@ -2057,12 +2061,203 @@ test("setup shell saves through the narrow setup config API and revalidates read
   );
   assert.equal(saveButton.disabled, false);
   assert.match(saveStatus.textContent, /Saved 2 setup fields\./u);
+  assert.match(restartStatus.textContent ?? "", /Restart required/u);
+  assert.match(
+    restartDetails.textContent ?? "",
+    /Saved changes to repoPath, reviewProvider require a supervisor restart before they take effect\..*Restart now is not available in the setup UI yet\..*Restart the supervisor manually and then refresh this page\./u,
+  );
   assert.match(harness.document.getElementById("setup-overall-status")?.textContent ?? "", /configured/u);
   assert.match(harness.document.getElementById("setup-blocker-summary")?.textContent ?? "", /No blocking setup conditions remain\./u);
   assert.match(harness.document.getElementById("setup-local-ci-summary")?.textContent ?? "", /Repo-owned local CI contract is configured\./u);
   assert.match(
     harness.document.getElementById("setup-local-ci-details")?.textContent ?? "",
     /Configured: yes.*Command: npm run ci:local.*Source: config.*This repo-owned command is the canonical local verification step before PR publication or update.*When configured local CI fails, PR publication or ready-for-review promotion stays blocked until the repo-owned command passes again\./u,
+  );
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("setup shell distinguishes saved changes that are already effective", async () => {
+  const setupConfigResponse = createDeferred<MockResponseLike>();
+  const setupReadinessRefreshResponse = createDeferred<MockResponseLike>();
+  const harness = createSetupHarness([
+    {
+      path: "/api/setup-readiness",
+      response: jsonResponse({
+        kind: "setup_readiness",
+        ready: true,
+        overallStatus: "configured",
+        configPath: "/tmp/supervisor.config.json",
+        fields: [
+          {
+            key: "reviewProvider",
+            label: "Review provider",
+            state: "configured",
+            value: "chatgpt-codex-connector",
+            message: "Review provider posture is configured.",
+            required: true,
+            metadata: {
+              source: "config",
+              editable: true,
+              valueType: "review_provider",
+            },
+          },
+        ],
+        blockers: [],
+        hostReadiness: {
+          overallStatus: "pass",
+          checks: [],
+        },
+        providerPosture: {
+          profile: "codex",
+          provider: "codex",
+          reviewers: ["chatgpt-codex-connector"],
+          signalSource: "review_bot_logins",
+          configured: true,
+          summary: "Codex Connector is configured.",
+        },
+        trustPosture: {
+          trustMode: "trusted_repo_and_authors",
+          executionSafetyMode: "unsandboxed_autonomous",
+          warning: null,
+          summary: "Trusted inputs with unsandboxed autonomous execution.",
+        },
+        localCiContract: {
+          configured: true,
+          command: "npm run ci:local",
+          source: "config",
+          summary: "Repo-owned local CI contract is configured.",
+        },
+      }),
+    },
+    {
+      path: "/api/setup-config",
+      method: "POST",
+      body: JSON.stringify({
+        changes: {
+          reviewProvider: "codex",
+        },
+      }),
+      response: setupConfigResponse.promise,
+    },
+    {
+      path: "/api/setup-readiness",
+      response: setupReadinessRefreshResponse.promise,
+    },
+  ]);
+  await harness.flush();
+
+  const reviewProviderInput = harness.document.getElementById("setup-input-reviewProvider");
+  const setupForm = harness.document.getElementById("setup-form");
+  const restartStatus = harness.document.getElementById("setup-restart-status");
+  const restartDetails = harness.document.getElementById("setup-restart-details");
+  assert.ok(reviewProviderInput);
+  assert.ok(setupForm);
+  assert.ok(restartStatus);
+  assert.ok(restartDetails);
+
+  reviewProviderInput.value = "codex";
+  const submitPromise = setupForm.dispatch("submit", {
+    preventDefault() {},
+  });
+  await harness.flush();
+
+  setupConfigResponse.resolve(jsonResponse({
+    kind: "setup_config_update",
+    configPath: "/tmp/supervisor.config.json",
+    backupPath: null,
+    updatedFields: ["reviewProvider"],
+    restartRequired: false,
+    restartScope: null,
+    restartTriggeredByFields: [],
+    document: {
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    },
+    readiness: {
+      kind: "setup_readiness",
+      ready: true,
+      overallStatus: "configured",
+      configPath: "/tmp/supervisor.config.json",
+      fields: [],
+      blockers: [],
+      hostReadiness: { overallStatus: "pass", checks: [] },
+      providerPosture: {
+        profile: "codex",
+        provider: "codex",
+        reviewers: ["chatgpt-codex-connector"],
+        signalSource: "review_bot_logins",
+        configured: true,
+        summary: "Codex Connector is configured.",
+      },
+      trustPosture: {
+        trustMode: "trusted_repo_and_authors",
+        executionSafetyMode: "unsandboxed_autonomous",
+        warning: null,
+        summary: "Trusted inputs with unsandboxed autonomous execution.",
+      },
+      localCiContract: {
+        configured: true,
+        command: "npm run ci:local",
+        source: "config",
+        summary: "Repo-owned local CI contract is configured.",
+      },
+    },
+  }));
+  await harness.flush();
+
+  setupReadinessRefreshResponse.resolve(jsonResponse({
+    kind: "setup_readiness",
+    ready: true,
+    overallStatus: "configured",
+    configPath: "/tmp/supervisor.config.json",
+    fields: [
+      {
+        key: "reviewProvider",
+        label: "Review provider",
+        state: "configured",
+        value: "chatgpt-codex-connector",
+        message: "Review provider posture is configured.",
+        required: true,
+        metadata: {
+          source: "config",
+          editable: true,
+          valueType: "review_provider",
+        },
+      },
+    ],
+    blockers: [],
+    hostReadiness: {
+      overallStatus: "pass",
+      checks: [],
+    },
+    providerPosture: {
+      profile: "codex",
+      provider: "codex",
+      reviewers: ["chatgpt-codex-connector"],
+      signalSource: "review_bot_logins",
+      configured: true,
+      summary: "Codex Connector is configured.",
+    },
+    trustPosture: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: null,
+      summary: "Trusted inputs with unsandboxed autonomous execution.",
+    },
+    localCiContract: {
+      configured: true,
+      command: "npm run ci:local",
+      source: "config",
+      summary: "Repo-owned local CI contract is configured.",
+    },
+  }));
+
+  await submitPromise;
+  await harness.flush();
+
+  assert.match(restartStatus.textContent ?? "", /Saved and effective/u);
+  assert.match(
+    restartDetails.textContent ?? "",
+    /Saved changes to reviewProvider are already effective\..*No supervisor restart is required for this save\./u,
   );
   assert.equal(harness.remainingFetches.length, 0);
 });

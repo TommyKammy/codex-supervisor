@@ -6,6 +6,10 @@ export function renderSetupBrowserScript(): string {
         editors: document.getElementById("setup-editors"),
         saveButton: document.getElementById("setup-save-button"),
         saveStatus: document.getElementById("setup-save-status"),
+        restartStatus: document.getElementById("setup-restart-status"),
+        restartDetails: document.getElementById("setup-restart-details"),
+        restartButton: document.getElementById("setup-restart-button"),
+        restartGuidance: document.getElementById("setup-restart-guidance"),
         overallStatus: document.getElementById("setup-overall-status"),
         overallCaption: document.getElementById("setup-overall-caption"),
         summary: document.getElementById("setup-summary"),
@@ -40,6 +44,11 @@ export function renderSetupBrowserScript(): string {
       ];
       let currentReport = null;
       let saveInFlight = false;
+
+      function formatFieldList(fields) {
+        const values = Array.isArray(fields) ? fields.filter((field) => typeof field === "string" && field.length > 0) : [];
+        return values.length > 0 ? values.join(", ") : "the saved fields";
+      }
 
       function setText(element, value) {
         if (!element) {
@@ -232,12 +241,49 @@ export function renderSetupBrowserScript(): string {
         if (elements.saveButton) {
           elements.saveButton.disabled = disabled;
         }
+        if (elements.restartButton) {
+          elements.restartButton.disabled = true;
+        }
         for (const field of editableFields(currentReport || {})) {
           const input = document.getElementById("setup-input-" + field.key);
           if (input) {
             input.disabled = disabled;
           }
         }
+      }
+
+      function renderRestartOutcome(result) {
+        if (!result) {
+          setText(elements.restartStatus, "No recent save");
+          setText(
+            elements.restartDetails,
+            "Save typed setup changes to see whether they take effect immediately or require a supervisor restart.",
+          );
+          setText(elements.restartGuidance, "Restart controls are not available in the setup UI yet.");
+          return;
+        }
+
+        const changedFields = formatFieldList(result.restartTriggeredByFields && result.restartTriggeredByFields.length > 0
+          ? result.restartTriggeredByFields
+          : result.updatedFields);
+        if (result.restartRequired) {
+          setText(elements.restartStatus, "Restart required");
+          setText(
+            elements.restartDetails,
+            "Saved changes to " +
+              changedFields +
+              " require a supervisor restart before they take effect. Restart now is not available in the setup UI yet. Restart the supervisor manually and then refresh this page.",
+          );
+          setText(elements.restartGuidance, "Manual next step: restart the supervisor process, then refresh /setup.");
+          return;
+        }
+
+        setText(elements.restartStatus, "Saved and effective");
+        setText(
+          elements.restartDetails,
+          "Saved changes to " + changedFields + " are already effective. No supervisor restart is required for this save.",
+        );
+        setText(elements.restartGuidance, "Restart controls remain disabled because this save is already effective.");
       }
 
       function renderSetup(report) {
@@ -428,6 +474,7 @@ export function renderSetupBrowserScript(): string {
           const result = await writeJson("/api/setup-config", { changes });
           setSaveStatus("Revalidating setup readiness...");
           await refreshSetupReadiness();
+          renderRestartOutcome(result);
           const updatedCount = Array.isArray(result.updatedFields) ? result.updatedFields.length : Object.keys(changes).length;
           setSaveStatus("Saved " + updatedCount + " setup field" + (updatedCount === 1 ? "" : "s") + ".");
         } catch (error) {
@@ -445,6 +492,7 @@ export function renderSetupBrowserScript(): string {
         setSaveStatus("Loading setup readiness...");
         try {
           await refreshSetupReadiness();
+          renderRestartOutcome(null);
           setSaveStatus("Edit the setup fields and save changes to revalidate readiness.");
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -457,6 +505,7 @@ export function renderSetupBrowserScript(): string {
             [{ title: message, tone: "blocker", meta: [], notes: [] }],
             "No setup blockers reported.",
           );
+          renderRestartOutcome(null);
           setSaveStatus("Setup readiness failed to load.");
         }
       }
