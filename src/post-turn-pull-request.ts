@@ -34,6 +34,10 @@ import {
 import { nowIso, truncate } from "./core/utils";
 import { runLocalCiGate, type LocalCiCommandRunner } from "./local-ci";
 import {
+  runWorkstationLocalPathGate,
+  type WorkstationLocalPathGateResult,
+} from "./workstation-local-path-gate";
+import {
   emitSupervisorEvent,
   maybeBuildReviewWaitChangedEvent,
   type SupervisorEventSink,
@@ -230,6 +234,7 @@ export interface HandlePostTurnPullRequestTransitionsArgs {
   mergeConflictDetected: (pr: GitHubPullRequest) => boolean;
   runLocalReviewImpl?: typeof runLocalReview;
   runLocalCiCommand?: LocalCiCommandRunner;
+  runWorkstationLocalPathGate?: (args: { workspacePath: string; gateLabel: string }) => Promise<WorkstationLocalPathGateResult>;
   emitEvent?: SupervisorEventSink;
   loadOpenPullRequestSnapshot?: (prNumber: number) => Promise<{
     pr: GitHubPullRequest;
@@ -258,6 +263,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
   const runLocalReviewImpl = args.runLocalReviewImpl ?? runLocalReview;
   const loadOpenPullRequestSnapshotImpl =
     args.loadOpenPullRequestSnapshot ?? ((prNumber: number) => loadOpenPullRequestSnapshot(args.github, prNumber));
+  const runWorkstationLocalPathGateImpl = args.runWorkstationLocalPathGate ?? runWorkstationLocalPathGate;
   const { config, stateStore, github } = args;
   const { state, issue, workspacePath, syncJournal, memoryArtifacts, options } = args.context;
   let { record, pr } = args.context;
@@ -400,6 +406,35 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     !localReviewBlocksReady(config, record, refreshed.pr) &&
     !options.dryRun
   ) {
+    const pathHygieneGate = await runWorkstationLocalPathGateImpl({
+      workspacePath,
+      gateLabel: `before marking PR #${refreshed.pr.number} ready`,
+    });
+    if (!pathHygieneGate.ok) {
+      const failureContext = pathHygieneGate.failureContext;
+      record = stateStore.touch(record, {
+        state: "blocked",
+        last_error: truncate(
+          failureContext?.summary
+            ?? `Tracked durable artifacts failed workstation-local path hygiene before marking PR #${refreshed.pr.number} ready.`,
+          1000,
+        ),
+        last_failure_kind: null,
+        last_failure_context: failureContext,
+        ...args.applyFailureSignature(record, failureContext),
+        blocked_reason: "verification",
+      });
+      state.issues[String(record.issue_number)] = record;
+      await stateStore.save(state);
+      await syncJournal(record);
+      return {
+        record,
+        pr: refreshed.pr,
+        checks: refreshed.checks,
+        reviewThreads: refreshed.reviewThreads,
+      };
+    }
+
     const localCiGate = await runLocalCiGate({
       config,
       workspacePath,

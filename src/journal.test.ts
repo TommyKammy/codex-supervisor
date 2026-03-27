@@ -3,7 +3,15 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test, { mock } from "node:test";
-import { issueJournalPath, syncIssueJournal } from "./core/journal";
+import {
+  DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
+  issueJournalPath,
+  LEGACY_SHARED_ISSUE_JOURNAL_RELATIVE_PATH,
+  resolveIssueJournalRelativePath,
+  syncIssueJournal,
+  trackedIssueJournalPath,
+  trackedIssueJournalRelativePath,
+} from "./core/journal";
 import { GitHubIssue, IssueRunRecord } from "./core/types";
 
 const issue: GitHubIssue = {
@@ -88,9 +96,7 @@ test("issueJournalPath throws when an issueNumber template is left unresolved", 
 
 test("issueJournalPath resolves the canonical issue-scoped journal template when issueNumber is provided", () => {
   assert.equal(
-    issueJournalPath("/tmp/workspaces/issue-177", ".codex-supervisor/issues/{issueNumber}/issue-journal.md", {
-      issueNumber: 177,
-    }),
+    issueJournalPath("/tmp/workspaces/issue-177", ".codex-supervisor/issues/{issueNumber}/issue-journal.md", 177),
     "/tmp/workspaces/issue-177/.codex-supervisor/issues/177/issue-journal.md",
   );
 });
@@ -124,7 +130,7 @@ test("syncIssueJournal writes the structured handoff schema for new journals", a
 
 test("syncIssueJournal writes workspace metadata as workspace-relative paths", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-relative-paths-"));
-  const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
+  const journalPath = issueJournalPath(tempDir, DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH, issue.number);
 
   await syncIssueJournal({
     issue,
@@ -134,8 +140,45 @@ test("syncIssueJournal writes workspace metadata as workspace-relative paths", a
 
   const content = await fs.readFile(journalPath, "utf8");
   assert.match(content, /- Workspace: \./);
-  assert.match(content, /- Journal: \.codex-supervisor\/issue-journal\.md/);
+  assert.match(content, /- Journal: \.codex-supervisor\/issues\/177\/issue-journal\.md/);
   assert.doesNotMatch(content, new RegExp(tempDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("resolveIssueJournalRelativePath scopes the default journal path by issue number", () => {
+  assert.equal(
+    resolveIssueJournalRelativePath(DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH, 177),
+    ".codex-supervisor/issues/177/issue-journal.md",
+  );
+});
+
+test("trackedIssueJournal helpers canonicalize the legacy shared path but preserve custom paths", () => {
+  assert.equal(
+    trackedIssueJournalRelativePath(
+      "/tmp/workspaces/issue-177",
+      "/tmp/workspaces/issue-177/.codex-supervisor/issue-journal.md",
+      DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
+      177,
+    ),
+    ".codex-supervisor/issues/177/issue-journal.md",
+  );
+  assert.equal(
+    trackedIssueJournalRelativePath(
+      "/tmp/workspaces/issue-177",
+      "/tmp/workspaces/issue-177/.codex-supervisor/custom-journal.md",
+      DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
+      177,
+    ),
+    ".codex-supervisor/custom-journal.md",
+  );
+  assert.equal(
+    trackedIssueJournalPath(
+      "/tmp/workspaces/issue-177",
+      LEGACY_SHARED_ISSUE_JOURNAL_RELATIVE_PATH,
+      DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
+      177,
+    ),
+    "/tmp/workspaces/issue-177/.codex-supervisor/issues/177/issue-journal.md",
+  );
 });
 
 test("syncIssueJournal normalizes absolute local paths before writing durable content", async () => {
