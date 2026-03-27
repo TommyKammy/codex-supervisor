@@ -2,6 +2,7 @@ import { loadRelevantExternalReviewMissPatterns } from "./external-review/extern
 import { GitHubClient } from "./github";
 import {
   hasMeaningfulJournalHandoff,
+  normalizeCommittedIssueJournal,
   readIssueJournal,
 } from "./core/journal";
 import { LockHandle } from "./core/lock";
@@ -327,6 +328,14 @@ export async function executeCodexTurnPhase(
       const preTurnStaleNoPrRecoveryCount = getStaleStabilizingNoPrRecoveryCount(record);
       const preTurnLastError = record.last_error;
       const journalAfterRun = await readIssueJournalImpl(journalPath);
+      const normalizedJournalAfterRun =
+        journalAfterRun === null
+          ? null
+          : await normalizeCommittedIssueJournal({
+              journalPath,
+              workspacePath,
+            });
+      const effectiveJournalAfterRun = normalizedJournalAfterRun ?? journalAfterRun;
       record = stateStore.touch(record, {
         codex_session_id: turnResult.sessionId,
         last_codex_summary: truncate(turnResult.supervisorMessage),
@@ -339,9 +348,9 @@ export async function executeCodexTurnPhase(
 
       if (
         turnResult.exitCode === 0 &&
-        (!journalAfterRun ||
-          journalAfterRun === journalContent ||
-          !hasMeaningfulJournalHandoff(journalAfterRun))
+        (!effectiveJournalAfterRun ||
+          effectiveJournalAfterRun === journalContent ||
+          !hasMeaningfulJournalHandoff(effectiveJournalAfterRun))
       ) {
         record = await persistMissingCodexJournalHandoffImpl({
           stateStore,

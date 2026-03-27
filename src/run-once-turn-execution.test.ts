@@ -1587,3 +1587,183 @@ test("executeCodexTurnPhase preserves stale stabilizing no-PR recovery tracking 
   assert.equal(state.issues["102"]?.repeated_failure_signature_count, 0);
   assert.equal(state.issues["102"]?.stale_stabilizing_no_pr_recovery_count, 1);
 });
+
+test("executeCodexTurnPhase normalizes workstation-local paths from a journal-only direct rewrite before post-run persistence", async () => {
+  await withTempWorkspace("journal-direct-rewrite-", async (workspacePath) => {
+    const journalPath = path.join(workspacePath, ".codex-supervisor", "issue-journal.md");
+    const repoFilePath = path.join(workspacePath, "src", "review-fix.ts");
+    const hostOnlyPath = "/home/alice/.codex/history.log";
+    await fs.mkdir(path.dirname(journalPath), { recursive: true });
+    await fs.mkdir(path.dirname(repoFilePath), { recursive: true });
+    await fs.writeFile(
+      journalPath,
+      [
+        "## Codex Working Notes",
+        "### Current Handoff",
+        "- Hypothesis: a journal-only review fix should still sanitize durable paths.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const pr = createPullRequest({
+      title: "Normalize journal-only review-fix rewrites",
+      headRefOid: "head-review-fix",
+    });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: 102,
+      issues: {
+        "102": createRecord({
+          state: "local_review_fix",
+          workspace: workspacePath,
+          journal_path: journalPath,
+          pr_number: pr.number,
+        }),
+      },
+    };
+
+    const result = await executeCodexTurnPhase({
+      config: createConfig(),
+      stateStore: {
+        touch: (record, patch) => ({ ...record, ...patch, updated_at: "2026-03-27T09:00:00.000Z" }),
+        save: async () => undefined,
+      },
+      github: {
+        resolvePullRequestForBranch: async () => pr,
+        createPullRequest: async () => {
+          throw new Error("unexpected createPullRequest call");
+        },
+        getChecks: async () => [],
+        getUnresolvedReviewThreads: async () => [],
+        getExternalReviewSurface: async () => {
+          throw new Error("unexpected getExternalReviewSurface call");
+        },
+      },
+      context: {
+        state,
+        record: state.issues["102"]!,
+        issue: createIssue({ title: "Normalize journal-only review-fix rewrites" }),
+        previousCodexSummary: null,
+        previousError: null,
+        workspacePath,
+        journalPath,
+        syncJournal: async () => undefined,
+        memoryArtifacts: {
+          alwaysReadFiles: [],
+          onDemandFiles: [],
+          contextIndexPath: "/tmp/context-index.md",
+          agentsPath: "/tmp/AGENTS.generated.md",
+        },
+        workspaceStatus: {
+          branch: "codex/issue-102",
+          headSha: "head-review-fix",
+          hasUncommittedChanges: false,
+          baseAhead: 0,
+          baseBehind: 0,
+          remoteBranchExists: true,
+          remoteAhead: 0,
+          remoteBehind: 0,
+        },
+        pr,
+        checks: [],
+        reviewThreads: [],
+        options: { dryRun: false },
+      },
+      acquireSessionLock: async () => null,
+      classifyFailure: () => "command_error",
+      buildCodexFailureContext: (category, summary, details) => ({
+        category,
+        summary,
+        signature: `${category}:${summary}`,
+        command: null,
+        details,
+        url: null,
+        updated_at: "2026-03-27T09:00:00.000Z",
+      }),
+      applyFailureSignature: () => ({
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+      }),
+      normalizeBlockerSignature: () => null,
+      isVerificationBlockedMessage: () => false,
+      derivePullRequestLifecycleSnapshot: (record) => ({
+        recordForState: record,
+        nextState: "local_review_fix",
+        failureContext: null,
+        reviewWaitPatch: {},
+        copilotRequestObservationPatch: {},
+        mergeLatencyVisibilityPatch: {
+          provider_success_observed_at: null,
+          provider_success_head_sha: null,
+          merge_readiness_last_evaluated_at: null,
+        },
+        copilotTimeoutPatch: {
+          copilot_review_timed_out_at: null,
+          copilot_review_timeout_action: null,
+          copilot_review_timeout_reason: null,
+        },
+      }),
+      inferStateWithoutPullRequest: () => "stabilizing",
+      blockedReasonFromReviewState: () => null,
+      recoverUnexpectedCodexTurnFailure: async () => {
+        throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+      },
+      getWorkspaceStatus: async () => ({
+        branch: "codex/issue-102",
+        headSha: "head-review-fix",
+        hasUncommittedChanges: true,
+        baseAhead: 0,
+        baseBehind: 0,
+        remoteBranchExists: true,
+        remoteAhead: 0,
+        remoteBehind: 0,
+      }),
+      pushBranch: async () => {
+        throw new Error("unexpected pushBranch call");
+      },
+      agentRunner: createSuccessfulAgentRunner(async (request) => {
+        await fs.writeFile(
+          request.journalPath,
+          [
+            "## Codex Working Notes",
+            "### Current Handoff",
+            `- What changed: rewrote ${repoFilePath} after inspecting ${hostOnlyPath}.`,
+            "- Next exact step: rerun the review-focused verification.",
+          ].join("\n"),
+          "utf8",
+        );
+
+        return {
+          exitCode: 0,
+          sessionId: null,
+          supervisorMessage: [
+            "Summary: rewrote the journal for a local review fix",
+            "State hint: local_review_fix",
+            "Blocked reason: none",
+            "Tests: not run",
+            "Failure signature: none",
+            "Next action: rerun the review-focused verification",
+          ].join("\n"),
+          stderr: "",
+          stdout: "",
+          structuredResult: {
+            summary: "rewrote the journal for a local review fix",
+            stateHint: "local_review_fix",
+            blockedReason: null,
+            failureSignature: null,
+            nextAction: "rerun the review-focused verification",
+            tests: "not run",
+          },
+          failureKind: null,
+          failureContext: null,
+        };
+      }),
+    });
+
+    assert.equal(result.kind, "completed");
+    const content = await fs.readFile(journalPath, "utf8");
+    assert.doesNotMatch(content, new RegExp(workspacePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.doesNotMatch(content, new RegExp(hostOnlyPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(content, /src\/review-fix\.ts/);
+    assert.match(content, /<redacted-local-path>/);
+  });
+});
