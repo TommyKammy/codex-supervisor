@@ -1537,7 +1537,7 @@ export class Supervisor {
           inferGitHubWaitStep,
         }, updateReconciliationProgress),
       reconcileRecoverableBlockedIssueStates: (state, issues) =>
-        reconcileRecoverableBlockedIssueStates(this.stateStore, state, this.config, issues, {
+        reconcileRecoverableBlockedIssueStates(this.github, this.stateStore, state, this.config, issues, {
           shouldAutoRetryHandoffMissing,
         }),
       reconcileParentEpicClosures: (state, issues) =>

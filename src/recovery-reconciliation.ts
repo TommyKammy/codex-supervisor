@@ -36,6 +36,7 @@ import {
   readInterruptedTurnMarker,
   sameIssueJournalFingerprint,
 } from "./interrupted-turn-marker";
+import { mergeConflictDetected } from "./supervisor/supervisor-status-rendering";
 
 const OWNER_GUARDED_ACTIVE_STATES = new Set<RunState>([
   "planning",
@@ -1125,6 +1126,7 @@ export async function reconcileStaleFailedIssueStates(
 }
 
 export async function reconcileRecoverableBlockedIssueStates(
+  github: Pick<RecoveryGitHubLike, "getPullRequestIfExists">,
   stateStore: StateStoreLike,
   state: SupervisorStateFile,
   config: SupervisorConfig,
@@ -1164,6 +1166,38 @@ export async function reconcileRecoverableBlockedIssueStates(
         copilot_review_timeout_reason: null,
         ...applyRecoveryEvent({}, recoveryEvent),
       });
+      state.issues[String(record.issue_number)] = updated;
+      changed = true;
+      recoveryEvents.push(recoveryEvent);
+      continue;
+    }
+
+    if (
+      record.state === "blocked" &&
+      record.blocked_reason === "handoff_missing" &&
+      record.pr_number !== null
+    ) {
+      const trackedPullRequest = await github.getPullRequestIfExists(record.pr_number);
+      if (!trackedPullRequest || trackedPullRequest.state !== "OPEN" || trackedPullRequest.mergedAt || !mergeConflictDetected(trackedPullRequest)) {
+        continue;
+      }
+
+      const recoveryEvent = buildTrackedPrResumeRecoveryEvent(record, trackedPullRequest, "resolving_conflict");
+      const updated = stateStore.touch(record, applyRecoveryEvent({
+        state: "resolving_conflict",
+        blocked_reason: null,
+        last_error: null,
+        last_failure_kind: null,
+        last_failure_context: null,
+        last_blocker_signature: null,
+        ...applyFailureSignature(record, null),
+        repeated_blocker_count: 0,
+        timeout_retry_count: 0,
+        blocked_verification_retry_count: 0,
+        codex_session_id: null,
+        pr_number: trackedPullRequest.number,
+        last_head_sha: trackedPullRequest.headRefOid,
+      }, recoveryEvent));
       state.issues[String(record.issue_number)] = updated;
       changed = true;
       recoveryEvents.push(recoveryEvent);
