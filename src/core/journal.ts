@@ -308,6 +308,13 @@ function normalizeDurableJournalText(text: string | null | undefined, workspaceP
   });
 }
 
+export function normalizeDurableIssueJournalContent(
+  content: string | null | undefined,
+  workspacePath: string,
+): string {
+  return normalizeDurableJournalText(content, workspacePath);
+}
+
 function truncateSummaryBody(summary: string, maxLength: number): string {
   if (summary.length === 0 || maxLength <= 0) {
     return "";
@@ -512,8 +519,25 @@ export async function syncIssueJournal(args: {
   const { issue, record, journalPath, maxChars = 6000 } = args;
   await ensureDir(path.dirname(journalPath));
   const existing = await readIssueJournal(journalPath);
-  const notes = existing ? normalizeDurableJournalText(preserveCodexNotes(existing), record.workspace) : null;
+  const notes = existing ? normalizeDurableIssueJournalContent(preserveCodexNotes(existing), record.workspace) : null;
   const snapshot = buildSupervisorSnapshot({ issue, record, journalPath });
   const nextContent = `${snapshot}\n${notes ? compactCodexNotes(notes, maxChars) : NOTES_TEMPLATE}`;
   await writeFileAtomic(journalPath, nextContent);
+}
+
+export async function normalizeCommittedIssueJournal(args: {
+  journalPath: string;
+  workspacePath: string;
+}): Promise<string | null> {
+  const existing = await readIssueJournal(args.journalPath);
+  if (existing === null) {
+    return null;
+  }
+
+  const normalized = normalizeDurableIssueJournalContent(existing, args.workspacePath);
+  if (normalized !== existing) {
+    await writeFileAtomic(args.journalPath, normalized);
+  }
+
+  return normalized;
 }
