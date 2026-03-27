@@ -160,6 +160,7 @@ Add execution-ready gating.`,
     createdAt: "2026-03-15T00:00:00Z",
     updatedAt: "2026-03-15T00:00:00Z",
     url: "https://example.test/issues/91",
+    labels: [],
     state: "OPEN",
   };
   const state: SupervisorStateFile = {
@@ -214,6 +215,7 @@ test("resolveRunnableIssueContext keeps the acquired lock attached to a ready is
     createdAt: "2026-03-15T00:00:00Z",
     updatedAt: "2026-03-15T00:00:00Z",
     url: "https://example.test/issues/92",
+    labels: [],
     state: "OPEN",
   };
   const state: SupervisorStateFile = {
@@ -264,6 +266,7 @@ test("resolveRunnableIssueContext blocks safer-mode autonomous execution without
     createdAt: "2026-03-15T00:00:00Z",
     updatedAt: "2026-03-15T00:00:00Z",
     url: "https://example.test/issues/94",
+    labels: [],
     state: "OPEN",
   };
   const state: SupervisorStateFile = {
@@ -369,6 +372,7 @@ test("resolveRunnableIssueContext does not persist a new active reservation when
     createdAt: "2026-03-15T00:00:00Z",
     updatedAt: "2026-03-15T00:00:00Z",
     url: "https://example.test/issues/93",
+    labels: [],
     state: "OPEN",
   };
   const state: SupervisorStateFile = {
@@ -408,6 +412,7 @@ test("resolveRunnableIssueContext emits typed active-issue and loop-skip events"
     createdAt: "2026-03-15T00:00:00Z",
     updatedAt: "2026-03-15T00:00:00Z",
     url: "https://example.test/issues/93",
+    labels: [],
     state: "OPEN",
   };
   const emitted: unknown[] = [];
@@ -492,6 +497,7 @@ test("resolveRunnableIssueContext skips Epic issues and selects a runnable child
     createdAt: "2026-03-15T00:00:00Z",
     updatedAt: "2026-03-15T00:00:00Z",
     url: "https://example.test/issues/93",
+    labels: [],
     state: "OPEN",
   };
   const childIssue: GitHubIssue = {
@@ -503,6 +509,7 @@ Part of: #93`,
     createdAt: "2026-03-15T00:05:00Z",
     updatedAt: "2026-03-15T00:05:00Z",
     url: "https://example.test/issues/94",
+    labels: [],
     state: "OPEN",
   };
   const state: SupervisorStateFile = {
@@ -542,6 +549,7 @@ test("resolveRunnableIssueContext reuses the current reserved issue instead of c
     createdAt: "2026-03-15T00:00:00Z",
     updatedAt: "2026-03-15T00:00:00Z",
     url: "https://example.test/issues/92",
+    labels: [],
     state: "OPEN",
   };
   const otherIssue: GitHubIssue = {
@@ -551,6 +559,7 @@ test("resolveRunnableIssueContext reuses the current reserved issue instead of c
     createdAt: "2026-03-15T00:05:00Z",
     updatedAt: "2026-03-15T00:05:00Z",
     url: "https://example.test/issues/93",
+    labels: [],
     state: "OPEN",
   };
   const state: SupervisorStateFile = {
@@ -616,6 +625,7 @@ Depends on: #95`,
     createdAt: "2026-03-15T00:00:00Z",
     updatedAt: "2026-03-15T00:00:00Z",
     url: "https://example.test/issues/96",
+    labels: [],
     state: "OPEN",
   };
   const dependencyIssue: GitHubIssue = {
@@ -625,6 +635,7 @@ Depends on: #95`,
     createdAt: "2026-03-15T00:00:00Z",
     updatedAt: "2026-03-15T00:00:00Z",
     url: "https://example.test/issues/95",
+    labels: [],
     state: "CLOSED",
   };
   const state: SupervisorStateFile = {
@@ -694,6 +705,7 @@ Execution order: 2 of 3`,
     createdAt: "2026-03-15T00:00:00Z",
     updatedAt: "2026-03-15T00:00:00Z",
     url: "https://example.test/issues/97",
+    labels: [],
     state: "OPEN",
   };
   const state: SupervisorStateFile = {
@@ -752,10 +764,12 @@ test("resolveRunnableIssueContext restarts closed issues instead of handing them
     createdAt: "2026-03-15T00:00:00Z",
     updatedAt: "2026-03-15T00:00:00Z",
     url: "https://example.test/issues/94",
+    labels: [],
     state: "OPEN",
   };
   const closedIssue: GitHubIssue = {
     ...selectedIssue,
+    labels: [],
     state: "CLOSED",
   };
   const state: SupervisorStateFile = {
@@ -811,6 +825,7 @@ Execution order: 1 of 2`,
     createdAt: "2026-03-15T00:00:00Z",
     updatedAt: "2026-03-15T00:00:00Z",
     url: "https://example.test/issues/91",
+    labels: [],
     state: "OPEN",
   };
   const blockedIssue: GitHubIssue = {
@@ -833,6 +848,7 @@ Execution order: 2 of 2`,
     createdAt: "2026-03-15T00:05:00Z",
     updatedAt: "2026-03-15T00:05:00Z",
     url: "https://example.test/issues/92",
+    labels: [],
     state: "OPEN",
   };
   const readyIssue: GitHubIssue = {
@@ -842,6 +858,7 @@ Execution order: 2 of 2`,
     createdAt: "2026-03-15T00:10:00Z",
     updatedAt: "2026-03-15T00:10:00Z",
     url: "https://example.test/issues/93",
+    labels: [],
     state: "OPEN",
   };
   const state: SupervisorStateFile = {

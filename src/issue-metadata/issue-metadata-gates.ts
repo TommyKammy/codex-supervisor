@@ -119,12 +119,82 @@ function hasConcreteVerificationTarget(content: string): boolean {
   return listItems.some((item) => item.split(/\s+/).length >= 5);
 }
 
+function requireLabels(issue: Pick<GitHubIssue, "labels">): NonNullable<GitHubIssue["labels"]> {
+  if (issue.labels === undefined) {
+    throw new Error("lintExecutionReadyIssueBody requires issue.labels");
+  }
+
+  return issue.labels;
+}
+
+function hasLabel(issue: Pick<GitHubIssue, "labels">, labelName: string): boolean {
+  const normalizedLabelName = labelName.trim().toLowerCase();
+  return requireLabels(issue).some((label) => label.name.trim().toLowerCase() === normalizedLabelName);
+}
+
+function getSingleMetadataValue(body: string, fieldName: string): string | null {
+  const matches = [
+    ...body.matchAll(
+      new RegExp(`^\\s*${escapeRegExp(fieldName)}:[^\\S\\r\\n]*(.*)$`, "gim"),
+    ),
+  ];
+  if (matches.length !== 1) {
+    return null;
+  }
+
+  return matches[0][1].trim();
+}
+
+function hasValidDependsOnMetadata(body: string): boolean {
+  const dependsOnValue = getSingleMetadataValue(body, "Depends on");
+  if (dependsOnValue === null) {
+    return false;
+  }
+
+  return /^(?:none|#(?:[1-9]\d*)(?:\s*,\s*#(?:[1-9]\d*))*)$/i.test(dependsOnValue);
+}
+
+function hasValidParallelizableMetadata(body: string): boolean {
+  const parallelizableValue = getSingleMetadataValue(body, "Parallelizable");
+  return parallelizableValue !== null && /^(?:yes|no)$/i.test(parallelizableValue);
+}
+
+function countExecutionOrderDeclarations(body: string): number {
+  return [
+    ...body.matchAll(/^\s*Execution order:[^\r\n]*$/gim),
+    ...body.matchAll(/^\s*##\s*Execution order\s*$[\r\n]+^[^\r\n]*$/gim),
+  ].length;
+}
+
+function parseSingleExecutionOrder(
+  body: string,
+): ReturnType<typeof parseExecutionOrder> {
+  if (countExecutionOrderDeclarations(body) !== 1) {
+    return null;
+  }
+
+  return parseExecutionOrder(body);
+}
+
+function hasValidExecutionOrderMetadata(
+  executionOrder: ReturnType<typeof parseExecutionOrder>,
+): boolean {
+  return executionOrder !== null
+    && executionOrder.executionOrderIndex >= 1
+    && executionOrder.executionOrderTotal >= 1
+    && executionOrder.executionOrderIndex <= executionOrder.executionOrderTotal;
+}
+
 export function lintExecutionReadyIssueBody(
-  issue: Pick<GitHubIssue, "title" | "body">,
+  issue: Pick<GitHubIssue, "title" | "body" | "labels">,
 ): ExecutionReadyLintResult {
   const summaryContent = findMarkdownSectionContent(issue.body, "Summary");
   const scopeContent = findMarkdownSectionContent(issue.body, "Scope");
   const verificationContent = findMarkdownSectionContent(issue.body, "Verification");
+  const executionOrder = parseSingleExecutionOrder(issue.body);
+  const isCodexLabeled = hasLabel(issue, "codex");
+  const requiresPartOf = executionOrder !== null
+    && !(executionOrder.executionOrderIndex === 1 && executionOrder.executionOrderTotal === 1);
   const riskyChangeClasses = detectRiskyChangeClasses(issue);
   const approvedRiskyChangeClasses = parseRiskyChangeApprovalList(issue.body);
   const requiredChecks: Array<{ key: string; present: boolean }> = [
@@ -144,16 +214,44 @@ export function lintExecutionReadyIssueBody(
       key: "verification",
       present: verificationContent !== null,
     },
+    ...(isCodexLabeled
+      ? [
+        {
+          key: "depends on",
+          present: hasValidDependsOnMetadata(issue.body),
+        },
+        {
+          key: "parallelizable",
+          present: hasValidParallelizableMetadata(issue.body),
+        },
+        {
+          key: "execution order",
+          present: hasValidExecutionOrderMetadata(executionOrder),
+        },
+        ...(requiresPartOf
+          ? [
+            {
+              key: "part of",
+              present: /^\s*Part of:\s+#\d+\s*$/im.test(issue.body),
+            },
+          ]
+          : []),
+      ]
+      : []),
   ];
   const recommendedChecks: Array<{ key: string; present: boolean }> = [
-    {
-      key: "depends on",
-      present: /^\s*Depends on:\s*.+$/im.test(issue.body),
-    },
-    {
-      key: "execution order",
-      present: parseExecutionOrder(issue.body) !== null,
-    },
+    ...(!isCodexLabeled
+      ? [
+        {
+          key: "depends on",
+          present: /^\s*Depends on:\s*.+$/im.test(issue.body),
+        },
+        {
+          key: "execution order",
+          present: executionOrder !== null,
+        },
+      ]
+      : []),
     {
       key: "scope boundary",
       present: scopeContent === null || hasScopeBoundary(scopeContent),

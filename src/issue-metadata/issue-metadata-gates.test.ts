@@ -14,6 +14,7 @@ function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: "https://example.com/issues/1",
+    labels: [],
     state: "OPEN",
     ...overrides,
   };

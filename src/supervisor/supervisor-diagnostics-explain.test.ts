@@ -70,6 +70,7 @@ Ship the first step.
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: "https://example.test/issues/91",
+    labels: [],
     state: "OPEN",
   };
   const blockedIssue: GitHubIssue = {
@@ -91,6 +92,7 @@ Depends on: #91`,
     createdAt: "2026-03-13T00:05:00Z",
     updatedAt: "2026-03-13T00:05:00Z",
     url: "https://example.test/issues/93",
+    labels: [],
     state: "OPEN",
   };
 
@@ -132,6 +134,7 @@ test("explain reports candidate filtering for a non-candidate issue", async () =
     createdAt: "2026-03-13T00:05:00Z",
     updatedAt: "2026-03-13T00:05:00Z",
     url: "https://example.test/issues/94",
+    labels: [],
     state: "CLOSED",
   };
 
@@ -170,6 +173,7 @@ test("explain surfaces degraded full inventory refresh without requiring a fresh
     createdAt: "2026-03-13T00:05:00Z",
     updatedAt: "2026-03-13T00:05:00Z",
     url: "https://example.test/issues/94",
+    labels: [],
     state: "OPEN",
   };
 
@@ -227,6 +231,7 @@ Retry the failing verification.
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: "https://example.test/issues/95",
+    labels: [],
     state: "OPEN",
   };
 
@@ -285,6 +290,7 @@ Wait for a human review before proceeding.
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: "https://example.test/issues/97",
+    labels: [],
     state: "OPEN",
   };
 
@@ -329,6 +335,7 @@ Decide whether to keep the current auth token flow or replace it before rollout.
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: "https://example.test/issues/98",
+    labels: [],
     state: "OPEN",
   };
 
@@ -379,6 +386,7 @@ test("explain reuses normalized changed-file policy for blocked tracked issues",
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: "https://example.test/issues/99",
+    labels: [],
     state: "OPEN",
   };
 
@@ -426,6 +434,7 @@ test("explain reuses external-review follow-up reasoning for current-head action
     createdAt: "2026-03-18T00:00:00Z",
     updatedAt: "2026-03-18T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const state: SupervisorStateFile = {
@@ -476,6 +485,7 @@ test("explain reuses the recorded recovery reason for a recovered tracked PR iss
     createdAt: "2026-03-18T00:00:00Z",
     updatedAt: "2026-03-18T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const state: SupervisorStateFile = {
