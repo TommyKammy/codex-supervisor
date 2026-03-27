@@ -1,36 +1,45 @@
-# Issue #1070: Expose inventory degradation provenance and recovery posture to operators
+# Issue #1071: Harden full inventory transport without collapsing distinct failure classes
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1070
-- Branch: codex/issue-1070
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1071
+- Branch: codex/issue-1071
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 8fa62a81c56953abcc4e90be0e2a5a46529b1868
+- Current phase: draft_pr
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: 1aed17074dfc11cdd25347882dedc5beea3f7f85
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-26T23:17:49Z
+- Updated at: 2026-03-26T23:57:16Z
 
 ## Latest Codex Summary
-- Added structured inventory posture reporting so status and WebUI can distinguish healthy full inventory, targeted degraded reconciliation, and snapshot-only degraded support.
+The implementation checkpoint remains `598f2c0` (`Harden full inventory transport fallback`): `GitHubClient.listAllIssues()` only uses the REST full-inventory fallback for malformed array-shaped `gh issue list` JSON, while transport-shaped primary failures remain fatal and fallback transport failures stay attributable.
+
+This turn restored local dev dependencies with `npm ci`, reran the issue-focused regressions, and verified `npm run build`. The focused transport coverage still passes. `npm test` now runs with the installed toolchain but fails later in the existing browser-smoke suite instead of on missing dependencies.
+
+Summary: Restored local verification, confirmed the inventory hardening checkpoint still passes focused coverage and build, isolated the remaining broad-suite failure to the browser-smoke path rather than this inventory transport change, and opened draft PR #1093.
+State hint: draft_pr
+Blocked reason: none
+Tests: `npm ci` (passed); `npx tsx --test src/github/github.test.ts src/run-once-cycle-prelude.test.ts` (passed); `npm run build` (passed); `npm test` (failed in `src/backend/webui-dashboard-browser-smoke.test.ts` after ~31s: `browser smoke loads the read-only dashboard against the live HTTP fixture`)
+Next action: watch draft PR #1093 CI and review feedback, and only revisit the browser-smoke failure here if CI or review shows it is newly introduced by this branch.
+Failure signature: browser_smoke_dashboard_fixture_timeout
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: operator-facing inventory posture needed a typed status object plus a single explicit posture line so both CLI status and the WebUI can prioritize degraded inventory correctly.
-- What changed: added `InventoryOperatorStatus` helpers, threaded `inventoryStatus` through `statusReport()`, emitted an `inventory_posture=...` line, and taught the dashboard overview/attention helpers to prefer degraded inventory posture over raw runnable counts.
+- Hypothesis: `listAllIssues()` was still treating any `gh issue list` parse failure as fallback-eligible, which collapses some primary transport failures into the same path as malformed payloads and can return silent success when the primary transport actually failed.
+- What changed: added a JSON-array shape gate in `GitHubClient.listAllIssues()` so only malformed full-inventory payloads that still look like the expected array output can fall back to REST pagination; transport-shaped non-JSON output now throws the primary failure directly. Added focused regression coverage for transport-shaped stdout staying fatal and for preserving both primary parse failure and fallback transport failure details.
 - Current blocker: none.
-- Next exact step: commit the inventory posture changes on `codex/issue-1070`, then rerun broader verification once the workspace has a local TypeScript compiler available.
-- Verification gap: `npm run build` cannot complete in this workspace because `tsc` is not installed; focused status and dashboard tests are green.
-- Files touched: `.codex-supervisor/issue-journal.md`; `src/backend/webui-dashboard-browser-logic.test.ts`; `src/backend/webui-dashboard-browser-logic.ts`; `src/inventory-refresh-state.ts`; `src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `src/supervisor/supervisor-status-report.ts`; `src/supervisor/supervisor.ts`
-- Rollback concern: moderate. A bad posture classifier could overstate degraded capabilities and make snapshot-backed readiness look more authoritative than it is.
-- Last focused command: `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts`
-- What changed this turn: reread the required memory files and journal, identified that `statusReport()` only exposed inventory degradation as free-form lines and warnings, added focused failing tests for typed posture and dashboard prioritization, implemented typed operator posture/guidance, reran the focused suites, and attempted a broader TypeScript build.
-- Exact failure reproduced this turn: before the fix, `statusReport().inventoryStatus` was undefined and the dashboard overview still reported runnable work as healthy even when inventory refresh was degraded and selection was blocked.
-- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `git log --oneline --decorate -n 12`; `rg -n "inventory_refresh|degraded|last_successful_inventory|snapshot|reconciliation_state|recovery" src test .`; `rg --files src | rg "supervisor|state-store|inventory|diagnostics|webui|status"`; `sed -n '1,260p' src/supervisor/supervisor-status-model.ts`; `sed -n '1,280p' src/supervisor/supervisor-status-rendering.ts`; `sed -n '1,320p' src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `sed -n '1,320p' src/backend/webui-dashboard.test.ts`; `rg -n "inventory_refresh|inventory_snapshot|last_successful_inventory|fallback|degraded" src/supervisor src/backend`; `sed -n '1,260p' src/supervisor/supervisor-status-report.ts`; `sed -n '1,260p' src/backend/webui-dashboard.ts`; `sed -n '1,260p' src/backend/webui-dashboard-browser-logic.ts`; `sed -n '1,360p' src/supervisor/supervisor-selection-readiness-summary.ts`; `sed -n '760,980p' src/backend/webui-dashboard-browser-script.ts`; `rg -n "selectionSummary|warning|inventory_refresh|inventory_snapshot|last-known-good|degraded" src/backend/webui-dashboard-browser-script.ts src/backend/webui-dashboard.test.ts`; `sed -n '640,760p' src/backend/webui-dashboard-browser-script.ts`; `sed -n '980,1080p' src/backend/webui-dashboard-browser-script.ts`; `sed -n '300,420p' src/backend/webui-dashboard.test.ts`; `sed -n '1,240p' src/inventory-refresh-state.ts`; `rg -n "inventory_refresh_failure|last_successful_inventory_snapshot|classification" src/core/types.ts src/core`; `sed -n '1,260p' src/core/types.ts`; `sed -n '980,1115p' src/supervisor/supervisor.ts`; `sed -n '1115,1205p' src/supervisor/supervisor.ts`; `sed -n '1,340p' src/backend/webui-dashboard-browser-logic.test.ts`; `sed -n '340,520p' src/backend/webui-dashboard-browser-logic.test.ts`; `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npx tsx --test src/backend/webui-dashboard-browser-logic.test.ts`; `npm run build`; `npx tsc -p tsconfig.json`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`
+- Next exact step: monitor draft PR #1093 on `codex/issue-1071`, and only revisit the browser-smoke suite here if CI or review indicates the failure is branch-specific.
+- Verification gap: full `npm test` still fails in `src/backend/webui-dashboard-browser-smoke.test.ts` with `browser smoke loads the read-only dashboard against the live HTTP fixture` timing out after roughly 31 seconds. Focused inventory regressions and `npm run build` now pass with local dependencies installed.
+- Files touched: `.codex-supervisor/issue-journal.md`; `src/github/github.test.ts`; `src/github/github.ts`
+- Rollback concern: low. The new guard only narrows when the full-inventory fallback is allowed; the main risk is being too strict and surfacing a malformed-but-recoverable payload as fatal.
+- Last focused command: `npx tsx --test src/github/github.test.ts src/run-once-cycle-prelude.test.ts`
+- What changed this turn: reread the required memory files and journal, confirmed the branch already contains checkpoint commit `598f2c0`, restored local dependencies with `npm ci`, reran focused inventory regressions, reran `npm run build`, checked `npm test`, committed the journal refresh as `1aed170`, pushed `codex/issue-1071`, and opened draft PR #1093.
+- Exact failure reproduced this turn: `npm test` now reaches `src/backend/webui-dashboard-browser-smoke.test.ts` and reports `browser smoke loads the read-only dashboard against the live HTTP fixture` failing after about 31 seconds; the inventory transport regressions continue to pass.
+- Commands run this turn: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1071/AGENTS.generated.md`; `sed -n '1,260p' /home/tommy/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1071/context-index.md`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `git log --oneline --decorate -n 6`; `sed -n '1,220p' package.json`; `ls -1`; `gh pr status`; `test -d node_modules && echo present || echo absent`; `sed -n '1,240p' <github-yeet-skill>`; `git branch -vv`; `npm ci`; `npx tsx --test src/github/github.test.ts src/run-once-cycle-prelude.test.ts`; `npm run build`; `npm test`; `sed -n '1,260p' src/backend/webui-dashboard-browser-smoke.test.ts`; `npx tsx --test src/backend/webui-dashboard-browser-smoke.test.ts`; `which google-chrome || true`; `which chromium || true`; `printenv CHROME_BIN || true`; `timeout 45s npx tsx --test src/backend/webui-dashboard-browser-smoke.test.ts`; `git remote get-url origin`; `gh auth status`; `git diff -- .codex-supervisor/issue-journal.md`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `git branch --show-current`; `gh repo view --json nameWithOwner,defaultBranchRef`; `git add .codex-supervisor/issue-journal.md`; `git commit -m "docs: update issue 1071 journal for draft PR"`; `git push -u origin codex/issue-1071`; `gh pr create --draft --base main --head codex/issue-1071 --title "[codex] Harden full inventory transport fallback" --body-file -`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
