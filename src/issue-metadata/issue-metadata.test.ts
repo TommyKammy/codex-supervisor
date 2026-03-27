@@ -312,6 +312,37 @@ Add deterministic issue-body linting for execution-ready metadata.
   });
 });
 
+test("lintExecutionReadyIssueBody rejects malformed scheduling metadata for codex-labeled issues", () => {
+  const issue = createIssue({
+    labels: [{ name: "codex" }],
+    body: `## Summary
+Add deterministic issue-body linting for execution-ready metadata.
+
+## Scope
+- lint execution-ready metadata
+- keep output deterministic
+
+## Acceptance criteria
+- valid issues pass linting
+- invalid issues report missing metadata
+
+## Verification
+- npm test -- src/issue-metadata/issue-metadata.test.ts
+
+Depends on: blocked by #oops
+Execution order: soon
+Parallelizable: Later`,
+  });
+
+  assert.deepEqual(lintExecutionReadyIssueBody(issue), {
+    isExecutionReady: false,
+    missingRequired: ["depends on", "parallelizable", "execution order"],
+    missingRecommended: [],
+    riskyChangeClasses: [],
+    approvedRiskyChangeClasses: [],
+  });
+});
+
 test("lintExecutionReadyIssueBody keeps recommending scope boundaries for multi-bullet in-scope lists", () => {
   const issue = createIssue({
     body: `## Summary

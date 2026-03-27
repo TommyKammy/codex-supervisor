@@ -123,8 +123,27 @@ function hasLabel(issue: Pick<GitHubIssue, "labels">, labelName: string): boolea
   return (issue.labels ?? []).some((label) => label.name.trim().toLowerCase() === labelName);
 }
 
-function hasExplicitMetadataLine(body: string, fieldName: string): boolean {
-  return new RegExp(`^\\s*${escapeRegExp(fieldName)}:\\s*\\S.*$`, "im").test(body);
+function hasValidDependsOnMetadata(body: string): boolean {
+  const dependsOnMatch = body.match(/^\s*Depends on:[^\S\r\n]*(.*)$/im);
+  if (dependsOnMatch === null) {
+    return false;
+  }
+
+  return /^(?:none|#([1-9]\d*)(?:\s*,\s*#([1-9]\d*))*)$/i.test(dependsOnMatch[1].trim());
+}
+
+function hasValidParallelizableMetadata(body: string): boolean {
+  const parallelizableMatch = body.match(/^\s*Parallelizable:[^\S\r\n]*(.*)$/im);
+  return parallelizableMatch !== null && /^(?:yes|no)$/i.test(parallelizableMatch[1].trim());
+}
+
+function hasValidExecutionOrderMetadata(
+  executionOrder: ReturnType<typeof parseExecutionOrder>,
+): boolean {
+  return executionOrder !== null
+    && executionOrder.executionOrderIndex >= 1
+    && executionOrder.executionOrderTotal >= 1
+    && executionOrder.executionOrderIndex <= executionOrder.executionOrderTotal;
 }
 
 export function lintExecutionReadyIssueBody(
@@ -160,15 +179,15 @@ export function lintExecutionReadyIssueBody(
       ? [
         {
           key: "depends on",
-          present: hasExplicitMetadataLine(issue.body, "Depends on"),
+          present: hasValidDependsOnMetadata(issue.body),
         },
         {
           key: "parallelizable",
-          present: hasExplicitMetadataLine(issue.body, "Parallelizable"),
+          present: hasValidParallelizableMetadata(issue.body),
         },
         {
           key: "execution order",
-          present: executionOrder !== null,
+          present: hasValidExecutionOrderMetadata(executionOrder),
         },
         ...(requiresPartOf
           ? [
