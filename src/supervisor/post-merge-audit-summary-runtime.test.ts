@@ -37,7 +37,7 @@ test("runSupervisorCommand renders a structured post-merge audit summary result"
           throw new Error("unexpected resetCorruptJsonState");
         },
         queryPostMergeAuditSummary: async () => ({
-          schemaVersion: 3,
+          schemaVersion: 4,
           advisoryOnly: true,
           autoApplyGuardrails: false,
           autoCreateFollowUpIssues: false,
@@ -48,6 +48,7 @@ test("runSupervisorCommand renders a structured post-merge audit summary result"
           reviewPatterns: [],
           failurePatterns: [],
           recoveryPatterns: [],
+          followUpCandidates: [],
           promotionCandidates: [],
         }),
       },
@@ -59,7 +60,7 @@ test("runSupervisorCommand renders a structured post-merge audit summary result"
 
   assert.equal(stdout.length, 1);
   assert.deepEqual(JSON.parse(stdout[0] ?? ""), {
-    schemaVersion: 3,
+    schemaVersion: 4,
     advisoryOnly: true,
     autoApplyGuardrails: false,
     autoCreateFollowUpIssues: false,
@@ -70,6 +71,7 @@ test("runSupervisorCommand renders a structured post-merge audit summary result"
     reviewPatterns: [],
     failurePatterns: [],
     recoveryPatterns: [],
+    followUpCandidates: [],
     promotionCandidates: [],
   });
 });
