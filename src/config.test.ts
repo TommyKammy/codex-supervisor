@@ -735,6 +735,52 @@ test("shipped example configs recommend blocked for high-severity local review f
   }
 });
 
+test("shipped example configs use the issue-scoped journal path template and preserve custom overrides", async (t) => {
+  const rootDir = path.resolve(__dirname, "..");
+  const expectedJournalPath = ".codex-supervisor/issues/{issueNumber}/issue-journal.md";
+  const examplePaths = [
+    path.join(rootDir, "supervisor.config.example.json"),
+    path.join(rootDir, "supervisor.config.copilot.json"),
+    path.join(rootDir, "supervisor.config.codex.json"),
+    path.join(rootDir, "supervisor.config.coderabbit.json"),
+    path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
+  ];
+
+  for (const examplePath of examplePaths) {
+    const raw = JSON.parse(await fs.readFile(examplePath, "utf8")) as { issueJournalRelativePath?: unknown };
+    assert.equal(
+      raw.issueJournalRelativePath,
+      expectedJournalPath,
+      `${path.relative(rootDir, examplePath)} should use the issue-scoped journal path template`,
+    );
+  }
+
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  const customJournalPath = ".codex-supervisor/custom-journal.md";
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      issueJournalRelativePath: customJournalPath,
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+  assert.equal(config.issueJournalRelativePath, customJournalPath);
+});
+
 test("shipped config profiles declare the intended review bot logins", async () => {
   const rootDir = path.resolve(__dirname, "..");
   const expectedProfiles = new Map<string, string[]>([
