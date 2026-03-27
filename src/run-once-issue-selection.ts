@@ -6,6 +6,7 @@ import {
   isRecordDoneForSequencing,
   lintExecutionReadyIssueBody,
   parseIssueMetadata,
+  validateIssueMetadataSyntax,
 } from "./issue-metadata";
 import { issueJournalPath, syncIssueJournal } from "./core/journal";
 import { acquireFileLock, LockHandle } from "./core/lock";
@@ -201,11 +202,36 @@ function buildClarificationFailureContext(
   };
 }
 
+function buildMetadataSyntaxFailureContext(
+  issue: Pick<GitHubIssue, "number" | "url">,
+  metadataErrors: string[],
+): FailureContext {
+  return {
+    category: "blocked",
+    summary: `Issue #${issue.number} has invalid scheduling metadata and must be repaired before execution.`,
+    signature: `requirements:metadata:${metadataErrors.join("|")}`,
+    command: null,
+    details: [`metadata_errors=${metadataErrors.join("; ")}`],
+    url: issue.url,
+    updated_at: nowIso(),
+  };
+}
+
 async function evaluateDegradedActiveIssueDependencies(
   github: Pick<IssueSelectionGitHub, "getIssue">,
   issue: GitHubIssue,
   state: SupervisorStateFile,
 ): Promise<DegradedDependencyCheckResult> {
+  const metadataErrors = validateIssueMetadataSyntax(issue);
+  if (metadataErrors.length > 0) {
+    return {
+      kind: "blocked",
+      reason:
+        `Issue #${issue.number} has invalid scheduling metadata and must be repaired before continuing: ` +
+        `${metadataErrors.join("; ")}.`,
+    };
+  }
+
   const metadata = parseIssueMetadata(issue);
 
   if (metadata.executionOrderIndex !== null && metadata.executionOrderIndex > 1) {
@@ -504,6 +530,35 @@ export async function resolveRunnableIssueContext(
         last_failure_context: failureContext,
         ...applyFailureSignature(record, failureContext),
         blocked_reason: "permissions",
+      });
+      state.issues[String(blockedRecord.issue_number)] = blockedRecord;
+      state.activeIssueNumber = null;
+      await stateStore.save(state);
+      if (blockedRecord.journal_path) {
+        await syncIssueJournalImpl({
+          issue,
+          record: blockedRecord,
+          journalPath: blockedRecord.journal_path,
+          maxChars: config.issueJournalMaxChars,
+        });
+      }
+      shouldReleaseIssueLock = false;
+      await issueLock.release();
+      return { kind: "restart" };
+    }
+
+    const metadataErrors = validateIssueMetadataSyntax(issue);
+    if (metadataErrors.length > 0) {
+      const journalContext = await ensureRecordJournalContext(record);
+      const failureContext = buildMetadataSyntaxFailureContext(issue, metadataErrors);
+      const blockedRecord = stateStore.touch(record, {
+        ...journalContext,
+        state: "blocked",
+        last_error: truncate(`Invalid scheduling metadata: ${metadataErrors.join("; ")}.`, 1000),
+        last_failure_kind: null,
+        last_failure_context: failureContext,
+        ...applyFailureSignature(record, failureContext),
+        blocked_reason: "requirements",
       });
       state.issues[String(blockedRecord.issue_number)] = blockedRecord;
       state.activeIssueNumber = null;

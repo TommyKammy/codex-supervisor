@@ -604,6 +604,142 @@ test("resolveRunnableIssueContext reuses the current reserved issue instead of c
   assert.equal(savedStates.length, 0);
 });
 
+test("resolveRunnableIssueContext blocks retry attempts that still have invalid scheduling metadata", async () => {
+  const config = createConfig();
+  const issue: GitHubIssue = {
+    number: 98,
+    title: "Retry issue with invalid scheduling metadata",
+    body: `${executionReadyBody("Repair the issue only after valid scheduling metadata is restored.")}
+
+Depends on: blocked by #95
+Execution order: soon
+Parallelizable: Later`,
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/98",
+    labels: [{ name: "codex" }],
+    state: "OPEN",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 98,
+    issues: {
+      "98": createRecord(98, {
+        attempt_count: 1,
+        implementation_attempt_count: 1,
+      }),
+    },
+  };
+  const savedStates: SupervisorStateFile[] = [];
+  const journalSyncs: IssueRunRecord[] = [];
+  let released = false;
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [issue],
+      getIssue: async () => issue,
+    },
+    config,
+    stateStore: createTouchStateStore(savedStates),
+    state,
+    currentRecord: state.issues["98"] ?? null,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {
+        released = true;
+      },
+    }),
+    ensureRecordJournalContext: async (record) => ({
+      workspace: record.workspace,
+      journal_path: "/tmp/workspaces/issue-98/.codex-supervisor/issue-journal.md",
+    }),
+    syncIssueJournal: async ({ record }) => {
+      journalSyncs.push(record);
+    },
+  });
+
+  assert.deepEqual(result, { kind: "restart" });
+  assert.equal(released, true);
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(savedStates.length, 1);
+  assert.equal(state.issues["98"]?.state, "blocked");
+  assert.equal(state.issues["98"]?.blocked_reason, "requirements");
+  assert.match(state.issues["98"]?.last_error ?? "", /invalid scheduling metadata/i);
+  assert.match(state.issues["98"]?.last_error ?? "", /depends on contains malformed references: #95/i);
+  assert.equal(journalSyncs.length, 1);
+  assert.equal(journalSyncs[0]?.issue_number, 98);
+});
+
+test("resolveRunnableIssueContext blocks degraded active issues with invalid scheduling metadata before targeted dependency reads", async () => {
+  const config = createConfig();
+  const issue: GitHubIssue = {
+    number: 99,
+    title: "Degraded active issue with invalid scheduling metadata",
+    body: `${executionReadyBody("Stay blocked until duplicate scheduling metadata is repaired.")}
+
+Depends on: none
+Depends on: #95
+Parallelizable: No`,
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/99",
+    labels: [{ name: "codex" }],
+    state: "OPEN",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 99,
+    inventory_refresh_failure: {
+      source: "gh issue list",
+      message: "Failed to parse JSON from gh issue list.",
+      recorded_at: "2026-03-26T00:00:00Z",
+    },
+    issues: {
+      "99": createRecord(99, {
+        attempt_count: 1,
+        implementation_attempt_count: 1,
+      }),
+    },
+  };
+  const savedStates: SupervisorStateFile[] = [];
+  const requestedIssueNumbers: number[] = [];
+  let released = false;
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => {
+        throw new Error("unexpected broad candidate inventory read");
+      },
+      getIssue: async (issueNumber) => {
+        requestedIssueNumbers.push(issueNumber);
+        return issue;
+      },
+    },
+    config,
+    stateStore: createTouchStateStore(savedStates),
+    state,
+    currentRecord: state.issues["99"] ?? null,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {
+        released = true;
+      },
+    }),
+    ensureRecordJournalContext: async (record) => ({
+      workspace: record.workspace,
+      journal_path: "/tmp/workspaces/issue-99/.codex-supervisor/issue-journal.md",
+    }),
+  });
+
+  assert.deepEqual(result, { kind: "restart" });
+  assert.equal(released, true);
+  assert.deepEqual(requestedIssueNumbers, [99]);
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(state.issues["99"]?.state, "blocked");
+  assert.equal(state.issues["99"]?.blocked_reason, "requirements");
+  assert.match(state.issues["99"]?.last_error ?? "", /invalid scheduling metadata/i);
+  assert.match(state.issues["99"]?.last_error ?? "", /depends on must appear exactly once/i);
+  assert.equal(savedStates.length, 1);
+});
+
 test("resolveRunnableIssueContext uses targeted dependency reads instead of broad candidate inventory when full inventory refresh is degraded", async () => {
   const config = createConfig();
   const issue: GitHubIssue = {
