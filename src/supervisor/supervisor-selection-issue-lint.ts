@@ -1,6 +1,9 @@
 import { GitHubClient } from "../github";
 import {
   findHighRiskBlockingAmbiguity,
+  hasAvailableIssueLabels,
+  LABEL_GATED_POLICY_MISSING_LABELS_MESSAGE,
+  LABEL_GATED_POLICY_MISSING_LABELS_REPAIR_GUIDANCE,
   lintExecutionReadyIssueBody,
   validateIssueMetadataSyntax,
 } from "../issue-metadata";
@@ -25,6 +28,19 @@ export async function buildIssueLintDto(
   issueNumber: number,
 ): Promise<SupervisorIssueLintDto> {
   const issue = await github.getIssue(issueNumber);
+  if (!hasAvailableIssueLabels(issue)) {
+    return {
+      issueNumber: issue.number,
+      title: issue.title,
+      executionReady: false,
+      missingRequired: [],
+      missingRecommended: [],
+      metadataErrors: [LABEL_GATED_POLICY_MISSING_LABELS_MESSAGE],
+      highRiskBlockingAmbiguity: null,
+      repairGuidance: [LABEL_GATED_POLICY_MISSING_LABELS_REPAIR_GUIDANCE],
+    };
+  }
+
   const readiness = lintExecutionReadyIssueBody(issue);
   const metadataErrors = validateIssueMetadataSyntax(issue);
   const clarificationBlock = findHighRiskBlockingAmbiguity(issue);

@@ -2,7 +2,9 @@ import { GitHubClient } from "../github";
 import {
   findBlockingIssue,
   findHighRiskBlockingAmbiguity,
+  hasAvailableIssueLabels,
   isRecordDoneForSequencing,
+  LABEL_GATED_POLICY_MISSING_LABELS_BLOCKED_BY,
   lintExecutionReadyIssueBody,
   parseIssueMetadata,
 } from "../issue-metadata";
@@ -196,7 +198,8 @@ export async function buildIssueExplainDto(
   ]);
   const issues = loadedIssues ?? [issue];
   const record = state.issues[String(issue.number)];
-  const readiness = lintExecutionReadyIssueBody(issue);
+  const labelsAvailable = hasAvailableIssueLabels(issue);
+  const readiness = labelsAvailable ? lintExecutionReadyIssueBody(issue) : null;
   const clarificationBlock = findHighRiskBlockingAmbiguity(issue);
   const blockingIssue = findBlockingIssue(issue, issues, state);
   const matchingSkipPrefix = config.skipTitlePrefixes.find((prefix) => issue.title.startsWith(prefix)) ?? null;
@@ -250,7 +253,9 @@ export async function buildIssueExplainDto(
     reasons.push("inventory_refresh degraded");
   }
 
-  if (shouldEnforceExecutionReady(record) && !readiness.isExecutionReady) {
+  if (!labelsAvailable) {
+    reasons.push(LABEL_GATED_POLICY_MISSING_LABELS_BLOCKED_BY);
+  } else if (shouldEnforceExecutionReady(record) && !readiness.isExecutionReady) {
     reasons.push(`requirements missing=${formatExecutionReadyMissingFields(readiness.missingRequired)}`);
   }
 
@@ -300,7 +305,7 @@ export async function buildIssueExplainDto(
         preMergeEvaluation,
       })
       : null,
-    selectionReason: runnable && !inventoryRefreshSummary
+    selectionReason: runnable && !inventoryRefreshSummary && readiness
       ? formatSelectionReason(issue, issues, state, record, readiness.isExecutionReady, config)
       : null,
     reasons,

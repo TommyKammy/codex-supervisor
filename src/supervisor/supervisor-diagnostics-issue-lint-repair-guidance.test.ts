@@ -14,6 +14,7 @@ Issue lint should report missing sections.`,
     createdAt: "2026-03-19T00:00:00Z",
     updatedAt: "2026-03-19T00:00:00Z",
     url: "https://example.test/issues/103",
+    labels: [],
     state: "OPEN",
   };
 
@@ -62,6 +63,7 @@ Parallelizable: Later
     createdAt: "2026-03-19T00:00:00Z",
     updatedAt: "2026-03-19T00:00:00Z",
     url: "https://example.test/issues/104",
+    labels: [],
     state: "OPEN",
   };
 

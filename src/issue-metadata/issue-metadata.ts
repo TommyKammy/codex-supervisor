@@ -11,6 +11,10 @@ export {
 export { summarizeChangeRiskDecision } from "./issue-metadata-change-risk-decision";
 export {
   findHighRiskBlockingAmbiguity,
+  hasAvailableIssueLabels,
+  LABEL_GATED_POLICY_MISSING_LABELS_BLOCKED_BY,
+  LABEL_GATED_POLICY_MISSING_LABELS_MESSAGE,
+  LABEL_GATED_POLICY_MISSING_LABELS_REPAIR_GUIDANCE,
   lintExecutionReadyIssueBody,
 } from "./issue-metadata-gates";
 export type {

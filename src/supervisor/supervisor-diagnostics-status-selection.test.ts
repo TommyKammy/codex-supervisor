@@ -1356,6 +1356,50 @@ Do not run this issue autonomously without an explicit trust signal.
   assert.match(status, /blocked_issues=#95 blocked_by=trust_gate:trusted-input-required/);
 });
 
+test("status reports missing labels as a blocked metadata problem instead of treating them as unlabeled", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: 97,
+    title: "Missing labels payload",
+    body: `## Summary
+Do not treat missing labels like an empty label set.
+
+## Scope
+- preserve fail-closed label-gated readiness
+
+## Acceptance criteria
+- status reports missing labels as blocking metadata
+
+## Verification
+- npm test -- src/supervisor/supervisor-diagnostics-status-selection.test.ts`,
+    createdAt: "2026-03-13T00:20:00Z",
+    updatedAt: "2026-03-13T00:20:00Z",
+    url: "https://example.test/issues/97",
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [issue],
+    listAllIssues: async () => [issue],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+  assert.match(report.readinessLines.join("\n"), /blocked_issues=#97 blocked_by=metadata:labels_unavailable/);
+
+  const status = await supervisor.status();
+  assert.match(status, /blocked_issues=#97 blocked_by=metadata:labels_unavailable/);
+});
+
 test("status uses the full issue set when a candidate is blocked by a non-candidate dependency", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {

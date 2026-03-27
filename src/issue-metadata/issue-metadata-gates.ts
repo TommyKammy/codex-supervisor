@@ -24,6 +24,12 @@ export interface ClarificationBlock {
   reason: string;
 }
 
+export const LABEL_GATED_POLICY_MISSING_LABELS_MESSAGE =
+  "issue labels are missing; cannot evaluate label-gated execution policy";
+export const LABEL_GATED_POLICY_MISSING_LABELS_BLOCKED_BY = "metadata:labels_unavailable";
+export const LABEL_GATED_POLICY_MISSING_LABELS_REPAIR_GUIDANCE =
+  "Refresh the issue payload so labels are present before rerunning issue lint or selection.";
+
 const HIGH_RISK_AMBIGUITY_CLASSES = ["open_question", "unresolved_choice", "operator_confirmation"] as const;
 
 export type HighRiskAmbiguityClass = (typeof HIGH_RISK_AMBIGUITY_CLASSES)[number];
@@ -125,6 +131,10 @@ function requireLabels(issue: Pick<GitHubIssue, "labels">): NonNullable<GitHubIs
   }
 
   return issue.labels;
+}
+
+export function hasAvailableIssueLabels(issue: Pick<GitHubIssue, "labels">): boolean {
+  return issue.labels !== undefined;
 }
 
 function hasLabel(issue: Pick<GitHubIssue, "labels">, labelName: string): boolean {
