@@ -22,9 +22,9 @@
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: The missing product behavior was confined to `summarizePostMergeAuditPatterns`, which preserved advisory promotion history but never loaded persisted `regressionTestCandidates` from `external_review_misses_path`.
-- What changed: Bumped the post-merge audit summary schema to v4, added validated `followUpCandidates`, loaded regression-test candidates from external-review miss artifacts, and added a focused reproducer plus contract test updates.
+- What changed: Bumped the post-merge audit summary schema to v4, added validated `followUpCandidates`, loaded regression-test candidates from external-review miss artifacts, added a focused reproducer plus contract test updates, and opened draft PR #1141.
 - Current blocker: none.
-- Next exact step: Commit the summary/follow-up candidate changes on `codex/issue-1137`.
+- Next exact step: Monitor draft PR #1141 and address any review or CI follow-up.
 - Verification gap: None in the approved focused targets; broader unrelated suites remain unrun.
 - Files touched: `.codex-supervisor/issues/1137/issue-journal.md`, `src/supervisor/post-merge-audit-summary.ts`, `src/supervisor/post-merge-audit-summary.test.ts`, `src/supervisor/post-merge-audit-summary-runtime.test.ts`, `src/backend/supervisor-http-server.test.ts`.
 - Rollback concern: Low; the behavior is additive and advisory-only, but consumers expecting schema v3 would need the corresponding v4 field.
