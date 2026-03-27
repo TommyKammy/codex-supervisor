@@ -1,36 +1,36 @@
-# Issue #1090: Allow conflicted PR repair to recover from handoff_missing without manual requeue
+# Issue #1101: CI path gate: block PRs that commit workstation-local absolute paths
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1090
-- Branch: codex/issue-1090
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1101
+- Branch: codex/issue-1101
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 831a596d07433fec5392d7e45801c363bba9162b
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: bf7d80e2ff84ca9015c7b76ea77693f4626e5f4d
 - Blocked reason: none
-- Last failure signature: handoff-missing
-- Repeated failure signature count: 1
-- Updated at: 2026-03-27T00:03:14.873Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-27T03:56:14.205Z
 
 ## Latest Codex Summary
-- Added a narrow recovery path so blocked `handoff_missing` records with an already-open conflicted tracked PR resume into `resolving_conflict` during reconciliation instead of waiting for an operator requeue.
+- Added a focused CI workflow regression test proving GitHub Actions did not run the workstation-local path detector on PR jobs, then updated `.github/workflows/ci.yml` to run `npm run verify:paths` on Ubuntu CI before the other Ubuntu-only checks.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `handoff_missing` should remain a durable blocker by default, but reconciliation can safely resume a blocked repair-lane issue when live tracked-PR facts show the PR is still open and merge-conflicted.
-- What changed: updated `reconcileRecoverableBlockedIssueStates()` to inspect tracked PRs for blocked `handoff_missing` records and promote only the open conflicted case back to `resolving_conflict`. Kept `shouldAutoRetryHandoffMissing()` unchanged so non-PR behavior and ordinary blocked selection policy stay intact. Added focused regression coverage for the conflicted tracked-PR path and updated the existing no-PR handoff test to assert the old behavior still holds.
+- Hypothesis: the repository already has a focused workstation-local path detector and package-level pre-PR contract, but the shared GitHub Actions workflow never invokes that detector on pull requests, so violating durable artifacts can still merge if local verification is skipped.
+- What changed: added a focused `src/ci-workflow.test.ts` assertion that Ubuntu CI must run `npm run verify:paths`, reproduced the failure against the current workflow, then inserted the new Ubuntu-only `verify:paths` step immediately after `npm ci` in `.github/workflows/ci.yml`.
 - Current blocker: none locally.
-- Next exact step: review the final diff and commit this `#1090` checkpoint on `codex/issue-1090`; if another pass is needed afterward, exercise the full run-once reconciliation path around the blocked conflicted PR case.
-- Verification gap: I have not run the full repo suite or an end-to-end supervisor loop; verification so far is focused on execution-policy and recovery-reconciliation tests.
-- Files touched: `src/recovery-reconciliation.ts`; `src/supervisor/supervisor.ts`; `src/supervisor/supervisor-recovery-reconciliation.test.ts`; `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low. The new path is limited to records already blocked on `handoff_missing` with an open tracked PR whose live merge state is conflicted; non-PR and non-conflict cases still follow the prior policy.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`
-- What changed this turn: reread the required memory files, confirmed the branch head was a prior unrelated checkpoint, traced the `handoff_missing` policy and reconciliation flow, implemented a conflicted-PR-specific reconciliation escape hatch into `resolving_conflict`, updated the focused reconciliation tests, and reran the relevant policy/recovery test files.
-- Exact failure reproduced this turn: a blocked record with `blocked_reason=handoff_missing` and an already-open tracked PR stayed stranded because `shouldAutoRetryHandoffMissing()` intentionally returns false once `pr_number` is set, so nothing moved the issue back into the conflict-repair lane without a manual requeue.
-- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git branch --show-current`; `git status --short`; `git log --oneline --decorate -5`; `git diff --stat`; `rg -n "handoff_missing|blocked_reason|resolving_conflict|mergeable|CONFLICTING|repair lane|requeue|blocked" src test`; `rg --files src test | rg "supervisor|turn-execution|recovery|issue|pull-request|lifecycle|policy|selection|repair"`; `sed -n '1,260p' src/supervisor/supervisor-execution-policy.ts`; `sed -n '1,320p' src/run-once-issue-preparation.ts`; `sed -n '1,260p' src/recovery-reconciliation.ts`; `sed -n '1,260p' src/supervisor/supervisor-lifecycle.ts`; `sed -n '1,320p' src/pull-request-state.ts`; `sed -n '1,320p' src/recovery-reconciliation.test.ts`; `sed -n '1,320p' src/supervisor/supervisor-execution-policy.test.ts`; `sed -n '1,320p' src/run-once-issue-preparation.test.ts`; `rg -n "shouldAutoRetryHandoffMissing|handoff_missing" src/run-once-issue-selection.ts src/run-once-cycle-prelude.ts src/run-once-turn-execution.ts src/supervisor -g'*.ts'`; `rg -n "tracked_pr_head_advanced|resumed issue|recovery event|last_recovery_reason|operator_requeue|handoff" src/recovery-reconciliation.ts src/*test.ts src/supervisor/*test.ts`; `sed -n '1,460p' src/supervisor/supervisor-recovery-reconciliation.test.ts`; `sed -n '520,760p' src/recovery-reconciliation.ts`; `sed -n '1,260p' src/supervisor/supervisor.ts`; `sed -n '120,220p' src/supervisor/supervisor-selection-issue-explain.ts`; `rg -n "function reconcileRecoverableBlockedIssueStates|export async function reconcileRecoverableBlockedIssueStates|reconcileTrackedMergedButOpenIssues|tracked_pr_lifecycle_recovered|tracked_pr_head_advanced" src/recovery-reconciliation.ts`; `sed -n '760,980p' src/recovery-reconciliation.ts`; `sed -n '980,1240p' src/recovery-reconciliation.ts`; `rg -n "CONFLICTING|mergeConflictDetected|resolving_conflict" src/pull-request-state.ts src/pull-request-state-policy.test.ts src/pull-request-state-test-helpers.ts`; `sed -n '320,520p' src/pull-request-state.ts`; `sed -n '1,220p' src/pull-request-state-policy.test.ts`; `sed -n '620,700p' src/pull-request-state.ts`; `sed -n '1,280p' src/run-once-cycle-prelude.ts`; `sed -n '1840,2035p' src/supervisor/supervisor-recovery-reconciliation.test.ts`; `sed -n '2035,2145p' src/supervisor/supervisor-recovery-reconciliation.test.ts`; `sed -n '1,220p' src/supervisor/supervisor-test-helpers.ts`; `rg -n "export function mergeConflictDetected|function mergeConflictDetected" src/supervisor/supervisor-status-rendering.ts src/supervisor/supervisor-reporting.ts`; `sed -n '1,100p' src/supervisor/supervisor-status-rendering.ts`; `rg -n "function applyFailureSignature|export function applyFailureSignature" src/supervisor/supervisor-failure-helpers.ts`; `sed -n '1,220p' src/supervisor/supervisor-failure-helpers.ts`; `rg -n "reconcileRecoverableBlockedIssueStates\\(" -g'*.ts' src`; `git diff -- src/recovery-reconciliation.ts src/supervisor/supervisor.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `sed -n '1,220p' .codex-supervisor/issue-journal.md`; `git status --short`
+- Next exact step: commit this CI gate checkpoint on `codex/issue-1101`, then open or update a draft PR so GitHub Actions can exercise the new pull-request path-hygiene job.
+- Verification gap: I have not run the full repository suite or a live GitHub Actions run; verification so far is focused on the workflow contract and the detector itself.
+- Files touched: `.github/workflows/ci.yml`; `src/ci-workflow.test.ts`; `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low. The change only adds an existing repo-owned verification command to the Ubuntu CI leg and constrains it with a focused workflow test.
+- Last focused command: `npx tsx --test src/ci-workflow.test.ts src/workstation-local-path-detector.test.ts`
+- What changed this turn: reread the required memory files and issue journal, located the existing workstation-local path detector and CI workflow coverage, added the narrow failing workflow assertion for `npm run verify:paths`, reproduced the missing-gate failure, added the Ubuntu CI step, and reran the focused workflow plus detector tests.
+- Exact failure reproduced this turn: `src/ci-workflow.test.ts` failed because `.github/workflows/ci.yml` lacked any `npm run verify:paths` step, so pull request CI would not enforce the workstation-local path gate.
+- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git branch --show-current`; `git status --short`; `rg -n "workstation-local|absolute path|path hygiene|path-hygiene|local path|absolute paths|durable artifact|repo-owned exclusions" .github src test package.json`; `rg --files .github src test | rg "workflow|path|hygiene|absolute|ci|actions|durable|scan|guard"`; `sed -n '1,260p' .github/workflows/ci.yml`; `sed -n '1,260p' src/ci-workflow.test.ts`; `sed -n '1,220p' src/workstation-local-path-detector.test.ts`; `sed -n '1,220p' scripts/check-workstation-local-paths.ts`; `sed -n '1,220p' package.json`; `sed -n '1,260p' src/local-ci.test.ts`; `sed -n '1,260p' src/pre-pr-verification-contract.test.ts`; `npx tsx --test src/ci-workflow.test.ts`; `git diff --stat`; `git diff -- .github/workflows/ci.yml src/ci-workflow.test.ts`; `npx tsx --test src/ci-workflow.test.ts src/workstation-local-path-detector.test.ts`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
