@@ -67,6 +67,92 @@ Parallelizable: No`,
   );
 });
 
+test("buildIssueLintDto treats standalone codex issues with explicit scheduling metadata as execution-ready", async () => {
+  const issue = createIssue({
+    number: 604,
+    title: "Ship standalone codex issue",
+    labels: [{ name: "codex" }],
+    body: `## Summary
+Preserve codex issue-lint behavior for standalone work.
+
+## Scope
+- keep standalone codex issues execution-ready without a parent epic
+- require explicit scheduling metadata
+
+## Acceptance criteria
+- standalone codex issues remain runnable with explicit scheduling metadata
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-issue-lint.test.ts
+
+Depends on: none
+Execution order: 1 of 1
+Parallelizable: No`,
+  });
+
+  const dto = await buildIssueLintDto(
+    {
+      getIssue: async () => issue,
+    },
+    issue.number,
+  );
+
+  assert.deepEqual(dto, {
+    issueNumber: 604,
+    title: "Ship standalone codex issue",
+    executionReady: true,
+    missingRequired: [],
+    missingRecommended: [],
+    metadataErrors: [],
+    highRiskBlockingAmbiguity: null,
+    repairGuidance: [],
+  });
+});
+
+test("buildIssueLintDto requires parent metadata for sequenced codex child issues", async () => {
+  const issue = createIssue({
+    number: 605,
+    title: "Run sequenced codex child issue",
+    labels: [{ name: "codex" }],
+    body: `## Summary
+Require explicit parent metadata before a sequenced codex issue can run.
+
+## Scope
+- block sequenced codex issues without a parent epic
+- keep the missing field diagnostic explicit
+
+## Acceptance criteria
+- sequenced codex child issues are not execution-ready without Part of
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-issue-lint.test.ts
+
+Depends on: none
+Execution order: 2 of 3
+Parallelizable: No`,
+  });
+
+  const dto = await buildIssueLintDto(
+    {
+      getIssue: async () => issue,
+    },
+    issue.number,
+  );
+
+  assert.deepEqual(dto, {
+    issueNumber: 605,
+    title: "Run sequenced codex child issue",
+    executionReady: false,
+    missingRequired: ["part of"],
+    missingRecommended: [],
+    metadataErrors: [],
+    highRiskBlockingAmbiguity: null,
+    repairGuidance: [
+      "Add `Part of: #<number>` when this sequenced codex issue belongs to a parent epic or tracking issue.",
+    ],
+  });
+});
+
 test("buildIssueLintDto keeps repair guidance ordering stable", async () => {
   const issue = createIssue({
     number: 603,

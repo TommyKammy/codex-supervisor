@@ -1505,6 +1505,79 @@ Rotate the production auth token flow for service-to-service requests.
   assert.equal(record.last_failure_context, null);
 });
 
+test("runOnce blocks codex-labeled issues that omit required scheduling metadata", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 95;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Codex issue without scheduling metadata",
+    labels: [{ name: "codex" }],
+    body: `## Summary
+Require explicit scheduling metadata for codex issues.
+
+## Scope
+- tighten the execution-ready gate for codex-labeled issues
+- keep non-codex issue behavior unchanged
+
+## Acceptance criteria
+- codex issues without scheduling metadata are blocked before execution
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts`,
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.equal(message, "No matching open issue found.");
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(persisted.activeIssueNumber, null);
+  assert.equal(record.state, "blocked");
+  assert.equal(record.blocked_reason, "requirements");
+  assert.match(
+    record.last_error ?? "",
+    /missing required execution-ready metadata: depends on, parallelizable, execution order/i,
+  );
+  assert.equal(record.last_failure_context?.category, "blocked");
+  assert.match(
+    record.last_failure_context?.summary ?? "",
+    /issue #95 is not execution-ready because it is missing: depends on, parallelizable, execution order/i,
+  );
+  assert.deepEqual(record.last_failure_context?.details ?? [], [
+    "missing_required=depends on, parallelizable, execution order",
+    "missing_recommended=none",
+  ]);
+});
+
 test("runOnce blocks only explicit high-risk blocking ambiguity", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 95;

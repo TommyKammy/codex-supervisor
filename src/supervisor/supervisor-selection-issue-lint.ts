@@ -79,6 +79,18 @@ function buildIssueLintRepairGuidance(
       case "verification":
         guidance.push("Add a `## Verification` section with the exact command, test file, or manual check to run.");
         break;
+      case "depends on":
+        guidance.push("Add `Depends on: none` if nothing blocks this issue, or list blocking issues as `Depends on: #123, #456`.");
+        break;
+      case "parallelizable":
+        guidance.push("Add `Parallelizable: No` unless this issue is explicitly safe to run alongside related work.");
+        break;
+      case "execution order":
+        guidance.push("Add `Execution order: 1 of 1` if this issue stands alone, or `Execution order: N of M` for a sequenced series.");
+        break;
+      case "part of":
+        guidance.push("Add `Part of: #<number>` when this sequenced codex issue belongs to a parent epic or tracking issue.");
+        break;
       default:
         break;
     }

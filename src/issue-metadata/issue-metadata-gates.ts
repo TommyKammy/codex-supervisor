@@ -119,12 +119,24 @@ function hasConcreteVerificationTarget(content: string): boolean {
   return listItems.some((item) => item.split(/\s+/).length >= 5);
 }
 
+function hasLabel(issue: Pick<GitHubIssue, "labels">, labelName: string): boolean {
+  return (issue.labels ?? []).some((label) => label.name.trim().toLowerCase() === labelName);
+}
+
+function hasExplicitMetadataLine(body: string, fieldName: string): boolean {
+  return new RegExp(`^\\s*${escapeRegExp(fieldName)}:\\s*\\S.*$`, "im").test(body);
+}
+
 export function lintExecutionReadyIssueBody(
-  issue: Pick<GitHubIssue, "title" | "body">,
+  issue: Pick<GitHubIssue, "title" | "body" | "labels">,
 ): ExecutionReadyLintResult {
   const summaryContent = findMarkdownSectionContent(issue.body, "Summary");
   const scopeContent = findMarkdownSectionContent(issue.body, "Scope");
   const verificationContent = findMarkdownSectionContent(issue.body, "Verification");
+  const executionOrder = parseExecutionOrder(issue.body);
+  const isCodexLabeled = hasLabel(issue, "codex");
+  const requiresPartOf = executionOrder !== null
+    && !(executionOrder.executionOrderIndex === 1 && executionOrder.executionOrderTotal === 1);
   const riskyChangeClasses = detectRiskyChangeClasses(issue);
   const approvedRiskyChangeClasses = parseRiskyChangeApprovalList(issue.body);
   const requiredChecks: Array<{ key: string; present: boolean }> = [
@@ -144,16 +156,44 @@ export function lintExecutionReadyIssueBody(
       key: "verification",
       present: verificationContent !== null,
     },
+    ...(isCodexLabeled
+      ? [
+        {
+          key: "depends on",
+          present: hasExplicitMetadataLine(issue.body, "Depends on"),
+        },
+        {
+          key: "parallelizable",
+          present: hasExplicitMetadataLine(issue.body, "Parallelizable"),
+        },
+        {
+          key: "execution order",
+          present: executionOrder !== null,
+        },
+        ...(requiresPartOf
+          ? [
+            {
+              key: "part of",
+              present: /^\s*Part of:?\s+#\d+\s*$/im.test(issue.body),
+            },
+          ]
+          : []),
+      ]
+      : []),
   ];
   const recommendedChecks: Array<{ key: string; present: boolean }> = [
-    {
-      key: "depends on",
-      present: /^\s*Depends on:\s*.+$/im.test(issue.body),
-    },
-    {
-      key: "execution order",
-      present: parseExecutionOrder(issue.body) !== null,
-    },
+    ...(!isCodexLabeled
+      ? [
+        {
+          key: "depends on",
+          present: /^\s*Depends on:\s*.+$/im.test(issue.body),
+        },
+        {
+          key: "execution order",
+          present: executionOrder !== null,
+        },
+      ]
+      : []),
     {
       key: "scope boundary",
       present: scopeContent === null || hasScopeBoundary(scopeContent),

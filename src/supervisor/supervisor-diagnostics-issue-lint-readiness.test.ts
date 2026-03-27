@@ -11,12 +11,12 @@ test("issue lint reports a complete execution-ready issue as clean", async () =>
 
   const issue: GitHubIssue = {
     number: 102,
-    title: "Execution-ready issue",
+    title: "Execution-ready codex issue",
+    labels: [{ name: "codex" }],
     body: `${executionReadyBody("Issue lint should accept an execution-ready issue.")}
 
-Part of: #200
 Depends on: none
-Execution order: 1 of 4
+Execution order: 1 of 1
 Parallelizable: No`,
     createdAt: "2026-03-19T00:00:00Z",
     updatedAt: "2026-03-19T00:00:00Z",
