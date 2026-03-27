@@ -1,0 +1,9 @@
+{
+  "issueNumber": 1102,
+  "state": "stabilizing",
+  "startedAt": "2026-03-27T06:24:57.386Z",
+  "journalFingerprint": {
+    "exists": true,
+    "sha256": "8f5e0ea957f70024022c03973c77874bdcd000911c0f65e10a31a895867fb19f"
+  }
+}

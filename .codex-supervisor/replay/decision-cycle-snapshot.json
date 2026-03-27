@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-03-27T06:24:57.378Z",
+  "issue": {
+    "number": 1102,
+    "title": "Publish gate: refuse supervisor-managed publication when durable artifacts fail path hygiene",
+    "url": "https://github.com/TommyKammy/codex-supervisor/issues/1102",
+    "state": "OPEN",
+    "updatedAt": "2026-03-27T06:07:33Z"
+  },
+  "local": {
+    "record": {
+      "issue_number": 1102,
+      "state": "implementing",
+      "branch": "codex/issue-1102",
+      "pr_number": null,
+      "workspace": "/home/tommy/Dev/codex-supervisor-self-clean-worktrees/issue-1102",
+      "journal_path": "/home/tommy/Dev/codex-supervisor-self-clean-worktrees/issue-1102/.codex-supervisor/issue-journal.md",
+      "attempt_count": 1,
+      "implementation_attempt_count": 1,
+      "repair_attempt_count": 0,
+      "timeout_retry_count": 0,
+      "blocked_verification_retry_count": 0,
+      "repeated_blocker_count": 0,
+      "repeated_failure_signature_count": 0,
+      "stale_stabilizing_no_pr_recovery_count": 0,
+      "blocked_reason": null,
+      "last_error": null,
+      "last_failure_kind": null,
+      "last_failure_context": null,
+      "last_failure_signature": null,
+      "last_head_sha": "6a5b43c640278ac53d9a4a008adc32af73399f21",
+      "review_wait_started_at": null,
+      "review_wait_head_sha": null,
+      "provider_success_observed_at": null,
+      "provider_success_head_sha": null,
+      "merge_readiness_last_evaluated_at": null,
+      "copilot_review_requested_observed_at": null,
+      "copilot_review_requested_head_sha": null,
+      "copilot_review_timed_out_at": null,
+      "copilot_review_timeout_action": null,
+      "copilot_review_timeout_reason": null,
+      "local_review_head_sha": null,
+      "local_review_blocker_summary": null,
+      "local_review_summary_path": null,
+      "local_review_run_at": null,
+      "local_review_max_severity": null,
+      "local_review_findings_count": 0,
+      "local_review_root_cause_count": 0,
+      "local_review_verified_max_severity": null,
+      "local_review_verified_findings_count": 0,
+      "local_review_recommendation": null,
+      "local_review_degraded": false,
+      "last_local_review_signature": null,
+      "repeated_local_review_signature_count": 0,
+      "latest_local_ci_result": null,
+      "processed_review_thread_ids": [],
+      "processed_review_thread_fingerprints": [],
+      "updated_at": "2026-03-27T06:24:56.575Z"
+    },
+    "workspaceStatus": {
+      "branch": "codex/issue-1102",
+      "headSha": "6a5b43c640278ac53d9a4a008adc32af73399f21",
+      "hasUncommittedChanges": true,
+      "baseAhead": 1,
+      "baseBehind": 0,
+      "remoteBranchExists": false,
+      "remoteAhead": 0,
+      "remoteBehind": 0,
+      "restoreSource": "existing_workspace",
+      "restoreRef": "codex/issue-1102"
+    }
+  },
+  "github": {
+    "pullRequest": null,
+    "checks": [],
+    "reviewThreads": []
+  },
+  "decision": {
+    "nextState": "stabilizing",
+    "shouldRunCodex": true,
+    "blockedReason": null,
+    "failureContext": null
+  },
+  "operatorSummary": {
+    "latestRecoverySummary": "latest_recovery issue=#1102 at=2026-03-27T06:24:47.835Z reason=stale_state_cleanup detail=cleared stale active reservation after issue lock and session lock were missing",
+    "retrySummary": null,
+    "recoveryLoopSummary": null,
+    "activityContext": {
+      "handoffSummary": null,
+      "localReviewRoutingSummary": null,
+      "changeClassesSummary": null,
+      "verificationPolicySummary": null,
+      "durableGuardrailSummary": null,
+      "externalReviewFollowUpSummary": null,
+      "preMergeEvaluation": null,
+      "localCiStatus": null,
+      "latestRecovery": {
+        "issueNumber": 1102,
+        "at": "2026-03-27T06:24:47.835Z",
+        "reason": "stale_state_cleanup",
+        "detail": "cleared stale active reservation after issue lock and session lock were missing"
+      },
+      "retryContext": {
+        "timeoutRetryCount": 0,
+        "blockedVerificationRetryCount": 0,
+        "repeatedBlockerCount": 0,
+        "repeatedFailureSignatureCount": 0,
+        "lastFailureSignature": null
+      },
+      "repeatedRecovery": null,
+      "recentPhaseChanges": [],
+      "localReviewSummaryPath": null,
+      "externalReviewMissesPath": null,
+      "reviewWaits": []
+    }
+  }
+}

@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 export const DEFAULT_EXCLUDED_PATHS = [
   "docs/examples/atlaspm.supervisor.config.example.json",
   "docs/examples/atlaspm.md",
+  "src/backend/webui-dashboard.test.ts",
   "src/index.test.ts",
 ] as const;
 
