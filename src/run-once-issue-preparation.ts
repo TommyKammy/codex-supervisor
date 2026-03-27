@@ -280,9 +280,49 @@ async function hydratePullRequestContext(
     args.writePreMergeAssessmentSnapshot ?? writePreMergeAssessmentSnapshotImpl;
   const runWorkstationLocalPathGateImpl = args.runWorkstationLocalPathGate ?? runWorkstationLocalPathGate;
   const now = args.now ?? nowIso;
+  let record = args.record;
+
+  const blockPublicationForPathHygieneFailure = async (): Promise<string | null> => {
+    const pathHygieneGate = await runWorkstationLocalPathGateImpl({
+      workspacePath: args.workspacePath,
+      gateLabel: "before publication",
+    });
+    if (pathHygieneGate.ok) {
+      return null;
+    }
+
+    const failureContext = pathHygieneGate.failureContext;
+    const previousRecord = record;
+    const blockedRecord = args.stateStore.touch(record, {
+      state: "blocked",
+      last_error:
+        failureContext?.summary ??
+        "Tracked durable artifacts failed workstation-local path hygiene before publication.",
+      last_failure_kind: null,
+      last_failure_context: failureContext,
+      ...applyFailureSignature(record, failureContext),
+      blocked_reason: "verification",
+    });
+    record = blockedRecord;
+    args.state.issues[String(blockedRecord.issue_number)] = blockedRecord;
+    await args.stateStore.save(args.state);
+    await syncExecutionMetricsRunSummarySafely({
+      previousRecord,
+      nextRecord: blockedRecord,
+      issue: args.issue,
+      retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
+      warningContext: "persisting",
+    });
+    await args.syncJournal(blockedRecord);
+    return `Issue #${blockedRecord.issue_number} blocked: tracked durable artifacts failed workstation-local path hygiene before publication.`;
+  };
 
   let nextWorkspaceStatus = args.workspaceStatus;
   if (nextWorkspaceStatus.remoteBranchExists && nextWorkspaceStatus.remoteAhead > 0) {
+    const pathHygieneBlocked = await blockPublicationForPathHygieneFailure();
+    if (pathHygieneBlocked) {
+      return pathHygieneBlocked;
+    }
     await pushBranch(args.workspacePath, args.record.branch, true);
     nextWorkspaceStatus = withWorkspaceRestoreMetadata(
       await getWorkspaceStatus(args.workspacePath, args.record.branch, args.config.defaultBranch),
@@ -298,7 +338,6 @@ async function hydratePullRequestContext(
   let pr = isOpenPullRequest(resolvedPr) ? resolvedPr : null;
   let checks = pr ? await args.github.getChecks(pr.number) : [];
   let reviewThreads = pr ? await args.github.getUnresolvedReviewThreads(pr.number) : [];
-  let record = args.record;
 
   if (!resolvedPr && record.pr_number !== null) {
     record = args.stateStore.touch(record, {
@@ -427,31 +466,9 @@ async function hydratePullRequestContext(
     !nextWorkspaceStatus.hasUncommittedChanges &&
     args.record.implementation_attempt_count >= args.config.draftPrAfterAttempt
   ) {
-    const pathHygieneGate = await runWorkstationLocalPathGateImpl({
-      workspacePath: args.workspacePath,
-      gateLabel: "before publication",
-    });
-    if (!pathHygieneGate.ok) {
-      const failureContext = pathHygieneGate.failureContext;
-      const blockedRecord = args.stateStore.touch(record, {
-        state: "blocked",
-        last_error: failureContext?.summary ?? "Tracked durable artifacts failed workstation-local path hygiene before publication.",
-        last_failure_kind: null,
-        last_failure_context: failureContext,
-        ...applyFailureSignature(record, failureContext),
-        blocked_reason: "verification",
-      });
-      args.state.issues[String(blockedRecord.issue_number)] = blockedRecord;
-      await args.stateStore.save(args.state);
-      await syncExecutionMetricsRunSummarySafely({
-        previousRecord: record,
-        nextRecord: blockedRecord,
-        issue: args.issue,
-        retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
-        warningContext: "persisting",
-      });
-      await args.syncJournal(blockedRecord);
-      return `Issue #${blockedRecord.issue_number} blocked: tracked durable artifacts failed workstation-local path hygiene before publication.`;
+    const pathHygieneBlocked = await blockPublicationForPathHygieneFailure();
+    if (pathHygieneBlocked) {
+      return pathHygieneBlocked;
     }
 
     const localCiGate = await runLocalCiGate({
