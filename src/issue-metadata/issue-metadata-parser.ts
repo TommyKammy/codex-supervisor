@@ -2,6 +2,8 @@ import type { GitHubIssue } from "../core/types";
 import type { IssueMetadata } from "./issue-metadata";
 import type { RiskyChangeClass } from "./issue-metadata-risky-policy";
 
+const PART_OF_LINE_PATTERN = /^\s*(?:-\s+)?Part of:?\s+#(\d+)\s*$/im;
+
 function parseIssueNumberList(input: string): number[] {
   return Array.from(
     new Set(
@@ -49,7 +51,7 @@ export function parseExecutionOrder(
 }
 
 export function parseIssueMetadata(issue: GitHubIssue): IssueMetadata {
-  const parentMatch = issue.body.match(/^\s*Part of:?\s+#(\d+)\s*$/im);
+  const parentMatch = issue.body.match(PART_OF_LINE_PATTERN);
   const dependsOnMatch = issue.body.match(/^\s*Depends on:\s*(.+)\s*$/im);
   const parallelGroupMatch = issue.body.match(/^\s*Parallel group:\s*(.+)\s*$/im);
   const executionOrder = parseExecutionOrder(issue.body);

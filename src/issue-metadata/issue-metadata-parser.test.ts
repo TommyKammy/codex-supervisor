@@ -36,3 +36,12 @@ Touches: src/issue-metadata/issue-metadata.ts, src/supervisor.ts
     touches: ["src/issue-metadata/issue-metadata.ts", "src/supervisor.ts"],
   });
 });
+
+test("parseIssueMetadata accepts bullet-prefixed part-of metadata", () => {
+  const issue = createIssue({
+    body: `- Part of: #123
+Depends on: none`,
+  });
+
+  assert.equal(parseIssueMetadata(issue).parentIssueNumber, 123);
+});
