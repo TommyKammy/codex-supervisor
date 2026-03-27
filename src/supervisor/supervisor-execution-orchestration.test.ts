@@ -185,6 +185,7 @@ test("runOnce dry-run selects an issue and hydrates workspace and PR context bef
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const pr: GitHubPullRequest = {
@@ -288,6 +289,7 @@ test("runOnce reserves a runnable issue before unrelated tracked-PR reconciliati
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${selectedIssueNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const unrelatedIssue: GitHubIssue = {
@@ -297,6 +299,7 @@ test("runOnce reserves a runnable issue before unrelated tracked-PR reconciliati
     createdAt: "2026-03-13T00:05:00Z",
     updatedAt: "2026-03-13T00:05:00Z",
     url: `https://example.test/issues/${unrelatedIssueNumber}`,
+    labels: [],
     state: "OPEN",
   };
 
@@ -580,6 +583,7 @@ test("runOnce blocks an interrupted active turn before selecting the next runnab
     createdAt: "2026-03-26T00:00:00Z",
     updatedAt: "2026-03-26T00:00:00Z",
     url: `https://example.test/issues/${interruptedIssueNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const nextIssue: GitHubIssue = {
@@ -589,6 +593,7 @@ test("runOnce blocks an interrupted active turn before selecting the next runnab
     createdAt: "2026-03-26T00:10:00Z",
     updatedAt: "2026-03-26T00:10:00Z",
     url: `https://example.test/issues/${nextIssueNumber}`,
+    labels: [],
     state: "OPEN",
   };
 
@@ -703,6 +708,7 @@ test("runOnce clears a stale interrupted-turn marker when the journal changed af
     createdAt: "2026-03-26T00:00:00Z",
     updatedAt: "2026-03-26T00:00:00Z",
     url: `https://example.test/issues/${interruptedIssueNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const nextIssue: GitHubIssue = {
@@ -712,6 +718,7 @@ test("runOnce clears a stale interrupted-turn marker when the journal changed af
     createdAt: "2026-03-26T00:10:00Z",
     updatedAt: "2026-03-26T00:10:00Z",
     url: `https://example.test/issues/${nextIssueNumber}`,
+    labels: [],
     state: "OPEN",
   };
 
@@ -1400,6 +1407,7 @@ Add execution-ready gating.`,
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
 
@@ -1472,6 +1480,7 @@ Rotate the production auth token flow for service-to-service requests.
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
 
@@ -1605,6 +1614,7 @@ Decide whether to keep the current production auth token flow or replace it befo
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
 
@@ -1690,6 +1700,7 @@ Execution order: 1 of 2`,
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${dependencyIssueNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const dependencyBlockedIssue: GitHubIssue = {
@@ -1712,6 +1723,7 @@ Execution order: 2 of 2`,
     createdAt: "2026-03-13T00:05:00Z",
     updatedAt: "2026-03-13T00:05:00Z",
     url: `https://example.test/issues/${blockedIssueNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const readyIssue: GitHubIssue = {
@@ -1731,6 +1743,7 @@ Ship the ready issue.
     createdAt: "2026-03-13T00:10:00Z",
     updatedAt: "2026-03-13T00:10:00Z",
     url: `https://example.test/issues/${readyIssueNumber}`,
+    labels: [],
     state: "OPEN",
   };
 

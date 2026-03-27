@@ -19,6 +19,7 @@ function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: "https://example.com/issues/1",
+    labels: [],
     state: "OPEN",
     ...overrides,
   };
@@ -341,6 +342,94 @@ Parallelizable: Later`,
     riskyChangeClasses: [],
     approvedRiskyChangeClasses: [],
   });
+});
+
+test("lintExecutionReadyIssueBody rejects duplicate scheduling metadata for codex-labeled issues", () => {
+  const issue = createIssue({
+    labels: [{ name: "codex" }],
+    body: `## Summary
+Add deterministic issue-body linting for execution-ready metadata.
+
+## Scope
+- lint execution-ready metadata
+- keep output deterministic
+
+## Acceptance criteria
+- duplicated scheduling metadata does not pass readiness
+
+## Verification
+- npm test -- src/issue-metadata/issue-metadata.test.ts
+
+Depends on: none
+Depends on: #123
+Execution order: 1 of 1
+Execution order: 2 of 2
+Parallelizable: No
+Parallelizable: Yes`,
+  });
+
+  assert.deepEqual(lintExecutionReadyIssueBody(issue), {
+    isExecutionReady: false,
+    missingRequired: ["depends on", "parallelizable", "execution order"],
+    missingRecommended: [],
+    riskyChangeClasses: [],
+    approvedRiskyChangeClasses: [],
+  });
+});
+
+test("lintExecutionReadyIssueBody requires canonical Part of metadata for sequenced codex issues", () => {
+  const issue = createIssue({
+    labels: [{ name: "codex" }],
+    body: `## Summary
+Add deterministic issue-body linting for execution-ready metadata.
+
+## Scope
+- lint execution-ready metadata
+- keep output deterministic
+
+## Acceptance criteria
+- sequenced codex issues require canonical parent metadata
+
+## Verification
+- npm test -- src/issue-metadata/issue-metadata.test.ts
+
+Part of #123
+Depends on: none
+Execution order: 2 of 3
+Parallelizable: No`,
+  });
+
+  assert.deepEqual(lintExecutionReadyIssueBody(issue), {
+    isExecutionReady: false,
+    missingRequired: ["part of"],
+    missingRecommended: [],
+    riskyChangeClasses: [],
+    approvedRiskyChangeClasses: [],
+  });
+});
+
+test("lintExecutionReadyIssueBody fails closed when labels are omitted", () => {
+  const issue = createIssue({
+    body: `## Summary
+Add deterministic issue-body linting for execution-ready metadata.
+
+## Scope
+- lint execution-ready metadata
+- keep output deterministic
+
+## Acceptance criteria
+- callers provide labels explicitly
+
+## Verification
+- npm test -- src/issue-metadata/issue-metadata.test.ts`,
+  });
+
+  delete issue.labels;
+
+  assert.throws(
+    () => lintExecutionReadyIssueBody(issue),
+    /lintExecutionReadyIssueBody requires issue\.labels/u,
+  );
 });
 
 test("lintExecutionReadyIssueBody keeps recommending scope boundaries for multi-bullet in-scope lists", () => {
