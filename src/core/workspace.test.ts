@@ -162,6 +162,35 @@ async function createSplitRemoteRepositoryFixture(): Promise<SupervisorConfig & 
   return { ...config, githubPath };
 }
 
+async function createDivergedDefaultBranchFixture(): Promise<SupervisorConfig> {
+  const config = await createRepositoryFixture();
+  const root = path.dirname(config.repoPath);
+  const githubPath = path.join(root, "github.git");
+  const githubClonePath = path.join(root, "github-clone");
+
+  await execFileAsync("git", ["init", "--bare", githubPath]);
+  await git(config.repoPath, "remote", "add", "github", githubPath);
+  await git(config.repoPath, "push", "-u", "github", config.defaultBranch);
+
+  await fs.writeFile(path.join(config.repoPath, "origin-only.txt"), "origin-only change\n", "utf8");
+  await git(config.repoPath, "add", "origin-only.txt");
+  await git(config.repoPath, "commit", "-m", "Origin-only commit");
+  await git(config.repoPath, "push", "origin", config.defaultBranch);
+
+  await execFileAsync("git", ["clone", githubPath, githubClonePath]);
+  await git(githubClonePath, "config", "user.name", "GitHub Collaborator");
+  await git(githubClonePath, "config", "user.email", "github@example.test");
+  await git(githubClonePath, "checkout", "-b", config.defaultBranch, `origin/${config.defaultBranch}`);
+  await fs.writeFile(path.join(githubClonePath, "github-only.txt"), "github-only change\n", "utf8");
+  await git(githubClonePath, "add", "github-only.txt");
+  await git(githubClonePath, "commit", "-m", "GitHub-only commit");
+  await git(githubClonePath, "push", "origin", config.defaultBranch);
+
+  await git(config.repoPath, "fetch", "github", config.defaultBranch);
+
+  return config;
+}
+
 test("ensureWorkspace reports when a recreated workspace restores from an existing local branch", async () => {
   const config = await createRepositoryFixture();
   const issueNumber = 721;
@@ -186,6 +215,28 @@ test("ensureWorkspace reports when a recreated workspace bootstraps from the def
   assert.equal(ensured.workspacePath, path.join(config.workspaceRoot, `issue-${issueNumber}`));
   assert.equal(ensured.restore.source, "bootstrap_default_branch");
   assert.equal(ensured.restore.ref, `origin/${config.defaultBranch}`);
+});
+
+test("ensureWorkspace keeps origin authoritative when the local default branch has unpublished commits", async () => {
+  const config = await createRepositoryFixture();
+  const issueNumber = 726;
+  const branch = `${config.branchPrefix}${issueNumber}`;
+
+  await fs.writeFile(path.join(config.repoPath, "local-only.txt"), "local-only change\n", "utf8");
+  await git(config.repoPath, "add", "local-only.txt");
+  await git(config.repoPath, "commit", "-m", "Local-only commit");
+
+  const originDefaultSha = await gitOutput(config.repoPath, "rev-parse", `origin/${config.defaultBranch}`);
+  const localDefaultSha = await gitOutput(config.repoPath, "rev-parse", config.defaultBranch);
+  assert.notEqual(localDefaultSha, originDefaultSha);
+
+  const ensured = await ensureWorkspace(config, issueNumber, branch);
+  const branchHeadSha = await gitOutput(ensured.workspacePath, "rev-parse", "HEAD");
+
+  assert.equal(ensured.restore.source, "bootstrap_default_branch");
+  assert.equal(ensured.restore.ref, `origin/${config.defaultBranch}`);
+  assert.equal(branchHeadSha, originDefaultSha);
+  assert.notEqual(branchHeadSha, localDefaultSha);
 });
 
 test("ensureWorkspace reports when a recreated workspace discovers an existing remote branch", async () => {
@@ -243,9 +294,48 @@ test("ensureWorkspace bootstraps from the fresh default-branch ref instead of st
 
   assert.equal(ensured.workspacePath, path.join(config.workspaceRoot, `issue-${issueNumber}`));
   assert.equal(ensured.restore.source, "bootstrap_default_branch");
-  assert.equal(ensured.restore.ref, config.defaultBranch);
+  assert.equal(ensured.restore.ref, `github/${config.defaultBranch}`);
   assert.equal(branchHeadSha, githubDefaultSha);
   assert.notEqual(branchHeadSha, originDefaultSha);
+});
+
+test("ensureWorkspace ignores similarly suffixed remote-tracking refs when bootstrapping", async () => {
+  const config = await createRepositoryFixture();
+  const issueNumber = 727;
+  const branch = `${config.branchPrefix}${issueNumber}`;
+
+  await git(config.repoPath, "checkout", "-b", "release/main", `origin/${config.defaultBranch}`);
+  await fs.writeFile(path.join(config.repoPath, "release-main.txt"), "release branch change\n", "utf8");
+  await git(config.repoPath, "add", "release-main.txt");
+  await git(config.repoPath, "commit", "-m", "Release branch commit");
+  await git(config.repoPath, "push", "-u", "origin", "release/main");
+  await git(config.repoPath, "checkout", config.defaultBranch);
+
+  const originDefaultSha = await gitOutput(config.repoPath, "rev-parse", `origin/${config.defaultBranch}`);
+  const releaseMainSha = await gitOutput(config.repoPath, "rev-parse", "origin/release/main");
+  assert.notEqual(releaseMainSha, originDefaultSha);
+
+  const ensured = await ensureWorkspace(config, issueNumber, branch);
+  const branchHeadSha = await gitOutput(ensured.workspacePath, "rev-parse", "HEAD");
+
+  assert.equal(ensured.restore.source, "bootstrap_default_branch");
+  assert.equal(ensured.restore.ref, `origin/${config.defaultBranch}`);
+  assert.equal(branchHeadSha, originDefaultSha);
+  assert.notEqual(branchHeadSha, releaseMainSha);
+});
+
+test("ensureWorkspace skips bootstrap-base resolution when restoring an existing local issue branch", async () => {
+  const config = await createDivergedDefaultBranchFixture();
+  const issueNumber = 728;
+  const branch = `${config.branchPrefix}${issueNumber}`;
+
+  await git(config.repoPath, "branch", branch, config.defaultBranch);
+
+  const ensured = await ensureWorkspace(config, issueNumber, branch);
+
+  assert.equal(ensured.workspacePath, path.join(config.workspaceRoot, `issue-${issueNumber}`));
+  assert.equal(ensured.restore.source, "local_branch");
+  assert.equal(ensured.restore.ref, branch);
 });
 
 test("issue-scoped journals do not manufacture merge conflicts between unrelated issue branches", async () => {

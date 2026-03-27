@@ -59,10 +59,11 @@ async function listDefaultBranchCandidateRefs(repoPath: string, defaultBranch: s
     candidates.add(defaultBranch);
   }
 
-  const remoteRefs = await runCommand("git", ["-C", repoPath, "for-each-ref", "--format=%(refname:short)", "refs/remotes"]);
-  for (const ref of remoteRefs.stdout.split("\n").map((line) => line.trim()).filter(Boolean)) {
-    if (ref.endsWith(`/${defaultBranch}`)) {
-      candidates.add(ref);
+  const remotes = await runCommand("git", ["-C", repoPath, "remote"]);
+  for (const remote of remotes.stdout.split("\n").map((line) => line.trim()).filter(Boolean)) {
+    const remoteRef = `refs/remotes/${remote}/${defaultBranch}`;
+    if (await gitRefExists(repoPath, remoteRef)) {
+      candidates.add(`${remote}/${defaultBranch}`);
     }
   }
 
@@ -100,15 +101,17 @@ async function resolveBootstrapBaseRef(repoPath: string, defaultBranch: string):
     throw new Error(`No available default-branch refs found for ${defaultBranch}`);
   }
 
+  const remoteCandidateRefs = candidateRefs.filter((ref) => ref !== defaultBranch);
+  const refsToCompare = remoteCandidateRefs.length > 0 ? remoteCandidateRefs : candidateRefs;
   const candidateShas = new Map<string, string>();
-  for (const ref of candidateRefs) {
+  for (const ref of refsToCompare) {
     candidateShas.set(ref, await revParse(repoPath, ref));
   }
 
   const maximalRefs: string[] = [];
-  for (const candidateRef of candidateRefs) {
+  for (const candidateRef of refsToCompare) {
     let containsAllOthers = true;
-    for (const otherRef of candidateRefs) {
+    for (const otherRef of refsToCompare) {
       if (candidateRef === otherRef) {
         continue;
       }
@@ -124,7 +127,7 @@ async function resolveBootstrapBaseRef(repoPath: string, defaultBranch: string):
 
   if (maximalRefs.length === 0) {
     throw new Error(
-      `Could not determine an authoritative default-branch ref for ${defaultBranch}; candidates diverged: ${candidateRefs.join(", ")}`,
+      `Could not determine an authoritative default-branch ref for ${defaultBranch}; candidates diverged: ${refsToCompare.join(", ")}`,
     );
   }
 
@@ -185,7 +188,6 @@ export async function ensureWorkspace(
   const workspacePath = workspacePathForIssue(config, issueNumber);
   await ensureDir(config.workspaceRoot);
   await runCommand("git", ["-C", config.repoPath, "fetch", "origin", config.defaultBranch]);
-  const bootstrapBaseRef = await resolveBootstrapBaseRef(config.repoPath, config.defaultBranch);
   const remoteBranchExists = await fetchIssueRemoteTrackingRef(config.repoPath, branch);
 
   if (fs.existsSync(path.join(workspacePath, ".git"))) {
@@ -215,6 +217,7 @@ export async function ensureWorkspace(
     });
   }
 
+  const bootstrapBaseRef = await resolveBootstrapBaseRef(config.repoPath, config.defaultBranch);
   await runCommand("git", [
     "-C",
     config.repoPath,
