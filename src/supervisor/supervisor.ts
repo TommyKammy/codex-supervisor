@@ -283,9 +283,10 @@ function buildLongReconciliationWarning(snapshot: {
 async function ensureRecordJournalContext(
   config: SupervisorConfig,
   record: IssueRunRecord,
-): Promise<Pick<IssueRunRecord, "workspace" | "journal_path">> {
+): Promise<Pick<IssueRunRecord, "issue_number" | "workspace" | "journal_path">> {
   if (record.journal_path) {
     return {
+      issue_number: record.issue_number,
       workspace: record.workspace,
       journal_path: record.journal_path,
     };
@@ -293,6 +294,7 @@ async function ensureRecordJournalContext(
 
   const workspace = await ensureWorkspace(config, record.issue_number, record.branch);
   return {
+    issue_number: record.issue_number,
     workspace: workspace.workspacePath,
     journal_path: issueJournalPath(workspace.workspacePath, config.issueJournalRelativePath, record.issue_number),
   };
@@ -483,7 +485,7 @@ export class Supervisor {
   }
 
   private async classifyStaleStabilizingNoPrBranchState(
-    record: Pick<IssueRunRecord, "workspace" | "journal_path">,
+    record: Pick<IssueRunRecord, "issue_number" | "workspace" | "journal_path">,
   ): Promise<"recoverable" | "already_satisfied_on_main"> {
     const journalPath =
       record.journal_path ??
