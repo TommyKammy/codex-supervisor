@@ -209,7 +209,7 @@ async function prepareWorkspaceContext(
     args.record.branch,
   );
   const workspacePath = ensuredWorkspace.workspacePath;
-  const journalPath = issueJournalPath(workspacePath, args.config.issueJournalRelativePath);
+  const journalPath = issueJournalPath(workspacePath, args.config.issueJournalRelativePath, args.record.issue_number);
   const syncJournal: IssueJournalSync = async (currentRecord: IssueRunRecord): Promise<void> => {
     await syncIssueJournal({
       issue: args.issue,

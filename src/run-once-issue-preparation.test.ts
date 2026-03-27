@@ -8,6 +8,7 @@ import {
   isRestartRunOnce,
   prepareIssueExecutionContext,
 } from "./run-once-issue-preparation";
+import { DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH } from "./core/journal";
 import {
   GitHubIssue,
   GitHubPullRequest,
@@ -49,7 +50,7 @@ function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConf
     localReviewHighSeverityAction: "retry",
     reviewBotLogins: [],
     humanReviewBlocksMerge: true,
-    issueJournalRelativePath: ".codex-supervisor/issue-journal.md",
+    issueJournalRelativePath: DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
     issueJournalMaxChars: 6000,
     candidateDiscoveryFetchWindow: 100,
     skipTitlePrefixes: [],
@@ -248,12 +249,12 @@ test("prepareIssueExecutionContext prepares workspace, journal, memory, and head
     options: { dryRun: true },
     ensureWorkspace: async () => "/tmp/workspaces/issue-240",
     syncIssueJournal: async ({ journalPath, record: currentRecord }) => {
-      assert.equal(journalPath, "/tmp/workspaces/issue-240/.codex-supervisor/issue-journal.md");
+      assert.equal(journalPath, "/tmp/workspaces/issue-240/.codex-supervisor/issues/240/issue-journal.md");
       assert.equal(currentRecord.state, "planning");
     },
     syncMemoryArtifacts: async ({ workspacePath, journalPath }) => {
       assert.equal(workspacePath, "/tmp/workspaces/issue-240");
-      assert.equal(journalPath, "/tmp/workspaces/issue-240/.codex-supervisor/issue-journal.md");
+      assert.equal(journalPath, "/tmp/workspaces/issue-240/.codex-supervisor/issues/240/issue-journal.md");
       return {
         contextIndexPath: "/tmp/context-index.md",
         agentsPath: "/tmp/AGENTS.generated.md",
@@ -288,11 +289,11 @@ test("prepareIssueExecutionContext prepares workspace, journal, memory, and head
   assert.equal(result.previousCodexSummary, "previous summary");
   assert.equal(result.previousError, "previous error");
   assert.equal(result.workspacePath, "/tmp/workspaces/issue-240");
-  assert.equal(result.journalPath, "/tmp/workspaces/issue-240/.codex-supervisor/issue-journal.md");
+  assert.equal(result.journalPath, "/tmp/workspaces/issue-240/.codex-supervisor/issues/240/issue-journal.md");
   assert.equal(result.pr, null);
   assert.deepEqual(resolvePurposes, ["action"]);
   assert.equal(saveSnapshots.length, 2);
-  assert.equal(saveSnapshots[0]?.issues["240"]?.journal_path, "/tmp/workspaces/issue-240/.codex-supervisor/issue-journal.md");
+  assert.equal(saveSnapshots[0]?.issues["240"]?.journal_path, "/tmp/workspaces/issue-240/.codex-supervisor/issues/240/issue-journal.md");
   assert.equal(saveSnapshots[1]?.issues["240"]?.last_head_sha, "workspace-head-240");
   assert.equal(touchedRecords.at(-1)?.last_head_sha, "workspace-head-240");
   assert.deepEqual(replaySnapshots, [

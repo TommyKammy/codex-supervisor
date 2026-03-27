@@ -1,50 +1,52 @@
-# Issue #1109: Close parent epics during degraded inventory reconciliation even when the parent is untracked
+# Issue #1111: Prevent artificial PR merge conflicts from the shared committed issue journal path
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1109
-- Branch: codex/issue-1109
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1111
+- Branch: codex/issue-1111
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: resolving_conflict
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: d88736c06be8d7b019c9f3605ee4ffaf3277b7b2
+- Current phase: repairing_ci
+- Attempt count: 6 (implementation=2, repair=4)
+- Last head SHA: 6034cd6045031d9d08256b6768f6ff3e7ff8a9ee
 - Blocked reason: none
-- Last failure signature: dirty:d88736c06be8d7b019c9f3605ee4ffaf3277b7b2
+- Last failure signature: build (ubuntu-latest):fail
 - Repeated failure signature count: 1
-- Updated at: 2026-03-27T10:05:53.168Z
+- Updated at: 2026-03-27T11:16:06Z
 
 ## Latest Codex Summary
-The implementation checkpoint is unchanged at [`d88736c`](https://github.com/TommyKammy/codex-supervisor/commit/d88736c06be8d7b019c9f3605ee4ffaf3277b7b2), which updates [src/run-once-cycle-prelude.ts](src/run-once-cycle-prelude.ts) and [src/run-once-cycle-prelude.test.ts](src/run-once-cycle-prelude.test.ts) so degraded reconciliation fetches referenced untracked parent epics before evaluating closure. I ran a broader local verification pass after restoring pinned dev dependencies with `npm ci`, pushed `codex/issue-1109`, and opened draft PR `#1110`: https://github.com/TommyKammy/codex-supervisor/pull/1110
+Reproduced the Ubuntu CI failure from the GitHub Actions log and confirmed it was not a feature-code regression. `verify:paths` was failing because the committed [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) still contained workstation-local absolute paths in the previous turn's command transcript.
 
-The only local dirt left is the expected unstaged supervisor scratch state plus the refreshed [issue journal](.codex-supervisor/issue-journal.md). I did not stage or commit those scratch changes.
+I sanitized the tracked journal entries back to `<redacted-local-path>` placeholders and reran `npm run verify:paths`, which now passes locally. No source-code changes were required for this CI repair; the only needed fix is the committed journal cleanup.
 
-Summary: Verified `d88736c`, pushed `codex/issue-1109`, and opened draft PR `#1110` for the degraded untracked-parent epic closure fix.
-State hint: draft_pr
+Summary: Sanitized the committed issue journal so `verify:paths` no longer sees workstation-local absolute paths.
+State hint: repairing_ci
 Blocked reason: none
-Tests: `npm ci`; `npm run build`; `npm run test:malformed-inventory-regressions`
-Next action: Wait for PR review/CI on `#1110` or address follow-up feedback if it arrives.
-Failure signature: dirty:d88736c06be8d7b019c9f3605ee4ffaf3277b7b2
+Tests: `npm run verify:paths`
+Next action: Commit and push the journal-only CI repair, then monitor PR `#1112` checks on the new head.
+Failure signature: build (ubuntu-latest):fail
 
 ## Active Failure Context
-- Category: conflict
-- Summary: PR #1110 has merge conflicts and needs a base-branch integration pass.
-- Command or source: git fetch origin && git merge origin/<default-branch>
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1110
+- Category: checks
+- Summary: PR #1112 failed `verify:paths` on Ubuntu because the committed issue journal still embedded workstation-local absolute paths.
+- Command or source: gh run view 23643425721 --log-failed
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1112
 - Details:
-  - mergeStateStatus=DIRTY
+  - `build (ubuntu-latest)` failed in `npm run verify:paths`.
+  - `.codex-supervisor/issue-journal.md:48` still contained workstation-local absolute paths from the previous turn's command transcript, so the tracked-path guard rejected the commit.
+  - The failing job is https://github.com/TommyKammy/codex-supervisor/actions/runs/23643425721/job/68869536964
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: degraded parent-epic closure should load tracked child issues first, derive any referenced `Part of:` parent issue numbers from those snapshots, and fetch the missing parents before calling `findParentIssuesReadyToClose(...)`.
-- What changed: updated `loadTrackedIssuesForParentEpicClosureFallback()` to parse tracked child metadata, dedupe referenced parent issue numbers not already tracked locally, fetch those parent issues, and append them to the degraded fallback issue set. Added a focused `runOnceCyclePrelude` regression where children `#1101-#1103` are tracked and closed, parent epic `#1100` is open but absent from `state.issues`, and malformed full inventory refresh still leads to a parent-closure reconciliation input that includes the fetched parent. Kept the existing tracked-parent degraded fallback test unchanged.
+- Hypothesis: the current CI failure is limited to the committed journal artifact; sanitizing the tracked command transcript should restore `verify:paths` without further feature-code changes.
+- What changed: sanitized the tracked `.codex-supervisor/issue-journal.md` entries that still embedded workstation-local absolute paths and refreshed this handoff for the CI repair turn.
 - Current blocker: none locally.
-- Next exact step: monitor draft PR `#1110` for CI or review feedback and respond if anything regresses.
-- Verification gap: I have not run the full repo suite or an end-to-end supervisor loop; verification now covers a TypeScript build plus the targeted malformed-inventory regression slice that exercises this degraded reconciliation path.
-- Files touched: `src/run-once-cycle-prelude.ts`; `src/run-once-cycle-prelude.test.ts`; `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low. The change only broadens degraded fallback issue loading to include referenced parent epics discovered from already-fetched tracked child snapshots; healthy full-inventory reconciliation and already-tracked parent behavior are unchanged.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-1109 --title "[codex] Close untracked parent epics during degraded reconciliation" --body-file <tempfile>`
-- What changed this turn: reread the required memory files and journal, confirmed the committed fix was already on `d88736c`, restored pinned dependencies with `npm ci`, ran `npm run build` and `npm run test:malformed-inventory-regressions`, pushed `codex/issue-1109` to the `github` remote, opened draft PR `#1110`, and refreshed this journal entry.
-- Exact failure reproduced this turn: none; this turn was a stabilization/publish pass on top of the existing committed fix.
-- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,240p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short`; `git log --oneline --decorate -5`; `git branch --show-current`; `rg -n "run-once-cycle-prelude|recovery-reconciliation|inventory" src --glob "*.test.ts"`; `cat package.json`; `npm run build`; `npm run test:malformed-inventory-regressions`; `ls -1`; `test -d node_modules && echo present || echo missing`; `test -f package-lock.json && echo lockfile-present || echo no-lockfile`; `npm ci`; `sed -n '1,240p' <redacted-local-path>`; `gh --version`; `gh auth status`; `git status -sb`; `git remote -v`; `gh repo view --json nameWithOwner,defaultBranchRef,url`; `git ls-remote --heads origin codex/issue-1109`; `git ls-remote --heads github codex/issue-1109`; `git push -u github codex/issue-1109`; `gh pr create --draft --base main --head codex/issue-1109 --title "[codex] Close untracked parent epics during degraded reconciliation" --body-file <tempfile>`; `date -u +%Y-%m-%dT%H:%M:%SZ`; `gh pr view 1110 --json url,number,title,isDraft,headRefName,baseRefName>`
+- Next exact step: commit and push the journal-only repair, then monitor `gh pr checks 1112` for the replacement CI run.
+- Verification gap: I did not rerun `npm run build` because the failing check never reached build and the prior head already passed the relevant source-level verification; the remaining verification is the fresh CI run on the repaired commit.
+- Files touched: `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low. This repair only redacts workstation-local absolute paths from the committed journal.
+- Last focused command: `npm run verify:paths`
+- What changed this turn: reread the required memory files, inspected the live PR check status and failed Ubuntu Actions log, confirmed the failure came from the committed journal contents, and sanitized the tracked journal entries back to portable placeholders.
+- Exact failure reproduced this turn: `gh run view 23643425721 --log-failed` showed `npm run verify:paths` failing because `.codex-supervisor/issue-journal.md:48` still embedded workstation-local absolute paths in the previous turn's command transcript; after redaction, `npm run verify:paths` passes locally.
+- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `gh auth status`; `gh pr view 1112 --json number,url,headRefName,headRefOid,baseRefName,mergeStateStatus,statusCheckRollup`; `python <redacted-local-path> --repo . --pr 1112`; `gh pr checks 1112`; `gh run view 23643425721 --json name,workflowName,conclusion,status,url,event,headBranch,headSha,jobs`; `gh run view 23643425721 --log-failed`; `nl -ba .codex-supervisor/issue-journal.md | sed -n '40,70p'`; `sed -n '1,220p' scripts/check-workstation-local-paths.ts`; `sed -n '1,220p' src/workstation-local-paths.ts`; `rg -n "Commands run this turn|<redacted-local-path>|issue-journal|Working Notes|Latest Codex Summary|Summary:" src .codex-supervisor scripts`; `rg -n "issue-journal.md|Codex Working Notes|Latest Codex Summary|Current Handoff|Scratchpad" src`; `git status --short --branch`; `git diff -- .codex-supervisor/issue-journal.md`; `npm run verify:paths`; `date -u +%Y-%m-%dT%H:%M:%SZ`; `git rev-parse --short HEAD`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
