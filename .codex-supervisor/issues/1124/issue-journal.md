@@ -5,26 +5,24 @@
 - Branch: codex/issue-1124
 - Workspace: .
 - Journal: .codex-supervisor/issues/1124/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 31d2f2d6d90c9fe6534d1a70c062bc4e54b30a42
+- Current phase: waiting_ci
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: 7bf387edb7250c1a808f486a39b89a3a350ce2eb
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-27T15:33:02Z
+- Updated at: 2026-03-27T15:46:15Z
 
 ## Latest Codex Summary
-Shared warning construction remains centralized in [warning-formatting.ts](src/warning-formatting.ts). Both [doctor.ts](src/doctor.ts) and [supervisor-status-report.ts](src/supervisor/supervisor-status-report.ts) still use the same helper for execution-safety and other warning lines, so the operator-visible strings stay the same while the duplicate wiring stays removed.
+Merged `github/main` at `d4986e5` into `codex/issue-1124` as merge commit `7bf387e`. The conflict resolution kept the shared warning-formatting path by expanding [src/warning-formatting.ts](src/warning-formatting.ts) to emit both execution-safety and config warnings, while preserving the new GitHub rate-limit status lines from `main` in [src/supervisor/supervisor-status-report.ts](src/supervisor/supervisor-status-report.ts).
 
-Focused regressions in [doctor.test.ts](src/doctor.test.ts) and [supervisor-diagnostics-status-selection.test.ts](src/supervisor/supervisor-diagnostics-status-selection.test.ts) still cover both warning and non-warning trust postures. The implementation checkpoint remains committed as `31d2f2d` (`Extract shared warning formatting`), and draft PR [#1130](https://github.com/TommyKammy/codex-supervisor/pull/1130) is now open for `codex/issue-1124`.
+Focused verification passed with `npx --yes tsx --test src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`. I also aligned [src/config.test.ts](src/config.test.ts), [src/doctor.test.ts](src/doctor.test.ts), and [src/supervisor/supervisor-diagnostics-status-selection.test.ts](src/supervisor/supervisor-diagnostics-status-selection.test.ts) with `main`'s preferred default issue-journal path while keeping legacy-path warning coverage intact for the issue-specific behavior under test.
 
-`npx --yes tsx --test src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts` passed again on 2026-03-27. I did not retry the ad hoc `npx --yes -p typescript tsc -p tsconfig.json` command because the earlier failure was environmental: local `@types/node` is missing and the fetched TypeScript version errors on the repo’s deprecated `moduleResolution=node10` setting.
-
-Summary: Validated the shared warning-formatting checkpoint, confirmed focused warning/non-warning coverage still passes, pushed `codex/issue-1124`, and opened draft PR #1130.
-State hint: draft_pr
+Summary: Merged `github/main` into `codex/issue-1124`, resolved the doctor/status warning-formatting conflicts conservatively, and re-passed the focused config/doctor/status suite.
+State hint: waiting_ci
 Blocked reason: none
 Tests: `npx --yes tsx --test src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts` passed
-Next action: Monitor draft PR #1130 and address any review or CI feedback.
+Next action: Push the refreshed branch to update draft PR #1130, then monitor CI and review feedback.
 Failure signature: none
 
 ## Active Failure Context
@@ -32,15 +30,15 @@ Failure signature: none
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: Trust/config-style warnings were being formatted independently in `doctor` and `status`, which risks drift when warning kinds or visibility rules change.
-- What changed: Added `src/warning-formatting.ts`, routed `renderDoctorReport()` and `renderSupervisorStatusDto()` through it, and added focused no-warning regressions in `src/doctor.test.ts` and `src/supervisor/supervisor-diagnostics-status-selection.test.ts`.
-- Current blocker: None on the code path. The only remaining verification caveat is the previously observed ad hoc `npx -p typescript tsc` environment failure (`@types/node` missing locally and TS5107 against `moduleResolution=node10` under the fetched TS version), which was not retried because it is unrelated to this focused change.
-- Next exact step: Monitor PR #1130 and respond to CI or review feedback if anything regresses.
-- Verification gap: No focused runtime gap. The warning/config/status tests passed again; full ad hoc typecheck remains environment-limited if needed later.
-- Files touched: src/warning-formatting.ts; src/doctor.ts; src/doctor.test.ts; src/supervisor/supervisor-status-report.ts; src/supervisor/supervisor-diagnostics-status-selection.test.ts
-- Rollback concern: Low; the change is isolated to warning-line construction and preserves existing operator-facing strings.
+- Hypothesis: `main` added config-warning defaults and GitHub rate-limit status lines that overlapped with issue #1124's extracted warning helper; the merge should preserve both instead of falling back to duplicated manual warning wiring.
+- What changed: Merged `github/main` at `d4986e5`, expanded `src/warning-formatting.ts` to build both execution-safety and config warnings, routed `renderDoctorReport()` and `renderSupervisorStatusDto()` through the shared helper again, and updated focused expectations in `src/config.test.ts`, `src/doctor.test.ts`, and `src/supervisor/supervisor-diagnostics-status-selection.test.ts` to match `main`'s safer default journal path while retaining legacy-path warning coverage.
+- Current blocker: None. Merge conflicts in `src/doctor.ts` and `src/supervisor/supervisor-status-report.ts` are resolved and the focused suite passes.
+- Next exact step: Push `codex/issue-1124` to refresh draft PR #1130, then watch CI.
+- Verification gap: No focused runtime gap. I did not retry the earlier ad hoc `npx --yes -p typescript tsc -p tsconfig.json` check because the prior failure was environmental (`@types/node` missing locally and TS5107 against `moduleResolution=node10` under the fetched TypeScript version).
+- Files touched: src/warning-formatting.ts; src/doctor.ts; src/supervisor/supervisor-status-report.ts; src/config.test.ts; src/doctor.test.ts; src/supervisor/supervisor-diagnostics-status-selection.test.ts
+- Rollback concern: Low; the merge resolution is localized to warning-line rendering and test expectation alignment with `main`.
 - Last focused command: npx --yes tsx --test src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
-- 2026-03-27T15:30:49Z: Re-ran focused warning/config/status verification after handoff review; tests passed and no code changes were needed beyond this journal update.
-- 2026-03-27T15:33:02Z: Pushed `codex/issue-1124` to both local mirror and GitHub remotes, then opened draft PR #1130.
+- 2026-03-27T15:44:01Z: Re-ran `npx --yes tsx --test src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts` after resolving the merge conflicts; the focused suite passed.
+- 2026-03-27T15:46:15Z: Recorded the `github/main` merge resolution and pending push after integrating `d4986e5` into `codex/issue-1124`.
