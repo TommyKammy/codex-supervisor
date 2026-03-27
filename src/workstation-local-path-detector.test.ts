@@ -93,6 +93,28 @@ test("workstation-local path detector flags tracked durable artifacts and allows
   );
 });
 
+test("workstation-local path detector honors repo-owned default exclusions for committed fixtures", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.join(repoPath, "src", "backend"), { recursive: true });
+  await fs.writeFile(
+    path.join(repoPath, "src", "backend", "webui-dashboard.test.ts"),
+    `Fixture note: ${SAMPLE_FORBIDDEN_PATH}\n`,
+    "utf8",
+  );
+  git(repoPath, "add", "src/backend/webui-dashboard.test.ts");
+
+  const result = runDetector(repoPath, "--workspace", repoPath);
+  assert.equal(
+    result.status,
+    0,
+    `expected repo-owned default exclusion to pass\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+  );
+});
+
 test("npm run verify:paths exposes the focused workstation-local path detector", async (t) => {
   const repoPath = await createTrackedRepo();
   t.after(async () => {
