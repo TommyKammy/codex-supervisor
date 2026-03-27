@@ -45,7 +45,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
   "localReviewHighSeverityAction": "blocked",
   "reviewBotLogins": ["copilot-pull-request-reviewer"],
   "humanReviewBlocksMerge": true,
-  "issueJournalRelativePath": ".codex-supervisor/issue-journal.md",
+  "issueJournalRelativePath": ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
   "issueJournalMaxChars": 6000,
   "issueLabel": "codex",
   "skipTitlePrefixes": ["Epic:"],

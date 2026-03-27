@@ -27,6 +27,10 @@ import {
 } from "./core/workspace";
 import { shouldPreserveNoPrFailureTracking } from "./no-pull-request-state";
 import { runLocalCiGate, type LocalCiCommandRunner } from "./local-ci";
+import {
+  runWorkstationLocalPathGate,
+  type WorkstationLocalPathGateResult,
+} from "./workstation-local-path-gate";
 import { writeSupervisorCycleDecisionSnapshot as writeSupervisorCycleDecisionSnapshotImpl } from "./supervisor/supervisor-cycle-snapshot";
 import { writePreMergeAssessmentSnapshot as writePreMergeAssessmentSnapshotImpl } from "./supervisor/pre-merge-assessment-snapshot";
 import {
@@ -125,6 +129,7 @@ interface PrepareIssueExecutionContextArgs {
   }) => Promise<string>;
   now?: () => string;
   runLocalCiCommand?: LocalCiCommandRunner;
+  runWorkstationLocalPathGate?: (args: { workspacePath: string; gateLabel: string }) => Promise<WorkstationLocalPathGateResult>;
 }
 
 export function isRestartRunOnce(
@@ -204,7 +209,7 @@ async function prepareWorkspaceContext(
     args.record.branch,
   );
   const workspacePath = ensuredWorkspace.workspacePath;
-  const journalPath = issueJournalPath(workspacePath, args.config.issueJournalRelativePath);
+  const journalPath = issueJournalPath(workspacePath, args.config.issueJournalRelativePath, args.record.issue_number);
   const syncJournal: IssueJournalSync = async (currentRecord: IssueRunRecord): Promise<void> => {
     await syncIssueJournal({
       issue: args.issue,
@@ -273,10 +278,51 @@ async function hydratePullRequestContext(
     args.writeSupervisorCycleDecisionSnapshot ?? writeSupervisorCycleDecisionSnapshotImpl;
   const writePreMergeAssessmentSnapshot =
     args.writePreMergeAssessmentSnapshot ?? writePreMergeAssessmentSnapshotImpl;
+  const runWorkstationLocalPathGateImpl = args.runWorkstationLocalPathGate ?? runWorkstationLocalPathGate;
   const now = args.now ?? nowIso;
+  let record = args.record;
+
+  const blockPublicationForPathHygieneFailure = async (): Promise<string | null> => {
+    const pathHygieneGate = await runWorkstationLocalPathGateImpl({
+      workspacePath: args.workspacePath,
+      gateLabel: "before publication",
+    });
+    if (pathHygieneGate.ok) {
+      return null;
+    }
+
+    const failureContext = pathHygieneGate.failureContext;
+    const previousRecord = record;
+    const blockedRecord = args.stateStore.touch(record, {
+      state: "blocked",
+      last_error:
+        failureContext?.summary ??
+        "Tracked durable artifacts failed workstation-local path hygiene before publication.",
+      last_failure_kind: null,
+      last_failure_context: failureContext,
+      ...applyFailureSignature(record, failureContext),
+      blocked_reason: "verification",
+    });
+    record = blockedRecord;
+    args.state.issues[String(blockedRecord.issue_number)] = blockedRecord;
+    await args.stateStore.save(args.state);
+    await syncExecutionMetricsRunSummarySafely({
+      previousRecord,
+      nextRecord: blockedRecord,
+      issue: args.issue,
+      retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
+      warningContext: "persisting",
+    });
+    await args.syncJournal(blockedRecord);
+    return `Issue #${blockedRecord.issue_number} blocked: tracked durable artifacts failed workstation-local path hygiene before publication.`;
+  };
 
   let nextWorkspaceStatus = args.workspaceStatus;
   if (nextWorkspaceStatus.remoteBranchExists && nextWorkspaceStatus.remoteAhead > 0) {
+    const pathHygieneBlocked = await blockPublicationForPathHygieneFailure();
+    if (pathHygieneBlocked) {
+      return pathHygieneBlocked;
+    }
     await pushBranch(args.workspacePath, args.record.branch, true);
     nextWorkspaceStatus = withWorkspaceRestoreMetadata(
       await getWorkspaceStatus(args.workspacePath, args.record.branch, args.config.defaultBranch),
@@ -292,7 +338,6 @@ async function hydratePullRequestContext(
   let pr = isOpenPullRequest(resolvedPr) ? resolvedPr : null;
   let checks = pr ? await args.github.getChecks(pr.number) : [];
   let reviewThreads = pr ? await args.github.getUnresolvedReviewThreads(pr.number) : [];
-  let record = args.record;
 
   if (!resolvedPr && record.pr_number !== null) {
     record = args.stateStore.touch(record, {
@@ -421,6 +466,11 @@ async function hydratePullRequestContext(
     !nextWorkspaceStatus.hasUncommittedChanges &&
     args.record.implementation_attempt_count >= args.config.draftPrAfterAttempt
   ) {
+    const pathHygieneBlocked = await blockPublicationForPathHygieneFailure();
+    if (pathHygieneBlocked) {
+      return pathHygieneBlocked;
+    }
+
     const localCiGate = await runLocalCiGate({
       config: args.config,
       workspacePath: args.workspacePath,

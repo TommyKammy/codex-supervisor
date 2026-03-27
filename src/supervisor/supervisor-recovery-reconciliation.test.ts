@@ -14,9 +14,15 @@ import {
   reconcileStaleActiveIssueReservation,
   reconcileTrackedMergedButOpenIssues,
 } from "../recovery-reconciliation";
-import { createPullRequest } from "../pull-request-state-test-helpers";
 import { shouldAutoRetryHandoffMissing } from "./supervisor-execution-policy";
-import { createConfig, createRecord, executionReadyBody } from "./supervisor-test-helpers";
+import {
+  createConfig,
+  createIssue,
+  createPullRequest,
+  createRecord,
+  createSupervisorState,
+  executionReadyBody,
+} from "./supervisor-test-helpers";
 
 test("requeueIssueForOperator requeues a blocked issue with no tracked PR", async () => {
   const original = createRecord({
@@ -50,12 +56,9 @@ test("requeueIssueForOperator requeues a blocked issue with no tracked PR", asyn
     copilot_review_timeout_reason: "stale request",
     local_review_blocker_summary: "Need operator retry",
   });
-  const state: SupervisorStateFile = {
-    activeIssueNumber: null,
-    issues: {
-      "366": original,
-    },
-  };
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
 
   let saveCalls = 0;
   const stateStore = {
@@ -140,17 +143,17 @@ test("requeueIssueForOperator requeues a blocked issue with no tracked PR", asyn
 });
 
 test("requeueIssueForOperator rejects active tracked-PR work", async () => {
-  const state: SupervisorStateFile = {
+  const state: SupervisorStateFile = createSupervisorState({
     activeIssueNumber: 366,
-    issues: {
-      "366": createRecord({
+    issues: [
+      createRecord({
         issue_number: 366,
         state: "stabilizing",
         pr_number: 191,
         codex_session_id: "session-366",
       }),
-    },
-  };
+    ],
+  });
 
   let saveCalls = 0;
   const stateStore = {
@@ -211,12 +214,9 @@ test("requeueIssueForOperator rejects active tracked-PR work", async () => {
 test("reconcileRecoverableBlockedIssueStates requeues open no-PR handoff-missing issues without dropping repeat tracking", async () => {
   const config = createConfig();
   const original = createRecord();
-  const state: SupervisorStateFile = {
-    activeIssueNumber: null,
-    issues: {
-      "366": original,
-    },
-  };
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
   const issues: GitHubIssue[] = [
     {
       number: 366,
@@ -387,10 +387,9 @@ test("reconcileRecoverableBlockedIssueStates requeues requirements-blocked issue
 
 test("reconcileRecoverableBlockedIssueStates resumes conflicted tracked PR handoff-missing issues into conflict repair", async () => {
   const config = createConfig();
-  const state: SupervisorStateFile = {
-    activeIssueNumber: null,
-    issues: {
-      "366": createRecord({
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
         state: "blocked",
         blocked_reason: "handoff_missing",
         pr_number: 191,
@@ -410,17 +409,12 @@ test("reconcileRecoverableBlockedIssueStates resumes conflicted tracked PR hando
         repeated_failure_signature_count: 2,
         codex_session_id: "session-366",
       }),
-    },
-  };
-  const issue: GitHubIssue = {
-    number: 366,
+    ],
+  });
+  const issue = createIssue({
     title: "Recovery issue",
-    body: "",
-    createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:21:00Z",
-    url: "https://example.test/issues/366",
-    state: "OPEN",
-  };
+  });
   const pr = createPullRequest({
     number: 191,
     title: "Recovery implementation",
@@ -1907,10 +1901,9 @@ test("reconcileTrackedMergedButOpenIssues does not rewrite recovery metadata whe
 
 test("reconcileStaleFailedIssueStates records a recovery reason when a tracked PR advances to a new head", async () => {
   const config = createConfig();
-  const state: SupervisorStateFile = {
-    activeIssueNumber: null,
-    issues: {
-      "366": createRecord({
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
         state: "failed",
         pr_number: 191,
         last_head_sha: "head-old-191",
@@ -1920,34 +1913,24 @@ test("reconcileStaleFailedIssueStates records a recovery reason when a tracked P
         last_error: "Stopped after repeated test failures.",
         last_failure_kind: "codex_failed",
       }),
-    },
-  };
-  const issue: GitHubIssue = {
-    number: 366,
+    ],
+  });
+  const issue = createIssue({
     title: "Recovery issue",
-    body: "",
-    createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:21:00Z",
-    url: "https://example.test/issues/366",
-    state: "OPEN",
-  };
-  const pr: GitHubPullRequest = {
+  });
+  const pr = createPullRequest({
     number: 191,
     title: "Recovery implementation",
-    url: "https://example.test/pr/191",
-    state: "OPEN",
     createdAt: "2026-03-13T00:10:00Z",
     updatedAt: "2026-03-13T00:22:00Z",
-    isDraft: false,
     headRefName: "codex/reopen-issue-366",
     headRefOid: "head-new-191",
-    mergeStateStatus: "CLEAN",
     reviewDecision: "CHANGES_REQUESTED",
-    mergedAt: null,
     copilotReviewState: null,
     copilotReviewRequestedAt: null,
     copilotReviewArrivedAt: null,
-  };
+  });
 
   let saveCalls = 0;
   const stateStore = {
@@ -2008,6 +1991,113 @@ test("reconcileStaleFailedIssueStates records a recovery reason when a tracked P
   assert.equal(saveCalls, 1);
 });
 
+test("reconcileStaleFailedIssueStates rehydrates stale failed tracked PRs from direct issue facts when inventory refresh is degraded", async () => {
+  const config = createConfig();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "366": createRecord({
+        state: "failed",
+        pr_number: 191,
+        last_head_sha: "head-old-191",
+        last_failure_signature: "dirty:head-old-191",
+        repeated_failure_signature_count: 3,
+        blocked_reason: null,
+        last_error: "Stopped after repeated merge conflicts.",
+        last_failure_kind: "codex_failed",
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: 366,
+    title: "Recovery issue",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:21:00Z",
+    url: "https://example.test/issues/366",
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: 191,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/191",
+    state: "OPEN",
+    createdAt: "2026-03-13T00:10:00Z",
+    updatedAt: "2026-03-13T00:22:00Z",
+    isDraft: false,
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-new-191",
+    mergeStateStatus: "CLEAN",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergedAt: null,
+    copilotReviewState: null,
+    copilotReviewRequestedAt: null,
+    copilotReviewArrivedAt: null,
+  };
+
+  let saveCalls = 0;
+  let getIssueCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  await reconcileStaleFailedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getIssue: async (issueNumber) => {
+        getIssueCalls += 1;
+        assert.equal(issueNumber, 366);
+        return issue;
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [],
+    {
+      inferStateFromPullRequest: () => "addressing_review",
+      inferFailureContext: () => null,
+      blockedReasonForLifecycleState: () => null,
+      isOpenPullRequest: () => true,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: () => ({}),
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(getIssueCalls, 1);
+  assert.equal(updated.state, "addressing_review");
+  assert.equal(updated.pr_number, 191);
+  assert.equal(updated.last_head_sha, "head-new-191");
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(
+    updated.last_recovery_reason,
+    "tracked_pr_head_advanced: resumed issue #366 from failed to addressing_review after tracked PR #191 advanced from head-old-191 to head-new-191",
+  );
+  assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+});
+
 test("reconcileStaleFailedIssueStates reclassifies stale failed tracked PRs to blocked manual_review state", async () => {
   const config = createConfig();
   const failureContext = {
@@ -2019,10 +2109,9 @@ test("reconcileStaleFailedIssueStates reclassifies stale failed tracked PRs to b
     url: "https://example.test/pr/191#discussion_r1",
     updated_at: "2026-03-13T00:25:00Z",
   };
-  const state: SupervisorStateFile = {
-    activeIssueNumber: null,
-    issues: {
-      "366": createRecord({
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
         state: "failed",
         pr_number: 191,
         last_head_sha: "head-191",
@@ -2040,17 +2129,12 @@ test("reconcileStaleFailedIssueStates reclassifies stale failed tracked PRs to b
         last_failure_signature: "tests:red",
         repeated_failure_signature_count: 3,
       }),
-    },
-  };
-  const issue: GitHubIssue = {
-    number: 366,
+    ],
+  });
+  const issue = createIssue({
     title: "Recovery issue",
-    body: "",
-    createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:21:00Z",
-    url: "https://example.test/issues/366",
-    state: "OPEN",
-  };
+  });
   const pr = createPullRequest({
     number: 191,
     title: "Recovery implementation",
@@ -2131,10 +2215,9 @@ test("reconcileStaleFailedIssueStates reclassifies stale failed tracked PRs to b
     url: null,
     updated_at: "2026-03-13T00:25:00Z",
   };
-  const state: SupervisorStateFile = {
-    activeIssueNumber: null,
-    issues: {
-      "366": createRecord({
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
         state: "failed",
         pr_number: 191,
         last_head_sha: "head-191",
@@ -2145,17 +2228,12 @@ test("reconcileStaleFailedIssueStates reclassifies stale failed tracked PRs to b
         last_failure_signature: "tests:red",
         repeated_failure_signature_count: 3,
       }),
-    },
-  };
-  const issue: GitHubIssue = {
-    number: 366,
+    ],
+  });
+  const issue = createIssue({
     title: "Recovery issue",
-    body: "",
-    createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:21:00Z",
-    url: "https://example.test/issues/366",
-    state: "OPEN",
-  };
+  });
   const pr = createPullRequest({
     number: 191,
     title: "Recovery implementation",

@@ -2,6 +2,7 @@ import { loadRelevantExternalReviewMissPatterns } from "./external-review/extern
 import { GitHubClient } from "./github";
 import {
   hasMeaningfulJournalHandoff,
+  normalizeCommittedIssueJournal,
   readIssueJournal,
 } from "./core/journal";
 import { LockHandle } from "./core/lock";
@@ -17,7 +18,11 @@ import {
   PullRequestLifecycleSnapshot,
 } from "./post-turn-pull-request";
 import { IssueJournalSync, MemoryArtifacts } from "./run-once-issue-preparation";
-import { runLocalCiGate, type LocalCiCommandRunner } from "./local-ci";
+import { type LocalCiCommandRunner } from "./local-ci";
+import {
+  runWorkstationLocalPathGate,
+  type WorkstationLocalPathGateResult,
+} from "./workstation-local-path-gate";
 import { StateStore } from "./core/state-store";
 import {
   getStaleStabilizingNoPrRecoveryCount,
@@ -53,16 +58,13 @@ import {
   clearInterruptedTurnMarker,
   writeInterruptedTurnMarker,
 } from "./interrupted-turn-marker";
+import { applyCodexTurnPublicationGate } from "./turn-execution-publication-gate";
 
 export {
   handlePostTurnPullRequestTransitionsPhase,
   PostTurnPullRequestContext,
   PostTurnPullRequestResult,
 } from "./post-turn-pull-request";
-
-function isOpenPullRequest(pr: GitHubPullRequest | null): pr is GitHubPullRequest {
-  return pr !== null && pr.state === "OPEN" && !pr.mergedAt;
-}
 
 export { loadLocalReviewRepairContext } from "./local-review/repair-context";
 
@@ -234,6 +236,7 @@ interface ExecuteCodexTurnPhaseArgs {
   readIssueJournal?: typeof readIssueJournal;
   agentRunner?: AgentRunner;
   runLocalCiCommand?: LocalCiCommandRunner;
+  runWorkstationLocalPathGate?: (args: { workspacePath: string; gateLabel: string }) => Promise<WorkstationLocalPathGateResult>;
 }
 
 export async function executeCodexTurnPhase(
@@ -249,6 +252,7 @@ export async function executeCodexTurnPhase(
     args.persistMissingCodexJournalHandoff ?? persistMissingCodexJournalHandoff;
   const persistHintedCodexTurnStateImpl =
     args.persistHintedCodexTurnState ?? persistHintedCodexTurnState;
+  const runWorkstationLocalPathGateImpl = args.runWorkstationLocalPathGate ?? runWorkstationLocalPathGate;
   const agentRunner =
     args.agentRunner ??
     createCodexAgentRunner({
@@ -327,6 +331,14 @@ export async function executeCodexTurnPhase(
       const preTurnStaleNoPrRecoveryCount = getStaleStabilizingNoPrRecoveryCount(record);
       const preTurnLastError = record.last_error;
       const journalAfterRun = await readIssueJournalImpl(journalPath);
+      const normalizedJournalAfterRun =
+        journalAfterRun === null
+          ? null
+          : await normalizeCommittedIssueJournal({
+              journalPath,
+              workspacePath,
+            });
+      const effectiveJournalAfterRun = normalizedJournalAfterRun ?? journalAfterRun;
       record = stateStore.touch(record, {
         codex_session_id: turnResult.sessionId,
         last_codex_summary: truncate(turnResult.supervisorMessage),
@@ -339,9 +351,9 @@ export async function executeCodexTurnPhase(
 
       if (
         turnResult.exitCode === 0 &&
-        (!journalAfterRun ||
-          journalAfterRun === journalContent ||
-          !hasMeaningfulJournalHandoff(journalAfterRun))
+        (!effectiveJournalAfterRun ||
+          effectiveJournalAfterRun === journalContent ||
+          !hasMeaningfulJournalHandoff(effectiveJournalAfterRun))
       ) {
         record = await persistMissingCodexJournalHandoffImpl({
           stateStore,
@@ -438,39 +450,18 @@ export async function executeCodexTurnPhase(
       const evaluatedReviewHeadSha = workspaceStatus.headSha;
 
       if ((workspaceStatus.remoteAhead > 0 || !workspaceStatus.remoteBranchExists) && !workspaceStatus.hasUncommittedChanges) {
-        await pushBranchImpl(workspacePath, record.branch, workspaceStatus.remoteBranchExists);
-        workspaceStatus = await getWorkspaceStatusImpl(workspacePath, record.branch, config.defaultBranch);
-      }
-
-      const refreshedResolvedPr = await github.resolvePullRequestForBranch(
-        record.branch,
-        record.pr_number,
-        { purpose: "action" },
-      );
-      pr = isOpenPullRequest(refreshedResolvedPr) ? refreshedResolvedPr : null;
-      if (
-        !pr &&
-        workspaceStatus.baseAhead > 0 &&
-        !workspaceStatus.hasUncommittedChanges &&
-        record.implementation_attempt_count >= config.draftPrAfterAttempt
-      ) {
-        const localCiGate = await runLocalCiGate({
-          config,
+        const pathHygieneGate = await runWorkstationLocalPathGateImpl({
           workspacePath,
-          gateLabel: "before opening a pull request",
-          runLocalCiCommand: args.runLocalCiCommand,
+          gateLabel: "before publication",
         });
-        if (!localCiGate.ok) {
-          const failureContext = localCiGate.failureContext;
+        if (!pathHygieneGate.ok) {
+          const failureContext = pathHygieneGate.failureContext;
           record = stateStore.touch(record, {
             state: "blocked",
-            latest_local_ci_result: localCiGate.latestResult
-              ? {
-                  ...localCiGate.latestResult,
-                  head_sha: workspaceStatus.headSha,
-                }
-              : null,
-            last_error: truncate(failureContext?.summary, 1000),
+            last_error: truncate(
+              failureContext?.summary ?? "Tracked durable artifacts failed workstation-local path hygiene before publication.",
+              1000,
+            ),
             last_failure_kind: null,
             last_failure_context: failureContext,
             ...args.applyFailureSignature(record, failureContext),
@@ -482,31 +473,54 @@ export async function executeCodexTurnPhase(
             previousRecord: args.context.record,
             nextRecord: record,
             issue,
+            pullRequest: pr,
             retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
             warningContext: "persisting",
           });
           await syncJournal(record);
           return {
             kind: "returned",
-            message: `Local CI gate blocked pull request creation for issue #${record.issue_number}.`,
+            message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
           };
         }
-        record = stateStore.touch(record, {
-          latest_local_ci_result: localCiGate.latestResult
-            ? {
-                ...localCiGate.latestResult,
-                head_sha: workspaceStatus.headSha,
-              }
-            : null,
-        });
-        state.issues[String(record.issue_number)] = record;
-        await stateStore.save(state);
-        await syncJournal(record);
-        pr = await github.createPullRequest(issue, record, { draft: true });
+        await pushBranchImpl(workspacePath, record.branch, workspaceStatus.remoteBranchExists);
+        workspaceStatus = await getWorkspaceStatusImpl(workspacePath, record.branch, config.defaultBranch);
       }
 
-      checks = pr ? await github.getChecks(pr.number) : [];
-      reviewThreads = pr ? await github.getUnresolvedReviewThreads(pr.number) : [];
+      const publicationGate = await applyCodexTurnPublicationGate({
+        config,
+        stateStore,
+        state,
+        record,
+        issue,
+        workspacePath,
+        workspaceStatus,
+        github,
+        syncJournal,
+        applyFailureSignature: args.applyFailureSignature,
+        runLocalCiCommand: args.runLocalCiCommand,
+        runWorkstationLocalPathGate: args.runWorkstationLocalPathGate,
+        syncExecutionMetricsRunSummary: async (blockedRecord) => {
+          await syncExecutionMetricsRunSummarySafely({
+            previousRecord: args.context.record,
+            nextRecord: blockedRecord,
+            issue,
+            retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
+            warningContext: "persisting",
+          });
+        },
+      });
+      record = publicationGate.record;
+      pr = publicationGate.pr;
+      checks = publicationGate.checks;
+      reviewThreads = publicationGate.reviewThreads;
+      if (publicationGate.kind === "blocked") {
+        return {
+          kind: "returned",
+          message: publicationGate.message,
+        };
+      }
+
       const processedReviewThreadPatch = nextProcessedReviewThreadPatch({
         preRunState,
         record,

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH } from "../core/journal";
 import { mapConfiguredReviewProviders } from "../core/review-providers";
 import type { SupervisorConfig } from "../core/types";
 
@@ -36,7 +37,7 @@ export function createCheckedInReplayCorpusConfig(repoRoot: string): SupervisorC
     reviewBotLogins,
     configuredReviewProviders: mapConfiguredReviewProviders(reviewBotLogins),
     humanReviewBlocksMerge: true,
-    issueJournalRelativePath: ".codex-supervisor/issue-journal.md",
+    issueJournalRelativePath: DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
     issueJournalMaxChars: 6000,
     candidateDiscoveryFetchWindow: 100,
     skipTitlePrefixes: [],

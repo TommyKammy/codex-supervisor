@@ -4,6 +4,7 @@ import {
   buildInventoryRefreshFailure,
   inventoryRefreshFailureEquals,
 } from "./inventory-refresh-state";
+import { parseIssueMetadata } from "./issue-metadata/issue-metadata";
 import {
   buildRecoverySupervisorEvent,
   emitSupervisorEvent,
@@ -81,7 +82,22 @@ async function loadTrackedIssuesForParentEpicClosureFallback(
   }
 
   try {
-    return await Promise.all(trackedIssueNumbers.map((issueNumber) => getIssue(issueNumber)));
+    const trackedIssues = await Promise.all(trackedIssueNumbers.map((issueNumber) => getIssue(issueNumber)));
+    const loadedIssueNumbers = new Set(trackedIssueNumbers);
+    const parentIssueNumbers = Array.from(
+      new Set(
+        trackedIssues
+          .map((issue) => parseIssueMetadata(issue).parentIssueNumber)
+          .filter((value): value is number => value !== null && !loadedIssueNumbers.has(value)),
+      ),
+    ).sort((left, right) => left - right);
+
+    if (parentIssueNumbers.length === 0) {
+      return trackedIssues;
+    }
+
+    const parentIssues = await Promise.all(parentIssueNumbers.map((issueNumber) => getIssue(issueNumber)));
+    return [...trackedIssues, ...parentIssues];
   } catch {
     return null;
   }
@@ -188,6 +204,16 @@ export async function runOnceCyclePrelude(
         );
         recoveryEvents.push(...activeMergedEvents);
         emitRecoveryEvents(activeMergedEvents);
+      }
+
+      const hasNonActiveFailedTrackedPrRecords = Object.values(state.issues).some((record) =>
+        record.state === "failed"
+          && record.pr_number !== null
+          && record.issue_number !== state.activeIssueNumber,
+      );
+      if (hasNonActiveFailedTrackedPrRecords) {
+        await setReconciliationPhase("stale_failed_issue_states");
+        await args.reconcileStaleFailedIssueStates(state, [], updateReconciliationProgress);
       }
 
       if (args.getIssueForParentEpicClosureFallback) {

@@ -6,12 +6,118 @@ import path from "node:path";
 import test from "node:test";
 import { loadConfig } from "./core/config";
 import {
+  buildTrackedPrStaleFailureRecovery,
   cleanupExpiredDoneWorkspaces,
   inspectOrphanedWorkspacePruneCandidates,
   pruneOrphanedWorkspacesForOperator,
 } from "./recovery-reconciliation";
 import { type SupervisorStateFile } from "./core/types";
-import { createConfig, createRecord } from "./turn-execution-test-helpers";
+import { createConfig, createPullRequest, createRecord } from "./turn-execution-test-helpers";
+
+test("buildTrackedPrStaleFailureRecovery marks tracked head advances distinctly from stale lifecycle refreshes", () => {
+  const record = createRecord({
+    issue_number: 366,
+    state: "failed",
+    pr_number: 191,
+    last_head_sha: "head-old-191",
+    last_failure_signature: "tests:red",
+    repeated_failure_signature_count: 3,
+  });
+  const pr = createPullRequest({
+    number: 191,
+    headRefName: "codex/issue-366",
+    headRefOid: "head-new-191",
+  });
+
+  const { recoveryEvent, patch } = buildTrackedPrStaleFailureRecovery({
+    record,
+    pr,
+    nextState: "addressing_review",
+    failureContext: null,
+    blockedReason: null,
+  });
+
+  assert.equal(
+    recoveryEvent.reason,
+    "tracked_pr_head_advanced: resumed issue #366 from failed to addressing_review after tracked PR #191 advanced from head-old-191 to head-new-191",
+  );
+  assert.deepEqual(patch, {
+    state: "addressing_review",
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_blocker_signature: null,
+    last_failure_signature: null,
+    repeated_failure_signature_count: 0,
+    blocked_reason: null,
+    repeated_blocker_count: 0,
+    timeout_retry_count: 0,
+    blocked_verification_retry_count: 0,
+    pr_number: 191,
+    last_head_sha: "head-new-191",
+  });
+});
+
+test("buildTrackedPrStaleFailureRecovery preserves blocked tracked-PR recovery policy at the same head", () => {
+  const failureContext = {
+    category: "review" as const,
+    summary: "Manual review is required before the PR can proceed.",
+    signature: "manual-review:thread-1",
+    command: null,
+    details: ["thread=thread-1"],
+    url: "https://example.test/pr/191#discussion_r1",
+    updated_at: "2026-03-13T00:25:00Z",
+  };
+  const record = createRecord({
+    issue_number: 366,
+    state: "failed",
+    pr_number: 191,
+    last_head_sha: "head-191",
+    last_failure_signature: failureContext.signature,
+    repeated_failure_signature_count: 3,
+    timeout_retry_count: 2,
+    blocked_verification_retry_count: 2,
+  });
+  const pr = createPullRequest({
+    number: 191,
+    headRefName: "codex/issue-366",
+    headRefOid: "head-191",
+  });
+
+  const { recoveryEvent, patch } = buildTrackedPrStaleFailureRecovery({
+    record,
+    pr,
+    nextState: "blocked",
+    failureContext,
+    blockedReason: "manual_review",
+    reviewWaitPatch: {
+      review_wait_started_at: "2026-03-13T00:24:00Z",
+      review_wait_head_sha: "head-191",
+    },
+  });
+
+  assert.equal(
+    recoveryEvent.reason,
+    "tracked_pr_lifecycle_recovered: resumed issue #366 from failed to blocked using fresh tracked PR #191 facts at head head-191",
+  );
+  assert.deepEqual(patch, {
+    state: "blocked",
+    last_error: failureContext.summary,
+    last_failure_kind: null,
+    last_failure_context: failureContext,
+    last_blocker_signature: null,
+    last_failure_signature: failureContext.signature,
+    repeated_failure_signature_count: 4,
+    blocked_reason: "manual_review",
+    repeated_blocker_count: 0,
+    timeout_retry_count: 0,
+    blocked_verification_retry_count: 0,
+    pr_number: 191,
+    last_head_sha: "head-191",
+    review_wait_started_at: "2026-03-13T00:24:00Z",
+    review_wait_head_sha: "head-191",
+  });
+});
 
 function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, {

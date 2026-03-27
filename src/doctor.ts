@@ -20,6 +20,7 @@ import {
   formatCandidateDiscoveryBehaviorLine,
   formatCandidateDiscoveryWarningDetail,
 } from "./supervisor/supervisor-selection-readiness-summary";
+import { buildTrustAndConfigWarnings, buildWarning, renderDoctorWarningLine } from "./warning-formatting";
 
 export type DoctorCheckStatus = "pass" | "warn" | "fail";
 
@@ -586,6 +587,8 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     diagnostics.cadenceDiagnostics.mergeCriticalRecheckSeconds === null
       ? "disabled"
       : String(diagnostics.cadenceDiagnostics.mergeCriticalRecheckSeconds);
+  const trustWarnings = buildTrustAndConfigWarnings(diagnostics.trustDiagnostics);
+  const candidateDiscoveryWarning = buildWarning("candidate_discovery", diagnostics.candidateDiscoveryWarning);
 
   return [
     `doctor overall=${diagnostics.overallStatus} checks=${diagnostics.checks.length}`,
@@ -594,12 +597,8 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     diagnostics.candidateDiscoverySummary,
     ...(diagnostics.orphanPolicySummary ? [diagnostics.orphanPolicySummary] : []),
     `doctor_local_ci configured=${localCiContract.configured} source=${localCiContract.source} command=${sanitizeDoctorValue(localCiContract.command ?? "none")} summary=${sanitizeDoctorValue(localCiContract.summary)}`,
-    ...(diagnostics.trustDiagnostics.warning === null
-      ? []
-      : [`doctor_warning kind=execution_safety detail=${sanitizeDoctorValue(diagnostics.trustDiagnostics.warning)}`]),
-    ...(diagnostics.candidateDiscoveryWarning === null
-      ? []
-      : [`doctor_warning kind=candidate_discovery detail=${sanitizeDoctorValue(diagnostics.candidateDiscoveryWarning)}`]),
+    ...trustWarnings.map((warning) => renderDoctorWarningLine(warning, sanitizeDoctorValue)),
+    ...(candidateDiscoveryWarning === null ? [] : [renderDoctorWarningLine(candidateDiscoveryWarning, sanitizeDoctorValue)]),
     ...diagnostics.checks.map(
       (check) =>
         `doctor_check name=${check.name} status=${check.status} summary=${sanitizeDoctorValue(check.summary)}`,

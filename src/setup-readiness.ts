@@ -253,6 +253,7 @@ function buildTrustPosture(config: ReturnType<typeof loadConfigSummary>["config"
     config ?? {
       trustMode: "trusted_repo_and_authors",
       executionSafetyMode: "unsandboxed_autonomous",
+      issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
     },
   );
 

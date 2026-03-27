@@ -7,6 +7,7 @@ import test from "node:test";
 import { promisify } from "node:util";
 import { SupervisorConfig } from "./types";
 import { ensureWorkspace } from "./workspace";
+import { DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH, issueJournalPath, syncIssueJournal } from "./journal";
 
 const execFileAsync = promisify(execFile);
 
@@ -40,7 +41,7 @@ function createConfig(root: string): SupervisorConfig {
     localReviewHighSeverityAction: "retry",
     reviewBotLogins: [],
     humanReviewBlocksMerge: true,
-    issueJournalRelativePath: ".codex-supervisor/issue-journal.md",
+    issueJournalRelativePath: DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
     issueJournalMaxChars: 6000,
     skipTitlePrefixes: [],
     branchPrefix: "codex/issue-",
@@ -66,7 +67,7 @@ async function git(cwd: string, ...args: string[]): Promise<void> {
   await execFileAsync("git", ["-C", cwd, ...args]);
 }
 
-async function gitStdout(cwd: string, ...args: string[]): Promise<string> {
+async function gitOutput(cwd: string, ...args: string[]): Promise<string> {
   const result = await execFileAsync("git", ["-C", cwd, ...args]);
   return result.stdout.trim();
 }
@@ -230,19 +231,192 @@ test("ensureWorkspace bootstraps from the fresh default-branch ref instead of st
   const issueNumber = 725;
   const branch = `${config.branchPrefix}${issueNumber}`;
 
-  const originDefaultSha = await gitStdout(config.repoPath, "rev-parse", `origin/${config.defaultBranch}`);
-  const githubDefaultSha = await gitStdout(config.repoPath, "rev-parse", `github/${config.defaultBranch}`);
-  const localDefaultSha = await gitStdout(config.repoPath, "rev-parse", config.defaultBranch);
+  const originDefaultSha = await gitOutput(config.repoPath, "rev-parse", `origin/${config.defaultBranch}`);
+  const githubDefaultSha = await gitOutput(config.repoPath, "rev-parse", `github/${config.defaultBranch}`);
+  const localDefaultSha = await gitOutput(config.repoPath, "rev-parse", config.defaultBranch);
 
   assert.notEqual(originDefaultSha, githubDefaultSha);
   assert.equal(localDefaultSha, githubDefaultSha);
 
   const ensured = await ensureWorkspace(config, issueNumber, branch);
-  const branchHeadSha = await gitStdout(ensured.workspacePath, "rev-parse", "HEAD");
+  const branchHeadSha = await gitOutput(ensured.workspacePath, "rev-parse", "HEAD");
 
   assert.equal(ensured.workspacePath, path.join(config.workspaceRoot, `issue-${issueNumber}`));
   assert.equal(ensured.restore.source, "bootstrap_default_branch");
   assert.equal(ensured.restore.ref, config.defaultBranch);
   assert.equal(branchHeadSha, githubDefaultSha);
   assert.notEqual(branchHeadSha, originDefaultSha);
+});
+
+test("issue-scoped journals do not manufacture merge conflicts between unrelated issue branches", async () => {
+  const config = await createRepositoryFixture();
+  const issueA = 801;
+  const issueB = 802;
+  const branchA = `${config.branchPrefix}${issueA}`;
+  const branchB = `${config.branchPrefix}${issueB}`;
+  const workspaceA = await ensureWorkspace(config, issueA, branchA);
+  const workspaceB = await ensureWorkspace(config, issueB, branchB);
+  const journalPathA = issueJournalPath(workspaceA.workspacePath, config.issueJournalRelativePath, issueA);
+  const journalPathB = issueJournalPath(workspaceB.workspacePath, config.issueJournalRelativePath, issueB);
+
+  await syncIssueJournal({
+    issue: {
+      number: issueA,
+      title: "Issue-scoped journal branch A",
+      body: "",
+      createdAt: "2026-03-27T00:00:00Z",
+      updatedAt: "2026-03-27T00:00:00Z",
+      url: "https://example.test/issues/801",
+      state: "OPEN",
+    },
+    record: {
+      issue_number: issueA,
+      state: "reproducing",
+      branch: branchA,
+      pr_number: null,
+      workspace: workspaceA.workspacePath,
+      journal_path: journalPathA,
+      review_wait_started_at: null,
+      review_wait_head_sha: null,
+      copilot_review_requested_observed_at: null,
+      copilot_review_requested_head_sha: null,
+      copilot_review_timed_out_at: null,
+      copilot_review_timeout_action: null,
+      copilot_review_timeout_reason: null,
+      codex_session_id: null,
+      local_review_head_sha: null,
+      local_review_blocker_summary: null,
+      local_review_summary_path: null,
+      local_review_run_at: null,
+      local_review_max_severity: null,
+      local_review_findings_count: 0,
+      local_review_root_cause_count: 0,
+      local_review_verified_max_severity: null,
+      local_review_verified_findings_count: 0,
+      local_review_recommendation: null,
+      local_review_degraded: false,
+      last_local_review_signature: null,
+      repeated_local_review_signature_count: 0,
+      external_review_head_sha: null,
+      external_review_misses_path: null,
+      external_review_matched_findings_count: 0,
+      external_review_near_match_findings_count: 0,
+      external_review_missed_findings_count: 0,
+      attempt_count: 1,
+      implementation_attempt_count: 1,
+      repair_attempt_count: 0,
+      timeout_retry_count: 0,
+      blocked_verification_retry_count: 0,
+      repeated_blocker_count: 0,
+      repeated_failure_signature_count: 0,
+      last_head_sha: null,
+      last_codex_summary: null,
+      last_recovery_reason: null,
+      last_recovery_at: null,
+      last_error: null,
+      last_failure_kind: null,
+      last_failure_context: null,
+      last_blocker_signature: null,
+      last_failure_signature: null,
+      blocked_reason: null,
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: [],
+      updated_at: "2026-03-27T00:00:00Z",
+    },
+    journalPath: journalPathA,
+  });
+  await fs.writeFile(path.join(workspaceA.workspacePath, "issue-801.txt"), "branch A change\n", "utf8");
+  await git(workspaceA.workspacePath, "add", ".");
+  await git(workspaceA.workspacePath, "commit", "-m", "Issue 801 journal and code");
+
+  await syncIssueJournal({
+    issue: {
+      number: issueB,
+      title: "Issue-scoped journal branch B",
+      body: "",
+      createdAt: "2026-03-27T00:00:00Z",
+      updatedAt: "2026-03-27T00:00:00Z",
+      url: "https://example.test/issues/802",
+      state: "OPEN",
+    },
+    record: {
+      issue_number: issueB,
+      state: "reproducing",
+      branch: branchB,
+      pr_number: null,
+      workspace: workspaceB.workspacePath,
+      journal_path: journalPathB,
+      review_wait_started_at: null,
+      review_wait_head_sha: null,
+      copilot_review_requested_observed_at: null,
+      copilot_review_requested_head_sha: null,
+      copilot_review_timed_out_at: null,
+      copilot_review_timeout_action: null,
+      copilot_review_timeout_reason: null,
+      codex_session_id: null,
+      local_review_head_sha: null,
+      local_review_blocker_summary: null,
+      local_review_summary_path: null,
+      local_review_run_at: null,
+      local_review_max_severity: null,
+      local_review_findings_count: 0,
+      local_review_root_cause_count: 0,
+      local_review_verified_max_severity: null,
+      local_review_verified_findings_count: 0,
+      local_review_recommendation: null,
+      local_review_degraded: false,
+      last_local_review_signature: null,
+      repeated_local_review_signature_count: 0,
+      external_review_head_sha: null,
+      external_review_misses_path: null,
+      external_review_matched_findings_count: 0,
+      external_review_near_match_findings_count: 0,
+      external_review_missed_findings_count: 0,
+      attempt_count: 1,
+      implementation_attempt_count: 1,
+      repair_attempt_count: 0,
+      timeout_retry_count: 0,
+      blocked_verification_retry_count: 0,
+      repeated_blocker_count: 0,
+      repeated_failure_signature_count: 0,
+      last_head_sha: null,
+      last_codex_summary: null,
+      last_recovery_reason: null,
+      last_recovery_at: null,
+      last_error: null,
+      last_failure_kind: null,
+      last_failure_context: null,
+      last_blocker_signature: null,
+      last_failure_signature: null,
+      blocked_reason: null,
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: [],
+      updated_at: "2026-03-27T00:00:00Z",
+    },
+    journalPath: journalPathB,
+  });
+  await fs.writeFile(path.join(workspaceB.workspacePath, "issue-802.txt"), "branch B change\n", "utf8");
+  await git(workspaceB.workspacePath, "add", ".");
+  await git(workspaceB.workspacePath, "commit", "-m", "Issue 802 journal and code");
+
+  await git(config.repoPath, "merge", "--no-ff", branchA, "-m", "Merge issue 801");
+  await git(workspaceB.workspacePath, "merge", config.defaultBranch);
+
+  assert.equal(
+    await gitOutput(workspaceB.workspacePath, "diff", "--name-only", "--diff-filter=U"),
+    "",
+  );
+  assert.equal(await gitOutput(workspaceB.workspacePath, "status", "--short"), "");
+  assert.equal(
+    await gitOutput(workspaceB.workspacePath, "ls-files", "--others", "--exclude-standard"),
+    "",
+  );
+  assert.equal(
+    await gitOutput(workspaceB.workspacePath, "ls-files", ".codex-supervisor/issues/801/issue-journal.md"),
+    ".codex-supervisor/issues/801/issue-journal.md",
+  );
+  assert.equal(
+    await gitOutput(workspaceB.workspacePath, "ls-files", ".codex-supervisor/issues/802/issue-journal.md"),
+    ".codex-supervisor/issues/802/issue-journal.md",
+  );
 });
