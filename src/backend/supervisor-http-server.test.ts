@@ -614,7 +614,7 @@ function createStubService(args?: {
         args.postMergeAuditSummaryCalls = (args.postMergeAuditSummaryCalls ?? 0) + 1;
       }
       return {
-        schemaVersion: 3,
+        schemaVersion: 4,
         advisoryOnly: true,
         autoApplyGuardrails: false,
         autoCreateFollowUpIssues: false,
@@ -625,6 +625,7 @@ function createStubService(args?: {
         reviewPatterns: [],
         failurePatterns: [],
         recoveryPatterns: [],
+        followUpCandidates: [],
         promotionCandidates: [],
       };
     },
@@ -758,7 +759,7 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
   assert.equal(postMergeAuditSummaryResponse.statusCode, 200);
   assert.equal(serviceArgs.postMergeAuditSummaryCalls, 1);
   assert.deepEqual(postMergeAuditSummaryResponse.body, {
-    schemaVersion: 3,
+    schemaVersion: 4,
     advisoryOnly: true,
     autoApplyGuardrails: false,
     autoCreateFollowUpIssues: false,
@@ -769,6 +770,7 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
     reviewPatterns: [],
     failurePatterns: [],
     recoveryPatterns: [],
+    followUpCandidates: [],
     promotionCandidates: [],
   });
 
