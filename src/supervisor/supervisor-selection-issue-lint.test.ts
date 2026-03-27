@@ -215,3 +215,57 @@ Parallelizable: Later`,
     ].join("\n"),
   );
 });
+
+test("buildIssueLintDto reports duplicate scheduling metadata as invalid", async () => {
+  const issue = createIssue({
+    number: 606,
+    title: "Reject conflicting scheduling metadata",
+    labels: [{ name: "codex" }],
+    body: `## Summary
+Reject duplicated scheduling declarations instead of accepting the first match.
+
+## Scope
+- keep reviewer-facing diagnostics explicit
+- reject duplicate scheduling metadata
+
+## Acceptance criteria
+- issue lint reports duplicate declarations as invalid metadata
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-issue-lint.test.ts
+
+Depends on: none
+Depends on: #601
+Execution order: 1 of 1
+Execution order: 2 of 2
+Parallelizable: No
+Parallelizable: Yes`,
+  });
+
+  const dto = await buildIssueLintDto(
+    {
+      getIssue: async () => issue,
+    },
+    issue.number,
+  );
+
+  assert.deepEqual(dto, {
+    issueNumber: 606,
+    title: "Reject conflicting scheduling metadata",
+    executionReady: false,
+    missingRequired: ["depends on", "parallelizable", "execution order"],
+    missingRecommended: [],
+    metadataErrors: [
+      "depends on must appear exactly once",
+      "execution order must appear exactly once",
+      "parallelizable must appear exactly once",
+    ],
+    highRiskBlockingAmbiguity: null,
+    repairGuidance: [
+      "Add `Depends on: none` if nothing blocks this issue, or list blocking issues as `Depends on: #123, #456`.",
+      "Add `Parallelizable: No` unless this issue is explicitly safe to run alongside related work.",
+      "Add `Execution order: 1 of 1` if this issue stands alone, or `Execution order: N of M` for a sequenced series.",
+      "Replace invalid scheduling metadata with valid `Part of: #<number>`, `Depends on: none|#<number>`, `Execution order: N of M`, and `Parallelizable: Yes|No` lines.",
+    ],
+  });
+});
