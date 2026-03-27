@@ -45,3 +45,23 @@ Depends on: none`,
 
   assert.equal(parseIssueMetadata(issue).parentIssueNumber, 123);
 });
+
+test("parseIssueMetadata fails closed on duplicate scheduling declarations", () => {
+  const issue = createIssue({
+    body: `Part of: #123
+Depends on: none
+Depends on: #45
+Execution order: 1 of 2
+Execution order: 2 of 2
+Parallel group: parser-refactor`,
+  });
+
+  assert.deepEqual(parseIssueMetadata(issue), {
+    parentIssueNumber: 123,
+    executionOrderIndex: null,
+    executionOrderTotal: null,
+    dependsOn: [],
+    parallelGroup: "parser-refactor",
+    touches: [],
+  });
+});

@@ -1,5 +1,7 @@
 import type { GitHubIssue } from "../core/types";
 import {
+  countExecutionOrderDeclarations,
+  getSingleMetadataLineValue,
   parseExecutionOrder,
 } from "./issue-metadata-parser";
 import {
@@ -132,21 +134,8 @@ function hasLabel(issue: Pick<GitHubIssue, "labels">, labelName: string): boolea
   return requireLabels(issue).some((label) => label.name.trim().toLowerCase() === normalizedLabelName);
 }
 
-function getSingleMetadataValue(body: string, fieldName: string): string | null {
-  const matches = [
-    ...body.matchAll(
-      new RegExp(`^\\s*${escapeRegExp(fieldName)}:[^\\S\\r\\n]*(.*)$`, "gim"),
-    ),
-  ];
-  if (matches.length !== 1) {
-    return null;
-  }
-
-  return matches[0][1].trim();
-}
-
 function hasValidDependsOnMetadata(body: string): boolean {
-  const dependsOnValue = getSingleMetadataValue(body, "Depends on");
+  const dependsOnValue = getSingleMetadataLineValue(body, "Depends on");
   if (dependsOnValue === null) {
     return false;
   }
@@ -155,19 +144,12 @@ function hasValidDependsOnMetadata(body: string): boolean {
 }
 
 function hasValidParallelizableMetadata(body: string): boolean {
-  const parallelizableValue = getSingleMetadataValue(body, "Parallelizable");
+  const parallelizableValue = getSingleMetadataLineValue(body, "Parallelizable");
   return parallelizableValue !== null && /^(?:yes|no)$/i.test(parallelizableValue);
 }
 
 function hasCanonicalPartOfMetadata(body: string): boolean {
   return /^\s*(?:-\s+)?Part of:\s+#\d+\s*$/im.test(body);
-}
-
-function countExecutionOrderDeclarations(body: string): number {
-  return [
-    ...body.matchAll(/^\s*Execution order:[^\r\n]*$/gim),
-    ...body.matchAll(/^\s*##\s*Execution order\s*$[\r\n]+^[^\r\n]*$/gim),
-  ].length;
 }
 
 function parseSingleExecutionOrder(

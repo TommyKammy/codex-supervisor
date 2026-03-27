@@ -223,6 +223,25 @@ Parallelizable:`,
   ]);
 });
 
+test("validateIssueMetadataSyntax rejects duplicate conflicting scheduling declarations", () => {
+  const issue = createIssue({
+    number: 55,
+    body: `Part of: #123
+Depends on: none
+Depends on: #77
+Execution order: 1 of 1
+Execution order: 2 of 2
+Parallelizable: No
+Parallelizable: Yes`,
+  });
+
+  assert.deepEqual(validateIssueMetadataSyntax(issue), [
+    "depends on must appear exactly once",
+    "execution order must appear exactly once",
+    "parallelizable must appear exactly once",
+  ]);
+});
+
 test("lintExecutionReadyIssueBody accepts a complete execution-ready issue body", () => {
   const issue = createIssue({
     body: `## Summary
