@@ -344,6 +344,7 @@ test("reconcileRecoverableBlockedIssueStates requeues requirements-blocked issue
       createdAt: "2026-03-10T23:25:21Z",
       updatedAt: "2026-03-10T23:25:21Z",
       url: "https://example.test/issues/366",
+      labels: [],
       state: "OPEN",
     },
   ];
