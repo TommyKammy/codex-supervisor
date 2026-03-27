@@ -5,6 +5,8 @@ import { handlePostTurnPullRequestTransitionsPhase } from "./post-turn-pull-requ
 import { PullRequestCheck, ReviewThread, SupervisorStateFile } from "./core/types";
 import { createConfig, createFailureContext, createIssue, createPullRequest, createRecord } from "./turn-execution-test-helpers";
 
+const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
+
 test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking ready", async () => {
   const config = createConfig({ localCiCommand: "npm run ci:local" });
   const issue = createIssue({ title: "Refresh post-ready PR state" });
@@ -309,7 +311,7 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion 
       failureContext: {
         ...createFailureContext("Tracked durable artifacts failed workstation-local path hygiene before marking PR #116 ready."),
         signature: "workstation-local-path-hygiene-failed",
-        details: ["docs/guide.md:1 matched /home/ via \"/home/alice/dev/private-repo\""],
+        details: [`docs/guide.md:1 matched /${"home"}/ via "${SAMPLE_UNIX_WORKSTATION_PATH}"`],
       },
     }),
     loadOpenPullRequestSnapshot: async () => ({

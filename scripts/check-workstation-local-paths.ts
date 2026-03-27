@@ -10,9 +10,9 @@ function usage(): string {
   return [
     "Usage: tsx scripts/check-workstation-local-paths.ts [--workspace <path>] [--exclude-path <repo-relative-path>]",
     "",
-    "Scans tracked durable text artifacts for workstation-local absolute paths such as /home/, /Users/, and C:\\Users\\.",
+    "Scans tracked durable text artifacts for workstation-local absolute paths that point to operator-specific home directories.",
     "Approved committed fixtures/examples must be exempted intentionally by repo-relative path via --exclude-path",
-    `or by extending DEFAULT_EXCLUDED_PATHS in ${path.posix.join("scripts", "check-workstation-local-paths.ts")}.`,
+    `or by extending DEFAULT_EXCLUDED_PATHS in ${path.posix.join("src", "workstation-local-paths.ts")}.`,
   ].join("\n");
 }
 
@@ -74,7 +74,7 @@ async function main(): Promise<void> {
       renderedFindings,
       "",
       "If a tracked fixture/example is intentionally committed with one of these paths, exempt it explicitly with --exclude-path",
-      `or extend DEFAULT_EXCLUDED_PATHS in ${path.posix.join("scripts", "check-workstation-local-paths.ts")}.`,
+      `or extend DEFAULT_EXCLUDED_PATHS in ${path.posix.join("src", "workstation-local-paths.ts")}.`,
       "",
       "Active excluded paths:",
       renderedExclusions,

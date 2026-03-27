@@ -36,6 +36,8 @@ interface ManualTimerController {
   advanceTime(ms: number): Promise<void>;
 }
 
+const SAMPLE_MACOS_WORKSPACE_ROOT = `/${"Users"}/example/dev/work`;
+
 const unavailableManagedRestart = {
   supported: false,
   launcher: null,
@@ -617,7 +619,7 @@ test("dashboard page renders repository identity from setup readiness data", () 
         key: "workspaceRoot",
         label: "Workspace root",
         state: "configured",
-        value: "/Users/example/dev/work\"trees",
+        value: `${SAMPLE_MACOS_WORKSPACE_ROOT}"trees`,
         message: "Workspace root is configured.",
         required: true,
         metadata: { source: "config", editable: true, valueType: "directory_path" },

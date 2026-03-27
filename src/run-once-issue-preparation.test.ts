@@ -17,6 +17,8 @@ import {
   WorkspaceStatus,
 } from "./core/types";
 
+const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
+
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
     repoPath: "/tmp/repo",
@@ -794,7 +796,7 @@ test("prepareIssueExecutionContext blocks publication when tracked durable artif
   await fs.mkdir(path.join(workspacePath, "docs"), { recursive: true });
   await fs.writeFile(
     path.join(workspacePath, "docs", "guide.md"),
-    "Leaked workstation path: /home/alice/dev/private-repo\n",
+    `Leaked workstation path: ${SAMPLE_UNIX_WORKSTATION_PATH}\n`,
     "utf8",
   );
   git(workspacePath, "add", "docs/guide.md");

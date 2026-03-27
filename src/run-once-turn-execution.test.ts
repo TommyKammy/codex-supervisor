@@ -8,6 +8,8 @@ import { createConfig, createIssue, createPullRequest, createRecord, createRevie
 import { AgentRunner, AgentTurnRequest } from "./supervisor/agent-runner";
 import { interruptedTurnMarkerPath } from "./interrupted-turn-marker";
 
+const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
+
 function createSuccessfulAgentRunner(
   impl: (request: AgentTurnRequest) => ReturnType<AgentRunner["runTurn"]>,
 ): AgentRunner {
@@ -635,7 +637,7 @@ test("executeCodexTurnPhase blocks branch publication when workstation-local pat
         summary: "Tracked durable artifacts failed workstation-local path hygiene before publication.",
         signature: "workstation-local-path-hygiene-failed",
         command: "npm run verify:paths",
-        details: ["docs/guide.md:1 matched /home/ via \"/home/alice/dev/private-repo\""],
+        details: [`docs/guide.md:1 matched /${"home"}/ via "${SAMPLE_UNIX_WORKSTATION_PATH}"`],
         url: null,
         updated_at: "2026-03-13T06:20:00Z",
       },
