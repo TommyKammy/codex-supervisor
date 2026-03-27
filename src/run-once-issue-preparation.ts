@@ -27,6 +27,10 @@ import {
 } from "./core/workspace";
 import { shouldPreserveNoPrFailureTracking } from "./no-pull-request-state";
 import { runLocalCiGate, type LocalCiCommandRunner } from "./local-ci";
+import {
+  runWorkstationLocalPathGate,
+  type WorkstationLocalPathGateResult,
+} from "./workstation-local-path-gate";
 import { writeSupervisorCycleDecisionSnapshot as writeSupervisorCycleDecisionSnapshotImpl } from "./supervisor/supervisor-cycle-snapshot";
 import { writePreMergeAssessmentSnapshot as writePreMergeAssessmentSnapshotImpl } from "./supervisor/pre-merge-assessment-snapshot";
 import {
@@ -125,6 +129,7 @@ interface PrepareIssueExecutionContextArgs {
   }) => Promise<string>;
   now?: () => string;
   runLocalCiCommand?: LocalCiCommandRunner;
+  runWorkstationLocalPathGate?: (args: { workspacePath: string; gateLabel: string }) => Promise<WorkstationLocalPathGateResult>;
 }
 
 export function isRestartRunOnce(
@@ -273,6 +278,7 @@ async function hydratePullRequestContext(
     args.writeSupervisorCycleDecisionSnapshot ?? writeSupervisorCycleDecisionSnapshotImpl;
   const writePreMergeAssessmentSnapshot =
     args.writePreMergeAssessmentSnapshot ?? writePreMergeAssessmentSnapshotImpl;
+  const runWorkstationLocalPathGateImpl = args.runWorkstationLocalPathGate ?? runWorkstationLocalPathGate;
   const now = args.now ?? nowIso;
 
   let nextWorkspaceStatus = args.workspaceStatus;
@@ -421,6 +427,33 @@ async function hydratePullRequestContext(
     !nextWorkspaceStatus.hasUncommittedChanges &&
     args.record.implementation_attempt_count >= args.config.draftPrAfterAttempt
   ) {
+    const pathHygieneGate = await runWorkstationLocalPathGateImpl({
+      workspacePath: args.workspacePath,
+      gateLabel: "before publication",
+    });
+    if (!pathHygieneGate.ok) {
+      const failureContext = pathHygieneGate.failureContext;
+      const blockedRecord = args.stateStore.touch(record, {
+        state: "blocked",
+        last_error: failureContext?.summary ?? "Tracked durable artifacts failed workstation-local path hygiene before publication.",
+        last_failure_kind: null,
+        last_failure_context: failureContext,
+        ...applyFailureSignature(record, failureContext),
+        blocked_reason: "verification",
+      });
+      args.state.issues[String(blockedRecord.issue_number)] = blockedRecord;
+      await args.stateStore.save(args.state);
+      await syncExecutionMetricsRunSummarySafely({
+        previousRecord: record,
+        nextRecord: blockedRecord,
+        issue: args.issue,
+        retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
+        warningContext: "persisting",
+      });
+      await args.syncJournal(blockedRecord);
+      return `Issue #${blockedRecord.issue_number} blocked: tracked durable artifacts failed workstation-local path hygiene before publication.`;
+    }
+
     const localCiGate = await runLocalCiGate({
       config: args.config,
       workspacePath: args.workspacePath,

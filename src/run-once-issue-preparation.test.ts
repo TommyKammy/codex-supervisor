@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import {
   isRestartRunOnce,
   prepareIssueExecutionContext,
@@ -180,6 +181,19 @@ function createState(record: IssueRunRecord): SupervisorStateFile {
       [String(record.issue_number)]: record,
     },
   };
+}
+
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync("git", ["-C", cwd, ...args], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Codex",
+      GIT_AUTHOR_EMAIL: "codex@example.com",
+      GIT_COMMITTER_NAME: "Codex",
+      GIT_COMMITTER_EMAIL: "codex@example.com",
+    },
+  }).trim();
 }
 
 test("prepareIssueExecutionContext prepares workspace, journal, memory, and head state", async () => {
@@ -747,6 +761,10 @@ test("prepareIssueExecutionContext creates a draft PR after checkpointed workspa
     pushBranch: async (workspacePath, branch, remoteBranchExists) => {
       pushCalls.push({ workspacePath, branch, remoteBranchExists });
     },
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
   });
 
   assert.equal(typeof result, "object");
@@ -759,4 +777,88 @@ test("prepareIssueExecutionContext creates a draft PR after checkpointed workspa
       remoteBranchExists: true,
     },
   ]);
+});
+
+test("prepareIssueExecutionContext blocks publication when tracked durable artifacts fail workstation-local path hygiene", async (t) => {
+  const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "prepare-issue-path-hygiene-"));
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+
+  git(workspacePath, "init", "-b", "main");
+  git(workspacePath, "config", "user.name", "Codex");
+  git(workspacePath, "config", "user.email", "codex@example.com");
+  await fs.writeFile(path.join(workspacePath, "README.md"), "# fixture\n", "utf8");
+  git(workspacePath, "add", "README.md");
+  git(workspacePath, "commit", "-m", "seed");
+  await fs.mkdir(path.join(workspacePath, "docs"), { recursive: true });
+  await fs.writeFile(
+    path.join(workspacePath, "docs", "guide.md"),
+    "Leaked workstation path: /home/alice/dev/private-repo\n",
+    "utf8",
+  );
+  git(workspacePath, "add", "docs/guide.md");
+
+  const record = createRecord({
+    implementation_attempt_count: 2,
+    state: "stabilizing",
+    workspace: workspacePath,
+    journal_path: path.join(workspacePath, ".codex-supervisor", "issue-journal.md"),
+  });
+  const state = createState(record);
+  const issue = createIssue();
+  const workspaceStatus = createWorkspaceStatus({
+    baseAhead: 1,
+    remoteBranchExists: true,
+    remoteAhead: 0,
+  });
+  let pushCalls = 0;
+  let createPullRequestCalls = 0;
+
+  const result = await prepareIssueExecutionContext({
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      createPullRequest: async () => {
+        createPullRequestCalls += 1;
+        throw new Error("unexpected createPullRequest call");
+      },
+    },
+    config: createConfig({ draftPrAfterAttempt: 1 }),
+    stateStore: {
+      touch(currentRecord, patch) {
+        return { ...currentRecord, ...patch };
+      },
+      async save() {},
+    },
+    state,
+    record,
+    issue,
+    options: { dryRun: false },
+    ensureWorkspace: async () => workspacePath,
+    syncIssueJournal: async () => {},
+    syncMemoryArtifacts: async () => ({
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+      alwaysReadFiles: [],
+      onDemandFiles: [],
+    }),
+    getWorkspaceStatus: async () => workspaceStatus,
+    pushBranch: async () => {
+      pushCalls += 1;
+    },
+  });
+
+  assert.equal(
+    result,
+    "Issue #240 blocked: tracked durable artifacts failed workstation-local path hygiene before publication.",
+  );
+  assert.equal(pushCalls, 0);
+  assert.equal(createPullRequestCalls, 0);
+  assert.equal(state.issues["240"]?.state, "blocked");
+  assert.equal(state.issues["240"]?.blocked_reason, "verification");
+  assert.equal(state.issues["240"]?.last_failure_signature, "workstation-local-path-hygiene-failed");
+  assert.match(state.issues["240"]?.last_failure_context?.details[0] ?? "", /docs\/guide\.md:1/);
+  assert.match(state.issues["240"]?.last_failure_context?.details[0] ?? "", /\/home\/alice\/dev\/private-repo/);
 });

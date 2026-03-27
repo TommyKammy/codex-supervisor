@@ -18,6 +18,10 @@ import {
 } from "./post-turn-pull-request";
 import { IssueJournalSync, MemoryArtifacts } from "./run-once-issue-preparation";
 import { runLocalCiGate, type LocalCiCommandRunner } from "./local-ci";
+import {
+  runWorkstationLocalPathGate,
+  type WorkstationLocalPathGateResult,
+} from "./workstation-local-path-gate";
 import { StateStore } from "./core/state-store";
 import {
   getStaleStabilizingNoPrRecoveryCount,
@@ -234,6 +238,7 @@ interface ExecuteCodexTurnPhaseArgs {
   readIssueJournal?: typeof readIssueJournal;
   agentRunner?: AgentRunner;
   runLocalCiCommand?: LocalCiCommandRunner;
+  runWorkstationLocalPathGate?: (args: { workspacePath: string; gateLabel: string }) => Promise<WorkstationLocalPathGateResult>;
 }
 
 export async function executeCodexTurnPhase(
@@ -249,6 +254,7 @@ export async function executeCodexTurnPhase(
     args.persistMissingCodexJournalHandoff ?? persistMissingCodexJournalHandoff;
   const persistHintedCodexTurnStateImpl =
     args.persistHintedCodexTurnState ?? persistHintedCodexTurnState;
+  const runWorkstationLocalPathGateImpl = args.runWorkstationLocalPathGate ?? runWorkstationLocalPathGate;
   const agentRunner =
     args.agentRunner ??
     createCodexAgentRunner({
@@ -438,6 +444,39 @@ export async function executeCodexTurnPhase(
       const evaluatedReviewHeadSha = workspaceStatus.headSha;
 
       if ((workspaceStatus.remoteAhead > 0 || !workspaceStatus.remoteBranchExists) && !workspaceStatus.hasUncommittedChanges) {
+        const pathHygieneGate = await runWorkstationLocalPathGateImpl({
+          workspacePath,
+          gateLabel: "before publication",
+        });
+        if (!pathHygieneGate.ok) {
+          const failureContext = pathHygieneGate.failureContext;
+          record = stateStore.touch(record, {
+            state: "blocked",
+            last_error: truncate(
+              failureContext?.summary ?? "Tracked durable artifacts failed workstation-local path hygiene before publication.",
+              1000,
+            ),
+            last_failure_kind: null,
+            last_failure_context: failureContext,
+            ...args.applyFailureSignature(record, failureContext),
+            blocked_reason: "verification",
+          });
+          state.issues[String(record.issue_number)] = record;
+          await stateStore.save(state);
+          await syncExecutionMetricsRunSummarySafely({
+            previousRecord: args.context.record,
+            nextRecord: record,
+            issue,
+            pullRequest: pr,
+            retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
+            warningContext: "persisting",
+          });
+          await syncJournal(record);
+          return {
+            kind: "returned",
+            message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
+          };
+        }
         await pushBranchImpl(workspacePath, record.branch, workspaceStatus.remoteBranchExists);
         workspaceStatus = await getWorkspaceStatusImpl(workspacePath, record.branch, config.defaultBranch);
       }
@@ -454,6 +493,38 @@ export async function executeCodexTurnPhase(
         !workspaceStatus.hasUncommittedChanges &&
         record.implementation_attempt_count >= config.draftPrAfterAttempt
       ) {
+        const pathHygieneGate = await runWorkstationLocalPathGateImpl({
+          workspacePath,
+          gateLabel: "before publication",
+        });
+        if (!pathHygieneGate.ok) {
+          const failureContext = pathHygieneGate.failureContext;
+          record = stateStore.touch(record, {
+            state: "blocked",
+            last_error: truncate(
+              failureContext?.summary ?? "Tracked durable artifacts failed workstation-local path hygiene before publication.",
+              1000,
+            ),
+            last_failure_kind: null,
+            last_failure_context: failureContext,
+            ...args.applyFailureSignature(record, failureContext),
+            blocked_reason: "verification",
+          });
+          state.issues[String(record.issue_number)] = record;
+          await stateStore.save(state);
+          await syncExecutionMetricsRunSummarySafely({
+            previousRecord: args.context.record,
+            nextRecord: record,
+            issue,
+            retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
+            warningContext: "persisting",
+          });
+          await syncJournal(record);
+          return {
+            kind: "returned",
+            message: `Workstation-local path hygiene blocked pull request creation for issue #${record.issue_number}.`,
+          };
+        }
         const localCiGate = await runLocalCiGate({
           config,
           workspacePath,
