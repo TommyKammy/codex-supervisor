@@ -342,6 +342,40 @@ test("buildOverviewSummary and related beginner-first helpers produce concise En
   );
 
   assert.deepEqual(
+    buildOverviewSummary({
+      status: {
+        inventoryStatus: {
+          mode: "degraded",
+          posture: "snapshot_support",
+          recoveryState: "partially_degraded",
+          selectionBlocked: true,
+          summary: "Full inventory refresh is degraded; using the last-known-good snapshot for diagnostics only.",
+          recoveryGuidance:
+            "Restore a successful full inventory refresh before relying on new queue selection; the snapshot is for degraded diagnostics only.",
+          recoveryActions: ["restore_full_inventory_refresh"],
+          lastSuccessfulFullRefreshAt: "2026-03-26T00:05:00Z",
+          failure: {
+            source: "gh issue list",
+            message: "Failed to parse JSON from gh issue list",
+            recordedAt: "2026-03-26T00:10:00Z",
+            classification: "unknown",
+          },
+        },
+        runnableIssues: [{ issueNumber: 92, title: "Snapshot candidate", readiness: "execution_ready" }],
+      },
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    {
+      headline: "Inventory refresh is degraded",
+      detail: "Using last-known-good snapshot support from 2026-03-26T00:05:00Z while new selection stays blocked.",
+      tone: "warn",
+    },
+  );
+
+  assert.deepEqual(
     buildNextIssueSummary({
       runnableIssues: [{ issueNumber: 77, title: "Ready issue", readiness: "execution_ready" }],
     }),
@@ -399,6 +433,44 @@ test("buildOverviewSummary and related beginner-first helpers produce concise En
       title: "Resolve environment checks",
       detail: "A required dependency is failing, so the supervisor should not advance until checks recover.",
     },
+  );
+
+  assert.deepEqual(
+    buildAttentionItems({
+      status: {
+        inventoryStatus: {
+          mode: "degraded",
+          posture: "targeted_degraded_reconciliation",
+          recoveryState: "partially_degraded",
+          selectionBlocked: true,
+          summary: "Full inventory refresh is degraded; targeted reconciliation can continue for tracked pull requests.",
+          recoveryGuidance:
+            "Restore a successful full inventory refresh to resume authoritative queue selection; tracked PR reconciliation can continue meanwhile.",
+          recoveryActions: [
+            "restore_full_inventory_refresh",
+            "continue_targeted_pr_reconciliation",
+          ],
+          lastSuccessfulFullRefreshAt: "2026-03-26T00:05:00Z",
+          failure: {
+            source: "gh issue list",
+            message: "secondary rate limit exceeded for the REST API",
+            recordedAt: "2026-03-26T00:10:00Z",
+            classification: "rate_limited",
+          },
+        },
+        blockedIssues: [],
+        runnableIssues: [],
+      },
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    [
+      "Inventory posture: targeted degraded reconciliation.",
+      "Last successful full refresh: 2026-03-26T00:05:00Z.",
+      "Recovery: Restore a successful full inventory refresh to resume authoritative queue selection; tracked PR reconciliation can continue meanwhile.",
+    ],
   );
 
   assert.deepEqual(

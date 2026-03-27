@@ -43,6 +43,28 @@ export interface DashboardLoopRuntimeLike {
   detail?: string | null;
 }
 
+export interface DashboardInventoryStatusLike {
+  mode?: "healthy" | "degraded" | null;
+  posture?:
+    | "fresh_full_inventory"
+    | "targeted_degraded_reconciliation"
+    | "snapshot_support"
+    | "blocked"
+    | null;
+  recoveryState?: "healthy" | "partially_degraded" | "blocked" | null;
+  selectionBlocked?: boolean | null;
+  summary?: string | null;
+  recoveryGuidance?: string | null;
+  recoveryActions?: string[] | null;
+  lastSuccessfulFullRefreshAt?: string | null;
+  failure?: {
+    source?: string | null;
+    message?: string | null;
+    recordedAt?: string | null;
+    classification?: string | null;
+  } | null;
+}
+
 export interface DashboardStatusLike {
   selectionSummary?: DashboardSelectionSummaryLike | null;
   activeIssue?: DashboardActiveIssueLike | null;
@@ -54,6 +76,7 @@ export interface DashboardStatusLike {
   whyLines?: string[] | null;
   candidateDiscovery?: DashboardCandidateDiscoveryLike | null;
   candidateDiscoverySummary?: string | null;
+  inventoryStatus?: DashboardInventoryStatusLike | null;
   reconciliationWarning?: string | null;
   reconciliationPhase?: string | null;
   loopRuntime?: DashboardLoopRuntimeLike | null;
@@ -454,6 +477,7 @@ export function buildOverviewSummary(args: {
   const selectedIssueNumber = parseSelectedIssueNumber(args.status);
   const runnableIssues = Array.isArray(args.status?.runnableIssues) ? args.status.runnableIssues : [];
   const blockedIssues = Array.isArray(args.status?.blockedIssues) ? args.status.blockedIssues : [];
+  const inventoryStatus = args.status?.inventoryStatus ?? null;
   const doctorStatus = typeof args.doctor?.overallStatus === "string" ? args.doctor.overallStatus.toLowerCase() : "";
 
   if (!args.hasSuccessfulRefresh) {
@@ -477,6 +501,23 @@ export function buildOverviewSummary(args: {
       headline: "Environment checks need attention",
       detail: "A required dependency is failing, so supervisor actions may not be safe yet.",
       tone: "fail",
+    };
+  }
+
+  if (inventoryStatus?.mode === "degraded") {
+    const lastRefresh = inventoryStatus.lastSuccessfulFullRefreshAt;
+    const detail =
+      inventoryStatus.posture === "targeted_degraded_reconciliation"
+        ? "Tracked PR reconciliation can continue while new queue selection stays blocked."
+        : inventoryStatus.posture === "snapshot_support"
+          ? "Using last-known-good snapshot support" +
+            (lastRefresh ? " from " + lastRefresh : "") +
+            " while new selection stays blocked."
+          : inventoryStatus.summary || "Queue reconciliation is degraded until a fresh full inventory refresh succeeds.";
+    return {
+      headline: "Inventory refresh is degraded",
+      detail,
+      tone: inventoryStatus.recoveryState === "blocked" ? "fail" : "warn",
     };
   }
 
@@ -623,6 +664,7 @@ export function buildAttentionItems(args: {
   const items: string[] = [];
   const blockedIssues = Array.isArray(args.status?.blockedIssues) ? args.status.blockedIssues : [];
   const runnableIssues = Array.isArray(args.status?.runnableIssues) ? args.status.runnableIssues : [];
+  const inventoryStatus = args.status?.inventoryStatus ?? null;
   const doctorChecks = Array.isArray(args.doctor?.checks) ? args.doctor.checks : [];
   const statusWarning = args.status?.warning?.message ?? null;
   const reconciliationWarning = args.status?.reconciliationWarning ?? null;
@@ -641,6 +683,16 @@ export function buildAttentionItems(args: {
 
   if (args.refreshPhase === "failed") {
     items.push("The last refresh failed, so some details may be stale.");
+  }
+
+  if (inventoryStatus?.mode === "degraded") {
+    items.push("Inventory posture: " + (inventoryStatus.posture ?? "degraded").replace(/_/gu, " ") + ".");
+    if (inventoryStatus.lastSuccessfulFullRefreshAt) {
+      items.push("Last successful full refresh: " + inventoryStatus.lastSuccessfulFullRefreshAt + ".");
+    }
+    if (inventoryStatus.recoveryGuidance) {
+      items.push("Recovery: " + inventoryStatus.recoveryGuidance);
+    }
   }
 
   if (blockedIssues.length > 0) {

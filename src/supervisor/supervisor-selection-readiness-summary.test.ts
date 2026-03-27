@@ -148,6 +148,90 @@ Choose whether to keep the production auth path or replace it before rollout.
   });
 });
 
+test("buildReadinessSummary emits degraded selection_reason without a snapshot", async () => {
+  const config = createConfig();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+    inventory_refresh_failure: {
+      source: "gh issue list",
+      message: "Failed to parse JSON from gh issue list: Unexpected token ] in JSON at position 1",
+      recorded_at: "2026-03-26T00:10:00Z",
+    },
+  };
+
+  const summary = await buildReadinessSummary(
+    {
+      listCandidateIssues: async () => {
+        throw new Error("unexpected listCandidateIssues call");
+      },
+      listAllIssues: async () => {
+        throw new Error("unexpected listAllIssues call");
+      },
+    },
+    config,
+    state,
+  );
+
+  assert.deepEqual(summary, {
+    runnableIssues: [],
+    blockedIssues: [],
+    readinessLines: [
+      "inventory_refresh=degraded source=gh issue list recorded_at=2026-03-26T00:10:00Z message=Failed to parse JSON from gh issue list: Unexpected token ] in JSON at position 1",
+      "selection_reason=inventory_refresh_degraded",
+    ],
+  });
+});
+
+test("buildReadinessSummary emits degraded selection_reason once with snapshot-backed readiness", async () => {
+  const config = createConfig();
+  const snapshotIssue = createIssue();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+    inventory_refresh_failure: {
+      source: "gh issue list",
+      message: "Failed to parse JSON from gh issue list: Unexpected token ] in JSON at position 1",
+      recorded_at: "2026-03-26T00:10:00Z",
+    },
+    last_successful_inventory_snapshot: {
+      source: "gh issue list",
+      recorded_at: "2026-03-26T00:05:00Z",
+      issue_count: 1,
+      issues: [snapshotIssue],
+    },
+  };
+
+  const summary = await buildReadinessSummary(
+    {
+      listCandidateIssues: async () => {
+        throw new Error("unexpected listCandidateIssues call");
+      },
+      listAllIssues: async () => {
+        throw new Error("unexpected listAllIssues call");
+      },
+    },
+    config,
+    state,
+  );
+
+  assert.deepEqual(summary, {
+    runnableIssues: [{
+      issueNumber: 604,
+      title: "Extract readiness summary helpers",
+      readiness: "execution_ready",
+    }],
+    blockedIssues: [],
+    readinessLines: [
+      "inventory_refresh=degraded source=gh issue list recorded_at=2026-03-26T00:10:00Z message=Failed to parse JSON from gh issue list: Unexpected token ] in JSON at position 1",
+      "selection_reason=inventory_refresh_degraded",
+      "inventory_snapshot=last_known_good source=gh issue list recorded_at=2026-03-26T00:05:00Z issue_count=1 authority=non_authoritative",
+      "runnable_issues=#604 ready=execution_ready",
+      "blocked_issues=none",
+    ],
+  });
+});
+
 test("buildSelectionWhySummary keeps the selected issue explanation stable", async () => {
   const config = createConfig();
   const state: SupervisorStateFile = {

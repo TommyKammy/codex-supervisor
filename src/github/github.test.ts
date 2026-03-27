@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { GitHubClient } from "./github";
 import { GitHubIssue, GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../core/types";
 
@@ -744,6 +747,41 @@ test("GitHubClient listAllIssues preserves gh issue list transport failures", as
   assert.equal(fallbackPageCalls, 0);
 });
 
+test("GitHubClient listAllIssues does not fall back when gh issue list returns transport-shaped non-JSON output", async () => {
+  const config = createConfig();
+  let issueListCalls = 0;
+  let fallbackPageCalls = 0;
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "issue" && args[1] === "list") {
+      issueListCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: 'Post "https://api.github.com/graphql": read tcp 127.0.0.1:12345->140.82.112.6:443: read: connection reset by peer',
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "repos/owner/repo/issues") {
+      fallbackPageCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: "[]",
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  await assert.rejects(
+    () => client.listAllIssues(),
+    /connection reset by peer/,
+  );
+
+  assert.equal(issueListCalls, 1);
+  assert.equal(fallbackPageCalls, 0);
+});
+
 test("GitHubClient listAllIssues does not fall back to REST pagination when gh issue list output is rate-limited", async () => {
   const config = createConfig();
   let issueListCalls = 0;
@@ -777,6 +815,228 @@ test("GitHubClient listAllIssues does not fall back to REST pagination when gh i
 
   assert.equal(issueListCalls, 1);
   assert.equal(fallbackPageCalls, 0);
+});
+
+test("GitHubClient listAllIssues preserves both primary parse failures and fallback transport failures", async () => {
+  const config = createConfig();
+  let issueListCalls = 0;
+  let fallbackPageCalls = 0;
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "issue" && args[1] === "list") {
+      issueListCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: "[{\"number\":500,\"title\":\"bad\njson\"}]",
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "repos/owner/repo/issues") {
+      fallbackPageCalls += 1;
+      throw new Error("HTTP 502: Bad Gateway");
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  await assert.rejects(
+    () => client.listAllIssues(),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /Failed to load full issue inventory\./);
+      assert.match(error.message, /Primary transport: Failed to parse JSON from gh issue list/);
+      assert.match(error.message, /Fallback transport: HTTP 502: Bad Gateway/);
+      return true;
+    },
+  );
+
+  assert.equal(issueListCalls, 1);
+  assert.equal(fallbackPageCalls, 1);
+});
+
+test("GitHubClient listAllIssues captures malformed gh issue list payloads when debug capture is enabled", async () => {
+  const captureDir = await fs.mkdtemp(path.join(os.tmpdir(), "inventory-capture-"));
+  const previousCaptureDir = process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR;
+  process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR = captureDir;
+
+  try {
+    const config = createConfig();
+    const client = new GitHubClient(config, async (_command, args) => {
+      if (args[0] === "issue" && args[1] === "list") {
+        return {
+          exitCode: 0,
+          stdout: "[{\"number\":500,\"title\":\"bad\njson\"}]",
+          stderr: "graphql transport stderr",
+        };
+      }
+
+      if (args[0] === "api" && args[1] === "repos/owner/repo/issues") {
+        throw new Error("HTTP 502: Bad Gateway");
+      }
+
+      throw new Error(`Unexpected args: ${args.join(" ")}`);
+    });
+
+    await assert.rejects(() => client.listAllIssues(), /Failed to load full issue inventory/);
+
+    const artifacts = await fs.readdir(captureDir);
+    assert.equal(artifacts.length, 1);
+    assert.match(artifacts[0] ?? "", /^\d{8}T\d{6}\.\d{3}Z-gh-issue-list\.json$/);
+
+    const artifact = JSON.parse(await fs.readFile(path.join(captureDir, artifacts[0] ?? ""), "utf8")) as {
+      source: string;
+      command: string[];
+      stdout: { text: string; base64: string };
+      stderr: string;
+      parseError: string;
+    };
+
+    assert.equal(artifact.source, "gh issue list");
+    assert.deepEqual(artifact.command.slice(0, 2), ["gh", "issue"]);
+    assert.equal(artifact.stderr, "graphql transport stderr");
+    assert.match(artifact.parseError, /Failed to parse JSON from gh issue list/);
+    assert.equal(artifact.stdout.text, "[{\"number\":500,\"title\":\"bad\njson\"}]");
+    assert.equal(Buffer.from(artifact.stdout.base64, "base64").toString("utf8"), artifact.stdout.text);
+  } finally {
+    if (previousCaptureDir === undefined) {
+      delete process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR;
+    } else {
+      process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR = previousCaptureDir;
+    }
+    await fs.rm(captureDir, { recursive: true, force: true });
+  }
+});
+
+test("GitHubClient listAllIssues captures malformed REST fallback pages with the page number when debug capture is enabled", async () => {
+  const captureDir = await fs.mkdtemp(path.join(os.tmpdir(), "inventory-capture-rest-"));
+  const previousCaptureDir = process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR;
+  process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR = captureDir;
+
+  try {
+    const config = createConfig();
+    const client = new GitHubClient(config, async (_command, args) => {
+      if (args[0] === "issue" && args[1] === "list") {
+        return {
+          exitCode: 0,
+          stdout: "[{\"number\":500,\"title\":\"bad\njson\"}]",
+          stderr: "",
+        };
+      }
+
+      if (args[0] === "api" && args[1] === "repos/owner/repo/issues") {
+        const page = Number(args.find((arg) => arg.startsWith("page="))?.slice("page=".length) ?? "1");
+        return {
+          exitCode: 0,
+          stdout:
+            page === 1
+              ? JSON.stringify(
+                  Array.from({ length: 100 }, (_value, index) => ({
+                    number: 500 - index,
+                    title: `Issue ${500 - index}`,
+                    body: `Body ${500 - index}`,
+                    created_at: "2026-03-01T00:00:00Z",
+                    updated_at: "2026-03-01T12:00:00Z",
+                    html_url: `https://example.test/issues/${500 - index}`,
+                    state: "open",
+                    labels: [],
+                  })),
+                )
+              : "[{\"number\":499,\"title\":\"bad\njson\"}]",
+          stderr: page === 2 ? "rest stderr" : "",
+        };
+      }
+
+      throw new Error(`Unexpected args: ${args.join(" ")}`);
+    });
+
+    await assert.rejects(
+      () => client.listAllIssues(),
+      /Fallback transport: Failed to parse JSON from gh api repos\/owner\/repo\/issues page=2/,
+    );
+
+    const artifacts = (await fs.readdir(captureDir)).sort();
+    assert.equal(artifacts.length, 2);
+    assert.match(artifacts[0] ?? "", /^\d{8}T\d{6}\.\d{3}Z-gh-issue-list\.json$/);
+    assert.match(artifacts[1] ?? "", /^\d{8}T\d{6}\.\d{3}Z-rest-page-2\.json$/);
+
+    const artifact = JSON.parse(await fs.readFile(path.join(captureDir, artifacts[1] ?? ""), "utf8")) as {
+      source: string;
+      page: number | null;
+      stderr: string;
+      stdout: { text: string; base64: string };
+    };
+    assert.equal(artifact.source, "gh api repos/owner/repo/issues");
+    assert.equal(artifact.page, 2);
+    assert.equal(artifact.stderr, "rest stderr");
+    assert.equal(artifact.stdout.text, "[{\"number\":499,\"title\":\"bad\njson\"}]");
+  } finally {
+    if (previousCaptureDir === undefined) {
+      delete process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR;
+    } else {
+      process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR = previousCaptureDir;
+    }
+    await fs.rm(captureDir, { recursive: true, force: true });
+  }
+});
+
+test("GitHubClient listAllIssues prunes older malformed inventory captures when the debug capture limit is exceeded", async () => {
+  const captureDir = await fs.mkdtemp(path.join(os.tmpdir(), "inventory-capture-limit-"));
+  const previousCaptureDir = process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR;
+  const previousCaptureLimit = process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_LIMIT;
+  process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR = captureDir;
+  process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_LIMIT = "2";
+
+  try {
+    const config = createConfig();
+    const nowValues = [
+      Date.parse("2026-03-27T00:00:00.000Z"),
+      Date.parse("2026-03-27T00:00:01.000Z"),
+      Date.parse("2026-03-27T00:00:02.000Z"),
+    ];
+    let nowIndex = 0;
+    const client = new GitHubClient(
+      config,
+      async (_command, args) => {
+        if (args[0] === "issue" && args[1] === "list") {
+          return {
+            exitCode: 0,
+            stdout: "[{\"number\":500,\"title\":\"bad\njson\"}]",
+            stderr: "",
+          };
+        }
+
+        if (args[0] === "api" && args[1] === "repos/owner/repo/issues") {
+          throw new Error("HTTP 502: Bad Gateway");
+        }
+
+        throw new Error(`Unexpected args: ${args.join(" ")}`);
+      },
+      undefined,
+      () => nowValues[Math.min(nowIndex++, nowValues.length - 1)] ?? nowValues[nowValues.length - 1]!,
+    );
+
+    await assert.rejects(() => client.listAllIssues(), /Failed to load full issue inventory/);
+    await assert.rejects(() => client.listAllIssues(), /Failed to load full issue inventory/);
+    await assert.rejects(() => client.listAllIssues(), /Failed to load full issue inventory/);
+
+    const artifacts = (await fs.readdir(captureDir)).sort();
+    assert.deepEqual(artifacts, [
+      "20260327T000001.000Z-gh-issue-list.json",
+      "20260327T000002.000Z-gh-issue-list.json",
+    ]);
+  } finally {
+    if (previousCaptureDir === undefined) {
+      delete process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR;
+    } else {
+      process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR = previousCaptureDir;
+    }
+    if (previousCaptureLimit === undefined) {
+      delete process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_LIMIT;
+    } else {
+      process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_LIMIT = previousCaptureLimit;
+    }
+    await fs.rm(captureDir, { recursive: true, force: true });
+  }
 });
 
 test("GitHubClient createPullRequest recovers when the first open-branch lookup misses the new PR", async () => {

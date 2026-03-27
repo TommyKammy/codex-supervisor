@@ -1,5 +1,6 @@
 import { GitHubIssue, SupervisorStateFile } from "./core/types";
 import {
+  buildLastSuccessfulInventorySnapshot,
   buildInventoryRefreshFailure,
   inventoryRefreshFailureEquals,
 } from "./inventory-refresh-state";
@@ -122,11 +123,17 @@ export async function runOnceCyclePrelude(
       emitSupervisorEvent(args.emitEvent, buildRecoverySupervisorEvent(event));
     }
   };
-  const persistInventoryRefreshFailure = async (
-    nextFailure: SupervisorStateFile["inventory_refresh_failure"] | null,
-  ) => {
+  const persistInventoryRefreshState = async (refreshState: {
+    nextFailure: SupervisorStateFile["inventory_refresh_failure"] | null;
+    successfulIssues?: GitHubIssue[] | null;
+  }) => {
+    const { nextFailure, successfulIssues = null } = refreshState;
     const currentFailure = state.inventory_refresh_failure;
-    if (inventoryRefreshFailureEquals(currentFailure, nextFailure)) {
+    const currentSnapshot = state.last_successful_inventory_snapshot;
+    const nextSnapshot = successfulIssues ? buildLastSuccessfulInventorySnapshot(successfulIssues) : currentSnapshot;
+    const snapshotUnchanged = successfulIssues === null || JSON.stringify(currentSnapshot) === JSON.stringify(nextSnapshot);
+
+    if (inventoryRefreshFailureEquals(currentFailure, nextFailure) && snapshotUnchanged) {
       return;
     }
 
@@ -134,6 +141,10 @@ export async function runOnceCyclePrelude(
       state.inventory_refresh_failure = nextFailure;
     } else {
       delete state.inventory_refresh_failure;
+    }
+
+    if (nextSnapshot) {
+      state.last_successful_inventory_snapshot = nextSnapshot;
     }
 
     await args.stateStore.save(state);
@@ -159,9 +170,14 @@ export async function runOnceCyclePrelude(
     let issues: GitHubIssue[] | null = null;
     try {
       issues = await args.listAllIssues();
-      await persistInventoryRefreshFailure(null);
+      await persistInventoryRefreshState({
+        nextFailure: null,
+        successfulIssues: issues,
+      });
     } catch (error) {
-      await persistInventoryRefreshFailure(buildInventoryRefreshFailure(error));
+      await persistInventoryRefreshState({
+        nextFailure: buildInventoryRefreshFailure(error),
+      });
       if (activeRecord !== null && activeRecord.pr_number !== null) {
         await setReconciliationPhase("tracked_merged_but_open_issues");
         const activeMergedEvents = await args.reconcileTrackedMergedButOpenIssues(

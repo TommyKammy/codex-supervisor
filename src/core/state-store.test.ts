@@ -182,6 +182,88 @@ test("StateStore sqlite roundtrip preserves tracked merged reconciliation resume
   });
 });
 
+test("StateStore json load realigns last-known-good snapshot issue_count with normalized issues", async () => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.json");
+    await fs.writeFile(
+      statePath,
+      `${JSON.stringify({
+        activeIssueNumber: null,
+        issues: {},
+        last_successful_inventory_snapshot: {
+          source: "gh issue list",
+          recorded_at: "2026-03-26T00:05:00Z",
+          issue_count: 2,
+          issues: [
+            {
+              number: 91,
+              title: "Valid snapshot issue",
+              body: "Preserve the valid issue.",
+              createdAt: "2026-03-26T00:00:00Z",
+              updatedAt: "2026-03-26T00:00:00Z",
+              url: "https://example.test/issues/91",
+              state: "OPEN",
+            },
+            {
+              number: 92,
+              body: "Missing a title so normalization should drop this entry.",
+              createdAt: "2026-03-26T00:01:00Z",
+              updatedAt: "2026-03-26T00:01:00Z",
+              url: "https://example.test/issues/92",
+            },
+          ],
+        },
+      }, null, 2)}\n`,
+      "utf8",
+    );
+
+    const store = new StateStore(statePath, { backend: "json" });
+    const loaded = await store.load();
+
+    assert.equal(loaded.last_successful_inventory_snapshot?.issue_count, 1);
+    assert.deepEqual(loaded.last_successful_inventory_snapshot?.issues, [{
+      number: 91,
+      title: "Valid snapshot issue",
+      body: "Preserve the valid issue.",
+      createdAt: "2026-03-26T00:00:00Z",
+      updatedAt: "2026-03-26T00:00:00Z",
+      url: "https://example.test/issues/91",
+      state: "OPEN",
+    }]);
+  });
+});
+
+test("StateStore sqlite roundtrip preserves snapshot-only persisted state", async () => {
+  await withTempDir(async (dir) => {
+    const store = new StateStore(path.join(dir, "state.sqlite"), { backend: "sqlite" });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: null,
+      issues: {},
+      last_successful_inventory_snapshot: {
+        source: "gh issue list",
+        recorded_at: "2026-03-26T00:05:00Z",
+        issue_count: 1,
+        issues: [{
+          number: 91,
+          title: "Snapshot-only issue",
+          body: "Persist snapshot-only sqlite metadata.",
+          createdAt: "2026-03-26T00:00:00Z",
+          updatedAt: "2026-03-26T00:00:00Z",
+          url: "https://example.test/issues/91",
+          state: "OPEN",
+        }],
+      },
+    };
+
+    await store.save(state);
+    const loaded = await store.load();
+
+    assert.equal(loaded.activeIssueNumber, null);
+    assert.deepEqual(loaded.issues, {});
+    assert.deepEqual(loaded.last_successful_inventory_snapshot, state.last_successful_inventory_snapshot);
+  });
+});
+
 test("StateStore json load captures structured corruption findings for invalid JSON", async () => {
   await withTempDir(async (dir) => {
     const statePath = path.join(dir, "state.json");

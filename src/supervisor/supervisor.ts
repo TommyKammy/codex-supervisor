@@ -96,6 +96,7 @@ import {
 } from "./supervisor-execution-policy";
 import {
   buildCandidateDiscoverySummary,
+  buildLastKnownGoodSnapshotReadinessSummary,
   buildReadinessSummary,
   buildSelectionSummary,
   buildSelectionWhySummary,
@@ -130,7 +131,12 @@ import {
   sanitizeStatusValue,
 } from "./supervisor-status-rendering";
 import { buildDetailedStatusModel, buildDetailedStatusSummaryLines } from "./supervisor-status-model";
-import { formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
+import {
+  buildInventoryOperatorStatus,
+  formatInventoryOperatorPostureLine,
+  formatInventoryRefreshStatusLine,
+  formatLastSuccessfulInventorySnapshotStatusLine,
+} from "../inventory-refresh-state";
 import {
   type SupervisorExecutionMetricsRollupResultDto,
   type SupervisorMutationResultDto,
@@ -1005,7 +1011,16 @@ export class Supervisor {
     const gsdSummary = await describeGsdIntegration(this.config);
     const statusRecords = summarizeSupervisorStatusRecords(state);
     const trackedIssues = buildTrackedIssueDtos(state);
+    const inventoryStatus = buildInventoryOperatorStatus({
+      state,
+      activeRecord: statusRecords.activeRecord,
+      trackedRecords: trackedIssues.map((issue) => ({ pr_number: issue.prNumber ?? null })),
+    });
+    const inventoryPostureLine = formatInventoryOperatorPostureLine(inventoryStatus);
     const inventoryRefreshStatusLine = formatInventoryRefreshStatusLine(state.inventory_refresh_failure);
+    const inventorySnapshotStatusLine = formatLastSuccessfulInventorySnapshotStatusLine(
+      state.last_successful_inventory_snapshot,
+    );
     const inventoryRefreshWarning = buildInventoryRefreshWarningMessage(state);
     const githubWithRateLimitTelemetry = this.github as GitHubClient & {
       getRateLimitTelemetry?: () => Promise<GitHubRateLimitTelemetry>;
@@ -1061,11 +1076,15 @@ export class Supervisor {
         mergeConflictDetected,
       });
       if (state.inventory_refresh_failure) {
+        const readinessSummary = buildLastKnownGoodSnapshotReadinessSummary(this.config, state);
+        const whyLines = options.why ? await buildSelectionWhySummary(this.github, this.config, state) : [];
         const githubRateLimitStatus = await loadGitHubRateLimitStatus();
         const inactiveDetailedStatusLines =
           [
             ...detailedStatusLines,
+            inventoryPostureLine,
             ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
+            ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
             ...githubRateLimitStatus.githubRateLimitLines,
           ];
         return {
@@ -1073,6 +1092,7 @@ export class Supervisor {
           trustDiagnostics,
           cadenceDiagnostics,
           githubRateLimit: githubRateLimitStatus.githubRateLimit,
+          inventoryStatus,
           candidateDiscoverySummary,
           candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
           localCiContract,
@@ -1080,14 +1100,14 @@ export class Supervisor {
           activeIssue: null,
           selectionSummary: null,
           trackedIssues,
-          runnableIssues: [],
-          blockedIssues: [],
+          runnableIssues: readinessSummary?.runnableIssues ?? [],
+          blockedIssues: readinessSummary?.blockedIssues ?? [],
           detailedStatusLines: [...inactiveDetailedStatusLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationProgress,
           reconciliationWarning,
-          readinessLines: [],
-          whyLines: [],
+          readinessLines: readinessSummary?.readinessLines ?? [],
+          whyLines,
           warning: inventoryRefreshWarning
             ? {
               kind: "readiness",
@@ -1124,7 +1144,9 @@ export class Supervisor {
         const inactiveDetailedStatusLines =
           [
             ...detailedStatusLines,
+            inventoryPostureLine,
             ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
+            ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
             ...githubRateLimitStatus.githubRateLimitLines,
           ];
         return {
@@ -1132,6 +1154,7 @@ export class Supervisor {
           trustDiagnostics,
           cadenceDiagnostics,
           githubRateLimit: githubRateLimitStatus.githubRateLimit,
+          inventoryStatus,
           candidateDiscoverySummary,
           candidateDiscovery,
           localCiContract,
@@ -1155,6 +1178,7 @@ export class Supervisor {
         const inactiveDetailedStatusLines =
           [
             ...detailedStatusLines,
+            inventoryPostureLine,
             ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
             ...githubRateLimitStatus.githubRateLimitLines,
           ];
@@ -1163,6 +1187,7 @@ export class Supervisor {
           trustDiagnostics,
           cadenceDiagnostics,
           githubRateLimit: githubRateLimitStatus.githubRateLimit,
+          inventoryStatus,
           candidateDiscoverySummary,
           candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
           localCiContract,
@@ -1226,7 +1251,9 @@ export class Supervisor {
     const detailedStatusLinesWithInventory =
       [
         ...detailedStatusLines,
+        inventoryPostureLine,
         ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
+        ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
         ...githubRateLimitStatus.githubRateLimitLines,
       ];
 
@@ -1235,6 +1262,7 @@ export class Supervisor {
       trustDiagnostics,
       cadenceDiagnostics,
       githubRateLimit: githubRateLimitStatus.githubRateLimit,
+      inventoryStatus,
       candidateDiscoverySummary,
       candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
       localCiContract,
