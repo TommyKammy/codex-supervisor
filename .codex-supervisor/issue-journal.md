@@ -1,36 +1,39 @@
-# Issue #1090: Allow conflicted PR repair to recover from handoff_missing without manual requeue
+# Issue #1115: Fail fast when issue journal path templates leave {issueNumber} unresolved
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1090
-- Branch: codex/issue-1090
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1115
+- Branch: codex/issue-1115
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 831a596d07433fec5392d7e45801c363bba9162b
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: bf7d80e2ff84ca9015c7b76ea77693f4626e5f4d
 - Blocked reason: none
-- Last failure signature: handoff-missing
-- Repeated failure signature count: 1
-- Updated at: 2026-03-27T00:03:14.873Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-27T12:25:17.879Z
 
 ## Latest Codex Summary
-- Added a narrow recovery path so blocked `handoff_missing` records with an already-open conflicted tracked PR resume into `resolving_conflict` during reconciliation instead of waiting for an operator requeue.
+- Reproduced unresolved `{issueNumber}` journal template handling in `issueJournalPath(...)`, added focused regression coverage, and updated journal-path resolution call sites to fail fast unless a concrete issue number is supplied.
 
 ## Active Failure Context
-- None recorded.
+- Category: test
+- Summary: `issueJournalPath(...)` previously resolved tokenized journal path templates without substituting `{issueNumber}`, allowing unresolved placeholders to become durable `journal_path` state.
+- Signature: issue-journal-path-unresolved-issue-number
+- Updated at: 2026-03-27T12:25:17.879Z
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `handoff_missing` should remain a durable blocker by default, but reconciliation can safely resume a blocked repair-lane issue when live tracked-PR facts show the PR is still open and merge-conflicted.
-- What changed: updated `reconcileRecoverableBlockedIssueStates()` to inspect tracked PRs for blocked `handoff_missing` records and promote only the open conflicted case back to `resolving_conflict`. Kept `shouldAutoRetryHandoffMissing()` unchanged so non-PR behavior and ordinary blocked selection policy stay intact. Added focused regression coverage for the conflicted tracked-PR path and updated the existing no-PR handoff test to assert the old behavior still holds.
+- Hypothesis: `issueJournalPath(...)` should be the fail-fast boundary for tokenized issue journal templates, rejecting unresolved `{issueNumber}` placeholders while leaving plain custom paths untouched.
+- What changed: added focused `src/journal.test.ts` coverage for unresolved-token failure, valid token substitution, and non-tokenized custom paths; updated `issueJournalPath(...)` to replace `{issueNumber}` only when an `issueNumber` is supplied and otherwise throw a clear error; threaded `issueNumber` through the selection, preparation, and supervisor call sites that derive `journal_path` from config.
 - Current blocker: none locally.
-- Next exact step: review the final diff and commit this `#1090` checkpoint on `codex/issue-1090`; if another pass is needed afterward, exercise the full run-once reconciliation path around the blocked conflicted PR case.
-- Verification gap: I have not run the full repo suite or an end-to-end supervisor loop; verification so far is focused on execution-policy and recovery-reconciliation tests.
-- Files touched: `src/recovery-reconciliation.ts`; `src/supervisor/supervisor.ts`; `src/supervisor/supervisor-recovery-reconciliation.test.ts`; `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low. The new path is limited to records already blocked on `handoff_missing` with an open tracked PR whose live merge state is conflicted; non-PR and non-conflict cases still follow the prior policy.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`
-- What changed this turn: reread the required memory files, confirmed the branch head was a prior unrelated checkpoint, traced the `handoff_missing` policy and reconciliation flow, implemented a conflicted-PR-specific reconciliation escape hatch into `resolving_conflict`, updated the focused reconciliation tests, and reran the relevant policy/recovery test files.
-- Exact failure reproduced this turn: a blocked record with `blocked_reason=handoff_missing` and an already-open tracked PR stayed stranded because `shouldAutoRetryHandoffMissing()` intentionally returns false once `pr_number` is set, so nothing moved the issue back into the conflict-repair lane without a manual requeue.
-- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git branch --show-current`; `git status --short`; `git log --oneline --decorate -5`; `git diff --stat`; `rg -n "handoff_missing|blocked_reason|resolving_conflict|mergeable|CONFLICTING|repair lane|requeue|blocked" src test`; `rg --files src test | rg "supervisor|turn-execution|recovery|issue|pull-request|lifecycle|policy|selection|repair"`; `sed -n '1,260p' src/supervisor/supervisor-execution-policy.ts`; `sed -n '1,320p' src/run-once-issue-preparation.ts`; `sed -n '1,260p' src/recovery-reconciliation.ts`; `sed -n '1,260p' src/supervisor/supervisor-lifecycle.ts`; `sed -n '1,320p' src/pull-request-state.ts`; `sed -n '1,320p' src/recovery-reconciliation.test.ts`; `sed -n '1,320p' src/supervisor/supervisor-execution-policy.test.ts`; `sed -n '1,320p' src/run-once-issue-preparation.test.ts`; `rg -n "shouldAutoRetryHandoffMissing|handoff_missing" src/run-once-issue-selection.ts src/run-once-cycle-prelude.ts src/run-once-turn-execution.ts src/supervisor -g'*.ts'`; `rg -n "tracked_pr_head_advanced|resumed issue|recovery event|last_recovery_reason|operator_requeue|handoff" src/recovery-reconciliation.ts src/*test.ts src/supervisor/*test.ts`; `sed -n '1,460p' src/supervisor/supervisor-recovery-reconciliation.test.ts`; `sed -n '520,760p' src/recovery-reconciliation.ts`; `sed -n '1,260p' src/supervisor/supervisor.ts`; `sed -n '120,220p' src/supervisor/supervisor-selection-issue-explain.ts`; `rg -n "function reconcileRecoverableBlockedIssueStates|export async function reconcileRecoverableBlockedIssueStates|reconcileTrackedMergedButOpenIssues|tracked_pr_lifecycle_recovered|tracked_pr_head_advanced" src/recovery-reconciliation.ts`; `sed -n '760,980p' src/recovery-reconciliation.ts`; `sed -n '980,1240p' src/recovery-reconciliation.ts`; `rg -n "CONFLICTING|mergeConflictDetected|resolving_conflict" src/pull-request-state.ts src/pull-request-state-policy.test.ts src/pull-request-state-test-helpers.ts`; `sed -n '320,520p' src/pull-request-state.ts`; `sed -n '1,220p' src/pull-request-state-policy.test.ts`; `sed -n '620,700p' src/pull-request-state.ts`; `sed -n '1,280p' src/run-once-cycle-prelude.ts`; `sed -n '1840,2035p' src/supervisor/supervisor-recovery-reconciliation.test.ts`; `sed -n '2035,2145p' src/supervisor/supervisor-recovery-reconciliation.test.ts`; `sed -n '1,220p' src/supervisor/supervisor-test-helpers.ts`; `rg -n "export function mergeConflictDetected|function mergeConflictDetected" src/supervisor/supervisor-status-rendering.ts src/supervisor/supervisor-reporting.ts`; `sed -n '1,100p' src/supervisor/supervisor-status-rendering.ts`; `rg -n "function applyFailureSignature|export function applyFailureSignature" src/supervisor/supervisor-failure-helpers.ts`; `sed -n '1,220p' src/supervisor/supervisor-failure-helpers.ts`; `rg -n "reconcileRecoverableBlockedIssueStates\\(" -g'*.ts' src`; `git diff -- src/recovery-reconciliation.ts src/supervisor/supervisor.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `sed -n '1,220p' .codex-supervisor/issue-journal.md`; `git status --short`
+- Next exact step: review the focused diff, commit the `issueJournalPath` fail-fast fix on `codex/issue-1115`, and only broaden verification if a later integration path shows a missed caller.
+- Verification gap: I have not run the full repo suite or an end-to-end supervisor loop; verification so far is limited to the journal helper and the narrow selection/preparation/replay tests that exercise journal-path persistence.
+- Files touched: `src/core/journal.ts`; `src/journal.test.ts`; `src/run-once-issue-preparation.ts`; `src/run-once-issue-selection.ts`; `src/supervisor/supervisor.ts`; `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low. The behavioral change is narrowly scoped to templates containing `{issueNumber}`; non-tokenized paths still resolve exactly as before.
+- Last focused command: `npx tsx --test src/journal.test.ts`
+- What changed this turn: reread the required memory and journal files, confirmed the branch head was still an unrelated prior checkpoint, traced `issueJournalPath(...)` and its callers, added a focused reproducing test for unresolved `{issueNumber}`, implemented fail-fast substitution logic, threaded `issueNumber` through the config-backed callers, and reran the narrow journal-path-related tests.
+- Exact failure reproduced this turn: `issueJournalPath("/tmp/workspaces/issue-177", ".codex-supervisor/issues/{issueNumber}/issue-journal.md")` returned a resolved path that still contained the literal `{issueNumber}` token instead of rejecting the invalid durable path state.
+- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git branch --show-current`; `git status --short`; `git log --oneline --decorate -5`; `rg -n "issueJournalPath|issueJournalRelativePath|\\{issueNumber\\}" src test -g'*.ts'`; `rg --files src test | rg "journal|issue|config|path"`; `sed -n '460,560p' src/core/journal.ts`; `sed -n '1,260p' src/journal.test.ts`; `sed -n '180,240p' src/run-once-issue-preparation.ts`; `sed -n '250,320p' src/run-once-issue-selection.ts`; `sed -n '280,320p' src/supervisor/supervisor.ts`; `sed -n '450,510p' src/core/config.ts`; `rg -n "issueJournalRelativePath|issue-journal" README.md docs/getting-started.md src -g'*.md' -g'*.ts'`; `rg -n "issueJournalPath\\(" src -g'*.ts'`; `sed -n '470,510p' src/supervisor/supervisor.ts`; `sed -n '220,320p' src/run-once-issue-preparation.test.ts`; `git diff -- src/core/journal.ts src/journal.test.ts src/run-once-issue-preparation.ts src/run-once-issue-selection.ts src/supervisor/supervisor.ts`; `npx tsx --test src/journal.test.ts`; `npx tsx --test src/run-once-issue-preparation.test.ts`; `npx tsx --test src/run-once-issue-selection.test.ts`; `npx tsx --test src/supervisor/supervisor-cycle-replay.test.ts`; `git status --short`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

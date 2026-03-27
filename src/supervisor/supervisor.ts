@@ -294,7 +294,9 @@ async function ensureRecordJournalContext(
   const workspace = await ensureWorkspace(config, record.issue_number, record.branch);
   return {
     workspace: workspace.workspacePath,
-    journal_path: issueJournalPath(workspace.workspacePath, config.issueJournalRelativePath),
+    journal_path: issueJournalPath(workspace.workspacePath, config.issueJournalRelativePath, {
+      issueNumber: record.issue_number,
+    }),
   };
 }
 
@@ -485,7 +487,11 @@ export class Supervisor {
   private async classifyStaleStabilizingNoPrBranchState(
     record: Pick<IssueRunRecord, "workspace" | "journal_path">,
   ): Promise<"recoverable" | "already_satisfied_on_main"> {
-    const journalPath = record.journal_path ?? issueJournalPath(record.workspace, this.config.issueJournalRelativePath);
+    const journalPath =
+      record.journal_path ??
+      issueJournalPath(record.workspace, this.config.issueJournalRelativePath, {
+        issueNumber: record.issue_number,
+      });
     const journalRelativePath = path.relative(record.workspace, journalPath).replace(/\\/g, "/");
     const gitProbeTimeoutMs = this.config.codexExecTimeoutMinutes * 60_000;
 

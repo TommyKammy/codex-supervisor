@@ -486,8 +486,21 @@ export function hasMeaningfulJournalHandoff(content: string | null): boolean {
   return normalized !== NOTES_TEMPLATE.trim();
 }
 
-export function issueJournalPath(workspacePath: string, relativePath: string): string {
-  return path.resolve(workspacePath, relativePath);
+export function issueJournalPath(
+  workspacePath: string,
+  relativePath: string,
+  options?: { issueNumber?: number },
+): string {
+  const issueNumberToken = "{issueNumber}";
+  if (!relativePath.includes(issueNumberToken)) {
+    return path.resolve(workspacePath, relativePath);
+  }
+
+  if (options?.issueNumber === undefined) {
+    throw new Error("issueJournalRelativePath requires issueNumber when using {issueNumber}");
+  }
+
+  return path.resolve(workspacePath, relativePath.replaceAll(issueNumberToken, String(options.issueNumber)));
 }
 
 export async function readIssueJournal(journalPath: string): Promise<string | null> {
