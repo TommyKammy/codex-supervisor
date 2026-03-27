@@ -372,3 +372,41 @@ test("formatCommittedGuardrails rewrites committed guardrails into canonical sor
 
   await fs.rm(workspaceDir, { recursive: true, force: true });
 });
+
+test("repo shared-memory guardrails include committed journal hygiene guidance", async () => {
+  const externalReviewGuardrails = JSON.parse(
+    await fs.readFile(path.join(process.cwd(), "docs", "shared-memory", "external-review-guardrails.json"), "utf8"),
+  ) as { patterns?: Array<{ fingerprint?: string; file?: string; summary?: string; rationale?: string }> };
+
+  const patterns = externalReviewGuardrails.patterns ?? [];
+  const committedJournalPathRule = patterns.find(
+    (pattern) =>
+      pattern.fingerprint === ".codex-supervisor/issue-journal.md|committed-journals-must-not-embed-workstation-local-absolute-paths",
+  );
+  assert.ok(committedJournalPathRule, "expected committed journal absolute-path hygiene guidance to exist");
+  assert.equal(committedJournalPathRule.file, ".codex-supervisor/issue-journal.md");
+  assert.equal(
+    committedJournalPathRule.summary,
+    "Flag committed journals or similar durable artifacts that embed workstation-local absolute paths from operator home directories instead of repo-relative or redacted references.",
+  );
+  assert.equal(
+    committedJournalPathRule.rationale,
+    "Shared memory must stay portable across operators, CI, and future sessions; committed machine-specific paths leak private local context and break reproducibility.",
+  );
+
+  const committedJournalConsistencyRule = patterns.find(
+    (pattern) =>
+      pattern.fingerprint ===
+      ".codex-supervisor/issue-journal.md|committed-journal-snapshot-handoff-sections-must-stay-internally-consistent",
+  );
+  assert.ok(committedJournalConsistencyRule, "expected committed journal consistency guidance to exist");
+  assert.equal(committedJournalConsistencyRule.file, ".codex-supervisor/issue-journal.md");
+  assert.equal(
+    committedJournalConsistencyRule.summary,
+    "Flag committed journal states where Supervisor Snapshot, Latest Codex Summary, Active Failure Context, and Current Handoff contradict each other within the same durable handoff.",
+  );
+  assert.equal(
+    committedJournalConsistencyRule.rationale,
+    "Future operators and Codex turns depend on one coherent committed journal state; contradictory snapshot, summary, failure, and handoff sections cause the next action to start from false premises.",
+  );
+});

@@ -4,6 +4,7 @@ import path from "node:path";
 import test, { mock } from "node:test";
 import { StateStore } from "../core/state-store";
 import { GitHubIssue, SupervisorStateFile } from "../core/types";
+import { renderSupervisorStatusDto } from "./supervisor-status-report";
 import { Supervisor } from "./supervisor";
 import {
   branchName,
@@ -110,6 +111,49 @@ test("status surfaces the default trust posture and execution-safety warning", a
   assert.match(status, /trust_mode=trusted_repo_and_authors/);
   assert.match(status, /execution_safety_mode=unsandboxed_autonomous/);
   assert.match(status, /execution_safety_warning=Unsandboxed autonomous execution assumes trusted GitHub-authored inputs\./);
+});
+
+test("renderSupervisorStatusDto appends canonical github rate-limit lines from dto.githubRateLimit", () => {
+  const status = renderSupervisorStatusDto({
+    gsdSummary: null,
+    githubRateLimit: {
+      rest: {
+        resource: "core",
+        limit: 5000,
+        remaining: 75,
+        resetAt: "2026-03-27T00:30:00.000Z",
+        state: "low",
+      },
+      graphql: {
+        resource: "graphql",
+        limit: 5000,
+        remaining: 0,
+        resetAt: "2026-03-27T00:15:00.000Z",
+        state: "exhausted",
+      },
+    },
+    candidateDiscovery: null,
+    loopRuntime: {
+      state: "off",
+      pid: null,
+      startedAt: null,
+      detail: null,
+    },
+    activeIssue: null,
+    selectionSummary: null,
+    trackedIssues: [],
+    runnableIssues: [],
+    blockedIssues: [],
+    detailedStatusLines: [],
+    reconciliationPhase: null,
+    reconciliationWarning: null,
+    readinessLines: [],
+    whyLines: [],
+    warning: null,
+  });
+
+  assert.match(status, /^github_rate_limit resource=rest status=low remaining=75 limit=5000 reset_at=2026-03-27T00:30:00.000Z$/m);
+  assert.match(status, /^github_rate_limit resource=graphql status=exhausted remaining=0 limit=5000 reset_at=2026-03-27T00:15:00.000Z$/m);
 });
 
 test("status reports degraded full inventory refresh and suppresses readiness selection work", async (t) => {

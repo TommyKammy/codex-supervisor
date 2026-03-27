@@ -529,7 +529,7 @@ export class Supervisor {
       const issues = await this.github.listAllIssues();
       this.cachedFullIssueInventory = {
         issues,
-        fetchedAtMs: nowMs,
+        fetchedAtMs: Date.now(),
       };
       return issues;
     } catch (error) {

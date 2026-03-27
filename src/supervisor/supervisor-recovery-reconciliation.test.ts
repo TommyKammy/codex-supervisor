@@ -2008,6 +2008,113 @@ test("reconcileStaleFailedIssueStates records a recovery reason when a tracked P
   assert.equal(saveCalls, 1);
 });
 
+test("reconcileStaleFailedIssueStates rehydrates stale failed tracked PRs from direct issue facts when inventory refresh is degraded", async () => {
+  const config = createConfig();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "366": createRecord({
+        state: "failed",
+        pr_number: 191,
+        last_head_sha: "head-old-191",
+        last_failure_signature: "dirty:head-old-191",
+        repeated_failure_signature_count: 3,
+        blocked_reason: null,
+        last_error: "Stopped after repeated merge conflicts.",
+        last_failure_kind: "codex_failed",
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: 366,
+    title: "Recovery issue",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:21:00Z",
+    url: "https://example.test/issues/366",
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: 191,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/191",
+    state: "OPEN",
+    createdAt: "2026-03-13T00:10:00Z",
+    updatedAt: "2026-03-13T00:22:00Z",
+    isDraft: false,
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-new-191",
+    mergeStateStatus: "CLEAN",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergedAt: null,
+    copilotReviewState: null,
+    copilotReviewRequestedAt: null,
+    copilotReviewArrivedAt: null,
+  };
+
+  let saveCalls = 0;
+  let getIssueCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  await reconcileStaleFailedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getIssue: async (issueNumber) => {
+        getIssueCalls += 1;
+        assert.equal(issueNumber, 366);
+        return issue;
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [],
+    {
+      inferStateFromPullRequest: () => "addressing_review",
+      inferFailureContext: () => null,
+      blockedReasonForLifecycleState: () => null,
+      isOpenPullRequest: () => true,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: () => ({}),
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(getIssueCalls, 1);
+  assert.equal(updated.state, "addressing_review");
+  assert.equal(updated.pr_number, 191);
+  assert.equal(updated.last_head_sha, "head-new-191");
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(
+    updated.last_recovery_reason,
+    "tracked_pr_head_advanced: resumed issue #366 from failed to addressing_review after tracked PR #191 advanced from head-old-191 to head-new-191",
+  );
+  assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+});
+
 test("reconcileStaleFailedIssueStates reclassifies stale failed tracked PRs to blocked manual_review state", async () => {
   const config = createConfig();
   const failureContext = {
