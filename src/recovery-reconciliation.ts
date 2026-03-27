@@ -639,6 +639,52 @@ function buildTrackedPrResumeRecoveryEvent(
   );
 }
 
+export function buildTrackedPrStaleFailureRecovery(args: {
+  record: IssueRunRecord;
+  pr: Pick<import("./core/types").GitHubPullRequest, "number" | "headRefOid">;
+  nextState: IssueRunRecord["state"];
+  failureContext: IssueRunRecord["last_failure_context"];
+  blockedReason: IssueRunRecord["blocked_reason"];
+  reviewWaitPatch?: Partial<IssueRunRecord>;
+  copilotReviewRequestObservationPatch?: Partial<IssueRunRecord>;
+  copilotReviewTimeoutPatch?: Partial<IssueRunRecord>;
+}): {
+  patch: Partial<IssueRunRecord>;
+  recoveryEvent: RecoveryEvent;
+} {
+  const {
+    record,
+    pr,
+    nextState,
+    failureContext,
+    blockedReason,
+    reviewWaitPatch = {},
+    copilotReviewRequestObservationPatch = {},
+    copilotReviewTimeoutPatch = {},
+  } = args;
+
+  return {
+    recoveryEvent: buildTrackedPrResumeRecoveryEvent(record, pr, nextState),
+    patch: {
+      state: nextState,
+      last_error: nextState === "blocked" && failureContext ? truncate(failureContext.summary, 1000) : null,
+      last_failure_kind: null,
+      last_failure_context: failureContext,
+      last_blocker_signature: null,
+      ...applyFailureSignature(record, failureContext),
+      blocked_reason: nextState === "blocked" ? blockedReason : null,
+      repeated_blocker_count: 0,
+      timeout_retry_count: 0,
+      blocked_verification_retry_count: 0,
+      pr_number: pr.number,
+      last_head_sha: pr.headRefOid,
+      ...reviewWaitPatch,
+      ...copilotReviewRequestObservationPatch,
+      ...copilotReviewTimeoutPatch,
+    },
+  };
+}
+
 export async function cleanupExpiredDoneWorkspaces(
   config: SupervisorConfig,
   state: SupervisorStateFile,
@@ -1093,27 +1139,19 @@ export async function reconcileStaleFailedIssueStates(
 
     const failureContext =
       nextState === "blocked" ? deps.inferFailureContext(config, recordForState, pr, checks, reviewThreads) : null;
-    const recoveryEvent = buildTrackedPrResumeRecoveryEvent(record, pr, nextState);
-    const patch: Partial<IssueRunRecord> = {
-      state: nextState,
-      last_error: nextState === "blocked" && failureContext ? truncate(failureContext.summary, 1000) : null,
-      last_failure_kind: null,
-      last_failure_context: failureContext,
-      last_blocker_signature: null,
-      ...applyFailureSignature(record, failureContext),
-      blocked_reason:
+    const { patch, recoveryEvent } = buildTrackedPrStaleFailureRecovery({
+      record,
+      pr,
+      nextState,
+      failureContext,
+      blockedReason:
         nextState === "blocked"
           ? deps.blockedReasonForLifecycleState(config, recordForState, pr, checks, reviewThreads)
           : null,
-      repeated_blocker_count: 0,
-      timeout_retry_count: 0,
-      blocked_verification_retry_count: 0,
-      pr_number: pr.number,
-      last_head_sha: pr.headRefOid,
-      ...reviewWaitPatch,
-      ...copilotReviewRequestObservationPatch,
-      ...copilotReviewTimeoutPatch,
-    };
+      reviewWaitPatch,
+      copilotReviewRequestObservationPatch,
+      copilotReviewTimeoutPatch,
+    });
 
     const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
     state.issues[String(record.issue_number)] = updated;
