@@ -43,6 +43,101 @@ async function remoteTrackingRefExists(gitPath: string, branch: string): Promise
   return result.exitCode === 0;
 }
 
+async function gitRefExists(gitPath: string, ref: string): Promise<boolean> {
+  const result = await runCommand(
+    "git",
+    ["-C", gitPath, "show-ref", "--verify", "--quiet", ref],
+    { allowExitCodes: [0, 1] },
+  );
+  return result.exitCode === 0;
+}
+
+async function listDefaultBranchCandidateRefs(repoPath: string, defaultBranch: string): Promise<string[]> {
+  const candidates = new Set<string>();
+  const localRef = `refs/heads/${defaultBranch}`;
+  if (await gitRefExists(repoPath, localRef)) {
+    candidates.add(defaultBranch);
+  }
+
+  const remoteRefs = await runCommand("git", ["-C", repoPath, "for-each-ref", "--format=%(refname:short)", "refs/remotes"]);
+  for (const ref of remoteRefs.stdout.split("\n").map((line) => line.trim()).filter(Boolean)) {
+    if (ref.endsWith(`/${defaultBranch}`)) {
+      candidates.add(ref);
+    }
+  }
+
+  return [...candidates];
+}
+
+async function isAncestorRef(repoPath: string, ancestor: string, descendant: string): Promise<boolean> {
+  const result = await runCommand(
+    "git",
+    ["-C", repoPath, "merge-base", "--is-ancestor", ancestor, descendant],
+    { allowExitCodes: [0, 1] },
+  );
+  return result.exitCode === 0;
+}
+
+async function revParse(repoPath: string, ref: string): Promise<string> {
+  const result = await runCommand("git", ["-C", repoPath, "rev-parse", ref]);
+  return result.stdout.trim();
+}
+
+function preferredBootstrapBaseRef(defaultBranch: string, refs: string[]): string {
+  const preferredOrder = [`origin/${defaultBranch}`, defaultBranch];
+  for (const preferredRef of preferredOrder) {
+    if (refs.includes(preferredRef)) {
+      return preferredRef;
+    }
+  }
+
+  return [...refs].sort()[0] ?? `origin/${defaultBranch}`;
+}
+
+async function resolveBootstrapBaseRef(repoPath: string, defaultBranch: string): Promise<string> {
+  const candidateRefs = await listDefaultBranchCandidateRefs(repoPath, defaultBranch);
+  if (candidateRefs.length === 0) {
+    throw new Error(`No available default-branch refs found for ${defaultBranch}`);
+  }
+
+  const candidateShas = new Map<string, string>();
+  for (const ref of candidateRefs) {
+    candidateShas.set(ref, await revParse(repoPath, ref));
+  }
+
+  const maximalRefs: string[] = [];
+  for (const candidateRef of candidateRefs) {
+    let containsAllOthers = true;
+    for (const otherRef of candidateRefs) {
+      if (candidateRef === otherRef) {
+        continue;
+      }
+      if (!(await isAncestorRef(repoPath, otherRef, candidateRef))) {
+        containsAllOthers = false;
+        break;
+      }
+    }
+    if (containsAllOthers) {
+      maximalRefs.push(candidateRef);
+    }
+  }
+
+  if (maximalRefs.length === 0) {
+    throw new Error(
+      `Could not determine an authoritative default-branch ref for ${defaultBranch}; candidates diverged: ${candidateRefs.join(", ")}`,
+    );
+  }
+
+  const maximalShas = new Set(maximalRefs.map((ref) => candidateShas.get(ref)));
+  if (maximalShas.size > 1) {
+    throw new Error(
+      `Could not determine an authoritative default-branch ref for ${defaultBranch}; candidates diverged: ${maximalRefs.join(", ")}`,
+    );
+  }
+
+  return preferredBootstrapBaseRef(defaultBranch, maximalRefs);
+}
+
 async function originBranchExists(gitPath: string, branch: string): Promise<boolean> {
   const result = await runCommand(
     "git",
@@ -90,6 +185,7 @@ export async function ensureWorkspace(
   const workspacePath = workspacePathForIssue(config, issueNumber);
   await ensureDir(config.workspaceRoot);
   await runCommand("git", ["-C", config.repoPath, "fetch", "origin", config.defaultBranch]);
+  const bootstrapBaseRef = await resolveBootstrapBaseRef(config.repoPath, config.defaultBranch);
   const remoteBranchExists = await fetchIssueRemoteTrackingRef(config.repoPath, branch);
 
   if (fs.existsSync(path.join(workspacePath, ".git"))) {
@@ -127,12 +223,12 @@ export async function ensureWorkspace(
     "-b",
     branch,
     workspacePath,
-    `origin/${config.defaultBranch}`,
+    bootstrapBaseRef,
   ]);
 
   return buildEnsuredWorkspace(workspacePath, {
     source: "bootstrap_default_branch",
-    ref: `origin/${config.defaultBranch}`,
+    ref: bootstrapBaseRef,
   });
 }
 

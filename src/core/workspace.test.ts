@@ -66,6 +66,11 @@ async function git(cwd: string, ...args: string[]): Promise<void> {
   await execFileAsync("git", ["-C", cwd, ...args]);
 }
 
+async function gitStdout(cwd: string, ...args: string[]): Promise<string> {
+  const result = await execFileAsync("git", ["-C", cwd, ...args]);
+  return result.stdout.trim();
+}
+
 async function withFakeGitFetch<T>(
   branch: string,
   stderrMessage: string,
@@ -126,6 +131,34 @@ async function createRepositoryFixture(): Promise<SupervisorConfig> {
   await git(config.repoPath, "push", "-u", "origin", config.defaultBranch);
 
   return config;
+}
+
+async function createSplitRemoteRepositoryFixture(): Promise<SupervisorConfig & { githubPath: string }> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-workspace-split-"));
+  const originPath = path.join(root, "origin.git");
+  const githubPath = path.join(root, "github.git");
+  const config = createConfig(root);
+
+  await execFileAsync("git", ["init", "--bare", originPath]);
+  await execFileAsync("git", ["init", "--bare", githubPath]);
+  await execFileAsync("git", ["clone", originPath, config.repoPath]);
+  await git(config.repoPath, "config", "user.name", "Codex Supervisor");
+  await git(config.repoPath, "config", "user.email", "codex@example.test");
+  await git(config.repoPath, "checkout", "-b", config.defaultBranch);
+  await fs.writeFile(path.join(config.repoPath, "README.md"), "fixture\n", "utf8");
+  await git(config.repoPath, "add", "README.md");
+  await git(config.repoPath, "commit", "-m", "Initial commit");
+  await git(config.repoPath, "push", "-u", "origin", config.defaultBranch);
+  await git(config.repoPath, "remote", "add", "github", githubPath);
+  await git(config.repoPath, "push", "-u", "github", config.defaultBranch);
+
+  await fs.writeFile(path.join(config.repoPath, "fresh.txt"), "fresh authoritative change\n", "utf8");
+  await git(config.repoPath, "add", "fresh.txt");
+  await git(config.repoPath, "commit", "-m", "Fresh authoritative commit");
+  await git(config.repoPath, "push", "github", config.defaultBranch);
+  await git(config.repoPath, "fetch", "github", config.defaultBranch);
+
+  return { ...config, githubPath };
 }
 
 test("ensureWorkspace reports when a recreated workspace restores from an existing local branch", async () => {
@@ -190,4 +223,26 @@ test("ensureWorkspace treats a missing remote branch as bootstrap even when fetc
   assert.equal(ensured.workspacePath, path.join(config.workspaceRoot, `issue-${issueNumber}`));
   assert.equal(ensured.restore.source, "bootstrap_default_branch");
   assert.equal(ensured.restore.ref, `origin/${config.defaultBranch}`);
+});
+
+test("ensureWorkspace bootstraps from the fresh default-branch ref instead of stale origin in split-remote repos", async () => {
+  const config = await createSplitRemoteRepositoryFixture();
+  const issueNumber = 725;
+  const branch = `${config.branchPrefix}${issueNumber}`;
+
+  const originDefaultSha = await gitStdout(config.repoPath, "rev-parse", `origin/${config.defaultBranch}`);
+  const githubDefaultSha = await gitStdout(config.repoPath, "rev-parse", `github/${config.defaultBranch}`);
+  const localDefaultSha = await gitStdout(config.repoPath, "rev-parse", config.defaultBranch);
+
+  assert.notEqual(originDefaultSha, githubDefaultSha);
+  assert.equal(localDefaultSha, githubDefaultSha);
+
+  const ensured = await ensureWorkspace(config, issueNumber, branch);
+  const branchHeadSha = await gitStdout(ensured.workspacePath, "rev-parse", "HEAD");
+
+  assert.equal(ensured.workspacePath, path.join(config.workspaceRoot, `issue-${issueNumber}`));
+  assert.equal(ensured.restore.source, "bootstrap_default_branch");
+  assert.equal(ensured.restore.ref, config.defaultBranch);
+  assert.equal(branchHeadSha, githubDefaultSha);
+  assert.notEqual(branchHeadSha, originDefaultSha);
 });
