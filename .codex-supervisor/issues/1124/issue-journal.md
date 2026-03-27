@@ -37,9 +37,9 @@ Failure signature: build (ubuntu-latest):fail|build (macos-latest):fail
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: The refreshed branch is functionally correct, but CI is failing because `renderStatusWarningLine()` still types its sanitizer as returning `string` while `renderSupervisorStatusDto()` passes `sanitizeStatusValue()`, which is explicitly nullable.
-- What changed: Reproduced the failure from GitHub Actions run `23654904548`, confirmed both `build` jobs fail in `npm run build` with `TS2345` at `src/supervisor/supervisor-status-report.ts:121` and `:141`, and narrowed it to the shared warning formatter signature. Widened `renderStatusWarningLine()` in `src/warning-formatting.ts` to accept `string | null | undefined`, which matches the existing `truncate()` contract and the status sanitizer already used elsewhere.
+- What changed: Reproduced the failure from GitHub Actions, confirmed both `build` jobs fail in `npm run build` with `TS2345` at `src/supervisor/supervisor-status-report.ts:121` and `:141`, and narrowed it to the shared warning formatter signature. Widened `renderStatusWarningLine()` in `src/warning-formatting.ts` to accept `string | null | undefined`, which matches the existing `truncate()` contract and the status sanitizer already used elsewhere. Committed the repair and pushed the branch so PR #1130 is rerunning CI on the updated head.
 - Current blocker: None. Local `npm run build` and the focused config/doctor/status warning tests pass after the type-only repair.
-- Next exact step: Commit and push the CI repair on `codex/issue-1124`, then re-check PR #1130 status.
+- Next exact step: Wait for PR #1130 build checks to finish on the updated branch head, then inspect any residual failures if CI still does not go green.
 - Verification gap: Remote CI has not been rerun yet on the repaired commit.
 - Files touched: src/warning-formatting.ts
 - Rollback concern: Low; the change only widens a shared callback type to match an existing nullable sanitizer and does not alter warning text construction.
@@ -52,3 +52,4 @@ Failure signature: build (ubuntu-latest):fail|build (macos-latest):fail
 - 2026-03-27T15:53:20Z: `gh run view 23654904548 --log-failed` showed both CI jobs failing in `npm run build` with `TS2345` because `renderStatusWarningLine()` expected a non-null sanitizer while `sanitizeStatusValue()` is nullable.
 - 2026-03-27T15:55:32Z: Ran `npm ci`, then `npm run build`; the build passed after widening the status warning sanitizer signature in `src/warning-formatting.ts`.
 - 2026-03-27T15:56:54Z: Re-ran `npx --yes tsx --test src/config.test.ts src/doctor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; all 84 tests passed.
+- 2026-03-27T15:58:52Z: Committed `Fix status warning sanitizer typing`, pushed `codex/issue-1124` to `origin` and `github`, and confirmed via `gh pr checks 1130` that the PR build checks restarted in `pending`.
