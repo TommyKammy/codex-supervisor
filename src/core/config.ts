@@ -15,6 +15,7 @@ import {
   TrustDiagnosticsSummary,
   TrustMode,
 } from "./types";
+import { DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH } from "./journal";
 import { mapConfiguredReviewProviders } from "./review-providers";
 import { isValidGitRefName, parseJson, resolveMaybeRelative } from "./utils";
 
@@ -479,7 +480,7 @@ function parseSupervisorConfigDocument(raw: Record<string, unknown>, resolvedPat
     issueJournalRelativePath:
       typeof raw.issueJournalRelativePath === "string" && raw.issueJournalRelativePath.trim() !== ""
         ? raw.issueJournalRelativePath
-        : ".codex-supervisor/issue-journal.md",
+        : DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
     issueJournalMaxChars:
       typeof raw.issueJournalMaxChars === "number" && raw.issueJournalMaxChars >= 2000
         ? raw.issueJournalMaxChars

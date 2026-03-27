@@ -4,6 +4,8 @@ import { GitHubIssue, IssueRunRecord } from "./types";
 import { ensureDir, truncate, writeFileAtomic } from "./utils";
 
 const NOTES_MARKER = "## Codex Working Notes";
+export const DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH = ".codex-supervisor/issues/{issueNumber}/issue-journal.md";
+export const LEGACY_SHARED_ISSUE_JOURNAL_RELATIVE_PATH = ".codex-supervisor/issue-journal.md";
 const DURABLE_PATH_TOKEN_PATTERN =
   /(?:(?<=["'`])(?:\/[^"'`<>\n]+|[A-Za-z]:[\\/][^"'`<>\n]+)(?=["'`])|(?<![A-Za-z0-9+./\\:-])(?:\/[^\s"'`<>\[\]{}()]+(?:[\\/][^\s"'`<>\[\]{}()]+)*|[A-Za-z]:[\\/][^\s"'`<>\[\]{}()]+(?:[\\/][^\s"'`<>\[\]{}()]+)*))/g;
 const LEADING_PATH_PUNCTUATION = "([{";
@@ -308,6 +310,13 @@ function normalizeDurableJournalText(text: string | null | undefined, workspaceP
   });
 }
 
+export function normalizeDurableIssueJournalContent(
+  content: string | null | undefined,
+  workspacePath: string,
+): string {
+  return normalizeDurableJournalText(content, workspacePath);
+}
+
 function truncateSummaryBody(summary: string, maxLength: number): string {
   if (summary.length === 0 || maxLength <= 0) {
     return "";
@@ -486,7 +495,49 @@ export function hasMeaningfulJournalHandoff(content: string | null): boolean {
   return normalized !== NOTES_TEMPLATE.trim();
 }
 
-export function issueJournalPath(workspacePath: string, relativePath: string): string {
+export function resolveIssueJournalRelativePath(relativePathTemplate: string, issueNumber: number): string {
+  return relativePathTemplate.replaceAll("{issueNumber}", String(issueNumber));
+}
+
+function workspaceRelativeJournalPath(workspacePath: string, journalPath: string): string {
+  const relativePath = path.isAbsolute(journalPath) ? path.relative(workspacePath, journalPath) : journalPath;
+  return relativePath.replace(/\\/g, "/");
+}
+
+export function trackedIssueJournalRelativePath(
+  workspacePath: string,
+  journalPath: string | null,
+  relativePathTemplate: string,
+  issueNumber: number,
+): string {
+  const canonicalRelativePath = resolveIssueJournalRelativePath(relativePathTemplate, issueNumber);
+  if (journalPath === null) {
+    return canonicalRelativePath;
+  }
+
+  const relativeJournalPath = workspaceRelativeJournalPath(workspacePath, journalPath);
+  return relativeJournalPath === LEGACY_SHARED_ISSUE_JOURNAL_RELATIVE_PATH
+    ? canonicalRelativePath
+    : relativeJournalPath;
+}
+
+export function trackedIssueJournalPath(
+  workspacePath: string,
+  journalPath: string | null,
+  relativePathTemplate: string,
+  issueNumber: number,
+): string {
+  return path.resolve(
+    workspacePath,
+    trackedIssueJournalRelativePath(workspacePath, journalPath, relativePathTemplate, issueNumber),
+  );
+}
+
+export function issueJournalPath(workspacePath: string, relativePathTemplate: string, issueNumber?: number): string {
+  const relativePath =
+    issueNumber === undefined
+      ? relativePathTemplate
+      : resolveIssueJournalRelativePath(relativePathTemplate, issueNumber);
   return path.resolve(workspacePath, relativePath);
 }
 
@@ -512,8 +563,25 @@ export async function syncIssueJournal(args: {
   const { issue, record, journalPath, maxChars = 6000 } = args;
   await ensureDir(path.dirname(journalPath));
   const existing = await readIssueJournal(journalPath);
-  const notes = existing ? normalizeDurableJournalText(preserveCodexNotes(existing), record.workspace) : null;
+  const notes = existing ? normalizeDurableIssueJournalContent(preserveCodexNotes(existing), record.workspace) : null;
   const snapshot = buildSupervisorSnapshot({ issue, record, journalPath });
   const nextContent = `${snapshot}\n${notes ? compactCodexNotes(notes, maxChars) : NOTES_TEMPLATE}`;
   await writeFileAtomic(journalPath, nextContent);
+}
+
+export async function normalizeCommittedIssueJournal(args: {
+  journalPath: string;
+  workspacePath: string;
+}): Promise<string | null> {
+  const existing = await readIssueJournal(args.journalPath);
+  if (existing === null) {
+    return null;
+  }
+
+  const normalized = normalizeDurableIssueJournalContent(existing, args.workspacePath);
+  if (normalized !== existing) {
+    await writeFileAtomic(args.journalPath, normalized);
+  }
+
+  return normalized;
 }

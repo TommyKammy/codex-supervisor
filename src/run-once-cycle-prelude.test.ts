@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { GitHubIssue, SupervisorStateFile } from "./core/types";
 import { RecoveryEvent, runOnceCyclePrelude } from "./run-once-cycle-prelude";
+import { createRecord } from "./supervisor/supervisor-test-helpers";
 
 test("runOnceCyclePrelude loads state and aggregates recovery setup events in order", async () => {
   const state: SupervisorStateFile = {
@@ -690,6 +691,88 @@ test("runOnceCyclePrelude records rate-limited inventory refresh failures distin
   assert.equal(result.state.inventory_refresh_failure?.classification, "rate_limited");
 });
 
+test("runOnceCyclePrelude rehydrates stale failed tracked PRs during degraded inventory refresh even without an active issue", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "77": createRecord({
+        issue_number: 77,
+        state: "failed",
+        pr_number: 170,
+        last_head_sha: "head-old-170",
+        last_failure_signature: "dirty:head-old-170",
+        repeated_failure_signature_count: 3,
+        blocked_reason: null,
+        last_error: "PR was previously conflicted.",
+        last_failure_kind: "codex_failed",
+      }),
+    },
+  };
+  const savedStates: SupervisorStateFile[] = [];
+  const staleFailedCalls: Array<{
+    loadedState: SupervisorStateFile;
+    loadedIssues: GitHubIssue[];
+  }> = [];
+
+  const result = await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+      save: async (nextState) => {
+        savedStates.push(structuredClone(nextState));
+      },
+    },
+    carryoverRecoveryEvents: [],
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => {
+      throw new Error("Failed to parse JSON from gh issue list: Unexpected token ] in JSON at position 1");
+    },
+    reserveRunnableIssueSelection: async () => {
+      throw new Error("unexpected reserveRunnableIssueSelection call");
+    },
+    reconcileTrackedMergedButOpenIssues: async () => {
+      throw new Error("unexpected reconcileTrackedMergedButOpenIssues call");
+    },
+    reconcileMergedIssueClosures: async () => {
+      throw new Error("unexpected reconcileMergedIssueClosures call");
+    },
+    reconcileStaleFailedIssueStates: async (loadedState, loadedIssues) => {
+      staleFailedCalls.push({ loadedState, loadedIssues });
+      loadedState.issues["77"] = {
+        ...loadedState.issues["77"]!,
+        state: "addressing_review",
+        last_head_sha: "head-new-170",
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+        last_recovery_reason:
+          "tracked_pr_head_advanced: resumed issue #77 from failed to addressing_review after tracked PR #170 advanced from head-old-170 to head-new-170",
+      };
+    },
+    reconcileRecoverableBlockedIssueStates: async () => {
+      throw new Error("unexpected reconcileRecoverableBlockedIssueStates call");
+    },
+    reconcileParentEpicClosures: async () => {
+      throw new Error("unexpected reconcileParentEpicClosures call");
+    },
+    cleanupExpiredDoneWorkspaces: async () => {
+      throw new Error("unexpected cleanupExpiredDoneWorkspaces call");
+    },
+  });
+
+  assert.ok(!("kind" in result));
+  assert.equal(savedStates.length, 1);
+  assert.equal(savedStates[0]?.inventory_refresh_failure?.source, "gh issue list");
+  assert.deepEqual(staleFailedCalls, [
+    {
+      loadedState: state,
+      loadedIssues: [],
+    },
+  ]);
+  assert.equal(result.state.issues["77"]?.state, "addressing_review");
+  assert.equal(result.state.issues["77"]?.last_head_sha, "head-new-170");
+  assert.equal(result.state.issues["77"]?.last_failure_signature, null);
+});
+
 test("runOnceCyclePrelude still reconciles parent epic closures from tracked issue snapshots when full inventory refresh is malformed", async () => {
   const parentIssue: GitHubIssue = {
     number: 1043,
@@ -783,4 +866,103 @@ test("runOnceCyclePrelude still reconciles parent epic closures from tracked iss
   assert.equal(saveCalls.length, 1);
   assert.equal(result.state.inventory_refresh_failure?.source, "gh issue list");
   assert.match(result.state.inventory_refresh_failure?.message ?? "", /Fallback transport: malformed REST inventory fallback payload/);
+});
+
+test("runOnceCyclePrelude fetches untracked parent epics for degraded parent closure reconciliation", async () => {
+  const parentIssue: GitHubIssue = {
+    number: 1100,
+    title: "Epic issue",
+    body: "",
+    createdAt: "2026-03-26T00:00:00Z",
+    updatedAt: "2026-03-26T00:00:00Z",
+    url: "https://example.test/issues/1100",
+    state: "OPEN",
+  };
+  const childOne: GitHubIssue = {
+    number: 1101,
+    title: "Child one",
+    body: "Part of: #1100",
+    createdAt: "2026-03-26T00:00:00Z",
+    updatedAt: "2026-03-26T00:00:00Z",
+    url: "https://example.test/issues/1101",
+    state: "CLOSED",
+  };
+  const childTwo: GitHubIssue = {
+    number: 1102,
+    title: "Child two",
+    body: "Part of: #1100",
+    createdAt: "2026-03-26T00:00:00Z",
+    updatedAt: "2026-03-26T00:00:00Z",
+    url: "https://example.test/issues/1102",
+    state: "CLOSED",
+  };
+  const childThree: GitHubIssue = {
+    number: 1103,
+    title: "Child three",
+    body: "Part of: #1100",
+    createdAt: "2026-03-26T00:00:00Z",
+    updatedAt: "2026-03-26T00:00:00Z",
+    url: "https://example.test/issues/1103",
+    state: "CLOSED",
+  };
+  const issuesByNumber = new Map([
+    [parentIssue.number, parentIssue],
+    [childOne.number, childOne],
+    [childTwo.number, childTwo],
+    [childThree.number, childThree],
+  ]);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "1101": {} as never,
+      "1102": {} as never,
+      "1103": {} as never,
+    },
+  };
+  const fetchedIssueNumbers: number[] = [];
+  const parentEpicClosureCalls: GitHubIssue[][] = [];
+
+  const result = await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+      save: async () => {},
+    },
+    carryoverRecoveryEvents: [],
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => {
+      throw new Error("Failed to load full issue inventory.\nPrimary transport: malformed gh issue list JSON");
+    },
+    getIssueForParentEpicClosureFallback: async (issueNumber) => {
+      fetchedIssueNumbers.push(issueNumber);
+      const issue = issuesByNumber.get(issueNumber);
+      assert.ok(issue);
+      return issue;
+    },
+    reserveRunnableIssueSelection: async () => {
+      throw new Error("unexpected reserveRunnableIssueSelection call");
+    },
+    reconcileTrackedMergedButOpenIssues: async () => {
+      throw new Error("unexpected reconcileTrackedMergedButOpenIssues call");
+    },
+    reconcileMergedIssueClosures: async () => {
+      throw new Error("unexpected reconcileMergedIssueClosures call");
+    },
+    reconcileStaleFailedIssueStates: async () => {
+      throw new Error("unexpected reconcileStaleFailedIssueStates call");
+    },
+    reconcileRecoverableBlockedIssueStates: async () => {
+      throw new Error("unexpected reconcileRecoverableBlockedIssueStates call");
+    },
+    reconcileParentEpicClosures: async (_loadedState, loadedIssues) => {
+      parentEpicClosureCalls.push(loadedIssues);
+    },
+    cleanupExpiredDoneWorkspaces: async () => {
+      throw new Error("unexpected cleanupExpiredDoneWorkspaces call");
+    },
+  });
+
+  assert.ok(!("kind" in result));
+  assert.deepEqual(fetchedIssueNumbers, [1101, 1102, 1103, 1100]);
+  assert.deepEqual(parentEpicClosureCalls, [[childOne, childTwo, childThree, parentIssue]]);
 });

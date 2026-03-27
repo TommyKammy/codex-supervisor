@@ -257,7 +257,7 @@ test("replay-corpus-promote promotes a captured snapshot through the dedicated C
         state: "planning",
         branch: "codex/issue-534",
         workspace: "/home/tommy/Dev/codex-supervisor-self-worktrees/issue-534",
-        journal_path: "/home/tommy/Dev/codex-supervisor-self-worktrees/issue-534/.codex-supervisor/issue-journal.md",
+        journal_path: "/home/tommy/Dev/codex-supervisor-self-worktrees/issue-534/.codex-supervisor/issues/534/issue-journal.md",
         local_review_summary_path: "/tmp/reviews/promoted-summary.md",
         last_head_sha: "head-534",
         provider_success_observed_at: null,
@@ -315,7 +315,7 @@ test("replay-corpus-promote promotes a captured snapshot through the dedicated C
   );
   assert.match(
     result.stdout,
-    /Normalization: workspace=>\., journal_path=>\.codex-supervisor\/issue-journal\.md, local_review_summary_path=>none, hasUncommittedChanges=>false/,
+    /Normalization: workspace=>\., journal_path=>\.codex-supervisor\/issues\/534\/issue-journal\.md, local_review_summary_path=>none, hasUncommittedChanges=>false/,
   );
 
   const promotedCase = JSON.parse(
@@ -333,7 +333,7 @@ test("replay-corpus-promote promotes a captured snapshot through the dedicated C
     await fs.readFile(path.join(corpusPath, "cases", "issue-534-reproducing", "input", "snapshot.json"), "utf8"),
   );
   assert.equal(promotedInput.local.record.workspace, ".");
-  assert.equal(promotedInput.local.record.journal_path, ".codex-supervisor/issue-journal.md");
+  assert.equal(promotedInput.local.record.journal_path, ".codex-supervisor/issues/534/issue-journal.md");
   assert.equal(promotedInput.local.record.local_review_summary_path, null);
   assert.equal(promotedInput.local.workspaceStatus.hasUncommittedChanges, false);
 
