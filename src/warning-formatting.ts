@@ -16,6 +16,15 @@ export function buildTrustWarning(
   return buildWarning("execution_safety", trustDiagnostics.warning);
 }
 
+export function buildTrustAndConfigWarnings(
+  trustDiagnostics: Pick<TrustDiagnosticsSummary, "warning" | "configWarning">,
+): FormattedWarning[] {
+  return [
+    buildTrustWarning(trustDiagnostics),
+    buildWarning("config", trustDiagnostics.configWarning ?? null),
+  ].filter((warning): warning is FormattedWarning => warning !== null);
+}
+
 export function renderDoctorWarningLine(
   warning: FormattedWarning,
   sanitize: (value: string) => string,

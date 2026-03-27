@@ -46,6 +46,7 @@ export interface TrustDiagnosticsSummary {
   trustMode: TrustMode;
   executionSafetyMode: ExecutionSafetyMode;
   warning: string | null;
+  configWarning?: string | null;
 }
 
 export interface CadenceDiagnosticsSummary {

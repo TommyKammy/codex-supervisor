@@ -21,7 +21,7 @@ import {
   formatInventoryRefreshStatusLine,
   formatLastSuccessfulInventorySnapshotStatusLine,
 } from "../inventory-refresh-state";
-import { buildTrustWarning, buildWarning, renderStatusWarningLine } from "../warning-formatting";
+import { buildTrustAndConfigWarnings, buildWarning, renderStatusWarningLine } from "../warning-formatting";
 
 export interface SupervisorStatusWarningDto {
   kind: "readiness" | "status";
@@ -92,6 +92,7 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
     trustMode: "trusted_repo_and_authors",
     executionSafetyMode: "unsandboxed_autonomous",
     warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+    configWarning: null,
   };
   const cadenceDiagnostics = dto.cadenceDiagnostics ?? {
     pollIntervalSeconds: 120,
@@ -103,13 +104,21 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
     cadenceDiagnostics.mergeCriticalRecheckSeconds === null
       ? "disabled"
       : String(cadenceDiagnostics.mergeCriticalRecheckSeconds);
-  const trustWarning = buildTrustWarning(trustDiagnostics);
+  const githubRateLimitLines =
+    dto.githubRateLimit === undefined || dto.githubRateLimit === null
+      ? []
+      : [
+        renderGitHubRateLimitLine("rest", dto.githubRateLimit.rest),
+        renderGitHubRateLimitLine("graphql", dto.githubRateLimit.graphql),
+      ].filter((line) => !dto.detailedStatusLines.includes(line));
+  const trustWarnings = buildTrustAndConfigWarnings(trustDiagnostics);
   const statusWarning = dto.warning === null ? null : buildWarning(dto.warning.kind, dto.warning.message);
   const lines = [
     ...dto.detailedStatusLines,
+    ...githubRateLimitLines,
     `trust_mode=${trustDiagnostics.trustMode}`,
     `execution_safety_mode=${trustDiagnostics.executionSafetyMode}`,
-    ...(trustWarning === null ? [] : [renderStatusWarningLine(trustWarning, sanitizeStatusValue)]),
+    ...trustWarnings.map((warning) => renderStatusWarningLine(warning, sanitizeStatusValue)),
     `merge_critical_recheck_seconds=${mergeCriticalRecheckSeconds} merge_critical_effective_seconds=${cadenceDiagnostics.mergeCriticalEffectiveSeconds} merge_critical_recheck_enabled=${cadenceDiagnostics.mergeCriticalRecheckEnabled}`,
     ...(dto.candidateDiscoverySummary ? [dto.candidateDiscoverySummary] : []),
     `local_ci configured=${localCiContract.configured} source=${localCiContract.source} command=${truncate(sanitizeStatusValue(localCiContract.command ?? "none"), 200)} summary=${truncate(sanitizeStatusValue(localCiContract.summary), 200)}`,

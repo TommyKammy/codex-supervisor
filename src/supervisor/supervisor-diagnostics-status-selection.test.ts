@@ -4,6 +4,7 @@ import path from "node:path";
 import test, { mock } from "node:test";
 import { StateStore } from "../core/state-store";
 import { GitHubIssue, SupervisorStateFile } from "../core/types";
+import { renderSupervisorStatusDto } from "./supervisor-status-report";
 import { Supervisor } from "./supervisor";
 import {
   branchName,
@@ -104,12 +105,92 @@ test("status surfaces the default trust posture and execution-safety warning", a
     trustMode: "trusted_repo_and_authors",
     executionSafetyMode: "unsandboxed_autonomous",
     warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+    configWarning:
+      "Active config still uses legacy shared issue journal path .codex-supervisor/issue-journal.md; prefer .codex-supervisor/issues/{issueNumber}/issue-journal.md.",
   });
 
   const status = await supervisor.status();
   assert.match(status, /trust_mode=trusted_repo_and_authors/);
   assert.match(status, /execution_safety_mode=unsandboxed_autonomous/);
   assert.match(status, /execution_safety_warning=Unsandboxed autonomous execution assumes trusted GitHub-authored inputs\./);
+  assert.match(
+    status,
+    /config_warning=Active config still uses legacy shared issue journal path \.codex-supervisor\/issue-journal\.md; prefer \.codex-supervisor\/issues\/\{issueNumber\}\/issue-journal\.md\./,
+  );
+});
+
+test("status does not warn for issue-scoped or custom issue journal paths", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const githubStub = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const issueScopedSupervisor = new Supervisor({
+    ...fixture.config,
+    issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
+  });
+  (issueScopedSupervisor as unknown as { github: Record<string, unknown> }).github = githubStub;
+  const issueScopedStatus = await issueScopedSupervisor.status();
+  assert.doesNotMatch(issueScopedStatus, /config_warning=/);
+
+  const customPathSupervisor = new Supervisor({
+    ...fixture.config,
+    issueJournalRelativePath: ".codex-supervisor/custom/issue-{issueNumber}.md",
+  });
+  (customPathSupervisor as unknown as { github: Record<string, unknown> }).github = githubStub;
+  const customPathStatus = await customPathSupervisor.status();
+  assert.doesNotMatch(customPathStatus, /config_warning=/);
+});
+
+test("renderSupervisorStatusDto appends canonical github rate-limit lines from dto.githubRateLimit", () => {
+  const status = renderSupervisorStatusDto({
+    gsdSummary: null,
+    githubRateLimit: {
+      rest: {
+        resource: "core",
+        limit: 5000,
+        remaining: 75,
+        resetAt: "2026-03-27T00:30:00.000Z",
+        state: "low",
+      },
+      graphql: {
+        resource: "graphql",
+        limit: 5000,
+        remaining: 0,
+        resetAt: "2026-03-27T00:15:00.000Z",
+        state: "exhausted",
+      },
+    },
+    candidateDiscovery: null,
+    loopRuntime: {
+      state: "off",
+      pid: null,
+      startedAt: null,
+      detail: null,
+    },
+    activeIssue: null,
+    selectionSummary: null,
+    trackedIssues: [],
+    runnableIssues: [],
+    blockedIssues: [],
+    detailedStatusLines: [],
+    reconciliationPhase: null,
+    reconciliationWarning: null,
+    readinessLines: [],
+    whyLines: [],
+    warning: null,
+  });
+
+  assert.match(status, /^github_rate_limit resource=rest status=low remaining=75 limit=5000 reset_at=2026-03-27T00:30:00.000Z$/m);
+  assert.match(status, /^github_rate_limit resource=graphql status=exhausted remaining=0 limit=5000 reset_at=2026-03-27T00:15:00.000Z$/m);
 });
 
 test("status omits execution-safety warnings when the trust posture does not require one", async (t) => {
@@ -135,6 +216,8 @@ test("status omits execution-safety warnings when the trust posture does not req
     trustMode: "untrusted_or_mixed",
     executionSafetyMode: "operator_gated",
     warning: null,
+    configWarning:
+      "Active config still uses legacy shared issue journal path .codex-supervisor/issue-journal.md; prefer .codex-supervisor/issues/{issueNumber}/issue-journal.md.",
   });
 
   const status = await supervisor.status();

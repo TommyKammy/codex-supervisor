@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH } from "../core/journal";
 import { createCheckedInReplayCorpusConfig } from "./replay-corpus-config";
 
 test("createCheckedInReplayCorpusConfig derives replay-local paths and provider defaults", () => {
@@ -19,7 +20,7 @@ test("createCheckedInReplayCorpusConfig derives replay-local paths and provider 
     "coderabbitai",
     "coderabbitai[bot]",
   ]);
-  assert.equal(config.issueJournalRelativePath, ".codex-supervisor/issue-journal.md");
+  assert.equal(config.issueJournalRelativePath, DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH);
   assert.equal(config.branchPrefix, "codex/issue-");
   assert.equal(config.draftPrAfterAttempt, 1);
 });

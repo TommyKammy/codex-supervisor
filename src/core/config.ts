@@ -15,11 +15,14 @@ import {
   TrustDiagnosticsSummary,
   TrustMode,
 } from "./types";
+import { DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH } from "./journal";
 import { mapConfiguredReviewProviders } from "./review-providers";
 import { isValidGitRefName, parseJson, resolveMaybeRelative } from "./utils";
 
 const DEFAULT_CONFIG_FILE = "supervisor.config.json";
 export const DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW = 100;
+export const LEGACY_SHARED_ISSUE_JOURNAL_RELATIVE_PATH = ".codex-supervisor/issue-journal.md";
+export const PREFERRED_ISSUE_JOURNAL_RELATIVE_PATH = ".codex-supervisor/issues/{issueNumber}/issue-journal.md";
 const REQUIRED_STRING_CONFIG_FIELDS = [
   "repoPath",
   "repoSlug",
@@ -242,10 +245,11 @@ function extractInvalidFieldName(error: unknown): string | null {
 }
 
 export function summarizeTrustDiagnostics(
-  config: Pick<SupervisorConfig, "trustMode" | "executionSafetyMode">,
+  config: Pick<SupervisorConfig, "trustMode" | "executionSafetyMode" | "issueJournalRelativePath">,
 ): TrustDiagnosticsSummary {
   const trustMode = config.trustMode ?? "trusted_repo_and_authors";
   const executionSafetyMode = config.executionSafetyMode ?? "unsandboxed_autonomous";
+  const issueJournalRelativePath = config.issueJournalRelativePath.trim();
 
   return {
     trustMode,
@@ -253,6 +257,10 @@ export function summarizeTrustDiagnostics(
     warning:
       trustMode === "trusted_repo_and_authors" && executionSafetyMode === "unsandboxed_autonomous"
         ? "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs."
+        : null,
+    configWarning:
+      issueJournalRelativePath === LEGACY_SHARED_ISSUE_JOURNAL_RELATIVE_PATH
+        ? `Active config still uses legacy shared issue journal path ${LEGACY_SHARED_ISSUE_JOURNAL_RELATIVE_PATH}; prefer ${PREFERRED_ISSUE_JOURNAL_RELATIVE_PATH}.`
         : null,
   };
 }
@@ -479,7 +487,7 @@ function parseSupervisorConfigDocument(raw: Record<string, unknown>, resolvedPat
     issueJournalRelativePath:
       typeof raw.issueJournalRelativePath === "string" && raw.issueJournalRelativePath.trim() !== ""
         ? raw.issueJournalRelativePath
-        : ".codex-supervisor/issue-journal.md",
+        : DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
     issueJournalMaxChars:
       typeof raw.issueJournalMaxChars === "number" && raw.issueJournalMaxChars >= 2000
         ? raw.issueJournalMaxChars

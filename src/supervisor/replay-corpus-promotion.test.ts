@@ -119,7 +119,7 @@ test("promotion normalization helpers canonicalize local metadata before writing
   const normalizedSnapshot = normalizePromotedInputSnapshot(createSnapshot());
 
   assert.equal(normalizedSnapshot.local.record.workspace, ".");
-  assert.equal(normalizedSnapshot.local.record.journal_path, ".codex-supervisor/issue-journal.md");
+  assert.equal(normalizedSnapshot.local.record.journal_path, ".codex-supervisor/issues/557/issue-journal.md");
   assert.equal(normalizedSnapshot.local.record.local_review_summary_path, null);
   assert.equal(normalizedSnapshot.local.workspaceStatus.hasUncommittedChanges, false);
   assert.deepEqual(buildPromotedCaseMetadata(normalizedSnapshot, "issue-557-stabilizing"), {
@@ -129,6 +129,16 @@ test("promotion normalization helpers canonicalize local metadata before writing
     title: "Replay corpus promotion: suggest normalized case ids during promotion",
     capturedAt: "2026-03-19T00:00:00Z",
   });
+});
+
+test("promotion normalization helpers preserve custom journal paths", () => {
+  const sourceSnapshot = createSnapshot();
+  sourceSnapshot.local.record.journal_path = "/tmp/workspaces/issue-557/.codex-supervisor/custom-journal.md";
+
+  const normalizedSnapshot = normalizePromotedInputSnapshot(sourceSnapshot);
+
+  assert.equal(normalizedSnapshot.local.record.workspace, ".");
+  assert.equal(normalizedSnapshot.local.record.journal_path, ".codex-supervisor/custom-journal.md");
 });
 
 test("promotion summary helpers surface normalization notes and advisory hints", () => {
@@ -157,7 +167,7 @@ test("promotion summary helpers surface normalization notes and advisory hints",
     expectedOutcome: "nextState=stabilizing, shouldRunCodex=true, blockedReason=none, failureSignature=none",
     normalizationNotes: [
       "workspace=>.",
-      "journal_path=>.codex-supervisor/issue-journal.md",
+      "journal_path=>.codex-supervisor/issues/557/issue-journal.md",
       "local_review_summary_path=>none",
       "hasUncommittedChanges=>false",
     ],

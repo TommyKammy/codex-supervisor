@@ -50,3 +50,12 @@ test("CI workflow runs the focused managed-restart regression suite on Ubuntu pu
     /-\s*if:\s*matrix\.os == 'ubuntu-latest'\s*run:\s*npm run test:managed-restart-regressions(?:\s|$)/,
   );
 });
+
+test("CI workflow runs the workstation-local path hygiene gate on Ubuntu pull request jobs", async () => {
+  const workflow = await fs.readFile(workflowPath, "utf8");
+
+  assert.match(
+    workflow,
+    /-\s*if:\s*matrix\.os == 'ubuntu-latest'\s*run:\s*npm run verify:paths(?:\s|$)/,
+  );
+});

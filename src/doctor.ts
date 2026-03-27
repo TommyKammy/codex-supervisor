@@ -20,7 +20,7 @@ import {
   formatCandidateDiscoveryBehaviorLine,
   formatCandidateDiscoveryWarningDetail,
 } from "./supervisor/supervisor-selection-readiness-summary";
-import { buildTrustWarning, buildWarning, renderDoctorWarningLine } from "./warning-formatting";
+import { buildTrustAndConfigWarnings, buildWarning, renderDoctorWarningLine } from "./warning-formatting";
 
 export type DoctorCheckStatus = "pass" | "warn" | "fail";
 
@@ -587,7 +587,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     diagnostics.cadenceDiagnostics.mergeCriticalRecheckSeconds === null
       ? "disabled"
       : String(diagnostics.cadenceDiagnostics.mergeCriticalRecheckSeconds);
-  const trustWarning = buildTrustWarning(diagnostics.trustDiagnostics);
+  const trustWarnings = buildTrustAndConfigWarnings(diagnostics.trustDiagnostics);
   const candidateDiscoveryWarning = buildWarning("candidate_discovery", diagnostics.candidateDiscoveryWarning);
 
   return [
@@ -597,7 +597,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     diagnostics.candidateDiscoverySummary,
     ...(diagnostics.orphanPolicySummary ? [diagnostics.orphanPolicySummary] : []),
     `doctor_local_ci configured=${localCiContract.configured} source=${localCiContract.source} command=${sanitizeDoctorValue(localCiContract.command ?? "none")} summary=${sanitizeDoctorValue(localCiContract.summary)}`,
-    ...(trustWarning === null ? [] : [renderDoctorWarningLine(trustWarning, sanitizeDoctorValue)]),
+    ...trustWarnings.map((warning) => renderDoctorWarningLine(warning, sanitizeDoctorValue)),
     ...(candidateDiscoveryWarning === null ? [] : [renderDoctorWarningLine(candidateDiscoveryWarning, sanitizeDoctorValue)]),
     ...diagnostics.checks.map(
       (check) =>
