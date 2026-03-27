@@ -1057,7 +1057,16 @@ export async function reconcileStaleFailedIssueStates(
       waitStep: null,
     });
 
-    if (issueStateByNumber.get(record.issue_number) !== "OPEN") {
+    let issueState = issueStateByNumber.get(record.issue_number) ?? null;
+    if (!issueStateByNumber.has(record.issue_number)) {
+      try {
+        issueState = (await github.getIssue(record.issue_number)).state ?? null;
+      } catch {
+        issueState = null;
+      }
+    }
+
+    if (issueState !== "OPEN") {
       continue;
     }
 
