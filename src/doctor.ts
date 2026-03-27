@@ -597,6 +597,9 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     ...(diagnostics.trustDiagnostics.warning === null
       ? []
       : [`doctor_warning kind=execution_safety detail=${sanitizeDoctorValue(diagnostics.trustDiagnostics.warning)}`]),
+    ...(diagnostics.trustDiagnostics.configWarning === null || diagnostics.trustDiagnostics.configWarning === undefined
+      ? []
+      : [`doctor_warning kind=config detail=${sanitizeDoctorValue(diagnostics.trustDiagnostics.configWarning)}`]),
     ...(diagnostics.candidateDiscoveryWarning === null
       ? []
       : [`doctor_warning kind=candidate_discovery detail=${sanitizeDoctorValue(diagnostics.candidateDiscoveryWarning)}`]),

@@ -15,6 +15,34 @@ export function latestReviewComment(thread: ReviewThread) {
   return thread.comments.nodes[thread.comments.nodes.length - 1] ?? null;
 }
 
+function normalizeReviewCommentWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function extractReviewCommentSummary(body: string): string {
+  const normalized = normalizeReviewCommentWhitespace(
+    body
+      .replace(/```[\s\S]*?```/g, " ")
+      .replace(/<[^>]+>/g, " "),
+  );
+  if (normalized.length === 0) {
+    return "review details available at source link";
+  }
+
+  const sentence = normalized.match(/^(.{1,180}?[.!?])(?:\s|$)/)?.[1] ?? normalized;
+  const summary = sentence.trim();
+  return summary.length > 180 ? `${summary.slice(0, 177)}...` : summary;
+}
+
+function renderReviewThreadDetail(thread: ReviewThread, includeAuthor = false): string {
+  const latestComment = latestReviewComment(thread);
+  const location = `${thread.path ?? "unknown"}:${thread.line ?? "?"}`;
+  const author = includeAuthor ? ` reviewer=${latestComment?.author?.login ?? "unknown"}` : "";
+  const summary = ` summary=${extractReviewCommentSummary(latestComment?.body ?? "")}`;
+  const url = latestComment?.url ? ` url=${latestComment.url}` : "";
+  return `${location}${author}${summary}${url}`;
+}
+
 export function manualReviewThreads(config: SupervisorConfig, reviewThreads: ReviewThread[]): ReviewThread[] {
   return reviewThreads.filter((thread) => !isAllowedReviewBotThread(config, thread));
 }
@@ -85,10 +113,7 @@ export function buildReviewFailureContext(reviewThreads: ReviewThread[]): Failur
     return null;
   }
 
-  const details = reviewThreads.slice(0, 5).map((thread) => {
-    const latestComment = latestReviewComment(thread);
-    return `${thread.path ?? "unknown"}:${thread.line ?? "?"} ${latestComment?.body.replace(/\s+/g, " ").trim() ?? ""}`;
-  });
+  const details = reviewThreads.slice(0, 5).map((thread) => renderReviewThreadDetail(thread));
 
   return {
     category: "review",
@@ -106,11 +131,7 @@ export function buildManualReviewFailureContext(reviewThreads: ReviewThread[]): 
     return null;
   }
 
-  const details = reviewThreads.slice(0, 5).map((thread) => {
-    const latestComment = latestReviewComment(thread);
-    const author = latestComment?.author?.login ?? "unknown";
-    return `${thread.path ?? "unknown"}:${thread.line ?? "?"} reviewer=${author} ${latestComment?.body.replace(/\s+/g, " ").trim() ?? ""}`;
-  });
+  const details = reviewThreads.slice(0, 5).map((thread) => renderReviewThreadDetail(thread, true));
 
   return {
     category: "manual",

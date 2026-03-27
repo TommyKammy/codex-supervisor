@@ -13,6 +13,10 @@ import {
   WorkspaceStatus,
 } from "./core/types";
 import { truncate } from "./core/utils";
+import {
+  runWorkstationLocalPathGate,
+  type WorkstationLocalPathGateResult,
+} from "./workstation-local-path-gate";
 
 function isOpenPullRequest(pr: GitHubPullRequest | null): pr is GitHubPullRequest {
   return pr !== null && pr.state === "OPEN" && !pr.mergedAt;
@@ -20,6 +24,7 @@ function isOpenPullRequest(pr: GitHubPullRequest | null): pr is GitHubPullReques
 
 export interface CodexTurnPublicationGateBlockedResult {
   kind: "blocked";
+  message: string;
   record: IssueRunRecord;
   pr: null;
   checks: [];
@@ -56,9 +61,14 @@ export async function applyCodexTurnPublicationGate(args: {
     failureContext: FailureContext | null,
   ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
   runLocalCiCommand?: LocalCiCommandRunner;
+  runWorkstationLocalPathGate?: (args: {
+    workspacePath: string;
+    gateLabel: string;
+  }) => Promise<WorkstationLocalPathGateResult>;
   syncExecutionMetricsRunSummary: (record: IssueRunRecord) => Promise<void>;
 }): Promise<CodexTurnPublicationGateResult> {
   let record = args.record;
+  const runWorkstationLocalPathGateImpl = args.runWorkstationLocalPathGate ?? runWorkstationLocalPathGate;
   const resolvedPr = await args.github.resolvePullRequestForBranch(record.branch, record.pr_number, { purpose: "action" });
   let pr = isOpenPullRequest(resolvedPr) ? resolvedPr : null;
 
@@ -68,6 +78,37 @@ export async function applyCodexTurnPublicationGate(args: {
     !args.workspaceStatus.hasUncommittedChanges &&
     record.implementation_attempt_count >= args.config.draftPrAfterAttempt
   ) {
+    const pathHygieneGate = await runWorkstationLocalPathGateImpl({
+      workspacePath: args.workspacePath,
+      gateLabel: "before publication",
+    });
+    if (!pathHygieneGate.ok) {
+      const failureContext = pathHygieneGate.failureContext;
+      record = args.stateStore.touch(record, {
+        state: "blocked",
+        last_error: truncate(
+          failureContext?.summary ?? "Tracked durable artifacts failed workstation-local path hygiene before publication.",
+          1000,
+        ),
+        last_failure_kind: null,
+        last_failure_context: failureContext,
+        ...args.applyFailureSignature(record, failureContext),
+        blocked_reason: "verification",
+      });
+      args.state.issues[String(record.issue_number)] = record;
+      await args.stateStore.save(args.state);
+      await args.syncExecutionMetricsRunSummary(record);
+      await args.syncJournal(record);
+      return {
+        kind: "blocked",
+        message: `Workstation-local path hygiene blocked pull request creation for issue #${record.issue_number}.`,
+        record,
+        pr: null,
+        checks: [],
+        reviewThreads: [],
+      };
+    }
+
     const localCiGate = await runLocalCiGate({
       config: args.config,
       workspacePath: args.workspacePath,
@@ -96,6 +137,7 @@ export async function applyCodexTurnPublicationGate(args: {
       await args.syncJournal(record);
       return {
         kind: "blocked",
+        message: `Local CI gate blocked pull request creation for issue #${record.issue_number}.`,
         record,
         pr: null,
         checks: [],

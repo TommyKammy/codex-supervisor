@@ -165,3 +165,98 @@ test("listLoopIssueInventory refreshes the full issue inventory after the reuse 
 
   assert.equal(listAllIssuesCalls, 2);
 });
+
+test("listLoopIssueInventory records fetchedAtMs after the awaited refresh succeeds", async () => {
+  const issue: GitHubIssue = {
+    number: 93,
+    title: "Track inventory fetch completion time",
+    body: "",
+    createdAt: "2026-03-20T00:00:00Z",
+    updatedAt: "2026-03-20T00:00:00Z",
+    url: "https://example.test/issues/93",
+    state: "OPEN",
+  };
+
+  const originalDateNow = Date.now;
+  let nowMs = Date.parse("2026-03-20T00:00:00.000Z");
+  let listAllIssuesCalls = 0;
+  const supervisor = new Supervisor(createConfig());
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listAllIssues: async () => {
+      listAllIssuesCalls += 1;
+      nowMs = Date.parse("2026-03-20T00:03:00.000Z");
+      return [issue];
+    },
+  };
+
+  Date.now = () => nowMs;
+  try {
+    const firstIssues = await (supervisor as unknown as {
+      listLoopIssueInventory: () => Promise<GitHubIssue[]>;
+    }).listLoopIssueInventory();
+
+    nowMs = Date.parse("2026-03-20T00:05:30.000Z");
+    const secondIssues = await (supervisor as unknown as {
+      listLoopIssueInventory: () => Promise<GitHubIssue[]>;
+    }).listLoopIssueInventory();
+
+    assert.deepEqual(firstIssues, [issue]);
+    assert.deepEqual(secondIssues, [issue]);
+    assert.equal(listAllIssuesCalls, 1);
+  } finally {
+    Date.now = originalDateNow;
+  }
+});
+
+test("listLoopIssueInventory clears an expired cached full inventory after refresh failure and refetches on the next read", async () => {
+  const initialIssue: GitHubIssue = {
+    number: 94,
+    title: "Initial cached full inventory",
+    body: "",
+    createdAt: "2026-03-20T00:00:00Z",
+    updatedAt: "2026-03-20T00:00:00Z",
+    url: "https://example.test/issues/93",
+    state: "OPEN",
+  };
+  const refreshedIssue: GitHubIssue = {
+    number: 95,
+    title: "Fresh full inventory after failed refresh",
+    body: "",
+    createdAt: "2026-03-20T00:10:00Z",
+    updatedAt: "2026-03-20T00:10:00Z",
+    url: "https://example.test/issues/94",
+    state: "OPEN",
+  };
+
+  let listAllIssuesCalls = 0;
+  const supervisor = new Supervisor(createConfig());
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listAllIssues: async () => {
+      listAllIssuesCalls += 1;
+      if (listAllIssuesCalls === 1) {
+        return [initialIssue];
+      }
+      if (listAllIssuesCalls === 2) {
+        throw new Error("inventory refresh failed");
+      }
+      return [refreshedIssue];
+    },
+  };
+
+  const cachedIssues = await withStubbedDateNow("2026-03-20T00:00:00.000Z", async () =>
+    (supervisor as unknown as { listLoopIssueInventory: () => Promise<GitHubIssue[]> }).listLoopIssueInventory());
+
+  await assert.rejects(
+    () =>
+      withStubbedDateNow("2026-03-20T00:05:01.000Z", async () =>
+        (supervisor as unknown as { listLoopIssueInventory: () => Promise<GitHubIssue[]> }).listLoopIssueInventory()),
+    /inventory refresh failed/,
+  );
+
+  const refreshedIssues = await withStubbedDateNow("2026-03-20T00:05:02.000Z", async () =>
+    (supervisor as unknown as { listLoopIssueInventory: () => Promise<GitHubIssue[]> }).listLoopIssueInventory());
+
+  assert.deepEqual(cachedIssues, [initialIssue]);
+  assert.deepEqual(refreshedIssues, [refreshedIssue]);
+  assert.equal(listAllIssuesCalls, 3);
+});

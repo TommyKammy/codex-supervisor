@@ -82,6 +82,48 @@ test("diagnoseSupervisorHost reports representative auth, state, and workspace f
     renderDoctorReport(diagnostics),
     /doctor_warning kind=execution_safety detail=Unsandboxed autonomous execution assumes trusted GitHub-authored inputs\./,
   );
+  assert.match(
+    renderDoctorReport(diagnostics),
+    /doctor_warning kind=config detail=Active config still uses legacy shared issue journal path \.codex-supervisor\/issue-journal\.md; prefer \.codex-supervisor\/issues\/\{issueNumber\}\/issue-journal\.md\./,
+  );
+});
+
+test("renderDoctorReport only warns for the legacy shared issue journal path", () => {
+  const baseDiagnostics = {
+    overallStatus: "pass" as const,
+    checks: [],
+    cadenceDiagnostics: {
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: null,
+      mergeCriticalEffectiveSeconds: 120,
+      mergeCriticalRecheckEnabled: false,
+    },
+    candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
+    candidateDiscoveryWarning: null,
+    trustDiagnostics: {
+      trustMode: "untrusted_or_mixed" as const,
+      executionSafetyMode: "operator_gated" as const,
+      warning: null,
+      configWarning:
+        "Active config still uses legacy shared issue journal path .codex-supervisor/issue-journal.md; prefer .codex-supervisor/issues/{issueNumber}/issue-journal.md.",
+    },
+  };
+
+  assert.match(
+    renderDoctorReport(baseDiagnostics),
+    /doctor_warning kind=config detail=Active config still uses legacy shared issue journal path \.codex-supervisor\/issue-journal\.md; prefer \.codex-supervisor\/issues\/\{issueNumber\}\/issue-journal\.md\./,
+  );
+
+  assert.doesNotMatch(
+    renderDoctorReport({
+      ...baseDiagnostics,
+      trustDiagnostics: {
+        ...baseDiagnostics.trustDiagnostics,
+        configWarning: null,
+      },
+    }),
+    /doctor_warning kind=config/,
+  );
 });
 
 test("diagnoseSupervisorHost surfaces orphan prune candidates and representative eligibility reasons", async (t) => {
@@ -327,6 +369,8 @@ test("diagnoseSetupReadiness returns typed first-run setup state distinct from d
     trustMode: "trusted_repo_and_authors",
     executionSafetyMode: "unsandboxed_autonomous",
     warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+    configWarning:
+      "Active config still uses legacy shared issue journal path .codex-supervisor/issue-journal.md; prefer .codex-supervisor/issues/{issueNumber}/issue-journal.md.",
     summary: "Trusted inputs with unsandboxed autonomous execution.",
   });
   assert.deepEqual(summary.localCiContract, {
