@@ -34,7 +34,7 @@ export function renderDoctorWarningLine(
 
 export function renderStatusWarningLine(
   warning: FormattedWarning,
-  sanitize: (value: string) => string,
+  sanitize: (value: string) => string | null | undefined,
   maxLength = 200,
 ): string {
   return `${warning.kind}_warning=${truncate(sanitize(warning.message), maxLength)}`;
