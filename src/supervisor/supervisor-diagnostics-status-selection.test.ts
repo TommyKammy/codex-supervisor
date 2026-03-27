@@ -300,6 +300,7 @@ test("status reports last-known-good inventory snapshot diagnostics during degra
           createdAt: "2026-03-26T00:00:00Z",
           updatedAt: "2026-03-26T00:00:00Z",
           url: "https://example.test/issues/91",
+          labels: [],
           state: "CLOSED",
         },
         {
@@ -321,6 +322,7 @@ Depends on: #91`,
           createdAt: "2026-03-26T00:01:00Z",
           updatedAt: "2026-03-26T00:01:00Z",
           url: "https://example.test/issues/92",
+          labels: [],
           state: "OPEN",
         },
       ],
@@ -398,6 +400,7 @@ test("statusReport exposes typed targeted degraded reconciliation posture for op
         createdAt: "2026-03-26T00:00:00Z",
         updatedAt: "2026-03-26T00:00:00Z",
         url: "https://example.test/issues/58",
+        labels: [],
         state: "OPEN",
       }],
     },
@@ -551,6 +554,7 @@ test("statusReport fetches GitHub rate-limit telemetry after inactive selection 
     createdAt: "2026-03-27T00:00:00Z",
     updatedAt: "2026-03-27T00:00:00Z",
     url: "https://example.test/issues/41",
+    labels: [],
     state: "OPEN",
   };
 
@@ -637,6 +641,7 @@ test("statusReport fetches GitHub rate-limit telemetry after active issue reads"
         createdAt: "2026-03-27T00:00:00Z",
         updatedAt: "2026-03-27T00:00:00Z",
         url: `https://example.test/issues/${issueNumber}`,
+        labels: [],
         state: "OPEN",
       };
     },
@@ -885,6 +890,7 @@ Expose typed operator-facing issue detail fields.
       createdAt: "2026-03-22T00:00:00Z",
       updatedAt: "2026-03-22T00:00:00Z",
       url: `https://example.test/issues/${issueNumber}`,
+      labels: [],
       state: "OPEN",
     }),
     listCandidateIssues: async () => [],
@@ -1189,6 +1195,7 @@ Depends on: #91`,
     createdAt: "2026-03-13T00:05:00Z",
     updatedAt: "2026-03-13T00:05:00Z",
     url: "https://example.test/issues/92",
+    labels: [],
     state: "OPEN",
   };
   const missingMetadataIssue: GitHubIssue = {
@@ -1199,6 +1206,7 @@ Missing execution-ready metadata.`,
     createdAt: "2026-03-13T00:10:00Z",
     updatedAt: "2026-03-13T00:10:00Z",
     url: "https://example.test/issues/93",
+    labels: [],
     state: "OPEN",
   };
   const clarificationBlockedIssue: GitHubIssue = {
@@ -1218,6 +1226,7 @@ Decide whether to keep the current production auth token flow or replace it befo
     createdAt: "2026-03-13T00:15:00Z",
     updatedAt: "2026-03-13T00:15:00Z",
     url: "https://example.test/issues/94",
+    labels: [],
     state: "OPEN",
   };
 
@@ -1312,6 +1321,7 @@ Do not run this issue autonomously without an explicit trust signal.
     createdAt: "2026-03-13T00:20:00Z",
     updatedAt: "2026-03-13T00:20:00Z",
     url: "https://example.test/issues/95",
+    labels: [],
     state: "OPEN",
   };
   const allowedIssue: GitHubIssue = {
@@ -1371,6 +1381,7 @@ Ship the dependency first.
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: "https://example.test/issues/91",
+    labels: [],
     state: "OPEN",
   };
   const candidateIssue: GitHubIssue = {
@@ -1392,6 +1403,7 @@ Depends on: #91`,
     createdAt: "2026-03-13T00:05:00Z",
     updatedAt: "2026-03-13T00:05:00Z",
     url: "https://example.test/issues/92",
+    labels: [],
     state: "OPEN",
   };
 
@@ -1476,6 +1488,7 @@ Execution order: 1 of 3`,
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: "https://example.test/issues/91",
+    labels: [],
     state: "CLOSED",
   };
   const predecessorTwo: GitHubIssue = {
@@ -1498,6 +1511,7 @@ Execution order: 2 of 3`,
     createdAt: "2026-03-13T00:05:00Z",
     updatedAt: "2026-03-13T00:05:00Z",
     url: "https://example.test/issues/92",
+    labels: [],
     state: "CLOSED",
   };
   const skippedRequirementsIssue: GitHubIssue = {
@@ -1512,6 +1526,7 @@ Execution order: 3 of 3`,
     createdAt: "2026-03-13T00:10:00Z",
     updatedAt: "2026-03-13T00:10:00Z",
     url: "https://example.test/issues/93",
+    labels: [],
     state: "OPEN",
   };
 
@@ -1557,6 +1572,7 @@ Keep selection behavior unchanged while surfacing the current discovery limit.
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: "https://example.test/issues/101",
+    labels: [],
     state: "OPEN",
   };
 
@@ -2002,6 +2018,7 @@ Retry the failing verification.
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: "https://example.test/issues/95",
+    labels: [],
     state: "OPEN",
   };
   const predecessorIssueOne: GitHubIssue = {
@@ -2024,6 +2041,7 @@ Execution order: 1 of 3`,
     createdAt: "2026-03-12T23:55:00Z",
     updatedAt: "2026-03-12T23:55:00Z",
     url: "https://example.test/issues/91",
+    labels: [],
     state: "CLOSED",
   };
   const predecessorIssueTwo: GitHubIssue = {
@@ -2046,6 +2064,7 @@ Execution order: 2 of 3`,
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: "https://example.test/issues/92",
+    labels: [],
     state: "CLOSED",
   };
   const selectedIssue: GitHubIssue = {
@@ -2069,6 +2088,7 @@ Execution order: 3 of 3`,
     createdAt: "2026-03-13T00:05:00Z",
     updatedAt: "2026-03-13T00:05:00Z",
     url: "https://example.test/issues/93",
+    labels: [],
     state: "OPEN",
   };
 
