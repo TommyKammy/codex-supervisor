@@ -1,6 +1,9 @@
 import type { GitHubIssue } from "../core/types";
 import { parseExecutionOrder, parseIssueMetadata } from "./issue-metadata-parser";
 
+const PART_OF_LINE_PATTERN = /^\s*(?:-\s+)?Part of\b.*$/im;
+const VALID_PART_OF_LINE_PATTERN = /^\s*(?:-\s+)?Part of:?\s+#([1-9]\d*)\s*$/i;
+
 function uniqueNumbers(values: number[]): number[] {
   return Array.from(new Set(values)).sort((left, right) => left - right);
 }
@@ -19,9 +22,9 @@ export function validateIssueMetadataSyntax(issue: Pick<GitHubIssue, "number" | 
   const errors: string[] = [];
   const metadata = parseIssueMetadata(issue as GitHubIssue);
 
-  const partOfLine = issue.body.match(/^\s*Part of\b.*$/im)?.[0] ?? null;
+  const partOfLine = issue.body.match(PART_OF_LINE_PATTERN)?.[0] ?? null;
   if (partOfLine) {
-    const validPartOf = /^\s*Part of:?\s+#([1-9]\d*)\s*$/i.test(partOfLine);
+    const validPartOf = VALID_PART_OF_LINE_PATTERN.test(partOfLine);
     if (!validPartOf) {
       errors.push("part of must reference a single issue as #<number>");
     } else if (metadata.parentIssueNumber === issue.number) {

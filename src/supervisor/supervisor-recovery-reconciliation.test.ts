@@ -987,7 +987,7 @@ test("reconcileParentEpicClosures clears a stale active issue pointer even when 
     {
       number: 202,
       title: "Child two",
-      body: "Part of: #123",
+      body: "- Part of: #123",
       createdAt: "2026-03-13T00:00:00Z",
       updatedAt: "2026-03-13T00:00:00Z",
       url: "https://example.test/issues/202",
