@@ -32,9 +32,13 @@ test("parseIssueMetadata accepts both parent issue metadata formats", () => {
   const templateFormat = createIssue({
     body: "Part of: #123",
   });
+  const bulletFormat = createIssue({
+    body: "- Part of: #123",
+  });
 
   assert.equal(parseIssueMetadata(legacyFormat).parentIssueNumber, 123);
   assert.equal(parseIssueMetadata(templateFormat).parentIssueNumber, 123);
+  assert.equal(parseIssueMetadata(bulletFormat).parentIssueNumber, 123);
 });
 
 test("findParentIssuesReadyToClose treats both parent metadata formats as the same parent", () => {
@@ -42,6 +46,7 @@ test("findParentIssuesReadyToClose treats both parent metadata formats as the sa
     createIssue({ number: 123, state: "OPEN" }),
     createIssue({ number: 201, state: "CLOSED", body: "Part of #123" }),
     createIssue({ number: 202, state: "CLOSED", body: "Part of: #123" }),
+    createIssue({ number: 203, state: "CLOSED", body: "- Part of: #123" }),
   ]);
 
   assert.deepEqual(
@@ -52,7 +57,7 @@ test("findParentIssuesReadyToClose treats both parent metadata formats as the sa
     [
       {
         parentIssueNumber: 123,
-        childIssueNumbers: [201, 202],
+        childIssueNumbers: [201, 202, 203],
       },
     ],
   );

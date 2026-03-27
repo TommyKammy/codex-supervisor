@@ -159,6 +159,10 @@ function hasValidParallelizableMetadata(body: string): boolean {
   return parallelizableValue !== null && /^(?:yes|no)$/i.test(parallelizableValue);
 }
 
+function hasCanonicalPartOfMetadata(body: string): boolean {
+  return /^\s*(?:-\s+)?Part of:\s+#\d+\s*$/im.test(body);
+}
+
 function countExecutionOrderDeclarations(body: string): number {
   return [
     ...body.matchAll(/^\s*Execution order:[^\r\n]*$/gim),
@@ -232,7 +236,7 @@ export function lintExecutionReadyIssueBody(
           ? [
             {
               key: "part of",
-              present: /^\s*Part of:\s+#\d+\s*$/im.test(issue.body),
+              present: hasCanonicalPartOfMetadata(issue.body),
             },
           ]
           : []),

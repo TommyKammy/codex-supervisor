@@ -786,7 +786,7 @@ test("runOnceCyclePrelude still reconciles parent epic closures from tracked iss
   const childOne: GitHubIssue = {
     number: 1044,
     title: "Child one",
-    body: "Part of: #1043",
+    body: "- Part of: #1043",
     createdAt: "2026-03-26T00:00:00Z",
     updatedAt: "2026-03-26T00:00:00Z",
     url: "https://example.test/issues/1044",
