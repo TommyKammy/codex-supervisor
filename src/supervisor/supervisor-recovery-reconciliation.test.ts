@@ -341,7 +341,6 @@ test("reconcileRecoverableBlockedIssueStates requeues requirements-blocked issue
       number: 366,
       title: "P3: Add regression coverage",
       body: executionReadyBody("Add regression coverage."),
-      labels: [],
       createdAt: "2026-03-10T23:25:21Z",
       updatedAt: "2026-03-10T23:25:21Z",
       url: "https://example.test/issues/366",
