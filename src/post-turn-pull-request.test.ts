@@ -5,6 +5,8 @@ import { handlePostTurnPullRequestTransitionsPhase } from "./post-turn-pull-requ
 import { PullRequestCheck, ReviewThread, SupervisorStateFile } from "./core/types";
 import { createConfig, createFailureContext, createIssue, createPullRequest, createRecord } from "./turn-execution-test-helpers";
 
+const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
+
 test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking ready", async () => {
   const config = createConfig({ localCiCommand: "npm run ci:local" });
   const issue = createIssue({ title: "Refresh post-ready PR state" });
@@ -95,6 +97,10 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking
       assert.equal(cwd, path.join("/tmp/workspaces", "issue-102"));
       localCiCalls += 1;
     },
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
     loadOpenPullRequestSnapshot: async () => {
       snapshotLoads += 1;
       return snapshotLoads === 1
@@ -199,6 +205,10 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion 
     runLocalCiCommand: async () => {
       throw new Error("Command failed: sh -lc +1 args\nexitCode=1\nlocal ci failed");
     },
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
     loadOpenPullRequestSnapshot: async () => ({
       pr: draftPr,
       checks: [],
@@ -213,6 +223,115 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion 
   assert.equal(result.record.last_failure_kind, null);
   assert.equal(result.record.last_failure_signature, "local-ci-gate-failed");
   assert.match(result.record.last_error ?? "", /Configured local CI command failed before marking PR #116 ready\./);
+});
+
+test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion when workstation-local path hygiene fails", async () => {
+  const config = createConfig({ localCiCommand: "npm run ci:local" });
+  const issue = createIssue({ title: "Gate ready promotion on path hygiene" });
+  const draftPr = createPullRequest({ title: "Gate ready promotion", isDraft: true });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: { "102": createRecord({ state: "draft_pr", pr_number: draftPr.number }) },
+  };
+
+  let readyCalls = 0;
+  let syncJournalCalls = 0;
+  let localCiCalls = 0;
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      markPullRequestReady: async () => {
+        readyCalls += 1;
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      syncJournal: async () => {
+        syncJournalCalls += 1;
+      },
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: draftPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "draft_pr",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => {
+      localCiCalls += 1;
+    },
+    runWorkstationLocalPathGate: async () => ({
+      ok: false,
+      failureContext: {
+        ...createFailureContext("Tracked durable artifacts failed workstation-local path hygiene before marking PR #116 ready."),
+        signature: "workstation-local-path-hygiene-failed",
+        details: [`docs/guide.md:1 matched /${"home"}/ via "${SAMPLE_UNIX_WORKSTATION_PATH}"`],
+      },
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: draftPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(readyCalls, 0);
+  assert.equal(localCiCalls, 0);
+  assert.equal(syncJournalCalls, 1);
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.blocked_reason, "verification");
+  assert.equal(result.record.last_failure_signature, "workstation-local-path-hygiene-failed");
+  assert.match(
+    result.record.last_error ?? "",
+    /Tracked durable artifacts failed workstation-local path hygiene before marking PR #116 ready\./,
+  );
+  assert.match(result.record.last_failure_context?.details[0] ?? "", /docs\/guide\.md:1/);
 });
 
 test("handlePostTurnPullRequestTransitionsPhase creates execution-ready follow-up issues for follow-up-eligible residuals", async () => {
@@ -323,6 +442,10 @@ Parallelizable: No`,
     configuredBotReviewThreads: () => [],
     manualReviewThreads: () => [],
     mergeConflictDetected: () => false,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
     runLocalReviewImpl: async () => ({
       ranAt: "2026-03-24T00:11:00Z",
       summaryPath: "/tmp/reviews/owner-repo/issue-102/head-116.md",

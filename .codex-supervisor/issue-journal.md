@@ -1,48 +1,50 @@
-# Issue #1101: CI path gate: block PRs that commit workstation-local absolute paths
+# Issue #1102: Publish gate: refuse supervisor-managed publication when durable artifacts fail path hygiene
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1101
-- Branch: codex/issue-1101
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1102
+- Branch: codex/issue-1102
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: repairing_ci
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 37d067559bedcb55b6c7fcc97835774b99c9a790
+- Attempt count: 5 (implementation=2, repair=3)
+- Last head SHA: b1fab170b37765ff7edc52dee9c209d1e9db9d1f
 - Blocked reason: none
 - Last failure signature: build (ubuntu-latest):fail
 - Repeated failure signature count: 2
-- Updated at: 2026-03-27T05:38:44.000Z
+- Updated at: 2026-03-27T07:25:00.000Z
 
 ## Latest Codex Summary
-The new CI gate was correct, but the branch failed because `github/main` already contained an intentional dashboard fixture with a macOS-style workstation path token that was not explicitly excluded from the workstation-local path detector. I merged `github/main` into `codex/issue-1101`, added `src/backend/webui-dashboard.test.ts` to the detector's repo-owned default exclusions, added a focused detector regression proving that explicit exclusion, and reran the Ubuntu-side CI commands locally.
+Reproduced the failing Ubuntu `verify:paths` run for PR `#1107` on head `b1fab17` and confirmed it is not stale metadata: the pushed commit still records workstation-local absolute-path text inside the tracked command-history entry in [`.codex-supervisor/issue-journal.md`](.codex-supervisor/issue-journal.md), exactly matching the GitHub Actions log for run `23635587877`.
 
-Summary: Repaired the failing Ubuntu CI run by explicitly excluding the existing dashboard fixture from `verify:paths`, merged `github/main`, and revalidated the merged branch locally.
+The local worktree already has the journal entry sanitized back to `<redacted-local-path>` placeholders, and that tracked artifact now passes `npm run verify:paths` and `npm run build` again. This repair turn is publishing the journal-only fix so PR `#1107` can rerun CI on a head that remains path-hygienic.
+
+Summary: Reproduced the Ubuntu `verify:paths` failure on PR `#1107`, confirmed it came from stale workstation-local absolute-path text persisted in the tracked issue journal on head `b1fab17`, and prepared the sanitized journal-only repair that passes local verification.
 State hint: repairing_ci
 Blocked reason: none
-Tests: `npm run verify:paths`; `npx tsx --test src/workstation-local-path-detector.test.ts src/ci-workflow.test.ts`; `npx tsx src/index.ts replay-corpus`; `npm run test:malformed-inventory-regressions`; `npm run test:managed-restart-regressions`; `npm run build`
-Next action: Commit the detector exclusion and journal update, push `codex/issue-1101`, and confirm PR `#1104` reruns clean on the new head
+Tests: `npm run verify:paths`; `npm run build`
+Next action: Push the sanitized journal fix to PR `#1107`, then monitor the rerun until GitHub replaces the stale failing Ubuntu `verify:paths` result.
 Failure signature: build (ubuntu-latest):fail
 
 ## Active Failure Context
 - Category: checks
-- Summary: PR `#1104` still shows the pre-fix failing Ubuntu build until a new head commit is pushed.
-- Command or source: `gh pr checks`
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1104
+- Summary: PR #1107 has failing checks.
+- Command or source: gh pr checks
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1107
 - Details:
-  - `build (ubuntu-latest)` failed because `npm run verify:paths` flagged `src/backend/webui-dashboard.test.ts:620` as matching the detector's macOS workstation prefix.
+  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23635587877/job/68844038454
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the CI path gate itself is correct; the remaining failure came from an existing repo-owned fixture introduced from `github/main` that now needs an explicit exclusion so clean PRs pass while non-exempt tracked artifacts still fail.
-- What changed: reproduced the failing detector output locally after `npm ci`, confirmed `src/backend/webui-dashboard.test.ts:620` was the offending tracked fixture, added that path to `DEFAULT_EXCLUDED_PATHS` in `scripts/check-workstation-local-paths.ts`, added a focused regression in `src/workstation-local-path-detector.test.ts`, merged `github/main` into the issue branch, resolved the tracked journal conflict in favor of the issue-1101 journal, and reran the high-signal Ubuntu-side checks successfully.
+- Hypothesis: supervisor-managed publication should fail closed at the publish/update seams whenever tracked durable artifacts still contain forbidden workstation-local absolute paths, and the checkpoint itself must remain publishable under the same `verify:paths` rule.
+- What changed: confirmed the publication-gating code from the prior repair is not the current blocker; the remaining CI failure is the tracked issue journal on pushed head `b1fab17`, whose persisted command-history entry still contained workstation-local absolute-path text. The local journal now keeps those entries redacted as `<redacted-local-path>`.
 - Current blocker: none locally.
-- Next exact step: create the repair commit, push the updated branch, and watch PR `#1104` for a clean rerun of the Ubuntu build.
-- Verification gap: local verification now covers the same Ubuntu-side commands the workflow runs, but the repaired commit has not yet been pushed through a live GitHub Actions rerun.
-- Files touched: `scripts/check-workstation-local-paths.ts`; `src/workstation-local-path-detector.test.ts`; `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low. The change does not weaken the detector globally; it only records one existing repo-owned fixture as an explicit exclusion and locks that expectation in with a focused test.
-- Last focused command: `npm run build`
-- What changed this turn: reread the required memory files and issue journal, inspected PR `#1104` checks and merge state, reproduced the detector failure locally, identified the existing dashboard fixture as the offending tracked path, patched the explicit exclusion list and detector coverage, merged `github/main`, and reran the relevant verification commands on the merged branch.
-- Exact failure reproduced this turn: `npm run verify:paths` failed because `src/backend/webui-dashboard.test.ts:620` matched the detector's macOS workstation prefix in an existing dashboard fixture.
-- Commands run this turn: `sed -n '1,220p' <skill-path>/SKILL.md`; `sed -n '1,220p' .local/memory/.../AGENTS.generated.md`; `sed -n '1,240p' .local/memory/.../context-index.md`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `gh auth status`; `git branch --show-current`; `git status --short`; `gh pr checks 1104`; `gh pr view 1104 --json number,url,mergeStateStatus,mergeable,headRefName,headRefOid,baseRefName,statusCheckRollup`; `git fetch github main`; `git rev-list --left-right --count github/main...HEAD`; `gh run view 23631010761 --json name,workflowName,event,status,conclusion,url,headSha,headBranch,jobs`; `gh api /repos/TommyKammy/codex-supervisor/actions/jobs/68830089900`; `npm ci`; `npm run verify:paths`; `git grep -n -E '<unix-home-prefix>|<macos-users-prefix>|<windows-users-prefix>' -- . ':(exclude)docs/examples/atlaspm.supervisor.config.example.json' ':(exclude)docs/examples/atlaspm.md' ':(exclude)src/index.test.ts'`; `sed -n '580,660p' src/backend/webui-dashboard.test.ts`; `rg -n "check-workstation-local-paths|DEFAULT_EXCLUDED_PATHS|verify:paths|exclude-path|webui-dashboard" src scripts .github`; `sed -n '1,260p' src/workstation-local-path-detector.test.ts`; `npx tsx --test src/workstation-local-path-detector.test.ts src/ci-workflow.test.ts`; `git stash push --include-untracked -m "issue-1101-supervisor-artifacts-before-main-merge" -- .codex-supervisor/issue-journal.md .codex-supervisor/pre-merge .codex-supervisor/replay .codex-supervisor/turn-in-progress.json`; `git merge github/main`; `git show HEAD:.codex-supervisor/issue-journal.md`; `git add .codex-supervisor/issue-journal.md`; `npm run verify:paths`; `npx tsx src/index.ts replay-corpus`; `npm run test:malformed-inventory-regressions`; `npm run test:managed-restart-regressions`; `npm run build`; `git commit -m "Merge github/main into codex/issue-1101"`; `git stash pop`; `git rev-parse HEAD`; `date -u +%Y-%m-%dT%H:%M:%S.000Z`; `git status --short --branch`
+- Next exact step: push the sanitized journal repair on `codex/issue-1102`, then monitor PR `#1107` until a fresh CI run supersedes the stale Ubuntu failure from run `23635587877`.
+- Verification gap: no remote rerun has executed on the sanitized journal yet; this turn covered the failing `verify:paths` step and `build` locally.
+- Files touched: `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low. The change only redacts workstation-local absolute paths from the tracked journal command history and does not change supervisor runtime behavior.
+- Last focused command: `gh run view 23635587877 --log-failed`
+- What changed this turn: read the required shared memory, verified PR `#1107` still points at head `b1fab17`, pulled the failing GitHub Actions log for run `23635587877`, confirmed the failure matches the tracked issue-journal command-history entry on the pushed commit, reran `npm run verify:paths` and `npm run build` locally against the sanitized journal, and updated the journal handoff for this CI repair.
+- Exact failure reproduced this turn: GitHub Actions run `23635587877` failed `npm run verify:paths` on head `b1fab17` because [`.codex-supervisor/issue-journal.md`](.codex-supervisor/issue-journal.md) line 48 in the pushed commit still contained workstation-local absolute-path command-history text; the local worktree version replaces those paths with `<redacted-local-path>` and passes the same check.
+- Commands run this turn: `sed -n '1,220p' <redacted-local-path>/SKILL.md`; `sed -n '1,220p' <redacted-local-path>/AGENTS.generated.md`; `sed -n '1,260p' <redacted-local-path>/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `gh auth status`; `gh pr view 1107 --json number,url,isDraft,headRefName,headRefOid,baseRefName,mergeStateStatus,mergeable,statusCheckRollup`; `python3 <redacted-local-path>/inspect_pr_checks.py --repo . --pr 1107 --json`; `git rev-parse HEAD`; `gh run view 23635587877 --json name,workflowName,conclusion,status,url,event,headBranch,headSha,jobs`; `gh run view 23635587877 --log-failed`; `nl -ba .codex-supervisor/issue-journal.md | sed -n '35,70p'`; `npm run verify:paths`; `git show --stat --oneline --decorate=short b1fab170b37765ff7edc52dee9c209d1e9db9d1f`; `git diff -- .codex-supervisor/issue-journal.md`; `npm run build`; `apply_patch`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
