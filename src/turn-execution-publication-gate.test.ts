@@ -67,7 +67,7 @@ test("applyCodexTurnPublicationGate blocks draft PR creation when path hygiene f
         summary: "Tracked durable artifacts failed workstation-local path hygiene before publication.",
         signature: "workstation-local-path-hygiene-failed",
         command: "npm run verify:paths",
-        details: ['docs/guide.md:1 matched /home/ via "/home/alice/dev/private-repo"'],
+        details: ['docs/guide.md:1 matched <workstation-local> via "<workstation-local>/private-repo"'],
         url: null,
         updated_at: "2026-03-27T00:00:00Z",
       },
