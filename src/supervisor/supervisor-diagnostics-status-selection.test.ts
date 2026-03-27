@@ -112,6 +112,37 @@ test("status surfaces the default trust posture and execution-safety warning", a
   assert.match(status, /execution_safety_warning=Unsandboxed autonomous execution assumes trusted GitHub-authored inputs\./);
 });
 
+test("status omits execution-safety warnings when the trust posture does not require one", async (t) => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.trustMode = "untrusted_or_mixed";
+  fixture.config.executionSafetyMode = "operator_gated";
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+
+  assert.deepEqual(report.trustDiagnostics, {
+    trustMode: "untrusted_or_mixed",
+    executionSafetyMode: "operator_gated",
+    warning: null,
+  });
+
+  const status = await supervisor.status();
+  assert.match(status, /trust_mode=untrusted_or_mixed/);
+  assert.match(status, /execution_safety_mode=operator_gated/);
+  assert.doesNotMatch(status, /execution_safety_warning=/);
+});
+
 test("status reports degraded full inventory refresh and suppresses readiness selection work", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {

@@ -381,6 +381,28 @@ test("renderDoctorReport surfaces merge-critical recheck cadence visibility", ()
   assert.match(report, /doctor_local_ci configured=true source=config command=npm run ci:local summary=Repo-owned local CI contract is configured\./);
 });
 
+test("renderDoctorReport omits execution-safety warnings when trust posture does not require one", () => {
+  const report = renderDoctorReport({
+    overallStatus: "pass",
+    trustDiagnostics: {
+      trustMode: "untrusted_or_mixed",
+      executionSafetyMode: "operator_gated",
+      warning: null,
+    },
+    checks: [],
+    cadenceDiagnostics: {
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: null,
+      mergeCriticalEffectiveSeconds: 120,
+      mergeCriticalRecheckEnabled: false,
+    },
+    candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
+    candidateDiscoveryWarning: null,
+  } as Awaited<ReturnType<typeof diagnoseSupervisorHost>>);
+
+  assert.doesNotMatch(report, /doctor_warning kind=execution_safety/);
+});
+
 test("diagnoseSupervisorHost and renderDoctorReport surface paginated candidate discovery", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
   t.after(async () => {
