@@ -87,6 +87,27 @@ function extractLatestCodexSummary(content: string): string {
   return match[1];
 }
 
+test("issueJournalPath throws when an issueNumber template is left unresolved", () => {
+  assert.throws(
+    () => issueJournalPath("/tmp/workspaces/issue-177", ".codex-supervisor/issues/{issueNumber}/issue-journal.md"),
+    /issueJournalRelativePath requires issueNumber when using \{issueNumber\}/,
+  );
+});
+
+test("issueJournalPath resolves the canonical issue-scoped journal template when issueNumber is provided", () => {
+  assert.equal(
+    issueJournalPath("/tmp/workspaces/issue-177", ".codex-supervisor/issues/{issueNumber}/issue-journal.md", 177),
+    "/tmp/workspaces/issue-177/.codex-supervisor/issues/177/issue-journal.md",
+  );
+});
+
+test("issueJournalPath keeps non-tokenized custom journal paths working without issueNumber", () => {
+  assert.equal(
+    issueJournalPath("/tmp/workspaces/issue-177", ".codex-supervisor/custom-journal.md"),
+    "/tmp/workspaces/issue-177/.codex-supervisor/custom-journal.md",
+  );
+});
+
 test("syncIssueJournal writes the structured handoff schema for new journals", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-schema-"));
   const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");

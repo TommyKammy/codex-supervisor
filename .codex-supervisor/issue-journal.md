@@ -1,45 +1,50 @@
-# Issue #1113: Update shipped supervisor configs to use issue-scoped journal paths
+# Issue #1115: Fail fast when issue journal path templates leave {issueNumber} unresolved
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1113
-- Branch: codex/issue-1113
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1115
+- Branch: codex/issue-1115
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: waiting_ci
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 052affcbf9ccb1d565a0aeba1566ebf093f0dd80
+- Current phase: resolving_conflict
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: 9b5e4f0c349c6af0b95434e0ccc00c1d476eb454
 - Blocked reason: none
-- Last failure signature: dirty:052affcbf9ccb1d565a0aeba1566ebf093f0dd80
+- Last failure signature: dirty:9b5e4f0c349c6af0b95434e0ccc00c1d476eb454
 - Repeated failure signature count: 1
-- Updated at: 2026-03-27T12:01:24Z
+- Updated at: 2026-03-27T12:37:25.971Z
 
 ## Latest Codex Summary
-Merged `github/main` (`c0cd0c6`) into `codex/issue-1113`, resolved the only conflict in `.codex-supervisor/issue-journal.md` by restoring the issue-1113 journal state with path-sanitized command history, and confirmed the staged diff against `github/main` still only adds the intended shipped-config/example journal-path updates plus the focused regression in [src/config.test.ts](src/config.test.ts#L738).
+Draft PR is open at https://github.com/TommyKammy/codex-supervisor/pull/1117 from `codex/issue-1115`. I reran the focused regression set against the committed checkpoint `9b5e4f0`, and it passed cleanly.
 
-Focused verification passed with `npx tsx --test src/config.test.ts src/supervisor/replay-corpus-config.test.ts` and `npx tsx scripts/check-workstation-local-paths.ts`.
+No implementation changes were needed this turn. I updated [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) with the PR state, verification rerun, commands run, and next handoff. The only local dirt now is that journal edit plus the existing supervisor runtime artifacts.
 
-Summary: Merged `github/main` into `codex/issue-1113`, resolved the journal-only conflict conservatively, and reran focused config/path-hygiene verification.
-State hint: waiting_ci
+Summary: Pushed `codex/issue-1115` to GitHub, opened draft PR #1117 for commit `9b5e4f0`, reran the focused tests, and updated the issue journal handoff.
+State hint: draft_pr
 Blocked reason: none
-Tests: `npx tsx --test src/config.test.ts src/supervisor/replay-corpus-config.test.ts`; `npx tsx scripts/check-workstation-local-paths.ts`
-Next action: Push the merge commit to `codex/issue-1113` and monitor draft PR `#1114` on the new head.
-Failure signature: none
+Tests: `npx tsx --test src/journal.test.ts src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor-cycle-replay.test.ts`
+Next action: watch PR #1117 CI and address any failures or review feedback if they appear
+Failure signature: dirty:9b5e4f0c349c6af0b95434e0ccc00c1d476eb454
 
 ## Active Failure Context
-- None recorded.
+- Category: conflict
+- Summary: PR #1117 has merge conflicts and needs a base-branch integration pass.
+- Command or source: git fetch origin && git merge origin/<default-branch>
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1117
+- Details:
+  - mergeStateStatus=DIRTY
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: after integrating `#1112` from `github/main`, this branch should remain a narrow follow-up that only changes the repo-owned preset/example journal-path templates plus the focused config regression coverage.
-- What changed: fetched `origin` and `github`, confirmed PR `#1114` was dirty only because `github/main` had advanced, stashed the local journal update, merged `github/main` with `--no-commit`, hit a single content conflict in `.codex-supervisor/issue-journal.md`, restored the issue-1113 journal content, and rechecked the net diff against `github/main`.
-- Current blocker: none locally.
-- Next exact step: commit and push the merge result, then monitor draft PR `#1114` checks on the updated head.
-- Verification gap: I have not run the full repo suite or an end-to-end supervisor loop; verification for this repair pass is limited to the config tests and the workstation-path guard.
-- Files touched: `.codex-supervisor/issue-journal.md` for conflict resolution. The issue-specific delta vs `github/main` remains `src/config.test.ts`, `supervisor.config.example.json`, `supervisor.config.copilot.json`, `supervisor.config.codex.json`, `supervisor.config.coderabbit.json`, `docs/examples/atlaspm.supervisor.config.example.json`, and `docs/examples/atlaspm.md`.
-- Rollback concern: low. The only manual merge resolution was the tracked issue journal; code and config changes merged cleanly from `github/main`.
-- Last focused command: `npx tsx scripts/check-workstation-local-paths.ts`
-- What changed this turn: reread the required memory files, confirmed `github/main` had advanced past the branch, merged it into `codex/issue-1113`, resolved the journal-only conflict in favor of the issue-1113 state, and reran focused verification.
-- Exact failure reproduced this turn: `git merge --no-ff --no-commit github/main` reported `CONFLICT (content): Merge conflict in .codex-supervisor/issue-journal.md`.
-- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `sed -n '1,220p' <redacted-local-path>`; `git status --short --branch`; `git remote show origin`; `git log --oneline --decorate -5`; `git ls-files --stage .codex-supervisor/issue-journal.md`; `git merge-base --is-ancestor origin/main HEAD`; `git diff --stat origin/main...HEAD`; `git fetch origin`; `git remote -v`; `gh pr view 1114 --json baseRefName,headRefName,mergeStateStatus,isDraft,headRepositoryOwner,url`; `git branch -vv`; `git fetch github`; `git log --oneline --decorate --left-right --cherry-pick github/main...HEAD`; `git rev-parse github/main HEAD`; `git merge-base --is-ancestor github/main HEAD`; `git diff --stat github/main...HEAD`; `git diff -- .codex-supervisor/issue-journal.md`; `git show --stat --summary github/main -- .codex-supervisor/issue-journal.md`; `git log --oneline --decorate -- .codex-supervisor/issue-journal.md | head -n 10`; `git stash push -m 'issue-1113-pre-merge-journal' -- .codex-supervisor/issue-journal.md`; `git merge --no-ff --no-commit github/main`; `git status --short`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git show github/main:.codex-supervisor/issue-journal.md | sed -n '1,260p'`; `git stash list`; `git show stash@{0}:.codex-supervisor/issue-journal.md | sed -n '1,260p'`; `git show HEAD:.codex-supervisor/issue-journal.md | sed -n '1,260p'`; `git add .codex-supervisor/issue-journal.md`; `git diff --cached --name-only`; `git diff --cached --stat github/main -- src/config.test.ts supervisor.config.example.json supervisor.config.copilot.json supervisor.config.codex.json supervisor.config.coderabbit.json docs/examples/atlaspm.supervisor.config.example.json docs/examples/atlaspm.md .codex-supervisor/issue-journal.md`; `git diff --cached github/main -- src/config.test.ts supervisor.config.example.json supervisor.config.copilot.json supervisor.config.codex.json supervisor.config.coderabbit.json docs/examples/atlaspm.supervisor.config.example.json docs/examples/atlaspm.md`; `git diff --cached github/main -- .codex-supervisor/issue-journal.md`; `npx tsx --test src/config.test.ts src/supervisor/replay-corpus-config.test.ts`; `npm run verify:paths`; `npx tsx scripts/check-workstation-local-paths.ts`; `date -u +%Y-%m-%dT%H:%M:%SZ`; `git rev-parse --short HEAD`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`
+- Hypothesis: `issueJournalPath(...)` should be the fail-fast boundary for tokenized issue journal templates, rejecting unresolved `{issueNumber}` placeholders while leaving plain custom paths untouched.
+- What changed: added focused `src/journal.test.ts` coverage for unresolved-token failure, valid token substitution, and non-tokenized custom paths; updated `issueJournalPath(...)` to replace `{issueNumber}` only when an `issueNumber` is supplied and otherwise throw a clear error; threaded `issueNumber` through the selection, preparation, and supervisor call sites that derive `journal_path` from config.
+- Current blocker: none.
+- Next exact step: monitor draft PR #1117 and fix CI or review feedback if any integration path exposes a missed caller.
+- Verification gap: I have not run the full repo suite or an end-to-end supervisor loop; verification so far is limited to the journal helper and the narrow selection/preparation/replay tests that exercise journal-path persistence.
+- Files touched: `src/core/journal.ts`; `src/journal.test.ts`; `src/run-once-issue-preparation.ts`; `src/run-once-issue-selection.ts`; `src/supervisor/supervisor.ts`; `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low. The behavioral change is narrowly scoped to templates containing `{issueNumber}`; non-tokenized paths still resolve exactly as before.
+- Last focused command: `gh pr view 1117 --json number,state,isDraft,url,title`
+- What changed this turn: reread the required memory and journal files, confirmed the committed checkpoint at `9b5e4f0`, reran the focused journal-path-related tests as a combined command, pushed `codex/issue-1115` to the GitHub remote, and opened draft PR #1117 for review.
+- Exact failure reproduced this turn: `issueJournalPath("<redacted-local-path>", ".codex-supervisor/issues/{issueNumber}/issue-journal.md")` returned a resolved path that still contained the literal `{issueNumber}` token instead of rejecting the invalid durable path state.
+- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git branch --show-current`; `git status --short`; `git log --oneline --decorate -5`; `gh pr view --json number,state,isDraft,title,headRefName,baseRefName,url`; `git show --stat --oneline --decorate HEAD`; `git ls-remote --heads origin codex/issue-1115`; `npx tsx --test src/journal.test.ts src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor-cycle-replay.test.ts`; `git push -u origin codex/issue-1115`; `gh pr create --draft --base main --head codex/issue-1115 --title "Fail fast on unresolved issue journal templates" --body ...`; `git remote -v`; `gh repo view --json nameWithOwner,defaultBranchRef,url`; `git rev-list --left-right --count origin/main...codex/issue-1115`; `git push -u github codex/issue-1115`; `git rev-list --left-right --count github/main...codex/issue-1115`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `gh pr view 1117 --json number,state,isDraft,url,title`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

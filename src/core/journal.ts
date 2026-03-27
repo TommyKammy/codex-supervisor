@@ -534,6 +534,10 @@ export function trackedIssueJournalPath(
 }
 
 export function issueJournalPath(workspacePath: string, relativePathTemplate: string, issueNumber?: number): string {
+  if (relativePathTemplate.includes("{issueNumber}") && issueNumber === undefined) {
+    throw new Error("issueJournalRelativePath requires issueNumber when using {issueNumber}");
+  }
+
   const relativePath =
     issueNumber === undefined
       ? relativePathTemplate
