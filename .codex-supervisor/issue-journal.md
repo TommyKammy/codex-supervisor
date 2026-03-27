@@ -1,52 +1,45 @@
-# Issue #1111: Prevent artificial PR merge conflicts from the shared committed issue journal path
+# Issue #1113: Update shipped supervisor configs to use issue-scoped journal paths
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1111
-- Branch: codex/issue-1111
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1113
+- Branch: codex/issue-1113
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: repairing_ci
-- Attempt count: 6 (implementation=2, repair=4)
-- Last head SHA: 6034cd6045031d9d08256b6768f6ff3e7ff8a9ee
+- Current phase: waiting_ci
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 052affcbf9ccb1d565a0aeba1566ebf093f0dd80
 - Blocked reason: none
-- Last failure signature: build (ubuntu-latest):fail
+- Last failure signature: dirty:052affcbf9ccb1d565a0aeba1566ebf093f0dd80
 - Repeated failure signature count: 1
-- Updated at: 2026-03-27T11:16:06Z
+- Updated at: 2026-03-27T12:01:24Z
 
 ## Latest Codex Summary
-Reproduced the Ubuntu CI failure from the GitHub Actions log and confirmed it was not a feature-code regression. `verify:paths` was failing because the committed [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) still contained workstation-local absolute paths in the previous turn's command transcript.
+Merged `github/main` (`c0cd0c6`) into `codex/issue-1113`, resolved the only conflict in `.codex-supervisor/issue-journal.md` by restoring the issue-1113 journal state with path-sanitized command history, and confirmed the staged diff against `github/main` still only adds the intended shipped-config/example journal-path updates plus the focused regression in [src/config.test.ts](src/config.test.ts#L738).
 
-I sanitized the tracked journal entries back to `<redacted-local-path>` placeholders and reran `npm run verify:paths`, which now passes locally. No source-code changes were required for this CI repair; the only needed fix is the committed journal cleanup.
+Focused verification passed with `npx tsx --test src/config.test.ts src/supervisor/replay-corpus-config.test.ts` and `npx tsx scripts/check-workstation-local-paths.ts`.
 
-Summary: Sanitized the committed issue journal so `verify:paths` no longer sees workstation-local absolute paths.
-State hint: repairing_ci
+Summary: Merged `github/main` into `codex/issue-1113`, resolved the journal-only conflict conservatively, and reran focused config/path-hygiene verification.
+State hint: waiting_ci
 Blocked reason: none
-Tests: `npm run verify:paths`
-Next action: Commit and push the journal-only CI repair, then monitor PR `#1112` checks on the new head.
-Failure signature: build (ubuntu-latest):fail
+Tests: `npx tsx --test src/config.test.ts src/supervisor/replay-corpus-config.test.ts`; `npx tsx scripts/check-workstation-local-paths.ts`
+Next action: Push the merge commit to `codex/issue-1113` and monitor draft PR `#1114` on the new head.
+Failure signature: none
 
 ## Active Failure Context
-- Category: checks
-- Summary: PR #1112 failed `verify:paths` on Ubuntu because the committed issue journal still embedded workstation-local absolute paths.
-- Command or source: gh run view 23643425721 --log-failed
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1112
-- Details:
-  - `build (ubuntu-latest)` failed in `npm run verify:paths`.
-  - `.codex-supervisor/issue-journal.md:48` still contained workstation-local absolute paths from the previous turn's command transcript, so the tracked-path guard rejected the commit.
-  - The failing job is https://github.com/TommyKammy/codex-supervisor/actions/runs/23643425721/job/68869536964
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the current CI failure is limited to the committed journal artifact; sanitizing the tracked command transcript should restore `verify:paths` without further feature-code changes.
-- What changed: sanitized the tracked `.codex-supervisor/issue-journal.md` entries that still embedded workstation-local absolute paths and refreshed this handoff for the CI repair turn.
+- Hypothesis: after integrating `#1112` from `github/main`, this branch should remain a narrow follow-up that only changes the repo-owned preset/example journal-path templates plus the focused config regression coverage.
+- What changed: fetched `origin` and `github`, confirmed PR `#1114` was dirty only because `github/main` had advanced, stashed the local journal update, merged `github/main` with `--no-commit`, hit a single content conflict in `.codex-supervisor/issue-journal.md`, restored the issue-1113 journal content, and rechecked the net diff against `github/main`.
 - Current blocker: none locally.
-- Next exact step: commit and push the journal-only repair, then monitor `gh pr checks 1112` for the replacement CI run.
-- Verification gap: I did not rerun `npm run build` because the failing check never reached build and the prior head already passed the relevant source-level verification; the remaining verification is the fresh CI run on the repaired commit.
-- Files touched: `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low. This repair only redacts workstation-local absolute paths from the committed journal.
-- Last focused command: `npm run verify:paths`
-- What changed this turn: reread the required memory files, inspected the live PR check status and failed Ubuntu Actions log, confirmed the failure came from the committed journal contents, and sanitized the tracked journal entries back to portable placeholders.
-- Exact failure reproduced this turn: `gh run view 23643425721 --log-failed` showed `npm run verify:paths` failing because `.codex-supervisor/issue-journal.md:48` still embedded workstation-local absolute paths in the previous turn's command transcript; after redaction, `npm run verify:paths` passes locally.
-- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `gh auth status`; `gh pr view 1112 --json number,url,headRefName,headRefOid,baseRefName,mergeStateStatus,statusCheckRollup`; `python <redacted-local-path> --repo . --pr 1112`; `gh pr checks 1112`; `gh run view 23643425721 --json name,workflowName,conclusion,status,url,event,headBranch,headSha,jobs`; `gh run view 23643425721 --log-failed`; `nl -ba .codex-supervisor/issue-journal.md | sed -n '40,70p'`; `sed -n '1,220p' scripts/check-workstation-local-paths.ts`; `sed -n '1,220p' src/workstation-local-paths.ts`; `rg -n "Commands run this turn|<redacted-local-path>|issue-journal|Working Notes|Latest Codex Summary|Summary:" src .codex-supervisor scripts`; `rg -n "issue-journal.md|Codex Working Notes|Latest Codex Summary|Current Handoff|Scratchpad" src`; `git status --short --branch`; `git diff -- .codex-supervisor/issue-journal.md`; `npm run verify:paths`; `date -u +%Y-%m-%dT%H:%M:%SZ`; `git rev-parse --short HEAD`
+- Next exact step: commit and push the merge result, then monitor draft PR `#1114` checks on the updated head.
+- Verification gap: I have not run the full repo suite or an end-to-end supervisor loop; verification for this repair pass is limited to the config tests and the workstation-path guard.
+- Files touched: `.codex-supervisor/issue-journal.md` for conflict resolution. The issue-specific delta vs `github/main` remains `src/config.test.ts`, `supervisor.config.example.json`, `supervisor.config.copilot.json`, `supervisor.config.codex.json`, `supervisor.config.coderabbit.json`, `docs/examples/atlaspm.supervisor.config.example.json`, and `docs/examples/atlaspm.md`.
+- Rollback concern: low. The only manual merge resolution was the tracked issue journal; code and config changes merged cleanly from `github/main`.
+- Last focused command: `npx tsx scripts/check-workstation-local-paths.ts`
+- What changed this turn: reread the required memory files, confirmed `github/main` had advanced past the branch, merged it into `codex/issue-1113`, resolved the journal-only conflict in favor of the issue-1113 state, and reran focused verification.
+- Exact failure reproduced this turn: `git merge --no-ff --no-commit github/main` reported `CONFLICT (content): Merge conflict in .codex-supervisor/issue-journal.md`.
+- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `sed -n '1,220p' <redacted-local-path>`; `git status --short --branch`; `git remote show origin`; `git log --oneline --decorate -5`; `git ls-files --stage .codex-supervisor/issue-journal.md`; `git merge-base --is-ancestor origin/main HEAD`; `git diff --stat origin/main...HEAD`; `git fetch origin`; `git remote -v`; `gh pr view 1114 --json baseRefName,headRefName,mergeStateStatus,isDraft,headRepositoryOwner,url`; `git branch -vv`; `git fetch github`; `git log --oneline --decorate --left-right --cherry-pick github/main...HEAD`; `git rev-parse github/main HEAD`; `git merge-base --is-ancestor github/main HEAD`; `git diff --stat github/main...HEAD`; `git diff -- .codex-supervisor/issue-journal.md`; `git show --stat --summary github/main -- .codex-supervisor/issue-journal.md`; `git log --oneline --decorate -- .codex-supervisor/issue-journal.md | head -n 10`; `git stash push -m 'issue-1113-pre-merge-journal' -- .codex-supervisor/issue-journal.md`; `git merge --no-ff --no-commit github/main`; `git status --short`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git show github/main:.codex-supervisor/issue-journal.md | sed -n '1,260p'`; `git stash list`; `git show stash@{0}:.codex-supervisor/issue-journal.md | sed -n '1,260p'`; `git show HEAD:.codex-supervisor/issue-journal.md | sed -n '1,260p'`; `git add .codex-supervisor/issue-journal.md`; `git diff --cached --name-only`; `git diff --cached --stat github/main -- src/config.test.ts supervisor.config.example.json supervisor.config.copilot.json supervisor.config.codex.json supervisor.config.coderabbit.json docs/examples/atlaspm.supervisor.config.example.json docs/examples/atlaspm.md .codex-supervisor/issue-journal.md`; `git diff --cached github/main -- src/config.test.ts supervisor.config.example.json supervisor.config.copilot.json supervisor.config.codex.json supervisor.config.coderabbit.json docs/examples/atlaspm.supervisor.config.example.json docs/examples/atlaspm.md`; `git diff --cached github/main -- .codex-supervisor/issue-journal.md`; `npx tsx --test src/config.test.ts src/supervisor/replay-corpus-config.test.ts`; `npm run verify:paths`; `npx tsx scripts/check-workstation-local-paths.ts`; `date -u +%Y-%m-%dT%H:%M:%SZ`; `git rev-parse --short HEAD`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
