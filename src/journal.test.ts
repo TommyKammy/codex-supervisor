@@ -5,6 +5,7 @@ import path from "node:path";
 import test, { mock } from "node:test";
 import { syncIssueJournal } from "./core/journal";
 import { GitHubIssue, IssueRunRecord } from "./core/types";
+import { buildReviewFailureContext } from "./review-thread-reporting";
 
 const issue: GitHubIssue = {
   number: 177,
@@ -447,6 +448,71 @@ test("syncIssueJournal preserves an appended failure signature when the summary 
   const renderedSummary = extractLatestCodexSummary(content);
   assert.ok(renderedSummary.length <= 4000);
   assert.match(renderedSummary, /Failure signature: retry-budget$/);
+});
+
+test("syncIssueJournal stores review failure details as concise summary plus link", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-review-summary-link-"));
+  const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
+  const failureContext = buildReviewFailureContext([
+    {
+      id: "thread-1",
+      isResolved: false,
+      isOutdated: false,
+      path: "src/auth.ts",
+      line: 42,
+      comments: {
+        nodes: [
+          {
+            id: "comment-1",
+            body: [
+              "Bug: this fallback skips the permission guard and allows unauthorized writes.",
+              "",
+              "<details>",
+              "<summary>Generated review payload</summary>",
+              "",
+              "```suggestion",
+              "if (!viewer.canWrite()) {",
+              "  return;",
+              "}",
+              "```",
+              "",
+              "<table><tr><td>html payload</td></tr></table>",
+              "</details>",
+            ].join("\n"),
+            createdAt: "2026-03-14T00:00:00Z",
+            url: "https://example.test/pr/880#discussion_r2973644268",
+            author: {
+              login: "coderabbitai[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    },
+  ]);
+
+  assert.ok(failureContext);
+
+  await syncIssueJournal({
+    issue,
+    record: createRecord({
+      workspace: tempDir,
+      journal_path: journalPath,
+      state: "addressing_review",
+      last_failure_context: failureContext,
+    }),
+    journalPath,
+  });
+
+  const content = await fs.readFile(journalPath, "utf8");
+  assert.match(content, /- Summary: 1 unresolved automated review thread\(s\) remain\./);
+  assert.match(content, /src\/auth\.ts:42/i);
+  assert.match(content, /permission guard and allows unauthorized writes/i);
+  assert.match(content, /https:\/\/example\.test\/pr\/880#discussion_r2973644268/);
+  assert.doesNotMatch(content, /Generated review payload/);
+  assert.doesNotMatch(content, /```suggestion/);
+  assert.doesNotMatch(content, /<details>/i);
+  assert.doesNotMatch(content, /<table>/i);
 });
 
 test("syncIssueJournal preserves a replaced failure signature when the summary is truncated", async () => {
