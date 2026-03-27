@@ -17,7 +17,7 @@ import {
   PullRequestLifecycleSnapshot,
 } from "./post-turn-pull-request";
 import { IssueJournalSync, MemoryArtifacts } from "./run-once-issue-preparation";
-import { runLocalCiGate, type LocalCiCommandRunner } from "./local-ci";
+import { type LocalCiCommandRunner } from "./local-ci";
 import { StateStore } from "./core/state-store";
 import {
   getStaleStabilizingNoPrRecoveryCount,
@@ -53,16 +53,13 @@ import {
   clearInterruptedTurnMarker,
   writeInterruptedTurnMarker,
 } from "./interrupted-turn-marker";
+import { applyCodexTurnPublicationGate } from "./turn-execution-publication-gate";
 
 export {
   handlePostTurnPullRequestTransitionsPhase,
   PostTurnPullRequestContext,
   PostTurnPullRequestResult,
 } from "./post-turn-pull-request";
-
-function isOpenPullRequest(pr: GitHubPullRequest | null): pr is GitHubPullRequest {
-  return pr !== null && pr.state === "OPEN" && !pr.mergedAt;
-}
 
 export { loadLocalReviewRepairContext } from "./local-review/repair-context";
 
@@ -442,71 +439,39 @@ export async function executeCodexTurnPhase(
         workspaceStatus = await getWorkspaceStatusImpl(workspacePath, record.branch, config.defaultBranch);
       }
 
-      const refreshedResolvedPr = await github.resolvePullRequestForBranch(
-        record.branch,
-        record.pr_number,
-        { purpose: "action" },
-      );
-      pr = isOpenPullRequest(refreshedResolvedPr) ? refreshedResolvedPr : null;
-      if (
-        !pr &&
-        workspaceStatus.baseAhead > 0 &&
-        !workspaceStatus.hasUncommittedChanges &&
-        record.implementation_attempt_count >= config.draftPrAfterAttempt
-      ) {
-        const localCiGate = await runLocalCiGate({
-          config,
-          workspacePath,
-          gateLabel: "before opening a pull request",
-          runLocalCiCommand: args.runLocalCiCommand,
-        });
-        if (!localCiGate.ok) {
-          const failureContext = localCiGate.failureContext;
-          record = stateStore.touch(record, {
-            state: "blocked",
-            latest_local_ci_result: localCiGate.latestResult
-              ? {
-                  ...localCiGate.latestResult,
-                  head_sha: workspaceStatus.headSha,
-                }
-              : null,
-            last_error: truncate(failureContext?.summary, 1000),
-            last_failure_kind: null,
-            last_failure_context: failureContext,
-            ...args.applyFailureSignature(record, failureContext),
-            blocked_reason: "verification",
-          });
-          state.issues[String(record.issue_number)] = record;
-          await stateStore.save(state);
+      const publicationGate = await applyCodexTurnPublicationGate({
+        config,
+        stateStore,
+        state,
+        record,
+        issue,
+        workspacePath,
+        workspaceStatus,
+        github,
+        syncJournal,
+        applyFailureSignature: args.applyFailureSignature,
+        runLocalCiCommand: args.runLocalCiCommand,
+        syncExecutionMetricsRunSummary: async (blockedRecord) => {
           await syncExecutionMetricsRunSummarySafely({
             previousRecord: args.context.record,
-            nextRecord: record,
+            nextRecord: blockedRecord,
             issue,
             retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
             warningContext: "persisting",
           });
-          await syncJournal(record);
-          return {
-            kind: "returned",
-            message: `Local CI gate blocked pull request creation for issue #${record.issue_number}.`,
-          };
-        }
-        record = stateStore.touch(record, {
-          latest_local_ci_result: localCiGate.latestResult
-            ? {
-                ...localCiGate.latestResult,
-                head_sha: workspaceStatus.headSha,
-              }
-            : null,
-        });
-        state.issues[String(record.issue_number)] = record;
-        await stateStore.save(state);
-        await syncJournal(record);
-        pr = await github.createPullRequest(issue, record, { draft: true });
+        },
+      });
+      record = publicationGate.record;
+      pr = publicationGate.pr;
+      checks = publicationGate.checks;
+      reviewThreads = publicationGate.reviewThreads;
+      if (publicationGate.kind === "blocked") {
+        return {
+          kind: "returned",
+          message: `Local CI gate blocked pull request creation for issue #${record.issue_number}.`,
+        };
       }
 
-      checks = pr ? await github.getChecks(pr.number) : [];
-      reviewThreads = pr ? await github.getUnresolvedReviewThreads(pr.number) : [];
       const processedReviewThreadPatch = nextProcessedReviewThreadPatch({
         preRunState,
         record,
