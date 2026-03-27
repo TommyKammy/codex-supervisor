@@ -208,7 +208,7 @@ test("requeueIssueForOperator rejects active tracked-PR work", async () => {
   assert.equal(saveCalls, 0);
 });
 
-test("reconcileRecoverableBlockedIssueStates requeues open handoff-missing issues without dropping repeat tracking", async () => {
+test("reconcileRecoverableBlockedIssueStates requeues open no-PR handoff-missing issues without dropping repeat tracking", async () => {
   const config = createConfig();
   const original = createRecord();
   const state: SupervisorStateFile = {
@@ -243,7 +243,11 @@ test("reconcileRecoverableBlockedIssueStates requeues open handoff-missing issue
     },
   };
 
-  await reconcileRecoverableBlockedIssueStates(stateStore, state, config, issues, {
+  await reconcileRecoverableBlockedIssueStates({
+    getPullRequestIfExists: async () => {
+      throw new Error("unexpected getPullRequestIfExists call");
+    },
+  }, stateStore, state, config, issues, {
     shouldAutoRetryHandoffMissing,
   });
 
@@ -292,7 +296,11 @@ test("reconcileRecoverableBlockedIssueStates leaves closed issues blocked", asyn
     },
   };
 
-  await reconcileRecoverableBlockedIssueStates(stateStore, state, config, issues, {
+  await reconcileRecoverableBlockedIssueStates({
+    getPullRequestIfExists: async () => {
+      throw new Error("unexpected getPullRequestIfExists call");
+    },
+  }, stateStore, state, config, issues, {
     shouldAutoRetryHandoffMissing,
   });
 
@@ -354,7 +362,11 @@ test("reconcileRecoverableBlockedIssueStates requeues requirements-blocked issue
     },
   };
 
-  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(stateStore, state, config, issues, {
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates({
+    getPullRequestIfExists: async () => {
+      throw new Error("unexpected getPullRequestIfExists call");
+    },
+  }, stateStore, state, config, issues, {
     shouldAutoRetryHandoffMissing,
   });
 
@@ -370,6 +382,100 @@ test("reconcileRecoverableBlockedIssueStates requeues requirements-blocked issue
   assert.equal(saveCalls, 1);
   assert.deepEqual(recoveryEvents.map((event) => event.reason), [
     "requirements_recovered: requeued issue #366 after execution-ready metadata was added",
+  ]);
+});
+
+test("reconcileRecoverableBlockedIssueStates resumes conflicted tracked PR handoff-missing issues into conflict repair", async () => {
+  const config = createConfig();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "366": createRecord({
+        state: "blocked",
+        blocked_reason: "handoff_missing",
+        pr_number: 191,
+        last_head_sha: "head-191",
+        last_error: "Codex started a turn but did not write a durable handoff.",
+        last_failure_kind: null,
+        last_failure_context: {
+          category: "blocked",
+          summary: "Codex started a turn but did not write a durable handoff.",
+          signature: "handoff-missing",
+          command: null,
+          details: ["Update the issue journal before the turn exits."],
+          url: null,
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "handoff-missing",
+        repeated_failure_signature_count: 2,
+        codex_session_id: "session-366",
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: 366,
+    title: "Recovery issue",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:21:00Z",
+    url: "https://example.test/issues/366",
+    state: "OPEN",
+  };
+  const pr = createPullRequest({
+    number: 191,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/191",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-191",
+    mergeStateStatus: "DIRTY",
+    mergeable: "CONFLICTING",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "resolving_conflict");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.codex_session_id, null);
+  assert.equal(updated.pr_number, 191);
+  assert.equal(updated.last_head_sha, "head-191");
+  assert.equal(
+    updated.last_recovery_reason,
+    "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to resolving_conflict using fresh tracked PR #191 facts at head head-191",
+  );
+  assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to resolving_conflict using fresh tracked PR #191 facts at head head-191",
   ]);
 });
 
