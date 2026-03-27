@@ -8,6 +8,8 @@ import { createConfig, createIssue, createPullRequest, createRecord, createRevie
 import { AgentRunner, AgentTurnRequest } from "./supervisor/agent-runner";
 import { interruptedTurnMarkerPath } from "./interrupted-turn-marker";
 
+const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
+
 function createSuccessfulAgentRunner(
   impl: (request: AgentTurnRequest) => ReturnType<AgentRunner["runTurn"]>,
 ): AgentRunner {
@@ -448,6 +450,10 @@ test("executeCodexTurnPhase blocks draft PR creation when configured local CI fa
             ].join("\n");
       };
     })(),
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
     runLocalCiCommand: async () => {
       throw new Error("Command failed: sh -lc +1 args\nexitCode=1\nlocal ci failed");
     },
@@ -487,6 +493,191 @@ test("executeCodexTurnPhase blocks draft PR creation when configured local CI fa
   assert.equal(state.issues["102"]?.blocked_reason, "verification");
   assert.equal(state.issues["102"]?.last_failure_signature, "local-ci-gate-failed");
   assert.match(state.issues["102"]?.last_error ?? "", /Configured local CI command failed before opening a pull request\./);
+});
+
+test("executeCodexTurnPhase blocks branch publication when workstation-local path hygiene fails", async () => {
+  const issue = createIssue({ title: "Gate branch publication on path hygiene" });
+  const pr = createPullRequest({ isDraft: true, headRefOid: "head-b" });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "draft_pr",
+        pr_number: pr.number,
+        implementation_attempt_count: 1,
+      }),
+    },
+  };
+  let pushBranchCalls = 0;
+  let syncJournalCalls = 0;
+
+  const result = await executeCodexTurnPhase({
+    config: createConfig({ localCiCommand: "npm run ci:local" }),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => pr,
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      previousCodexSummary: null,
+      previousError: null,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      journalPath: path.join("/tmp/workspaces/issue-102", ".codex-supervisor", "issue-journal.md"),
+      syncJournal: async () => {
+        syncJournalCalls += 1;
+      },
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      workspaceStatus: {
+        branch: "codex/issue-102",
+        headSha: "head-a",
+        hasUncommittedChanges: false,
+        baseAhead: 0,
+        baseBehind: 0,
+        remoteBranchExists: true,
+        remoteAhead: 0,
+        remoteBehind: 0,
+      },
+      pr,
+      checks: [],
+      reviewThreads: [],
+      options: { dryRun: false },
+    },
+    acquireSessionLock: async () => null,
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-03-13T06:20:00Z",
+    }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    normalizeBlockerSignature: () => null,
+    isVerificationBlockedMessage: () => false,
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "draft_pr",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    inferStateWithoutPullRequest: () => "draft_pr",
+    blockedReasonFromReviewState: () => null,
+    recoverUnexpectedCodexTurnFailure: async () => {
+      throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+    },
+    getWorkspaceStatus: async () => ({
+      branch: "codex/issue-102",
+      headSha: "head-b",
+      hasUncommittedChanges: false,
+      baseAhead: 0,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 1,
+      remoteBehind: 0,
+    }),
+    pushBranch: async () => {
+      pushBranchCalls += 1;
+    },
+    readIssueJournal: (() => {
+      let readCount = 0;
+      return async () => {
+        readCount += 1;
+        return readCount === 1
+          ? [
+              "## Codex Working Notes",
+              "### Current Handoff",
+              "- Hypothesis: update the existing PR.",
+            ].join("\n")
+          : [
+              "## Codex Working Notes",
+              "### Current Handoff",
+              "- Hypothesis: update the existing PR.",
+              "- What changed: completed the implementation turn.",
+            ].join("\n");
+      };
+    })(),
+    runWorkstationLocalPathGate: async () => ({
+      ok: false,
+      failureContext: {
+        category: "blocked",
+        summary: "Tracked durable artifacts failed workstation-local path hygiene before publication.",
+        signature: "workstation-local-path-hygiene-failed",
+        command: "npm run verify:paths",
+        details: [`docs/guide.md:1 matched /${"home"}/ via "${SAMPLE_UNIX_WORKSTATION_PATH}"`],
+        url: null,
+        updated_at: "2026-03-13T06:20:00Z",
+      },
+    }),
+    agentRunner: createSuccessfulAgentRunner(async () => ({
+      exitCode: 0,
+      sessionId: "session-102",
+      supervisorMessage: [
+        "Summary: implementation complete",
+        "State hint: draft_pr",
+        "Blocked reason: none",
+        "Tests: not run",
+        "Failure signature: none",
+        "Next action: push the branch update",
+      ].join("\n"),
+      stderr: "",
+      stdout: "",
+      structuredResult: {
+        summary: "implementation complete",
+        stateHint: "draft_pr",
+        blockedReason: null,
+        failureSignature: null,
+        nextAction: "push the branch update",
+        tests: "not run",
+      },
+      failureKind: null,
+      failureContext: null,
+    })),
+  });
+
+  assert.deepEqual(result, {
+    kind: "returned",
+    message: "Workstation-local path hygiene blocked publication for issue #102.",
+  });
+  assert.equal(pushBranchCalls, 0);
+  assert.equal(syncJournalCalls, 1);
+  assert.equal(state.issues["102"]?.state, "blocked");
+  assert.equal(state.issues["102"]?.blocked_reason, "verification");
+  assert.equal(state.issues["102"]?.last_failure_signature, "workstation-local-path-hygiene-failed");
+  assert.match(state.issues["102"]?.last_failure_context?.details[0] ?? "", /docs\/guide\.md:1/);
 });
 
 test("executeCodexTurnPhase routes start and resume turns through the shared agent runner contract", async () => {
@@ -983,6 +1174,10 @@ test("executeCodexTurnPhase keeps local-CI blocked outcomes isolated from execut
               "- What changed: local CI blocked the run before PR creation.",
             ].join("\n");
       },
+      runWorkstationLocalPathGate: async () => ({
+        ok: true,
+        failureContext: null,
+      }),
       runLocalCiCommand: async () => {
         throw new Error("Command failed: sh -lc +1 args\nexitCode=1\nlocal ci failed");
       },
@@ -1586,4 +1781,184 @@ test("executeCodexTurnPhase preserves stale stabilizing no-PR recovery tracking 
   assert.equal(state.issues["102"]?.last_failure_signature, staleNoPrFailureContext.signature);
   assert.equal(state.issues["102"]?.repeated_failure_signature_count, 0);
   assert.equal(state.issues["102"]?.stale_stabilizing_no_pr_recovery_count, 1);
+});
+
+test("executeCodexTurnPhase normalizes workstation-local paths from a journal-only direct rewrite before post-run persistence", async () => {
+  await withTempWorkspace("journal-direct-rewrite-", async (workspacePath) => {
+    const journalPath = path.join(workspacePath, ".codex-supervisor", "issue-journal.md");
+    const repoFilePath = path.join(workspacePath, "src", "review-fix.ts");
+    const hostOnlyPath = path.posix.join("/", "home", "alice", ".codex", "history.log");
+    await fs.mkdir(path.dirname(journalPath), { recursive: true });
+    await fs.mkdir(path.dirname(repoFilePath), { recursive: true });
+    await fs.writeFile(
+      journalPath,
+      [
+        "## Codex Working Notes",
+        "### Current Handoff",
+        "- Hypothesis: a journal-only review fix should still sanitize durable paths.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const pr = createPullRequest({
+      title: "Normalize journal-only review-fix rewrites",
+      headRefOid: "head-review-fix",
+    });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: 102,
+      issues: {
+        "102": createRecord({
+          state: "local_review_fix",
+          workspace: workspacePath,
+          journal_path: journalPath,
+          pr_number: pr.number,
+        }),
+      },
+    };
+
+    const result = await executeCodexTurnPhase({
+      config: createConfig(),
+      stateStore: {
+        touch: (record, patch) => ({ ...record, ...patch, updated_at: "2026-03-27T09:00:00.000Z" }),
+        save: async () => undefined,
+      },
+      github: {
+        resolvePullRequestForBranch: async () => pr,
+        createPullRequest: async () => {
+          throw new Error("unexpected createPullRequest call");
+        },
+        getChecks: async () => [],
+        getUnresolvedReviewThreads: async () => [],
+        getExternalReviewSurface: async () => {
+          throw new Error("unexpected getExternalReviewSurface call");
+        },
+      },
+      context: {
+        state,
+        record: state.issues["102"]!,
+        issue: createIssue({ title: "Normalize journal-only review-fix rewrites" }),
+        previousCodexSummary: null,
+        previousError: null,
+        workspacePath,
+        journalPath,
+        syncJournal: async () => undefined,
+        memoryArtifacts: {
+          alwaysReadFiles: [],
+          onDemandFiles: [],
+          contextIndexPath: "/tmp/context-index.md",
+          agentsPath: "/tmp/AGENTS.generated.md",
+        },
+        workspaceStatus: {
+          branch: "codex/issue-102",
+          headSha: "head-review-fix",
+          hasUncommittedChanges: false,
+          baseAhead: 0,
+          baseBehind: 0,
+          remoteBranchExists: true,
+          remoteAhead: 0,
+          remoteBehind: 0,
+        },
+        pr,
+        checks: [],
+        reviewThreads: [],
+        options: { dryRun: false },
+      },
+      acquireSessionLock: async () => null,
+      classifyFailure: () => "command_error",
+      buildCodexFailureContext: (category, summary, details) => ({
+        category,
+        summary,
+        signature: `${category}:${summary}`,
+        command: null,
+        details,
+        url: null,
+        updated_at: "2026-03-27T09:00:00.000Z",
+      }),
+      applyFailureSignature: () => ({
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+      }),
+      normalizeBlockerSignature: () => null,
+      isVerificationBlockedMessage: () => false,
+      derivePullRequestLifecycleSnapshot: (record) => ({
+        recordForState: record,
+        nextState: "local_review_fix",
+        failureContext: null,
+        reviewWaitPatch: {},
+        copilotRequestObservationPatch: {},
+        mergeLatencyVisibilityPatch: {
+          provider_success_observed_at: null,
+          provider_success_head_sha: null,
+          merge_readiness_last_evaluated_at: null,
+        },
+        copilotTimeoutPatch: {
+          copilot_review_timed_out_at: null,
+          copilot_review_timeout_action: null,
+          copilot_review_timeout_reason: null,
+        },
+      }),
+      inferStateWithoutPullRequest: () => "stabilizing",
+      blockedReasonFromReviewState: () => null,
+      recoverUnexpectedCodexTurnFailure: async () => {
+        throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+      },
+      getWorkspaceStatus: async () => ({
+        branch: "codex/issue-102",
+        headSha: "head-review-fix",
+        hasUncommittedChanges: true,
+        baseAhead: 0,
+        baseBehind: 0,
+        remoteBranchExists: true,
+        remoteAhead: 0,
+        remoteBehind: 0,
+      }),
+      pushBranch: async () => {
+        throw new Error("unexpected pushBranch call");
+      },
+      agentRunner: createSuccessfulAgentRunner(async (request) => {
+        await fs.writeFile(
+          request.journalPath,
+          [
+            "## Codex Working Notes",
+            "### Current Handoff",
+            `- What changed: rewrote ${repoFilePath} after inspecting ${hostOnlyPath}.`,
+            "- Next exact step: rerun the review-focused verification.",
+          ].join("\n"),
+          "utf8",
+        );
+
+        return {
+          exitCode: 0,
+          sessionId: null,
+          supervisorMessage: [
+            "Summary: rewrote the journal for a local review fix",
+            "State hint: local_review_fix",
+            "Blocked reason: none",
+            "Tests: not run",
+            "Failure signature: none",
+            "Next action: rerun the review-focused verification",
+          ].join("\n"),
+          stderr: "",
+          stdout: "",
+          structuredResult: {
+            summary: "rewrote the journal for a local review fix",
+            stateHint: "local_review_fix",
+            blockedReason: null,
+            failureSignature: null,
+            nextAction: "rerun the review-focused verification",
+            tests: "not run",
+          },
+          failureKind: null,
+          failureContext: null,
+        };
+      }),
+    });
+
+    assert.equal(result.kind, "completed");
+    const content = await fs.readFile(journalPath, "utf8");
+    assert.doesNotMatch(content, new RegExp(workspacePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.doesNotMatch(content, new RegExp(hostOnlyPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(content, /src\/review-fix\.ts/);
+    assert.match(content, /<redacted-local-path>/);
+  });
 });

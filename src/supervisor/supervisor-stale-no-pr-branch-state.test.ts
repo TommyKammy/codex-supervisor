@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { runCommand } from "../core/command";
+import { DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH } from "../core/journal";
 import { IssueRunRecord } from "../core/types";
 import { createConfig, createRecord } from "./supervisor-test-helpers";
 import { Supervisor } from "./supervisor";
@@ -12,15 +13,19 @@ type StaleNoPrBranchState = "recoverable" | "already_satisfied_on_main";
 
 async function classifyStaleStabilizingNoPrBranchState(
   supervisor: Supervisor,
-  record: Pick<IssueRunRecord, "workspace" | "journal_path">,
+  record: Partial<Pick<IssueRunRecord, "issue_number">> & Pick<IssueRunRecord, "workspace" | "journal_path">,
 ): Promise<StaleNoPrBranchState> {
   return (
     supervisor as unknown as {
       classifyStaleStabilizingNoPrBranchState(
-        input: Pick<IssueRunRecord, "workspace" | "journal_path">,
+        input: Pick<IssueRunRecord, "issue_number" | "workspace" | "journal_path">,
       ): Promise<StaleNoPrBranchState>;
     }
-  ).classifyStaleStabilizingNoPrBranchState(record);
+  ).classifyStaleStabilizingNoPrBranchState({
+    issue_number: record.issue_number ?? 1,
+    workspace: record.workspace,
+    journal_path: record.journal_path,
+  });
 }
 
 async function createRepositoryWithOrigin(): Promise<{ repoPath: string; rootPath: string }> {
@@ -176,6 +181,7 @@ test("classifyStaleStabilizingNoPrBranchState returns recoverable when the branc
   const supervisor = new Supervisor(
     createConfig({
       repoPath,
+      issueJournalRelativePath: DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
       workspaceRoot: rootPath,
     }),
   );
@@ -358,4 +364,28 @@ test("classifyStaleStabilizingNoPrBranchState treats replay-to-code renames as m
   });
 
   assert.equal(result, "recoverable");
+});
+
+test("classifyStaleStabilizingNoPrBranchState ignores legacy shared journal paths after issue-scoped migration", async () => {
+  const { repoPath, rootPath } = await createRepositoryWithOrigin();
+  const legacyJournalPath = path.join(repoPath, ".codex-supervisor", "issue-journal.md");
+  const canonicalJournalPath = path.join(repoPath, ".codex-supervisor", "issues", "801", "issue-journal.md");
+  await fs.mkdir(path.dirname(canonicalJournalPath), { recursive: true });
+  await fs.writeFile(canonicalJournalPath, "# issue-scoped journal\n");
+
+  const supervisor = new Supervisor(
+    createConfig({
+      repoPath,
+      issueJournalRelativePath: DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
+      workspaceRoot: rootPath,
+    }),
+  );
+
+  const result = await classifyStaleStabilizingNoPrBranchState(supervisor, {
+    issue_number: 801,
+    workspace: repoPath,
+    journal_path: legacyJournalPath,
+  });
+
+  assert.equal(result, "already_satisfied_on_main");
 });

@@ -16,7 +16,10 @@ import {
 import {
   branchName,
   createConfig,
+  createIssue,
+  createPullRequest,
   createRecord,
+  createSupervisorState,
   createSupervisorFixture,
   executionReadyBody,
   git,
@@ -51,10 +54,10 @@ test("runOnce records timeout bookkeeping when Codex exits non-zero", async () =
   });
   const issueNumber = 89;
   const branch = branchName(fixture.config, issueNumber);
-  const state: SupervisorStateFile = {
+  const state: SupervisorStateFile = createSupervisorState({
     activeIssueNumber: issueNumber,
-    issues: {
-      [String(issueNumber)]: createRecord({
+    issues: [
+      createRecord({
         issue_number: issueNumber,
         state: "stabilizing",
         branch,
@@ -69,19 +72,14 @@ test("runOnce records timeout bookkeeping when Codex exits non-zero", async () =
         last_failure_signature: null,
         repeated_failure_signature_count: 0,
       }),
-    },
-  };
+    ],
+  });
   await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 
-  const issue: GitHubIssue = {
+  const issue = createIssue({
     number: issueNumber,
     title: "Capture timeout failure bookkeeping",
-    body: "",
-    createdAt: "2026-03-13T00:00:00Z",
-    updatedAt: "2026-03-13T00:00:00Z",
-    url: `https://example.test/issues/${issueNumber}`,
-    state: "OPEN",
-  };
+  });
 
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
@@ -172,36 +170,23 @@ test("runOnce dry-run selects an issue and hydrates workspace and PR context bef
   const fixture = await createSupervisorFixture();
   const issueNumber = 91;
   const branch = branchName(fixture.config, issueNumber);
-  const state: SupervisorStateFile = {
-    activeIssueNumber: null,
-    issues: {},
-  };
+  const state: SupervisorStateFile = createSupervisorState();
   await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 
-  const issue: GitHubIssue = {
+  const issue = createIssue({
     number: issueNumber,
     title: "Extract supervisor setup helpers",
     body: executionReadyBody("Extract supervisor setup helpers."),
-    createdAt: "2026-03-13T00:00:00Z",
-    updatedAt: "2026-03-13T00:00:00Z",
-    url: `https://example.test/issues/${issueNumber}`,
     labels: [],
-    state: "OPEN",
-  };
-  const pr: GitHubPullRequest = {
+  });
+  const pr = createPullRequest({
     number: 112,
     title: "Draft setup refactor",
-    url: "https://example.test/pr/112",
-    state: "OPEN",
     createdAt: "2026-03-13T00:10:00Z",
     isDraft: true,
-    reviewDecision: null,
-    mergeStateStatus: "CLEAN",
-    mergeable: "MERGEABLE",
     headRefName: branch,
     headRefOid: "head-112",
-    mergedAt: null,
-  };
+  });
   const checks: PullRequestCheck[] = [];
   const reviewThreads: ReviewThread[] = [];
 
@@ -268,40 +253,33 @@ test("runOnce reserves a runnable issue before unrelated tracked-PR reconciliati
   const unrelatedIssueNumber = 92;
   const selectedBranch = branchName(fixture.config, selectedIssueNumber);
   const unrelatedBranch = branchName(fixture.config, unrelatedIssueNumber);
-  const state: SupervisorStateFile = {
-    activeIssueNumber: null,
-    issues: {
-      [String(unrelatedIssueNumber)]: createRecord({
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
         issue_number: unrelatedIssueNumber,
         state: "waiting_ci",
         branch: unrelatedBranch,
         pr_number: 192,
         codex_session_id: null,
       }),
-    },
-  };
+    ],
+  });
   await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 
-  const selectedIssue: GitHubIssue = {
+  const selectedIssue = createIssue({
     number: selectedIssueNumber,
     title: "Reserve the next runnable issue before broad reconciliation",
     body: executionReadyBody("Reserve the runnable issue before unrelated reconciliation."),
-    createdAt: "2026-03-13T00:00:00Z",
-    updatedAt: "2026-03-13T00:00:00Z",
-    url: `https://example.test/issues/${selectedIssueNumber}`,
     labels: [],
-    state: "OPEN",
-  };
-  const unrelatedIssue: GitHubIssue = {
+  });
+  const unrelatedIssue = createIssue({
     number: unrelatedIssueNumber,
     title: "Slow unrelated reconciliation target",
     body: executionReadyBody("Remain unrelated to the selected runnable issue."),
     createdAt: "2026-03-13T00:05:00Z",
     updatedAt: "2026-03-13T00:05:00Z",
-    url: `https://example.test/issues/${unrelatedIssueNumber}`,
     labels: [],
-    state: "OPEN",
-  };
+  });
 
   let selectedIssueFetched = false;
   const supervisor = new Supervisor(fixture.config);
@@ -361,22 +339,16 @@ test("prepareIssueExecutionContext blocks PR publication when configured local C
     last_failure_signature: null,
     repeated_failure_signature_count: 0,
   });
-  const state: SupervisorStateFile = {
+  const state: SupervisorStateFile = createSupervisorState({
     activeIssueNumber: issueNumber,
-    issues: {
-      [String(issueNumber)]: record,
-    },
-  };
+    issues: [record],
+  });
 
-  const issue: GitHubIssue = {
+  const issue = createIssue({
     number: issueNumber,
     title: "Gate PR publication on local CI",
     body: executionReadyBody("Run configured local CI before opening the PR."),
-    createdAt: "2026-03-13T00:00:00Z",
-    updatedAt: "2026-03-13T00:00:00Z",
-    url: `https://example.test/issues/${issueNumber}`,
-    state: "OPEN",
-  };
+  });
 
   let createPullRequestCalls = 0;
   let pushBranchCalls = 0;
@@ -422,6 +394,10 @@ test("prepareIssueExecutionContext blocks PR publication when configured local C
     pushBranch: async () => {
       pushBranchCalls += 1;
     },
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
     writeSupervisorCycleDecisionSnapshot: async () => "/tmp/snapshot.json",
     runLocalCiCommand: async () => {
       throw new Error("Command failed: sh -lc +1 args\nexitCode=1\nlocal ci failed");
@@ -444,10 +420,10 @@ test("runOnce reclaims a stale stabilizing issue without carrying mismatched tra
   const fixture = await createSupervisorFixture();
   const issueNumber = 91;
   const branch = branchName(fixture.config, issueNumber);
-  const state: SupervisorStateFile = {
+  const state: SupervisorStateFile = createSupervisorState({
     activeIssueNumber: issueNumber,
-    issues: {
-      [String(issueNumber)]: createRecord({
+    issues: [
+      createRecord({
         issue_number: issueNumber,
         state: "stabilizing",
         branch,
@@ -458,19 +434,15 @@ test("runOnce reclaims a stale stabilizing issue without carrying mismatched tra
         implementation_attempt_count: 0,
         last_codex_summary: "Stale summary mentioning PR #527 from another issue.",
       }),
-    },
-  };
+    ],
+  });
   await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 
-  const issue: GitHubIssue = {
+  const issue = createIssue({
     number: issueNumber,
     title: "Recover stale stabilizing reservation",
     body: executionReadyBody("Recover stale stabilizing reservation."),
-    createdAt: "2026-03-13T00:00:00Z",
-    updatedAt: "2026-03-13T00:00:00Z",
-    url: `https://example.test/issues/${issueNumber}`,
-    state: "OPEN",
-  };
+  });
 
   let resolveCalls = 0;
   const resolvedPrNumbers: Array<number | null> = [];
@@ -488,20 +460,16 @@ test("runOnce reclaims a stale stabilizing issue without carrying mismatched tra
     },
     getChecks: async () => [],
     getUnresolvedReviewThreads: async () => [],
-    getPullRequestIfExists: async () => ({
-      number: 527,
-      title: "Merged PR for another issue",
-      url: "https://example.test/pr/527",
-      state: "MERGED",
-      createdAt: "2026-03-13T00:10:00Z",
-      isDraft: false,
-      reviewDecision: null,
-      mergeStateStatus: "CLEAN",
-      mergeable: "MERGEABLE",
-      headRefName: "codex/issue-524",
-      headRefOid: "wrong-head-527",
-      mergedAt: "2026-03-13T00:20:00Z",
-    }),
+    getPullRequestIfExists: async () =>
+      createPullRequest({
+        number: 527,
+        title: "Merged PR for another issue",
+        state: "MERGED",
+        createdAt: "2026-03-13T00:10:00Z",
+        headRefName: "codex/issue-524",
+        headRefOid: "wrong-head-527",
+        mergedAt: "2026-03-13T00:20:00Z",
+      }),
     getMergedPullRequestsClosingIssue: async () => [],
     closeIssue: async () => {
       throw new Error("unexpected closeIssue call");
