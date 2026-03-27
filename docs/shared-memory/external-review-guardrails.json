@@ -2,6 +2,28 @@
   "version": 1,
   "patterns": [
     {
+      "fingerprint": ".codex-supervisor/issue-journal.md|committed-journal-snapshot-handoff-sections-must-stay-internally-consistent",
+      "reviewerLogin": "coderabbitai",
+      "file": ".codex-supervisor/issue-journal.md",
+      "line": null,
+      "summary": "Flag committed journal states where Supervisor Snapshot, Latest Codex Summary, Active Failure Context, and Current Handoff contradict each other within the same durable handoff.",
+      "rationale": "Future operators and Codex turns depend on one coherent committed journal state; contradictory snapshot, summary, failure, and handoff sections cause the next action to start from false premises.",
+      "sourceArtifactPath": "promoted-from-issue-1096",
+      "sourceHeadSha": "issue-1096",
+      "lastSeenAt": "2026-03-27T00:00:00Z"
+    },
+    {
+      "fingerprint": ".codex-supervisor/issue-journal.md|committed-journals-must-not-embed-workstation-local-absolute-paths",
+      "reviewerLogin": "coderabbitai",
+      "file": ".codex-supervisor/issue-journal.md",
+      "line": null,
+      "summary": "Flag committed journals or similar durable artifacts that embed workstation-local absolute paths from operator home directories instead of repo-relative or redacted references.",
+      "rationale": "Shared memory must stay portable across operators, CI, and future sessions; committed machine-specific paths leak private local context and break reproducibility.",
+      "sourceArtifactPath": "promoted-from-issue-1096",
+      "sourceHeadSha": "issue-1096",
+      "lastSeenAt": "2026-03-27T00:00:00Z"
+    },
+    {
       "fingerprint": "src/backend/webui-setup-browser-script.ts|reconnect-or-readiness-polling-must-use-bounded-backoff-under-repeated-failures",
       "reviewerLogin": "coderabbitai",
       "file": "src/backend/webui-setup-browser-script.ts",

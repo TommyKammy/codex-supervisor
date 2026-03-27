@@ -1,36 +1,49 @@
-# Issue #1090: Allow conflicted PR repair to recover from handoff_missing without manual requeue
+# Issue #1096: Promote journal hygiene findings into shared memory
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1090
-- Branch: codex/issue-1090
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1096
+- Branch: codex/issue-1096
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 831a596d07433fec5392d7e45801c363bba9162b
+- Current phase: addressing_review
+- Attempt count: 5 (implementation=3, repair=2)
+- Last head SHA: 50312f56d363408251440b5763052c9b0b945a9f
 - Blocked reason: none
-- Last failure signature: handoff-missing
+- Last failure signature: PRRT_kwDORgvdZ853L_Zs
 - Repeated failure signature count: 1
-- Updated at: 2026-03-27T00:03:14.873Z
+- Updated at: 2026-03-27T03:37:42.789Z
 
 ## Latest Codex Summary
-- Added a narrow recovery path so blocked `handoff_missing` records with an already-open conflicted tracked PR resume into `resolving_conflict` during reconciliation instead of waiting for an operator requeue.
+Updated [`.codex-supervisor/issue-journal.md`](.codex-supervisor/issue-journal.md) so the committed journal no longer embeds workstation-local absolute paths, kept the review/handoff sections internally consistent, committed it as `50312f5`, and pushed that commit to PR `#1098`. `gh pr view` confirms the PR head is now `50312f56d363408251440b5763052c9b0b945a9f`.
+
+Focused verification passed for the journal fix with the repo’s existing fixture exclusion. The raw path-detector still fails on the known pre-existing `src/backend/webui-dashboard.test.ts` fixture, which is unchanged by this review fix.
+
+Summary: Committed and pushed the journal redaction fix for the unresolved CodeRabbit review on PR `#1098`.
+State hint: addressing_review
+Blocked reason: none
+Tests: `npx tsx scripts/check-workstation-local-paths.ts`; `npx tsx scripts/check-workstation-local-paths.ts --exclude-path src/backend/webui-dashboard.test.ts`; `gh pr view 1098 --repo TommyKammy/codex-supervisor --json number,url,isDraft,headRefName,headRefOid,state`
+Next action: Wait for PR `#1098` to refresh on commit `50312f5`; if the review thread remains unresolved, inspect the updated thread state and respond accordingly.
+Failure signature: PRRT_kwDORgvdZ853L_Zs
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1098#discussion_r2998798740
+- Details:
+  - .codex-supervisor/issue-journal.md:45 _⚠️ Potential issue_ | _🟡 Minor_ **Minor consistency mismatch in rollback note.** Line 45 says this turn “adds a repository-content assertion,” but Line 44 says only `.codex-supervisor/issue-journal.md` was touched. Reword this to avoid implying code/test changes in this specific journal update. <details> <summary>Suggested wording tweak</summary> ```diff -- Rollback concern: low. The change only promotes durable guidance and adds a repository-content assertion; runtime behavior is unchanged. +- Rollback concern: low. This turn only updates committed journal text for durable guidance alignment; runtime behavior is unchanged. ``` </details> <!-- suggestion_start --> <details> <summary>📝 Committable suggestion</summary> > ‼️ **IMPORTANT** > Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements. ```suggestion - Rollback concern: low. This turn only updates committed journal text for durable guidance alignment; runtime behavior is unchanged. ``` </details> <!-- suggestion_end --> <details> <summary>🤖 Prompt for AI Agents</summary> ``` Verify each finding against the current code and only fix it if needed. In @.codex-supervisor/issue-journal.md at line 45, Update the rollback note in .codex-supervisor/issue-journal.md so it doesn't imply code or test changes: change the sentence that currently reads “adds a repository-content assertion” (line containing "Rollback concern: low...") to explicitly say the change is limited to documentation/journal wording only (e.g., "this update only modifies the journal entry and does not change code or tests"), ensuring the note remains concise and consistent with the file-only edit. ``` </details> <!-- fingerprinting:phantom:triton:hawk --> <!-- This is an auto-generated comment by CodeRabbit -->
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `handoff_missing` should remain a durable blocker by default, but reconciliation can safely resume a blocked repair-lane issue when live tracked-PR facts show the PR is still open and merge-conflicted.
-- What changed: updated `reconcileRecoverableBlockedIssueStates()` to inspect tracked PRs for blocked `handoff_missing` records and promote only the open conflicted case back to `resolving_conflict`. Kept `shouldAutoRetryHandoffMissing()` unchanged so non-PR behavior and ordinary blocked selection policy stay intact. Added focused regression coverage for the conflicted tracked-PR path and updated the existing no-PR handoff test to assert the old behavior still holds.
-- Current blocker: none locally.
-- Next exact step: review the final diff and commit this `#1090` checkpoint on `codex/issue-1090`; if another pass is needed afterward, exercise the full run-once reconciliation path around the blocked conflicted PR case.
-- Verification gap: I have not run the full repo suite or an end-to-end supervisor loop; verification so far is focused on execution-policy and recovery-reconciliation tests.
-- Files touched: `src/recovery-reconciliation.ts`; `src/supervisor/supervisor.ts`; `src/supervisor/supervisor-recovery-reconciliation.test.ts`; `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low. The new path is limited to records already blocked on `handoff_missing` with an open tracked PR whose live merge state is conflicted; non-PR and non-conflict cases still follow the prior policy.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`
-- What changed this turn: reread the required memory files, confirmed the branch head was a prior unrelated checkpoint, traced the `handoff_missing` policy and reconciliation flow, implemented a conflicted-PR-specific reconciliation escape hatch into `resolving_conflict`, updated the focused reconciliation tests, and reran the relevant policy/recovery test files.
-- Exact failure reproduced this turn: a blocked record with `blocked_reason=handoff_missing` and an already-open tracked PR stayed stranded because `shouldAutoRetryHandoffMissing()` intentionally returns false once `pr_number` is set, so nothing moved the issue back into the conflict-repair lane without a manual requeue.
-- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git branch --show-current`; `git status --short`; `git log --oneline --decorate -5`; `git diff --stat`; `rg -n "handoff_missing|blocked_reason|resolving_conflict|mergeable|CONFLICTING|repair lane|requeue|blocked" src test`; `rg --files src test | rg "supervisor|turn-execution|recovery|issue|pull-request|lifecycle|policy|selection|repair"`; `sed -n '1,260p' src/supervisor/supervisor-execution-policy.ts`; `sed -n '1,320p' src/run-once-issue-preparation.ts`; `sed -n '1,260p' src/recovery-reconciliation.ts`; `sed -n '1,260p' src/supervisor/supervisor-lifecycle.ts`; `sed -n '1,320p' src/pull-request-state.ts`; `sed -n '1,320p' src/recovery-reconciliation.test.ts`; `sed -n '1,320p' src/supervisor/supervisor-execution-policy.test.ts`; `sed -n '1,320p' src/run-once-issue-preparation.test.ts`; `rg -n "shouldAutoRetryHandoffMissing|handoff_missing" src/run-once-issue-selection.ts src/run-once-cycle-prelude.ts src/run-once-turn-execution.ts src/supervisor -g'*.ts'`; `rg -n "tracked_pr_head_advanced|resumed issue|recovery event|last_recovery_reason|operator_requeue|handoff" src/recovery-reconciliation.ts src/*test.ts src/supervisor/*test.ts`; `sed -n '1,460p' src/supervisor/supervisor-recovery-reconciliation.test.ts`; `sed -n '520,760p' src/recovery-reconciliation.ts`; `sed -n '1,260p' src/supervisor/supervisor.ts`; `sed -n '120,220p' src/supervisor/supervisor-selection-issue-explain.ts`; `rg -n "function reconcileRecoverableBlockedIssueStates|export async function reconcileRecoverableBlockedIssueStates|reconcileTrackedMergedButOpenIssues|tracked_pr_lifecycle_recovered|tracked_pr_head_advanced" src/recovery-reconciliation.ts`; `sed -n '760,980p' src/recovery-reconciliation.ts`; `sed -n '980,1240p' src/recovery-reconciliation.ts`; `rg -n "CONFLICTING|mergeConflictDetected|resolving_conflict" src/pull-request-state.ts src/pull-request-state-policy.test.ts src/pull-request-state-test-helpers.ts`; `sed -n '320,520p' src/pull-request-state.ts`; `sed -n '1,220p' src/pull-request-state-policy.test.ts`; `sed -n '620,700p' src/pull-request-state.ts`; `sed -n '1,280p' src/run-once-cycle-prelude.ts`; `sed -n '1840,2035p' src/supervisor/supervisor-recovery-reconciliation.test.ts`; `sed -n '2035,2145p' src/supervisor/supervisor-recovery-reconciliation.test.ts`; `sed -n '1,220p' src/supervisor/supervisor-test-helpers.ts`; `rg -n "export function mergeConflictDetected|function mergeConflictDetected" src/supervisor/supervisor-status-rendering.ts src/supervisor/supervisor-reporting.ts`; `sed -n '1,100p' src/supervisor/supervisor-status-rendering.ts`; `rg -n "function applyFailureSignature|export function applyFailureSignature" src/supervisor/supervisor-failure-helpers.ts`; `sed -n '1,220p' src/supervisor/supervisor-failure-helpers.ts`; `rg -n "reconcileRecoverableBlockedIssueStates\\(" -g'*.ts' src`; `git diff -- src/recovery-reconciliation.ts src/supervisor/supervisor.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `sed -n '1,220p' .codex-supervisor/issue-journal.md`; `git status --short`
+- Hypothesis: the only remaining actionable review work is the journal redaction itself; once this committed journal update is pushed, the CodeRabbit thread should become stale or resolvable without further code changes.
+- What changed: rewrote the committed journal handoff so its `Commands run this turn` entries use portable `<workstation-local>` placeholders instead of operator-home absolute paths, while keeping the review context and verification notes aligned with the current PR state.
+- Current blocker: none.
+- Next exact step: run focused verification for the journal-only wording fix, commit the updated journal, push `codex/issue-1096`, and confirm PR `#1098` reflects the new commit.
+- Verification gap: I did not run the full repo suite because this turn only changes the committed journal text. Focused validation covered the exact path-detector path relevant to the review comment.
+- Files touched: `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low. This turn only updates committed journal text for durable guidance alignment; runtime behavior is unchanged.
+- Last focused command: `npx tsx scripts/check-workstation-local-paths.ts --exclude-path src/backend/webui-dashboard.test.ts`
+- What changed this turn: reread the required memory files, revalidated the live PR state, confirmed the only remaining actionable review finding is the rollback-note wording in the committed journal handoff, and updated that handoff text so it no longer implies any code or test change for this journal-only turn.
+- Exact failure reproduced this turn: `nl -ba .codex-supervisor/issue-journal.md | sed -n '36,70p'` showed the handoff still said the change “adds a repository-content assertion,” which conflicts with the journal-only `Files touched` entry for the same committed state.
+- Commands run this turn: `sed -n '1,220p' <workstation-local>/.local/memory/TommyKammy-codex-supervisor/issue-1096/AGENTS.generated.md`; `sed -n '1,220p' <workstation-local>/.local/memory/TommyKammy-codex-supervisor/issue-1096/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `sed -n '1,220p' <workstation-local>/plugins/cache/openai-curated/github/c33798c8a1e6da61a75e06e33ceae39a35f05ea5/skills/gh-address-comments/SKILL.md`; `git status --short --branch`; `nl -ba .codex-supervisor/issue-journal.md | sed -n '36,70p'`; `gh pr view 1098 --repo TommyKammy/codex-supervisor --json number,url,isDraft,headRefName,headRefOid,state,reviewDecision`; `git diff -- .codex-supervisor/issue-journal.md`; `git rev-parse HEAD`; `date -u +%Y-%m-%dT%H:%M:%S.000Z`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
