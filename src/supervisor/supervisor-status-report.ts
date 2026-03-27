@@ -102,8 +102,16 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
     cadenceDiagnostics.mergeCriticalRecheckSeconds === null
       ? "disabled"
       : String(cadenceDiagnostics.mergeCriticalRecheckSeconds);
+  const githubRateLimitLines =
+    dto.githubRateLimit === undefined || dto.githubRateLimit === null
+      ? []
+      : [
+        renderGitHubRateLimitLine("rest", dto.githubRateLimit.rest),
+        renderGitHubRateLimitLine("graphql", dto.githubRateLimit.graphql),
+      ].filter((line) => !dto.detailedStatusLines.includes(line));
   const lines = [
     ...dto.detailedStatusLines,
+    ...githubRateLimitLines,
     `trust_mode=${trustDiagnostics.trustMode}`,
     `execution_safety_mode=${trustDiagnostics.executionSafetyMode}`,
     ...(trustDiagnostics.warning === null

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { GitHubIssue, SupervisorStateFile } from "./core/types";
 import { RecoveryEvent, runOnceCyclePrelude } from "./run-once-cycle-prelude";
+import { createRecord } from "./supervisor/supervisor-test-helpers";
 
 test("runOnceCyclePrelude loads state and aggregates recovery setup events in order", async () => {
   const state: SupervisorStateFile = {
@@ -688,6 +689,88 @@ test("runOnceCyclePrelude records rate-limited inventory refresh failures distin
   assert.equal(savedStates[0]?.inventory_refresh_failure?.classification, "rate_limited");
   assert.match(savedStates[0]?.inventory_refresh_failure?.message ?? "", /secondary rate limit/);
   assert.equal(result.state.inventory_refresh_failure?.classification, "rate_limited");
+});
+
+test("runOnceCyclePrelude rehydrates stale failed tracked PRs during degraded inventory refresh even without an active issue", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "77": createRecord({
+        issue_number: 77,
+        state: "failed",
+        pr_number: 170,
+        last_head_sha: "head-old-170",
+        last_failure_signature: "dirty:head-old-170",
+        repeated_failure_signature_count: 3,
+        blocked_reason: null,
+        last_error: "PR was previously conflicted.",
+        last_failure_kind: "codex_failed",
+      }),
+    },
+  };
+  const savedStates: SupervisorStateFile[] = [];
+  const staleFailedCalls: Array<{
+    loadedState: SupervisorStateFile;
+    loadedIssues: GitHubIssue[];
+  }> = [];
+
+  const result = await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+      save: async (nextState) => {
+        savedStates.push(structuredClone(nextState));
+      },
+    },
+    carryoverRecoveryEvents: [],
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => {
+      throw new Error("Failed to parse JSON from gh issue list: Unexpected token ] in JSON at position 1");
+    },
+    reserveRunnableIssueSelection: async () => {
+      throw new Error("unexpected reserveRunnableIssueSelection call");
+    },
+    reconcileTrackedMergedButOpenIssues: async () => {
+      throw new Error("unexpected reconcileTrackedMergedButOpenIssues call");
+    },
+    reconcileMergedIssueClosures: async () => {
+      throw new Error("unexpected reconcileMergedIssueClosures call");
+    },
+    reconcileStaleFailedIssueStates: async (loadedState, loadedIssues) => {
+      staleFailedCalls.push({ loadedState, loadedIssues });
+      loadedState.issues["77"] = {
+        ...loadedState.issues["77"]!,
+        state: "addressing_review",
+        last_head_sha: "head-new-170",
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+        last_recovery_reason:
+          "tracked_pr_head_advanced: resumed issue #77 from failed to addressing_review after tracked PR #170 advanced from head-old-170 to head-new-170",
+      };
+    },
+    reconcileRecoverableBlockedIssueStates: async () => {
+      throw new Error("unexpected reconcileRecoverableBlockedIssueStates call");
+    },
+    reconcileParentEpicClosures: async () => {
+      throw new Error("unexpected reconcileParentEpicClosures call");
+    },
+    cleanupExpiredDoneWorkspaces: async () => {
+      throw new Error("unexpected cleanupExpiredDoneWorkspaces call");
+    },
+  });
+
+  assert.ok(!("kind" in result));
+  assert.equal(savedStates.length, 1);
+  assert.equal(savedStates[0]?.inventory_refresh_failure?.source, "gh issue list");
+  assert.deepEqual(staleFailedCalls, [
+    {
+      loadedState: state,
+      loadedIssues: [],
+    },
+  ]);
+  assert.equal(result.state.issues["77"]?.state, "addressing_review");
+  assert.equal(result.state.issues["77"]?.last_head_sha, "head-new-170");
+  assert.equal(result.state.issues["77"]?.last_failure_signature, null);
 });
 
 test("runOnceCyclePrelude still reconciles parent epic closures from tracked issue snapshots when full inventory refresh is malformed", async () => {
