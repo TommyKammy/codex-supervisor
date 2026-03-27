@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH, resolveIssueJournalRelativePath } from "../core/journal";
+import { DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH, trackedIssueJournalRelativePath } from "../core/journal";
 import type { SupervisorConfig } from "../core/types";
 import { loadSupervisorCycleDecisionSnapshot, replaySupervisorCycleDecisionSnapshot } from "./supervisor-cycle-replay";
 import {
@@ -43,7 +43,9 @@ export function normalizePromotedInputSnapshot(snapshot: ReplayCorpusInputSnapsh
         journal_path:
           snapshot.local.record.journal_path === null
             ? null
-            : resolveIssueJournalRelativePath(
+            : trackedIssueJournalRelativePath(
+                snapshot.local.record.workspace,
+                snapshot.local.record.journal_path,
                 DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
                 snapshot.local.record.issue_number,
               ),

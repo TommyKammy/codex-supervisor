@@ -6,8 +6,11 @@ import test, { mock } from "node:test";
 import {
   DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
   issueJournalPath,
+  LEGACY_SHARED_ISSUE_JOURNAL_RELATIVE_PATH,
   resolveIssueJournalRelativePath,
   syncIssueJournal,
+  trackedIssueJournalPath,
+  trackedIssueJournalRelativePath,
 } from "./core/journal";
 import { GitHubIssue, IssueRunRecord } from "./core/types";
 
@@ -124,6 +127,36 @@ test("resolveIssueJournalRelativePath scopes the default journal path by issue n
   assert.equal(
     resolveIssueJournalRelativePath(DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH, 177),
     ".codex-supervisor/issues/177/issue-journal.md",
+  );
+});
+
+test("trackedIssueJournal helpers canonicalize the legacy shared path but preserve custom paths", () => {
+  assert.equal(
+    trackedIssueJournalRelativePath(
+      "/tmp/workspaces/issue-177",
+      "/tmp/workspaces/issue-177/.codex-supervisor/issue-journal.md",
+      DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
+      177,
+    ),
+    ".codex-supervisor/issues/177/issue-journal.md",
+  );
+  assert.equal(
+    trackedIssueJournalRelativePath(
+      "/tmp/workspaces/issue-177",
+      "/tmp/workspaces/issue-177/.codex-supervisor/custom-journal.md",
+      DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
+      177,
+    ),
+    ".codex-supervisor/custom-journal.md",
+  );
+  assert.equal(
+    trackedIssueJournalPath(
+      "/tmp/workspaces/issue-177",
+      LEGACY_SHARED_ISSUE_JOURNAL_RELATIVE_PATH,
+      DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
+      177,
+    ),
+    "/tmp/workspaces/issue-177/.codex-supervisor/issues/177/issue-journal.md",
   );
 });
 

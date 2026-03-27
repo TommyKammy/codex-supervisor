@@ -3,7 +3,7 @@ import { runCommand } from "../core/command";
 import { loadConfig, summarizeCadenceDiagnostics, summarizeLocalCiContract, summarizeTrustDiagnostics } from "../core/config";
 import { GitHubClient } from "../github";
 import { describeGsdIntegration } from "../gsd";
-import { issueJournalPath } from "../core/journal";
+import { issueJournalPath, trackedIssueJournalPath } from "../core/journal";
 import { acquireFileLock, LockHandle } from "../core/lock";
 import {
   cleanupExpiredDoneWorkspaces,
@@ -288,7 +288,12 @@ async function ensureRecordJournalContext(
     return {
       issue_number: record.issue_number,
       workspace: record.workspace,
-      journal_path: record.journal_path,
+      journal_path: trackedIssueJournalPath(
+        record.workspace,
+        record.journal_path,
+        config.issueJournalRelativePath,
+        record.issue_number,
+      ),
     };
   }
 
@@ -487,9 +492,12 @@ export class Supervisor {
   private async classifyStaleStabilizingNoPrBranchState(
     record: Pick<IssueRunRecord, "issue_number" | "workspace" | "journal_path">,
   ): Promise<"recoverable" | "already_satisfied_on_main"> {
-    const journalPath =
-      record.journal_path ??
-      issueJournalPath(record.workspace, this.config.issueJournalRelativePath, record.issue_number);
+    const journalPath = trackedIssueJournalPath(
+      record.workspace,
+      record.journal_path,
+      this.config.issueJournalRelativePath,
+      record.issue_number,
+    );
     const journalRelativePath = path.relative(record.workspace, journalPath).replace(/\\/g, "/");
     const gitProbeTimeoutMs = this.config.codexExecTimeoutMinutes * 60_000;
 

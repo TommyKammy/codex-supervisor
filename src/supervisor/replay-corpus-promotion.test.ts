@@ -131,6 +131,16 @@ test("promotion normalization helpers canonicalize local metadata before writing
   });
 });
 
+test("promotion normalization helpers preserve custom journal paths", () => {
+  const sourceSnapshot = createSnapshot();
+  sourceSnapshot.local.record.journal_path = "/tmp/workspaces/issue-557/.codex-supervisor/custom-journal.md";
+
+  const normalizedSnapshot = normalizePromotedInputSnapshot(sourceSnapshot);
+
+  assert.equal(normalizedSnapshot.local.record.workspace, ".");
+  assert.equal(normalizedSnapshot.local.record.journal_path, ".codex-supervisor/custom-journal.md");
+});
+
 test("promotion summary helpers surface normalization notes and advisory hints", () => {
   const sourceSnapshot = createSnapshot();
   const promotedCase: ReplayCorpusCaseBundle = {
