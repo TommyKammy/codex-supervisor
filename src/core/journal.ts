@@ -4,6 +4,7 @@ import { GitHubIssue, IssueRunRecord } from "./types";
 import { ensureDir, truncate, writeFileAtomic } from "./utils";
 
 const NOTES_MARKER = "## Codex Working Notes";
+export const DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH = ".codex-supervisor/issues/{issueNumber}/issue-journal.md";
 const DURABLE_PATH_TOKEN_PATTERN =
   /(?:(?<=["'`])(?:\/[^"'`<>\n]+|[A-Za-z]:[\\/][^"'`<>\n]+)(?=["'`])|(?<![A-Za-z0-9+./\\:-])(?:\/[^\s"'`<>\[\]{}()]+(?:[\\/][^\s"'`<>\[\]{}()]+)*|[A-Za-z]:[\\/][^\s"'`<>\[\]{}()]+(?:[\\/][^\s"'`<>\[\]{}()]+)*))/g;
 const LEADING_PATH_PUNCTUATION = "([{";
@@ -486,7 +487,15 @@ export function hasMeaningfulJournalHandoff(content: string | null): boolean {
   return normalized !== NOTES_TEMPLATE.trim();
 }
 
-export function issueJournalPath(workspacePath: string, relativePath: string): string {
+export function resolveIssueJournalRelativePath(relativePathTemplate: string, issueNumber: number): string {
+  return relativePathTemplate.replaceAll("{issueNumber}", String(issueNumber));
+}
+
+export function issueJournalPath(workspacePath: string, relativePathTemplate: string, issueNumber?: number): string {
+  const relativePath =
+    issueNumber === undefined
+      ? relativePathTemplate
+      : resolveIssueJournalRelativePath(relativePathTemplate, issueNumber);
   return path.resolve(workspacePath, relativePath);
 }
 

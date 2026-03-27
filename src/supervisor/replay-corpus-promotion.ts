@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH, resolveIssueJournalRelativePath } from "../core/journal";
 import type { SupervisorConfig } from "../core/types";
 import { loadSupervisorCycleDecisionSnapshot, replaySupervisorCycleDecisionSnapshot } from "./supervisor-cycle-replay";
 import {
@@ -39,7 +40,13 @@ export function normalizePromotedInputSnapshot(snapshot: ReplayCorpusInputSnapsh
       record: {
         ...snapshot.local.record,
         workspace: ".",
-        journal_path: snapshot.local.record.journal_path === null ? null : ".codex-supervisor/issue-journal.md",
+        journal_path:
+          snapshot.local.record.journal_path === null
+            ? null
+            : resolveIssueJournalRelativePath(
+                DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
+                snapshot.local.record.issue_number,
+              ),
         local_review_summary_path: null,
       },
       workspaceStatus: {

@@ -119,7 +119,7 @@ test("promotion normalization helpers canonicalize local metadata before writing
   const normalizedSnapshot = normalizePromotedInputSnapshot(createSnapshot());
 
   assert.equal(normalizedSnapshot.local.record.workspace, ".");
-  assert.equal(normalizedSnapshot.local.record.journal_path, ".codex-supervisor/issue-journal.md");
+  assert.equal(normalizedSnapshot.local.record.journal_path, ".codex-supervisor/issues/557/issue-journal.md");
   assert.equal(normalizedSnapshot.local.record.local_review_summary_path, null);
   assert.equal(normalizedSnapshot.local.workspaceStatus.hasUncommittedChanges, false);
   assert.deepEqual(buildPromotedCaseMetadata(normalizedSnapshot, "issue-557-stabilizing"), {
@@ -157,7 +157,7 @@ test("promotion summary helpers surface normalization notes and advisory hints",
     expectedOutcome: "nextState=stabilizing, shouldRunCodex=true, blockedReason=none, failureSignature=none",
     normalizationNotes: [
       "workspace=>.",
-      "journal_path=>.codex-supervisor/issue-journal.md",
+      "journal_path=>.codex-supervisor/issues/557/issue-journal.md",
       "local_review_summary_path=>none",
       "hasUncommittedChanges=>false",
     ],
