@@ -604,16 +604,17 @@ test("resolveRunnableIssueContext reuses the current reserved issue instead of c
   assert.equal(savedStates.length, 0);
 });
 
-test("resolveRunnableIssueContext blocks retry attempts that still have invalid scheduling metadata", async () => {
+test("resolveRunnableIssueContext blocks retry attempts that still have invalid issue metadata", async () => {
   const config = createConfig();
   const issue: GitHubIssue = {
     number: 98,
-    title: "Retry issue with invalid scheduling metadata",
-    body: `${executionReadyBody("Repair the issue only after valid scheduling metadata is restored.")}
+    title: "Retry issue with invalid issue metadata",
+    body: `${executionReadyBody("Repair the issue only after valid issue metadata is restored.")}
 
-Depends on: blocked by #95
-Execution order: soon
-Parallelizable: Later`,
+Part of: #98
+Depends on: none
+Execution order: 1 of 1
+Parallelizable: No`,
     createdAt: "2026-03-15T00:00:00Z",
     updatedAt: "2026-03-15T00:00:00Z",
     url: "https://example.test/issues/98",
@@ -663,8 +664,8 @@ Parallelizable: Later`,
   assert.equal(savedStates.length, 1);
   assert.equal(state.issues["98"]?.state, "blocked");
   assert.equal(state.issues["98"]?.blocked_reason, "requirements");
-  assert.match(state.issues["98"]?.last_error ?? "", /invalid scheduling metadata/i);
-  assert.match(state.issues["98"]?.last_error ?? "", /depends on contains malformed references: #95/i);
+  assert.match(state.issues["98"]?.last_error ?? "", /invalid issue metadata/i);
+  assert.match(state.issues["98"]?.last_error ?? "", /part of references the issue itself/i);
   assert.equal(journalSyncs.length, 1);
   assert.equal(journalSyncs[0]?.issue_number, 98);
 });
@@ -735,7 +736,7 @@ Parallelizable: No`,
   assert.equal(state.activeIssueNumber, null);
   assert.equal(state.issues["99"]?.state, "blocked");
   assert.equal(state.issues["99"]?.blocked_reason, "requirements");
-  assert.match(state.issues["99"]?.last_error ?? "", /invalid scheduling metadata/i);
+  assert.match(state.issues["99"]?.last_error ?? "", /invalid issue metadata/i);
   assert.match(state.issues["99"]?.last_error ?? "", /depends on must appear exactly once/i);
   assert.equal(savedStates.length, 1);
 });

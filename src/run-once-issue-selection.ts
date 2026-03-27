@@ -202,13 +202,13 @@ function buildClarificationFailureContext(
   };
 }
 
-function buildMetadataSyntaxFailureContext(
+function buildIssueMetadataFailureContext(
   issue: Pick<GitHubIssue, "number" | "url">,
   metadataErrors: string[],
 ): FailureContext {
   return {
     category: "blocked",
-    summary: `Issue #${issue.number} has invalid scheduling metadata and must be repaired before execution.`,
+    summary: `Issue #${issue.number} has invalid issue metadata and must be repaired before execution.`,
     signature: `requirements:metadata:${metadataErrors.join("|")}`,
     command: null,
     details: [`metadata_errors=${metadataErrors.join("; ")}`],
@@ -227,7 +227,7 @@ async function evaluateDegradedActiveIssueDependencies(
     return {
       kind: "blocked",
       reason:
-        `Issue #${issue.number} has invalid scheduling metadata and must be repaired before continuing: ` +
+        `Issue #${issue.number} has invalid issue metadata and must be repaired before continuing: ` +
         `${metadataErrors.join("; ")}.`,
     };
   }
@@ -550,11 +550,11 @@ export async function resolveRunnableIssueContext(
     const metadataErrors = validateIssueMetadataSyntax(issue);
     if (metadataErrors.length > 0) {
       const journalContext = await ensureRecordJournalContext(record);
-      const failureContext = buildMetadataSyntaxFailureContext(issue, metadataErrors);
+      const failureContext = buildIssueMetadataFailureContext(issue, metadataErrors);
       const blockedRecord = stateStore.touch(record, {
         ...journalContext,
         state: "blocked",
-        last_error: truncate(`Invalid scheduling metadata: ${metadataErrors.join("; ")}.`, 1000),
+        last_error: truncate(`Invalid issue metadata: ${metadataErrors.join("; ")}.`, 1000),
         last_failure_kind: null,
         last_failure_context: failureContext,
         ...applyFailureSignature(record, failureContext),
