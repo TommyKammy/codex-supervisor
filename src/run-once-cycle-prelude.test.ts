@@ -867,3 +867,102 @@ test("runOnceCyclePrelude still reconciles parent epic closures from tracked iss
   assert.equal(result.state.inventory_refresh_failure?.source, "gh issue list");
   assert.match(result.state.inventory_refresh_failure?.message ?? "", /Fallback transport: malformed REST inventory fallback payload/);
 });
+
+test("runOnceCyclePrelude fetches untracked parent epics for degraded parent closure reconciliation", async () => {
+  const parentIssue: GitHubIssue = {
+    number: 1100,
+    title: "Epic issue",
+    body: "",
+    createdAt: "2026-03-26T00:00:00Z",
+    updatedAt: "2026-03-26T00:00:00Z",
+    url: "https://example.test/issues/1100",
+    state: "OPEN",
+  };
+  const childOne: GitHubIssue = {
+    number: 1101,
+    title: "Child one",
+    body: "Part of: #1100",
+    createdAt: "2026-03-26T00:00:00Z",
+    updatedAt: "2026-03-26T00:00:00Z",
+    url: "https://example.test/issues/1101",
+    state: "CLOSED",
+  };
+  const childTwo: GitHubIssue = {
+    number: 1102,
+    title: "Child two",
+    body: "Part of: #1100",
+    createdAt: "2026-03-26T00:00:00Z",
+    updatedAt: "2026-03-26T00:00:00Z",
+    url: "https://example.test/issues/1102",
+    state: "CLOSED",
+  };
+  const childThree: GitHubIssue = {
+    number: 1103,
+    title: "Child three",
+    body: "Part of: #1100",
+    createdAt: "2026-03-26T00:00:00Z",
+    updatedAt: "2026-03-26T00:00:00Z",
+    url: "https://example.test/issues/1103",
+    state: "CLOSED",
+  };
+  const issuesByNumber = new Map([
+    [parentIssue.number, parentIssue],
+    [childOne.number, childOne],
+    [childTwo.number, childTwo],
+    [childThree.number, childThree],
+  ]);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "1101": {} as never,
+      "1102": {} as never,
+      "1103": {} as never,
+    },
+  };
+  const fetchedIssueNumbers: number[] = [];
+  const parentEpicClosureCalls: GitHubIssue[][] = [];
+
+  const result = await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+      save: async () => {},
+    },
+    carryoverRecoveryEvents: [],
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => {
+      throw new Error("Failed to load full issue inventory.\nPrimary transport: malformed gh issue list JSON");
+    },
+    getIssueForParentEpicClosureFallback: async (issueNumber) => {
+      fetchedIssueNumbers.push(issueNumber);
+      const issue = issuesByNumber.get(issueNumber);
+      assert.ok(issue);
+      return issue;
+    },
+    reserveRunnableIssueSelection: async () => {
+      throw new Error("unexpected reserveRunnableIssueSelection call");
+    },
+    reconcileTrackedMergedButOpenIssues: async () => {
+      throw new Error("unexpected reconcileTrackedMergedButOpenIssues call");
+    },
+    reconcileMergedIssueClosures: async () => {
+      throw new Error("unexpected reconcileMergedIssueClosures call");
+    },
+    reconcileStaleFailedIssueStates: async () => {
+      throw new Error("unexpected reconcileStaleFailedIssueStates call");
+    },
+    reconcileRecoverableBlockedIssueStates: async () => {
+      throw new Error("unexpected reconcileRecoverableBlockedIssueStates call");
+    },
+    reconcileParentEpicClosures: async (_loadedState, loadedIssues) => {
+      parentEpicClosureCalls.push(loadedIssues);
+    },
+    cleanupExpiredDoneWorkspaces: async () => {
+      throw new Error("unexpected cleanupExpiredDoneWorkspaces call");
+    },
+  });
+
+  assert.ok(!("kind" in result));
+  assert.deepEqual(fetchedIssueNumbers, [1101, 1102, 1103, 1100]);
+  assert.deepEqual(parentEpicClosureCalls, [[childOne, childTwo, childThree, parentIssue]]);
+});

@@ -1,47 +1,50 @@
-# Issue #1103: Journal write enforcement: normalize every committed issue-journal write path
+# Issue #1109: Close parent epics during degraded inventory reconciliation even when the parent is untracked
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1103
-- Branch: codex/issue-1103
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1109
+- Branch: codex/issue-1109
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: waiting_ci
-- Attempt count: 3 (implementation=1, repair=2)
-- Last head SHA: 288a41a03dbdc4c65c58df977390b457852f474b
+- Current phase: resolving_conflict
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: d88736c06be8d7b019c9f3605ee4ffaf3277b7b2
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-27T07:58:53.000Z
+- Last failure signature: dirty:d88736c06be8d7b019c9f3605ee4ffaf3277b7b2
+- Repeated failure signature count: 1
+- Updated at: 2026-03-27T10:05:53.168Z
 
 ## Latest Codex Summary
-Merged `github/main` into `codex/issue-1103`, resolved the only conflict by keeping the issue-1103 journal handoff instead of the unrelated journal snapshot from main, and kept the turn-execution implementation plus focused regression intact through the merge.
+The implementation checkpoint is unchanged at [`d88736c`](https://github.com/TommyKammy/codex-supervisor/commit/d88736c06be8d7b019c9f3605ee4ffaf3277b7b2), which updates [src/run-once-cycle-prelude.ts](src/run-once-cycle-prelude.ts) and [src/run-once-cycle-prelude.test.ts](src/run-once-cycle-prelude.test.ts) so degraded reconciliation fetches referenced untracked parent epics before evaluating closure. I ran a broader local verification pass after restoring pinned dev dependencies with `npm ci`, pushed `codex/issue-1109`, and opened draft PR `#1110`: https://github.com/TommyKammy/codex-supervisor/pull/1110
 
-The new `github/main` path-hygiene gate also exposed one merge-induced regression in the journal-only test fixture: it embedded a literal host-only absolute path in tracked test source. I changed that fixture to synthesize the same host-only path at runtime with `path.posix.join(...)`, installed dependencies with `npm ci`, reran focused verification plus `build`, committed the merge as `288a41a`, and pushed the refreshed branch to both `origin` and `github`.
+The only local dirt left is the expected unstaged supervisor scratch state plus the refreshed [issue journal](.codex-supervisor/issue-journal.md). I did not stage or commit those scratch changes.
 
-PR [#1108](https://github.com/TommyKammy/codex-supervisor/pull/1108) now reports `mergeable=MERGEABLE` on head `288a41a`, with `mergeStateStatus=UNSTABLE` only because the new CI run is still in progress.
-
-Summary: Merged `github/main`, preserved the issue-1103 journal handoff during conflict resolution, adjusted the journal-only regression fixture to satisfy the new committed-path gate, pushed `288a41a`, and left PR #1108 waiting on CI from a mergeable state.
-State hint: waiting_ci
+Summary: Verified `d88736c`, pushed `codex/issue-1109`, and opened draft PR `#1110` for the degraded untracked-parent epic closure fix.
+State hint: draft_pr
 Blocked reason: none
-Tests: `npx tsx --test src/journal.test.ts src/run-once-turn-execution.test.ts`; `npm run verify:paths`; `npm run build`
-Next action: monitor the in-progress CI run for PR #1108 and only revisit the branch if the refreshed checks or review surface a regression.
-Failure signature: none
+Tests: `npm ci`; `npm run build`; `npm run test:malformed-inventory-regressions`
+Next action: Wait for PR review/CI on `#1110` or address follow-up feedback if it arrives.
+Failure signature: dirty:d88736c06be8d7b019c9f3605ee4ffaf3277b7b2
 
 ## Active Failure Context
-- None recorded.
+- Category: conflict
+- Summary: PR #1110 has merge conflicts and needs a base-branch integration pass.
+- Command or source: git fetch origin && git merge origin/<default-branch>
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1110
+- Details:
+  - mergeStateStatus=DIRTY
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: with the branch now merged onto `github/main` and pushed, the shared journal-normalization fix is integrated cleanly; barring fresh CI or review feedback, no further implementation change should be necessary for #1103.
-- What changed: fetched `origin` and `github`, confirmed the PR branch was current against `origin/main` but five commits behind `github/main`, stashed the local journal metadata, merged `github/main`, restored the issue-1103 journal handoff to resolve the only conflict, and kept the turn-execution merge result intact. The new base introduced a committed-path gate that rejected the regression test's literal host-only absolute-path example, so I rewrote that fixture to construct the host-only path dynamically with `path.posix.join(...)`. Installed dependencies with `npm ci`, reran the focused tests, `verify:paths`, and `build`, committed the merge as `288a41a`, pushed to `origin` and `github`, and confirmed via `gh pr view 1108` that the PR head is mergeable and now waiting on CI.
+- Hypothesis: degraded parent-epic closure should load tracked child issues first, derive any referenced `Part of:` parent issue numbers from those snapshots, and fetch the missing parents before calling `findParentIssuesReadyToClose(...)`.
+- What changed: updated `loadTrackedIssuesForParentEpicClosureFallback()` to parse tracked child metadata, dedupe referenced parent issue numbers not already tracked locally, fetch those parent issues, and append them to the degraded fallback issue set. Added a focused `runOnceCyclePrelude` regression where children `#1101-#1103` are tracked and closed, parent epic `#1100` is open but absent from `state.issues`, and malformed full inventory refresh still leads to a parent-closure reconciliation input that includes the fetched parent. Kept the existing tracked-parent degraded fallback test unchanged.
 - Current blocker: none locally.
-- Next exact step: monitor PR #1108 until the new CI run finishes; if a refreshed check fails, debug that failure instead of changing the implementation speculatively.
-- Verification gap: I have not run the full repository test suite or an end-to-end supervisor loop after the merge; verification is focused on the journal path normalization flow, the committed-path gate, and TypeScript buildability.
-- Files touched: `.codex-supervisor/issue-journal.md`; `src/run-once-turn-execution.test.ts`; merged `github/main` changes across the supervisor path-hygiene and recovery files.
-- Rollback concern: low. The only manual post-merge code edit was changing a test fixture string construction to satisfy the new committed-path gate without weakening the regression.
-- Last focused command: `gh pr view 1108 --json number,url,isDraft,headRefName,headRefOid,baseRefName,mergeStateStatus,mergeable,statusCheckRollup`
-- What changed this turn: reread the required memory and journal files, fetched `origin` and `github`, confirmed `github/main` had advanced, merged that base into the issue branch, resolved the journal conflict conservatively by restoring the issue-1103 handoff, fixed the merge-induced path-gate regression in `src/run-once-turn-execution.test.ts`, installed dependencies with `npm ci`, reran focused verification, committed and pushed the refreshed branch, and confirmed PR #1108 is mergeable with CI in progress.
-- Exact failure reproduced this turn: `git merge --no-edit github/main` initially conflicted on `.codex-supervisor/issue-journal.md` because `github/main` carried an unrelated issue journal snapshot, and `npx tsx scripts/check-workstation-local-paths.ts` initially failed because `src/run-once-turn-execution.test.ts` committed a literal host-only absolute path in the journal-only regression fixture; restoring the issue-1103 journal and replacing the literal with `path.posix.join("/", "home", "alice", ".codex", "history.log")` resolved both problems.
-- Commands run this turn: `sed -n '1,220p' <redacted-local-path>/AGENTS.generated.md`; `sed -n '1,220p' <redacted-local-path>/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git status --short --branch`; `git symbolic-ref refs/remotes/origin/HEAD`; `git fetch origin --prune`; `git fetch github --prune`; `git diff --name-only HEAD...github/main`; `git stash push -m 'temp-issue-1103-journal-before-merge' -- .codex-supervisor/issue-journal.md`; `git merge --no-edit github/main`; `git show stash@{0}:.codex-supervisor/issue-journal.md`; `git checkout stash@{0} -- .codex-supervisor/issue-journal.md`; `npx tsx --test src/journal.test.ts src/run-once-turn-execution.test.ts`; `npx tsx scripts/check-workstation-local-paths.ts`; `npm ci`; `npm run verify:paths`; `npm run build`; `git commit -m "Merge github/main into codex/issue-1103"`; `git push origin codex/issue-1103`; `git push github codex/issue-1103`; `gh pr view 1108 --json number,url,isDraft,headRefName,headRefOid,baseRefName,mergeStateStatus,mergeable,statusCheckRollup`; `git stash drop stash@{0}`; `apply_patch`
+- Next exact step: monitor draft PR `#1110` for CI or review feedback and respond if anything regresses.
+- Verification gap: I have not run the full repo suite or an end-to-end supervisor loop; verification now covers a TypeScript build plus the targeted malformed-inventory regression slice that exercises this degraded reconciliation path.
+- Files touched: `src/run-once-cycle-prelude.ts`; `src/run-once-cycle-prelude.test.ts`; `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low. The change only broadens degraded fallback issue loading to include referenced parent epics discovered from already-fetched tracked child snapshots; healthy full-inventory reconciliation and already-tracked parent behavior are unchanged.
+- Last focused command: `gh pr create --draft --base main --head codex/issue-1109 --title "[codex] Close untracked parent epics during degraded reconciliation" --body-file <tempfile>`
+- What changed this turn: reread the required memory files and journal, confirmed the committed fix was already on `d88736c`, restored pinned dependencies with `npm ci`, ran `npm run build` and `npm run test:malformed-inventory-regressions`, pushed `codex/issue-1109` to the `github` remote, opened draft PR `#1110`, and refreshed this journal entry.
+- Exact failure reproduced this turn: none; this turn was a stabilization/publish pass on top of the existing committed fix.
+- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,240p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git status --short`; `git log --oneline --decorate -5`; `git branch --show-current`; `rg -n "run-once-cycle-prelude|recovery-reconciliation|inventory" src --glob "*.test.ts"`; `cat package.json`; `npm run build`; `npm run test:malformed-inventory-regressions`; `ls -1`; `test -d node_modules && echo present || echo missing`; `test -f package-lock.json && echo lockfile-present || echo no-lockfile`; `npm ci`; `sed -n '1,240p' <redacted-local-path>`; `gh --version`; `gh auth status`; `git status -sb`; `git remote -v`; `gh repo view --json nameWithOwner,defaultBranchRef,url`; `git ls-remote --heads origin codex/issue-1109`; `git ls-remote --heads github codex/issue-1109`; `git push -u github codex/issue-1109`; `gh pr create --draft --base main --head codex/issue-1109 --title "[codex] Close untracked parent epics during degraded reconciliation" --body-file <tempfile>`; `date -u +%Y-%m-%dT%H:%M:%SZ`; `gh pr view 1110 --json url,number,title,isDraft,headRefName,baseRefName>`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
