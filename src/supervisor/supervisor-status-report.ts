@@ -91,6 +91,7 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
     trustMode: "trusted_repo_and_authors",
     executionSafetyMode: "unsandboxed_autonomous",
     warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+    configWarning: null,
   };
   const cadenceDiagnostics = dto.cadenceDiagnostics ?? {
     pollIntervalSeconds: 120,
@@ -109,6 +110,9 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
     ...(trustDiagnostics.warning === null
       ? []
       : [`execution_safety_warning=${truncate(sanitizeStatusValue(trustDiagnostics.warning), 200)}`]),
+    ...(trustDiagnostics.configWarning === null || trustDiagnostics.configWarning === undefined
+      ? []
+      : [`config_warning=${truncate(sanitizeStatusValue(trustDiagnostics.configWarning), 200)}`]),
     `merge_critical_recheck_seconds=${mergeCriticalRecheckSeconds} merge_critical_effective_seconds=${cadenceDiagnostics.mergeCriticalEffectiveSeconds} merge_critical_recheck_enabled=${cadenceDiagnostics.mergeCriticalRecheckEnabled}`,
     ...(dto.candidateDiscoverySummary ? [dto.candidateDiscoverySummary] : []),
     `local_ci configured=${localCiContract.configured} source=${localCiContract.source} command=${truncate(sanitizeStatusValue(localCiContract.command ?? "none"), 200)} summary=${truncate(sanitizeStatusValue(localCiContract.summary), 200)}`,

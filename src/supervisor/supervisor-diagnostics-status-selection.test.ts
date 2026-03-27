@@ -104,12 +104,49 @@ test("status surfaces the default trust posture and execution-safety warning", a
     trustMode: "trusted_repo_and_authors",
     executionSafetyMode: "unsandboxed_autonomous",
     warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+    configWarning:
+      "Active config still uses legacy shared issue journal path .codex-supervisor/issue-journal.md; prefer .codex-supervisor/issues/{issueNumber}/issue-journal.md.",
   });
 
   const status = await supervisor.status();
   assert.match(status, /trust_mode=trusted_repo_and_authors/);
   assert.match(status, /execution_safety_mode=unsandboxed_autonomous/);
   assert.match(status, /execution_safety_warning=Unsandboxed autonomous execution assumes trusted GitHub-authored inputs\./);
+  assert.match(
+    status,
+    /config_warning=Active config still uses legacy shared issue journal path \.codex-supervisor\/issue-journal\.md; prefer \.codex-supervisor\/issues\/\{issueNumber\}\/issue-journal\.md\./,
+  );
+});
+
+test("status does not warn for issue-scoped or custom issue journal paths", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const githubStub = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const issueScopedSupervisor = new Supervisor({
+    ...fixture.config,
+    issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
+  });
+  (issueScopedSupervisor as unknown as { github: Record<string, unknown> }).github = githubStub;
+  const issueScopedStatus = await issueScopedSupervisor.status();
+  assert.doesNotMatch(issueScopedStatus, /config_warning=/);
+
+  const customPathSupervisor = new Supervisor({
+    ...fixture.config,
+    issueJournalRelativePath: ".codex-supervisor/custom/issue-{issueNumber}.md",
+  });
+  (customPathSupervisor as unknown as { github: Record<string, unknown> }).github = githubStub;
+  const customPathStatus = await customPathSupervisor.status();
+  assert.doesNotMatch(customPathStatus, /config_warning=/);
 });
 
 test("status reports degraded full inventory refresh and suppresses readiness selection work", async (t) => {
