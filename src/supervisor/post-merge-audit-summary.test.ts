@@ -612,3 +612,75 @@ test("summarizePostMergeAuditPatterns promotes missed focused test regressions i
     },
   ]);
 });
+
+test("summarizePostMergeAuditPatterns ignores external review miss artifacts with malformed nullable evidence fields", async () => {
+  const { reviewDir } = await createArtifactTestPaths("post-merge-audit-summary");
+  const config = createConfig({
+    localReviewArtifactDir: reviewDir,
+    repoSlug: "owner/repo",
+  });
+  const artifactDir = postMergeAuditArtifactDir(config);
+  const missArtifactPath = path.join(reviewDir, "owner-repo", "issue-102", "external-review-misses-head-merged-head.json");
+  const malformedMissArtifact = createExternalReviewMissArtifact();
+  const malformedCandidate = malformedMissArtifact.regressionTestCandidates[0];
+
+  assert.ok(malformedCandidate);
+  (malformedCandidate as unknown as Record<string, unknown>).sourceThreadId = { invalid: true };
+  (malformedCandidate as unknown as Record<string, unknown>).sourceUrl = 42;
+
+  await fs.mkdir(path.dirname(missArtifactPath), { recursive: true });
+  await fs.mkdir(artifactDir, { recursive: true });
+  await writeJsonAtomic(missArtifactPath, malformedMissArtifact as unknown as Record<string, unknown>);
+  await writeJsonAtomic(
+    path.join(artifactDir, "issue-102-head-merged-head.json"),
+    createPostMergeArtifact({
+      artifacts: {
+        executionMetricsSummaryPath: null,
+        localReviewSummaryPath: null,
+        localReviewFindingsPath: null,
+        externalReviewMissesPath: missArtifactPath,
+      },
+    }),
+  );
+
+  const summary = await summarizePostMergeAuditPatterns(config);
+
+  assert.deepEqual(summary.followUpCandidates, []);
+});
+
+test("summarizePostMergeAuditPatterns ignores external review miss artifacts that do not match the merged issue metadata", async () => {
+  const { reviewDir } = await createArtifactTestPaths("post-merge-audit-summary");
+  const config = createConfig({
+    localReviewArtifactDir: reviewDir,
+    repoSlug: "owner/repo",
+  });
+  const artifactDir = postMergeAuditArtifactDir(config);
+  const missArtifactPath = path.join(reviewDir, "owner-repo", "issue-102", "external-review-misses-head-merged-head.json");
+
+  await fs.mkdir(path.dirname(missArtifactPath), { recursive: true });
+  await fs.mkdir(artifactDir, { recursive: true });
+  await writeJsonAtomic(
+    missArtifactPath,
+    createExternalReviewMissArtifact({
+      issueNumber: 999,
+      prNumber: 998,
+      branch: "codex/issue-999",
+      headSha: "wrong-head-sha",
+    }),
+  );
+  await writeJsonAtomic(
+    path.join(artifactDir, "issue-102-head-merged-head.json"),
+    createPostMergeArtifact({
+      artifacts: {
+        executionMetricsSummaryPath: null,
+        localReviewSummaryPath: null,
+        localReviewFindingsPath: null,
+        externalReviewMissesPath: missArtifactPath,
+      },
+    }),
+  );
+
+  const summary = await summarizePostMergeAuditPatterns(config);
+
+  assert.deepEqual(summary.followUpCandidates, []);
+});

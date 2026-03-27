@@ -596,7 +596,9 @@ function isExternalReviewRegressionCandidate(value: unknown): value is ExternalR
     typeof candidate.summary === "string" &&
     typeof candidate.rationale === "string" &&
     typeof candidate.reviewerLogin === "string" &&
-    typeof candidate.sourceId === "string"
+    typeof candidate.sourceId === "string" &&
+    (candidate.sourceThreadId === null || typeof candidate.sourceThreadId === "string") &&
+    (candidate.sourceUrl === null || typeof candidate.sourceUrl === "string")
   );
 }
 
@@ -803,6 +805,19 @@ async function readExternalReviewMissArtifactSafely(artifactPath: string | null)
   }
 }
 
+function matchesExternalReviewMissArtifact(
+  artifact: PostMergeAuditArtifact,
+  missArtifact: ExternalReviewMissArtifact,
+): boolean {
+  return (
+    artifact.pullRequest !== null &&
+    missArtifact.issueNumber === artifact.issue.number &&
+    missArtifact.prNumber === artifact.pullRequest.number &&
+    missArtifact.branch === artifact.branch &&
+    missArtifact.headSha === artifact.pullRequest.headRefOid
+  );
+}
+
 export async function summarizePostMergeAuditPatterns(
   config: Pick<SupervisorConfig, "localReviewArtifactDir" | "repoSlug">,
 ): Promise<PostMergeAuditPatternSummaryDto> {
@@ -911,9 +926,10 @@ export async function summarizePostMergeAuditPatterns(
     }
 
     const externalReviewMissArtifact = await readExternalReviewMissArtifactSafely(artifact.artifacts.externalReviewMissesPath);
-    if (externalReviewMissArtifact && artifact.pullRequest) {
+    const pullRequest = artifact.pullRequest;
+    if (externalReviewMissArtifact && pullRequest && matchesExternalReviewMissArtifact(artifact, externalReviewMissArtifact)) {
       for (const candidate of externalReviewMissArtifact.regressionTestCandidates) {
-        const key = `test_regression:${artifact.issue.number}:${artifact.pullRequest.number}:${candidate.id}`;
+        const key = `test_regression:${artifact.issue.number}:${pullRequest.number}:${candidate.id}`;
         followUpCandidates.set(key, {
           key,
           category: "test_regression",
@@ -928,8 +944,8 @@ export async function summarizePostMergeAuditPatterns(
           evidence: {
             mergedIssueNumber: artifact.issue.number,
             mergedIssueTitle: artifact.issue.title,
-            mergedPrNumber: artifact.pullRequest.number,
-            mergedPrTitle: artifact.pullRequest.title,
+            mergedPrNumber: pullRequest.number,
+            mergedPrTitle: pullRequest.title,
             sourceArtifactPath: artifact.artifacts.externalReviewMissesPath!,
             sourceUrl: candidate.sourceUrl,
             sourceId: candidate.sourceId,
