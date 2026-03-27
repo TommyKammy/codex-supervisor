@@ -7,11 +7,11 @@
 - Journal: .codex-supervisor/issues/1124/issue-journal.md
 - Current phase: waiting_ci
 - Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 7bf387edb7250c1a808f486a39b89a3a350ce2eb
+- Last head SHA: 08d27e8541b3c00cfc4546730f67e7660b87847b
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-03-27T15:47:52Z
+- Updated at: 2026-03-27T15:48:58Z
 
 ## Latest Codex Summary
 Merged `github/main` at `d4986e5` into `codex/issue-1124` as merge commit `7bf387e`. The conflict resolution kept the shared warning-formatting path by expanding [src/warning-formatting.ts](src/warning-formatting.ts) to emit both execution-safety and config warnings, while preserving the new GitHub rate-limit status lines from `main` in [src/supervisor/supervisor-status-report.ts](src/supervisor/supervisor-status-report.ts).
