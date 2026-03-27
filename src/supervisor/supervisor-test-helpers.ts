@@ -3,12 +3,14 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
+  GitHubPullRequest,
   GitHubIssue,
   IssueRunRecord,
   ReviewThread,
   SupervisorConfig,
   SupervisorStateFile,
 } from "../core/types";
+import { createPullRequest as createBasePullRequest } from "../pull-request-state-test-helpers";
 import { renderIssueLintDto } from "./supervisor-selection-issue-lint";
 import { Supervisor } from "./supervisor";
 
@@ -163,6 +165,49 @@ export function createReviewThread(overrides: Partial<ReviewThread> = {}): Revie
       ],
     },
     ...overrides,
+  };
+}
+
+export function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
+  const number = overrides.number ?? 366;
+
+  return {
+    number,
+    title: `Issue ${number}`,
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${number}`,
+    state: "OPEN",
+    ...overrides,
+  };
+}
+
+export function createPullRequest(overrides: Partial<GitHubPullRequest> = {}): GitHubPullRequest {
+  const number = overrides.number ?? 44;
+
+  return createBasePullRequest({
+    number,
+    title: `Test PR #${number}`,
+    url: `https://example.test/pr/${number}`,
+    ...overrides,
+  });
+}
+
+export function createSupervisorState(
+  overrides: Omit<Partial<SupervisorStateFile>, "issues"> & {
+    issues?: IssueRunRecord[] | Record<string, IssueRunRecord>;
+  } = {},
+): SupervisorStateFile {
+  const { issues, ...rest } = overrides;
+  const issueEntries = Array.isArray(issues)
+    ? Object.fromEntries(issues.map((record) => [String(record.issue_number), record]))
+    : (issues ?? {});
+
+  return {
+    activeIssueNumber: null,
+    ...rest,
+    issues: issueEntries,
   };
 }
 
