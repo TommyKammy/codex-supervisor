@@ -95,8 +95,7 @@ test("loadConfigSummary surfaces the default trust diagnostics posture", async (
     trustMode: "trusted_repo_and_authors",
     executionSafetyMode: "unsandboxed_autonomous",
     warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
-    configWarning:
-      "Active config still uses legacy shared issue journal path .codex-supervisor/issue-journal.md; prefer .codex-supervisor/issues/{issueNumber}/issue-journal.md.",
+    configWarning: null,
   });
 });
 
@@ -129,8 +128,7 @@ test("loadConfigSummary accepts an explicit safer trust diagnostics posture with
     trustMode: "untrusted_or_mixed",
     executionSafetyMode: "operator_gated",
     warning: null,
-    configWarning:
-      "Active config still uses legacy shared issue journal path .codex-supervisor/issue-journal.md; prefer .codex-supervisor/issues/{issueNumber}/issue-journal.md.",
+    configWarning: null,
   });
 });
 

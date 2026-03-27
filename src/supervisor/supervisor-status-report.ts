@@ -21,6 +21,7 @@ import {
   formatInventoryRefreshStatusLine,
   formatLastSuccessfulInventorySnapshotStatusLine,
 } from "../inventory-refresh-state";
+import { buildTrustAndConfigWarnings, buildWarning, renderStatusWarningLine } from "../warning-formatting";
 
 export interface SupervisorStatusWarningDto {
   kind: "readiness" | "status";
@@ -110,17 +111,14 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
         renderGitHubRateLimitLine("rest", dto.githubRateLimit.rest),
         renderGitHubRateLimitLine("graphql", dto.githubRateLimit.graphql),
       ].filter((line) => !dto.detailedStatusLines.includes(line));
+  const trustWarnings = buildTrustAndConfigWarnings(trustDiagnostics);
+  const statusWarning = dto.warning === null ? null : buildWarning(dto.warning.kind, dto.warning.message);
   const lines = [
     ...dto.detailedStatusLines,
     ...githubRateLimitLines,
     `trust_mode=${trustDiagnostics.trustMode}`,
     `execution_safety_mode=${trustDiagnostics.executionSafetyMode}`,
-    ...(trustDiagnostics.warning === null
-      ? []
-      : [`execution_safety_warning=${truncate(sanitizeStatusValue(trustDiagnostics.warning), 200)}`]),
-    ...(trustDiagnostics.configWarning === null || trustDiagnostics.configWarning === undefined
-      ? []
-      : [`config_warning=${truncate(sanitizeStatusValue(trustDiagnostics.configWarning), 200)}`]),
+    ...trustWarnings.map((warning) => renderStatusWarningLine(warning, sanitizeStatusValue)),
     `merge_critical_recheck_seconds=${mergeCriticalRecheckSeconds} merge_critical_effective_seconds=${cadenceDiagnostics.mergeCriticalEffectiveSeconds} merge_critical_recheck_enabled=${cadenceDiagnostics.mergeCriticalRecheckEnabled}`,
     ...(dto.candidateDiscoverySummary ? [dto.candidateDiscoverySummary] : []),
     `local_ci configured=${localCiContract.configured} source=${localCiContract.source} command=${truncate(sanitizeStatusValue(localCiContract.command ?? "none"), 200)} summary=${truncate(sanitizeStatusValue(localCiContract.summary), 200)}`,
@@ -140,9 +138,7 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
     ...(dto.reconciliationWarning === null ? [] : [dto.reconciliationWarning]),
     ...dto.readinessLines,
     ...dto.whyLines,
-    ...(dto.warning === null
-      ? []
-      : [`${dto.warning.kind}_warning=${truncate(sanitizeStatusValue(dto.warning.message), 200)}`]),
+    ...(statusWarning === null ? [] : [renderStatusWarningLine(statusWarning, sanitizeStatusValue)]),
   ];
 
   return [dto.gsdSummary, lines.join("\n")].filter(Boolean).join("\n");

@@ -193,6 +193,39 @@ test("renderSupervisorStatusDto appends canonical github rate-limit lines from d
   assert.match(status, /^github_rate_limit resource=graphql status=exhausted remaining=0 limit=5000 reset_at=2026-03-27T00:15:00.000Z$/m);
 });
 
+test("status omits execution-safety warnings when the trust posture does not require one", async (t) => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.trustMode = "untrusted_or_mixed";
+  fixture.config.executionSafetyMode = "operator_gated";
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+
+  assert.deepEqual(report.trustDiagnostics, {
+    trustMode: "untrusted_or_mixed",
+    executionSafetyMode: "operator_gated",
+    warning: null,
+    configWarning:
+      "Active config still uses legacy shared issue journal path .codex-supervisor/issue-journal.md; prefer .codex-supervisor/issues/{issueNumber}/issue-journal.md.",
+  });
+
+  const status = await supervisor.status();
+  assert.match(status, /trust_mode=untrusted_or_mixed/);
+  assert.match(status, /execution_safety_mode=operator_gated/);
+  assert.doesNotMatch(status, /execution_safety_warning=/);
+});
+
 test("status reports degraded full inventory refresh and suppresses readiness selection work", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {
