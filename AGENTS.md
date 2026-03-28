@@ -4,8 +4,8 @@ This repository uses GitHub issue bodies as execution inputs. Treat issue author
 
 ## Canonical source
 
-- Before creating or updating a `codex` issue, follow [`docs/issue-metadata.md`](/Users/tomoakikawada/Dev/codex-supervisor-self/docs/issue-metadata.md).
-- If README examples, chat instructions, and issue history disagree, prefer [`docs/issue-metadata.md`](/Users/tomoakikawada/Dev/codex-supervisor-self/docs/issue-metadata.md).
+- Before creating or updating a `codex` issue, follow [`docs/issue-metadata.md`](docs/issue-metadata.md).
+- If README examples, chat instructions, and issue history disagree, prefer [`docs/issue-metadata.md`](docs/issue-metadata.md).
 
 ## Required format for `codex` issues
 
