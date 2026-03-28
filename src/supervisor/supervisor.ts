@@ -1,7 +1,7 @@
 import path from "node:path";
 import { runCommand } from "../core/command";
 import { loadConfig, summarizeCadenceDiagnostics, summarizeLocalCiContract, summarizeTrustDiagnostics } from "../core/config";
-import { GitHubClient, MALFORMED_INVENTORY_CAPTURE_DIR_ENV } from "../github";
+import { GitHubClient } from "../github";
 import { describeGsdIntegration } from "../gsd";
 import { issueJournalPath, trackedIssueJournalPath } from "../core/journal";
 import { acquireFileLock, LockHandle } from "../core/lock";
@@ -538,7 +538,8 @@ export class Supervisor {
     }
 
     try {
-      const issues = await this.withLoopInventoryCapture(() => this.github.listAllIssues());
+      const issues = await this.withLoopInventoryCapture((captureDir) =>
+        this.github.listAllIssues({ captureDir }));
       this.cachedFullIssueInventory = {
         issues,
         fetchedAtMs: Date.now(),
@@ -554,22 +555,8 @@ export class Supervisor {
     return path.join(path.dirname(this.config.stateFile), "inventory-refresh-failures");
   }
 
-  private async withLoopInventoryCapture<T>(operation: () => Promise<T>): Promise<T> {
-    const previousCaptureDir = process.env[MALFORMED_INVENTORY_CAPTURE_DIR_ENV];
-    if (previousCaptureDir && previousCaptureDir.trim() !== "") {
-      return operation();
-    }
-
-    process.env[MALFORMED_INVENTORY_CAPTURE_DIR_ENV] = this.inventoryRefreshCaptureDir();
-    try {
-      return await operation();
-    } finally {
-      if (previousCaptureDir === undefined) {
-        delete process.env[MALFORMED_INVENTORY_CAPTURE_DIR_ENV];
-      } else {
-        process.env[MALFORMED_INVENTORY_CAPTURE_DIR_ENV] = previousCaptureDir;
-      }
-    }
+  private async withLoopInventoryCapture<T>(operation: (captureDir: string) => Promise<T>): Promise<T> {
+    return operation(this.inventoryRefreshCaptureDir());
   }
 
   private async resolveRunnableIssueContext(

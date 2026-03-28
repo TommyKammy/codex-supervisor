@@ -34,7 +34,6 @@ const POST_CREATE_PR_LOOKUP_RETRY_LIMIT = 2;
 const POST_CREATE_PR_LOOKUP_BASE_DELAY_MS = 200;
 const FULL_ISSUE_INVENTORY_PAGE_SIZE = 100;
 const PULL_REQUEST_GRAPHQL_SURFACE_CACHE_MAX_ENTRIES = 128;
-export const MALFORMED_INVENTORY_CAPTURE_DIR_ENV = "CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR";
 const MALFORMED_INVENTORY_CAPTURE_LIMIT_ENV = "CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_LIMIT";
 const DEFAULT_MALFORMED_INVENTORY_CAPTURE_LIMIT = 10;
 
@@ -50,6 +49,10 @@ interface InventoryCaptureArtifact {
   stderrBytes: number;
   capturedAt: string;
   workingDirectory: string;
+}
+
+interface ListAllIssuesOptions {
+  captureDir?: string | null;
 }
 
 export class GitHubInventoryRefreshError extends Error {
@@ -277,7 +280,7 @@ export class GitHubClient {
     };
   }
 
-  async listAllIssues(): Promise<GitHubIssue[]> {
+  async listAllIssues(options: ListAllIssuesOptions = {}): Promise<GitHubIssue[]> {
     const command = [
       "issue",
       "list",
@@ -297,6 +300,7 @@ export class GitHubClient {
       const primaryCapture = await this.captureMalformedInventoryPayload({
         transport: "primary",
         source: "gh issue list",
+        captureDir: options.captureDir,
         args: command,
         result,
         parseError: error,
@@ -318,7 +322,7 @@ export class GitHubClient {
       if (isGitHubRateLimitFailure(primaryFailureMessage) || !looksLikeJsonArrayPayload(result.stdout)) {
         throw new GitHubInventoryRefreshError(primaryFailureMessage, [primaryDiagnostic], { cause: error });
       }
-      return this.listAllIssuesViaRestApi(primaryDiagnostic);
+      return this.listAllIssuesViaRestApi(primaryDiagnostic, options);
     }
   }
 
@@ -380,7 +384,10 @@ export class GitHubClient {
       .filter((issue): issue is GitHubIssue => issue !== null);
   }
 
-  private async listAllIssuesViaRestApi(primaryDiagnostic: InventoryRefreshDiagnosticEntry): Promise<GitHubIssue[]> {
+  private async listAllIssuesViaRestApi(
+    primaryDiagnostic: InventoryRefreshDiagnosticEntry,
+    options: ListAllIssuesOptions,
+  ): Promise<GitHubIssue[]> {
     try {
       const { owner, repo } = this.repoOwnerAndName();
       const issues: GitHubIssue[] = [];
@@ -409,6 +416,7 @@ export class GitHubClient {
             transport: "fallback",
             source: `gh api repos/${owner}/${repo}/issues`,
             page,
+            captureDir: options.captureDir,
             args: [
               "api",
               `repos/${owner}/${repo}/issues`,
@@ -484,12 +492,13 @@ export class GitHubClient {
   private async captureMalformedInventoryPayload(args: {
     transport: "primary" | "fallback";
     source: string;
+    captureDir?: string | null;
     args: string[];
     result: CommandResult;
     parseError: unknown;
     page?: number;
   }): Promise<InventoryCaptureArtifact | null> {
-    const captureDir = process.env[MALFORMED_INVENTORY_CAPTURE_DIR_ENV]?.trim();
+    const captureDir = args.captureDir?.trim();
     if (!captureDir) {
       return null;
     }
