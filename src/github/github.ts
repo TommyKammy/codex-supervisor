@@ -23,7 +23,7 @@ import {
 import { GitHubPullRequestHydrator } from "./github-pull-request-hydrator";
 import { GitHubTransport, isGitHubRateLimitFailure } from "./github-transport";
 import type { GitHubCommandRunner } from "./github-transport";
-import { ensureDir, parseJson, truncate, writeJsonAtomic } from "../core/utils";
+import { ensureDir, parseJson, truncate, truncatePreservingStartAndEnd, writeJsonAtomic } from "../core/utils";
 
 export { isTransientGitHubCommandFailure } from "./github-transport";
 export { isGitHubRateLimitFailure } from "./github-transport";
@@ -36,6 +36,7 @@ const FULL_ISSUE_INVENTORY_PAGE_SIZE = 100;
 const PULL_REQUEST_GRAPHQL_SURFACE_CACHE_MAX_ENTRIES = 128;
 const MALFORMED_INVENTORY_CAPTURE_LIMIT_ENV = "CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_LIMIT";
 const DEFAULT_MALFORMED_INVENTORY_CAPTURE_LIMIT = 10;
+const INVENTORY_FAILURE_OUTPUT_LIMIT = 2_000;
 
 interface InventoryCaptureArtifact {
   transport: "primary" | "fallback";
@@ -99,6 +100,13 @@ function inventoryCaptureLimit(): number {
 
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MALFORMED_INVENTORY_CAPTURE_LIMIT;
+}
+
+function renderInventoryFailureOutput(result: CommandResult): string | null {
+  return truncatePreservingStartAndEnd(
+    [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n"),
+    INVENTORY_FAILURE_OUTPUT_LIMIT,
+  );
 }
 
 interface GitHubRestIssue {
@@ -293,7 +301,7 @@ export class GitHubClient {
       "--json",
       "number,title,body,createdAt,updatedAt,url,labels,state",
     ];
-    const result = await this.runGhCommand(command);
+    const result = await this.runGhCommand(command, { stdoutCaptureLimitBytes: null });
     try {
       return parseJson<GitHubIssue[]>(result.stdout, "gh issue list");
     } catch (error) {
@@ -313,8 +321,7 @@ export class GitHubClient {
       });
       const primaryFailureMessage = [
         primaryDiagnostic.message,
-        result.stderr.trim(),
-        result.stdout.trim(),
+        renderInventoryFailureOutput(result),
         primaryCapture ? `Malformed inventory capture: ${primaryCapture.artifactPath}` : null,
       ]
         .filter(Boolean)
@@ -404,7 +411,7 @@ export class GitHubClient {
           `per_page=${FULL_ISSUE_INVENTORY_PAGE_SIZE}`,
           "-f",
           `page=${page}`,
-        ]);
+        ], { stdoutCaptureLimitBytes: null });
         let pageResponse: GitHubRestIssue[];
         try {
           pageResponse = parseJson<GitHubRestIssue[]>(

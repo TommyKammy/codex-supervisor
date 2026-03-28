@@ -9,6 +9,7 @@ export interface CommandOptions {
   allowExitCodes?: number[];
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
+  stdoutCaptureLimitBytes?: number | null;
 }
 
 export interface CommandResult {
@@ -60,8 +61,17 @@ function createBoundedOutputBuffer(): BoundedOutputBuffer {
   return { head: "", tail: "", truncated: false };
 }
 
-function appendBoundedOutput(buffer: BoundedOutputBuffer, chunk: string, limit = COMMAND_OUTPUT_CAPTURE_LIMIT): void {
+function appendBoundedOutput(
+  buffer: BoundedOutputBuffer,
+  chunk: string,
+  limit: number | null = COMMAND_OUTPUT_CAPTURE_LIMIT,
+): void {
   if (chunk.length === 0) {
+    return;
+  }
+
+  if (limit === null) {
+    buffer.head += chunk;
     return;
   }
 
@@ -150,7 +160,7 @@ export async function runCommand(
     };
 
     child.stdout.on("data", (chunk) => {
-      appendBoundedOutput(stdoutBuffer, chunk.toString());
+      appendBoundedOutput(stdoutBuffer, chunk.toString(), options.stdoutCaptureLimitBytes);
     });
 
     child.stderr.on("data", (chunk) => {

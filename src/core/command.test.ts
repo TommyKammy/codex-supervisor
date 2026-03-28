@@ -112,6 +112,29 @@ test("runCommand success bounds large stdout while preserving both ends", async 
   assert.equal(result.stderr, "");
 });
 
+test("runCommand can opt out of stdout truncation for machine-readable payloads", async () => {
+  const payload = JSON.stringify(
+    Array.from({ length: 220 }, (_value, index) => ({
+      number: index + 1,
+      title: `Issue ${index + 1}`,
+      body: `Body ${index + 1} ${"z".repeat(500)}`,
+    })),
+  );
+
+  const result = await runCommand(
+    process.execPath,
+    [
+      "-e",
+      `process.stdout.write(${JSON.stringify(payload)});`,
+    ],
+    { stdoutCaptureLimitBytes: null },
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stdout, payload);
+  assert.doesNotMatch(result.stdout, /\n\.\.\.\n/);
+});
+
 test("runCommand failure bounds large stderr on the error object while preserving both ends", async () => {
   const stderrPrefix = "stderr-prefix";
   const stderrSuffix = "stderr-suffix";
