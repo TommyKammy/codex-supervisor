@@ -4,7 +4,6 @@ import {
   buildInventoryRefreshFailure,
   inventoryRefreshFailureEquals,
 } from "./inventory-refresh-state";
-import { parseIssueMetadata } from "./issue-metadata/issue-metadata";
 import {
   buildRecoverySupervisorEvent,
   emitSupervisorEvent,
@@ -67,41 +66,6 @@ interface RunOnceCyclePreludeArgs {
     issues: GitHubIssue[],
   ) => Promise<void>;
   cleanupExpiredDoneWorkspaces: (state: SupervisorStateFile) => Promise<RecoveryEvent[]>;
-}
-
-async function loadTrackedIssuesForParentEpicClosureFallback(
-  state: SupervisorStateFile,
-  getIssue: (issueNumber: number) => Promise<GitHubIssue>,
-): Promise<GitHubIssue[] | null> {
-  const trackedIssueNumbers = Object.keys(state.issues)
-    .map((value) => Number(value))
-    .filter((value) => Number.isInteger(value))
-    .sort((left, right) => left - right);
-
-  if (trackedIssueNumbers.length === 0) {
-    return [];
-  }
-
-  try {
-    const trackedIssues = await Promise.all(trackedIssueNumbers.map((issueNumber) => getIssue(issueNumber)));
-    const loadedIssueNumbers = new Set(trackedIssueNumbers);
-    const parentIssueNumbers = Array.from(
-      new Set(
-        trackedIssues
-          .map((issue) => parseIssueMetadata(issue).parentIssueNumber)
-          .filter((value): value is number => value !== null && !loadedIssueNumbers.has(value)),
-      ),
-    ).sort((left, right) => left - right);
-
-    if (parentIssueNumbers.length === 0) {
-      return trackedIssues;
-    }
-
-    const parentIssues = await Promise.all(parentIssueNumbers.map((issueNumber) => getIssue(issueNumber)));
-    return [...trackedIssues, ...parentIssues];
-  } catch {
-    return null;
-  }
 }
 
 function hasNonTrackedRecoverableBlockedStates(state: SupervisorStateFile): boolean {
@@ -231,17 +195,6 @@ export async function runOnceCyclePrelude(
         const recoverableBlockedEvents = await args.reconcileRecoverableBlockedIssueStates(state, []);
         recoveryEvents.push(...recoverableBlockedEvents);
         emitRecoveryEvents(recoverableBlockedEvents);
-      }
-
-      if (args.getIssueForParentEpicClosureFallback) {
-        const trackedIssues = await loadTrackedIssuesForParentEpicClosureFallback(
-          state,
-          args.getIssueForParentEpicClosureFallback,
-        );
-        if (trackedIssues !== null) {
-          await setReconciliationPhase("parent_epic_closures");
-          await args.reconcileParentEpicClosures(state, trackedIssues);
-        }
       }
 
       return {
