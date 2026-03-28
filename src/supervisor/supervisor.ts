@@ -189,7 +189,7 @@ import {
   SupervisorStateFile,
   WorkspaceStatus,
 } from "../core/types";
-import { nowIso, truncate } from "../core/utils";
+import { isTerminalState, nowIso, truncate } from "../core/utils";
 import {
   ensureWorkspace,
   getWorkspaceStatus,
@@ -834,6 +834,9 @@ export class Supervisor {
     }
 
     state.issues[String(record.issue_number)] = record;
+    if (state.activeIssueNumber === null && !isTerminalState(record.state)) {
+      state.activeIssueNumber = record.issue_number;
+    }
     await this.stateStore.save(state);
     await syncJournal(record);
     return prependRecoveryLog(formatStatus(record, state), recoveryLog);
@@ -1579,6 +1582,13 @@ export class Supervisor {
       reconcileRecoverableBlockedIssueStates: (state, issues) =>
         reconcileRecoverableBlockedIssueStates(this.github, this.stateStore, state, this.config, issues, {
           shouldAutoRetryHandoffMissing,
+          inferStateFromPullRequest,
+          inferFailureContext,
+          blockedReasonForLifecycleState,
+          isOpenPullRequest,
+          syncReviewWaitWindow,
+          syncCopilotReviewRequestObservation,
+          syncCopilotReviewTimeoutState,
         }),
       reconcileParentEpicClosures: (state, issues) =>
         reconcileParentEpicClosures(this.github, this.stateStore, state, issues),

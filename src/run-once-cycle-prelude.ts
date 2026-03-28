@@ -68,6 +68,17 @@ interface RunOnceCyclePreludeArgs {
   cleanupExpiredDoneWorkspaces: (state: SupervisorStateFile) => Promise<RecoveryEvent[]>;
 }
 
+function shouldDelaySelectionForTrackedPrRehydration(state: SupervisorStateFile): boolean {
+  return Object.values(state.issues).some((record) =>
+    (record.state === "failed" && record.pr_number !== null) ||
+    (
+      record.state === "blocked" &&
+      record.pr_number !== null &&
+      (record.blocked_reason === null || record.blocked_reason === "manual_review" || record.blocked_reason === "verification")
+    ),
+  );
+}
+
 async function loadTrackedIssuesForParentEpicClosureFallback(
   state: SupervisorStateFile,
   getIssue: (issueNumber: number) => Promise<GitHubIssue>,
@@ -216,6 +227,18 @@ export async function runOnceCyclePrelude(
         await args.reconcileStaleFailedIssueStates(state, [], updateReconciliationProgress);
       }
 
+      const hasBlockedTrackedPrRecords = Object.values(state.issues).some((record) =>
+        record.state === "blocked" &&
+        record.pr_number !== null &&
+        (record.blocked_reason === null || record.blocked_reason === "manual_review" || record.blocked_reason === "verification"),
+      );
+      if (hasBlockedTrackedPrRecords) {
+        await setReconciliationPhase("recoverable_blocked_issue_states");
+        const recoverableBlockedEvents = await args.reconcileRecoverableBlockedIssueStates(state, []);
+        recoveryEvents.push(...recoverableBlockedEvents);
+        emitRecoveryEvents(recoverableBlockedEvents);
+      }
+
       if (args.getIssueForParentEpicClosureFallback) {
         const trackedIssues = await loadTrackedIssuesForParentEpicClosureFallback(
           state,
@@ -233,7 +256,12 @@ export async function runOnceCyclePrelude(
       };
     }
 
-    if (state.activeIssueNumber === null && await args.reserveRunnableIssueSelection?.(state) === true) {
+    const delaySelectionForTrackedPrRehydration = shouldDelaySelectionForTrackedPrRehydration(state);
+    if (
+      !delaySelectionForTrackedPrRehydration &&
+      state.activeIssueNumber === null &&
+      await args.reserveRunnableIssueSelection?.(state) === true
+    ) {
       return {
         state,
         recoveryEvents,
@@ -278,6 +306,17 @@ export async function runOnceCyclePrelude(
     const recoverableBlockedEvents = await args.reconcileRecoverableBlockedIssueStates(state, issues);
     recoveryEvents.push(...recoverableBlockedEvents);
     emitRecoveryEvents(recoverableBlockedEvents);
+
+    if (
+      delaySelectionForTrackedPrRehydration &&
+      state.activeIssueNumber === null &&
+      await args.reserveRunnableIssueSelection?.(state) === true
+    ) {
+      return {
+        state,
+        recoveryEvents,
+      };
+    }
 
     await setReconciliationPhase("parent_epic_closures");
     await args.reconcileParentEpicClosures(state, issues);

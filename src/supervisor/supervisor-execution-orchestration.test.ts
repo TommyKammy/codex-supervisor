@@ -804,6 +804,7 @@ test("runOnce preserves stale no-PR recovery tracking across a successful no-PR 
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
 
@@ -945,6 +946,7 @@ test("runOnce converges a stale no-PR issue to done when only supervisor-owned w
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
 
