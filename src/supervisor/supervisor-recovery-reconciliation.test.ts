@@ -14,7 +14,15 @@ import {
   reconcileStaleActiveIssueReservation,
   reconcileTrackedMergedButOpenIssues,
 } from "../recovery-reconciliation";
+import {
+  inferStateFromPullRequest,
+  syncCopilotReviewRequestObservation,
+  syncCopilotReviewTimeoutState,
+  syncReviewWaitWindow,
+} from "../pull-request-state";
 import { shouldAutoRetryHandoffMissing } from "./supervisor-execution-policy";
+import { inferFailureContext } from "./supervisor-failure-context";
+import { blockedReasonForLifecycleState, isOpenPullRequest } from "./supervisor-lifecycle";
 import {
   createConfig,
   createIssue,
@@ -247,6 +255,15 @@ test("reconcileRecoverableBlockedIssueStates requeues open no-PR handoff-missing
     getPullRequestIfExists: async () => {
       throw new Error("unexpected getPullRequestIfExists call");
     },
+    getIssue: async () => {
+      throw new Error("unexpected getIssue call");
+    },
+    getChecks: async () => {
+      throw new Error("unexpected getChecks call");
+    },
+    getUnresolvedReviewThreads: async () => {
+      throw new Error("unexpected getUnresolvedReviewThreads call");
+    },
   }, stateStore, state, config, issues, {
     shouldAutoRetryHandoffMissing,
   });
@@ -299,6 +316,15 @@ test("reconcileRecoverableBlockedIssueStates leaves closed issues blocked", asyn
   await reconcileRecoverableBlockedIssueStates({
     getPullRequestIfExists: async () => {
       throw new Error("unexpected getPullRequestIfExists call");
+    },
+    getIssue: async () => {
+      throw new Error("unexpected getIssue call");
+    },
+    getChecks: async () => {
+      throw new Error("unexpected getChecks call");
+    },
+    getUnresolvedReviewThreads: async () => {
+      throw new Error("unexpected getUnresolvedReviewThreads call");
     },
   }, stateStore, state, config, issues, {
     shouldAutoRetryHandoffMissing,
@@ -366,6 +392,15 @@ test("reconcileRecoverableBlockedIssueStates requeues requirements-blocked issue
   const recoveryEvents = await reconcileRecoverableBlockedIssueStates({
     getPullRequestIfExists: async () => {
       throw new Error("unexpected getPullRequestIfExists call");
+    },
+    getIssue: async () => {
+      throw new Error("unexpected getIssue call");
+    },
+    getChecks: async () => {
+      throw new Error("unexpected getChecks call");
+    },
+    getUnresolvedReviewThreads: async () => {
+      throw new Error("unexpected getUnresolvedReviewThreads call");
     },
   }, stateStore, state, config, issues, {
     shouldAutoRetryHandoffMissing,
@@ -443,6 +478,15 @@ test("reconcileRecoverableBlockedIssueStates resumes conflicted tracked PR hando
   const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
     {
       getPullRequestIfExists: async () => pr,
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
     },
     stateStore,
     state,
@@ -471,6 +515,107 @@ test("reconcileRecoverableBlockedIssueStates resumes conflicted tracked PR hando
   assert.equal(saveCalls, 1);
   assert.deepEqual(recoveryEvents.map((event) => event.reason), [
     "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to resolving_conflict using fresh tracked PR #191 facts at head head-191",
+  ]);
+});
+
+test("reconcileRecoverableBlockedIssueStates rehydrates tracked PR manual-review blocks to ready_to_merge on same-head GitHub facts", async () => {
+  const config = createConfig();
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        state: "blocked",
+        blocked_reason: "manual_review",
+        pr_number: 191,
+        last_head_sha: "head-191",
+        last_error: "Manual review is required before the PR can proceed.",
+        last_failure_kind: null,
+        last_failure_context: {
+          category: "review",
+          summary: "Manual review is required before the PR can proceed.",
+          signature: "manual-review:thread-1",
+          command: null,
+          details: ["thread=thread-1"],
+          url: "https://example.test/pr/191#discussion_r1",
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "manual-review:thread-1",
+        repeated_failure_signature_count: 2,
+        repeated_blocker_count: 2,
+      }),
+    ],
+  });
+  const issue = createIssue({
+    title: "Recovery issue",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+  const pr = createPullRequest({
+    number: 191,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/191",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-191",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async (issueNumber) => {
+        assert.equal(issueNumber, 366);
+        return issue;
+      },
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "ready_to_merge");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.repeated_blocker_count, 0);
+  assert.equal(updated.pr_number, 191);
+  assert.equal(updated.last_head_sha, "head-191");
+  assert.equal(
+    updated.last_recovery_reason,
+    "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to ready_to_merge using fresh tracked PR #191 facts at head head-191",
+  );
+  assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to ready_to_merge using fresh tracked PR #191 facts at head head-191",
   ]);
 });
 
