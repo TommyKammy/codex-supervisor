@@ -330,14 +330,18 @@ function shouldWaitForConfiguredBotLatestHeadRearm(
     return false;
   }
 
-  const actionableSignalAt = latestConfiguredBotActionableSignalAt(pr);
-  if (!actionableSignalAt) {
+  const reviewWaitStartedAtMs = Date.parse(record.review_wait_started_at);
+  if (Number.isNaN(reviewWaitStartedAtMs)) {
     return false;
   }
 
-  const reviewWaitStartedAtMs = Date.parse(record.review_wait_started_at);
+  const actionableSignalAt = latestConfiguredBotActionableSignalAt(pr);
+  if (!actionableSignalAt) {
+    return Date.now() < reviewWaitStartedAtMs + configuredBotInitialGraceWaitMs(config);
+  }
+
   const actionableSignalAtMs = Date.parse(actionableSignalAt);
-  if (Number.isNaN(reviewWaitStartedAtMs) || Number.isNaN(actionableSignalAtMs)) {
+  if (Number.isNaN(actionableSignalAtMs)) {
     return false;
   }
 
