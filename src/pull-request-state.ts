@@ -388,6 +388,54 @@ function mergeConditionsSatisfied(pr: GitHubPullRequest, checks: PullRequestChec
   );
 }
 
+function isIssueJournalThreadPath(thread: Pick<ReviewThread, "path">): boolean {
+  const normalizedPath = thread.path?.replace(/\\/g, "/") ?? "";
+  return /^\.codex-supervisor\/.+\/issue-journal\.md$/.test(normalizedPath);
+}
+
+function allowJournalOnlyConfiguredBotThreadException(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
+  reviewThreads: ReviewThread[],
+): boolean {
+  if (!reviewProviderWaitPolicyFromConfig(config).shouldApplyCurrentHeadQuietPeriod) {
+    return false;
+  }
+
+  if (
+    pr.state !== "OPEN" ||
+    pr.isDraft ||
+    pr.mergedAt ||
+    pr.mergeStateStatus !== "CLEAN" ||
+    pr.mergeable !== "MERGEABLE" ||
+    pr.configuredBotCurrentHeadStatusState !== "SUCCESS" ||
+    pr.configuredBotTopLevelReviewStrength === "blocking"
+  ) {
+    return false;
+  }
+
+  const checkSummary = summarizeChecks(checks);
+  if (!checkSummary.allPassing) {
+    return false;
+  }
+
+  const unresolvedConfiguredBotThreads = configuredBotReviewThreads(config, reviewThreads);
+  return unresolvedConfiguredBotThreads.length > 0 && unresolvedConfiguredBotThreads.every(isIssueJournalThreadPath);
+}
+
+function effectiveConfiguredBotReviewThreads(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
+  reviewThreads: ReviewThread[],
+): ReviewThread[] {
+  const unresolvedConfiguredBotThreads = configuredBotReviewThreads(config, reviewThreads);
+  return allowJournalOnlyConfiguredBotThreadException(config, pr, checks, unresolvedConfiguredBotThreads)
+    ? unresolvedConfiguredBotThreads.filter((thread) => !isIssueJournalThreadPath(thread))
+    : unresolvedConfiguredBotThreads;
+}
+
 function pullRequestHeadMatchesRecord(record: Pick<IssueRunRecord, "last_head_sha">, pr: GitHubPullRequest): boolean {
   return record.last_head_sha === null || record.last_head_sha === pr.headRefOid;
 }
@@ -459,10 +507,11 @@ export function blockedReasonFromReviewState(
   config: SupervisorConfig,
   record: IssueRunRecord,
   pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
   reviewThreads: ReviewThread[],
 ): Exclude<BlockedReason, null> | null {
   const manualThreads = manualReviewThreads(config, reviewThreads);
-  const unresolvedBotThreads = configuredBotReviewThreads(config, reviewThreads);
+  const unresolvedBotThreads = effectiveConfiguredBotReviewThreads(config, pr, checks, reviewThreads);
   const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
   if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
     return "review_bot_timeout";
@@ -588,8 +637,8 @@ export function inferStateFromPullRequest(
   reviewThreads: ReviewThread[],
 ): RunState {
   const manualThreads = manualReviewThreads(config, reviewThreads);
-  const unresolvedBotThreads = configuredBotReviewThreads(config, reviewThreads);
-  const pendingBotThreads = pendingBotReviewThreads(config, record, pr, reviewThreads);
+  const unresolvedBotThreads = effectiveConfiguredBotReviewThreads(config, pr, checks, reviewThreads);
+  const pendingBotThreads = pendingBotReviewThreads(config, record, pr, unresolvedBotThreads);
   const botFollowUpState = configuredBotReviewFollowUpState(record, pr, unresolvedBotThreads);
 
   if (pr.mergedAt || pr.state === "MERGED") {
@@ -710,7 +759,10 @@ export function inferStateFromPullRequest(
     return "waiting_ci";
   }
 
-  if (!pullRequestHeadMatchesRecord(record, pr) && mergeConditionsSatisfied(pr, checks)) {
+  if (
+    !pullRequestHeadMatchesRecord(record, pr) &&
+    mergeConditionsSatisfied(pr, checks)
+  ) {
     return "stabilizing";
   }
 

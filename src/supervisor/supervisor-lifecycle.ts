@@ -113,7 +113,7 @@ export function blockedReasonForLifecycleState(
   reviewThreads: ReviewThread[],
 ): IssueRunRecord["blocked_reason"] {
   return (
-    blockedReasonFromReviewState(config, record, pr, reviewThreads) ??
+    blockedReasonFromReviewState(config, record, pr, checks, reviewThreads) ??
     (localReviewRetryLoopStalled(
       config,
       record,

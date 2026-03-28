@@ -687,8 +687,8 @@ export class Supervisor {
             recordPatch,
           ),
         inferStateWithoutPullRequest,
-        blockedReasonFromReviewState: (phaseRecord, phasePr, phaseReviewThreads) =>
-          blockedReasonFromReviewState(this.config, phaseRecord, phasePr, phaseReviewThreads),
+        blockedReasonFromReviewState: (phaseRecord, phasePr, phaseChecks, phaseReviewThreads) =>
+          blockedReasonFromReviewState(this.config, phaseRecord, phasePr, phaseChecks, phaseReviewThreads),
         recoverUnexpectedCodexTurnFailure: (args) =>
           recoverUnexpectedCodexTurnFailure({
             ...args,
@@ -861,8 +861,8 @@ export class Supervisor {
       derivePullRequestLifecycleSnapshot: (record, pr, checks, reviewThreads, recordPatch = {}) =>
         derivePullRequestLifecycleSnapshot(this.config, record, pr, checks, reviewThreads, recordPatch),
       applyFailureSignature,
-      blockedReasonFromReviewState: (record, pr, reviewThreads) =>
-        blockedReasonFromReviewState(this.config, record, pr, reviewThreads),
+      blockedReasonFromReviewState: (record, pr, checks, reviewThreads) =>
+        blockedReasonFromReviewState(this.config, record, pr, checks, reviewThreads),
       summarizeChecks,
       configuredBotReviewThreads,
       manualReviewThreads,

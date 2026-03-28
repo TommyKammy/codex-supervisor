@@ -343,6 +343,7 @@ export interface GitHubPullRequest {
   copilotReviewRequestedAt?: string | null;
   copilotReviewArrivedAt?: string | null;
   configuredBotCurrentHeadObservedAt?: string | null;
+  configuredBotCurrentHeadStatusState?: string | null;
   currentHeadCiGreenAt?: string | null;
   configuredBotRateLimitedAt?: string | null;
   configuredBotDraftSkipAt?: string | null;

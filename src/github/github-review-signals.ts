@@ -67,6 +67,7 @@ export interface ConfiguredBotReviewSummary {
   lifecycle: CopilotReviewLifecycle;
   topLevelReview: ConfiguredBotTopLevelReviewSummary;
   currentHeadObservedAt: string | null;
+  currentHeadStatusState: string | null;
   currentHeadCiGreenAt: string | null;
   rateLimitWarningAt: string | null;
   draftSkipAt: string | null;
@@ -104,6 +105,18 @@ function isConfiguredBotStatusContextActivity(args: {
   const normalizedContext = (args.context ?? "").trim().toLowerCase();
   const normalizedDescription = (args.description ?? "").trim().toLowerCase();
   return normalizedContext.includes("coderabbit") || normalizedDescription.includes("coderabbit");
+}
+
+function isCodeRabbitStatusContext(args: {
+  creatorLogin: string | null | undefined;
+  context: string | null | undefined;
+  description?: string | null | undefined;
+}): boolean {
+  return (
+    isCodeRabbitLogin(args.creatorLogin) ||
+    (args.context ?? "").trim().toLowerCase().includes("coderabbit") ||
+    (args.description ?? "").trim().toLowerCase().includes("coderabbit")
+  );
 }
 
 function mapCheckBucket(args: {
@@ -395,6 +408,53 @@ function inferConfiguredBotCurrentHeadObservedAt(
   ]);
 }
 
+function inferConfiguredBotCurrentHeadStatusState(
+  facts: CopilotReviewLifecycleFacts,
+  reviewBotLogins: string[],
+  currentHeadOid: string | null | undefined,
+): string | null {
+  const normalizedCurrentHeadOid = currentHeadOid?.trim();
+  if (!normalizedCurrentHeadOid) {
+    return null;
+  }
+
+  const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
+  if (configuredReviewBots.size === 0) {
+    return null;
+  }
+
+  let latestMatch: { createdAt: string; state: string } | null = null;
+  for (const statusContext of facts.statusContexts ?? []) {
+    if (
+      statusContext.commitOid !== normalizedCurrentHeadOid ||
+      !isCodeRabbitStatusContext(statusContext) ||
+      !isConfiguredBotStatusContextActivity({
+        creatorLogin: statusContext.creatorLogin,
+        context: statusContext.context,
+        description: statusContext.description,
+        configuredReviewBots,
+      })
+    ) {
+      continue;
+    }
+
+    const createdAtMs = parseTimestamp(statusContext.createdAt);
+    const normalizedState = statusContext.state?.trim().toUpperCase() ?? null;
+    if (createdAtMs === 0 || !normalizedState) {
+      continue;
+    }
+
+    if (!latestMatch || createdAtMs >= parseTimestamp(latestMatch.createdAt)) {
+      latestMatch = {
+        createdAt: statusContext.createdAt ?? "",
+        state: normalizedState,
+      };
+    }
+  }
+
+  return latestMatch?.state ?? null;
+}
+
 function inferCurrentHeadCiGreenAt(
   facts: CopilotReviewLifecycleFacts,
   currentHeadOid: string | null | undefined,
@@ -518,6 +578,7 @@ export function buildConfiguredBotReviewSummary(
     lifecycle: inferCopilotReviewLifecycle(facts, reviewBotLogins),
     topLevelReview: inferConfiguredBotTopLevelReviewSummary(facts, reviewBotLogins),
     currentHeadObservedAt: inferConfiguredBotCurrentHeadObservedAt(facts, reviewBotLogins, currentHeadOid),
+    currentHeadStatusState: inferConfiguredBotCurrentHeadStatusState(facts, reviewBotLogins, currentHeadOid),
     currentHeadCiGreenAt: inferCurrentHeadCiGreenAt(facts, currentHeadOid),
     rateLimitWarningAt: inferConfiguredBotRateLimitWarningAt(facts, reviewBotLogins),
     draftSkipAt: inferConfiguredBotDraftSkipAt(facts, reviewBotLogins),
