@@ -108,6 +108,8 @@ function createStubService(args?: { pruneCalls?: number[] }): SupervisorService 
       latestRecoverySummary: null,
       staleRecoveryWarningSummary: null,
       activityContext: null,
+      trackedPrMismatchSummary: null,
+      recoveryGuidance: null,
       reasons: ["selected"],
     }),
     queryIssueLint: async (issueNumber) => ({
@@ -409,6 +411,8 @@ function createFirstRunSetupService(args: {
       latestRecoverySummary: null,
       staleRecoveryWarningSummary: null,
       activityContext: null,
+      trackedPrMismatchSummary: null,
+      recoveryGuidance: null,
       reasons: ["selected"],
     }),
     queryIssueLint: async (issueNumber) => ({
