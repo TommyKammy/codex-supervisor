@@ -371,8 +371,10 @@ test("StateStore roundtrip preserves inventory refresh diagnostics", async () =>
             transport: "primary",
             source: "gh issue list",
             message: "Failed to parse JSON from gh issue list: Bad control character in string literal",
-            artifact_path: "/tmp/inventory-refresh-failures/primary.json",
+            raw_artifact_path: "/tmp/inventory-refresh-failures/primary-raw.json",
+            preview_artifact_path: "/tmp/inventory-refresh-failures/primary-preview.json",
             command: ["gh", "issue", "list", "--repo", "owner/repo"],
+            parse_stage: "primary_json_parse",
             parse_error: "Failed to parse JSON from gh issue list: Bad control character in string literal",
             stdout_bytes: 32766,
             stderr_bytes: 14,
@@ -384,8 +386,10 @@ test("StateStore roundtrip preserves inventory refresh diagnostics", async () =>
             source: "gh api repos/owner/repo/issues",
             message: "Failed to parse JSON from gh api repos/owner/repo/issues page=2: Bad control character in string literal",
             page: 2,
-            artifact_path: "/tmp/inventory-refresh-failures/fallback.json",
+            raw_artifact_path: "/tmp/inventory-refresh-failures/fallback-raw.json",
+            preview_artifact_path: "/tmp/inventory-refresh-failures/fallback-preview.json",
             command: ["gh", "api", "repos/owner/repo/issues", "--method", "GET", "-f", "page=2"],
+            parse_stage: "fallback_json_parse",
             parse_error: "Failed to parse JSON from gh api repos/owner/repo/issues page=2: Bad control character in string literal",
             stdout_bytes: 32766,
             stderr_bytes: 9,
@@ -405,6 +409,70 @@ test("StateStore roundtrip preserves inventory refresh diagnostics", async () =>
     await sqliteStore.save(state);
     const loadedSqlite = await sqliteStore.load();
     assert.deepEqual(loadedSqlite.inventory_refresh_failure, state.inventory_refresh_failure);
+  });
+});
+
+test("StateStore save canonicalizes legacy inventory artifact paths to preview_artifact_path", async () => {
+  await withTempDir(async (dir) => {
+    const state: SupervisorStateFile = {
+      activeIssueNumber: null,
+      issues: {},
+      inventory_refresh_failure: {
+        source: "gh issue list",
+        message: "Failed to load full issue inventory.",
+        recorded_at: "2026-03-28T07:16:21.409Z",
+        diagnostics: [
+          {
+            transport: "primary",
+            source: "gh issue list",
+            message: "legacy artifact only",
+            artifact_path: "/tmp/inventory-refresh-failures/legacy-preview.json",
+          },
+          {
+            transport: "fallback",
+            source: "gh api repos/owner/repo/issues",
+            message: "legacy and canonical artifact paths",
+            artifact_path: "/tmp/inventory-refresh-failures/legacy-preview.json",
+            preview_artifact_path: "/tmp/inventory-refresh-failures/fallback-preview.json",
+            raw_artifact_path: "/tmp/inventory-refresh-failures/fallback-raw.json",
+          },
+        ],
+      },
+    };
+
+    const store = new StateStore(path.join(dir, "state.json"), { backend: "json" });
+    await store.save(state);
+
+    const persisted = JSON.parse(await fs.readFile(path.join(dir, "state.json"), "utf8")) as {
+      inventory_refresh_failure?: {
+        diagnostics?: Array<Record<string, unknown>>;
+      };
+    };
+    const persistedDiagnostics = persisted.inventory_refresh_failure?.diagnostics ?? [];
+
+    assert.equal(persistedDiagnostics.length, 2);
+    assert.equal("artifact_path" in (persistedDiagnostics[0] ?? {}), false);
+    assert.equal("artifact_path" in (persistedDiagnostics[1] ?? {}), false);
+    assert.equal(
+      persistedDiagnostics[0]?.preview_artifact_path,
+      "/tmp/inventory-refresh-failures/legacy-preview.json",
+    );
+    assert.equal(
+      persistedDiagnostics[1]?.preview_artifact_path,
+      "/tmp/inventory-refresh-failures/fallback-preview.json",
+    );
+
+    const loaded = await store.load();
+    assert.equal(loaded.inventory_refresh_failure?.diagnostics?.[0]?.artifact_path, undefined);
+    assert.equal(
+      loaded.inventory_refresh_failure?.diagnostics?.[0]?.preview_artifact_path,
+      "/tmp/inventory-refresh-failures/legacy-preview.json",
+    );
+    assert.equal(loaded.inventory_refresh_failure?.diagnostics?.[1]?.artifact_path, undefined);
+    assert.equal(
+      loaded.inventory_refresh_failure?.diagnostics?.[1]?.preview_artifact_path,
+      "/tmp/inventory-refresh-failures/fallback-preview.json",
+    );
   });
 });
 

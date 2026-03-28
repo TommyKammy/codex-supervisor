@@ -231,7 +231,10 @@ export interface InventoryRefreshDiagnosticEntry {
   message: string;
   page?: number | null;
   artifact_path?: string | null;
+  raw_artifact_path?: string | null;
+  preview_artifact_path?: string | null;
   command?: string[];
+  parse_stage?: "primary_json_parse" | "fallback_json_parse";
   parse_error?: string;
   stdout_bytes?: number;
   stderr_bytes?: number;
