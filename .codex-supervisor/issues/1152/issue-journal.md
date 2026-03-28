@@ -36,13 +36,13 @@ Failure signature: stale-stabilizing-no-pr-recovery-loop
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the branch is now at a reviewable checkpoint. The tracked-PR rehydration implementation and the later orchestration-fixture stabilization both hold under focused local verification, so the remaining work is publication rather than more runtime changes.
-- What changed: no new runtime code this turn. I re-read the branch diff, reverified the targeted suites, and confirmed the implementation still covers both selection-order rehydration and same-head blocked-PR recovery from fresh GitHub facts. I also confirmed `gh` auth is healthy and there is not yet a PR for `codex/issue-1152`.
+- Hypothesis: the branch is now at a published reviewable checkpoint. The tracked-PR rehydration implementation and the later orchestration-fixture stabilization both hold under focused local verification, and the draft PR is open for review.
+- What changed: no new runtime code this turn. I re-read the branch diff, reverified the targeted suites, confirmed the implementation still covers both selection-order rehydration and same-head blocked-PR recovery from fresh GitHub facts, pushed `codex/issue-1152` to `github`, and opened draft PR #1157.
 - Current blocker: none.
-- Next exact step: commit this journal refresh if desired, push `codex/issue-1152`, and open a draft PR against `main` so the current checkpoint is reviewable.
+- Next exact step: use draft PR #1157 for review or CI follow-up; if review feedback lands, address it on `codex/issue-1152` and push incremental fixes.
 - Verification gap: none in the intended issue path. Focused suites are green. There are still pre-existing non-fatal execution-metrics chronology warnings in some tests, but they did not fail the runs and were not changed here.
 - Files touched: src/run-once-cycle-prelude.ts; src/recovery-reconciliation.ts; src/supervisor/supervisor.ts; src/run-once-cycle-prelude.test.ts; src/supervisor/supervisor-recovery-reconciliation.test.ts; src/supervisor/supervisor-execution-orchestration.test.ts
 - Rollback concern: low for this checkpoint; the new edit is test-only and constrains fixtures to supply labels explicitly.
-- Last focused commands: `npx tsx --test src/run-once-cycle-prelude.test.ts`; `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts`; `gh auth status`; `gh repo view --json nameWithOwner,defaultBranchRef`
+- Last focused commands: `npx tsx --test src/run-once-cycle-prelude.test.ts`; `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts`; `gh auth status`; `gh repo view --json nameWithOwner,defaultBranchRef`; `git push -u github codex/issue-1152`; `gh pr create --draft --base main --head codex/issue-1152 --title "[codex] Rehydrate tracked PR-open issues from live GitHub facts at cycle start" --body-file <tempfile>`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
