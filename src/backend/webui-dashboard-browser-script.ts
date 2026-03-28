@@ -549,7 +549,8 @@ export function renderDashboardBrowserScript(): string {
       }
 
       function getHeroSecondaryActionConfig(nextIssue) {
-        if (hasHeroIssueFocus(nextIssue)) {
+        const primaryActionConfig = getHeroPrimaryActionConfig(nextIssue);
+        if (hasHeroIssueFocus(nextIssue) || primaryActionConfig.mode === "queue") {
           return { mode: "queue", label: "", hidden: true };
         }
         return { mode: "queue", label: "Open Queue Details", hidden: false };
