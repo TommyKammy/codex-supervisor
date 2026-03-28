@@ -39,7 +39,12 @@ export interface InventoryOperatorStatus {
   } | null;
 }
 
-export function buildInventoryRefreshFailure(error: unknown): InventoryRefreshFailure {
+export function buildInventoryRefreshFailure(
+  error: unknown,
+  options: {
+    boundedContinuationAllowed?: boolean;
+  } = {},
+): InventoryRefreshFailure {
   const message = truncate(error instanceof Error ? error.message : String(error), 500) ?? "Unknown inventory refresh failure.";
   const diagnostics = error instanceof GitHubInventoryRefreshError && error.diagnostics.length > 0
     ? error.diagnostics.map((entry) => ({
@@ -52,6 +57,7 @@ export function buildInventoryRefreshFailure(error: unknown): InventoryRefreshFa
     message,
     recorded_at: nowIso(),
     ...(isGitHubRateLimitFailure(message) ? { classification: "rate_limited" as const } : {}),
+    ...(options.boundedContinuationAllowed ? { bounded_continuation_allowed: true } : {}),
     ...(diagnostics ? { diagnostics } : {}),
   };
 }
@@ -92,6 +98,30 @@ export function canUseSnapshotBackedSelectionAfterInventoryRefreshFailure(args: 
   return isTransientGitHubCommandFailure(failure.message) && isFreshInventorySnapshot(snapshot);
 }
 
+export function canContinueBoundedAfterInventoryRefreshFailure(args: {
+  failure: InventoryRefreshFailure | null | undefined;
+  snapshot: LastSuccessfulInventorySnapshot | null | undefined;
+}): boolean {
+  const { failure, snapshot } = args;
+  if (!failure?.bounded_continuation_allowed) {
+    return false;
+  }
+
+  return isTransientGitHubCommandFailure(failure.message) && isFreshInventorySnapshot(snapshot);
+}
+
+export function canProceedWithDegradedContinuationAfterInventoryRefreshFailure(args: {
+  failure: InventoryRefreshFailure | null | undefined;
+  snapshot: LastSuccessfulInventorySnapshot | null | undefined;
+}): boolean {
+  const { failure } = args;
+  if (!failure) {
+    return true;
+  }
+
+  return !isTransientGitHubCommandFailure(failure.message) || canContinueBoundedAfterInventoryRefreshFailure(args);
+}
+
 export function inventoryRefreshFailureEquals(
   left: InventoryRefreshFailure | null | undefined,
   right: InventoryRefreshFailure | null | undefined,
@@ -108,6 +138,7 @@ export function inventoryRefreshFailureEquals(
     left.source === right.source &&
     left.message === right.message &&
     left.classification === right.classification &&
+    left.bounded_continuation_allowed === right.bounded_continuation_allowed &&
     JSON.stringify(left.diagnostics ?? []) === JSON.stringify(right.diagnostics ?? [])
   );
 }

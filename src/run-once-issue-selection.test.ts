@@ -892,6 +892,99 @@ Execution order: 2 of 3`,
   assert.equal(savedStates.length, 1);
 });
 
+test("resolveRunnableIssueContext requeues active issues after repeated transient refresh failures even when a fresh snapshot exists", async () => {
+  const config = createConfig();
+  const issue: GitHubIssue = {
+    number: 96,
+    title: "Constrained active issue",
+    body: `## Summary
+Continue only after the dependency closes.
+
+## Scope
+- resume the active tracked issue safely
+
+## Acceptance criteria
+- degrade safely
+
+## Verification
+- npm test -- src/run-once-issue-selection.test.ts
+
+Depends on: #95`,
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/96",
+    labels: [],
+    state: "OPEN",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 96,
+    inventory_refresh_failure: {
+      source: "gh issue list",
+      message:
+        'Transient GitHub CLI failure after 3 attempts: gh issue list --repo owner/repo\nCommand failed: gh issue list --repo owner/repo\nexitCode=1\nPost "https://api.github.com/graphql": read tcp 127.0.0.1:12345->140.82.112.6:443: read: connection reset by peer',
+      recorded_at: "2026-03-26T00:10:00Z",
+    },
+    last_successful_inventory_snapshot: {
+      source: "gh issue list",
+      recorded_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      issue_count: 2,
+      issues: [
+        {
+          number: 95,
+          title: "Dependency issue",
+          body: executionReadyBody("Close me first."),
+          createdAt: "2026-03-15T00:00:00Z",
+          updatedAt: "2026-03-15T00:00:00Z",
+          url: "https://example.test/issues/95",
+          labels: [],
+          state: "CLOSED",
+        },
+        issue,
+      ],
+    },
+    issues: {
+      "95": createRecord(95, { state: "done" }),
+      "96": createRecord(96),
+    },
+  };
+  const savedStates: SupervisorStateFile[] = [];
+  let released = false;
+  let getIssueCalls = 0;
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => {
+        throw new Error("unexpected broad candidate inventory read");
+      },
+      getIssue: async () => {
+        getIssueCalls += 1;
+        return issue;
+      },
+    },
+    config,
+    stateStore: createTouchStateStore(savedStates),
+    state,
+    currentRecord: state.issues["96"] ?? null,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {
+        released = true;
+      },
+    }),
+  });
+
+  assert.deepEqual(result, { kind: "restart" });
+  assert.equal(released, true);
+  assert.equal(getIssueCalls, 0);
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(state.issues["96"]?.state, "queued");
+  assert.match(
+    state.issues["96"]?.last_error ?? "",
+    /Full inventory refresh is degraded and bounded continuation is no longer allowed for issue #96/,
+  );
+  assert.equal(savedStates.length, 1);
+});
+
 test("resolveRunnableIssueContext restarts closed issues instead of handing them off as ready", async () => {
   const config = createConfig();
   const selectedIssue: GitHubIssue = {

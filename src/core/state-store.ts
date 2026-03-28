@@ -236,6 +236,9 @@ function normalizeStateForLoad(raw: SupervisorStateFile | null | undefined): Sup
       ...(raw.inventory_refresh_failure.classification === "rate_limited"
         ? { classification: "rate_limited" as const }
         : {}),
+      ...(raw.inventory_refresh_failure.bounded_continuation_allowed === true
+        ? { bounded_continuation_allowed: true }
+        : {}),
       ...(normalizeInventoryRefreshDiagnostics(raw.inventory_refresh_failure.diagnostics)
         ? { diagnostics: normalizeInventoryRefreshDiagnostics(raw.inventory_refresh_failure.diagnostics) }
         : {}),
@@ -289,6 +292,9 @@ function normalizeStateForSave(raw: SupervisorStateFile | null | undefined): Sup
       recorded_at: raw.inventory_refresh_failure.recorded_at,
       ...(raw.inventory_refresh_failure.classification === "rate_limited"
         ? { classification: "rate_limited" as const }
+        : {}),
+      ...(raw.inventory_refresh_failure.bounded_continuation_allowed === true
+        ? { bounded_continuation_allowed: true }
         : {}),
       ...(normalizeInventoryRefreshDiagnostics(raw.inventory_refresh_failure.diagnostics)
         ? { diagnostics: normalizeInventoryRefreshDiagnostics(raw.inventory_refresh_failure.diagnostics) }

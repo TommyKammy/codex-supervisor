@@ -995,6 +995,82 @@ test("runOnceCyclePrelude still blocks new selection after repeated transient fu
   assert.equal(reserveCallCount, 0);
 });
 
+test("runOnceCyclePrelude hard-blocks tracked PR reconciliation after repeated transient full inventory refresh failures even with a fresh snapshot", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 41,
+    issues: {
+      "41": createRecord({
+        issue_number: 41,
+        state: "waiting_ci",
+        pr_number: 141,
+      }),
+    },
+    inventory_refresh_failure: {
+      source: "gh issue list",
+      message:
+        'Transient GitHub CLI failure after 3 attempts: gh issue list --repo owner/repo\nCommand failed: gh issue list --repo owner/repo\nexitCode=1\nPost "https://api.github.com/graphql": read tcp 127.0.0.1:12345->140.82.112.6:443: read: connection reset by peer',
+      recorded_at: "2026-03-26T00:09:00Z",
+    },
+    last_successful_inventory_snapshot: {
+      source: "gh issue list",
+      recorded_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      issue_count: 1,
+      issues: [
+        {
+          number: 41,
+          title: "Fresh snapshot candidate",
+          body: "## Summary\nBound repeated transient degradation for tracked PR reconciliation.",
+          createdAt: "2026-03-26T00:00:00Z",
+          updatedAt: "2026-03-26T00:00:00Z",
+          url: "https://example.test/issues/41",
+          state: "OPEN",
+        },
+      ],
+    },
+  };
+  let reconcileCallCount = 0;
+
+  const result = await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+      save: async () => {},
+    },
+    carryoverRecoveryEvents: [],
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => {
+      throw new Error(
+        'Transient GitHub CLI failure after 3 attempts: gh issue list --repo owner/repo\nCommand failed: gh issue list --repo owner/repo\nexitCode=1\nPost "https://api.github.com/graphql": read tcp 127.0.0.1:12345->140.82.112.6:443: read: connection reset by peer',
+      );
+    },
+    reserveRunnableIssueSelection: async () => {
+      throw new Error("unexpected reserveRunnableIssueSelection call");
+    },
+    reconcileTrackedMergedButOpenIssues: async () => {
+      reconcileCallCount += 1;
+      return [];
+    },
+    reconcileMergedIssueClosures: async () => {
+      throw new Error("unexpected reconcileMergedIssueClosures call");
+    },
+    reconcileStaleFailedIssueStates: async () => {
+      throw new Error("unexpected reconcileStaleFailedIssueStates call");
+    },
+    reconcileRecoverableBlockedIssueStates: async () => {
+      throw new Error("unexpected reconcileRecoverableBlockedIssueStates call");
+    },
+    reconcileParentEpicClosures: async () => {
+      throw new Error("unexpected reconcileParentEpicClosures call");
+    },
+    cleanupExpiredDoneWorkspaces: async () => {
+      throw new Error("unexpected cleanupExpiredDoneWorkspaces call");
+    },
+  });
+
+  assert.ok(!("kind" in result));
+  assert.equal(reconcileCallCount, 0);
+});
+
 test("runOnceCyclePrelude records rate-limited inventory refresh failures distinctly while keeping active tracked reconciliation available", async () => {
   const state: SupervisorStateFile = {
     activeIssueNumber: 41,

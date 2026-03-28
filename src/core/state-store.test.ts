@@ -366,6 +366,7 @@ test("StateStore roundtrip preserves inventory refresh diagnostics", async () =>
         source: "gh issue list",
         message: "Failed to load full issue inventory.",
         recorded_at: "2026-03-28T07:16:21.409Z",
+        bounded_continuation_allowed: true,
         diagnostics: [
           {
             transport: "primary",
