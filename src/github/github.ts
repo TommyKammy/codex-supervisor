@@ -23,7 +23,7 @@ import {
 import { GitHubPullRequestHydrator } from "./github-pull-request-hydrator";
 import { GitHubTransport, isGitHubRateLimitFailure } from "./github-transport";
 import type { GitHubCommandRunner } from "./github-transport";
-import { ensureDir, parseJson, truncate, truncatePreservingStartAndEnd, writeJsonAtomic } from "../core/utils";
+import { ensureDir, parseJson, truncate, truncatePreservingStartAndEnd, writeFileAtomic, writeJsonAtomic } from "../core/utils";
 
 export { isTransientGitHubCommandFailure } from "./github-transport";
 export { isGitHubRateLimitFailure } from "./github-transport";
@@ -43,8 +43,10 @@ interface InventoryCaptureArtifact {
   source: string;
   message: string;
   page: number | null;
-  artifactPath: string;
+  rawArtifactPath: string;
+  previewArtifactPath: string;
   command: string[];
+  parseStage: "primary_json_parse" | "fallback_json_parse";
   parseError: string;
   stdoutBytes: number;
   stderrBytes: number;
@@ -90,6 +92,10 @@ function inventoryCaptureSourceSlug(source: string, page?: number): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function inventoryCaptureBaseName(source: string, capturedAt: string, page?: number): string {
+  return `${inventoryCaptureTimestamp(capturedAt)}-${inventoryCaptureSourceSlug(source, page)}`;
 }
 
 function inventoryCaptureLimit(): number {
@@ -311,6 +317,7 @@ export class GitHubClient {
         captureDir: options.captureDir,
         args: command,
         result,
+        parseStage: "primary_json_parse",
         parseError: error,
       });
       const primaryDiagnostic = this.buildInventoryRefreshDiagnostic({
@@ -322,7 +329,8 @@ export class GitHubClient {
       const primaryFailureMessage = [
         primaryDiagnostic.message,
         renderInventoryFailureOutput(result),
-        primaryCapture ? `Malformed inventory capture: ${primaryCapture.artifactPath}` : null,
+        primaryCapture ? `Malformed inventory raw payload: ${primaryCapture.rawArtifactPath}` : null,
+        primaryCapture ? `Malformed inventory preview: ${primaryCapture.previewArtifactPath}` : null,
       ]
         .filter(Boolean)
         .join("\n");
@@ -437,6 +445,7 @@ export class GitHubClient {
               `page=${page}`,
             ],
             result,
+            parseStage: "fallback_json_parse",
             parseError,
           });
           const fallbackDiagnostic = this.buildInventoryRefreshDiagnostic({
@@ -448,7 +457,8 @@ export class GitHubClient {
           });
           const fallbackMessage = [
             fallbackDiagnostic.message,
-            fallbackCapture ? `Malformed inventory capture: ${fallbackCapture.artifactPath}` : null,
+            fallbackCapture ? `Malformed inventory raw payload: ${fallbackCapture.rawArtifactPath}` : null,
+            fallbackCapture ? `Malformed inventory preview: ${fallbackCapture.previewArtifactPath}` : null,
           ]
             .filter(Boolean)
             .join("\n");
@@ -456,7 +466,14 @@ export class GitHubClient {
             [
               "Failed to load full issue inventory.",
               `Primary transport: ${primaryDiagnostic.message}`,
-              primaryDiagnostic.artifact_path ? `Malformed inventory capture: ${primaryDiagnostic.artifact_path}` : null,
+              primaryDiagnostic.raw_artifact_path
+                ? `Malformed inventory raw payload: ${primaryDiagnostic.raw_artifact_path}`
+                : null,
+              primaryDiagnostic.preview_artifact_path
+                ? `Malformed inventory preview: ${primaryDiagnostic.preview_artifact_path}`
+                : primaryDiagnostic.artifact_path
+                  ? `Malformed inventory preview: ${primaryDiagnostic.artifact_path}`
+                  : null,
               `Fallback transport: ${fallbackMessage}`,
             ].filter(Boolean).join("\n"),
             [primaryDiagnostic, fallbackDiagnostic],
@@ -487,7 +504,14 @@ export class GitHubClient {
         [
           "Failed to load full issue inventory.",
           `Primary transport: ${primaryDiagnostic.message}`,
-          primaryDiagnostic.artifact_path ? `Malformed inventory capture: ${primaryDiagnostic.artifact_path}` : null,
+          primaryDiagnostic.raw_artifact_path
+            ? `Malformed inventory raw payload: ${primaryDiagnostic.raw_artifact_path}`
+            : null,
+          primaryDiagnostic.preview_artifact_path
+            ? `Malformed inventory preview: ${primaryDiagnostic.preview_artifact_path}`
+            : primaryDiagnostic.artifact_path
+              ? `Malformed inventory preview: ${primaryDiagnostic.artifact_path}`
+              : null,
           `Fallback transport: ${fallbackDiagnostic.message}`,
         ].join("\n"),
         [primaryDiagnostic, fallbackDiagnostic],
@@ -502,6 +526,7 @@ export class GitHubClient {
     captureDir?: string | null;
     args: string[];
     result: CommandResult;
+    parseStage: "primary_json_parse" | "fallback_json_parse";
     parseError: unknown;
     page?: number;
   }): Promise<InventoryCaptureArtifact | null> {
@@ -511,48 +536,55 @@ export class GitHubClient {
     }
 
     const capturedAt = new Date(this.now()).toISOString();
-    const fileName = `${inventoryCaptureTimestamp(capturedAt)}-${inventoryCaptureSourceSlug(args.source, args.page)}.json`;
-    const artifactPath = path.join(captureDir, fileName);
+    const baseName = inventoryCaptureBaseName(args.source, capturedAt, args.page);
+    const rawArtifactPath = path.join(captureDir, `${baseName}-raw.json`);
+    const previewArtifactPath = path.join(captureDir, `${baseName}-preview.json`);
     const parseMessage = args.parseError instanceof Error ? args.parseError.message : String(args.parseError);
     const workingDirectory = process.cwd();
     const stdoutBytes = Buffer.byteLength(args.result.stdout, "utf8");
     const stderrBytes = Buffer.byteLength(args.result.stderr, "utf8");
     await ensureDir(captureDir);
-    await writeJsonAtomic(artifactPath, {
-      capturedAt,
-      transport: args.transport,
-      source: args.source,
-      page: args.page ?? null,
-      command: ["gh", ...args.args],
-      parseError: parseMessage,
-      stdout: {
-        text: args.result.stdout,
-        base64: Buffer.from(args.result.stdout, "utf8").toString("base64"),
-        bytes: stdoutBytes,
-      },
-      stderr: {
-        text: args.result.stderr,
-        bytes: stderrBytes,
-      },
-      context: {
-        repoSlug: this.config.repoSlug,
-        workingDirectory,
-        pid: process.pid,
-        platform: process.platform,
-        nodeVersion: process.version,
-        ghHost: process.env.GH_HOST ?? null,
-        ghRepo: process.env.GH_REPO ?? null,
-        ghConfigDir: process.env.GH_CONFIG_DIR ?? null,
-      },
-    });
+    await writeFileAtomic(rawArtifactPath, args.result.stdout);
+    try {
+      await writeJsonAtomic(previewArtifactPath, {
+        capturedAt,
+        transport: args.transport,
+        source: args.source,
+        page: args.page ?? null,
+        parseStage: args.parseStage,
+        rawArtifactPath,
+        previewArtifactPath,
+        command: ["gh", ...args.args],
+        parseError: parseMessage,
+        stdoutPreview: truncatePreservingStartAndEnd(args.result.stdout, INVENTORY_FAILURE_OUTPUT_LIMIT) ?? "",
+        stderrPreview: truncatePreservingStartAndEnd(args.result.stderr, INVENTORY_FAILURE_OUTPUT_LIMIT) ?? "",
+        stdoutBytes,
+        stderrBytes,
+        context: {
+          repoSlug: this.config.repoSlug,
+          workingDirectory,
+          pid: process.pid,
+          platform: process.platform,
+          nodeVersion: process.version,
+          ghHost: process.env.GH_HOST ?? null,
+          ghRepo: process.env.GH_REPO ?? null,
+          ghConfigDir: process.env.GH_CONFIG_DIR ?? null,
+        },
+      });
+    } catch (error) {
+      await fs.rm(rawArtifactPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
     await this.pruneMalformedInventoryCaptures(captureDir);
     return {
       transport: args.transport,
       source: args.source,
       message: parseMessage,
       page: args.page ?? null,
-      artifactPath,
+      rawArtifactPath,
+      previewArtifactPath,
       command: ["gh", ...args.args],
+      parseStage: args.parseStage,
       parseError: parseMessage,
       stdoutBytes,
       stderrBytes,
@@ -576,8 +608,10 @@ export class GitHubClient {
       ...(args.page !== undefined ? { page: args.page } : {}),
       ...(capture
         ? {
-          artifact_path: capture.artifactPath,
+          raw_artifact_path: capture.rawArtifactPath,
+          preview_artifact_path: capture.previewArtifactPath,
           command: capture.command,
+          parse_stage: capture.parseStage,
           parse_error: capture.parseError,
           stdout_bytes: capture.stdoutBytes,
           stderr_bytes: capture.stderrBytes,
@@ -590,16 +624,31 @@ export class GitHubClient {
 
   private async pruneMalformedInventoryCaptures(captureDir: string): Promise<void> {
     const entries = await fs.readdir(captureDir, { withFileTypes: true });
-    const captureFiles = entries
-      .filter((entry) => entry.isFile() && /^\d{8}T\d{6}\.\d{3}Z-.*\.json$/u.test(entry.name))
-      .map((entry) => entry.name)
+    const captureEventPattern = /^(\d{8}T\d{6}\.\d{3}Z-.*?)(?:-(?:raw|preview))?\.json$/u;
+    const captureEvents = Array.from(new Set(
+      entries
+        .flatMap((entry) => {
+          if (!entry.isFile()) {
+            return [];
+          }
+
+          const match = entry.name.match(captureEventPattern);
+          return match?.[1] ? [match[1]] : [];
+        }),
+    ))
       .sort();
-    const extraFiles = captureFiles.length - inventoryCaptureLimit();
-    if (extraFiles <= 0) {
+    const extraEvents = captureEvents.length - inventoryCaptureLimit();
+    if (extraEvents <= 0) {
       return;
     }
 
-    await Promise.all(captureFiles.slice(0, extraFiles).map((fileName) => fs.rm(path.join(captureDir, fileName), { force: true })));
+    await Promise.all(
+      captureEvents.slice(0, extraEvents).flatMap((baseName) => ([
+        fs.rm(path.join(captureDir, `${baseName}.json`), { force: true }),
+        fs.rm(path.join(captureDir, `${baseName}-raw.json`), { force: true }),
+        fs.rm(path.join(captureDir, `${baseName}-preview.json`), { force: true }),
+      ])),
+    );
   }
 
   private buildCandidateSearchQuery(): string {

@@ -732,8 +732,10 @@ test("runOnceCyclePrelude preserves structured primary and fallback inventory di
             transport: "primary",
             source: "gh issue list",
             message: "Failed to parse JSON from gh issue list: Bad control character in string literal",
-            artifact_path: "/tmp/inventory-refresh-failures/primary.json",
+            raw_artifact_path: "/tmp/inventory-refresh-failures/primary-raw.json",
+            preview_artifact_path: "/tmp/inventory-refresh-failures/primary-preview.json",
             command: ["gh", "issue", "list", "--repo", "owner/repo"],
+            parse_stage: "primary_json_parse",
             parse_error: "Failed to parse JSON from gh issue list: Bad control character in string literal",
             stdout_bytes: 32766,
             stderr_bytes: 14,
@@ -745,8 +747,10 @@ test("runOnceCyclePrelude preserves structured primary and fallback inventory di
             source: "gh api repos/owner/repo/issues",
             message: "Failed to parse JSON from gh api repos/owner/repo/issues page=2: Bad control character in string literal",
             page: 2,
-            artifact_path: "/tmp/inventory-refresh-failures/fallback.json",
+            raw_artifact_path: "/tmp/inventory-refresh-failures/fallback-raw.json",
+            preview_artifact_path: "/tmp/inventory-refresh-failures/fallback-preview.json",
             command: ["gh", "api", "repos/owner/repo/issues", "--method", "GET", "-f", "page=2"],
+            parse_stage: "fallback_json_parse",
             parse_error: "Failed to parse JSON from gh api repos/owner/repo/issues page=2: Bad control character in string literal",
             stdout_bytes: 32766,
             stderr_bytes: 9,
@@ -784,8 +788,24 @@ test("runOnceCyclePrelude preserves structured primary and fallback inventory di
   assert.equal(savedStates[0]?.inventory_refresh_failure?.diagnostics?.length, 2);
   assert.equal(savedStates[0]?.inventory_refresh_failure?.diagnostics?.[0]?.transport, "primary");
   assert.equal(savedStates[0]?.inventory_refresh_failure?.diagnostics?.[1]?.transport, "fallback");
+  assert.equal(savedStates[0]?.inventory_refresh_failure?.diagnostics?.[0]?.parse_stage, "primary_json_parse");
   assert.equal(savedStates[0]?.inventory_refresh_failure?.diagnostics?.[1]?.page, 2);
-  assert.equal(savedStates[0]?.inventory_refresh_failure?.diagnostics?.[1]?.artifact_path, "/tmp/inventory-refresh-failures/fallback.json");
+  assert.equal(
+    savedStates[0]?.inventory_refresh_failure?.diagnostics?.[0]?.raw_artifact_path,
+    "/tmp/inventory-refresh-failures/primary-raw.json",
+  );
+  assert.equal(
+    savedStates[0]?.inventory_refresh_failure?.diagnostics?.[0]?.preview_artifact_path,
+    "/tmp/inventory-refresh-failures/primary-preview.json",
+  );
+  assert.equal(
+    savedStates[0]?.inventory_refresh_failure?.diagnostics?.[1]?.raw_artifact_path,
+    "/tmp/inventory-refresh-failures/fallback-raw.json",
+  );
+  assert.equal(
+    savedStates[0]?.inventory_refresh_failure?.diagnostics?.[1]?.preview_artifact_path,
+    "/tmp/inventory-refresh-failures/fallback-preview.json",
+  );
   assert.equal(result.state.inventory_refresh_failure?.diagnostics?.[0]?.command?.[0], "gh");
 });
 
