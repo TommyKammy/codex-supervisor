@@ -1106,7 +1106,7 @@ test("runOnceCyclePrelude rehydrates blocked tracked PRs during degraded invento
   assert.equal(result.state.issues["77"]?.last_failure_signature, null);
 });
 
-test("runOnceCyclePrelude still reconciles parent epic closures from tracked issue snapshots when full inventory refresh is malformed", async () => {
+test("runOnceCyclePrelude does not reconcile parent epic closures from tracked issue snapshots when full inventory refresh is malformed", async () => {
   const parentIssue: GitHubIssue = {
     number: 1043,
     title: "Epic issue",
@@ -1194,14 +1194,79 @@ test("runOnceCyclePrelude still reconciles parent epic closures from tracked iss
   });
 
   assert.ok(!("kind" in result));
-  assert.deepEqual(fetchedIssueNumbers, [1043, 1044, 1045]);
-  assert.deepEqual(parentEpicClosureCalls, [[parentIssue, childOne, childTwo]]);
+  assert.deepEqual(fetchedIssueNumbers, []);
+  assert.deepEqual(parentEpicClosureCalls, []);
   assert.equal(saveCalls.length, 1);
   assert.equal(result.state.inventory_refresh_failure?.source, "gh issue list");
   assert.match(result.state.inventory_refresh_failure?.message ?? "", /Fallback transport: malformed REST inventory fallback payload/);
 });
 
-test("runOnceCyclePrelude fetches untracked parent epics for degraded parent closure reconciliation", async () => {
+test("runOnceCyclePrelude does not attempt degraded parent epic closure from a partial tracked child set", async () => {
+  const parentIssue: GitHubIssue = {
+    number: 1150,
+    title: "Epic issue",
+    body: "",
+    createdAt: "2026-03-26T00:00:00Z",
+    updatedAt: "2026-03-26T00:00:00Z",
+    url: "https://example.test/issues/1150",
+    state: "OPEN",
+  };
+  const trackedChild: GitHubIssue = {
+    number: 1152,
+    title: "Tracked child",
+    body: "Part of: #1150",
+    createdAt: "2026-03-26T00:00:00Z",
+    updatedAt: "2026-03-26T00:00:00Z",
+    url: "https://example.test/issues/1152",
+    state: "CLOSED",
+  };
+  const issuesByNumber = new Map([
+    [parentIssue.number, parentIssue],
+    [trackedChild.number, trackedChild],
+  ]);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "1152": {} as never,
+    },
+  };
+  let parentEpicClosureCalls = 0;
+
+  const result = await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+      save: async () => {},
+    },
+    carryoverRecoveryEvents: [],
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => {
+      throw new Error("Failed to load full issue inventory.\nPrimary transport: malformed gh issue list JSON");
+    },
+    getIssueForParentEpicClosureFallback: async (issueNumber) => {
+      const issue = issuesByNumber.get(issueNumber);
+      assert.ok(issue);
+      return issue;
+    },
+    reserveRunnableIssueSelection: async () => {
+      throw new Error("unexpected reserveRunnableIssueSelection call");
+    },
+    reconcileTrackedMergedButOpenIssues: async () => [],
+    reconcileMergedIssueClosures: async () => [],
+    reconcileStaleFailedIssueStates: async () => {},
+    reconcileRecoverableBlockedIssueStates: async () => [],
+    reconcileParentEpicClosures: async () => {
+      parentEpicClosureCalls += 1;
+    },
+    cleanupExpiredDoneWorkspaces: async () => [],
+  });
+
+  assert.ok(!("kind" in result));
+  assert.equal(parentEpicClosureCalls, 0);
+  assert.equal(result.state.inventory_refresh_failure?.source, "gh issue list");
+});
+
+test("runOnceCyclePrelude does not fetch parent epics for degraded parent closure reconciliation", async () => {
   const parentIssue: GitHubIssue = {
     number: 1100,
     title: "Epic issue",
@@ -1296,6 +1361,6 @@ test("runOnceCyclePrelude fetches untracked parent epics for degraded parent clo
   });
 
   assert.ok(!("kind" in result));
-  assert.deepEqual(fetchedIssueNumbers, [1101, 1102, 1103, 1100]);
-  assert.deepEqual(parentEpicClosureCalls, [[childOne, childTwo, childThree, parentIssue]]);
+  assert.deepEqual(fetchedIssueNumbers, []);
+  assert.deepEqual(parentEpicClosureCalls, []);
 });
