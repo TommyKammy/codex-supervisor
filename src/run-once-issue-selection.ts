@@ -1,5 +1,6 @@
 import path from "node:path";
 import { GitHubClient } from "./github";
+import { canProceedWithDegradedContinuationAfterInventoryRefreshFailure } from "./inventory-refresh-state";
 import {
   findBlockingIssue,
   findHighRiskBlockingAmbiguity,
@@ -98,6 +99,13 @@ interface ReserveRunnableIssueSelectionArgs {
 type DegradedDependencyCheckResult =
   | { kind: "ready" }
   | { kind: "blocked"; reason: string };
+
+function canContinueActiveIssueDuringInventoryDegradation(state: SupervisorStateFile): boolean {
+  return canProceedWithDegradedContinuationAfterInventoryRefreshFailure({
+    failure: state.inventory_refresh_failure,
+    snapshot: state.last_successful_inventory_snapshot,
+  });
+}
 
 function createIssueRecord(config: SupervisorConfig, issueNumber: number): IssueRunRecord {
   const branch = branchNameForIssue(config, issueNumber);
@@ -437,6 +445,25 @@ export async function resolveRunnableIssueContext(
 
   let shouldReleaseIssueLock = true;
   try {
+    if (
+      state.inventory_refresh_failure !== undefined &&
+      record.pr_number === null &&
+      !canContinueActiveIssueDuringInventoryDegradation(state)
+    ) {
+      record = stateStore.touch(record, {
+        state: "queued",
+        last_error:
+          `Full inventory refresh is degraded and bounded continuation is no longer allowed for issue #${record.issue_number}. ` +
+          "Wait for a successful full refresh before continuing.",
+      });
+      state.issues[String(record.issue_number)] = record;
+      state.activeIssueNumber = null;
+      await stateStore.save(state);
+      shouldReleaseIssueLock = false;
+      await issueLock.release();
+      return { kind: "restart" };
+    }
+
     if (persistReservation) {
       const previousIssueNumber = state.activeIssueNumber;
       state.activeIssueNumber = record.issue_number;

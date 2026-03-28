@@ -2,6 +2,8 @@ import { GitHubIssue, SupervisorStateFile } from "./core/types";
 import {
   buildLastSuccessfulInventorySnapshot,
   buildInventoryRefreshFailure,
+  canContinueBoundedAfterInventoryRefreshFailure,
+  canProceedWithDegradedContinuationAfterInventoryRefreshFailure,
   canUseSnapshotBackedSelectionAfterInventoryRefreshFailure,
   inventoryRefreshFailureEquals,
 } from "./inventory-refresh-state";
@@ -169,12 +171,21 @@ export async function runOnceCyclePrelude(
         previousFailure,
       });
       if (snapshotBackedSelectionPermitted) {
+        nextFailure.bounded_continuation_allowed = true;
         nextFailure.selection_permitted = "snapshot_backed";
       }
       await persistInventoryRefreshState({
         nextFailure,
       });
-      if (activeRecord !== null && activeRecord.pr_number !== null) {
+      const allowBoundedContinuation = canContinueBoundedAfterInventoryRefreshFailure({
+        failure: nextFailure,
+        snapshot: state.last_successful_inventory_snapshot,
+      });
+      const allowDegradedContinuation = canProceedWithDegradedContinuationAfterInventoryRefreshFailure({
+        failure: nextFailure,
+        snapshot: state.last_successful_inventory_snapshot,
+      });
+      if (allowDegradedContinuation && activeRecord !== null && activeRecord.pr_number !== null) {
         await setReconciliationPhase("tracked_merged_but_open_issues");
         const activeMergedEvents = await args.reconcileTrackedMergedButOpenIssues(
           state,
@@ -191,7 +202,7 @@ export async function runOnceCyclePrelude(
           && record.pr_number !== null
           && record.issue_number !== state.activeIssueNumber,
       );
-      if (hasNonActiveFailedTrackedPrRecords) {
+      if (allowDegradedContinuation && hasNonActiveFailedTrackedPrRecords) {
         await setReconciliationPhase("stale_failed_issue_states");
         await args.reconcileStaleFailedIssueStates(state, [], updateReconciliationProgress);
       }
@@ -201,16 +212,18 @@ export async function runOnceCyclePrelude(
         record.pr_number !== null &&
         (record.blocked_reason === null || record.blocked_reason === "manual_review" || record.blocked_reason === "verification"),
       );
-      if (hasBlockedTrackedPrRecords) {
+      if (allowDegradedContinuation && hasBlockedTrackedPrRecords) {
         await setReconciliationPhase("recoverable_blocked_issue_states");
-        const recoverableBlockedEvents = await args.reconcileRecoverableBlockedIssueStates(state, []);
+        const recoverableBlockedEvents = await args.reconcileRecoverableBlockedIssueStates(state, [], {
+          onlyTrackedPrStates: true,
+        });
         recoveryEvents.push(...recoverableBlockedEvents);
         emitRecoveryEvents(recoverableBlockedEvents);
       }
 
       if (
         state.activeIssueNumber === null
-        && snapshotBackedSelectionPermitted
+        && allowBoundedContinuation
         && await args.reserveRunnableIssueSelection?.(state) === true
       ) {
         return {

@@ -222,6 +222,7 @@ export interface InventoryRefreshFailure {
   message: string;
   recorded_at: string;
   classification?: "rate_limited";
+  bounded_continuation_allowed?: boolean;
   selection_permitted?: "snapshot_backed";
   diagnostics?: InventoryRefreshDiagnosticEntry[];
 }
