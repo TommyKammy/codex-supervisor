@@ -383,6 +383,80 @@ Expose stale tracked PR mismatch diagnostics.
   );
 });
 
+test("explain degrades gracefully when tracked PR mismatch hydration fails", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 172;
+  const prNumber = 272;
+  const branch = branchName(fixture.config, issueNumber);
+  git(["checkout", "-b", branch], fixture.repoPath);
+
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        blocked_reason: "manual_review",
+        last_error: "waiting on stale review signal",
+        last_head_sha: "head-ready-272",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Tracked PR mismatch hydration failure",
+    body: `## Summary
+Explain should still render when tracked PR hydration fails.
+
+## Scope
+- keep explain output available during transient GitHub failures
+
+## Acceptance criteria
+- explain omits tracked PR mismatch fields when mismatch hydration fails
+
+## Verification
+- npm test -- src/supervisor/supervisor-diagnostics-explain.test.ts`,
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const readyPr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: "head-ready-272",
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () => readyPr,
+    getChecks: async () => {
+      throw new Error("transient checks failure");
+    },
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.explainReport(issueNumber);
+  assert.equal(report.trackedPrMismatchSummary, null);
+  assert.equal(report.recoveryGuidance, null);
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(explanation, /^blocked_reason=manual_review$/m);
+  assert.doesNotMatch(explanation, /^tracked_pr_mismatch /m);
+  assert.doesNotMatch(explanation, /^recovery_guidance=/m);
+});
+
 test("explain reuses normalized change-risk policy for risky ambiguity blockers", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {

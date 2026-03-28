@@ -38,6 +38,8 @@ import {
   GitHubIssue,
   GitHubPullRequest,
   IssueRunRecord,
+  PullRequestCheck,
+  ReviewThread,
   RunState,
   SupervisorConfig,
   SupervisorStateFile,
@@ -243,11 +245,21 @@ export async function buildIssueExplainDto(
       pr,
     })
     : null;
-  const explainChecks = record && pr && github.getChecks ? await github.getChecks(pr.number) : [];
-  const explainReviewThreads =
-    record && pr && github.getUnresolvedReviewThreads ? await github.getUnresolvedReviewThreads(pr.number) : [];
+  let explainChecks: PullRequestCheck[] = [];
+  let explainReviewThreads: ReviewThread[] = [];
+  let trackedPrHydrationFailed = false;
+  if (record && pr) {
+    try {
+      [explainChecks, explainReviewThreads] = await Promise.all([
+        github.getChecks ? github.getChecks(pr.number) : Promise.resolve([]),
+        github.getUnresolvedReviewThreads ? github.getUnresolvedReviewThreads(pr.number) : Promise.resolve([]),
+      ]);
+    } catch {
+      trackedPrHydrationFailed = true;
+    }
+  }
   const trackedPrMismatch =
-    record && pr
+    record && pr && !trackedPrHydrationFailed
       ? buildTrackedPrMismatch(config, record, pr, explainChecks, explainReviewThreads)
       : null;
 

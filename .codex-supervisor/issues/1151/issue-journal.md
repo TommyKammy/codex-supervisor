@@ -5,34 +5,46 @@
 - Branch: codex/issue-1151
 - Workspace: .
 - Journal: .codex-supervisor/issues/1151/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 3eff5f1bc72dc4d30294ec1c602abeee8aaeedc7
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: f7d539fc4adadc9d0fc6bf571efb65fa600f1a8c
 - Blocked reason: none
-- Last failure signature: stale-stabilizing-no-pr-recovery-loop
-- Repeated failure signature count: 0
-- Updated at: 2026-03-28T06:48:44.885Z
+- Last failure signature: PRRT_kwDORgvdZ853b-df
+- Repeated failure signature count: 1
+- Updated at: 2026-03-28T07:06:38.000Z
 
 ## Latest Codex Summary
-Summary: Restored local TypeScript tooling with `npm ci`, fixed stale `SupervisorExplainDto` test fixtures for the new mismatch fields, and revalidated the tracked-PR mismatch change with a clean build plus focused HTTP/doctor/status/explain coverage.
-State hint: draft_pr
+Addressed the remaining CodeRabbit review thread on PR [#1161](https://github.com/TommyKammy/codex-supervisor/pull/1161) by making explain-side tracked-PR mismatch hydration degrade gracefully on transient GitHub failures.
+
+Code changes this turn were limited to [src/supervisor/supervisor-selection-issue-explain.ts](src/supervisor/supervisor-selection-issue-explain.ts), where mismatch hydration now falls back to null mismatch fields instead of throwing, and [src/supervisor/supervisor-diagnostics-explain.test.ts](src/supervisor/supervisor-diagnostics-explain.test.ts), which adds a regression test for the failure path. I also updated this issue journal.
+
+Verification that passed:
+- `npm run build`
+- `npx tsx --test src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/doctor.test.ts`
+
+Summary: Addressed the explain hydration review thread by degrading tracked-PR mismatch enrichment gracefully when GitHub checks or review-thread reads fail, with focused regression coverage and a clean build
+State hint: addressing_review
 Blocked reason: none
-Tests: `npm ci`; `npm run build`; `npm test` (fails in unrelated baseline tests outside this issue); `npx tsx --test src/backend/supervisor-http-server.test.ts`; `npx tsx --test src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/doctor.test.ts`
-Next action: monitor draft PR `#1161` and decide whether to chase any out-of-scope baseline `npm test` failures separately from this issue
-Failure signature: none
+Tests: `npm run build`; `npx tsx --test src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/doctor.test.ts`
+Next action: Commit and push the review fix on `codex/issue-1151`, then re-check PR `#1161` for any remaining unresolved review threads
+Failure signature: PRRT_kwDORgvdZ853b-df
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1161#discussion_r3004389348
+- Details:
+  - Local fix prepared for `src/supervisor/supervisor-selection-issue-explain.ts`: transient `getChecks` or `getUnresolvedReviewThreads` failures now suppress tracked-PR mismatch enrichment instead of breaking `buildIssueExplainDto`; branch still needs the update pushed before GitHub thread state changes.
 
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: Operator diagnostics need a shared tracked-PR comparison against live GitHub PR lifecycle facts, not just persisted local state, to expose stale `blocked`/`failed` records.
-- What changed: Added `src/supervisor/tracked-pr-mismatch.ts`; wired mismatch summaries and guidance into `status`, `doctor`, and `explain`; added focused regression tests for all three surfaces; then fixed backend/browser/service test fixtures to include the new `trackedPrMismatchSummary` and `recoveryGuidance` DTO fields.
+- What changed: Wrapped explain-only mismatch hydration in a guarded `Promise.all` so transient GitHub failures leave `trackedPrMismatchSummary`/`recoveryGuidance` null instead of throwing, and added a focused explain regression test for that failure path.
 - Current blocker: None.
-- Next exact step: Keep the branch reviewable and use draft PR `#1161` for review while keeping unrelated broad-suite failures out of this issue scope.
-- Verification gap: Broad `npm test` still fails in unrelated baseline tests (`supervisor-pr-readiness`, `supervisor-recovery-failure-flows`, `supervisor-selection-readiness-summary`, `supervisor-status-rendering`, long browser smoke cases) that are outside the touched mismatch-diagnostics surface.
-- Files touched: src/supervisor/tracked-pr-mismatch.ts; src/supervisor/supervisor.ts; src/supervisor/supervisor-selection-issue-explain.ts; src/doctor.ts; src/supervisor/supervisor-diagnostics-status-selection.test.ts; src/supervisor/supervisor-diagnostics-explain.test.ts; src/doctor.test.ts; src/backend/supervisor-http-server.test.ts; src/backend/webui-dashboard-browser-smoke.test.ts; src/supervisor/supervisor-service.test.ts
+- Next exact step: Push this review-fix commit to PR `#1161`, then confirm the CodeRabbit thread is no longer actionable.
+- Verification gap: Broad `npm test` was not rerun this turn because the review fix is scoped to explain-only mismatch hydration; the focused diagnostics suites and `npm run build` passed.
+- Files touched: src/supervisor/supervisor-selection-issue-explain.ts; src/supervisor/supervisor-diagnostics-explain.test.ts; .codex-supervisor/issues/1151/issue-journal.md
 - Rollback concern: Low; the change is additive diagnostics-only logic that does not mutate tracked state.
-- Last focused command: npx tsx --test src/backend/supervisor-http-server.test.ts
+- Last focused command: npx tsx --test src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/doctor.test.ts
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
