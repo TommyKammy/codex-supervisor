@@ -2,12 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { nowIso } from "../core/utils";
 import type { SupervisorConfig } from "../core/types";
+import type { ExternalReviewMissArtifact, ExternalReviewRegressionCandidate } from "../external-review/external-review-miss-artifact-types";
 import type { ActionableSeverity, LocalReviewRootCauseSummary } from "../local-review/types";
 import { hasMatchingPromotionIdentity } from "../persisted-artifact-promotion";
 import type { PostMergeAuditArtifact } from "./post-merge-audit-artifact";
 import { postMergeAuditArtifactDir } from "./post-merge-audit-artifact";
 
-export const POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION = 3;
+export const POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION = 4;
 export const POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS = [
   "schemaVersion",
   "generatedAt",
@@ -20,6 +21,7 @@ export const POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS = [
   "reviewPatterns",
   "failurePatterns",
   "recoveryPatterns",
+  "followUpCandidates",
   "promotionCandidates",
 ] as const;
 const POST_MERGE_AUDIT_REVIEW_PATTERN_KEYS = [
@@ -63,6 +65,32 @@ const POST_MERGE_AUDIT_PROMOTION_CANDIDATE_KEYS = [
   "advisoryOnly",
   "autoApply",
   "autoCreateFollowUpIssue",
+] as const;
+const POST_MERGE_AUDIT_FOLLOW_UP_CANDIDATE_KEYS = [
+  "key",
+  "category",
+  "title",
+  "summary",
+  "rationale",
+  "sourcePatternKeys",
+  "supportingIssueNumbers",
+  "supportingFindingKeys",
+  "advisoryOnly",
+  "autoCreateFollowUpIssue",
+  "evidence",
+] as const;
+const POST_MERGE_AUDIT_FOLLOW_UP_CANDIDATE_EVIDENCE_KEYS = [
+  "mergedIssueNumber",
+  "mergedIssueTitle",
+  "mergedPrNumber",
+  "mergedPrTitle",
+  "sourceArtifactPath",
+  "sourceUrl",
+  "sourceId",
+  "sourceThreadId",
+  "reviewerLogin",
+  "file",
+  "line",
 ] as const;
 
 export interface PostMergeAuditReviewPatternDto {
@@ -113,6 +141,34 @@ export interface PostMergeAuditPromotionCandidateDto {
   autoCreateFollowUpIssue: false;
 }
 
+export type PostMergeAuditFollowUpCategoryDto = "test_regression";
+
+export interface PostMergeAuditFollowUpCandidateDto {
+  key: string;
+  category: PostMergeAuditFollowUpCategoryDto;
+  title: string;
+  summary: string;
+  rationale: string;
+  sourcePatternKeys: string[];
+  supportingIssueNumbers: number[];
+  supportingFindingKeys: string[];
+  advisoryOnly: true;
+  autoCreateFollowUpIssue: false;
+  evidence: {
+    mergedIssueNumber: number;
+    mergedIssueTitle: string;
+    mergedPrNumber: number;
+    mergedPrTitle: string;
+    sourceArtifactPath: string;
+    sourceUrl: string | null;
+    sourceId: string;
+    sourceThreadId: string | null;
+    reviewerLogin: string;
+    file: string;
+    line: number;
+  };
+}
+
 export interface PostMergeAuditPatternSummaryDto {
   schemaVersion: typeof POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION;
   generatedAt: string;
@@ -125,6 +181,7 @@ export interface PostMergeAuditPatternSummaryDto {
   reviewPatterns: PostMergeAuditReviewPatternDto[];
   failurePatterns: PostMergeAuditFailurePatternDto[];
   recoveryPatterns: PostMergeAuditRecoveryPatternDto[];
+  followUpCandidates: PostMergeAuditFollowUpCandidateDto[];
   promotionCandidates: PostMergeAuditPromotionCandidateDto[];
 }
 
@@ -319,6 +376,104 @@ function expectPromotionCandidate(value: unknown, index: number): PostMergeAudit
   };
 }
 
+function expectFollowUpCategory(value: unknown, field: string): PostMergeAuditFollowUpCategoryDto {
+  if (value !== "test_regression") {
+    failSummaryValidation(`${field} must be one of: test_regression.`);
+  }
+
+  return value;
+}
+
+function expectFollowUpCandidate(
+  value: unknown,
+  index: number,
+): PostMergeAuditFollowUpCandidateDto {
+  const candidate = expectSummaryObject(value, `followUpCandidates[${index}]`);
+  expectExactKeys(candidate, POST_MERGE_AUDIT_FOLLOW_UP_CANDIDATE_KEYS, `followUpCandidates[${index}]`);
+
+  if (candidate.advisoryOnly !== true) {
+    failSummaryValidation(`followUpCandidates[${index}].advisoryOnly must be true.`);
+  }
+  if (candidate.autoCreateFollowUpIssue !== false) {
+    failSummaryValidation(`followUpCandidates[${index}].autoCreateFollowUpIssue must be false.`);
+  }
+
+  const evidence = expectSummaryObject(candidate.evidence, `followUpCandidates[${index}].evidence`);
+  expectExactKeys(
+    evidence,
+    POST_MERGE_AUDIT_FOLLOW_UP_CANDIDATE_EVIDENCE_KEYS,
+    `followUpCandidates[${index}].evidence`,
+  );
+
+  return {
+    key: expectSummaryString(candidate.key, `followUpCandidates[${index}].key`),
+    category: expectFollowUpCategory(candidate.category, `followUpCandidates[${index}].category`),
+    title: expectSummaryString(candidate.title, `followUpCandidates[${index}].title`),
+    summary: expectSummaryString(candidate.summary, `followUpCandidates[${index}].summary`),
+    rationale: expectSummaryString(candidate.rationale, `followUpCandidates[${index}].rationale`),
+    sourcePatternKeys: expectStringArray(
+      candidate.sourcePatternKeys,
+      `followUpCandidates[${index}].sourcePatternKeys`,
+    ),
+    supportingIssueNumbers: expectIntegerArray(
+      candidate.supportingIssueNumbers,
+      `followUpCandidates[${index}].supportingIssueNumbers`,
+    ),
+    supportingFindingKeys: expectStringArray(
+      candidate.supportingFindingKeys,
+      `followUpCandidates[${index}].supportingFindingKeys`,
+    ),
+    advisoryOnly: true,
+    autoCreateFollowUpIssue: false,
+    evidence: {
+      mergedIssueNumber: expectSummaryInteger(
+        evidence.mergedIssueNumber,
+        `followUpCandidates[${index}].evidence.mergedIssueNumber`,
+      ),
+      mergedIssueTitle: expectSummaryString(
+        evidence.mergedIssueTitle,
+        `followUpCandidates[${index}].evidence.mergedIssueTitle`,
+      ),
+      mergedPrNumber: expectSummaryInteger(
+        evidence.mergedPrNumber,
+        `followUpCandidates[${index}].evidence.mergedPrNumber`,
+      ),
+      mergedPrTitle: expectSummaryString(
+        evidence.mergedPrTitle,
+        `followUpCandidates[${index}].evidence.mergedPrTitle`,
+      ),
+      sourceArtifactPath: expectSummaryString(
+        evidence.sourceArtifactPath,
+        `followUpCandidates[${index}].evidence.sourceArtifactPath`,
+      ),
+      sourceUrl: expectNullableSummaryString(
+        evidence.sourceUrl,
+        `followUpCandidates[${index}].evidence.sourceUrl`,
+      ),
+      sourceId: expectSummaryString(
+        evidence.sourceId,
+        `followUpCandidates[${index}].evidence.sourceId`,
+      ),
+      sourceThreadId: expectNullableSummaryString(
+        evidence.sourceThreadId,
+        `followUpCandidates[${index}].evidence.sourceThreadId`,
+      ),
+      reviewerLogin: expectSummaryString(
+        evidence.reviewerLogin,
+        `followUpCandidates[${index}].evidence.reviewerLogin`,
+      ),
+      file: expectSummaryString(
+        evidence.file,
+        `followUpCandidates[${index}].evidence.file`,
+      ),
+      line: expectSummaryInteger(
+        evidence.line,
+        `followUpCandidates[${index}].evidence.line`,
+      ),
+    },
+  };
+}
+
 export function validatePostMergeAuditPatternSummary(raw: unknown): PostMergeAuditPatternSummaryDto {
   const summary = expectSummaryObject(raw, "summary");
   expectExactKeys(summary, POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS, "summary");
@@ -343,6 +498,9 @@ export function validatePostMergeAuditPatternSummary(raw: unknown): PostMergeAud
   if (!Array.isArray(summary.recoveryPatterns)) {
     failSummaryValidation("recoveryPatterns must be an array.");
   }
+  if (!Array.isArray(summary.followUpCandidates)) {
+    failSummaryValidation("followUpCandidates must be an array.");
+  }
   if (!Array.isArray(summary.promotionCandidates)) {
     failSummaryValidation("promotionCandidates must be an array.");
   }
@@ -359,6 +517,7 @@ export function validatePostMergeAuditPatternSummary(raw: unknown): PostMergeAud
     reviewPatterns: summary.reviewPatterns.map((pattern, index) => expectReviewPattern(pattern, index)),
     failurePatterns: summary.failurePatterns.map((pattern, index) => expectFailurePattern(pattern, index)),
     recoveryPatterns: summary.recoveryPatterns.map((pattern, index) => expectRecoveryPattern(pattern, index)),
+    followUpCandidates: summary.followUpCandidates.map((candidate, index) => expectFollowUpCandidate(candidate, index)),
     promotionCandidates: summary.promotionCandidates.map((candidate, index) => expectPromotionCandidate(candidate, index)),
   };
 }
@@ -434,6 +593,44 @@ function isPromotablePostMergeAuditArtifact(artifact: PostMergeAuditArtifact): b
     branch: artifact.pullRequest.headRefName,
     headSha: artifact.pullRequest.headRefOid,
   });
+}
+
+function isExternalReviewRegressionCandidate(value: unknown): value is ExternalReviewRegressionCandidate {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as Partial<ExternalReviewRegressionCandidate>;
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.title === "string" &&
+    typeof candidate.file === "string" &&
+    typeof candidate.line === "number" &&
+    Number.isInteger(candidate.line) &&
+    candidate.line > 0 &&
+    typeof candidate.summary === "string" &&
+    typeof candidate.rationale === "string" &&
+    typeof candidate.reviewerLogin === "string" &&
+    typeof candidate.sourceId === "string" &&
+    (candidate.sourceThreadId === null || typeof candidate.sourceThreadId === "string") &&
+    (candidate.sourceUrl === null || typeof candidate.sourceUrl === "string")
+  );
+}
+
+function isExternalReviewMissArtifact(value: unknown): value is ExternalReviewMissArtifact {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as Partial<ExternalReviewMissArtifact>;
+  return (
+    typeof candidate.issueNumber === "number" &&
+    typeof candidate.prNumber === "number" &&
+    typeof candidate.branch === "string" &&
+    typeof candidate.headSha === "string" &&
+    Array.isArray(candidate.regressionTestCandidates) &&
+    candidate.regressionTestCandidates.every((entry) => isExternalReviewRegressionCandidate(entry))
+  );
 }
 
 async function readPersistedPostMergeAuditArtifacts(artifactDir: string): Promise<{
@@ -610,6 +807,32 @@ function comparePromotionCategory(left: PostMergeAuditPromotionCategoryDto, righ
   return order.indexOf(left) - order.indexOf(right);
 }
 
+async function readExternalReviewMissArtifactSafely(artifactPath: string | null): Promise<ExternalReviewMissArtifact | null> {
+  if (!artifactPath) {
+    return null;
+  }
+
+  try {
+    const raw = JSON.parse(await fs.readFile(artifactPath, "utf8")) as unknown;
+    return isExternalReviewMissArtifact(raw) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+function matchesExternalReviewMissArtifact(
+  artifact: PostMergeAuditArtifact,
+  missArtifact: ExternalReviewMissArtifact,
+): boolean {
+  return (
+    artifact.pullRequest !== null &&
+    missArtifact.issueNumber === artifact.issue.number &&
+    missArtifact.prNumber === artifact.pullRequest.number &&
+    missArtifact.branch === artifact.branch &&
+    missArtifact.headSha === artifact.pullRequest.headRefOid
+  );
+}
+
 export async function summarizePostMergeAuditPatterns(
   config: Pick<SupervisorConfig, "localReviewArtifactDir" | "repoSlug">,
 ): Promise<PostMergeAuditPatternSummaryDto> {
@@ -644,6 +867,7 @@ export async function summarizePostMergeAuditPatterns(
     occurrenceCount: number;
     latestRecoveredAt: string | null;
   }>();
+  const followUpCandidates = new Map<string, PostMergeAuditFollowUpCandidateDto>();
 
   for (const artifact of artifacts) {
     if (!isPromotablePostMergeAuditArtifact(artifact)) {
@@ -723,6 +947,39 @@ export async function summarizePostMergeAuditPatterns(
         });
       }
     }
+
+    const externalReviewMissArtifact = await readExternalReviewMissArtifactSafely(artifact.artifacts.externalReviewMissesPath);
+    const pullRequest = artifact.pullRequest;
+    if (externalReviewMissArtifact && pullRequest && matchesExternalReviewMissArtifact(artifact, externalReviewMissArtifact)) {
+      for (const candidate of externalReviewMissArtifact.regressionTestCandidates) {
+        const key = `test_regression:${artifact.issue.number}:${pullRequest.number}:${candidate.id}`;
+        followUpCandidates.set(key, {
+          key,
+          category: "test_regression",
+          title: candidate.title,
+          summary: candidate.summary,
+          rationale: candidate.rationale,
+          sourcePatternKeys: [candidate.id],
+          supportingIssueNumbers: [artifact.issue.number],
+          supportingFindingKeys: [],
+          advisoryOnly: true,
+          autoCreateFollowUpIssue: false,
+          evidence: {
+            mergedIssueNumber: artifact.issue.number,
+            mergedIssueTitle: artifact.issue.title,
+            mergedPrNumber: pullRequest.number,
+            mergedPrTitle: pullRequest.title,
+            sourceArtifactPath: artifact.artifacts.externalReviewMissesPath!,
+            sourceUrl: candidate.sourceUrl,
+            sourceId: candidate.sourceId,
+            sourceThreadId: candidate.sourceThreadId,
+            reviewerLogin: candidate.reviewerLogin,
+            file: candidate.file,
+            line: candidate.line,
+          },
+        });
+      }
+    }
   }
 
   const summarizedReviewPatterns = [...reviewPatterns.values()]
@@ -782,6 +1039,10 @@ export async function summarizePostMergeAuditPatterns(
     comparePromotionCategory(left.category, right.category) ||
     right.supportingIssueNumbers.length - left.supportingIssueNumbers.length ||
     compareStringsAscending(left.key, right.key));
+  const summarizedFollowUpCandidates = [...followUpCandidates.values()].sort((left, right) =>
+    right.evidence.mergedIssueNumber - left.evidence.mergedIssueNumber ||
+    right.evidence.mergedPrNumber - left.evidence.mergedPrNumber ||
+    compareStringsAscending(left.key, right.key));
 
   return validatePostMergeAuditPatternSummary({
     schemaVersion: POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION,
@@ -795,6 +1056,7 @@ export async function summarizePostMergeAuditPatterns(
     reviewPatterns: summarizedReviewPatterns,
     failurePatterns: summarizedFailurePatterns,
     recoveryPatterns: summarizedRecoveryPatterns,
+    followUpCandidates: summarizedFollowUpCandidates,
     promotionCandidates,
   });
 }

@@ -1031,6 +1031,22 @@ test("dashboard folds current state into hero badges and action buttons", async 
   assert.equal(heroSecondaryButton.classList.contains("is-hidden"), true);
 });
 
+test("dashboard avoids duplicate queue hero actions when no issue is focused", async () => {
+  const harness = createDashboardHarness([
+    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+  ]);
+  await harness.flush();
+
+  const heroPrimaryButton = harness.document.getElementById("hero-primary-button");
+  const heroSecondaryButton = harness.document.getElementById("hero-secondary-button");
+  assert.ok(heroPrimaryButton);
+  assert.ok(heroSecondaryButton);
+
+  assert.match(heroPrimaryButton.textContent, /Open Queue Details/u);
+  assert.doesNotMatch(heroSecondaryButton.textContent, /Open Queue Details/u);
+});
+
 test("dashboard hero issue-details action loads focused issue details when needed", async () => {
   const harness = createDashboardHarness([
     {

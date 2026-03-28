@@ -24,6 +24,7 @@ Rotate the production auth token flow for service-to-service requests.
     createdAt: "2026-03-19T00:00:00Z",
     updatedAt: "2026-03-19T00:00:00Z",
     url: "https://example.test/issues/106",
+    labels: [],
     state: "OPEN",
   };
 
@@ -55,6 +56,7 @@ Decide whether to keep the current production auth token flow or replace it befo
     createdAt: "2026-03-19T00:00:00Z",
     updatedAt: "2026-03-19T00:00:00Z",
     url: "https://example.test/issues/107",
+    labels: [],
     state: "OPEN",
   };
 

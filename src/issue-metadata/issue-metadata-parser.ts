@@ -4,6 +4,10 @@ import type { RiskyChangeClass } from "./issue-metadata-risky-policy";
 
 const PART_OF_LINE_PATTERN = /^\s*(?:-\s+)?Part of:?\s+#(\d+)\s*$/im;
 
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function parseIssueNumberList(input: string): number[] {
   return Array.from(
     new Set(
@@ -26,9 +30,37 @@ export function parseTouchesList(body: string): string[] {
   return touchesMatch ? parseList(touchesMatch[1]) : [];
 }
 
+export function countMetadataLineDeclarations(body: string, fieldName: string): number {
+  return [
+    ...body.matchAll(new RegExp(`^\\s*${escapeRegExp(fieldName)}:[^\\r\\n]*$`, "gim")),
+  ].length;
+}
+
+export function getSingleMetadataLineValue(body: string, fieldName: string): string | null {
+  const matches = [
+    ...body.matchAll(new RegExp(`^\\s*${escapeRegExp(fieldName)}:[^\\S\\r\\n]*(.*)$`, "gim")),
+  ];
+  if (matches.length !== 1) {
+    return null;
+  }
+
+  return matches[0][1].trim();
+}
+
+export function countExecutionOrderDeclarations(body: string): number {
+  return [
+    ...body.matchAll(/^\s*Execution order:[^\r\n]*$/gim),
+    ...body.matchAll(/^\s*##\s*Execution order\s*$[\r\n]+^[^\r\n]*$/gim),
+  ].length;
+}
+
 export function parseExecutionOrder(
   body: string,
 ): { executionOrderIndex: number; executionOrderTotal: number } | null {
+  if (countExecutionOrderDeclarations(body) !== 1) {
+    return null;
+  }
+
   const headingMatch = body.match(
     /^\s*##\s*Execution order\s*$[\r\n]+^\s*(\d+)\s+of\s+(\d+)\s*$/im,
   );
@@ -52,16 +84,16 @@ export function parseExecutionOrder(
 
 export function parseIssueMetadata(issue: GitHubIssue): IssueMetadata {
   const parentMatch = issue.body.match(PART_OF_LINE_PATTERN);
-  const dependsOnMatch = issue.body.match(/^\s*Depends on:\s*(.+)\s*$/im);
-  const parallelGroupMatch = issue.body.match(/^\s*Parallel group:\s*(.+)\s*$/im);
+  const dependsOnValue = getSingleMetadataLineValue(issue.body, "Depends on");
+  const parallelGroupValue = getSingleMetadataLineValue(issue.body, "Parallel group");
   const executionOrder = parseExecutionOrder(issue.body);
 
   return {
     parentIssueNumber: parentMatch ? Number(parentMatch[1]) : null,
     executionOrderIndex: executionOrder?.executionOrderIndex ?? null,
     executionOrderTotal: executionOrder?.executionOrderTotal ?? null,
-    dependsOn: dependsOnMatch ? parseIssueNumberList(dependsOnMatch[1]) : [],
-    parallelGroup: parallelGroupMatch ? parallelGroupMatch[1].trim() : null,
+    dependsOn: dependsOnValue ? parseIssueNumberList(dependsOnValue) : [],
+    parallelGroup: parallelGroupValue ? parallelGroupValue : null,
     touches: parseTouchesList(issue.body),
   };
 }

@@ -1,5 +1,7 @@
 import type { GitHubIssue } from "../core/types";
 import {
+  countExecutionOrderDeclarations,
+  getSingleMetadataLineValue,
   parseExecutionOrder,
 } from "./issue-metadata-parser";
 import {
@@ -23,6 +25,12 @@ export interface ClarificationBlock {
   riskyChangeClasses: RiskyChangeClass[];
   reason: string;
 }
+
+export const LABEL_GATED_POLICY_MISSING_LABELS_MESSAGE =
+  "issue labels are missing; cannot evaluate label-gated execution policy";
+export const LABEL_GATED_POLICY_MISSING_LABELS_BLOCKED_BY = "metadata:labels_unavailable";
+export const LABEL_GATED_POLICY_MISSING_LABELS_REPAIR_GUIDANCE =
+  "Refresh the issue payload so labels are present before rerunning issue lint or selection.";
 
 const HIGH_RISK_AMBIGUITY_CLASSES = ["open_question", "unresolved_choice", "operator_confirmation"] as const;
 
@@ -127,26 +135,17 @@ function requireLabels(issue: Pick<GitHubIssue, "labels">): NonNullable<GitHubIs
   return issue.labels;
 }
 
+export function hasAvailableIssueLabels(issue: Pick<GitHubIssue, "labels">): boolean {
+  return issue.labels !== undefined;
+}
+
 function hasLabel(issue: Pick<GitHubIssue, "labels">, labelName: string): boolean {
   const normalizedLabelName = labelName.trim().toLowerCase();
   return requireLabels(issue).some((label) => label.name.trim().toLowerCase() === normalizedLabelName);
 }
 
-function getSingleMetadataValue(body: string, fieldName: string): string | null {
-  const matches = [
-    ...body.matchAll(
-      new RegExp(`^\\s*${escapeRegExp(fieldName)}:[^\\S\\r\\n]*(.*)$`, "gim"),
-    ),
-  ];
-  if (matches.length !== 1) {
-    return null;
-  }
-
-  return matches[0][1].trim();
-}
-
 function hasValidDependsOnMetadata(body: string): boolean {
-  const dependsOnValue = getSingleMetadataValue(body, "Depends on");
+  const dependsOnValue = getSingleMetadataLineValue(body, "Depends on");
   if (dependsOnValue === null) {
     return false;
   }
@@ -155,19 +154,12 @@ function hasValidDependsOnMetadata(body: string): boolean {
 }
 
 function hasValidParallelizableMetadata(body: string): boolean {
-  const parallelizableValue = getSingleMetadataValue(body, "Parallelizable");
+  const parallelizableValue = getSingleMetadataLineValue(body, "Parallelizable");
   return parallelizableValue !== null && /^(?:yes|no)$/i.test(parallelizableValue);
 }
 
 function hasCanonicalPartOfMetadata(body: string): boolean {
   return /^\s*(?:-\s+)?Part of:\s+#\d+\s*$/im.test(body);
-}
-
-function countExecutionOrderDeclarations(body: string): number {
-  return [
-    ...body.matchAll(/^\s*Execution order:[^\r\n]*$/gim),
-    ...body.matchAll(/^\s*##\s*Execution order\s*$[\r\n]+^[^\r\n]*$/gim),
-  ].length;
 }
 
 function parseSingleExecutionOrder(

@@ -3,7 +3,9 @@ import { DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW } from "../core/config";
 import {
   findBlockingIssue,
   findHighRiskBlockingAmbiguity,
+  hasAvailableIssueLabels,
   isRecordDoneForSequencing,
+  LABEL_GATED_POLICY_MISSING_LABELS_BLOCKED_BY,
   lintExecutionReadyIssueBody,
   parseIssueMetadata,
 } from "../issue-metadata";
@@ -182,6 +184,15 @@ function buildReadinessSummaryFromIssues(
     }
 
     const existing = state.issues[String(issue.number)];
+    if (!hasAvailableIssueLabels(issue)) {
+      blockedIssues.push({
+        issueNumber: issue.number,
+        title: issue.title,
+        blockedBy: LABEL_GATED_POLICY_MISSING_LABELS_BLOCKED_BY,
+      });
+      continue;
+    }
+
     const readiness = lintExecutionReadyIssueBody(issue);
     if (shouldEnforceExecutionReady(existing) && !readiness.isExecutionReady) {
       blockedIssues.push({
@@ -293,6 +304,10 @@ export async function buildSelectionSummary(
     }
 
     const existing = state.issues[String(issue.number)];
+    if (!hasAvailableIssueLabels(issue)) {
+      continue;
+    }
+
     const readiness = lintExecutionReadyIssueBody(issue);
     if (shouldEnforceExecutionReady(existing) && !readiness.isExecutionReady) {
       continue;

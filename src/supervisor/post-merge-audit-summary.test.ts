@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { writeJsonAtomic } from "../core/utils";
+import type { ExternalReviewMissArtifact } from "../external-review/external-review-miss-artifact-types";
 import { createConfig } from "../turn-execution-test-helpers";
 import type { LocalReviewArtifact } from "../local-review/types";
 import { createArtifactTestPaths } from "./artifact-test-helpers";
@@ -147,6 +148,51 @@ function createPostMergeArtifact(overrides: Partial<PostMergeAuditArtifact> = {}
   };
 }
 
+function createExternalReviewMissArtifact(
+  overrides: Partial<ExternalReviewMissArtifact> = {},
+): ExternalReviewMissArtifact {
+  return {
+    issueNumber: 102,
+    prNumber: 116,
+    branch: "codex/issue-102",
+    headSha: "merged-head-116",
+    generatedAt: "2026-03-24T10:07:00Z",
+    localReviewSummaryPath: null,
+    localReviewFindingsPath: null,
+    findings: [],
+    reusableMissPatterns: [],
+    durableGuardrailCandidates: [],
+    regressionTestCandidates: [
+      {
+        id: "regression:src/recovery-reconciliation.ts:412:fixture-drift",
+        title: "Add regression coverage for execution-ready metadata hardening fixture drift",
+        file: "src/recovery-reconciliation.ts",
+        line: 412,
+        summary: "Execution-ready metadata hardening can drift the recovery reconciliation fixture.",
+        rationale: "Add a focused test that locks the recovered fixture shape after metadata hardening.",
+        reviewerLogin: "coderabbitai[bot]",
+        sourceKind: "review_thread",
+        sourceId: "thread-1135",
+        sourceThreadId: "thread-1135",
+        sourceUrl: "https://example.test/pull/116#discussion_r1135",
+        qualificationReasons: [
+          "missed_by_local_review",
+          "non_low_severity",
+          "high_confidence",
+          "file_scoped",
+          "line_scoped",
+        ],
+      },
+    ],
+    counts: {
+      matched: 0,
+      nearMatch: 0,
+      missedByLocalReview: 1,
+    },
+    ...overrides,
+  };
+}
+
 test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and recovery patterns from persisted artifacts", async () => {
   const { reviewDir } = await createArtifactTestPaths("post-merge-audit-summary");
   const config = createConfig({
@@ -230,7 +276,7 @@ test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and 
 
   assert.deepEqual(validatePostMergeAuditPatternSummary(summary), summary);
   assert.deepEqual(Object.keys(summary).sort(), [...POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS].sort());
-  assert.equal(summary.schemaVersion, 3);
+  assert.equal(summary.schemaVersion, 4);
   assert.equal(summary.advisoryOnly, true);
   assert.equal(summary.autoApplyGuardrails, false);
   assert.equal(summary.autoCreateFollowUpIssues, false);
@@ -248,6 +294,7 @@ test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and 
   assert.equal(summary.recoveryPatterns[0]?.key, "merged_pr_convergence");
   assert.equal(summary.recoveryPatterns[0]?.artifactCount, 2);
   assert.equal(summary.recoveryPatterns[0]?.occurrenceCount, 2);
+  assert.deepEqual(summary.followUpCandidates, []);
   assert.deepEqual(
     summary.promotionCandidates.map((candidate) => ({
       key: candidate.key,
@@ -292,7 +339,7 @@ test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and 
 
 test("validatePostMergeAuditPatternSummary rejects unsupported schema versions and missing required fields", () => {
   const summary = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     generatedAt: "2026-03-25T00:00:00Z",
     artifactDir: "/tmp/post-merge",
     advisoryOnly: true,
@@ -303,6 +350,7 @@ test("validatePostMergeAuditPatternSummary rejects unsupported schema versions a
     reviewPatterns: [],
     failurePatterns: [],
     recoveryPatterns: [],
+    followUpCandidates: [],
     promotionCandidates: [],
   } as const;
 
@@ -310,14 +358,14 @@ test("validatePostMergeAuditPatternSummary rejects unsupported schema versions a
 
   assert.throws(
     () => validatePostMergeAuditPatternSummary({ ...summary, schemaVersion: 1 }),
-    /schemaVersion must be 3\./u,
+    /schemaVersion must be 4\./u,
   );
 
   const { promotionCandidates, ...summaryWithoutPromotionCandidates } = summary;
   void promotionCandidates;
   assert.throws(
     () => validatePostMergeAuditPatternSummary(summaryWithoutPromotionCandidates),
-    /summary must contain schemaVersion, generatedAt, artifactDir, advisoryOnly, autoApplyGuardrails, autoCreateFollowUpIssues, artifactsAnalyzed, artifactsSkipped, reviewPatterns, failurePatterns, recoveryPatterns, and promotionCandidates\./u,
+    /summary must contain schemaVersion, generatedAt, artifactDir, advisoryOnly, autoApplyGuardrails, autoCreateFollowUpIssues, artifactsAnalyzed, artifactsSkipped, reviewPatterns, failurePatterns, recoveryPatterns, followUpCandidates, and promotionCandidates\./u,
   );
 });
 
@@ -585,4 +633,131 @@ test("summarizePostMergeAuditPatterns skips artifacts whose embedded local-revie
   assert.deepEqual(summary.failurePatterns, []);
   assert.deepEqual(summary.recoveryPatterns, []);
   assert.deepEqual(summary.promotionCandidates, []);
+});
+
+test("summarizePostMergeAuditPatterns promotes missed focused test regressions into operator-facing follow-up candidates", async () => {
+  const { reviewDir } = await createArtifactTestPaths("post-merge-audit-summary");
+  const config = createConfig({
+    localReviewArtifactDir: reviewDir,
+    repoSlug: "owner/repo",
+  });
+  const artifactDir = postMergeAuditArtifactDir(config);
+  const missArtifactPath = path.join(reviewDir, "owner-repo", "issue-102", "external-review-misses-head-merged-head.json");
+
+  await fs.mkdir(path.dirname(missArtifactPath), { recursive: true });
+  await fs.mkdir(artifactDir, { recursive: true });
+  await writeJsonAtomic(missArtifactPath, createExternalReviewMissArtifact());
+  await writeJsonAtomic(
+    path.join(artifactDir, "issue-102-head-merged-head.json"),
+    createPostMergeArtifact({
+      artifacts: {
+        executionMetricsSummaryPath: null,
+        localReviewSummaryPath: null,
+        localReviewFindingsPath: null,
+        externalReviewMissesPath: missArtifactPath,
+      },
+    }),
+  );
+
+  const summary = await summarizePostMergeAuditPatterns(config);
+
+  assert.deepEqual(summary.followUpCandidates, [
+    {
+      key: "test_regression:102:116:regression:src/recovery-reconciliation.ts:412:fixture-drift",
+      category: "test_regression",
+      title: "Add regression coverage for execution-ready metadata hardening fixture drift",
+      summary: "Execution-ready metadata hardening can drift the recovery reconciliation fixture.",
+      rationale: "Add a focused test that locks the recovered fixture shape after metadata hardening.",
+      sourcePatternKeys: ["regression:src/recovery-reconciliation.ts:412:fixture-drift"],
+      supportingIssueNumbers: [102],
+      supportingFindingKeys: [],
+      advisoryOnly: true,
+      autoCreateFollowUpIssue: false,
+      evidence: {
+        mergedIssueNumber: 102,
+        mergedIssueTitle: "Persist a completed-work audit artifact",
+        mergedPrNumber: 116,
+        mergedPrTitle: "Persist completed-work audit artifact",
+        sourceArtifactPath: missArtifactPath,
+        sourceUrl: "https://example.test/pull/116#discussion_r1135",
+        sourceId: "thread-1135",
+        sourceThreadId: "thread-1135",
+        reviewerLogin: "coderabbitai[bot]",
+        file: "src/recovery-reconciliation.ts",
+        line: 412,
+      },
+    },
+  ]);
+});
+
+test("summarizePostMergeAuditPatterns ignores external review miss artifacts with malformed nullable evidence fields", async () => {
+  const { reviewDir } = await createArtifactTestPaths("post-merge-audit-summary");
+  const config = createConfig({
+    localReviewArtifactDir: reviewDir,
+    repoSlug: "owner/repo",
+  });
+  const artifactDir = postMergeAuditArtifactDir(config);
+  const missArtifactPath = path.join(reviewDir, "owner-repo", "issue-102", "external-review-misses-head-merged-head.json");
+  const malformedMissArtifact = createExternalReviewMissArtifact();
+  const malformedCandidate = malformedMissArtifact.regressionTestCandidates[0];
+
+  assert.ok(malformedCandidate);
+  (malformedCandidate as unknown as Record<string, unknown>).sourceThreadId = { invalid: true };
+  (malformedCandidate as unknown as Record<string, unknown>).sourceUrl = 42;
+
+  await fs.mkdir(path.dirname(missArtifactPath), { recursive: true });
+  await fs.mkdir(artifactDir, { recursive: true });
+  await writeJsonAtomic(missArtifactPath, malformedMissArtifact as unknown as Record<string, unknown>);
+  await writeJsonAtomic(
+    path.join(artifactDir, "issue-102-head-merged-head.json"),
+    createPostMergeArtifact({
+      artifacts: {
+        executionMetricsSummaryPath: null,
+        localReviewSummaryPath: null,
+        localReviewFindingsPath: null,
+        externalReviewMissesPath: missArtifactPath,
+      },
+    }),
+  );
+
+  const summary = await summarizePostMergeAuditPatterns(config);
+
+  assert.deepEqual(summary.followUpCandidates, []);
+});
+
+test("summarizePostMergeAuditPatterns ignores external review miss artifacts that do not match the merged issue metadata", async () => {
+  const { reviewDir } = await createArtifactTestPaths("post-merge-audit-summary");
+  const config = createConfig({
+    localReviewArtifactDir: reviewDir,
+    repoSlug: "owner/repo",
+  });
+  const artifactDir = postMergeAuditArtifactDir(config);
+  const missArtifactPath = path.join(reviewDir, "owner-repo", "issue-102", "external-review-misses-head-merged-head.json");
+
+  await fs.mkdir(path.dirname(missArtifactPath), { recursive: true });
+  await fs.mkdir(artifactDir, { recursive: true });
+  await writeJsonAtomic(
+    missArtifactPath,
+    createExternalReviewMissArtifact({
+      issueNumber: 999,
+      prNumber: 998,
+      branch: "codex/issue-999",
+      headSha: "wrong-head-sha",
+    }),
+  );
+  await writeJsonAtomic(
+    path.join(artifactDir, "issue-102-head-merged-head.json"),
+    createPostMergeArtifact({
+      artifacts: {
+        executionMetricsSummaryPath: null,
+        localReviewSummaryPath: null,
+        localReviewFindingsPath: null,
+        externalReviewMissesPath: missArtifactPath,
+      },
+    }),
+  );
+
+  const summary = await summarizePostMergeAuditPatterns(config);
+
+  assert.deepEqual(summary.followUpCandidates, []);
 });

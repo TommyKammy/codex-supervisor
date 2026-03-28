@@ -1,5 +1,11 @@
 import type { GitHubIssue } from "../core/types";
-import { parseExecutionOrder, parseIssueMetadata } from "./issue-metadata-parser";
+import {
+  countExecutionOrderDeclarations,
+  countMetadataLineDeclarations,
+  getSingleMetadataLineValue,
+  parseExecutionOrder,
+  parseIssueMetadata,
+} from "./issue-metadata-parser";
 
 const PART_OF_LINE_PATTERN = /^\s*(?:-\s+)?Part of\b.*$/im;
 const VALID_PART_OF_LINE_PATTERN = /^\s*(?:-\s+)?Part of:?\s+#([1-9]\d*)\s*$/i;
@@ -32,9 +38,11 @@ export function validateIssueMetadataSyntax(issue: Pick<GitHubIssue, "number" | 
     }
   }
 
-  const dependsOnMatch = issue.body.match(/^\s*Depends on:[^\S\r\n]*(.*)$/im);
-  if (dependsOnMatch) {
-    const dependsOnLine = dependsOnMatch[1].trim();
+  const dependsOnDeclarationCount = countMetadataLineDeclarations(issue.body, "Depends on");
+  const dependsOnLine = getSingleMetadataLineValue(issue.body, "Depends on");
+  if (dependsOnDeclarationCount > 1) {
+    errors.push("depends on must appear exactly once");
+  } else if (dependsOnLine !== null) {
     if (dependsOnLine.length === 0) {
       errors.push("depends on must be none or comma-separated #<number> references");
     } else {
@@ -79,10 +87,11 @@ export function validateIssueMetadataSyntax(issue: Pick<GitHubIssue, "number" | 
     }
   }
 
-  const hasExecutionOrderLine = /^\s*Execution order:[^\r\n]*$/im.test(issue.body);
-  const hasExecutionOrderHeading = /^\s*##\s*Execution order\s*$/im.test(issue.body);
+  const executionOrderDeclarationCount = countExecutionOrderDeclarations(issue.body);
   const executionOrder = parseExecutionOrder(issue.body);
-  if (hasExecutionOrderLine || hasExecutionOrderHeading) {
+  if (executionOrderDeclarationCount > 1) {
+    errors.push("execution order must appear exactly once");
+  } else if (executionOrderDeclarationCount === 1) {
     if (
       executionOrder === null ||
       executionOrder.executionOrderIndex < 1 ||
@@ -93,8 +102,11 @@ export function validateIssueMetadataSyntax(issue: Pick<GitHubIssue, "number" | 
     }
   }
 
-  const parallelizableMatch = issue.body.match(/^\s*Parallelizable:[^\S\r\n]*(.*)$/im);
-  if (parallelizableMatch && !/^(?:yes|no)$/i.test(parallelizableMatch[1].trim())) {
+  const parallelizableDeclarationCount = countMetadataLineDeclarations(issue.body, "Parallelizable");
+  const parallelizableValue = getSingleMetadataLineValue(issue.body, "Parallelizable");
+  if (parallelizableDeclarationCount > 1) {
+    errors.push("parallelizable must appear exactly once");
+  } else if (parallelizableValue !== null && !/^(?:yes|no)$/i.test(parallelizableValue)) {
     errors.push("parallelizable must be Yes or No");
   }
 

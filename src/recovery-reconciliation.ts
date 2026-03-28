@@ -4,6 +4,7 @@ import { runCommand } from "./core/command";
 import {
   findHighRiskBlockingAmbiguity,
   findParentIssuesReadyToClose,
+  hasAvailableIssueLabels,
   lintExecutionReadyIssueBody,
 } from "./issue-metadata";
 import { inspectFileLock } from "./core/lock";
@@ -1252,6 +1253,10 @@ export async function reconcileRecoverableBlockedIssueStates(
     }
 
     if (record.state === "blocked" && record.blocked_reason === "requirements") {
+      if (!hasAvailableIssueLabels(issue)) {
+        continue;
+      }
+
       const readiness = lintExecutionReadyIssueBody(issue);
       if (!readiness.isExecutionReady) {
         continue;
