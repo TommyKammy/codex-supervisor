@@ -144,6 +144,7 @@ interface ExecuteCodexTurnPhaseArgs {
   blockedReasonFromReviewState: (
     record: IssueRunRecord,
     pr: GitHubPullRequest,
+    checks: PullRequestCheck[],
     reviewThreads: ReviewThread[],
   ) => IssueRunRecord["blocked_reason"];
   recoverUnexpectedCodexTurnFailure: (
@@ -585,7 +586,7 @@ export async function executeCodexTurnPhase(
         ),
         blocked_reason:
           pr && postRunState === "blocked"
-            ? args.blockedReasonFromReviewState(postRunSnapshot?.recordForState ?? record, pr, reviewThreads)
+            ? args.blockedReasonFromReviewState(postRunSnapshot?.recordForState ?? record, pr, checks, reviewThreads)
             : null,
         state: postRunState,
       });

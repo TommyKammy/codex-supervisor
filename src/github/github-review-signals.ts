@@ -107,6 +107,18 @@ function isConfiguredBotStatusContextActivity(args: {
   return normalizedContext.includes("coderabbit") || normalizedDescription.includes("coderabbit");
 }
 
+function isCodeRabbitStatusContext(args: {
+  creatorLogin: string | null | undefined;
+  context: string | null | undefined;
+  description?: string | null | undefined;
+}): boolean {
+  return (
+    isCodeRabbitLogin(args.creatorLogin) ||
+    (args.context ?? "").trim().toLowerCase().includes("coderabbit") ||
+    (args.description ?? "").trim().toLowerCase().includes("coderabbit")
+  );
+}
+
 function mapCheckBucket(args: {
   state?: string | null;
   conclusion?: string | null;
@@ -415,6 +427,7 @@ function inferConfiguredBotCurrentHeadStatusState(
   for (const statusContext of facts.statusContexts ?? []) {
     if (
       statusContext.commitOid !== normalizedCurrentHeadOid ||
+      !isCodeRabbitStatusContext(statusContext) ||
       !isConfiguredBotStatusContextActivity({
         creatorLogin: statusContext.creatorLogin,
         context: statusContext.context,

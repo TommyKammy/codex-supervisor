@@ -507,11 +507,11 @@ export function blockedReasonFromReviewState(
   config: SupervisorConfig,
   record: IssueRunRecord,
   pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
   reviewThreads: ReviewThread[],
 ): Exclude<BlockedReason, null> | null {
   const manualThreads = manualReviewThreads(config, reviewThreads);
-  const unresolvedBotThreads = effectiveConfiguredBotReviewThreads(config, pr, [], reviewThreads);
-  const journalOnlyConfiguredBotException = allowJournalOnlyConfiguredBotThreadException(config, pr, [], reviewThreads);
+  const unresolvedBotThreads = effectiveConfiguredBotReviewThreads(config, pr, checks, reviewThreads);
   const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
   if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
     return "review_bot_timeout";
@@ -522,7 +522,6 @@ export function blockedReasonFromReviewState(
   }
 
   if (
-    !journalOnlyConfiguredBotException &&
     pr.reviewDecision === "CHANGES_REQUESTED" &&
     (pr.configuredBotTopLevelReviewStrength === "blocking" ||
       (config.humanReviewBlocksMerge && pr.configuredBotTopLevelReviewStrength !== "nitpick_only"))
@@ -641,13 +640,12 @@ export function inferStateFromPullRequest(
   const unresolvedBotThreads = effectiveConfiguredBotReviewThreads(config, pr, checks, reviewThreads);
   const pendingBotThreads = pendingBotReviewThreads(config, record, pr, unresolvedBotThreads);
   const botFollowUpState = configuredBotReviewFollowUpState(record, pr, unresolvedBotThreads);
-  const journalOnlyConfiguredBotException = allowJournalOnlyConfiguredBotThreadException(config, pr, checks, reviewThreads);
 
   if (pr.mergedAt || pr.state === "MERGED") {
     return "done";
   }
 
-  if (pr.reviewDecision === "CHANGES_REQUESTED" && !journalOnlyConfiguredBotException) {
+  if (pr.reviewDecision === "CHANGES_REQUESTED") {
     if (pendingBotThreads.length > 0 || (botFollowUpState === "eligible" && manualThreads.length === 0)) {
       return "addressing_review";
     }
@@ -763,12 +761,12 @@ export function inferStateFromPullRequest(
 
   if (
     !pullRequestHeadMatchesRecord(record, pr) &&
-    (mergeConditionsSatisfied(pr, checks) || journalOnlyConfiguredBotException)
+    mergeConditionsSatisfied(pr, checks)
   ) {
     return "stabilizing";
   }
 
-  if (mergeConditionsSatisfied(pr, checks) || journalOnlyConfiguredBotException) {
+  if (mergeConditionsSatisfied(pr, checks)) {
     return "ready_to_merge";
   }
 

@@ -122,7 +122,6 @@ test("inferStateFromPullRequest allows a journal-only configured-bot thread when
     processed_review_thread_fingerprints: ["thread-1@head123#comment-1"],
   });
   const pr = createPullRequest({
-    reviewDecision: "CHANGES_REQUESTED",
     configuredBotCurrentHeadObservedAt: "2026-03-13T02:04:00Z",
     configuredBotCurrentHeadStatusState: "SUCCESS",
     mergeStateStatus: "CLEAN",
@@ -149,7 +148,7 @@ test("inferStateFromPullRequest allows a journal-only configured-bot thread when
   ];
 
   assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), reviewThreads), "ready_to_merge");
-  assert.equal(blockedReasonFromReviewState(config, record, pr, reviewThreads), null);
+  assert.equal(blockedReasonFromReviewState(config, record, pr, passingChecks(), reviewThreads), null);
 });
 
 test("inferStateFromPullRequest still blocks a configured-bot thread on non-journal files even when CodeRabbit status is SUCCESS", () => {
@@ -164,7 +163,6 @@ test("inferStateFromPullRequest still blocks a configured-bot thread on non-jour
     processed_review_thread_fingerprints: ["thread-1@head123#comment-1"],
   });
   const pr = createPullRequest({
-    reviewDecision: "CHANGES_REQUESTED",
     configuredBotCurrentHeadObservedAt: "2026-03-13T02:04:00Z",
     configuredBotCurrentHeadStatusState: "SUCCESS",
     mergeStateStatus: "CLEAN",
@@ -191,7 +189,7 @@ test("inferStateFromPullRequest still blocks a configured-bot thread on non-jour
   ];
 
   assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), reviewThreads), "blocked");
-  assert.equal(blockedReasonFromReviewState(config, record, pr, reviewThreads), "manual_review");
+  assert.equal(blockedReasonFromReviewState(config, record, pr, passingChecks(), reviewThreads), "manual_review");
 });
 
 test("inferStateFromPullRequest still blocks a journal-only configured-bot thread when the PR is not otherwise green", () => {
@@ -206,7 +204,6 @@ test("inferStateFromPullRequest still blocks a journal-only configured-bot threa
     processed_review_thread_fingerprints: ["thread-1@head123#comment-1"],
   });
   const pr = createPullRequest({
-    reviewDecision: "CHANGES_REQUESTED",
     configuredBotCurrentHeadObservedAt: "2026-03-13T02:04:00Z",
     configuredBotCurrentHeadStatusState: "SUCCESS",
     mergeStateStatus: "CLEAN",
@@ -234,7 +231,49 @@ test("inferStateFromPullRequest still blocks a journal-only configured-bot threa
   ];
 
   assert.equal(inferStateFromPullRequest(config, record, pr, [...checks], reviewThreads), "blocked");
-  assert.equal(blockedReasonFromReviewState(config, record, pr, reviewThreads), "manual_review");
+  assert.equal(blockedReasonFromReviewState(config, record, pr, [...checks], reviewThreads), "manual_review");
+});
+
+test("inferStateFromPullRequest keeps human review gates in place when only a journal-only configured-bot thread remains", () => {
+  const config = createConfig({
+    reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+    humanReviewBlocksMerge: true,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head123",
+    processed_review_thread_ids: ["thread-1@head123"],
+    processed_review_thread_fingerprints: ["thread-1@head123#comment-1"],
+  });
+  const pr = createPullRequest({
+    reviewDecision: "REVIEW_REQUIRED",
+    configuredBotCurrentHeadObservedAt: "2026-03-13T02:04:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const reviewThreads = [
+    createReviewThread({
+      path: ".codex-supervisor/issues/1148/issue-journal.md",
+      comments: {
+        nodes: [
+          {
+            id: "comment-1",
+            body: "Tiny wording fix in the issue journal.",
+            createdAt: "2026-03-13T02:05:00Z",
+            url: "https://example.test/pr/44#discussion_r1",
+            author: {
+              login: "coderabbitai[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), reviewThreads), "pr_open");
+  assert.equal(blockedReasonFromReviewState(config, record, pr, passingChecks(), reviewThreads), null);
 });
 
 test("inferStateFromPullRequest covers local review policy gating combinations", () => {
@@ -445,7 +484,7 @@ test("blockedReasonFromReviewState reports manual_review for manual-review-block
   });
 
   assert.equal(
-    blockedReasonFromReviewState(config, record, createPullRequest({ headRefOid: "head123" }), []),
+    blockedReasonFromReviewState(config, record, createPullRequest({ headRefOid: "head123" }), [], []),
     "manual_review",
   );
 });

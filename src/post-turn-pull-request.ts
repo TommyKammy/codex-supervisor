@@ -226,6 +226,7 @@ export interface HandlePostTurnPullRequestTransitionsArgs {
   blockedReasonFromReviewState: (
     record: IssueRunRecord,
     pr: GitHubPullRequest,
+    checks: PullRequestCheck[],
     reviewThreads: ReviewThread[],
   ) => IssueRunRecord["blocked_reason"];
   summarizeChecks: (checks: PullRequestCheck[]) => { hasPending: boolean; hasFailing: boolean };
@@ -554,6 +555,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         ? args.blockedReasonFromReviewState(
             refreshedLifecycle.recordForState,
             postReady.pr,
+            postReady.checks,
             postReady.reviewThreads,
           ) ??
           ((localReviewRetryLoopStalled(

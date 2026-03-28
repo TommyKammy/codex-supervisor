@@ -903,6 +903,43 @@ test("buildConfiguredBotReviewSummary treats current-head CodeRabbit status cont
   });
 });
 
+test("buildConfiguredBotReviewSummary scopes current-head status state to CodeRabbit-specific contexts", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [],
+    comments: [],
+    issueComments: [],
+    statusContexts: [
+      {
+        creatorLogin: "coderabbitai",
+        context: "CodeRabbit",
+        description: "CodeRabbit is still reviewing the current head.",
+        state: "PENDING",
+        createdAt: "2026-03-13T02:04:00Z",
+        commitOid: "head-44",
+      },
+      {
+        creatorLogin: "chatgpt-codex-connector",
+        context: "Codex Review",
+        description: "Codex finished its review on the current head.",
+        state: "SUCCESS",
+        createdAt: "2026-03-13T02:07:00Z",
+        commitOid: "head-44",
+      },
+    ],
+    timeline: [],
+  };
+
+  const summary = buildConfiguredBotReviewSummary(
+    facts,
+    ["coderabbitai", "coderabbitai[bot]", "chatgpt-codex-connector"],
+    "head-44",
+  );
+
+  assert.equal(summary.currentHeadObservedAt, "2026-03-13T02:07:00Z");
+  assert.equal(summary.currentHeadStatusState, "PENDING");
+});
+
 test("buildConfiguredBotReviewSummary records the current-head CI-green timestamp from required passing checks only", () => {
   const facts: CopilotReviewLifecycleFacts = {
     reviewRequests: [],
