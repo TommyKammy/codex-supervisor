@@ -336,6 +336,7 @@ export function applyConfiguredBotReviewSummary(
     copilotReviewRequestedAt: summary?.lifecycle.requestedAt ?? null,
     copilotReviewArrivedAt: summary?.lifecycle.arrivedAt ?? null,
     configuredBotCurrentHeadObservedAt: summary?.currentHeadObservedAt ?? null,
+    configuredBotCurrentHeadStatusState: summary?.currentHeadStatusState ?? null,
     currentHeadCiGreenAt: summary?.currentHeadCiGreenAt ?? null,
     configuredBotRateLimitedAt: summary?.rateLimitWarningAt ?? null,
     configuredBotDraftSkipAt: summary?.draftSkipAt ?? null,

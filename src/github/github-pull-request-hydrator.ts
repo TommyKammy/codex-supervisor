@@ -59,6 +59,7 @@ class ConfiguredBotReviewSummaryCache {
         lifecycle: { state: "not_requested", requestedAt: null, arrivedAt: null },
         topLevelReview: { strength: null, submittedAt: null },
         currentHeadObservedAt: null,
+        currentHeadStatusState: null,
         currentHeadCiGreenAt: null,
         rateLimitWarningAt: null,
         draftSkipAt: null,
