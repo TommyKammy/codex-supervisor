@@ -5,44 +5,44 @@
 - Branch: codex/issue-1144
 - Workspace: .
 - Journal: .codex-supervisor/issues/1144/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 6 (implementation=2, repair=4)
-- Last head SHA: dc73a6cbae7b4480523420663e683499ee070731
+- Current phase: waiting_ci
+- Attempt count: 8 (implementation=2, repair=6)
+- Last head SHA: 1b9f45bed5ceea6fd99bd302fa4f0be052a40a31
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ853aiEX|PRRT_kwDORgvdZ853aiEb
+- Last failure signature: build (ubuntu-latest):fail
 - Repeated failure signature count: 1
-- Updated at: 2026-03-28T01:18:09Z
+- Updated at: 2026-03-28T01:25:28Z
 
 ## Latest Codex Summary
-Updated [issue-journal.md](.codex-supervisor/issues/1144/issue-journal.md#L36) to capitalize `GitHub/main` in the handoff text, which was the remaining valid CodeRabbit prose fix. I also re-checked the unresolved-count review comment against the current journal and confirmed that thread is stale because the journal no longer contains the previously addressed-entry mismatch it referenced, then committed and pushed the journal-only fix as `c62ed34`.
+Reproduced PR #1147's failing Ubuntu build from Actions run `23674219411`, confirmed `npm run verify:paths` was rejecting workstation-local absolute-path references in this journal's committed `Last focused commands` entry, and finalized the journal redaction so the path guard now passes locally. I also reran `npm run build` after the journal-only fix to preserve a higher-signal local verification before pushing the repair branch update.
 
-No code paths changed in this turn, so I re-verified the journal text locally with `nl -ba .codex-supervisor/issues/1144/issue-journal.md | sed -n '1,140p'` and `rg -n "github/main|GitHub/main|unresolved automated review thread\\(s\\) remain|Addressed in commit" .codex-supervisor/issues/1144/issue-journal.md`, then pushed `c62ed34` to `github/codex/issue-1144`. I have not resolved or replied to the GitHub review threads.
-
-Summary: Fixed the remaining valid journal prose review comment and confirmed the unresolved-count comment is stale against the current file.
-State hint: addressing_review
+Summary: Reproduced the Ubuntu CI failure, removed the committed workstation-local paths from the journal, and verified the repair locally.
+State hint: waiting_ci
 Blocked reason: none
-Tests: not run (journal-only change); local text checks with `nl -ba .codex-supervisor/issues/1144/issue-journal.md | sed -n '1,140p'` and `rg -n "github/main|GitHub/main|unresolved automated review thread\\(s\\) remain|Addressed in commit" .codex-supervisor/issues/1144/issue-journal.md`
-Next action: Resolve or reply to PR #1147's remaining review threads, noting that the unresolved-count comment is stale and the `GitHub/main` prose fix shipped in `c62ed34`.
-Failure signature: PRRT_kwDORgvdZ853aiEX|PRRT_kwDORgvdZ853aiEb
+Tests: `gh pr checks 1147`; `gh run view 23674219411 --log-failed`; `npm run verify:paths`; `npm run build`
+Next action: Push the journal-only repair to `github/codex/issue-1144`, then watch PR #1147 for a clean rerun of `build (ubuntu-latest)` before addressing any remaining review-thread bookkeeping.
+Failure signature: build (ubuntu-latest):fail
 
 ## Active Failure Context
-- Category: review
-- Summary: 2 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1147#discussion_r3003875176
+- Category: checks
+- Summary: PR #1147 has failing checks.
+- Command or source: gh pr checks
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1147
 - Details:
-  - .codex-supervisor/issues/1144/issue-journal.md:35 summary=_⚠️ Potential issue_ | _🟡 Minor_ **Clarify the count of unresolved review threads.** Line 30 states "2 unresolved automated review thread(s) remain," but line 33 shows one thre... url=https://github.com/TommyKammy/codex-supervisor/pull/1147#discussion_r3003875176
-  - .codex-supervisor/issues/1144/issue-journal.md:39 summary=_⚠️ Potential issue_ | _🟡 Minor_ **Use proper brand capitalization for GitHub.** The text contains `github/main` which should be `GitHub/main` to match the proper capitalizatio... url=https://github.com/TommyKammy/codex-supervisor/pull/1147#discussion_r3003875181
+  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23674219411/job/68973994332
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: Persisted artifact promotion was too permissive. Runtime external-review history accepted malformed optional evidence fields, and post-merge audit summarization trusted embedded local-review identity without checking it against the merged context.
-- What changed: Added reusable identity/evidence validation helpers, enforced fail-closed validation before promoting persisted external-review miss artifacts, skipped post-merge audit artifacts whose embedded local-review issue/PR/branch/head identity mismatches the authoritative merged context, added focused regression tests, documented the guardrail in `docs/local-review.md`, merged `GitHub/main` at `a5d6e16`, resolved the resulting conflicts in `src/supervisor/post-merge-audit-summary.ts` and `src/supervisor/post-merge-audit-summary.test.ts`, tightened `src/external-review/external-review-miss-artifact.ts` so durable-guardrail provenance `issueNumber` and `prNumber` must be positive integers before promotion, added production-call-shape coverage for promotability checks that omit `headSha`, and removed the stale `6ad7898` SHA reference from this journal handoff.
+- Hypothesis: The remaining CI failure is a journal-only hygiene regression, not a code-path regression. PR #1147's committed journal still contained workstation-local absolute memory-file paths, so `verify:paths` failed before the rest of the Ubuntu build could proceed.
+- What changed: Reproduced the failing `verify:paths` job from Actions run `23674219411`, kept the path-redacted `Last focused commands` journal entry, refreshed the handoff to match the CI root cause, and reran `npm run verify:paths` plus `npm run build` locally after the journal-only repair.
 - Current blocker: none
-- Next exact step: Resolve or reply to PR #1147's remaining automated review threads, noting that the unresolved-count comment is already stale against the current journal text and that the brand-capitalization fix shipped in `c62ed34`.
-- Verification gap: No code paths changed in this turn, so I only re-checked the journal text locally; the earlier focused external-review artifact/history tests, post-merge audit summary test, and `npm run build` remain the latest code verification for this issue.
-- Files touched: .codex-supervisor/issues/1144/issue-journal.md; docs/local-review.md; src/persisted-artifact-promotion.ts; src/external-review/external-review-miss-artifact.ts; src/external-review/external-review-miss-artifact.test.ts; src/external-review/external-review-miss-history.ts; src/external-review/external-review-miss-history.test.ts; src/local-review/repair-context.ts; src/local-review/runner.ts; src/supervisor/post-merge-audit-summary.ts; src/supervisor/post-merge-audit-summary.test.ts; src/supervisor/supervisor-status-rendering.ts
-- Rollback concern: Tightened validation now skips malformed or mismatched persisted artifacts instead of promoting them; if older artifacts relied on permissive parsing, operator-facing summaries may surface fewer historical runtime hints until those artifacts are regenerated.
-- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self-clean/.local/memory/TommyKammy-codex-supervisor/issue-1144/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self-clean/.local/memory/TommyKammy-codex-supervisor/issue-1144/context-index.md`; `sed -n '1,260p' .codex-supervisor/issues/1144/issue-journal.md`; `nl -ba .codex-supervisor/issues/1144/issue-journal.md | sed -n '1,140p'`; `rg -n "github/main|GitHub/main|unresolved automated review thread\\(s\\) remain|Addressed in commit" .codex-supervisor/issues/1144/issue-journal.md`; `git commit -m "docs: fix issue 1144 journal review notes"`; `git push github codex/issue-1144`
+- Next exact step: Push the journal-only fix and confirm PR #1147 reruns `build (ubuntu-latest)` cleanly against the redacted journal text.
+- Verification gap: This turn only changed the issue journal. I reran `npm run verify:paths` and `npm run build`, but I did not rerun the earlier focused persisted-artifact regression tests because the source files under `src/` were unchanged.
+- Files touched: .codex-supervisor/issues/1144/issue-journal.md
+- Rollback concern: Reverting this repair would reintroduce forbidden workstation-local absolute paths into a committed durable artifact and immediately break `verify:paths` again on Linux runners.
+- Last focused command:
+- Last focused commands: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' .codex-supervisor/issues/1144/issue-journal.md`; `gh pr checks 1147`; `gh run view 23674219411 --log-failed`; `rg -n 'redacted-local-path|workstation-local' .codex-supervisor/issues/1144/issue-journal.md`; `npm run verify:paths`; `npm run build`
 ### Scratchpad
 - 2026-03-28: Re-checked the two remaining CodeRabbit comments before editing. The unresolved-count complaint is stale because the current journal now lists two unresolved threads without any embedded "Addressed in commit" entry; only the `github/main` brand-capitalization comment still required a local change.
+- 2026-03-28: The current CI failure is from `verify:paths`, not from the persisted-artifact implementation. The failing Ubuntu log points directly to previously committed workstation-local absolute paths in this journal, and the redacted worktree now passes that guard locally.
 - Keep this section short. The supervisor may compact older notes automatically.
