@@ -14,6 +14,7 @@ Issue lint should report missing sections.`,
     createdAt: "2026-03-19T00:00:00Z",
     updatedAt: "2026-03-19T00:00:00Z",
     url: "https://example.test/issues/103",
+    labels: [],
     state: "OPEN",
   };
 
@@ -50,6 +51,7 @@ Parallelizable: Later
     createdAt: "2026-03-19T00:00:00Z",
     updatedAt: "2026-03-19T00:00:00Z",
     url: "https://example.test/issues/104",
+    labels: [],
     state: "OPEN",
   };
 
@@ -85,6 +87,7 @@ Parallelizable: No
     createdAt: "2026-03-19T00:00:00Z",
     updatedAt: "2026-03-19T00:00:00Z",
     url: "https://example.test/issues/105",
+    labels: [],
     state: "OPEN",
   };
 
@@ -94,5 +97,40 @@ Parallelizable: No
   assert.match(
     report,
     /^metadata_errors=depends on duplicates parent epic #900; remove it and keep only real blocking issues$/m,
+  );
+});
+
+test("issue lint reports missing labels as a blocking metadata input problem", async () => {
+  const { loadIssueLintReport } = await createIssueLintFixture();
+
+  const issue: GitHubIssue = {
+    number: 106,
+    title: "Missing labels payload",
+    body: `## Summary
+Issue lint should fail closed when label data is missing from the fetched issue payload.
+
+## Scope
+- keep label-gated execution policy fail-closed
+
+## Acceptance criteria
+- missing labels do not behave like an empty label set
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-diagnostics-issue-lint-metadata.test.ts`,
+    createdAt: "2026-03-19T00:00:00Z",
+    updatedAt: "2026-03-19T00:00:00Z",
+    url: "https://example.test/issues/106",
+    state: "OPEN",
+  };
+
+  const report = await loadIssueLintReport(issue);
+
+  assert.match(report, /^issue=#106$/m);
+  assert.match(report, /^execution_ready=no$/m);
+  assert.match(report, /^missing_required=none$/m);
+  assert.match(report, /^metadata_errors=issue labels are missing; cannot evaluate label-gated execution policy$/m);
+  assert.match(
+    report,
+    /^repair_guidance_1=Refresh the issue payload so labels are present before rerunning issue lint or selection\.$/m,
   );
 });

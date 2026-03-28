@@ -3,7 +3,9 @@ import { GitHubClient } from "./github";
 import {
   findBlockingIssue,
   findHighRiskBlockingAmbiguity,
+  hasAvailableIssueLabels,
   isRecordDoneForSequencing,
+  LABEL_GATED_POLICY_MISSING_LABELS_MESSAGE,
   lintExecutionReadyIssueBody,
   parseIssueMetadata,
   validateIssueMetadataSyntax,
@@ -176,6 +178,24 @@ function buildExecutionReadyFailureContext(
       `missing_recommended=${
         missingRecommended.length > 0 ? formatExecutionReadyMissingFields(missingRecommended) : "none"
       }`,
+    ],
+    url: issue.url,
+    updated_at: nowIso(),
+  };
+}
+
+function buildMissingLabelsFailureContext(
+  issue: Pick<GitHubIssue, "number" | "url">,
+): FailureContext {
+  return {
+    category: "blocked",
+    summary: `Issue #${issue.number} is blocked because ${LABEL_GATED_POLICY_MISSING_LABELS_MESSAGE}.`,
+    signature: "metadata:labels_unavailable",
+    command: null,
+    details: [
+      "label_gate=blocked",
+      "labels=missing",
+      "Refresh the issue payload so labels are present before rerunning selection.",
     ],
     url: issue.url,
     updated_at: nowIso(),
@@ -438,6 +458,34 @@ export async function resolveRunnableIssueContext(
       state.issues[String(record.issue_number)] = record;
       state.activeIssueNumber = null;
       await stateStore.save(state);
+      shouldReleaseIssueLock = false;
+      await issueLock.release();
+      return { kind: "restart" };
+    }
+
+    if (!hasAvailableIssueLabels(issue)) {
+      const journalContext = await ensureRecordJournalContext(record);
+      const failureContext = buildMissingLabelsFailureContext(issue);
+      const blockedRecord = stateStore.touch(record, {
+        ...journalContext,
+        state: "blocked",
+        last_error: truncate(failureContext.summary, 1000),
+        last_failure_kind: null,
+        last_failure_context: failureContext,
+        ...applyFailureSignature(record, failureContext),
+        blocked_reason: "requirements",
+      });
+      state.issues[String(blockedRecord.issue_number)] = blockedRecord;
+      state.activeIssueNumber = null;
+      await stateStore.save(state);
+      if (blockedRecord.journal_path) {
+        await syncIssueJournalImpl({
+          issue,
+          record: blockedRecord,
+          journalPath: blockedRecord.journal_path,
+          maxChars: config.issueJournalMaxChars,
+        });
+      }
       shouldReleaseIssueLock = false;
       await issueLock.release();
       return { kind: "restart" };

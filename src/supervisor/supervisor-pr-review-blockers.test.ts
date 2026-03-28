@@ -74,6 +74,7 @@ test("runOnce reprocesses a configured bot review thread once after a new PR hea
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const pr: GitHubPullRequest = {
@@ -221,6 +222,7 @@ test("runOnce does not mark configured bot review threads as processed for a ref
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const initialPr: GitHubPullRequest = {
@@ -325,6 +327,7 @@ test("runOnce still reevaluates an active tracked PR into addressing_review when
     createdAt: "2026-03-26T01:30:00Z",
     updatedAt: "2026-03-26T01:30:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const pr: GitHubPullRequest = {
@@ -461,6 +464,7 @@ test("runOnce still reevaluates an active tracked PR into addressing_review when
     createdAt: "2026-03-26T01:30:00Z",
     updatedAt: "2026-03-26T01:30:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const pr: GitHubPullRequest = {
@@ -616,6 +620,7 @@ Depends on: #${dependencyNumber}
     createdAt: "2026-03-26T01:30:00Z",
     updatedAt: "2026-03-26T01:30:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const blockingDependency: GitHubIssue = {
@@ -625,6 +630,7 @@ Depends on: #${dependencyNumber}
     createdAt: "2026-03-26T01:20:00Z",
     updatedAt: "2026-03-26T01:20:00Z",
     url: `https://example.test/issues/${dependencyNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const pr: GitHubPullRequest = {
@@ -725,6 +731,7 @@ test("runOnce records verification blocker context when local review blocks merg
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const pr: GitHubPullRequest = {
@@ -805,6 +812,7 @@ test("runOnce records manual review context when GitHub reports changes requeste
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const pr: GitHubPullRequest = {
