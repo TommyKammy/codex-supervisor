@@ -138,6 +138,38 @@ test("inferStateFromPullRequest re-arms CodeRabbit waiting after ready-for-revie
   });
 });
 
+test("inferStateFromPullRequest keeps waiting after ready-for-review when the local review wait was re-armed but current-head CI hydration is missing", () => {
+  withStubbedDateNow("2026-03-13T02:30:10Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      configuredBotInitialGraceWaitSeconds: 90,
+    });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-03-13T02:30:00Z",
+      review_wait_head_sha: "head123",
+    });
+
+    assert.equal(
+      inferStateFromPullRequest(
+        config,
+        record,
+        createPullRequest({
+          copilotReviewState: "not_requested",
+          copilotReviewArrivedAt: null,
+          currentHeadCiGreenAt: null,
+          configuredBotCurrentHeadObservedAt: null,
+          configuredBotTopLevelReviewSubmittedAt: null,
+          configuredBotDraftSkipAt: null,
+        }),
+        passingChecks(),
+        [],
+      ),
+      "waiting_ci",
+    );
+  });
+});
+
 test("inferStateFromPullRequest re-arms CodeRabbit latest-head waiting when the PR advances after an earlier review arrived", () => {
   withStubbedDateNow("2026-03-13T02:32:29Z", () => {
     const config = createConfig({
