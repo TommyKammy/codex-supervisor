@@ -15,10 +15,10 @@
 
 ## Latest Codex Summary
 Summary: Restored local TypeScript tooling with `npm ci`, fixed stale `SupervisorExplainDto` test fixtures for the new mismatch fields, and revalidated the tracked-PR mismatch change with a clean build plus focused HTTP/doctor/status/explain coverage.
-State hint: stabilizing
+State hint: draft_pr
 Blocked reason: none
 Tests: `npm ci`; `npm run build`; `npm test` (fails in unrelated baseline tests outside this issue); `npx tsx --test src/backend/supervisor-http-server.test.ts`; `npx tsx --test src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/doctor.test.ts`
-Next action: commit the focused fixture follow-up, push `codex/issue-1151`, and open a draft PR with the passing targeted verification results
+Next action: monitor draft PR `#1161` and decide whether to chase any out-of-scope baseline `npm test` failures separately from this issue
 Failure signature: none
 
 ## Active Failure Context
@@ -29,7 +29,7 @@ Failure signature: none
 - Hypothesis: Operator diagnostics need a shared tracked-PR comparison against live GitHub PR lifecycle facts, not just persisted local state, to expose stale `blocked`/`failed` records.
 - What changed: Added `src/supervisor/tracked-pr-mismatch.ts`; wired mismatch summaries and guidance into `status`, `doctor`, and `explain`; added focused regression tests for all three surfaces; then fixed backend/browser/service test fixtures to include the new `trackedPrMismatchSummary` and `recoveryGuidance` DTO fields.
 - Current blocker: None.
-- Next exact step: Commit the fixture follow-up, push the branch, and open a draft PR from `codex/issue-1151`.
+- Next exact step: Keep the branch reviewable and use draft PR `#1161` for review while keeping unrelated broad-suite failures out of this issue scope.
 - Verification gap: Broad `npm test` still fails in unrelated baseline tests (`supervisor-pr-readiness`, `supervisor-recovery-failure-flows`, `supervisor-selection-readiness-summary`, `supervisor-status-rendering`, long browser smoke cases) that are outside the touched mismatch-diagnostics surface.
 - Files touched: src/supervisor/tracked-pr-mismatch.ts; src/supervisor/supervisor.ts; src/supervisor/supervisor-selection-issue-explain.ts; src/doctor.ts; src/supervisor/supervisor-diagnostics-status-selection.test.ts; src/supervisor/supervisor-diagnostics-explain.test.ts; src/doctor.test.ts; src/backend/supervisor-http-server.test.ts; src/backend/webui-dashboard-browser-smoke.test.ts; src/supervisor/supervisor-service.test.ts
 - Rollback concern: Low; the change is additive diagnostics-only logic that does not mutate tracked state.
