@@ -2,6 +2,7 @@ import { GitHubIssue, SupervisorStateFile } from "./core/types";
 import {
   buildLastSuccessfulInventorySnapshot,
   buildInventoryRefreshFailure,
+  canUseSnapshotBackedSelectionAfterInventoryRefreshFailure,
   inventoryRefreshFailureEquals,
 } from "./inventory-refresh-state";
 import {
@@ -160,8 +161,10 @@ export async function runOnceCyclePrelude(
         successfulIssues: issues,
       });
     } catch (error) {
+      const previousFailure = state.inventory_refresh_failure;
+      const nextFailure = buildInventoryRefreshFailure(error);
       await persistInventoryRefreshState({
-        nextFailure: buildInventoryRefreshFailure(error),
+        nextFailure,
       });
       if (activeRecord !== null && activeRecord.pr_number !== null) {
         await setReconciliationPhase("tracked_merged_but_open_issues");
@@ -195,6 +198,21 @@ export async function runOnceCyclePrelude(
         const recoverableBlockedEvents = await args.reconcileRecoverableBlockedIssueStates(state, []);
         recoveryEvents.push(...recoverableBlockedEvents);
         emitRecoveryEvents(recoverableBlockedEvents);
+      }
+
+      if (
+        state.activeIssueNumber === null
+        && canUseSnapshotBackedSelectionAfterInventoryRefreshFailure({
+          failure: nextFailure,
+          snapshot: state.last_successful_inventory_snapshot,
+          previousFailure,
+        })
+        && await args.reserveRunnableIssueSelection?.(state) === true
+      ) {
+        return {
+          state,
+          recoveryEvents,
+        };
       }
 
       return {

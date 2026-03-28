@@ -836,6 +836,145 @@ test("runOnceCyclePrelude blocks new selection when full inventory refresh is ma
   assert.equal(result.state.inventory_refresh_failure?.source, "gh issue list");
 });
 
+test("runOnceCyclePrelude allows new selection after a transient full inventory refresh failure when a fresh snapshot exists", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+    last_successful_inventory_snapshot: {
+      source: "gh issue list",
+      recorded_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      issue_count: 1,
+      issues: [
+        {
+          number: 91,
+          title: "Fresh snapshot candidate",
+          body: "## Summary\nAllow snapshot-backed selection after a transient refresh failure.",
+          createdAt: "2026-03-26T00:00:00Z",
+          updatedAt: "2026-03-26T00:00:00Z",
+          url: "https://example.test/issues/91",
+          state: "OPEN",
+        },
+      ],
+    },
+  };
+  const savedStates: SupervisorStateFile[] = [];
+  let reserveCallCount = 0;
+
+  const result = await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+      save: async (nextState) => {
+        savedStates.push(structuredClone(nextState));
+      },
+    },
+    carryoverRecoveryEvents: [],
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => {
+      throw new Error(
+        'Transient GitHub CLI failure after 3 attempts: gh issue list --repo owner/repo\nCommand failed: gh issue list --repo owner/repo\nexitCode=1\nPost "https://api.github.com/graphql": read tcp 127.0.0.1:12345->140.82.112.6:443: read: connection reset by peer',
+      );
+    },
+    reserveRunnableIssueSelection: async () => {
+      reserveCallCount += 1;
+      return true;
+    },
+    reconcileTrackedMergedButOpenIssues: async () => {
+      throw new Error("unexpected reconcileTrackedMergedButOpenIssues call");
+    },
+    reconcileMergedIssueClosures: async () => {
+      throw new Error("unexpected reconcileMergedIssueClosures call");
+    },
+    reconcileStaleFailedIssueStates: async () => {
+      throw new Error("unexpected reconcileStaleFailedIssueStates call");
+    },
+    reconcileRecoverableBlockedIssueStates: async () => {
+      throw new Error("unexpected reconcileRecoverableBlockedIssueStates call");
+    },
+    reconcileParentEpicClosures: async () => {
+      throw new Error("unexpected reconcileParentEpicClosures call");
+    },
+    cleanupExpiredDoneWorkspaces: async () => {
+      throw new Error("unexpected cleanupExpiredDoneWorkspaces call");
+    },
+  });
+
+  assert.ok(!("kind" in result));
+  assert.equal(savedStates.length, 1);
+  assert.equal(savedStates[0]?.inventory_refresh_failure?.source, "gh issue list");
+  assert.equal(reserveCallCount, 1);
+});
+
+test("runOnceCyclePrelude still blocks new selection after repeated transient full inventory refresh failures", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+    inventory_refresh_failure: {
+      source: "gh issue list",
+      message:
+        'Transient GitHub CLI failure after 3 attempts: gh issue list --repo owner/repo\nCommand failed: gh issue list --repo owner/repo\nexitCode=1\nPost "https://api.github.com/graphql": read tcp 127.0.0.1:12345->140.82.112.6:443: read: connection reset by peer',
+      recorded_at: "2026-03-26T00:09:00Z",
+    },
+    last_successful_inventory_snapshot: {
+      source: "gh issue list",
+      recorded_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      issue_count: 1,
+      issues: [
+        {
+          number: 91,
+          title: "Fresh snapshot candidate",
+          body: "## Summary\nBlock repeated transient refresh failures.",
+          createdAt: "2026-03-26T00:00:00Z",
+          updatedAt: "2026-03-26T00:00:00Z",
+          url: "https://example.test/issues/91",
+          state: "OPEN",
+        },
+      ],
+    },
+  };
+  let reserveCallCount = 0;
+
+  const result = await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+      save: async () => {},
+    },
+    carryoverRecoveryEvents: [],
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => {
+      throw new Error(
+        'Transient GitHub CLI failure after 3 attempts: gh issue list --repo owner/repo\nCommand failed: gh issue list --repo owner/repo\nexitCode=1\nPost "https://api.github.com/graphql": read tcp 127.0.0.1:12345->140.82.112.6:443: read: connection reset by peer',
+      );
+    },
+    reserveRunnableIssueSelection: async () => {
+      reserveCallCount += 1;
+      return true;
+    },
+    reconcileTrackedMergedButOpenIssues: async () => {
+      throw new Error("unexpected reconcileTrackedMergedButOpenIssues call");
+    },
+    reconcileMergedIssueClosures: async () => {
+      throw new Error("unexpected reconcileMergedIssueClosures call");
+    },
+    reconcileStaleFailedIssueStates: async () => {
+      throw new Error("unexpected reconcileStaleFailedIssueStates call");
+    },
+    reconcileRecoverableBlockedIssueStates: async () => {
+      throw new Error("unexpected reconcileRecoverableBlockedIssueStates call");
+    },
+    reconcileParentEpicClosures: async () => {
+      throw new Error("unexpected reconcileParentEpicClosures call");
+    },
+    cleanupExpiredDoneWorkspaces: async () => {
+      throw new Error("unexpected cleanupExpiredDoneWorkspaces call");
+    },
+  });
+
+  assert.ok(!("kind" in result));
+  assert.equal(reserveCallCount, 0);
+});
+
 test("runOnceCyclePrelude records rate-limited inventory refresh failures distinctly while keeping active tracked reconciliation available", async () => {
   const state: SupervisorStateFile = {
     activeIssueNumber: 41,
