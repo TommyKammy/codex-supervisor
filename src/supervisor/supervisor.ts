@@ -1579,7 +1579,7 @@ export class Supervisor {
           syncCopilotReviewTimeoutState,
           inferGitHubWaitStep,
         }, updateReconciliationProgress),
-      reconcileRecoverableBlockedIssueStates: (state, issues) =>
+      reconcileRecoverableBlockedIssueStates: (state, issues, options) =>
         reconcileRecoverableBlockedIssueStates(this.github, this.stateStore, state, this.config, issues, {
           shouldAutoRetryHandoffMissing,
           inferStateFromPullRequest,
@@ -1589,7 +1589,7 @@ export class Supervisor {
           syncReviewWaitWindow,
           syncCopilotReviewRequestObservation,
           syncCopilotReviewTimeoutState,
-        }),
+        }, options),
       reconcileParentEpicClosures: (state, issues) =>
         reconcileParentEpicClosures(this.github, this.stateStore, state, issues),
       cleanupExpiredDoneWorkspaces: (state) => cleanupExpiredDoneWorkspaces(this.config, state),

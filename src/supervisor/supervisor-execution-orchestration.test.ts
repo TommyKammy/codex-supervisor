@@ -247,7 +247,7 @@ test("runOnce dry-run selects an issue and hydrates workspace and PR context bef
   assert.equal(reviewThreadCalls, 1);
 });
 
-test("runOnce reserves a runnable issue before unrelated tracked-PR reconciliation work", async () => {
+test("runOnce reconciles tracked PR state before reserving a new runnable issue", async () => {
   const fixture = await createSupervisorFixture();
   const selectedIssueNumber = 91;
   const unrelatedIssueNumber = 92;
@@ -281,6 +281,15 @@ test("runOnce reserves a runnable issue before unrelated tracked-PR reconciliati
     labels: [],
   });
 
+  const unrelatedPr = createPullRequest({
+    number: 192,
+    title: "Existing tracked PR",
+    createdAt: "2026-03-13T00:03:00Z",
+    headRefName: unrelatedBranch,
+    headRefOid: "head-192",
+  });
+
+  let trackedPrReconciled = false;
   let selectedIssueFetched = false;
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
@@ -296,9 +305,10 @@ test("runOnce reserves a runnable issue before unrelated tracked-PR reconciliati
     getChecks: async () => [],
     getUnresolvedReviewThreads: async () => [],
     getPullRequestIfExists: async (prNumber: number) => {
-      throw new Error(
-        `unrelated reconciliation touched PR #${prNumber} before selected issue #${selectedIssueNumber} was claimed`,
-      );
+      assert.equal(prNumber, unrelatedPr.number);
+      assert.equal(selectedIssueFetched, false);
+      trackedPrReconciled = true;
+      return unrelatedPr;
     },
     getMergedPullRequestsClosingIssue: async () => [],
     closeIssue: async () => {
@@ -311,6 +321,7 @@ test("runOnce reserves a runnable issue before unrelated tracked-PR reconciliati
 
   const message = await supervisor.runOnce({ dryRun: true });
   assert.match(message, /Dry run: would invoke Codex for issue #91\./);
+  assert.equal(trackedPrReconciled, true);
   assert.equal(selectedIssueFetched, true);
 
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
