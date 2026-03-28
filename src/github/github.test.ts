@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { GitHubClient } from "./github";
+import { runCommand } from "../core/command";
 import { GitHubIssue, GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
@@ -714,6 +715,129 @@ test("GitHubClient listAllIssues falls back to paginated API inventory when gh i
   assert.equal(issues[0]?.state, "CLOSED");
   assert.equal(issues[1]?.state, "OPEN");
   assert.ok(!issues.some((issue) => issue.number === 999));
+});
+
+test("GitHubClient listAllIssues parses large gh issue list inventory payloads without local stdout truncation", async () => {
+  const config = createConfig();
+  const backlog = Array.from({ length: 220 }, (_value, index) => ({
+    number: index + 1,
+    title: `Issue ${index + 1}`,
+    body: `Body ${index + 1} ${"x".repeat(500)}`,
+    createdAt: "2026-03-01T00:00:00Z",
+    updatedAt: "2026-03-01T12:00:00Z",
+    url: `https://example.test/issues/${index + 1}`,
+    labels: [{ name: "inventory" }],
+    state: "OPEN",
+  }));
+  let issueListCalls = 0;
+  let fallbackPageCalls = 0;
+  const client = new GitHubClient(config, async (_command, args, options) => {
+    if (args[0] === "issue" && args[1] === "list") {
+      issueListCalls += 1;
+      return runCommand(
+        process.execPath,
+        [
+          "-e",
+          `
+            const backlog = Array.from({ length: 220 }, (_, index) => ({
+              number: index + 1,
+              title: \`Issue \${index + 1}\`,
+              body: \`Body \${index + 1} ${"x".repeat(500)}\`,
+              createdAt: "2026-03-01T00:00:00Z",
+              updatedAt: "2026-03-01T12:00:00Z",
+              url: \`https://example.test/issues/\${index + 1}\`,
+              labels: [{ name: "inventory" }],
+              state: "OPEN",
+            }));
+            process.stdout.write(JSON.stringify(backlog));
+          `,
+        ],
+        options,
+      );
+    }
+
+    if (args[0] === "api" && args[1] === "repos/owner/repo/issues") {
+      fallbackPageCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: "[]",
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const issues = await client.listAllIssues();
+
+  assert.equal(issueListCalls, 1);
+  assert.equal(fallbackPageCalls, 0);
+  assert.equal(issues.length, backlog.length);
+  assert.equal(issues[0]?.title, backlog[0]?.title);
+  assert.equal(issues.at(-1)?.body, backlog.at(-1)?.body);
+});
+
+test("GitHubClient listAllIssues parses large REST fallback inventory payloads without local stdout truncation", async () => {
+  const config = createConfig();
+  const backlog = Array.from({ length: 180 }, (_value, index) => ({
+    number: index + 1,
+    title: `Issue ${index + 1}`,
+    body: `Body ${index + 1} ${"y".repeat(700)}`,
+    created_at: "2026-03-01T00:00:00Z",
+    updated_at: "2026-03-01T12:00:00Z",
+    html_url: `https://example.test/issues/${index + 1}`,
+    state: index % 2 === 0 ? "open" : "closed",
+    labels: [{ name: "inventory" }],
+  }));
+  let issueListCalls = 0;
+  let fallbackPageCalls = 0;
+  const client = new GitHubClient(config, async (_command, args, options) => {
+    if (args[0] === "issue" && args[1] === "list") {
+      issueListCalls += 1;
+      return {
+        exitCode: 0,
+        stdout: "[{\"number\":1,\"title\":\"bad\njson\"}]",
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "repos/owner/repo/issues") {
+      fallbackPageCalls += 1;
+      const page = Number(args.find((arg) => arg.startsWith("page="))?.slice("page=".length) ?? "1");
+      return runCommand(
+        process.execPath,
+        [
+          "-e",
+          page === 1
+            ? `
+                const backlog = Array.from({ length: 180 }, (_, index) => ({
+                  number: index + 1,
+                  title: \`Issue \${index + 1}\`,
+                  body: \`Body \${index + 1} ${"y".repeat(700)}\`,
+                  created_at: "2026-03-01T00:00:00Z",
+                  updated_at: "2026-03-01T12:00:00Z",
+                  html_url: \`https://example.test/issues/\${index + 1}\`,
+                  state: index % 2 === 0 ? "open" : "closed",
+                  labels: [{ name: "inventory" }],
+                }));
+                process.stdout.write(JSON.stringify(backlog));
+              `
+            : `process.stdout.write("[]");`,
+        ],
+        options,
+      );
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const issues = await client.listAllIssues();
+
+  assert.equal(issueListCalls, 1);
+  assert.equal(fallbackPageCalls, 2);
+  assert.equal(issues.length, backlog.length);
+  assert.equal(issues[0]?.number, backlog[0]?.number);
+  assert.equal(issues.at(-1)?.state, "CLOSED");
 });
 
 test("GitHubClient listAllIssues preserves gh issue list transport failures", async () => {
