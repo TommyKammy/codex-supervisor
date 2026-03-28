@@ -367,6 +367,103 @@ Depends on: #91`,
   assert.match(status, /^selection_reason=inventory_refresh_degraded$/m);
 });
 
+test("statusReport exposes bounded snapshot-backed selection posture when degraded selection can continue", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+    inventory_refresh_failure: {
+      source: "gh issue list",
+      message:
+        'Transient GitHub CLI failure after 3 attempts: gh issue list --repo owner/repo\nCommand failed: gh issue list --repo owner/repo\nexitCode=1\nPost "https://api.github.com/graphql": read tcp 127.0.0.1:12345->140.82.112.6:443: read: connection reset by peer',
+      recorded_at: "2026-03-26T00:10:00Z",
+      selection_permitted: "snapshot_backed",
+    },
+    last_successful_inventory_snapshot: {
+      source: "gh issue list",
+      recorded_at: "2026-03-26T00:05:00Z",
+      issue_count: 1,
+      issues: [
+        {
+          number: 92,
+          title: "Snapshot-backed runnable candidate",
+          body: `## Summary
+Use the last-known-good snapshot for bounded degraded selection.
+
+## Scope
+- keep operator-facing posture aligned with snapshot-backed continuation
+
+## Acceptance criteria
+- status distinguishes bounded degraded selection from hard-blocked degraded mode
+
+## Verification
+- npm test -- src/supervisor/supervisor-diagnostics-status-selection.test.ts`,
+          createdAt: "2026-03-26T00:01:00Z",
+          updatedAt: "2026-03-26T00:01:00Z",
+          url: "https://example.test/issues/92",
+          labels: [],
+          state: "OPEN",
+        },
+      ],
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => {
+      throw new Error("unexpected listCandidateIssues call");
+    },
+    listAllIssues: async () => {
+      throw new Error("unexpected listAllIssues call");
+    },
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport({ why: true });
+
+  assert.deepEqual(report.inventoryStatus, {
+    mode: "degraded",
+    posture: "bounded_snapshot_selection",
+    recoveryState: "partially_degraded",
+    selectionBlocked: false,
+    summary: "Full inventory refresh is degraded; bounded queue selection can continue from a fresh last-known-good snapshot.",
+    recoveryGuidance:
+      "Restore a successful full inventory refresh soon; bounded snapshot-backed selection can continue temporarily while fresh inventory is unavailable.",
+    recoveryActions: [
+      "restore_full_inventory_refresh",
+      "continue_bounded_snapshot_selection",
+    ],
+    lastSuccessfulFullRefreshAt: "2026-03-26T00:05:00Z",
+    failure: {
+      source: "gh issue list",
+      message:
+        'Transient GitHub CLI failure after 3 attempts: gh issue list --repo owner/repo\nCommand failed: gh issue list --repo owner/repo\nexitCode=1\nPost "https://api.github.com/graphql": read tcp 127.0.0.1:12345->140.82.112.6:443: read: connection reset by peer',
+      recordedAt: "2026-03-26T00:10:00Z",
+      classification: "unknown",
+    },
+  });
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^inventory_posture=bounded_snapshot_selection recovery_state=partially_degraded selection_blocked=no last_successful_full_refresh_at=2026-03-26T00:05:00Z$/m,
+  );
+
+  const status = await supervisor.status({ why: true });
+  assert.match(
+    status,
+    /^inventory_posture=bounded_snapshot_selection recovery_state=partially_degraded selection_blocked=no last_successful_full_refresh_at=2026-03-26T00:05:00Z$/m,
+  );
+  assert.match(
+    status,
+    /^readiness_warning=Full inventory refresh is degraded\. Bounded snapshot-backed selection can continue temporarily\./m,
+  );
+});
+
 test("statusReport exposes typed targeted degraded reconciliation posture for operators", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {

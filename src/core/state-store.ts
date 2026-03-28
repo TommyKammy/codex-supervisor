@@ -223,6 +223,9 @@ function normalizeStateForLoad(raw: SupervisorStateFile | null | undefined): Sup
       ...(raw.inventory_refresh_failure.classification === "rate_limited"
         ? { classification: "rate_limited" as const }
         : {}),
+      ...(raw.inventory_refresh_failure.selection_permitted === "snapshot_backed"
+        ? { selection_permitted: "snapshot_backed" as const }
+        : {}),
       ...(normalizeInventoryRefreshDiagnostics(raw.inventory_refresh_failure.diagnostics)
         ? { diagnostics: normalizeInventoryRefreshDiagnostics(raw.inventory_refresh_failure.diagnostics) }
         : {}),
@@ -276,6 +279,9 @@ function normalizeStateForSave(raw: SupervisorStateFile | null | undefined): Sup
       recorded_at: raw.inventory_refresh_failure.recorded_at,
       ...(raw.inventory_refresh_failure.classification === "rate_limited"
         ? { classification: "rate_limited" as const }
+        : {}),
+      ...(raw.inventory_refresh_failure.selection_permitted === "snapshot_backed"
+        ? { selection_permitted: "snapshot_backed" as const }
         : {}),
       ...(normalizeInventoryRefreshDiagnostics(raw.inventory_refresh_failure.diagnostics)
         ? { diagnostics: normalizeInventoryRefreshDiagnostics(raw.inventory_refresh_failure.diagnostics) }
