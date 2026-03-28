@@ -412,6 +412,31 @@ test("StateStore roundtrip preserves inventory refresh diagnostics", async () =>
   });
 });
 
+test("StateStore roundtrip preserves degraded snapshot selection posture metadata", async () => {
+  await withTempDir(async (dir) => {
+    const state: SupervisorStateFile = {
+      activeIssueNumber: null,
+      issues: {},
+      inventory_refresh_failure: {
+        source: "gh issue list",
+        message: "Transient inventory refresh failure.",
+        recorded_at: "2026-03-28T07:16:21.409Z",
+        selection_permitted: "snapshot_backed",
+      },
+    };
+
+    const jsonStore = new StateStore(path.join(dir, "state.json"), { backend: "json" });
+    await jsonStore.save(state);
+    const loadedJson = await jsonStore.load();
+    assert.deepEqual(loadedJson.inventory_refresh_failure, state.inventory_refresh_failure);
+
+    const sqliteStore = new StateStore(path.join(dir, "state.sqlite"), { backend: "sqlite" });
+    await sqliteStore.save(state);
+    const loadedSqlite = await sqliteStore.load();
+    assert.deepEqual(loadedSqlite.inventory_refresh_failure, state.inventory_refresh_failure);
+  });
+});
+
 test("StateStore save canonicalizes legacy inventory artifact paths to preview_artifact_path", async () => {
   await withTempDir(async (dir) => {
     const state: SupervisorStateFile = {

@@ -152,6 +152,10 @@ export function buildInventoryRefreshWarningMessage(state: SupervisorStateFile):
 
   const snapshotLine = formatLastSuccessfulInventorySnapshotStatusLine(state.last_successful_inventory_snapshot);
   if (snapshotLine) {
+    if (state.inventory_refresh_failure?.selection_permitted === "snapshot_backed") {
+      return `Full inventory refresh is degraded. Bounded snapshot-backed selection can continue temporarily. ${line} ${snapshotLine}`;
+    }
+
     return `Full inventory refresh is degraded. Using the last-known-good snapshot for diagnostics only. ${line} ${snapshotLine}`;
   }
 
