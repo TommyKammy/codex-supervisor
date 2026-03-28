@@ -6,25 +6,29 @@
 - Workspace: .
 - Journal: .codex-supervisor/issues/1152/issue-journal.md
 - Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 08818020a6547027b7308ef9121793bff28ad1b6
+- Attempt count: 3 (implementation=3, repair=0)
+- Last head SHA: 990219fff88edc5a07571723f99fc8b0dfa2b16b
 - Blocked reason: none
 - Last failure signature: stale-stabilizing-no-pr-recovery-loop
 - Repeated failure signature count: 0
-- Updated at: 2026-03-28T04:33:56.693Z
+- Updated at: 2026-03-28T04:38:00.507Z
 
 ## Latest Codex Summary
-Implemented cycle-start tracked-PR rehydration for stale blocked lifecycle state and committed it as `0881802` (`Rehydrate tracked blocked PR lifecycle at cycle start`).
+Added a small test-only stabilization commit, `990219f` (`Fix orchestration fixture labels for stale no-PR recovery`).
 
-The main change is in [src/run-once-cycle-prelude.ts](src/run-once-cycle-prelude.ts) and [src/recovery-reconciliation.ts](src/recovery-reconciliation.ts): selection is now delayed only when tracked PR records actually need live rehydration, blocked tracked PRs with stale `manual_review`/`verification` state are refreshed from live PR/check/review-thread facts, and degraded inventory refresh now still rehydrates those tracked PRs directly. I added focused regressions in [src/run-once-cycle-prelude.test.ts](src/run-once-cycle-prelude.test.ts) and [src/supervisor/supervisor-recovery-reconciliation.test.ts](src/supervisor/supervisor-recovery-reconciliation.test.ts), and wired the supervisor path in [src/supervisor/supervisor.ts](src/supervisor/supervisor.ts).
+The actual issue implementation remains the earlier tracked-PR rehydration work. This turn fixed the remaining red orchestration test by making the raw `GitHubIssue` fixtures explicit about `labels: []`, which matches the current metadata contract where missing labels are blocked as `metadata:labels_unavailable` rather than treated as unlabeled. I also updated the issue journal with the failure cause, commands run, and current handoff.
 
-Focused verification passed. A broader orchestration run still has one failing test on an issue-label metadata gate (`metadata:labels_unavailable`), which does not appear to be in the tracked-PR rehydration path.
+Verification passed:
+- `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts`
+- `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`
 
-Summary: Rehydrated stale blocked tracked PR lifecycle from live GitHub facts at cycle start, including degraded-refresh fallback, and added focused regressions.
+There are still non-fatal execution-metrics chronology warnings emitted during some tests, but they did not fail either suite and were not changed here.
+
+Summary: Fixed the remaining stale no-PR orchestration test by adding explicit empty labels to raw issue fixtures, updated the journal, and committed a clean stabilization checkpoint.
 State hint: stabilizing
-Blocked reason: verification
-Tests: `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts` passed; `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts` has 1 failing broader test (`runOnce preserves stale no-PR recovery tracking across a successful no-PR turn and converges on the next stale cleanup`)
-Next action: Investigate the remaining orchestration test’s label-gate failure and decide whether the fixture should carry labels or the no-PR retry path should bypass that metadata gate
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts` passed; `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts` passed
+Next action: Keep the branch as the current reviewable checkpoint, or open/update the draft PR if you want this checkpoint published now.
 Failure signature: stale-stabilizing-no-pr-recovery-loop
 
 ## Active Failure Context
@@ -32,13 +36,13 @@ Failure signature: stale-stabilizing-no-pr-recovery-loop
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining orchestration failure was a stale test fixture assumption, not a tracked-PR rehydration regression. The raw `GitHubIssue` fixture for the stale no-PR recovery path omitted `labels`, and current selection correctly blocks missing labels with `metadata:labels_unavailable` instead of treating them as an empty label set.
-- What changed: added explicit `labels: []` to the raw issue fixtures in `src/supervisor/supervisor-execution-orchestration.test.ts` that were still relying on the older unlabeled fallback behavior. This keeps the stale no-PR orchestration test aligned with the current issue-metadata contract without widening runtime scope.
+- Hypothesis: the branch is now at a reviewable checkpoint. The tracked-PR rehydration implementation and the later orchestration-fixture stabilization both hold under focused local verification, so the remaining work is publication rather than more runtime changes.
+- What changed: no new runtime code this turn. I re-read the branch diff, reverified the targeted suites, and confirmed the implementation still covers both selection-order rehydration and same-head blocked-PR recovery from fresh GitHub facts. I also confirmed `gh` auth is healthy and there is not yet a PR for `codex/issue-1152`.
 - Current blocker: none.
-- Next exact step: keep the branch at a clean checkpoint; the tracked-PR rehydration path and the previously failing orchestration suite are both green locally.
-- Verification gap: none in the intended issue path. There are still non-fatal execution-metrics chronology warnings emitted by some tests, but they did not fail the focused or broader suites exercised here.
+- Next exact step: commit this journal refresh if desired, push `codex/issue-1152`, and open a draft PR against `main` so the current checkpoint is reviewable.
+- Verification gap: none in the intended issue path. Focused suites are green. There are still pre-existing non-fatal execution-metrics chronology warnings in some tests, but they did not fail the runs and were not changed here.
 - Files touched: src/run-once-cycle-prelude.ts; src/recovery-reconciliation.ts; src/supervisor/supervisor.ts; src/run-once-cycle-prelude.test.ts; src/supervisor/supervisor-recovery-reconciliation.test.ts; src/supervisor/supervisor-execution-orchestration.test.ts
 - Rollback concern: low for this checkpoint; the new edit is test-only and constrains fixtures to supply labels explicitly.
-- Last focused commands: `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts`; `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`
+- Last focused commands: `npx tsx --test src/run-once-cycle-prelude.test.ts`; `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts`; `gh auth status`; `gh repo view --json nameWithOwner,defaultBranchRef`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
