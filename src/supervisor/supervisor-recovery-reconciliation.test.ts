@@ -474,6 +474,109 @@ test("reconcileRecoverableBlockedIssueStates resumes conflicted tracked PR hando
   ]);
 });
 
+test("reconcileRecoverableBlockedIssueStates clears stale same-head review-thread blockers after GitHub reports them resolved", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 366,
+        state: "blocked",
+        blocked_reason: "manual_review",
+        pr_number: 191,
+        last_head_sha: "head-191",
+        last_error:
+          "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+        last_failure_kind: null,
+        last_failure_context: {
+          category: "manual",
+          summary:
+            "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+          signature: "stalled-bot:thread-1",
+          command: null,
+          details: ["reviewer=copilot-pull-request-reviewer file=src/file.ts line=12 processed_on_current_head=yes"],
+          url: "https://example.test/pr/191#discussion_r1",
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "stalled-bot:thread-1",
+        repeated_failure_signature_count: 2,
+      }),
+    ],
+  });
+  const issue = createIssue({
+    title: "Recovery issue",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+  const pr = createPullRequest({
+    number: 191,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/191",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-191",
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    copilotReviewState: "arrived",
+    copilotReviewArrivedAt: "2026-03-13T00:10:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async (prNumber: number) => {
+        assert.equal(prNumber, 191);
+        return pr;
+      },
+      getChecks: async (prNumber: number) => {
+        assert.equal(prNumber, 191);
+        return [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+      },
+      getUnresolvedReviewThreads: async (prNumber: number) => {
+        assert.equal(prNumber, 191);
+        return [];
+      },
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "ready_to_merge");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(
+    updated.last_recovery_reason,
+    "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to ready_to_merge using fresh tracked PR #191 facts at head head-191",
+  );
+  assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to ready_to_merge using fresh tracked PR #191 facts at head head-191",
+  ]);
+});
+
 test("reconcileStaleActiveIssueReservation clears a stale reservation and emits a recovery loggable event", async () => {
   const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
   const state: SupervisorStateFile = {
