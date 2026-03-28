@@ -11,18 +11,18 @@
 - Blocked reason: none
 - Last failure signature: PRRT_kwDORgvdZ853aiEX|PRRT_kwDORgvdZ853aiEb
 - Repeated failure signature count: 1
-- Updated at: 2026-03-28T01:17:16Z
+- Updated at: 2026-03-28T01:18:09Z
 
 ## Latest Codex Summary
-Updated [issue-journal.md](.codex-supervisor/issues/1144/issue-journal.md#L36) to capitalize `GitHub/main` in the handoff text, which was the remaining valid CodeRabbit prose fix. I also re-checked the unresolved-count review comment against the current journal and confirmed that thread is stale because the journal no longer contains the previously addressed-entry mismatch it referenced.
+Updated [issue-journal.md](.codex-supervisor/issues/1144/issue-journal.md#L36) to capitalize `GitHub/main` in the handoff text, which was the remaining valid CodeRabbit prose fix. I also re-checked the unresolved-count review comment against the current journal and confirmed that thread is stale because the journal no longer contains the previously addressed-entry mismatch it referenced, then committed and pushed the journal-only fix as `c62ed34`.
 
-No code paths changed in this turn, so I re-verified the journal text locally with `nl -ba .codex-supervisor/issues/1144/issue-journal.md | sed -n '1,140p'` and `rg -n "github/main|GitHub/main|unresolved automated review thread\\(s\\) remain|Addressed in commit" .codex-supervisor/issues/1144/issue-journal.md`. I have not resolved or replied to the GitHub review threads.
+No code paths changed in this turn, so I re-verified the journal text locally with `nl -ba .codex-supervisor/issues/1144/issue-journal.md | sed -n '1,140p'` and `rg -n "github/main|GitHub/main|unresolved automated review thread\\(s\\) remain|Addressed in commit" .codex-supervisor/issues/1144/issue-journal.md`, then pushed `c62ed34` to `github/codex/issue-1144`. I have not resolved or replied to the GitHub review threads.
 
 Summary: Fixed the remaining valid journal prose review comment and confirmed the unresolved-count comment is stale against the current file.
 State hint: addressing_review
 Blocked reason: none
 Tests: not run (journal-only change); local text checks with `nl -ba .codex-supervisor/issues/1144/issue-journal.md | sed -n '1,140p'` and `rg -n "github/main|GitHub/main|unresolved automated review thread\\(s\\) remain|Addressed in commit" .codex-supervisor/issues/1144/issue-journal.md`
-Next action: Commit and push the journal-only review fix, then resolve or reply to PR #1147's remaining review threads with note that the unresolved-count comment is stale.
+Next action: Resolve or reply to PR #1147's remaining review threads, noting that the unresolved-count comment is stale and the `GitHub/main` prose fix shipped in `c62ed34`.
 Failure signature: PRRT_kwDORgvdZ853aiEX|PRRT_kwDORgvdZ853aiEb
 
 ## Active Failure Context
@@ -38,11 +38,11 @@ Failure signature: PRRT_kwDORgvdZ853aiEX|PRRT_kwDORgvdZ853aiEb
 - Hypothesis: Persisted artifact promotion was too permissive. Runtime external-review history accepted malformed optional evidence fields, and post-merge audit summarization trusted embedded local-review identity without checking it against the merged context.
 - What changed: Added reusable identity/evidence validation helpers, enforced fail-closed validation before promoting persisted external-review miss artifacts, skipped post-merge audit artifacts whose embedded local-review issue/PR/branch/head identity mismatches the authoritative merged context, added focused regression tests, documented the guardrail in `docs/local-review.md`, merged `GitHub/main` at `a5d6e16`, resolved the resulting conflicts in `src/supervisor/post-merge-audit-summary.ts` and `src/supervisor/post-merge-audit-summary.test.ts`, tightened `src/external-review/external-review-miss-artifact.ts` so durable-guardrail provenance `issueNumber` and `prNumber` must be positive integers before promotion, added production-call-shape coverage for promotability checks that omit `headSha`, and removed the stale `6ad7898` SHA reference from this journal handoff.
 - Current blocker: none
-- Next exact step: Commit the journal-only review fix, push the branch update, then resolve or reply to PR #1147's remaining automated review threads, noting that the unresolved-count comment is already stale against the current journal text.
+- Next exact step: Resolve or reply to PR #1147's remaining automated review threads, noting that the unresolved-count comment is already stale against the current journal text and that the brand-capitalization fix shipped in `c62ed34`.
 - Verification gap: No code paths changed in this turn, so I only re-checked the journal text locally; the earlier focused external-review artifact/history tests, post-merge audit summary test, and `npm run build` remain the latest code verification for this issue.
 - Files touched: .codex-supervisor/issues/1144/issue-journal.md; docs/local-review.md; src/persisted-artifact-promotion.ts; src/external-review/external-review-miss-artifact.ts; src/external-review/external-review-miss-artifact.test.ts; src/external-review/external-review-miss-history.ts; src/external-review/external-review-miss-history.test.ts; src/local-review/repair-context.ts; src/local-review/runner.ts; src/supervisor/post-merge-audit-summary.ts; src/supervisor/post-merge-audit-summary.test.ts; src/supervisor/supervisor-status-rendering.ts
 - Rollback concern: Tightened validation now skips malformed or mismatched persisted artifacts instead of promoting them; if older artifacts relied on permissive parsing, operator-facing summaries may surface fewer historical runtime hints until those artifacts are regenerated.
-- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self-clean/.local/memory/TommyKammy-codex-supervisor/issue-1144/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self-clean/.local/memory/TommyKammy-codex-supervisor/issue-1144/context-index.md`; `sed -n '1,260p' .codex-supervisor/issues/1144/issue-journal.md`; `nl -ba .codex-supervisor/issues/1144/issue-journal.md | sed -n '1,140p'`; `rg -n "github/main|GitHub/main|unresolved automated review thread\\(s\\) remain|Addressed in commit" .codex-supervisor/issues/1144/issue-journal.md`
+- Last focused commands: `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self-clean/.local/memory/TommyKammy-codex-supervisor/issue-1144/AGENTS.generated.md`; `sed -n '1,220p' /home/tommy/Dev/codex-supervisor-self-clean/.local/memory/TommyKammy-codex-supervisor/issue-1144/context-index.md`; `sed -n '1,260p' .codex-supervisor/issues/1144/issue-journal.md`; `nl -ba .codex-supervisor/issues/1144/issue-journal.md | sed -n '1,140p'`; `rg -n "github/main|GitHub/main|unresolved automated review thread\\(s\\) remain|Addressed in commit" .codex-supervisor/issues/1144/issue-journal.md`; `git commit -m "docs: fix issue 1144 journal review notes"`; `git push github codex/issue-1144`
 ### Scratchpad
 - 2026-03-28: Re-checked the two remaining CodeRabbit comments before editing. The unresolved-count complaint is stale because the current journal now lists two unresolved threads without any embedded "Addressed in commit" entry; only the `github/main` brand-capitalization comment still required a local change.
 - Keep this section short. The supervisor may compact older notes automatically.
