@@ -153,12 +153,17 @@ export async function recoverUnexpectedCodexTurnFailure(args: {
   );
 
   const updated = stateStore.touch(record, {
-    state: "failed",
-    last_error: truncatePreservingStartAndEnd(message),
-    last_failure_kind: failureKind,
-    last_failure_context: failureContext,
-    ...applyFailureSignature(record, failureContext),
-    blocked_reason: null,
+    state: record.pr_number !== null ? record.state : "failed",
+    last_error: record.pr_number !== null ? record.last_error : truncatePreservingStartAndEnd(message),
+    last_failure_kind: record.pr_number !== null ? record.last_failure_kind : failureKind,
+    last_failure_context: record.pr_number !== null ? record.last_failure_context : failureContext,
+    ...(record.pr_number !== null
+      ? {}
+      : applyFailureSignature(record, failureContext)),
+    last_runtime_error: truncatePreservingStartAndEnd(message),
+    last_runtime_failure_kind: failureKind,
+    last_runtime_failure_context: failureContext,
+    blocked_reason: record.pr_number !== null ? record.blocked_reason : null,
     timeout_retry_count:
       failureKind === "timeout" ? record.timeout_retry_count + 1 : record.timeout_retry_count,
   });

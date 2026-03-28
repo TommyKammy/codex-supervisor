@@ -181,6 +181,93 @@ test("recoverUnexpectedCodexTurnFailure preserves dirty recovery context and tim
   assert.equal(syncedRecord, updated);
 });
 
+test("recoverUnexpectedCodexTurnFailure preserves tracked PR lifecycle state while recording host-local runtime diagnostics", async () => {
+  const issueNumber = 89;
+  const reviewFailureContext = {
+    category: "review" as const,
+    summary: "Manual review is still required before merge.",
+    signature: "manual-review:thread-9",
+    command: null,
+    details: ["thread=thread-9"],
+    url: "https://example.test/pr/56#discussion_r9",
+    updated_at: "2026-03-13T00:20:00Z",
+  };
+  const record = createRecord({
+    issue_number: issueNumber,
+    state: "blocked",
+    pr_number: 56,
+    blocked_reason: "manual_review",
+    last_error: reviewFailureContext.summary,
+    last_failure_kind: null,
+    last_failure_context: reviewFailureContext,
+    last_failure_signature: reviewFailureContext.signature,
+    repeated_failure_signature_count: 2,
+    last_recovery_reason:
+      "tracked_pr_lifecycle_recovered: resumed issue #89 from failed to blocked using fresh tracked PR #56 facts at head head-56",
+    last_recovery_at: "2026-03-13T00:21:00Z",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: record,
+    },
+  };
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return { ...current, ...patch, updated_at: "2026-03-13T00:22:00.000Z" };
+    },
+    async save(): Promise<void> {},
+  };
+
+  const updated = await recoverUnexpectedCodexTurnFailure({
+    config: { stateFile: "/tmp/state.json" },
+    stateStore: stateStore as unknown as Parameters<typeof recoverUnexpectedCodexTurnFailure>[0]["stateStore"],
+    state,
+    record,
+    issue: {
+      number: issueNumber,
+      title: "Chronology failure after fresh PR recovery",
+      body: "",
+      createdAt: "2026-03-13T00:00:00Z",
+      updatedAt: "2026-03-13T00:00:00Z",
+      url: `https://example.test/issues/${issueNumber}`,
+      state: "OPEN",
+    },
+    journalSync: async () => {},
+    error: new Error(
+      "Invalid execution metrics chronology: 2026-03-13T00:22:00Z must be at or before 2026-03-13T00:21:00Z.",
+    ),
+    workspaceStatus: {
+      hasUncommittedChanges: false,
+      headSha: "head-56",
+    },
+    pr: {
+      number: 56,
+      createdAt: "2026-03-13T00:10:00Z",
+      headRefOid: "head-56",
+      mergedAt: null,
+    },
+  });
+
+  assert.equal(updated.state, "blocked");
+  assert.equal(updated.blocked_reason, "manual_review");
+  assert.equal(updated.last_error, reviewFailureContext.summary);
+  assert.equal(updated.last_failure_kind, null);
+  assert.deepEqual(updated.last_failure_context, reviewFailureContext);
+  assert.equal(updated.last_failure_signature, reviewFailureContext.signature);
+  assert.equal(updated.repeated_failure_signature_count, 2);
+  assert.match(updated.last_runtime_error ?? "", /Invalid execution metrics chronology/);
+  assert.equal(updated.last_runtime_failure_kind, "command_error");
+  assert.match(updated.last_runtime_failure_context?.summary ?? "", /Supervisor failed while recovering a Codex turn/);
+  assert.deepEqual(updated.last_runtime_failure_context?.details.slice(0, 5), [
+    "previous_state=blocked",
+    "workspace_dirty=no",
+    "workspace_head=head-56",
+    "pr_number=56",
+    "pr_head=head-56",
+  ]);
+});
+
 test("recoverUnexpectedCodexTurnFailure records unavailable workspace inspection distinctly", async () => {
   const issueNumber = 92;
   const record = createRecord({
