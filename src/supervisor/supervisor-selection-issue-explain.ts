@@ -31,7 +31,7 @@ import {
 } from "./supervisor-status-rendering";
 import { formatLatestRecoveryStatusLine } from "./supervisor-detailed-status-assembly";
 import { readIssueJournal, summarizeIssueJournalHandoff } from "../core/journal";
-import { formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
+import { formatInventoryRefreshDiagnosticLines, formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
 import { buildTrackedPrMismatch } from "./tracked-pr-mismatch";
 import {
   BlockedReason,
@@ -64,6 +64,7 @@ export interface SupervisorExplainDto {
   blockedReason: BlockedReason | "none";
   runnable: boolean;
   inventoryRefreshSummary?: string | null;
+  inventoryRefreshDiagnostics?: string[];
   changeRiskLines: string[];
   externalReviewFollowUpSummary: string | null;
   latestRecoverySummary: string | null;
@@ -211,6 +212,7 @@ export async function buildIssueExplainDto(
   const candidateIssueNumbers = new Set(candidateIssues.map((candidate) => candidate.number));
   const reasons: string[] = [];
   const inventoryRefreshSummary = formatInventoryRefreshStatusLine(state.inventory_refresh_failure);
+  const inventoryRefreshDiagnostics = formatInventoryRefreshDiagnosticLines(state.inventory_refresh_failure);
   const changeRiskLines = await buildExplainChangeRiskSummary({
     config,
     issue,
@@ -315,6 +317,7 @@ export async function buildIssueExplainDto(
     blockedReason: record?.blocked_reason ?? "none",
     runnable,
     inventoryRefreshSummary,
+    inventoryRefreshDiagnostics,
     changeRiskLines,
     externalReviewFollowUpSummary,
     latestRecoverySummary,
@@ -351,6 +354,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     `blocked_reason=${dto.blockedReason}`,
     `runnable=${dto.runnable ? "yes" : "no"}`,
     ...(dto.inventoryRefreshSummary ? [dto.inventoryRefreshSummary] : []),
+    ...(dto.inventoryRefreshDiagnostics ?? []),
     ...dto.changeRiskLines,
     ...(dto.externalReviewFollowUpSummary ? [dto.externalReviewFollowUpSummary] : []),
     ...(preMergeEvaluationLine ? [preMergeEvaluationLine] : []),

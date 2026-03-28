@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { GitHubIssue, SupervisorStateFile } from "./core/types";
+import { GitHubInventoryRefreshError } from "./github";
 import { RecoveryEvent, runOnceCyclePrelude } from "./run-once-cycle-prelude";
 import { createRecord } from "./supervisor/supervisor-test-helpers";
 
@@ -698,6 +699,94 @@ test("runOnceCyclePrelude contains malformed inventory failures for an active tr
   assert.equal(savedStates[0]?.inventory_refresh_failure?.source, "gh issue list");
   assert.match(savedStates[0]?.inventory_refresh_failure?.message ?? "", /Failed to parse JSON from gh issue list/);
   assert.equal(result.state.inventory_refresh_failure?.source, "gh issue list");
+});
+
+test("runOnceCyclePrelude preserves structured primary and fallback inventory diagnostics", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  const savedStates: SupervisorStateFile[] = [];
+
+  const result = await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+      save: async (nextState) => {
+        savedStates.push(JSON.parse(JSON.stringify(nextState)) as SupervisorStateFile);
+      },
+    },
+    carryoverRecoveryEvents: [],
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => {
+      throw new GitHubInventoryRefreshError(
+        [
+          "Failed to load full issue inventory.",
+          "Primary transport: Failed to parse JSON from gh issue list: Bad control character in string literal",
+          "Malformed inventory capture: /tmp/inventory-refresh-failures/primary.json",
+          "Fallback transport: Failed to parse JSON from gh api repos/owner/repo/issues page=2: Bad control character in string literal",
+          "Malformed inventory capture: /tmp/inventory-refresh-failures/fallback.json",
+        ].join("\n"),
+        [
+          {
+            transport: "primary",
+            source: "gh issue list",
+            message: "Failed to parse JSON from gh issue list: Bad control character in string literal",
+            artifact_path: "/tmp/inventory-refresh-failures/primary.json",
+            command: ["gh", "issue", "list", "--repo", "owner/repo"],
+            parse_error: "Failed to parse JSON from gh issue list: Bad control character in string literal",
+            stdout_bytes: 32766,
+            stderr_bytes: 14,
+            captured_at: "2026-03-28T07:16:21.409Z",
+            working_directory: "/tmp/workspaces/loop",
+          },
+          {
+            transport: "fallback",
+            source: "gh api repos/owner/repo/issues",
+            message: "Failed to parse JSON from gh api repos/owner/repo/issues page=2: Bad control character in string literal",
+            page: 2,
+            artifact_path: "/tmp/inventory-refresh-failures/fallback.json",
+            command: ["gh", "api", "repos/owner/repo/issues", "--method", "GET", "-f", "page=2"],
+            parse_error: "Failed to parse JSON from gh api repos/owner/repo/issues page=2: Bad control character in string literal",
+            stdout_bytes: 32766,
+            stderr_bytes: 9,
+            captured_at: "2026-03-28T07:16:22.000Z",
+            working_directory: "/tmp/workspaces/loop",
+          },
+        ],
+      );
+    },
+    reserveRunnableIssueSelection: async () => {
+      throw new Error("unexpected reserveRunnableIssueSelection call");
+    },
+    reconcileTrackedMergedButOpenIssues: async () => {
+      throw new Error("unexpected reconcileTrackedMergedButOpenIssues call");
+    },
+    reconcileMergedIssueClosures: async () => {
+      throw new Error("unexpected reconcileMergedIssueClosures call");
+    },
+    reconcileStaleFailedIssueStates: async () => {
+      throw new Error("unexpected reconcileStaleFailedIssueStates call");
+    },
+    reconcileRecoverableBlockedIssueStates: async () => {
+      throw new Error("unexpected reconcileRecoverableBlockedIssueStates call");
+    },
+    reconcileParentEpicClosures: async () => {
+      throw new Error("unexpected reconcileParentEpicClosures call");
+    },
+    cleanupExpiredDoneWorkspaces: async () => {
+      throw new Error("unexpected cleanupExpiredDoneWorkspaces call");
+    },
+  });
+
+  assert.ok(!("kind" in result));
+  assert.equal(savedStates.length, 1);
+  assert.equal(savedStates[0]?.inventory_refresh_failure?.diagnostics?.length, 2);
+  assert.equal(savedStates[0]?.inventory_refresh_failure?.diagnostics?.[0]?.transport, "primary");
+  assert.equal(savedStates[0]?.inventory_refresh_failure?.diagnostics?.[1]?.transport, "fallback");
+  assert.equal(savedStates[0]?.inventory_refresh_failure?.diagnostics?.[1]?.page, 2);
+  assert.equal(savedStates[0]?.inventory_refresh_failure?.diagnostics?.[1]?.artifact_path, "/tmp/inventory-refresh-failures/fallback.json");
+  assert.equal(result.state.inventory_refresh_failure?.diagnostics?.[0]?.command?.[0], "gh");
 });
 
 test("runOnceCyclePrelude blocks new selection when full inventory refresh is malformed and no issue is active", async () => {

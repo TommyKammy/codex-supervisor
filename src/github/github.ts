@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   CandidateDiscoveryDiagnostics,
   GitHubIssue,
+  InventoryRefreshDiagnosticEntry,
   GitHubPullRequest,
   GitHubRateLimitBudget,
   GitHubRateLimitTelemetry,
@@ -33,9 +34,39 @@ const POST_CREATE_PR_LOOKUP_RETRY_LIMIT = 2;
 const POST_CREATE_PR_LOOKUP_BASE_DELAY_MS = 200;
 const FULL_ISSUE_INVENTORY_PAGE_SIZE = 100;
 const PULL_REQUEST_GRAPHQL_SURFACE_CACHE_MAX_ENTRIES = 128;
-const MALFORMED_INVENTORY_CAPTURE_DIR_ENV = "CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR";
 const MALFORMED_INVENTORY_CAPTURE_LIMIT_ENV = "CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_LIMIT";
 const DEFAULT_MALFORMED_INVENTORY_CAPTURE_LIMIT = 10;
+
+interface InventoryCaptureArtifact {
+  transport: "primary" | "fallback";
+  source: string;
+  message: string;
+  page: number | null;
+  artifactPath: string;
+  command: string[];
+  parseError: string;
+  stdoutBytes: number;
+  stderrBytes: number;
+  capturedAt: string;
+  workingDirectory: string;
+}
+
+interface ListAllIssuesOptions {
+  captureDir?: string | null;
+}
+
+export class GitHubInventoryRefreshError extends Error {
+  readonly diagnostics: InventoryRefreshDiagnosticEntry[];
+
+  constructor(message: string, diagnostics: InventoryRefreshDiagnosticEntry[], options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "GitHubInventoryRefreshError";
+    this.diagnostics = diagnostics.map((entry) => ({
+      ...entry,
+      ...(entry.command ? { command: [...entry.command] } : {}),
+    }));
+  }
+}
 
 function looksLikeJsonArrayPayload(raw: string): boolean {
   return raw.trimStart().startsWith("[");
@@ -249,8 +280,8 @@ export class GitHubClient {
     };
   }
 
-  async listAllIssues(): Promise<GitHubIssue[]> {
-    const result = await this.runGhCommand([
+  async listAllIssues(options: ListAllIssuesOptions = {}): Promise<GitHubIssue[]> {
+    const command = [
       "issue",
       "list",
       "--repo",
@@ -261,39 +292,37 @@ export class GitHubClient {
       "500",
       "--json",
       "number,title,body,createdAt,updatedAt,url,labels,state",
-    ]);
+    ];
+    const result = await this.runGhCommand(command);
     try {
       return parseJson<GitHubIssue[]>(result.stdout, "gh issue list");
     } catch (error) {
-      const capturePath = await this.captureMalformedInventoryPayload({
+      const primaryCapture = await this.captureMalformedInventoryPayload({
+        transport: "primary",
         source: "gh issue list",
-        args: [
-          "issue",
-          "list",
-          "--repo",
-          this.config.repoSlug,
-          "--state",
-          "all",
-          "--limit",
-          "500",
-          "--json",
-          "number,title,body,createdAt,updatedAt,url,labels,state",
-        ],
+        captureDir: options.captureDir,
+        args: command,
         result,
         parseError: error,
       });
+      const primaryDiagnostic = this.buildInventoryRefreshDiagnostic({
+        transport: "primary",
+        source: "gh issue list",
+        message: error instanceof Error ? error.message : String(error),
+        capture: primaryCapture,
+      });
       const primaryFailureMessage = [
-        error instanceof Error ? error.message : String(error),
+        primaryDiagnostic.message,
         result.stderr.trim(),
         result.stdout.trim(),
-        capturePath ? `Malformed inventory capture: ${capturePath}` : null,
+        primaryCapture ? `Malformed inventory capture: ${primaryCapture.artifactPath}` : null,
       ]
         .filter(Boolean)
         .join("\n");
       if (isGitHubRateLimitFailure(primaryFailureMessage) || !looksLikeJsonArrayPayload(result.stdout)) {
-        throw new Error(primaryFailureMessage, { cause: error });
+        throw new GitHubInventoryRefreshError(primaryFailureMessage, [primaryDiagnostic], { cause: error });
       }
-      return this.listAllIssuesViaRestApi(error);
+      return this.listAllIssuesViaRestApi(primaryDiagnostic, options);
     }
   }
 
@@ -355,7 +384,10 @@ export class GitHubClient {
       .filter((issue): issue is GitHubIssue => issue !== null);
   }
 
-  private async listAllIssuesViaRestApi(cause: unknown): Promise<GitHubIssue[]> {
+  private async listAllIssuesViaRestApi(
+    primaryDiagnostic: InventoryRefreshDiagnosticEntry,
+    options: ListAllIssuesOptions,
+  ): Promise<GitHubIssue[]> {
     try {
       const { owner, repo } = this.repoOwnerAndName();
       const issues: GitHubIssue[] = [];
@@ -380,9 +412,11 @@ export class GitHubClient {
             `gh api repos/${owner}/${repo}/issues page=${page}`,
           );
         } catch (parseError) {
-          const capturePath = await this.captureMalformedInventoryPayload({
+          const fallbackCapture = await this.captureMalformedInventoryPayload({
+            transport: "fallback",
             source: `gh api repos/${owner}/${repo}/issues`,
             page,
+            captureDir: options.captureDir,
             args: [
               "api",
               `repos/${owner}/${repo}/issues`,
@@ -398,9 +432,27 @@ export class GitHubClient {
             result,
             parseError,
           });
-          const parseMessage = parseError instanceof Error ? parseError.message : String(parseError);
-          throw new Error(
-            capturePath ? `${parseMessage}\nMalformed inventory capture: ${capturePath}` : parseMessage,
+          const fallbackDiagnostic = this.buildInventoryRefreshDiagnostic({
+            transport: "fallback",
+            source: `gh api repos/${owner}/${repo}/issues`,
+            message: parseError instanceof Error ? parseError.message : String(parseError),
+            page,
+            capture: fallbackCapture,
+          });
+          const fallbackMessage = [
+            fallbackDiagnostic.message,
+            fallbackCapture ? `Malformed inventory capture: ${fallbackCapture.artifactPath}` : null,
+          ]
+            .filter(Boolean)
+            .join("\n");
+          throw new GitHubInventoryRefreshError(
+            [
+              "Failed to load full issue inventory.",
+              `Primary transport: ${primaryDiagnostic.message}`,
+              primaryDiagnostic.artifact_path ? `Malformed inventory capture: ${primaryDiagnostic.artifact_path}` : null,
+              `Fallback transport: ${fallbackMessage}`,
+            ].filter(Boolean).join("\n"),
+            [primaryDiagnostic, fallbackDiagnostic],
             { cause: parseError },
           );
         }
@@ -416,27 +468,37 @@ export class GitHubClient {
 
       return issues;
     } catch (fallbackError) {
-      const primaryMessage = cause instanceof Error ? cause.message : String(cause);
-      const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-      throw new Error(
+      if (fallbackError instanceof GitHubInventoryRefreshError) {
+        throw fallbackError;
+      }
+      const fallbackDiagnostic = this.buildInventoryRefreshDiagnostic({
+        transport: "fallback",
+        source: `gh api repos/${this.repoOwnerAndName().owner}/${this.repoOwnerAndName().repo}/issues`,
+        message: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+      });
+      throw new GitHubInventoryRefreshError(
         [
           "Failed to load full issue inventory.",
-          `Primary transport: ${primaryMessage}`,
-          `Fallback transport: ${fallbackMessage}`,
+          `Primary transport: ${primaryDiagnostic.message}`,
+          primaryDiagnostic.artifact_path ? `Malformed inventory capture: ${primaryDiagnostic.artifact_path}` : null,
+          `Fallback transport: ${fallbackDiagnostic.message}`,
         ].join("\n"),
+        [primaryDiagnostic, fallbackDiagnostic],
         { cause: fallbackError },
       );
     }
   }
 
   private async captureMalformedInventoryPayload(args: {
+    transport: "primary" | "fallback";
     source: string;
+    captureDir?: string | null;
     args: string[];
     result: CommandResult;
     parseError: unknown;
     page?: number;
-  }): Promise<string | null> {
-    const captureDir = process.env[MALFORMED_INVENTORY_CAPTURE_DIR_ENV]?.trim();
+  }): Promise<InventoryCaptureArtifact | null> {
+    const captureDir = args.captureDir?.trim();
     if (!captureDir) {
       return null;
     }
@@ -445,9 +507,13 @@ export class GitHubClient {
     const fileName = `${inventoryCaptureTimestamp(capturedAt)}-${inventoryCaptureSourceSlug(args.source, args.page)}.json`;
     const artifactPath = path.join(captureDir, fileName);
     const parseMessage = args.parseError instanceof Error ? args.parseError.message : String(args.parseError);
+    const workingDirectory = process.cwd();
+    const stdoutBytes = Buffer.byteLength(args.result.stdout, "utf8");
+    const stderrBytes = Buffer.byteLength(args.result.stderr, "utf8");
     await ensureDir(captureDir);
     await writeJsonAtomic(artifactPath, {
       capturedAt,
+      transport: args.transport,
       source: args.source,
       page: args.page ?? null,
       command: ["gh", ...args.args],
@@ -455,11 +521,64 @@ export class GitHubClient {
       stdout: {
         text: args.result.stdout,
         base64: Buffer.from(args.result.stdout, "utf8").toString("base64"),
+        bytes: stdoutBytes,
       },
-      stderr: args.result.stderr,
+      stderr: {
+        text: args.result.stderr,
+        bytes: stderrBytes,
+      },
+      context: {
+        repoSlug: this.config.repoSlug,
+        workingDirectory,
+        pid: process.pid,
+        platform: process.platform,
+        nodeVersion: process.version,
+        ghHost: process.env.GH_HOST ?? null,
+        ghRepo: process.env.GH_REPO ?? null,
+        ghConfigDir: process.env.GH_CONFIG_DIR ?? null,
+      },
     });
     await this.pruneMalformedInventoryCaptures(captureDir);
-    return artifactPath;
+    return {
+      transport: args.transport,
+      source: args.source,
+      message: parseMessage,
+      page: args.page ?? null,
+      artifactPath,
+      command: ["gh", ...args.args],
+      parseError: parseMessage,
+      stdoutBytes,
+      stderrBytes,
+      capturedAt,
+      workingDirectory,
+    };
+  }
+
+  private buildInventoryRefreshDiagnostic(args: {
+    transport: "primary" | "fallback";
+    source: string;
+    message: string;
+    page?: number;
+    capture?: InventoryCaptureArtifact | null;
+  }): InventoryRefreshDiagnosticEntry {
+    const { capture } = args;
+    return {
+      transport: args.transport,
+      source: args.source,
+      message: args.message,
+      ...(args.page !== undefined ? { page: args.page } : {}),
+      ...(capture
+        ? {
+          artifact_path: capture.artifactPath,
+          command: capture.command,
+          parse_error: capture.parseError,
+          stdout_bytes: capture.stdoutBytes,
+          stderr_bytes: capture.stderrBytes,
+          captured_at: capture.capturedAt,
+          working_directory: capture.workingDirectory,
+        }
+        : {}),
+    };
   }
 
   private async pruneMalformedInventoryCaptures(captureDir: string): Promise<void> {

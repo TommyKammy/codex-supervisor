@@ -166,6 +166,22 @@ test("listLoopIssueInventory refreshes the full issue inventory after the reuse 
   assert.equal(listAllIssuesCalls, 2);
 });
 
+test("listLoopIssueInventory passes malformed inventory capture to the loop path explicitly", async () => {
+  const config = createConfig({ stateFile: "/tmp/supervisor/state.json" });
+  let observedCaptureDir: string | undefined;
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listAllIssues: async ({ captureDir }: { captureDir?: string }) => {
+      observedCaptureDir = captureDir;
+      return [];
+    },
+  };
+
+  await (supervisor as unknown as { listLoopIssueInventory: () => Promise<GitHubIssue[]> }).listLoopIssueInventory();
+
+  assert.equal(observedCaptureDir, "/tmp/supervisor/inventory-refresh-failures");
+});
+
 test("listLoopIssueInventory records fetchedAtMs after the awaited refresh succeeds", async () => {
   const issue: GitHubIssue = {
     number: 93,

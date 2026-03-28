@@ -856,8 +856,6 @@ test("GitHubClient listAllIssues preserves both primary parse failures and fallb
 
 test("GitHubClient listAllIssues captures malformed gh issue list payloads when debug capture is enabled", async () => {
   const captureDir = await fs.mkdtemp(path.join(os.tmpdir(), "inventory-capture-"));
-  const previousCaptureDir = process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR;
-  process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR = captureDir;
 
   try {
     const config = createConfig();
@@ -877,7 +875,7 @@ test("GitHubClient listAllIssues captures malformed gh issue list payloads when 
       throw new Error(`Unexpected args: ${args.join(" ")}`);
     });
 
-    await assert.rejects(() => client.listAllIssues(), /Failed to load full issue inventory/);
+    await assert.rejects(() => client.listAllIssues({ captureDir }), /Failed to load full issue inventory/);
 
     const artifacts = await fs.readdir(captureDir);
     assert.equal(artifacts.length, 1);
@@ -886,31 +884,29 @@ test("GitHubClient listAllIssues captures malformed gh issue list payloads when 
     const artifact = JSON.parse(await fs.readFile(path.join(captureDir, artifacts[0] ?? ""), "utf8")) as {
       source: string;
       command: string[];
-      stdout: { text: string; base64: string };
-      stderr: string;
+      stdout: { text: string; base64: string; bytes: number };
+      stderr: { text: string; bytes: number };
       parseError: string;
+      context: { repoSlug: string; workingDirectory: string };
     };
 
     assert.equal(artifact.source, "gh issue list");
     assert.deepEqual(artifact.command.slice(0, 2), ["gh", "issue"]);
-    assert.equal(artifact.stderr, "graphql transport stderr");
+    assert.equal(artifact.stderr.text, "graphql transport stderr");
+    assert.equal(artifact.stderr.bytes, Buffer.byteLength("graphql transport stderr", "utf8"));
     assert.match(artifact.parseError, /Failed to parse JSON from gh issue list/);
     assert.equal(artifact.stdout.text, "[{\"number\":500,\"title\":\"bad\njson\"}]");
+    assert.equal(artifact.stdout.bytes, Buffer.byteLength(artifact.stdout.text, "utf8"));
     assert.equal(Buffer.from(artifact.stdout.base64, "base64").toString("utf8"), artifact.stdout.text);
+    assert.equal(artifact.context.repoSlug, "owner/repo");
+    assert.match(artifact.context.workingDirectory, /codex-supervisor/);
   } finally {
-    if (previousCaptureDir === undefined) {
-      delete process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR;
-    } else {
-      process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR = previousCaptureDir;
-    }
     await fs.rm(captureDir, { recursive: true, force: true });
   }
 });
 
 test("GitHubClient listAllIssues captures malformed REST fallback pages with the page number when debug capture is enabled", async () => {
   const captureDir = await fs.mkdtemp(path.join(os.tmpdir(), "inventory-capture-rest-"));
-  const previousCaptureDir = process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR;
-  process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR = captureDir;
 
   try {
     const config = createConfig();
@@ -950,7 +946,7 @@ test("GitHubClient listAllIssues captures malformed REST fallback pages with the
     });
 
     await assert.rejects(
-      () => client.listAllIssues(),
+      () => client.listAllIssues({ captureDir }),
       /Fallback transport: Failed to parse JSON from gh api repos\/owner\/repo\/issues page=2/,
     );
 
@@ -962,28 +958,23 @@ test("GitHubClient listAllIssues captures malformed REST fallback pages with the
     const artifact = JSON.parse(await fs.readFile(path.join(captureDir, artifacts[1] ?? ""), "utf8")) as {
       source: string;
       page: number | null;
-      stderr: string;
-      stdout: { text: string; base64: string };
+      stderr: { text: string; bytes: number };
+      stdout: { text: string; base64: string; bytes: number };
     };
     assert.equal(artifact.source, "gh api repos/owner/repo/issues");
     assert.equal(artifact.page, 2);
-    assert.equal(artifact.stderr, "rest stderr");
+    assert.equal(artifact.stderr.text, "rest stderr");
+    assert.equal(artifact.stderr.bytes, Buffer.byteLength("rest stderr", "utf8"));
     assert.equal(artifact.stdout.text, "[{\"number\":499,\"title\":\"bad\njson\"}]");
+    assert.equal(artifact.stdout.bytes, Buffer.byteLength(artifact.stdout.text, "utf8"));
   } finally {
-    if (previousCaptureDir === undefined) {
-      delete process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR;
-    } else {
-      process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR = previousCaptureDir;
-    }
     await fs.rm(captureDir, { recursive: true, force: true });
   }
 });
 
 test("GitHubClient listAllIssues prunes older malformed inventory captures when the debug capture limit is exceeded", async () => {
   const captureDir = await fs.mkdtemp(path.join(os.tmpdir(), "inventory-capture-limit-"));
-  const previousCaptureDir = process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR;
   const previousCaptureLimit = process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_LIMIT;
-  process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR = captureDir;
   process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_LIMIT = "2";
 
   try {
@@ -1015,9 +1006,9 @@ test("GitHubClient listAllIssues prunes older malformed inventory captures when 
       () => nowValues[Math.min(nowIndex++, nowValues.length - 1)] ?? nowValues[nowValues.length - 1]!,
     );
 
-    await assert.rejects(() => client.listAllIssues(), /Failed to load full issue inventory/);
-    await assert.rejects(() => client.listAllIssues(), /Failed to load full issue inventory/);
-    await assert.rejects(() => client.listAllIssues(), /Failed to load full issue inventory/);
+    await assert.rejects(() => client.listAllIssues({ captureDir }), /Failed to load full issue inventory/);
+    await assert.rejects(() => client.listAllIssues({ captureDir }), /Failed to load full issue inventory/);
+    await assert.rejects(() => client.listAllIssues({ captureDir }), /Failed to load full issue inventory/);
 
     const artifacts = (await fs.readdir(captureDir)).sort();
     assert.deepEqual(artifacts, [
@@ -1025,11 +1016,6 @@ test("GitHubClient listAllIssues prunes older malformed inventory captures when 
       "20260327T000002.000Z-gh-issue-list.json",
     ]);
   } finally {
-    if (previousCaptureDir === undefined) {
-      delete process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR;
-    } else {
-      process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR = previousCaptureDir;
-    }
     if (previousCaptureLimit === undefined) {
       delete process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_LIMIT;
     } else {
