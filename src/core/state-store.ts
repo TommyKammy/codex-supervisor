@@ -52,8 +52,19 @@ function normalizeInventoryRefreshDiagnostics(
       ...(typeof entry.artifact_path === "string" && entry.artifact_path.trim() !== ""
         ? { artifact_path: entry.artifact_path }
         : {}),
+      ...(typeof entry.raw_artifact_path === "string" && entry.raw_artifact_path.trim() !== ""
+        ? { raw_artifact_path: entry.raw_artifact_path }
+        : {}),
+      ...(typeof entry.preview_artifact_path === "string" && entry.preview_artifact_path.trim() !== ""
+        ? { preview_artifact_path: entry.preview_artifact_path }
+        : typeof entry.artifact_path === "string" && entry.artifact_path.trim() !== ""
+          ? { preview_artifact_path: entry.artifact_path }
+          : {}),
       ...(Array.isArray(entry.command) && entry.command.every((value: unknown) => typeof value === "string")
         ? { command: [...entry.command as string[]] }
+        : {}),
+      ...(entry.parse_stage === "primary_json_parse" || entry.parse_stage === "fallback_json_parse"
+        ? { parse_stage: entry.parse_stage }
         : {}),
       ...(typeof entry.parse_error === "string" && entry.parse_error.trim() !== ""
         ? { parse_error: entry.parse_error }

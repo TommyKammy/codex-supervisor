@@ -135,7 +135,13 @@ function formatInventoryRefreshDiagnosticLine(entry: InventoryRefreshDiagnosticE
     `source=${sanitizeStatusValue(entry.source)}`,
     `message=${sanitizeStatusValue(entry.message.replace(/\r?\n/g, "\\n"))}`,
     ...(entry.page === undefined || entry.page === null ? [] : [`page=${entry.page}`]),
-    ...(entry.artifact_path ? [`artifact=${sanitizeStatusValue(entry.artifact_path)}`] : []),
+    ...(entry.parse_stage ? [`parse_stage=${entry.parse_stage}`] : []),
+    ...(entry.raw_artifact_path ? [`raw_artifact=${sanitizeStatusValue(entry.raw_artifact_path)}`] : []),
+    ...(entry.preview_artifact_path
+      ? [`preview_artifact=${sanitizeStatusValue(entry.preview_artifact_path)}`]
+      : entry.artifact_path
+        ? [`preview_artifact=${sanitizeStatusValue(entry.artifact_path)}`]
+        : []),
     ...(entry.command ? [`command=${sanitizeStatusValue(entry.command.join(" "))}`] : []),
     ...(entry.parse_error ? [`parse_error=${sanitizeStatusValue(entry.parse_error.replace(/\r?\n/g, "\\n"))}`] : []),
     ...(entry.stdout_bytes === undefined ? [] : [`stdout_bytes=${entry.stdout_bytes}`]),

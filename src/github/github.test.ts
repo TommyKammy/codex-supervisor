@@ -1001,27 +1001,38 @@ test("GitHubClient listAllIssues captures malformed gh issue list payloads when 
 
     await assert.rejects(() => client.listAllIssues({ captureDir }), /Failed to load full issue inventory/);
 
-    const artifacts = await fs.readdir(captureDir);
-    assert.equal(artifacts.length, 1);
-    assert.match(artifacts[0] ?? "", /^\d{8}T\d{6}\.\d{3}Z-gh-issue-list\.json$/);
+    const artifacts = (await fs.readdir(captureDir)).sort();
+    assert.equal(artifacts.length, 2);
+    assert.match(artifacts[0] ?? "", /^\d{8}T\d{6}\.\d{3}Z-gh-issue-list-preview\.json$/);
+    assert.match(artifacts[1] ?? "", /^\d{8}T\d{6}\.\d{3}Z-gh-issue-list-raw\.json$/);
+
+    const rawArtifact = await fs.readFile(path.join(captureDir, artifacts[1] ?? ""), "utf8");
+    assert.equal(rawArtifact, "[{\"number\":500,\"title\":\"bad\njson\"}]");
 
     const artifact = JSON.parse(await fs.readFile(path.join(captureDir, artifacts[0] ?? ""), "utf8")) as {
       source: string;
       command: string[];
-      stdout: { text: string; base64: string; bytes: number };
-      stderr: { text: string; bytes: number };
+      rawArtifactPath: string;
+      previewArtifactPath: string;
+      parseStage: string;
+      stdoutPreview: string;
+      stderrPreview: string;
+      stdoutBytes: number;
+      stderrBytes: number;
       parseError: string;
       context: { repoSlug: string; workingDirectory: string };
     };
 
     assert.equal(artifact.source, "gh issue list");
     assert.deepEqual(artifact.command.slice(0, 2), ["gh", "issue"]);
-    assert.equal(artifact.stderr.text, "graphql transport stderr");
-    assert.equal(artifact.stderr.bytes, Buffer.byteLength("graphql transport stderr", "utf8"));
+    assert.equal(artifact.rawArtifactPath, path.join(captureDir, artifacts[1] ?? ""));
+    assert.equal(artifact.previewArtifactPath, path.join(captureDir, artifacts[0] ?? ""));
+    assert.equal(artifact.parseStage, "primary_json_parse");
+    assert.equal(artifact.stderrPreview, "graphql transport stderr");
+    assert.equal(artifact.stderrBytes, Buffer.byteLength("graphql transport stderr", "utf8"));
     assert.match(artifact.parseError, /Failed to parse JSON from gh issue list/);
-    assert.equal(artifact.stdout.text, "[{\"number\":500,\"title\":\"bad\njson\"}]");
-    assert.equal(artifact.stdout.bytes, Buffer.byteLength(artifact.stdout.text, "utf8"));
-    assert.equal(Buffer.from(artifact.stdout.base64, "base64").toString("utf8"), artifact.stdout.text);
+    assert.equal(artifact.stdoutPreview, rawArtifact);
+    assert.equal(artifact.stdoutBytes, Buffer.byteLength(rawArtifact, "utf8"));
     assert.equal(artifact.context.repoSlug, "owner/repo");
     assert.match(artifact.context.workingDirectory, /codex-supervisor/);
   } finally {
@@ -1075,22 +1086,35 @@ test("GitHubClient listAllIssues captures malformed REST fallback pages with the
     );
 
     const artifacts = (await fs.readdir(captureDir)).sort();
-    assert.equal(artifacts.length, 2);
-    assert.match(artifacts[0] ?? "", /^\d{8}T\d{6}\.\d{3}Z-gh-issue-list\.json$/);
-    assert.match(artifacts[1] ?? "", /^\d{8}T\d{6}\.\d{3}Z-rest-page-2\.json$/);
+    assert.equal(artifacts.length, 4);
+    assert.match(artifacts[0] ?? "", /^\d{8}T\d{6}\.\d{3}Z-gh-issue-list-preview\.json$/);
+    assert.match(artifacts[1] ?? "", /^\d{8}T\d{6}\.\d{3}Z-gh-issue-list-raw\.json$/);
+    assert.match(artifacts[2] ?? "", /^\d{8}T\d{6}\.\d{3}Z-rest-page-2-preview\.json$/);
+    assert.match(artifacts[3] ?? "", /^\d{8}T\d{6}\.\d{3}Z-rest-page-2-raw\.json$/);
 
-    const artifact = JSON.parse(await fs.readFile(path.join(captureDir, artifacts[1] ?? ""), "utf8")) as {
+    const rawArtifactPath = path.join(captureDir, artifacts[3] ?? "");
+    const rawArtifact = await fs.readFile(rawArtifactPath, "utf8");
+    const artifact = JSON.parse(await fs.readFile(path.join(captureDir, artifacts[2] ?? ""), "utf8")) as {
       source: string;
       page: number | null;
-      stderr: { text: string; bytes: number };
-      stdout: { text: string; base64: string; bytes: number };
+      rawArtifactPath: string;
+      previewArtifactPath: string;
+      parseStage: string;
+      stderrPreview: string;
+      stdoutPreview: string;
+      stdoutBytes: number;
+      stderrBytes: number;
     };
     assert.equal(artifact.source, "gh api repos/owner/repo/issues");
     assert.equal(artifact.page, 2);
-    assert.equal(artifact.stderr.text, "rest stderr");
-    assert.equal(artifact.stderr.bytes, Buffer.byteLength("rest stderr", "utf8"));
-    assert.equal(artifact.stdout.text, "[{\"number\":499,\"title\":\"bad\njson\"}]");
-    assert.equal(artifact.stdout.bytes, Buffer.byteLength(artifact.stdout.text, "utf8"));
+    assert.equal(artifact.rawArtifactPath, rawArtifactPath);
+    assert.equal(artifact.previewArtifactPath, path.join(captureDir, artifacts[2] ?? ""));
+    assert.equal(artifact.parseStage, "fallback_json_parse");
+    assert.equal(artifact.stderrPreview, "rest stderr");
+    assert.equal(artifact.stderrBytes, Buffer.byteLength("rest stderr", "utf8"));
+    assert.equal(rawArtifact, "[{\"number\":499,\"title\":\"bad\njson\"}]");
+    assert.equal(artifact.stdoutPreview, rawArtifact);
+    assert.equal(artifact.stdoutBytes, Buffer.byteLength(rawArtifact, "utf8"));
   } finally {
     await fs.rm(captureDir, { recursive: true, force: true });
   }
@@ -1136,8 +1160,10 @@ test("GitHubClient listAllIssues prunes older malformed inventory captures when 
 
     const artifacts = (await fs.readdir(captureDir)).sort();
     assert.deepEqual(artifacts, [
-      "20260327T000001.000Z-gh-issue-list.json",
-      "20260327T000002.000Z-gh-issue-list.json",
+      "20260327T000001.000Z-gh-issue-list-preview.json",
+      "20260327T000001.000Z-gh-issue-list-raw.json",
+      "20260327T000002.000Z-gh-issue-list-preview.json",
+      "20260327T000002.000Z-gh-issue-list-raw.json",
     ]);
   } finally {
     if (previousCaptureLimit === undefined) {
