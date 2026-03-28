@@ -922,6 +922,8 @@ test("runOnceCyclePrelude allows new selection after a transient full inventory 
   assert.ok(!("kind" in result));
   assert.equal(savedStates.length, 1);
   assert.equal(savedStates[0]?.inventory_refresh_failure?.source, "gh issue list");
+  assert.equal(savedStates[0]?.inventory_refresh_failure?.bounded_continuation_allowed, true);
+  assert.equal(savedStates[0]?.inventory_refresh_failure?.selection_permitted, "snapshot_backed");
   assert.equal(reserveCallCount, 1);
 });
 
@@ -993,6 +995,8 @@ test("runOnceCyclePrelude still blocks new selection after repeated transient fu
 
   assert.ok(!("kind" in result));
   assert.equal(reserveCallCount, 0);
+  assert.equal(result.state.inventory_refresh_failure?.bounded_continuation_allowed, undefined);
+  assert.equal(result.state.inventory_refresh_failure?.selection_permitted, undefined);
 });
 
 test("runOnceCyclePrelude hard-blocks tracked PR reconciliation after repeated transient full inventory refresh failures even with a fresh snapshot", async () => {

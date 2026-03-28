@@ -18,7 +18,8 @@ export type InventoryStatusMode = "healthy" | "degraded";
 export type InventoryStatusPosture =
   | "fresh_full_inventory"
   | "targeted_degraded_reconciliation"
-  | "snapshot_support"
+  | "bounded_snapshot_selection"
+  | "diagnostics_only_snapshot"
   | "blocked";
 export type InventoryRecoveryState = "healthy" | "partially_degraded" | "blocked";
 
@@ -103,7 +104,10 @@ export function canContinueBoundedAfterInventoryRefreshFailure(args: {
   snapshot: LastSuccessfulInventorySnapshot | null | undefined;
 }): boolean {
   const { failure, snapshot } = args;
-  if (!failure?.bounded_continuation_allowed) {
+  if (
+    failure?.bounded_continuation_allowed !== true
+    && failure?.selection_permitted !== "snapshot_backed"
+  ) {
     return false;
   }
 
@@ -139,6 +143,7 @@ export function inventoryRefreshFailureEquals(
     left.message === right.message &&
     left.classification === right.classification &&
     left.bounded_continuation_allowed === right.bounded_continuation_allowed &&
+    left.selection_permitted === right.selection_permitted &&
     JSON.stringify(left.diagnostics ?? []) === JSON.stringify(right.diagnostics ?? [])
   );
 }
@@ -258,10 +263,33 @@ export function buildInventoryOperatorStatus(args: {
     };
   }
 
+  if (snapshot && failure.selection_permitted === "snapshot_backed") {
+    return {
+      mode: "degraded",
+      posture: "bounded_snapshot_selection",
+      recoveryState: "partially_degraded",
+      selectionBlocked: false,
+      summary: "Full inventory refresh is degraded; bounded queue selection can continue from a fresh last-known-good snapshot.",
+      recoveryGuidance:
+        "Restore a successful full inventory refresh soon; bounded snapshot-backed selection can continue temporarily while fresh inventory is unavailable.",
+      recoveryActions: [
+        "restore_full_inventory_refresh",
+        "continue_bounded_snapshot_selection",
+      ],
+      lastSuccessfulFullRefreshAt,
+      failure: {
+        source: failure.source,
+        message: failure.message,
+        recordedAt: failure.recorded_at,
+        classification: failure.classification ?? "unknown",
+      },
+    };
+  }
+
   if (snapshot) {
     return {
       mode: "degraded",
-      posture: "snapshot_support",
+      posture: "diagnostics_only_snapshot",
       recoveryState: "partially_degraded",
       selectionBlocked: true,
       summary: "Full inventory refresh is degraded; using the last-known-good snapshot for diagnostics only.",

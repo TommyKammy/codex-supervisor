@@ -164,14 +164,16 @@ export async function runOnceCyclePrelude(
       });
     } catch (error) {
       const previousFailure = state.inventory_refresh_failure;
-      const boundedContinuationAllowed = canUseSnapshotBackedSelectionAfterInventoryRefreshFailure({
-        failure: buildInventoryRefreshFailure(error),
+      const nextFailure = buildInventoryRefreshFailure(error);
+      const snapshotBackedSelectionPermitted = canUseSnapshotBackedSelectionAfterInventoryRefreshFailure({
+        failure: nextFailure,
         snapshot: state.last_successful_inventory_snapshot,
         previousFailure,
       });
-      const nextFailure = buildInventoryRefreshFailure(error, {
-        boundedContinuationAllowed,
-      });
+      if (snapshotBackedSelectionPermitted) {
+        nextFailure.bounded_continuation_allowed = true;
+        nextFailure.selection_permitted = "snapshot_backed";
+      }
       await persistInventoryRefreshState({
         nextFailure,
       });

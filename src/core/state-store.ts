@@ -239,6 +239,9 @@ function normalizeStateForLoad(raw: SupervisorStateFile | null | undefined): Sup
       ...(raw.inventory_refresh_failure.bounded_continuation_allowed === true
         ? { bounded_continuation_allowed: true }
         : {}),
+      ...(raw.inventory_refresh_failure.selection_permitted === "snapshot_backed"
+        ? { selection_permitted: "snapshot_backed" as const }
+        : {}),
       ...(normalizeInventoryRefreshDiagnostics(raw.inventory_refresh_failure.diagnostics)
         ? { diagnostics: normalizeInventoryRefreshDiagnostics(raw.inventory_refresh_failure.diagnostics) }
         : {}),
@@ -295,6 +298,9 @@ function normalizeStateForSave(raw: SupervisorStateFile | null | undefined): Sup
         : {}),
       ...(raw.inventory_refresh_failure.bounded_continuation_allowed === true
         ? { bounded_continuation_allowed: true }
+        : {}),
+      ...(raw.inventory_refresh_failure.selection_permitted === "snapshot_backed"
+        ? { selection_permitted: "snapshot_backed" as const }
         : {}),
       ...(normalizeInventoryRefreshDiagnostics(raw.inventory_refresh_failure.diagnostics)
         ? { diagnostics: normalizeInventoryRefreshDiagnostics(raw.inventory_refresh_failure.diagnostics) }

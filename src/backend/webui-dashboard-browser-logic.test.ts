@@ -346,7 +346,7 @@ test("buildOverviewSummary and related beginner-first helpers produce concise En
       status: {
         inventoryStatus: {
           mode: "degraded",
-          posture: "snapshot_support",
+          posture: "diagnostics_only_snapshot",
           recoveryState: "partially_degraded",
           selectionBlocked: true,
           summary: "Full inventory refresh is degraded; using the last-known-good snapshot for diagnostics only.",
@@ -371,6 +371,39 @@ test("buildOverviewSummary and related beginner-first helpers produce concise En
     {
       headline: "Inventory refresh is degraded",
       detail: "Using last-known-good snapshot support from 2026-03-26T00:05:00Z while new selection stays blocked.",
+      tone: "warn",
+    },
+  );
+
+  assert.deepEqual(
+    buildOverviewSummary({
+      status: {
+        inventoryStatus: {
+          mode: "degraded",
+          posture: "bounded_snapshot_selection",
+          recoveryState: "partially_degraded",
+          selectionBlocked: false,
+          summary: "Full inventory refresh is degraded; bounded queue selection can continue from a fresh last-known-good snapshot.",
+          recoveryGuidance:
+            "Restore a successful full inventory refresh soon; bounded snapshot-backed selection can continue temporarily while fresh inventory is unavailable.",
+          recoveryActions: ["restore_full_inventory_refresh", "continue_bounded_snapshot_selection"],
+          lastSuccessfulFullRefreshAt: "2026-03-26T00:05:00Z",
+          failure: {
+            source: "gh issue list",
+            message: "Transient GitHub CLI failure after 3 attempts",
+            recordedAt: "2026-03-26T00:10:00Z",
+            classification: "unknown",
+          },
+        },
+      },
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    {
+      headline: "Inventory refresh is degraded",
+      detail: "Using a fresh last-known-good snapshot from 2026-03-26T00:05:00Z while bounded selection can continue.",
       tone: "warn",
     },
   );

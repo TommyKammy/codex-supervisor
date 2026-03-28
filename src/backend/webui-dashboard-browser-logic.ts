@@ -48,7 +48,8 @@ export interface DashboardInventoryStatusLike {
   posture?:
     | "fresh_full_inventory"
     | "targeted_degraded_reconciliation"
-    | "snapshot_support"
+    | "bounded_snapshot_selection"
+    | "diagnostics_only_snapshot"
     | "blocked"
     | null;
   recoveryState?: "healthy" | "partially_degraded" | "blocked" | null;
@@ -509,7 +510,11 @@ export function buildOverviewSummary(args: {
     const detail =
       inventoryStatus.posture === "targeted_degraded_reconciliation"
         ? "Tracked PR reconciliation can continue while new queue selection stays blocked."
-        : inventoryStatus.posture === "snapshot_support"
+        : inventoryStatus.posture === "bounded_snapshot_selection"
+          ? "Using a fresh last-known-good snapshot" +
+            (lastRefresh ? " from " + lastRefresh : "") +
+            " while bounded selection can continue."
+          : inventoryStatus.posture === "diagnostics_only_snapshot"
           ? "Using last-known-good snapshot support" +
             (lastRefresh ? " from " + lastRefresh : "") +
             " while new selection stays blocked."
