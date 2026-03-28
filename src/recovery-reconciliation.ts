@@ -1220,6 +1220,9 @@ export async function reconcileRecoverableBlockedIssueStates(
       pr: NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
     ) => Partial<IssueRunRecord>;
   },
+  options: {
+    onlyTrackedPrStates?: boolean;
+  } = {},
 ): Promise<RecoveryEvent[]> {
   let changed = false;
   const recoveryEvents: RecoveryEvent[] = [];
@@ -1227,6 +1230,9 @@ export async function reconcileRecoverableBlockedIssueStates(
 
   for (const record of Object.values(state.issues)) {
     if (record.state !== "blocked") {
+      continue;
+    }
+    if (options.onlyTrackedPrStates && record.pr_number === null) {
       continue;
     }
 
