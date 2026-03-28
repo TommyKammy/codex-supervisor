@@ -413,6 +413,80 @@ test("loadRelevantExternalReviewMissPatterns rejects malformed durable guardrail
   ]);
 });
 
+test("loadRelevantExternalReviewMissPatterns fails closed when persisted follow-up evidence fields are malformed", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "external-review-malformed-persisted-evidence-test-"));
+  await fs.writeFile(
+    path.join(tempDir, "external-review-misses-head-old.json"),
+    JSON.stringify({
+      issueNumber: 61,
+      prNumber: 99,
+      branch: "codex/issue-61",
+      headSha: "oldhead",
+      generatedAt: "2026-03-10T00:00:00Z",
+      reusableMissPatterns: [
+        {
+          fingerprint: "src/auth.ts|permission",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 42,
+          summary: "Permission guard is bypassed.",
+          rationale: "Check the permission guard before the fallback write path.",
+          sourceArtifactPath: path.join(tempDir, "external-review-misses-head-old.json"),
+          sourceHeadSha: "oldhead",
+          lastSeenAt: "2026-03-10T00:00:00Z",
+        },
+      ],
+      durableGuardrailCandidates: [
+        {
+          id: "durable-1",
+          category: "verifier",
+          title: "Promote verifier guardrail",
+          reviewerLogin: "copilot-pull-request-reviewer",
+          file: "src/auth.ts",
+          line: 42,
+          summary: "Permission guard is bypassed.",
+          rationale: "Check the permission guard before the fallback write path.",
+          qualificationReasons: ["confirmed_same_file_miss"],
+          provenance: {
+            issueNumber: 61,
+            prNumber: 99,
+            branch: "codex/issue-61",
+            headSha: "oldhead",
+            sourceKind: "review_thread",
+            sourceId: "thread-1",
+            sourceThreadId: { invalid: true },
+            sourceUrl: "https://example.test/thread-1#comment-1",
+            sourceArtifactPath: path.join(tempDir, "external-review-misses-head-old.json"),
+            localReviewSummaryPath: null,
+            localReviewFindingsPath: null,
+            matchedLocalReference: null,
+            matchReason: "no same-file local-review match",
+          },
+        },
+      ],
+      regressionTestCandidates: [],
+      counts: {
+        matched: 0,
+        nearMatch: 0,
+        missedByLocalReview: 1,
+      },
+    }),
+    "utf8",
+  );
+
+  const patterns = await loadRelevantExternalReviewMissPatterns({
+    artifactDir: tempDir,
+    issueNumber: 61,
+    prNumber: 99,
+    branch: "codex/issue-61",
+    currentHeadSha: "currenthead",
+    changedFiles: ["src/auth.ts"],
+    limit: 3,
+  });
+
+  assert.deepEqual(patterns, []);
+});
+
 test("repo-committed durable external-review guardrails teach stable anchors for drift-prone line assertions", async () => {
   const repoRoot = path.resolve(__dirname, "..", "..");
   const patterns = await loadRelevantExternalReviewMissPatterns({

@@ -335,6 +335,23 @@ test("summarizePostMergeAuditPatterns keeps review promotion candidate keys uniq
     path.join(artifactDir, "issue-201-head-merged-head.json"),
     createPostMergeArtifact({
       issueNumber: 201,
+      branch: "codex/issue-201",
+      issue: {
+        number: 201,
+        title: "Repeat the same review summary at medium and high severity",
+        url: "https://example.test/issues/201",
+        createdAt: "2026-03-24T12:55:00Z",
+        updatedAt: "2026-03-24T13:06:00Z",
+      },
+      pullRequest: {
+        number: 201,
+        title: "Repeat the same review summary",
+        url: "https://example.test/pull/201",
+        createdAt: "2026-03-24T13:03:00Z",
+        mergedAt: "2026-03-24T13:05:00Z",
+        headRefName: "codex/issue-201",
+        headRefOid: "merged-head-201",
+      },
       localReview: {
         summaryPath: null,
         findingsPath: null,
@@ -391,6 +408,23 @@ test("summarizePostMergeAuditPatterns keeps review promotion candidate keys uniq
     path.join(artifactDir, "issue-202-head-merged-head.json"),
     createPostMergeArtifact({
       issueNumber: 202,
+      branch: "codex/issue-202",
+      issue: {
+        number: 202,
+        title: "Repeat the same review summary at medium and high severity again",
+        url: "https://example.test/issues/202",
+        createdAt: "2026-03-24T13:55:00Z",
+        updatedAt: "2026-03-24T14:06:00Z",
+      },
+      pullRequest: {
+        number: 202,
+        title: "Repeat the same review summary again",
+        url: "https://example.test/pull/202",
+        createdAt: "2026-03-24T14:03:00Z",
+        mergedAt: "2026-03-24T14:05:00Z",
+        headRefName: "codex/issue-202",
+        headRefOid: "merged-head-202",
+      },
       localReview: {
         summaryPath: null,
         findingsPath: null,
@@ -508,4 +542,47 @@ test("summarizePostMergeAuditPatterns tolerates root-cause summaries without fin
   assert.equal(summary.reviewPatterns.length, 1);
   assert.equal(summary.reviewPatterns[0]?.evidenceCount, 0);
   assert.deepEqual(summary.reviewPatterns[0]?.supportingFindingKeys, []);
+});
+
+test("summarizePostMergeAuditPatterns skips artifacts whose embedded local-review identity does not match the merged context", async () => {
+  const { reviewDir } = await createArtifactTestPaths("post-merge-audit-summary");
+  const config = createConfig({
+    localReviewArtifactDir: reviewDir,
+    repoSlug: "owner/repo",
+  });
+  const artifactDir = postMergeAuditArtifactDir(config);
+
+  await fs.mkdir(artifactDir, { recursive: true });
+  await writeJsonAtomic(
+    path.join(artifactDir, "issue-102-head-merged-head.json"),
+    createPostMergeArtifact({
+      localReview: {
+        summaryPath: null,
+        findingsPath: null,
+        runAt: "2026-03-24T10:00:00Z",
+        recommendation: "changes_requested",
+        degraded: false,
+        findingsCount: 1,
+        rootCauseCount: 1,
+        maxSeverity: "medium",
+        verifiedFindingsCount: 0,
+        verifiedMaxSeverity: "none",
+        artifact: createLocalReviewArtifact({
+          issueNumber: 999,
+          prNumber: 888,
+          branch: "codex/issue-999",
+          headSha: "wrong-head",
+        }),
+      },
+    }),
+  );
+
+  const summary = await summarizePostMergeAuditPatterns(config);
+
+  assert.equal(summary.artifactsAnalyzed, 0);
+  assert.equal(summary.artifactsSkipped, 1);
+  assert.deepEqual(summary.reviewPatterns, []);
+  assert.deepEqual(summary.failurePatterns, []);
+  assert.deepEqual(summary.recoveryPatterns, []);
+  assert.deepEqual(summary.promotionCandidates, []);
 });

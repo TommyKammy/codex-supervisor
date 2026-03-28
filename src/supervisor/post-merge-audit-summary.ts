@@ -3,6 +3,7 @@ import path from "node:path";
 import { nowIso } from "../core/utils";
 import type { SupervisorConfig } from "../core/types";
 import type { ActionableSeverity, LocalReviewRootCauseSummary } from "../local-review/types";
+import { hasMatchingPromotionIdentity } from "../persisted-artifact-promotion";
 import type { PostMergeAuditArtifact } from "./post-merge-audit-artifact";
 import { postMergeAuditArtifactDir } from "./post-merge-audit-artifact";
 
@@ -421,6 +422,20 @@ function isPostMergeAuditArtifact(value: unknown): value is PostMergeAuditArtifa
   );
 }
 
+function isPromotablePostMergeAuditArtifact(artifact: PostMergeAuditArtifact): boolean {
+  const localReviewArtifact = artifact.localReview?.artifact;
+  if (!localReviewArtifact) {
+    return true;
+  }
+
+  return hasMatchingPromotionIdentity(localReviewArtifact, {
+    issueNumber: artifact.issue.number,
+    prNumber: artifact.pullRequest.number,
+    branch: artifact.pullRequest.headRefName,
+    headSha: artifact.pullRequest.headRefOid,
+  });
+}
+
 async function readPersistedPostMergeAuditArtifacts(artifactDir: string): Promise<{
   artifacts: PostMergeAuditArtifact[];
   skippedCount: number;
@@ -599,7 +614,9 @@ export async function summarizePostMergeAuditPatterns(
   config: Pick<SupervisorConfig, "localReviewArtifactDir" | "repoSlug">,
 ): Promise<PostMergeAuditPatternSummaryDto> {
   const artifactDir = postMergeAuditArtifactDir(config);
-  const { artifacts, skippedCount } = await readPersistedPostMergeAuditArtifacts(artifactDir);
+  const { artifacts, skippedCount: unreadableSkippedCount } = await readPersistedPostMergeAuditArtifacts(artifactDir);
+  let artifactsAnalyzed = 0;
+  let artifactsSkipped = unreadableSkippedCount;
 
   const reviewPatterns = new Map<string, {
     key: string;
@@ -629,6 +646,12 @@ export async function summarizePostMergeAuditPatterns(
   }>();
 
   for (const artifact of artifacts) {
+    if (!isPromotablePostMergeAuditArtifact(artifact)) {
+      artifactsSkipped += 1;
+      continue;
+    }
+    artifactsAnalyzed += 1;
+
     for (const rootCause of artifact.localReview?.artifact?.rootCauseSummaries ?? []) {
       if (!isLocalReviewRootCauseSummary(rootCause)) {
         continue;
@@ -767,8 +790,8 @@ export async function summarizePostMergeAuditPatterns(
     advisoryOnly: true,
     autoApplyGuardrails: false,
     autoCreateFollowUpIssues: false,
-    artifactsAnalyzed: artifacts.length,
-    artifactsSkipped: skippedCount,
+    artifactsAnalyzed,
+    artifactsSkipped,
     reviewPatterns: summarizedReviewPatterns,
     failurePatterns: summarizedFailurePatterns,
     recoveryPatterns: summarizedRecoveryPatterns,

@@ -111,6 +111,8 @@ export async function loadLocalReviewRepairContext(
     workspacePath && typeof artifact.branch === "string" && typeof artifact.headSha === "string"
       ? await loadRelevantExternalReviewMissPatterns({
           artifactDir: path.dirname(summaryPath),
+          issueNumber: typeof artifact.issueNumber === "number" ? artifact.issueNumber : undefined,
+          prNumber: typeof artifact.prNumber === "number" ? artifact.prNumber : undefined,
           branch: artifact.branch,
           currentHeadSha: artifact.headSha,
           changedFiles: relevantFiles,
