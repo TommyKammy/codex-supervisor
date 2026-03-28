@@ -20,6 +20,7 @@ import {
   formatCandidateDiscoveryBehaviorLine,
   formatCandidateDiscoveryWarningDetail,
 } from "./supervisor/supervisor-selection-readiness-summary";
+import { buildTrackedPrMismatch } from "./supervisor/tracked-pr-mismatch";
 import { buildTrustAndConfigWarnings, buildWarning, renderDoctorWarningLine } from "./warning-formatting";
 
 export type DoctorCheckStatus = "pass" | "warn" | "fail";
@@ -65,6 +66,9 @@ interface DiagnoseSupervisorHostArgs {
   loadState?: () => Promise<SupervisorStateFile>;
   github?: {
     getCandidateDiscoveryDiagnostics: () => Promise<CandidateDiscoveryDiagnostics>;
+    getPullRequestIfExists?: (prNumber: number) => Promise<import("./core/types").GitHubPullRequest | null>;
+    getChecks?: (pullRequestNumber: number) => Promise<import("./core/types").PullRequestCheck[]>;
+    getUnresolvedReviewThreads?: (pullRequestNumber: number) => Promise<import("./core/types").ReviewThread[]>;
   };
 }
 
@@ -412,6 +416,7 @@ function parseWorktreeList(stdout: string): Set<string> {
 async function diagnoseWorktrees(
   config: SupervisorConfig,
   loadState: () => Promise<SupervisorStateFile>,
+  github?: DiagnoseSupervisorHostArgs["github"],
 ): Promise<DoctorCheck> {
   try {
     const repoResult = await runCommand("git", ["-C", config.repoPath, "rev-parse", "--is-inside-work-tree"]);
@@ -454,8 +459,34 @@ async function diagnoseWorktrees(
     const orphanDetails = orphanCandidates.map((candidate) =>
       `orphan_prune_candidate issue_number=${candidate.issueNumber} eligibility=${candidate.eligibility} workspace=${candidate.workspacePath} branch=${candidate.branch ?? "none"} modified_at=${candidate.modifiedAt ?? "unknown"} reason=${candidate.reason}`
     );
+    const trackedPrMismatchDetails: string[] = [];
+    if (github?.getPullRequestIfExists && github.getChecks && github.getUnresolvedReviewThreads) {
+      for (const record of Object.values(state.issues)) {
+        if (record.pr_number === null) {
+          continue;
+        }
 
-    if (problems.length === 0 && orphanCandidates.length === 0) {
+        try {
+          const pr = await github.getPullRequestIfExists(record.pr_number);
+          if (!pr || pr.state !== "OPEN" || pr.mergedAt) {
+            continue;
+          }
+
+          const checks = await github.getChecks(pr.number);
+          const reviewThreads = await github.getUnresolvedReviewThreads(pr.number);
+          const mismatch = buildTrackedPrMismatch(config, record, pr, checks, reviewThreads);
+          if (!mismatch) {
+            continue;
+          }
+
+          trackedPrMismatchDetails.push(mismatch.summaryLine, mismatch.guidanceLine);
+        } catch {
+          // Degrade doctor diagnostics when tracked PR hydration fails.
+        }
+      }
+    }
+
+    if (problems.length === 0 && orphanCandidates.length === 0 && trackedPrMismatchDetails.length === 0) {
       return {
         name: "worktrees",
         status: "pass",
@@ -473,14 +504,21 @@ async function diagnoseWorktrees(
         `recent=${orphanCandidates.filter((candidate) => candidate.eligibility === "recent").length}`,
         `unsafe_target=${orphanCandidates.filter((candidate) => candidate.eligibility === "unsafe_target").length}`,
       ].join(" ");
+    const mismatchSummary = trackedPrMismatchDetails.length === 0
+      ? null
+      : `tracked PR mismatch candidates=${trackedPrMismatchDetails.length / 2}`;
 
     return {
       name: "worktrees",
       status: "warn",
-      summary: [problems.length > 0 ? `${problems.length} tracked workspace issue(s) detected.` : null, orphanSummary]
+      summary: [
+        problems.length > 0 ? `${problems.length} tracked workspace issue(s) detected.` : null,
+        orphanSummary,
+        mismatchSummary,
+      ]
         .filter((value): value is string => value !== null)
         .join(" "),
-      details: [...problems, ...orphanDetails],
+      details: [...problems, ...orphanDetails, ...trackedPrMismatchDetails],
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -508,7 +546,7 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
     diagnoseGitHubAuth(authStatus),
     diagnoseCodexCli(args.config),
     diagnoseStateFile(args.config),
-    diagnoseWorktrees(args.config, loadState),
+    diagnoseWorktrees(args.config, loadState, github),
   ]);
   const candidateDiscoveryWarning = formatCandidateDiscoveryWarningDetail(
     await github.getCandidateDiscoveryDiagnostics().catch(() => null),

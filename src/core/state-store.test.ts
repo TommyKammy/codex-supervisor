@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { StateStore } from "./state-store";
 import { IssueRunRecord, SupervisorStateFile } from "./types";
 
@@ -230,6 +231,98 @@ test("StateStore json load realigns last-known-good snapshot issue_count with no
       url: "https://example.test/issues/91",
       state: "OPEN",
     }]);
+  });
+});
+
+test("StateStore json load normalizes legacy runtime failure fields into the canonical null shape", async () => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.json");
+    await fs.writeFile(
+      statePath,
+      `${JSON.stringify({
+        activeIssueNumber: 402,
+        issues: {
+          "402": createRecord(402, {
+            last_runtime_error: undefined,
+            last_runtime_failure_kind: undefined,
+            last_runtime_failure_context: undefined,
+          }),
+        },
+      }, null, 2)}\n`,
+      "utf8",
+    );
+
+    const store = new StateStore(statePath, { backend: "json" });
+    const loaded = await store.load();
+    const record = loaded.issues["402"];
+
+    assert.equal(record?.last_runtime_error, null);
+    assert.equal(record?.last_runtime_failure_kind, null);
+    assert.equal(record?.last_runtime_failure_context, null);
+
+    await store.save(loaded);
+
+    const reserialized = JSON.parse(await fs.readFile(statePath, "utf8")) as SupervisorStateFile;
+    assert.equal(reserialized.issues["402"]?.last_runtime_error, null);
+    assert.equal(reserialized.issues["402"]?.last_runtime_failure_kind, null);
+    assert.equal(reserialized.issues["402"]?.last_runtime_failure_context, null);
+  });
+});
+
+test("StateStore sqlite load normalizes legacy runtime failure fields into the canonical null shape", async () => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.sqlite");
+    const store = new StateStore(statePath, { backend: "sqlite" });
+    const db = new DatabaseSync(statePath);
+
+    try {
+      db.exec(`
+        CREATE TABLE metadata (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+        CREATE TABLE issues (
+          issue_number INTEGER PRIMARY KEY,
+          record_json TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+      `);
+      db.prepare("INSERT INTO metadata(key, value) VALUES ('activeIssueNumber', '403')").run();
+      db.prepare("INSERT INTO issues(issue_number, record_json, updated_at) VALUES (?, ?, ?)").run(
+        403,
+        JSON.stringify(createRecord(403, {
+          last_runtime_error: undefined,
+          last_runtime_failure_kind: undefined,
+          last_runtime_failure_context: undefined,
+        })),
+        "2026-03-16T00:00:00Z",
+      );
+    } finally {
+      db.close();
+    }
+
+    const loaded = await store.load();
+    const record = loaded.issues["403"];
+
+    assert.equal(record?.last_runtime_error, null);
+    assert.equal(record?.last_runtime_failure_kind, null);
+    assert.equal(record?.last_runtime_failure_context, null);
+
+    await store.save(loaded);
+
+    const reloadedDb = new DatabaseSync(statePath);
+    try {
+      const row = reloadedDb.prepare("SELECT record_json FROM issues WHERE issue_number = 403").get() as {
+        record_json: string;
+      };
+      const reserialized = JSON.parse(row.record_json) as IssueRunRecord;
+
+      assert.equal(reserialized.last_runtime_error, null);
+      assert.equal(reserialized.last_runtime_failure_kind, null);
+      assert.equal(reserialized.last_runtime_failure_context, null);
+    } finally {
+      reloadedDb.close();
+    }
   });
 });
 

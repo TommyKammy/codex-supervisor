@@ -151,6 +151,7 @@ import {
   renderSupervisorStatusDto,
   SupervisorStatusDto,
 } from "./supervisor-status-report";
+import { buildTrackedPrMismatch } from "./tracked-pr-mismatch";
 import { acquireSupervisorLoopRuntimeLock, readSupervisorLoopRuntime } from "./supervisor-loop-runtime-state";
 import {
   clearCurrentReconciliationPhase,
@@ -1097,6 +1098,30 @@ export class Supervisor {
         targetPrNumber: reconciliationSnapshot.targetPrNumber,
         waitStep: reconciliationSnapshot.waitStep,
       };
+    const trackedPrMismatchLines: string[] = [];
+    for (const record of Object.values(state.issues)) {
+      if (record.pr_number === null) {
+        continue;
+      }
+
+      try {
+        const pr = await this.github.getPullRequestIfExists(record.pr_number);
+        if (!pr || pr.state !== "OPEN" || pr.mergedAt) {
+          continue;
+        }
+
+        const checks = await this.github.getChecks(pr.number);
+        const reviewThreads = await this.github.getUnresolvedReviewThreads(pr.number);
+        const mismatch = buildTrackedPrMismatch(this.config, record, pr, checks, reviewThreads);
+        if (!mismatch) {
+          continue;
+        }
+
+        trackedPrMismatchLines.push(mismatch.summaryLine, mismatch.guidanceLine);
+      } catch {
+        // Degrade status diagnostics if tracked PR hydration fails.
+      }
+    }
 
     if (!statusRecords.activeRecord) {
       const detailedStatusLines = buildDetailedStatusModel({
@@ -1142,7 +1167,7 @@ export class Supervisor {
           trackedIssues,
           runnableIssues: readinessSummary?.runnableIssues ?? [],
           blockedIssues: readinessSummary?.blockedIssues ?? [],
-          detailedStatusLines: [...inactiveDetailedStatusLines, ...stateDiagnosticLines],
+          detailedStatusLines: [...inactiveDetailedStatusLines, ...trackedPrMismatchLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationProgress,
           reconciliationWarning,
@@ -1205,7 +1230,7 @@ export class Supervisor {
           trackedIssues,
           runnableIssues: readinessSummary.runnableIssues,
           blockedIssues: readinessSummary.blockedIssues,
-          detailedStatusLines: [...inactiveDetailedStatusLines, ...stateDiagnosticLines],
+          detailedStatusLines: [...inactiveDetailedStatusLines, ...trackedPrMismatchLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationProgress,
           reconciliationWarning,
@@ -1239,7 +1264,7 @@ export class Supervisor {
           trackedIssues,
           runnableIssues: [],
           blockedIssues: [],
-          detailedStatusLines: [...inactiveDetailedStatusLines, ...stateDiagnosticLines],
+          detailedStatusLines: [...inactiveDetailedStatusLines, ...trackedPrMismatchLines, ...stateDiagnosticLines],
           reconciliationPhase,
           reconciliationProgress,
           reconciliationWarning,
@@ -1325,7 +1350,7 @@ export class Supervisor {
       trackedIssues,
       runnableIssues: [],
       blockedIssues: [],
-      detailedStatusLines: [...detailedStatusLinesWithInventory, ...summaryLines, ...stateDiagnosticLines],
+      detailedStatusLines: [...detailedStatusLinesWithInventory, ...summaryLines, ...trackedPrMismatchLines, ...stateDiagnosticLines],
       reconciliationPhase,
       reconciliationProgress,
       reconciliationWarning,
@@ -1607,7 +1632,7 @@ export class Supervisor {
           syncCopilotReviewTimeoutState,
           inferGitHubWaitStep,
         }, updateReconciliationProgress),
-      reconcileRecoverableBlockedIssueStates: (state, issues) =>
+      reconcileRecoverableBlockedIssueStates: (state, issues, options) =>
         reconcileRecoverableBlockedIssueStates(this.github, this.stateStore, state, this.config, issues, {
           shouldAutoRetryHandoffMissing,
           inferStateFromPullRequest,
@@ -1617,7 +1642,7 @@ export class Supervisor {
           syncReviewWaitWindow,
           syncCopilotReviewRequestObservation,
           syncCopilotReviewTimeoutState,
-        }),
+        }, options),
       reconcileParentEpicClosures: (state, issues) =>
         reconcileParentEpicClosures(this.github, this.stateStore, state, issues),
       cleanupExpiredDoneWorkspaces: (state) => cleanupExpiredDoneWorkspaces(this.config, state),

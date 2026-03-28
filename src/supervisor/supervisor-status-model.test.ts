@@ -240,6 +240,8 @@ test("buildDetailedStatusModel preserves active-line ordering across PR and fail
       provider_success_head_sha: "deadbeef",
       merge_readiness_last_evaluated_at: "2026-03-11T15:06:00Z",
       last_error: "build failed\nsee logs",
+      last_runtime_error: "host loop failed after persistence",
+      last_runtime_failure_kind: "command_error",
       copilot_review_timeout_reason: "provider timeout\nwaiting",
       last_failure_context: {
         category: "checks",
@@ -249,6 +251,15 @@ test("buildDetailedStatusModel preserves active-line ordering across PR and fail
         details: ["step one", "step two"],
         url: null,
         updated_at: "2026-03-11T16:00:00Z",
+      },
+      last_runtime_failure_context: {
+        category: "codex",
+        summary: "Host loop failed while persisting diagnostics.",
+        signature: "runtime:chronology",
+        command: null,
+        details: ["Invalid execution metrics chronology"],
+        url: null,
+        updated_at: "2026-03-11T16:01:00Z",
       },
     }),
     latestRecord: null,
@@ -278,6 +289,8 @@ test("buildDetailedStatusModel preserves active-line ordering across PR and fail
     "local_review gating=",
     "external_review head=",
     "last_error=build failed\\nsee logs",
+    "last_runtime_error=host loop failed after persistence",
+    "last_runtime_failure_kind=command_error",
     "review_bot_profile profile=",
     "review_bot_diagnostics status=",
     "configured_bot_review state=arrived",
@@ -290,6 +303,8 @@ test("buildDetailedStatusModel preserves active-line ordering across PR and fail
     "review_threads bot_pending=0 bot_unresolved=0 manual=0",
     "failure_context category=checks summary=build failed\\nsee logs",
     "failure_details=step one | step two",
+    "runtime_failure_context category=codex summary=Host loop failed while persisting diagnostics.",
+    "runtime_failure_details=Invalid execution metrics chronology",
   ];
 
   let lastIndex = -1;

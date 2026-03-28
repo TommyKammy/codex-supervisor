@@ -306,6 +306,9 @@ export interface IssueRunRecord {
   last_error: string | null;
   last_failure_kind: FailureKind;
   last_failure_context: FailureContext | null;
+  last_runtime_error?: string | null;
+  last_runtime_failure_kind?: FailureKind;
+  last_runtime_failure_context?: FailureContext | null;
   last_blocker_signature: string | null;
   last_failure_signature: string | null;
   blocked_reason: BlockedReason;

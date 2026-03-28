@@ -156,6 +156,11 @@ export function buildActiveDetailedStatusLines(
     lines.push(`last_error=${truncate(sanitizeStatusValue(activeRecord.last_error), 300)}`);
   }
 
+  if (activeRecord.last_runtime_error) {
+    lines.push(`last_runtime_error=${truncate(sanitizeStatusValue(activeRecord.last_runtime_error), 300)}`);
+    lines.push(`last_runtime_failure_kind=${activeRecord.last_runtime_failure_kind ?? "none"}`);
+  }
+
   if (pr) {
     const reviewBotProfile = inferReviewBotProfile(config);
     const reviewBotStatus = reviewBotDiagnostics(config, activeRecord, pr, reviewThreads, configuredBotReviewThreads);
@@ -227,6 +232,17 @@ export function buildActiveDetailedStatusLines(
     if (activeRecord.last_failure_context.details.length > 0) {
       lines.push(
         `failure_details=${truncate(sanitizeStatusValue(activeRecord.last_failure_context.details.join(" | ")), 300) ?? "none"}`,
+      );
+    }
+  }
+
+  if (activeRecord.last_runtime_failure_context) {
+    lines.push(
+      `runtime_failure_context category=${activeRecord.last_runtime_failure_context.category ?? "none"} summary=${truncate(sanitizeStatusValue(activeRecord.last_runtime_failure_context.summary), 200) ?? "none"}`,
+    );
+    if (activeRecord.last_runtime_failure_context.details.length > 0) {
+      lines.push(
+        `runtime_failure_details=${truncate(sanitizeStatusValue(activeRecord.last_runtime_failure_context.details.join(" | ")), 300) ?? "none"}`,
       );
     }
   }
