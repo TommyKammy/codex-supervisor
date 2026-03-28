@@ -5,38 +5,42 @@
 - Branch: codex/issue-1144
 - Workspace: .
 - Journal: .codex-supervisor/issues/1144/issue-journal.md
-- Current phase: resolving_conflict
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 9f3301e21751f8bff57d39910d4eec0d3e999810
+- Current phase: addressing_review
+- Attempt count: 4 (implementation=2, repair=2)
+- Last head SHA: 6265d3b5667e1a9c79b7c552bc97091167ed87c0
 - Blocked reason: none
-- Last failure signature: dirty:9f3301e21751f8bff57d39910d4eec0d3e999810
+- Last failure signature: PRRT_kwDORgvdZ853abCv
 - Repeated failure signature count: 1
-- Updated at: 2026-03-28T00:47:05.000Z
+- Updated at: 2026-03-28T00:56:11.351Z
 
 ## Latest Codex Summary
-Merged the latest `github/main` (`a5d6e16`) into `codex/issue-1144`, resolved the two post-merge audit summary conflicts by keeping both the persisted-artifact identity guardrail and the new external-review follow-up promotion path, and reran a broader focused verification pass plus `npm run build`.
+Merged `github/main` at `a5d6e16` into `codex/issue-1144`, resolved the overlap in [post-merge-audit-summary.ts](src/supervisor/post-merge-audit-summary.ts) and [post-merge-audit-summary.test.ts](src/supervisor/post-merge-audit-summary.test.ts) by keeping both the persisted-artifact identity guardrail and the external-review follow-up promotion path, and updated [issue-journal.md](.codex-supervisor/issues/1144/issue-journal.md). The merge commit is `6265d3b` and it has been pushed to `github/codex/issue-1144`.
 
-The branch is ready for the merge commit/push that clears PR #1147's dirty merge state; the only remaining local tracked change should be this journal update after staging the merge.
+The broader focused verification pass and `npm run build` both passed. GitHub now reports PR `#1147` as `mergeable: true`, so the previous DIRTY merge state is cleared. Local status is clean except for untracked supervisor scratch files under `.codex-supervisor/`.
 
-Summary: Merged `github/main` into `codex/issue-1144`, resolved post-merge audit summary conflicts, and reran focused verification successfully.
+Summary: Merged `github/main` into `codex/issue-1144`, resolved post-merge audit summary conflicts, reran focused verification, and pushed the updated branch.
 State hint: resolving_conflict
 Blocked reason: none
 Tests: `npx tsx --test src/supervisor/post-merge-audit-summary.test.ts src/supervisor/post-merge-audit-summary-runtime.test.ts src/external-review/external-review-miss-history.test.ts src/local-review/runner.test.ts src/local-review/repair-context.test.ts src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts src/issue-metadata/issue-metadata-parser.test.ts src/issue-metadata/issue-metadata.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor-selection-issue-lint.test.ts`; `npm run build`
-Next action: Stage and commit the merge resolution, push `codex/issue-1144`, and confirm PR #1147 is no longer DIRTY.
-Failure signature: none
+Next action: Monitor PR #1147 CI/review feedback and address any follow-up fixes on `codex/issue-1144` if needed.
+Failure signature: PRRT_kwDORgvdZ853abCv
 
 ## Active Failure Context
-- None recorded. Prior PR #1147 merge-state conflict was resolved locally by merging `github/main` (`a5d6e16`) into `codex/issue-1144`.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1147#discussion_r3003835932
+- Details:
+  - src/external-review/external-review-miss-artifact.ts:86 summary=_⚠️ Potential issue_ | _🟡 Minor_ **Provenance `issueNumber`/`prNumber` should validate as positive integers.** The current validation accepts 0 or negative values, but GitHub i... url=https://github.com/TommyKammy/codex-supervisor/pull/1147#discussion_r3003835932
 
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: Persisted artifact promotion was too permissive. Runtime external-review history accepted malformed optional evidence fields, and post-merge audit summarization trusted embedded local-review identity without checking it against the merged context.
-- What changed: Added reusable identity/evidence validation helpers, enforced fail-closed validation before promoting persisted external-review miss artifacts, skipped post-merge audit artifacts whose embedded local-review issue/PR/branch/head identity mismatches the authoritative merged context, added focused regression tests, documented the guardrail in `docs/local-review.md`, merged `github/main` at `a5d6e16`, and resolved the resulting conflicts in `src/supervisor/post-merge-audit-summary.ts` and `src/supervisor/post-merge-audit-summary.test.ts` by keeping both the identity guardrail and the external-review follow-up promotion coverage.
+- What changed: Added reusable identity/evidence validation helpers, enforced fail-closed validation before promoting persisted external-review miss artifacts, skipped post-merge audit artifacts whose embedded local-review issue/PR/branch/head identity mismatches the authoritative merged context, added focused regression tests, documented the guardrail in `docs/local-review.md`, merged `github/main` at `a5d6e16`, resolved the resulting conflicts in `src/supervisor/post-merge-audit-summary.ts` and `src/supervisor/post-merge-audit-summary.test.ts`, and tightened `src/external-review/external-review-miss-artifact.ts` so durable-guardrail provenance `issueNumber` and `prNumber` must be positive integers before promotion.
 - Current blocker: none
-- Next exact step: Stage and commit the merge resolution on `codex/issue-1144`, push the branch, and verify PR #1147 no longer reports `mergeStateStatus=DIRTY`.
-- Verification gap: Full repo `npm test` still includes unrelated browser-smoke coverage and was not used for this issue; the broader focused suite and `npm run build` passed after the base-branch merge.
-- Files touched: docs/local-review.md; src/persisted-artifact-promotion.ts; src/external-review/external-review-miss-artifact.ts; src/external-review/external-review-miss-history.ts; src/external-review/external-review-miss-history.test.ts; src/local-review/repair-context.ts; src/local-review/runner.ts; src/supervisor/post-merge-audit-summary.ts; src/supervisor/post-merge-audit-summary.test.ts; src/supervisor/supervisor-status-rendering.ts
+- Next exact step: Stage and commit the positive-integer provenance validation fix on `codex/issue-1144`, push the branch, and refresh PR #1147 for re-review or thread resolution.
+- Verification gap: Full repo `npm test` still includes unrelated browser-smoke coverage and was not used for this issue; the focused external-review artifact/history tests, post-merge audit summary test, and `npm run build` passed after this review fix.
+- Files touched: docs/local-review.md; src/persisted-artifact-promotion.ts; src/external-review/external-review-miss-artifact.ts; src/external-review/external-review-miss-artifact.test.ts; src/external-review/external-review-miss-history.ts; src/external-review/external-review-miss-history.test.ts; src/local-review/repair-context.ts; src/local-review/runner.ts; src/supervisor/post-merge-audit-summary.ts; src/supervisor/post-merge-audit-summary.test.ts; src/supervisor/supervisor-status-rendering.ts
 - Rollback concern: Tightened validation now skips malformed or mismatched persisted artifacts instead of promoting them; if older artifacts relied on permissive parsing, operator-facing summaries may surface fewer historical runtime hints until those artifacts are regenerated.
-- Last focused commands: `git fetch github main`; `git fetch origin main`; `git merge --no-ff github/main`; `npx tsx --test src/supervisor/post-merge-audit-summary.test.ts src/supervisor/post-merge-audit-summary-runtime.test.ts src/external-review/external-review-miss-history.test.ts src/local-review/runner.test.ts src/local-review/repair-context.test.ts src/supervisor/supervisor-diagnostics-guardrail-reporting.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts src/issue-metadata/issue-metadata-parser.test.ts src/issue-metadata/issue-metadata.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor-selection-issue-lint.test.ts`; `npm run build`
+- Last focused commands: `npx tsx --test src/external-review/external-review-miss-artifact.test.ts src/external-review/external-review-miss-history.test.ts src/supervisor/post-merge-audit-summary.test.ts`; `npm run build`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

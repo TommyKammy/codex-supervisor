@@ -82,8 +82,10 @@ function isDurableGuardrailCandidateLike(value: unknown): value is ExternalRevie
     isStringArray(candidate.qualificationReasons) &&
     typeof typedProvenance.issueNumber === "number" &&
     Number.isInteger(typedProvenance.issueNumber) &&
+    typedProvenance.issueNumber >= 1 &&
     typeof typedProvenance.prNumber === "number" &&
     Number.isInteger(typedProvenance.prNumber) &&
+    typedProvenance.prNumber >= 1 &&
     isNonEmptyString(typedProvenance.branch) &&
     isNonEmptyString(typedProvenance.headSha) &&
     isNonEmptyString(typedProvenance.sourceKind) &&
