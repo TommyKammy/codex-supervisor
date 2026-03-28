@@ -6,7 +6,11 @@ import {
 } from "../committed-guardrails";
 import { parseJson } from "../core/utils";
 import { type ExternalReviewMissPattern } from "./external-review-miss-artifact-types";
-import { type ExternalReviewMissArtifactLike, readExternalReviewMissArtifactPatterns } from "./external-review-miss-artifact";
+import {
+  isPromotableExternalReviewMissArtifact,
+  type ExternalReviewMissArtifactLike,
+  readExternalReviewMissArtifactPatterns,
+} from "./external-review-miss-artifact";
 
 function mergeRelevantPatterns(
   deduped: Map<string, ExternalReviewMissPattern>,
@@ -27,6 +31,8 @@ function mergeRelevantPatterns(
 
 export async function loadRelevantExternalReviewMissPatterns(args: {
   artifactDir: string;
+  issueNumber?: number;
+  prNumber?: number;
   branch: string;
   currentHeadSha: string;
   changedFiles: string[];
@@ -71,7 +77,14 @@ export async function loadRelevantExternalReviewMissPatterns(args: {
     }
 
     const artifact = parseJson<ExternalReviewMissArtifactLike>(raw, artifactPath);
-    if (artifact.branch !== args.branch || artifact.headSha === args.currentHeadSha) {
+    if (
+      !isPromotableExternalReviewMissArtifact(artifact, {
+        issueNumber: args.issueNumber,
+        prNumber: args.prNumber,
+        branch: args.branch,
+      }) ||
+      artifact.headSha === args.currentHeadSha
+    ) {
       continue;
     }
 

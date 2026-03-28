@@ -124,7 +124,7 @@ export function buildVerificationPolicyStatusLine(args: {
 export async function buildDurableGuardrailStatusLine(args: {
   config: SupervisorConfig;
   activeRecord: Pick<IssueRunRecord, "branch" | "issue_number" | "last_head_sha" | "workspace">;
-  pr: Pick<GitHubPullRequest, "headRefOid"> | null;
+  pr: Pick<GitHubPullRequest, "number" | "headRefOid"> | null;
   changedFiles?: string[];
 }): Promise<string | null> {
   const changedFiles =
@@ -144,6 +144,8 @@ export async function buildDurableGuardrailStatusLine(args: {
     .sort(compareExternalReviewPatterns);
   const runtimeExternalReviewPatterns = await loadRelevantExternalReviewMissPatterns({
     artifactDir: reviewDir(args.config, args.activeRecord.issue_number),
+    issueNumber: args.activeRecord.issue_number,
+    prNumber: args.pr?.number,
     branch: args.activeRecord.branch,
     currentHeadSha: args.pr?.headRefOid ?? args.activeRecord.last_head_sha ?? "",
     changedFiles,

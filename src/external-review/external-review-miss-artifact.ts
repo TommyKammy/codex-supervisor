@@ -1,4 +1,5 @@
 import { nowIso } from "../core/utils";
+import { hasMatchingPromotionIdentity, isNullablePromotionEvidenceString } from "../persisted-artifact-promotion";
 import { type ExternalReviewMissFinding } from "./external-review-classifier";
 import {
   type ExternalReviewArtifactFinding,
@@ -15,12 +16,143 @@ import { assignExternalReviewPreventionTarget } from "./external-review-preventi
 import { toRegressionTestCandidate } from "./external-review-regression-candidates";
 
 export interface ExternalReviewMissArtifactLike {
+  issueNumber?: number;
+  prNumber?: number;
   branch?: string;
   headSha?: string;
   generatedAt?: string;
   findings?: ExternalReviewMissFinding[];
+  durableGuardrailCandidates?: ExternalReviewDurableGuardrailCandidate[];
   reusableMissPatterns?: ExternalReviewMissPattern[];
   regressionTestCandidates?: ExternalReviewRegressionCandidate[];
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function isPositiveIntegerOrNull(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isInteger(value) && value >= 1);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isExternalReviewMissPatternLike(value: unknown): value is ExternalReviewMissPattern {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const pattern = value as Record<string, unknown>;
+  return (
+    isNonEmptyString(pattern.fingerprint) &&
+    isNonEmptyString(pattern.reviewerLogin) &&
+    isNonEmptyString(pattern.file) &&
+    isPositiveIntegerOrNull(pattern.line) &&
+    isNonEmptyString(pattern.summary) &&
+    isNonEmptyString(pattern.rationale) &&
+    isNonEmptyString(pattern.sourceArtifactPath) &&
+    isNonEmptyString(pattern.sourceHeadSha) &&
+    isNonEmptyString(pattern.lastSeenAt)
+  );
+}
+
+function isDurableGuardrailCandidateLike(value: unknown): value is ExternalReviewDurableGuardrailCandidate {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const provenance = candidate.provenance;
+  if (!provenance || typeof provenance !== "object" || Array.isArray(provenance)) {
+    return false;
+  }
+
+  const typedProvenance = provenance as Record<string, unknown>;
+  return (
+    isNonEmptyString(candidate.id) &&
+    (candidate.category === "reviewer_rubric" || candidate.category === "verifier" || candidate.category === "regression_test") &&
+    isNonEmptyString(candidate.title) &&
+    isNonEmptyString(candidate.reviewerLogin) &&
+    (candidate.file === null || isNonEmptyString(candidate.file)) &&
+    isPositiveIntegerOrNull(candidate.line) &&
+    isNonEmptyString(candidate.summary) &&
+    isNonEmptyString(candidate.rationale) &&
+    isStringArray(candidate.qualificationReasons) &&
+    typeof typedProvenance.issueNumber === "number" &&
+    Number.isInteger(typedProvenance.issueNumber) &&
+    typedProvenance.issueNumber >= 1 &&
+    typeof typedProvenance.prNumber === "number" &&
+    Number.isInteger(typedProvenance.prNumber) &&
+    typedProvenance.prNumber >= 1 &&
+    isNonEmptyString(typedProvenance.branch) &&
+    isNonEmptyString(typedProvenance.headSha) &&
+    isNonEmptyString(typedProvenance.sourceKind) &&
+    isNonEmptyString(typedProvenance.sourceId) &&
+    isNullablePromotionEvidenceString(typedProvenance.sourceThreadId) &&
+    isNullablePromotionEvidenceString(typedProvenance.sourceUrl) &&
+    isNonEmptyString(typedProvenance.sourceArtifactPath) &&
+    isNullablePromotionEvidenceString(typedProvenance.localReviewSummaryPath) &&
+    isNullablePromotionEvidenceString(typedProvenance.localReviewFindingsPath) &&
+    isNullablePromotionEvidenceString(typedProvenance.matchedLocalReference) &&
+    isNonEmptyString(typedProvenance.matchReason)
+  );
+}
+
+function isRegressionTestCandidateLike(value: unknown): value is ExternalReviewRegressionCandidate {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    isNonEmptyString(candidate.id) &&
+    isNonEmptyString(candidate.title) &&
+    isNonEmptyString(candidate.file) &&
+    isPositiveIntegerOrNull(candidate.line) &&
+    candidate.line !== null &&
+    isNonEmptyString(candidate.summary) &&
+    isNonEmptyString(candidate.rationale) &&
+    isNonEmptyString(candidate.reviewerLogin) &&
+    isNonEmptyString(candidate.sourceKind) &&
+    isNonEmptyString(candidate.sourceId) &&
+    isNullablePromotionEvidenceString(candidate.sourceThreadId) &&
+    isNullablePromotionEvidenceString(candidate.sourceUrl) &&
+    isStringArray(candidate.qualificationReasons)
+  );
+}
+
+export function isPromotableExternalReviewMissArtifact(
+  artifact: ExternalReviewMissArtifactLike,
+  context: {
+    issueNumber?: number;
+    prNumber?: number;
+    branch: string;
+    headSha?: string;
+  },
+): boolean {
+  if (!hasMatchingPromotionIdentity(artifact, context)) {
+    return false;
+  }
+
+  if (artifact.reusableMissPatterns && !artifact.reusableMissPatterns.every((pattern) => isExternalReviewMissPatternLike(pattern))) {
+    return false;
+  }
+  if (
+    artifact.durableGuardrailCandidates &&
+    !artifact.durableGuardrailCandidates.every((candidate) => isDurableGuardrailCandidateLike(candidate))
+  ) {
+    return false;
+  }
+  if (
+    artifact.regressionTestCandidates &&
+    !artifact.regressionTestCandidates.every((candidate) => isRegressionTestCandidateLike(candidate))
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 export function readExternalReviewMissArtifactPatterns(

@@ -151,6 +151,12 @@ Committed local-review guardrails live under `docs/shared-memory/`:
 
 Each committed guardrail document must include top-level `"version": 1`. The loader rejects missing versions, non-integer versions, and unsupported future versions so schema changes stay explicit and predictable.
 
+Treat persisted-artifact promotion as provenance-sensitive. Before any persisted miss artifact, local-review artifact, or post-merge audit artifact is promoted into operator-facing summaries, follow-up candidates, or durable guardrails, the loader should validate it fail-closed:
+
+- reject malformed nullable evidence fields such as `sourceUrl` or `sourceThreadId`
+- cross-check embedded `issueNumber`, `prNumber`, `branch`, and `headSha` against the authoritative surrounding context when those values are available
+- skip the artifact instead of partially promoting stale or mismatched data
+
 When you add or update an entry, use the deterministic repo workflow:
 
 1. Edit the committed JSON in `docs/shared-memory/`.

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildExternalReviewMissArtifact,
+  isPromotableExternalReviewMissArtifact,
   readExternalReviewMissArtifactPatterns,
 } from "./external-review-miss-artifact";
 import {
@@ -430,5 +431,115 @@ test("buildExternalReviewMissFollowUpDigest throws when a missed finding lacks a
         localReviewHeadSha: "deadbeefcafebabe",
       }),
     /Found 1 missed finding\(s\) without a prevention target in \/tmp\/external-review-misses-head-deadbeefcafe\.json/,
+  );
+});
+
+test("isPromotableExternalReviewMissArtifact rejects non-positive provenance issue and PR numbers", () => {
+  const artifact: ExternalReviewMissArtifact = {
+    issueNumber: 58,
+    prNumber: 91,
+    branch: "codex/issue-58",
+    headSha: "deadbeefcafebabe",
+    generatedAt: "2026-03-18T00:00:00Z",
+    localReviewSummaryPath: "/tmp/head-deadbeef.md",
+    localReviewFindingsPath: "/tmp/head-deadbeef.json",
+    findings: [],
+    reusableMissPatterns: [],
+    durableGuardrailCandidates: [
+      {
+        id: "durable-1",
+        category: "verifier",
+        title: "Promote verifier guardrail",
+        reviewerLogin: "copilot-pull-request-reviewer",
+        file: "src/auth.ts",
+        line: 42,
+        summary: "Permission guard is bypassed.",
+        rationale: "Check the permission guard before the fallback write path.",
+        qualificationReasons: ["confirmed_same_file_miss"],
+        provenance: {
+          issueNumber: 58,
+          prNumber: 91,
+          branch: "codex/issue-58",
+          headSha: "deadbeefcafebabe",
+          sourceKind: "review_thread",
+          sourceId: "thread-1",
+          sourceThreadId: "thread-1",
+          sourceUrl: "https://example.test/pr/1#discussion_r1",
+          sourceArtifactPath: "/tmp/external-review-misses-head-deadbeefcafe.json",
+          localReviewSummaryPath: "/tmp/head-deadbeef.md",
+          localReviewFindingsPath: "/tmp/head-deadbeef.json",
+          matchedLocalReference: null,
+          matchReason: "no same-file local-review match",
+        },
+      },
+    ],
+    regressionTestCandidates: [],
+    counts: {
+      matched: 0,
+      nearMatch: 0,
+      missedByLocalReview: 0,
+    },
+  };
+
+  const historicalArtifactContext = {
+    issueNumber: 58,
+    prNumber: 91,
+    branch: "codex/issue-58",
+  } as const;
+  const exactArtifactContext = {
+    ...historicalArtifactContext,
+    headSha: "deadbeefcafebabe",
+  } as const;
+
+  assert.equal(
+    isPromotableExternalReviewMissArtifact(artifact, historicalArtifactContext),
+    true,
+  );
+
+  assert.equal(
+    isPromotableExternalReviewMissArtifact(artifact, exactArtifactContext),
+    true,
+  );
+
+  const zeroIssueArtifact: ExternalReviewMissArtifact = {
+    ...artifact,
+    durableGuardrailCandidates: [
+      {
+        ...artifact.durableGuardrailCandidates[0],
+        provenance: {
+          ...artifact.durableGuardrailCandidates[0].provenance,
+          issueNumber: 0,
+        },
+      },
+    ],
+  };
+  assert.equal(
+    isPromotableExternalReviewMissArtifact(zeroIssueArtifact, historicalArtifactContext),
+    false,
+  );
+  assert.equal(
+    isPromotableExternalReviewMissArtifact(zeroIssueArtifact, exactArtifactContext),
+    false,
+  );
+
+  const negativePrArtifact: ExternalReviewMissArtifact = {
+    ...artifact,
+    durableGuardrailCandidates: [
+      {
+        ...artifact.durableGuardrailCandidates[0],
+        provenance: {
+          ...artifact.durableGuardrailCandidates[0].provenance,
+          prNumber: -1,
+        },
+      },
+    ],
+  };
+  assert.equal(
+    isPromotableExternalReviewMissArtifact(negativePrArtifact, historicalArtifactContext),
+    false,
+  );
+  assert.equal(
+    isPromotableExternalReviewMissArtifact(negativePrArtifact, exactArtifactContext),
+    false,
   );
 });

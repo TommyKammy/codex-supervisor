@@ -143,6 +143,8 @@ export async function runVerifierReview(args: {
   )];
   const priorMissPatterns = await loadRelevantExternalReviewMissPatterns({
     artifactDir: reviewDir(args.config, args.issue.number),
+    issueNumber: args.issue.number,
+    prNumber: args.pr.number,
     branch: args.branch,
     currentHeadSha: args.pr.headRefOid,
     changedFiles,
