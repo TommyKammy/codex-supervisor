@@ -214,7 +214,9 @@ export async function runOnceCyclePrelude(
       );
       if (allowDegradedContinuation && hasBlockedTrackedPrRecords) {
         await setReconciliationPhase("recoverable_blocked_issue_states");
-        const recoverableBlockedEvents = await args.reconcileRecoverableBlockedIssueStates(state, []);
+        const recoverableBlockedEvents = await args.reconcileRecoverableBlockedIssueStates(state, [], {
+          onlyTrackedPrStates: true,
+        });
         recoveryEvents.push(...recoverableBlockedEvents);
         emitRecoveryEvents(recoverableBlockedEvents);
       }

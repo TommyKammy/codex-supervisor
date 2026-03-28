@@ -985,6 +985,78 @@ Depends on: #95`,
   assert.equal(savedStates.length, 1);
 });
 
+test("resolveRunnableIssueContext keeps tracked PR lifecycle states during repeated transient refresh failures", async () => {
+  const config = createConfig();
+  const issue: GitHubIssue = {
+    number: 96,
+    title: "Tracked PR issue",
+    body: executionReadyBody("Continue the tracked PR lifecycle without broad inventory."),
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/96",
+    labels: [],
+    state: "OPEN",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 96,
+    inventory_refresh_failure: {
+      source: "gh issue list",
+      message:
+        'Transient GitHub CLI failure after 3 attempts: gh issue list --repo owner/repo\nCommand failed: gh issue list --repo owner/repo\nexitCode=1\nPost "https://api.github.com/graphql": read tcp 127.0.0.1:12345->140.82.112.6:443: read: connection reset by peer',
+      recorded_at: "2026-03-26T00:10:00Z",
+    },
+    last_successful_inventory_snapshot: {
+      source: "gh issue list",
+      recorded_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      issue_count: 1,
+      issues: [issue],
+    },
+    issues: {
+      "96": createRecord(96, {
+        state: "waiting_ci",
+        pr_number: 170,
+      }),
+    },
+  };
+  const savedStates: SupervisorStateFile[] = [];
+  let released = false;
+  let getIssueCalls = 0;
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => {
+        throw new Error("unexpected broad candidate inventory read");
+      },
+      getIssue: async () => {
+        getIssueCalls += 1;
+        return issue;
+      },
+    },
+    config,
+    stateStore: createTouchStateStore(savedStates),
+    state,
+    currentRecord: state.issues["96"] ?? null,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {
+        released = true;
+      },
+    }),
+  });
+
+  assert.ok(typeof result !== "string");
+  assert.equal(result.kind, "ready");
+  assert.equal(result.record.issue_number, 96);
+  assert.equal(result.record.state, "waiting_ci");
+  assert.equal(result.record.pr_number, 170);
+  assert.equal(getIssueCalls, 1);
+  assert.equal(released, false);
+  assert.equal(state.activeIssueNumber, 96);
+  assert.equal(state.issues["96"]?.state, "waiting_ci");
+  assert.equal(state.issues["96"]?.pr_number, 170);
+  assert.equal(savedStates.length, 0);
+});
+
 test("resolveRunnableIssueContext restarts closed issues instead of handing them off as ready", async () => {
   const config = createConfig();
   const selectedIssue: GitHubIssue = {

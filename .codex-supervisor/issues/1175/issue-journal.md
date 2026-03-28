@@ -5,44 +5,45 @@
 - Branch: codex/issue-1175
 - Workspace: .
 - Journal: .codex-supervisor/issues/1175/issue-journal.md
-- Current phase: resolving_conflict
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 2e2ee6019fc97aca4eda3d75b90a4ed80d2f6f83
+- Current phase: addressing_review
+- Attempt count: 4 (implementation=2, repair=2)
+- Last head SHA: 1a934dbb346db67c819d649404be80549b3cb02f
 - Blocked reason: none
-- Last failure signature: dirty:2e2ee6019fc97aca4eda3d75b90a4ed80d2f6f83
+- Last failure signature: PRRT_kwDORgvdZ853dqXs|PRRT_kwDORgvdZ853dqXx
 - Repeated failure signature count: 1
-- Updated at: 2026-03-28T14:54:06.439Z
+- Updated at: 2026-03-28T15:16:14.429Z
 
 ## Latest Codex Summary
-Draft PR #1179 is open at https://github.com/TommyKammy/codex-supervisor/pull/1179 on `codex/issue-1175`. I merged `github/main` (`9b69d22`) into the issue branch, resolved the overlapping inventory-refresh conflicts by preserving both the bounded degraded-continuation bit and the snapshot-backed selection posture metadata, and re-ran the focused merged-file verification set plus `tsc` successfully.
+Merged `github/main` into `codex/issue-1175`, resolved the overlapping inventory-refresh changes by keeping both `bounded_continuation_allowed` and `selection_permitted: "snapshot_backed"`, reran the focused merged-file checks plus `tsc`, updated the issue journal, and pushed commits `a2b3cb2` and `1a934db` to `github/codex/issue-1175`. PR #1179 remains draft, and GitHub now reports it as `mergeable: true`. Local tracked files are clean; only untracked supervisor scratch remains under `.codex-supervisor/`.
 
-Summary: Pushed merge commit `a2b3cb2` after integrating github/main into codex/issue-1175, resolving the inventory-refresh conflicts conservatively, and verifying the updated branch locally
+Summary: Pushed the conflict-resolution merge for issue #1175, updated the journal, and cleared PR #1179 back to a mergeable draft state
 State hint: draft_pr
 Blocked reason: none
 Tests: `npm exec --yes -- tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/core/state-store.test.ts src/run-once-cycle-prelude.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor-pr-review-blockers.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `./node_modules/.bin/tsc -p tsconfig.json --noEmit`
-Next action: Monitor draft PR #1179 CI/review state after merge commit `a2b3cb2` and address any follow-up on `codex/issue-1175`
-Failure signature: none
+Next action: Monitor draft PR #1179 CI/review state and address any follow-up on `codex/issue-1175`
+Failure signature: PRRT_kwDORgvdZ853dqXs|PRRT_kwDORgvdZ853dqXx
 
 ## Active Failure Context
-- Category: conflict
-- Summary: PR #1179 has merge conflicts and needs a base-branch integration pass.
-- Command or source: git fetch origin && git merge origin/<default-branch>
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1179
+- Category: review
+- Summary: 2 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1179#discussion_r3004938566
 - Details:
-  - mergeStateStatus=DIRTY
+  - src/run-once-cycle-prelude.ts:217 summary=_⚠️ Potential issue_ | _🟠 Major_ **Keep degraded blocked recovery scoped to tracked PR states.** This catch path still calls `reconcileRecoverableBlockedIssueStates(state, [])`... url=https://github.com/TommyKammy/codex-supervisor/pull/1179#discussion_r3004938566
+  - src/run-once-issue-selection.ts:460 summary=_⚠️ Potential issue_ | _🟠 Major_ **Don't demote tracked PR records to `queued` here.** This branch runs for any active record. url=https://github.com/TommyKammy/codex-supervisor/pull/1179#discussion_r3004938572
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The `github/main` status-surface work and the issue branch both touched the same inventory-refresh persistence and prelude code, so the conservative merge needed to keep `selection_permitted: "snapshot_backed"` for bounded selection while preserving the issue branch's persisted `bounded_continuation_allowed` flag for broader degraded continuation.
-- What changed: Merged `github/main` (`9b69d22`) into `codex/issue-1175`, resolved the overlapping conflicts in `src/core/types.ts`, `src/core/state-store.ts`, and `src/run-once-cycle-prelude.ts`, kept backward-compatible bounded-continuation helper behavior for snapshot-backed selection state, and extended the prelude regression to assert both persisted fields on first transient-failure continuation.
+- Hypothesis: The remaining CodeRabbit findings are valid regressions from broadening degraded continuation: the malformed-refresh recovery branch must stay scoped to tracked PR blocked states, and repeated transient refresh failures must not collapse tracked PR lifecycle states back to `queued`.
+- What changed: Scoped the degraded `reconcileRecoverableBlockedIssueStates` call in `src/run-once-cycle-prelude.ts` with `{ onlyTrackedPrStates: true }`, restricted the repeated-failure active-issue requeue path in `src/run-once-issue-selection.ts` to pre-PR records (`pr_number === null`), and added focused regressions in `src/run-once-cycle-prelude.test.ts` and `src/run-once-issue-selection.test.ts`.
 - Current blocker: none
-- Next exact step: Monitor draft PR #1179 after pushed merge commit `a2b3cb2`, then address any CI or review follow-up on `codex/issue-1175`.
-- Verification gap: none for the focused merged-file checks; broader full-suite coverage remains unrun.
-- Files touched: .codex-supervisor/issues/1175/issue-journal.md; src/backend/webui-dashboard-browser-logic.test.ts; src/backend/webui-dashboard-browser-logic.ts; src/core/state-store.test.ts; src/core/state-store.ts; src/core/types.ts; src/inventory-refresh-state.ts; src/run-once-cycle-prelude.test.ts; src/run-once-cycle-prelude.ts; src/supervisor/supervisor-diagnostics-status-selection.test.ts; src/supervisor/supervisor-status-report.ts
-- Rollback concern: Low to moderate; the main merge-risk is accidentally desynchronizing bounded degraded continuation from the operator-facing snapshot-selection posture if a future edit drops one persisted field or helper compatibility path.
-- Last focused command: npm exec --yes -- tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/core/state-store.test.ts src/run-once-cycle-prelude.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor-pr-review-blockers.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts
+- Next exact step: Commit and push the review-fix patch for PR #1179, then monitor CI and remaining review state.
+- Verification gap: none for the focused review-fix checks; broader full-suite coverage remains unrun.
+- Files touched: .codex-supervisor/issues/1175/issue-journal.md; src/backend/webui-dashboard-browser-logic.test.ts; src/backend/webui-dashboard-browser-logic.ts; src/core/state-store.test.ts; src/core/state-store.ts; src/core/types.ts; src/inventory-refresh-state.ts; src/run-once-cycle-prelude.test.ts; src/run-once-cycle-prelude.ts; src/run-once-issue-selection.test.ts; src/run-once-issue-selection.ts; src/supervisor/supervisor-diagnostics-status-selection.test.ts; src/supervisor/supervisor-status-report.ts
+- Rollback concern: Low to moderate; the main risk in this review-fix patch is accidentally broadening degraded continuation again by removing the tracked-PR-only recovery scope or by reintroducing tracked PR demotion to `queued` on repeated refresh failures.
+- Last focused command: npm exec --yes -- tsx --test src/run-once-cycle-prelude.test.ts src/run-once-issue-selection.test.ts
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
+- 2026-03-29: Addressed the two remaining CodeRabbit findings locally, then verified with `npm exec --yes -- tsx --test src/run-once-cycle-prelude.test.ts src/run-once-issue-selection.test.ts` and `./node_modules/.bin/tsc -p tsconfig.json --noEmit`.
 - 2026-03-28: Pushed merge commit `a2b3cb2` to `github/codex/issue-1175` to update draft PR #1179 after the conflict-resolution pass.
 - 2026-03-28: Merged `github/main` (`9b69d22`) into `codex/issue-1175`, resolved the overlapping inventory-refresh conflicts, and kept both `bounded_continuation_allowed` and `selection_permitted: "snapshot_backed"` persistence in the merged branch.
 - 2026-03-28: Re-ran focused merged-file verification with `npm exec --yes -- tsx --test src/backend/webui-dashboard-browser-logic.test.ts src/core/state-store.test.ts src/run-once-cycle-prelude.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor-pr-review-blockers.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts` and all 116 tests passed.

@@ -445,7 +445,11 @@ export async function resolveRunnableIssueContext(
 
   let shouldReleaseIssueLock = true;
   try {
-    if (state.inventory_refresh_failure !== undefined && !canContinueActiveIssueDuringInventoryDegradation(state)) {
+    if (
+      state.inventory_refresh_failure !== undefined &&
+      record.pr_number === null &&
+      !canContinueActiveIssueDuringInventoryDegradation(state)
+    ) {
       record = stateStore.touch(record, {
         state: "queued",
         last_error:

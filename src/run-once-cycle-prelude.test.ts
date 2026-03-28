@@ -1288,6 +1288,7 @@ test("runOnceCyclePrelude rehydrates blocked tracked PRs during degraded invento
   const blockedCalls: Array<{
     loadedState: SupervisorStateFile;
     loadedIssues: GitHubIssue[];
+    options?: { onlyTrackedPrStates?: boolean };
   }> = [];
 
   const result = await runOnceCyclePrelude({
@@ -1313,8 +1314,8 @@ test("runOnceCyclePrelude rehydrates blocked tracked PRs during degraded invento
     reconcileStaleFailedIssueStates: async () => {
       throw new Error("unexpected reconcileStaleFailedIssueStates call");
     },
-    reconcileRecoverableBlockedIssueStates: async (loadedState, loadedIssues) => {
-      blockedCalls.push({ loadedState, loadedIssues });
+    reconcileRecoverableBlockedIssueStates: async (loadedState, loadedIssues, options) => {
+      blockedCalls.push({ loadedState, loadedIssues, options });
       loadedState.issues["77"] = {
         ...loadedState.issues["77"]!,
         state: "ready_to_merge",
@@ -1338,6 +1339,7 @@ test("runOnceCyclePrelude rehydrates blocked tracked PRs during degraded invento
     {
       loadedState: state,
       loadedIssues: [],
+      options: { onlyTrackedPrStates: true },
     },
   ]);
   assert.equal(result.state.issues["77"]?.state, "ready_to_merge");
