@@ -5,44 +5,50 @@
 - Branch: codex/issue-1152
 - Workspace: .
 - Journal: .codex-supervisor/issues/1152/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 3 (implementation=3, repair=0)
-- Last head SHA: 990219fff88edc5a07571723f99fc8b0dfa2b16b
+- Current phase: addressing_review
+- Attempt count: 5 (implementation=3, repair=2)
+- Last head SHA: f1ac2b44d6e0b22e921f31e0bd905bb9eeb74895
 - Blocked reason: none
-- Last failure signature: stale-stabilizing-no-pr-recovery-loop
-- Repeated failure signature count: 0
-- Updated at: 2026-03-28T04:38:00.507Z
+- Last failure signature: PRRT_kwDORgvdZ853bbqc|PRRT_kwDORgvdZ853bbqd|PRRT_kwDORgvdZ853bbqh
+- Repeated failure signature count: 1
+- Updated at: 2026-03-28T04:58:05Z
 
 ## Latest Codex Summary
-Added a small test-only stabilization commit, `990219f` (`Fix orchestration fixture labels for stale no-PR recovery`).
+Addressed the three automated review findings on PR [#1157](https://github.com/TommyKammy/codex-supervisor/pull/1157) locally. The runtime change now skips degraded `getIssue()` fallback for non-blocked records inside blocked-state reconciliation, persists refreshed tracked-PR lifecycle sync fields when a same-head PR remains blocked, and the journal text now uses the official `GitHub` capitalization in prose.
 
-The actual issue implementation remains the earlier tracked-PR rehydration work. This turn fixed the remaining red orchestration test by making the raw `GitHubIssue` fixtures explicit about `labels: []`, which matches the current metadata contract where missing labels are blocked as `metadata:labels_unavailable` rather than treated as unlabeled. I also updated the issue journal with the failure cause, commands run, and current handoff.
-
-Verification passed:
+Focused verification passed:
+- `npx tsx --test src/run-once-cycle-prelude.test.ts`
+- `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`
 - `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts`
-- `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`
 
-There are still non-fatal execution-metrics chronology warnings emitted during some tests, but they did not fail either suite and were not changed here.
+The worktree still has untracked supervisor runtime artifacts under `.codex-supervisor/`. Tracked changes are limited to the recovery implementation, regression tests, and this journal update.
 
-Summary: Fixed the remaining stale no-PR orchestration test by adding explicit empty labels to raw issue fixtures, updated the journal, and committed a clean stabilization checkpoint.
-State hint: stabilizing
+Summary: Addressed PR #1157 review feedback by narrowing degraded tracked-PR issue refreshes, persisting blocked lifecycle sync fields, and fixing journal `GitHub` capitalization
+State hint: addressing_review
 Blocked reason: none
-Tests: `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts` passed; `npx tsx --test src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts` passed
-Next action: Keep the branch as the current reviewable checkpoint, or open/update the draft PR if you want this checkpoint published now.
-Failure signature: stale-stabilizing-no-pr-recovery-loop
+Tests: `npx tsx --test src/run-once-cycle-prelude.test.ts` passed; `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts` passed; `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts` passed
+Next action: Commit and push the review-fix checkpoint to PR #1157, then monitor GitHub re-review and CI on `codex/issue-1152`
+Failure signature: PRRT_kwDORgvdZ853bbqc|PRRT_kwDORgvdZ853bbqd|PRRT_kwDORgvdZ853bbqh
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 3 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1157#discussion_r3004188989
+- Details:
+  - .codex-supervisor/issues/1152/issue-journal.md:40 summary=_⚠️ Potential issue_ | _🟡 Minor_ **Use the official `GitHub` capitalization in journal text.** At Line 40 and Line 46, `github` should be `GitHub` for naming consistency in pro... url=https://github.com/TommyKammy/codex-supervisor/pull/1157#discussion_r3004188989
+  - src/recovery-reconciliation.ts:1236 summary=_⚠️ Potential issue_ | _🟠 Major_ **Avoid probing `getIssue()` for every tracked PR in degraded mode.** This fallback runs before any state filtering, so an `issues=[]` cycle wi... url=https://github.com/TommyKammy/codex-supervisor/pull/1157#discussion_r3004188990
+  - src/recovery-reconciliation.ts:1360 summary=_⚠️ Potential issue_ | _🟠 Major_ **Don't drop the refreshed lifecycle patch when the PR is still blocked.** This branch computes `reviewWaitPatch`, `copilotReview*` patches, an... url=https://github.com/TommyKammy/codex-supervisor/pull/1157#discussion_r3004188994
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the branch is now at a published reviewable checkpoint. The tracked-PR rehydration implementation and the later orchestration-fixture stabilization both hold under focused local verification, and the draft PR is open for review.
-- What changed: no new runtime code this turn. I re-read the branch diff, reverified the targeted suites, confirmed the implementation still covers both selection-order rehydration and same-head blocked-PR recovery from fresh GitHub facts, pushed `codex/issue-1152` to `github`, and opened draft PR #1157.
+- Hypothesis: the remaining PR #1157 review threads are fully covered by a narrow recovery-reconciliation patch plus focused regression tests, and the branch is ready for an incremental review-fix push.
+- What changed: I narrowed `reconcileRecoverableBlockedIssueStates` so degraded inventory fallback only probes `getIssue()` for blocked records, persisted fresh `last_head_sha` and sync-derived review/Copilot fields when a tracked PR remains blocked, added focused regression coverage for both paths, and corrected the journal prose to use `GitHub`.
 - Current blocker: none.
-- Next exact step: use draft PR #1157 for review or CI follow-up; if review feedback lands, address it on `codex/issue-1152` and push incremental fixes.
-- Verification gap: none in the intended issue path. Focused suites are green. There are still pre-existing non-fatal execution-metrics chronology warnings in some tests, but they did not fail the runs and were not changed here.
-- Files touched: src/run-once-cycle-prelude.ts; src/recovery-reconciliation.ts; src/supervisor/supervisor.ts; src/run-once-cycle-prelude.test.ts; src/supervisor/supervisor-recovery-reconciliation.test.ts; src/supervisor/supervisor-execution-orchestration.test.ts
-- Rollback concern: low for this checkpoint; the new edit is test-only and constrains fixtures to supply labels explicitly.
-- Last focused commands: `npx tsx --test src/run-once-cycle-prelude.test.ts`; `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts`; `gh auth status`; `gh repo view --json nameWithOwner,defaultBranchRef`; `git push -u github codex/issue-1152`; `gh pr create --draft --base main --head codex/issue-1152 --title "[codex] Rehydrate tracked PR-open issues from live GitHub facts at cycle start" --body-file <tempfile>`
+- Next exact step: commit this review-fix checkpoint, push `codex/issue-1152`, and then watch PR #1157 for re-review or follow-up CI noise.
+- Verification gap: none for the addressed review path. The same pre-existing non-fatal execution-metrics chronology warnings still appear in some suites, but they did not fail runs and were not changed here.
+- Files touched: src/recovery-reconciliation.ts; src/supervisor/supervisor-recovery-reconciliation.test.ts; .codex-supervisor/issues/1152/issue-journal.md
+- Rollback concern: low. The code change only narrows degraded issue refresh scope and persists already-computed blocked lifecycle sync fields.
+- Last focused command: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`
+- Last focused commands: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npx tsx --test src/run-once-cycle-prelude.test.ts`; `npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

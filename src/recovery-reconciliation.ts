@@ -1226,6 +1226,10 @@ export async function reconcileRecoverableBlockedIssueStates(
   const issuesByNumber = new Map(issues.map((issue) => [issue.number, issue]));
 
   for (const record of Object.values(state.issues)) {
+    if (record.state !== "blocked") {
+      continue;
+    }
+
     let issue = issuesByNumber.get(record.issue_number);
     if (!issue && record.pr_number !== null) {
       try {
@@ -1339,7 +1343,24 @@ export async function reconcileRecoverableBlockedIssueStates(
         checks,
         reviewThreads,
       );
-      if (nextState === "blocked" || nextState === "failed") {
+      if (nextState === "failed") {
+        continue;
+      }
+
+      if (nextState === "blocked") {
+        const blockedPatch: Partial<IssueRunRecord> = {
+          pr_number: trackedPullRequest.number,
+          last_head_sha: trackedPullRequest.headRefOid,
+          ...reviewWaitPatch,
+          ...copilotReviewRequestObservationPatch,
+          ...copilotReviewTimeoutPatch,
+        };
+
+        if (needsRecordUpdate(record, blockedPatch)) {
+          const updated = stateStore.touch(record, blockedPatch);
+          state.issues[String(record.issue_number)] = updated;
+          changed = true;
+        }
         continue;
       }
 

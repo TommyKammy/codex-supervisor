@@ -28,6 +28,7 @@ import {
   createIssue,
   createPullRequest,
   createRecord,
+  createReviewThread,
   createSupervisorState,
   executionReadyBody,
 } from "./supervisor-test-helpers";
@@ -617,6 +618,206 @@ test("reconcileRecoverableBlockedIssueStates rehydrates tracked PR manual-review
   assert.deepEqual(recoveryEvents.map((event) => event.reason), [
     "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to ready_to_merge using fresh tracked PR #191 facts at head head-191",
   ]);
+});
+
+test("reconcileRecoverableBlockedIssueStates only falls back to getIssue for blocked tracked PR records", async () => {
+  const config = createConfig();
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 366,
+        state: "waiting_ci",
+        blocked_reason: null,
+        pr_number: 191,
+      }),
+      createRecord({
+        issue_number: 367,
+        state: "blocked",
+        blocked_reason: "manual_review",
+        pr_number: 192,
+        branch: "codex/reopen-issue-367",
+        workspace: "/tmp/workspaces/issue-367",
+        journal_path: "/tmp/workspaces/issue-367/.codex-supervisor/issue-journal.md",
+        last_head_sha: "head-192",
+        last_error: "Manual review is required before the PR can proceed.",
+        last_failure_kind: null,
+        last_failure_context: {
+          category: "review",
+          summary: "Manual review is required before the PR can proceed.",
+          signature: "manual-review:thread-2",
+          command: null,
+          details: ["thread=thread-2"],
+          url: "https://example.test/pr/192#discussion_r2",
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "manual-review:thread-2",
+        repeated_failure_signature_count: 1,
+      }),
+    ],
+  });
+  const issueCalls: number[] = [];
+  const issue = createIssue({
+    number: 367,
+    title: "Recovery issue",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+  const pr = createPullRequest({
+    number: 192,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/192",
+    headRefName: "codex/reopen-issue-367",
+    headRefOid: "head-192",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async (prNumber) => {
+        assert.equal(prNumber, 192);
+        return pr;
+      },
+      getIssue: async (issueNumber) => {
+        issueCalls.push(issueNumber);
+        assert.equal(issueNumber, 367);
+        return issue;
+      },
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  assert.deepEqual(issueCalls, [367]);
+  assert.equal(state.issues["366"]?.state, "waiting_ci");
+  assert.equal(state.issues["367"]?.state, "ready_to_merge");
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "tracked_pr_lifecycle_recovered: resumed issue #367 from blocked to ready_to_merge using fresh tracked PR #192 facts at head head-192",
+  ]);
+});
+
+test("reconcileRecoverableBlockedIssueStates persists refreshed tracked PR lifecycle fields when the PR remains blocked", async () => {
+  const config = createConfig();
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        state: "blocked",
+        blocked_reason: "manual_review",
+        pr_number: 191,
+        last_head_sha: "stale-head",
+        review_wait_started_at: null,
+        review_wait_head_sha: null,
+        copilot_review_requested_observed_at: null,
+        copilot_review_requested_head_sha: null,
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      }),
+    ],
+  });
+  const issue = createIssue({
+    title: "Recovery issue",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+  const pr = createPullRequest({
+    number: 191,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/191",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-191",
+    mergeStateStatus: "BLOCKED",
+    mergeable: "CONFLICTING",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [createReviewThread()],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest: () => "blocked",
+      inferFailureContext,
+      blockedReasonForLifecycleState: () => "manual_review",
+      isOpenPullRequest,
+      syncReviewWaitWindow: () => ({
+        review_wait_started_at: "2026-03-13T00:22:00Z",
+        review_wait_head_sha: "head-191",
+      }),
+      syncCopilotReviewRequestObservation: () => ({
+        copilot_review_requested_observed_at: "2026-03-13T00:23:00Z",
+        copilot_review_requested_head_sha: "head-191",
+      }),
+      syncCopilotReviewTimeoutState: () => ({
+        copilot_review_timed_out_at: "2026-03-13T00:24:00Z",
+        copilot_review_timeout_action: "continue",
+        copilot_review_timeout_reason: "review pending",
+      }),
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "blocked");
+  assert.equal(updated.pr_number, 191);
+  assert.equal(updated.last_head_sha, "head-191");
+  assert.equal(updated.review_wait_started_at, "2026-03-13T00:22:00Z");
+  assert.equal(updated.review_wait_head_sha, "head-191");
+  assert.equal(updated.copilot_review_requested_observed_at, "2026-03-13T00:23:00Z");
+  assert.equal(updated.copilot_review_requested_head_sha, "head-191");
+  assert.equal(updated.copilot_review_timed_out_at, "2026-03-13T00:24:00Z");
+  assert.equal(updated.copilot_review_timeout_action, "continue");
+  assert.equal(updated.copilot_review_timeout_reason, "review pending");
+  assert.equal(updated.last_recovery_reason, null);
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents, []);
 });
 
 test("reconcileStaleActiveIssueReservation clears a stale reservation and emits a recovery loggable event", async () => {
