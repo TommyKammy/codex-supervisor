@@ -32,6 +32,7 @@ import {
 import { formatLatestRecoveryStatusLine } from "./supervisor-detailed-status-assembly";
 import { readIssueJournal, summarizeIssueJournalHandoff } from "../core/journal";
 import { formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
+import { buildTrackedPrMismatch } from "./tracked-pr-mismatch";
 import {
   BlockedReason,
   GitHubIssue,
@@ -66,6 +67,8 @@ export interface SupervisorExplainDto {
   latestRecoverySummary: string | null;
   staleRecoveryWarningSummary: string | null;
   activityContext: SupervisorIssueActivityContextDto | null;
+  trackedPrMismatchSummary: string | null;
+  recoveryGuidance: string | null;
   selectionReason: string | null;
   reasons: string[];
   lastError: string | null;
@@ -240,6 +243,13 @@ export async function buildIssueExplainDto(
       pr,
     })
     : null;
+  const explainChecks = record && pr && github.getChecks ? await github.getChecks(pr.number) : [];
+  const explainReviewThreads =
+    record && pr && github.getUnresolvedReviewThreads ? await github.getUnresolvedReviewThreads(pr.number) : [];
+  const trackedPrMismatch =
+    record && pr
+      ? buildTrackedPrMismatch(config, record, pr, explainChecks, explainReviewThreads)
+      : null;
 
   if (matchingSkipPrefix) {
     reasons.push(`skip_title_prefix ${matchingSkipPrefix}`);
@@ -308,6 +318,8 @@ export async function buildIssueExplainDto(
         preMergeEvaluation,
       })
       : null,
+    trackedPrMismatchSummary: trackedPrMismatch?.summaryLine ?? null,
+    recoveryGuidance: trackedPrMismatch?.guidanceLine ?? null,
     selectionReason,
     reasons,
     lastError: record?.last_error ?? null,
@@ -331,6 +343,8 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(dto.externalReviewFollowUpSummary ? [dto.externalReviewFollowUpSummary] : []),
     ...(preMergeEvaluationLine ? [preMergeEvaluationLine] : []),
     ...(localCiStatusLine ? [localCiStatusLine] : []),
+    ...(dto.trackedPrMismatchSummary ? [dto.trackedPrMismatchSummary] : []),
+    ...(dto.recoveryGuidance ? [dto.recoveryGuidance] : []),
     ...(retrySummaryLine ? [retrySummaryLine] : []),
     ...(recoveryLoopSummaryLine ? [recoveryLoopSummaryLine] : []),
     ...(dto.latestRecoverySummary ? [dto.latestRecoverySummary] : []),

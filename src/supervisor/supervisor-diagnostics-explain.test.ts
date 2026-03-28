@@ -7,6 +7,7 @@ import { Supervisor } from "./supervisor";
 import {
   branchName,
   createRecord,
+  createPullRequest,
   createSupervisorFixture,
   executionReadyBody,
   git,
@@ -308,6 +309,78 @@ Wait for a human review before proceeding.
   assert.match(explanation, /^runnable=no$/m);
   assert.match(explanation, /^reason_1=manual_block manual_review$/m);
   assert.match(explanation, /^reason_2=local_state blocked$/m);
+});
+
+test("explain reports tracked PR mismatches when GitHub is ready but local state is still blocked", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 171;
+  const prNumber = 271;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        blocked_reason: "manual_review",
+        last_error: "waiting on stale review signal",
+        last_head_sha: "head-ready-271",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Tracked PR mismatch",
+    body: `## Summary
+Expose stale tracked PR mismatch diagnostics.
+
+## Scope
+- make explain show GitHub-ready versus local-blocked state
+
+## Acceptance criteria
+- explain says GitHub is ready while local state is stale
+
+## Verification
+- npm test -- src/supervisor/supervisor-diagnostics-explain.test.ts`,
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const readyPr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: "head-ready-271",
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () => readyPr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(explanation, /^blocked_reason=manual_review$/m);
+  assert.match(
+    explanation,
+    /^tracked_pr_mismatch issue=#171 pr=#271 github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=manual_review stale_local_blocker=yes$/m,
+  );
+  assert.match(
+    explanation,
+    /^recovery_guidance=Tracked PR facts are fresher than local state; run the supervisor again to refresh tracked PR state\. Explicit requeue is unavailable for tracked PR work\.$/m,
+  );
 });
 
 test("explain reuses normalized change-risk policy for risky ambiguity blockers", async () => {

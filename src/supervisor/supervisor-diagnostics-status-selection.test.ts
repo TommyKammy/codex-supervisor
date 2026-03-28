@@ -9,6 +9,7 @@ import { Supervisor } from "./supervisor";
 import {
   branchName,
   createRecord,
+  createPullRequest,
   createSupervisorFixture,
   executionReadyBody,
   git,
@@ -2151,5 +2152,74 @@ Execution order: 3 of 3`,
   assert.match(
     status,
     /selection_reason=ready execution_ready=yes depends_on=91:done execution_order=150\/3 predecessors=91\|92:done retry_state=fresh/,
+  );
+});
+
+test("status surfaces tracked PR mismatches when GitHub is ready but local state is still blocked", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 171;
+  const prNumber = 271;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        blocked_reason: "manual_review",
+        last_error: "waiting on stale review signal",
+        last_head_sha: "head-ready-271",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Tracked PR mismatch",
+    body: executionReadyBody("Surface GitHub-ready versus local-blocked tracked PR mismatches."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const readyPr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: "head-ready-271",
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [trackedIssue],
+    listAllIssues: async () => [trackedIssue],
+    getPullRequestIfExists: async () => readyPr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^tracked_pr_mismatch issue=#171 pr=#271 github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=manual_review stale_local_blocker=yes$/m,
+  );
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^recovery_guidance=Tracked PR facts are fresher than local state; run the supervisor again to refresh tracked PR state\. Explicit requeue is unavailable for tracked PR work\.$/m,
+  );
+
+  const status = await supervisor.status();
+  assert.match(
+    status,
+    /^tracked_pr_mismatch issue=#171 pr=#271 github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=manual_review stale_local_blocker=yes$/m,
+  );
+  assert.match(
+    status,
+    /^recovery_guidance=Tracked PR facts are fresher than local state; run the supervisor again to refresh tracked PR state\. Explicit requeue is unavailable for tracked PR work\.$/m,
   );
 });
