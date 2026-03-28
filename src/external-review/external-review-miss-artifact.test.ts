@@ -481,13 +481,23 @@ test("isPromotableExternalReviewMissArtifact rejects non-positive provenance iss
     },
   };
 
+  const historicalArtifactContext = {
+    issueNumber: 58,
+    prNumber: 91,
+    branch: "codex/issue-58",
+  } as const;
+  const exactArtifactContext = {
+    ...historicalArtifactContext,
+    headSha: "deadbeefcafebabe",
+  } as const;
+
   assert.equal(
-    isPromotableExternalReviewMissArtifact(artifact, {
-      issueNumber: 58,
-      prNumber: 91,
-      branch: "codex/issue-58",
-      headSha: "deadbeefcafebabe",
-    }),
+    isPromotableExternalReviewMissArtifact(artifact, historicalArtifactContext),
+    true,
+  );
+
+  assert.equal(
+    isPromotableExternalReviewMissArtifact(artifact, exactArtifactContext),
     true,
   );
 
@@ -504,12 +514,11 @@ test("isPromotableExternalReviewMissArtifact rejects non-positive provenance iss
     ],
   };
   assert.equal(
-    isPromotableExternalReviewMissArtifact(zeroIssueArtifact, {
-      issueNumber: 58,
-      prNumber: 91,
-      branch: "codex/issue-58",
-      headSha: "deadbeefcafebabe",
-    }),
+    isPromotableExternalReviewMissArtifact(zeroIssueArtifact, historicalArtifactContext),
+    false,
+  );
+  assert.equal(
+    isPromotableExternalReviewMissArtifact(zeroIssueArtifact, exactArtifactContext),
     false,
   );
 
@@ -526,12 +535,11 @@ test("isPromotableExternalReviewMissArtifact rejects non-positive provenance iss
     ],
   };
   assert.equal(
-    isPromotableExternalReviewMissArtifact(negativePrArtifact, {
-      issueNumber: 58,
-      prNumber: 91,
-      branch: "codex/issue-58",
-      headSha: "deadbeefcafebabe",
-    }),
+    isPromotableExternalReviewMissArtifact(negativePrArtifact, historicalArtifactContext),
+    false,
+  );
+  assert.equal(
+    isPromotableExternalReviewMissArtifact(negativePrArtifact, exactArtifactContext),
     false,
   );
 });
