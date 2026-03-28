@@ -44,40 +44,42 @@ function normalizeInventoryRefreshDiagnostics(
       typeof entry.source === "string" && entry.source.trim() !== "" &&
       typeof entry.message === "string" && entry.message.trim() !== "",
     )
-    .map((entry): InventoryRefreshDiagnosticEntry => ({
-      transport: entry.transport as "primary" | "fallback",
-      source: entry.source as string,
-      message: entry.message as string,
-      ...(typeof entry.page === "number" ? { page: entry.page } : {}),
-      ...(typeof entry.artifact_path === "string" && entry.artifact_path.trim() !== ""
-        ? { artifact_path: entry.artifact_path }
-        : {}),
-      ...(typeof entry.raw_artifact_path === "string" && entry.raw_artifact_path.trim() !== ""
-        ? { raw_artifact_path: entry.raw_artifact_path }
-        : {}),
-      ...(typeof entry.preview_artifact_path === "string" && entry.preview_artifact_path.trim() !== ""
-        ? { preview_artifact_path: entry.preview_artifact_path }
-        : typeof entry.artifact_path === "string" && entry.artifact_path.trim() !== ""
-          ? { preview_artifact_path: entry.artifact_path }
+    .map((entry): InventoryRefreshDiagnosticEntry => {
+      const previewArtifactPath =
+        typeof entry.preview_artifact_path === "string" && entry.preview_artifact_path.trim() !== ""
+          ? entry.preview_artifact_path
+          : typeof entry.artifact_path === "string" && entry.artifact_path.trim() !== ""
+            ? entry.artifact_path
+            : undefined;
+
+      return {
+        transport: entry.transport as "primary" | "fallback",
+        source: entry.source as string,
+        message: entry.message as string,
+        ...(typeof entry.page === "number" ? { page: entry.page } : {}),
+        ...(typeof entry.raw_artifact_path === "string" && entry.raw_artifact_path.trim() !== ""
+          ? { raw_artifact_path: entry.raw_artifact_path }
           : {}),
-      ...(Array.isArray(entry.command) && entry.command.every((value: unknown) => typeof value === "string")
-        ? { command: [...entry.command as string[]] }
-        : {}),
-      ...(entry.parse_stage === "primary_json_parse" || entry.parse_stage === "fallback_json_parse"
-        ? { parse_stage: entry.parse_stage }
-        : {}),
-      ...(typeof entry.parse_error === "string" && entry.parse_error.trim() !== ""
-        ? { parse_error: entry.parse_error }
-        : {}),
-      ...(typeof entry.stdout_bytes === "number" ? { stdout_bytes: entry.stdout_bytes } : {}),
-      ...(typeof entry.stderr_bytes === "number" ? { stderr_bytes: entry.stderr_bytes } : {}),
-      ...(typeof entry.captured_at === "string" && entry.captured_at.trim() !== ""
-        ? { captured_at: entry.captured_at }
-        : {}),
-      ...(typeof entry.working_directory === "string" && entry.working_directory.trim() !== ""
-        ? { working_directory: entry.working_directory }
-        : {}),
-    }));
+        ...(previewArtifactPath ? { preview_artifact_path: previewArtifactPath } : {}),
+        ...(Array.isArray(entry.command) && entry.command.every((value: unknown) => typeof value === "string")
+          ? { command: [...entry.command as string[]] }
+          : {}),
+        ...(entry.parse_stage === "primary_json_parse" || entry.parse_stage === "fallback_json_parse"
+          ? { parse_stage: entry.parse_stage }
+          : {}),
+        ...(typeof entry.parse_error === "string" && entry.parse_error.trim() !== ""
+          ? { parse_error: entry.parse_error }
+          : {}),
+        ...(typeof entry.stdout_bytes === "number" ? { stdout_bytes: entry.stdout_bytes } : {}),
+        ...(typeof entry.stderr_bytes === "number" ? { stderr_bytes: entry.stderr_bytes } : {}),
+        ...(typeof entry.captured_at === "string" && entry.captured_at.trim() !== ""
+          ? { captured_at: entry.captured_at }
+          : {}),
+        ...(typeof entry.working_directory === "string" && entry.working_directory.trim() !== ""
+          ? { working_directory: entry.working_directory }
+          : {}),
+      };
+    });
 
   return normalized.length > 0 ? normalized : undefined;
 }

@@ -545,31 +545,36 @@ export class GitHubClient {
     const stderrBytes = Buffer.byteLength(args.result.stderr, "utf8");
     await ensureDir(captureDir);
     await writeFileAtomic(rawArtifactPath, args.result.stdout);
-    await writeJsonAtomic(previewArtifactPath, {
-      capturedAt,
-      transport: args.transport,
-      source: args.source,
-      page: args.page ?? null,
-      parseStage: args.parseStage,
-      rawArtifactPath,
-      previewArtifactPath,
-      command: ["gh", ...args.args],
-      parseError: parseMessage,
-      stdoutPreview: truncatePreservingStartAndEnd(args.result.stdout, INVENTORY_FAILURE_OUTPUT_LIMIT) ?? "",
-      stderrPreview: truncatePreservingStartAndEnd(args.result.stderr, INVENTORY_FAILURE_OUTPUT_LIMIT) ?? "",
-      stdoutBytes,
-      stderrBytes,
-      context: {
-        repoSlug: this.config.repoSlug,
-        workingDirectory,
-        pid: process.pid,
-        platform: process.platform,
-        nodeVersion: process.version,
-        ghHost: process.env.GH_HOST ?? null,
-        ghRepo: process.env.GH_REPO ?? null,
-        ghConfigDir: process.env.GH_CONFIG_DIR ?? null,
-      },
-    });
+    try {
+      await writeJsonAtomic(previewArtifactPath, {
+        capturedAt,
+        transport: args.transport,
+        source: args.source,
+        page: args.page ?? null,
+        parseStage: args.parseStage,
+        rawArtifactPath,
+        previewArtifactPath,
+        command: ["gh", ...args.args],
+        parseError: parseMessage,
+        stdoutPreview: truncatePreservingStartAndEnd(args.result.stdout, INVENTORY_FAILURE_OUTPUT_LIMIT) ?? "",
+        stderrPreview: truncatePreservingStartAndEnd(args.result.stderr, INVENTORY_FAILURE_OUTPUT_LIMIT) ?? "",
+        stdoutBytes,
+        stderrBytes,
+        context: {
+          repoSlug: this.config.repoSlug,
+          workingDirectory,
+          pid: process.pid,
+          platform: process.platform,
+          nodeVersion: process.version,
+          ghHost: process.env.GH_HOST ?? null,
+          ghRepo: process.env.GH_REPO ?? null,
+          ghConfigDir: process.env.GH_CONFIG_DIR ?? null,
+        },
+      });
+    } catch (error) {
+      await fs.rm(rawArtifactPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
     await this.pruneMalformedInventoryCaptures(captureDir);
     return {
       transport: args.transport,
@@ -619,10 +624,17 @@ export class GitHubClient {
 
   private async pruneMalformedInventoryCaptures(captureDir: string): Promise<void> {
     const entries = await fs.readdir(captureDir, { withFileTypes: true });
+    const captureEventPattern = /^(\d{8}T\d{6}\.\d{3}Z-.*?)(?:-(?:raw|preview))?\.json$/u;
     const captureEvents = Array.from(new Set(
       entries
-        .filter((entry) => entry.isFile() && /^\d{8}T\d{6}\.\d{3}Z-.*-(?:raw|preview)\.json$/u.test(entry.name))
-        .map((entry) => entry.name.replace(/-(?:raw|preview)\.json$/u, "")),
+        .flatMap((entry) => {
+          if (!entry.isFile()) {
+            return [];
+          }
+
+          const match = entry.name.match(captureEventPattern);
+          return match?.[1] ? [match[1]] : [];
+        }),
     ))
       .sort();
     const extraEvents = captureEvents.length - inventoryCaptureLimit();
@@ -632,6 +644,7 @@ export class GitHubClient {
 
     await Promise.all(
       captureEvents.slice(0, extraEvents).flatMap((baseName) => ([
+        fs.rm(path.join(captureDir, `${baseName}.json`), { force: true }),
         fs.rm(path.join(captureDir, `${baseName}-raw.json`), { force: true }),
         fs.rm(path.join(captureDir, `${baseName}-preview.json`), { force: true }),
       ])),

@@ -412,6 +412,70 @@ test("StateStore roundtrip preserves inventory refresh diagnostics", async () =>
   });
 });
 
+test("StateStore save canonicalizes legacy inventory artifact paths to preview_artifact_path", async () => {
+  await withTempDir(async (dir) => {
+    const state: SupervisorStateFile = {
+      activeIssueNumber: null,
+      issues: {},
+      inventory_refresh_failure: {
+        source: "gh issue list",
+        message: "Failed to load full issue inventory.",
+        recorded_at: "2026-03-28T07:16:21.409Z",
+        diagnostics: [
+          {
+            transport: "primary",
+            source: "gh issue list",
+            message: "legacy artifact only",
+            artifact_path: "/tmp/inventory-refresh-failures/legacy-preview.json",
+          },
+          {
+            transport: "fallback",
+            source: "gh api repos/owner/repo/issues",
+            message: "legacy and canonical artifact paths",
+            artifact_path: "/tmp/inventory-refresh-failures/legacy-preview.json",
+            preview_artifact_path: "/tmp/inventory-refresh-failures/fallback-preview.json",
+            raw_artifact_path: "/tmp/inventory-refresh-failures/fallback-raw.json",
+          },
+        ],
+      },
+    };
+
+    const store = new StateStore(path.join(dir, "state.json"), { backend: "json" });
+    await store.save(state);
+
+    const persisted = JSON.parse(await fs.readFile(path.join(dir, "state.json"), "utf8")) as {
+      inventory_refresh_failure?: {
+        diagnostics?: Array<Record<string, unknown>>;
+      };
+    };
+    const persistedDiagnostics = persisted.inventory_refresh_failure?.diagnostics ?? [];
+
+    assert.equal(persistedDiagnostics.length, 2);
+    assert.equal("artifact_path" in (persistedDiagnostics[0] ?? {}), false);
+    assert.equal("artifact_path" in (persistedDiagnostics[1] ?? {}), false);
+    assert.equal(
+      persistedDiagnostics[0]?.preview_artifact_path,
+      "/tmp/inventory-refresh-failures/legacy-preview.json",
+    );
+    assert.equal(
+      persistedDiagnostics[1]?.preview_artifact_path,
+      "/tmp/inventory-refresh-failures/fallback-preview.json",
+    );
+
+    const loaded = await store.load();
+    assert.equal(loaded.inventory_refresh_failure?.diagnostics?.[0]?.artifact_path, undefined);
+    assert.equal(
+      loaded.inventory_refresh_failure?.diagnostics?.[0]?.preview_artifact_path,
+      "/tmp/inventory-refresh-failures/legacy-preview.json",
+    );
+    assert.equal(loaded.inventory_refresh_failure?.diagnostics?.[1]?.artifact_path, undefined);
+    assert.equal(
+      loaded.inventory_refresh_failure?.diagnostics?.[1]?.preview_artifact_path,
+      "/tmp/inventory-refresh-failures/fallback-preview.json",
+    );
+  });
+});
+
 test("StateStore json load captures structured corruption findings for invalid JSON", async () => {
   await withTempDir(async (dir) => {
     const statePath = path.join(dir, "state.json");

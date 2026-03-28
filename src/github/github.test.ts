@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -1120,6 +1120,52 @@ test("GitHubClient listAllIssues captures malformed REST fallback pages with the
   }
 });
 
+test("GitHubClient listAllIssues removes the raw artifact when preview capture persistence fails", async (t) => {
+  const captureDir = await fs.mkdtemp(path.join(os.tmpdir(), "inventory-capture-preview-write-failure-"));
+
+  try {
+    const originalRename = fs.rename.bind(fs);
+    const renameMock = mock.method(
+      fs,
+      "rename",
+      async (...args: Parameters<typeof fs.rename>) => {
+        const [, destination] = args;
+        if (String(destination).endsWith("-preview.json")) {
+          const error = new Error("preview rename failed") as NodeJS.ErrnoException;
+          error.code = "EIO";
+          throw error;
+        }
+
+        return originalRename(...args);
+      },
+    );
+    t.after(() => {
+      renameMock.mock.restore();
+    });
+
+    const config = createConfig();
+    const client = new GitHubClient(config, async (_command, args) => {
+      if (args[0] === "issue" && args[1] === "list") {
+        return {
+          exitCode: 0,
+          stdout: "[{\"number\":500,\"title\":\"bad\njson\"}]",
+          stderr: "",
+        };
+      }
+
+      throw new Error(`Unexpected args: ${args.join(" ")}`);
+    });
+
+    await assert.rejects(() => client.listAllIssues({ captureDir }), /preview rename failed/);
+
+    const artifacts = await fs.readdir(captureDir);
+    assert.equal(artifacts.some((name) => name.endsWith("-raw.json")), false);
+    assert.equal(artifacts.some((name) => name.endsWith("-preview.json")), false);
+  } finally {
+    await fs.rm(captureDir, { recursive: true, force: true });
+  }
+});
+
 test("GitHubClient listAllIssues prunes older malformed inventory captures when the debug capture limit is exceeded", async () => {
   const captureDir = await fs.mkdtemp(path.join(os.tmpdir(), "inventory-capture-limit-"));
   const previousCaptureLimit = process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_LIMIT;
@@ -1156,6 +1202,57 @@ test("GitHubClient listAllIssues prunes older malformed inventory captures when 
 
     await assert.rejects(() => client.listAllIssues({ captureDir }), /Failed to load full issue inventory/);
     await assert.rejects(() => client.listAllIssues({ captureDir }), /Failed to load full issue inventory/);
+    await assert.rejects(() => client.listAllIssues({ captureDir }), /Failed to load full issue inventory/);
+
+    const artifacts = (await fs.readdir(captureDir)).sort();
+    assert.deepEqual(artifacts, [
+      "20260327T000001.000Z-gh-issue-list-preview.json",
+      "20260327T000001.000Z-gh-issue-list-raw.json",
+      "20260327T000002.000Z-gh-issue-list-preview.json",
+      "20260327T000002.000Z-gh-issue-list-raw.json",
+    ]);
+  } finally {
+    if (previousCaptureLimit === undefined) {
+      delete process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_LIMIT;
+    } else {
+      process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_LIMIT = previousCaptureLimit;
+    }
+    await fs.rm(captureDir, { recursive: true, force: true });
+  }
+});
+
+test("GitHubClient listAllIssues prunes legacy single-file malformed inventory captures alongside paired captures", async () => {
+  const captureDir = await fs.mkdtemp(path.join(os.tmpdir(), "inventory-capture-legacy-limit-"));
+  const previousCaptureLimit = process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_LIMIT;
+  process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_LIMIT = "2";
+
+  try {
+    await fs.writeFile(path.join(captureDir, "20260327T000000.000Z-gh-issue-list.json"), "{\n  \"legacy\": true\n}\n");
+    await fs.writeFile(path.join(captureDir, "20260327T000001.000Z-gh-issue-list-preview.json"), "{\n}\n");
+    await fs.writeFile(path.join(captureDir, "20260327T000001.000Z-gh-issue-list-raw.json"), "[\n]\n");
+
+    const config = createConfig();
+    const client = new GitHubClient(
+      config,
+      async (_command, args) => {
+        if (args[0] === "issue" && args[1] === "list") {
+          return {
+            exitCode: 0,
+            stdout: "[{\"number\":500,\"title\":\"bad\njson\"}]",
+            stderr: "",
+          };
+        }
+
+        if (args[0] === "api" && args[1] === "repos/owner/repo/issues") {
+          throw new Error("HTTP 502: Bad Gateway");
+        }
+
+        throw new Error(`Unexpected args: ${args.join(" ")}`);
+      },
+      undefined,
+      () => Date.parse("2026-03-27T00:00:02.000Z"),
+    );
+
     await assert.rejects(() => client.listAllIssues({ captureDir }), /Failed to load full issue inventory/);
 
     const artifacts = (await fs.readdir(captureDir)).sort();
