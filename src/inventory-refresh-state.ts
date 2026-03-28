@@ -6,12 +6,13 @@ import {
   LastSuccessfulInventorySnapshot,
   SupervisorStateFile,
 } from "./core/types";
-import { nowIso, truncate } from "./core/utils";
-import { isGitHubRateLimitFailure } from "./github/github-transport";
+import { hoursSince, nowIso, truncate } from "./core/utils";
+import { isGitHubRateLimitFailure, isTransientGitHubCommandFailure } from "./github/github-transport";
 import { GitHubInventoryRefreshError } from "./github";
 import { sanitizeStatusValue } from "./supervisor/supervisor-status-rendering";
 
 export const FULL_ISSUE_INVENTORY_SOURCE = "gh issue list";
+export const FRESH_INVENTORY_SNAPSHOT_MAX_AGE_HOURS = 1;
 
 export type InventoryStatusMode = "healthy" | "degraded";
 export type InventoryStatusPosture =
@@ -65,6 +66,30 @@ export function buildLastSuccessfulInventorySnapshot(issues: GitHubIssue[]): Las
       ...(issue.labels ? { labels: issue.labels.map((label) => ({ ...label })) } : {}),
     })),
   };
+}
+
+export function isFreshInventorySnapshot(
+  snapshot: LastSuccessfulInventorySnapshot | null | undefined,
+): snapshot is LastSuccessfulInventorySnapshot {
+  return Boolean(
+    snapshot
+    && snapshot.source === FULL_ISSUE_INVENTORY_SOURCE
+    && snapshot.issue_count > 0
+    && hoursSince(snapshot.recorded_at) <= FRESH_INVENTORY_SNAPSHOT_MAX_AGE_HOURS,
+  );
+}
+
+export function canUseSnapshotBackedSelectionAfterInventoryRefreshFailure(args: {
+  failure: InventoryRefreshFailure | null | undefined;
+  snapshot: LastSuccessfulInventorySnapshot | null | undefined;
+  previousFailure: InventoryRefreshFailure | null | undefined;
+}): boolean {
+  const { failure, snapshot, previousFailure } = args;
+  if (previousFailure !== undefined || !failure) {
+    return false;
+  }
+
+  return isTransientGitHubCommandFailure(failure.message) && isFreshInventorySnapshot(snapshot);
 }
 
 export function inventoryRefreshFailureEquals(
