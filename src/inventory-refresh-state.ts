@@ -1,4 +1,5 @@
 import {
+  InventoryRefreshDiagnosticEntry,
   GitHubIssue,
   InventoryRefreshFailure,
   IssueRunRecord,
@@ -7,6 +8,7 @@ import {
 } from "./core/types";
 import { nowIso, truncate } from "./core/utils";
 import { isGitHubRateLimitFailure } from "./github/github-transport";
+import { GitHubInventoryRefreshError } from "./github";
 import { sanitizeStatusValue } from "./supervisor/supervisor-status-rendering";
 
 export const FULL_ISSUE_INVENTORY_SOURCE = "gh issue list";
@@ -38,11 +40,18 @@ export interface InventoryOperatorStatus {
 
 export function buildInventoryRefreshFailure(error: unknown): InventoryRefreshFailure {
   const message = truncate(error instanceof Error ? error.message : String(error), 500) ?? "Unknown inventory refresh failure.";
+  const diagnostics = error instanceof GitHubInventoryRefreshError && error.diagnostics.length > 0
+    ? error.diagnostics.map((entry) => ({
+      ...entry,
+      ...(entry.command ? { command: [...entry.command] } : {}),
+    }))
+    : undefined;
   return {
-    source: FULL_ISSUE_INVENTORY_SOURCE,
+    source: diagnostics?.[0]?.source ?? FULL_ISSUE_INVENTORY_SOURCE,
     message,
     recorded_at: nowIso(),
     ...(isGitHubRateLimitFailure(message) ? { classification: "rate_limited" as const } : {}),
+    ...(diagnostics ? { diagnostics } : {}),
   };
 }
 
@@ -73,7 +82,8 @@ export function inventoryRefreshFailureEquals(
   return (
     left.source === right.source &&
     left.message === right.message &&
-    left.classification === right.classification
+    left.classification === right.classification &&
+    JSON.stringify(left.diagnostics ?? []) === JSON.stringify(right.diagnostics ?? [])
   );
 }
 
@@ -91,6 +101,33 @@ export function formatInventoryRefreshStatusLine(
     `recorded_at=${failure.recorded_at}`,
     `message=${sanitizeStatusValue(failure.message.replace(/\r?\n/g, "\\n"))}`,
   ].join(" ");
+}
+
+function formatInventoryRefreshDiagnosticLine(entry: InventoryRefreshDiagnosticEntry): string {
+  return [
+    "inventory_refresh_transport",
+    `transport=${entry.transport}`,
+    `source=${sanitizeStatusValue(entry.source)}`,
+    `message=${sanitizeStatusValue(entry.message.replace(/\r?\n/g, "\\n"))}`,
+    ...(entry.page === undefined || entry.page === null ? [] : [`page=${entry.page}`]),
+    ...(entry.artifact_path ? [`artifact=${sanitizeStatusValue(entry.artifact_path)}`] : []),
+    ...(entry.command ? [`command=${sanitizeStatusValue(entry.command.join(" "))}`] : []),
+    ...(entry.parse_error ? [`parse_error=${sanitizeStatusValue(entry.parse_error.replace(/\r?\n/g, "\\n"))}`] : []),
+    ...(entry.stdout_bytes === undefined ? [] : [`stdout_bytes=${entry.stdout_bytes}`]),
+    ...(entry.stderr_bytes === undefined ? [] : [`stderr_bytes=${entry.stderr_bytes}`]),
+    ...(entry.captured_at ? [`captured_at=${entry.captured_at}`] : []),
+    ...(entry.working_directory ? [`cwd=${sanitizeStatusValue(entry.working_directory)}`] : []),
+  ].join(" ");
+}
+
+export function formatInventoryRefreshDiagnosticLines(
+  failure: InventoryRefreshFailure | null | undefined,
+): string[] {
+  if (!failure?.diagnostics?.length) {
+    return [];
+  }
+
+  return failure.diagnostics.map((entry) => formatInventoryRefreshDiagnosticLine(entry));
 }
 
 export function formatLastSuccessfulInventorySnapshotStatusLine(

@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
+  InventoryRefreshDiagnosticEntry,
   IssueRunRecord,
   JsonCorruptStateResetResult,
   JsonStateQuarantine,
@@ -27,6 +28,47 @@ function hasOwn<T extends object, K extends PropertyKey>(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeInventoryRefreshDiagnostics(
+  diagnostics: unknown,
+): InventoryRefreshDiagnosticEntry[] | undefined {
+  if (!Array.isArray(diagnostics)) {
+    return undefined;
+  }
+
+  const normalized = diagnostics
+    .filter((entry): entry is Record<string, unknown> =>
+      isRecord(entry) &&
+      (entry.transport === "primary" || entry.transport === "fallback") &&
+      typeof entry.source === "string" && entry.source.trim() !== "" &&
+      typeof entry.message === "string" && entry.message.trim() !== "",
+    )
+    .map((entry): InventoryRefreshDiagnosticEntry => ({
+      transport: entry.transport as "primary" | "fallback",
+      source: entry.source as string,
+      message: entry.message as string,
+      ...(typeof entry.page === "number" ? { page: entry.page } : {}),
+      ...(typeof entry.artifact_path === "string" && entry.artifact_path.trim() !== ""
+        ? { artifact_path: entry.artifact_path }
+        : {}),
+      ...(Array.isArray(entry.command) && entry.command.every((value: unknown) => typeof value === "string")
+        ? { command: [...entry.command as string[]] }
+        : {}),
+      ...(typeof entry.parse_error === "string" && entry.parse_error.trim() !== ""
+        ? { parse_error: entry.parse_error }
+        : {}),
+      ...(typeof entry.stdout_bytes === "number" ? { stdout_bytes: entry.stdout_bytes } : {}),
+      ...(typeof entry.stderr_bytes === "number" ? { stderr_bytes: entry.stderr_bytes } : {}),
+      ...(typeof entry.captured_at === "string" && entry.captured_at.trim() !== ""
+        ? { captured_at: entry.captured_at }
+        : {}),
+      ...(typeof entry.working_directory === "string" && entry.working_directory.trim() !== ""
+        ? { working_directory: entry.working_directory }
+        : {}),
+    }));
+
+  return normalized.length > 0 ? normalized : undefined;
 }
 
 function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
@@ -178,6 +220,9 @@ function normalizeStateForLoad(raw: SupervisorStateFile | null | undefined): Sup
       ...(raw.inventory_refresh_failure.classification === "rate_limited"
         ? { classification: "rate_limited" as const }
         : {}),
+      ...(normalizeInventoryRefreshDiagnostics(raw.inventory_refresh_failure.diagnostics)
+        ? { diagnostics: normalizeInventoryRefreshDiagnostics(raw.inventory_refresh_failure.diagnostics) }
+        : {}),
     }
     : undefined;
   const lastSuccessfulInventorySnapshot = normalizeLastSuccessfulInventorySnapshot(raw?.last_successful_inventory_snapshot);
@@ -228,6 +273,9 @@ function normalizeStateForSave(raw: SupervisorStateFile | null | undefined): Sup
       recorded_at: raw.inventory_refresh_failure.recorded_at,
       ...(raw.inventory_refresh_failure.classification === "rate_limited"
         ? { classification: "rate_limited" as const }
+        : {}),
+      ...(normalizeInventoryRefreshDiagnostics(raw.inventory_refresh_failure.diagnostics)
+        ? { diagnostics: normalizeInventoryRefreshDiagnostics(raw.inventory_refresh_failure.diagnostics) }
         : {}),
     }
     : undefined;

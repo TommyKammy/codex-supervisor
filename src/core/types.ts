@@ -222,6 +222,21 @@ export interface InventoryRefreshFailure {
   message: string;
   recorded_at: string;
   classification?: "rate_limited";
+  diagnostics?: InventoryRefreshDiagnosticEntry[];
+}
+
+export interface InventoryRefreshDiagnosticEntry {
+  transport: "primary" | "fallback";
+  source: string;
+  message: string;
+  page?: number | null;
+  artifact_path?: string | null;
+  command?: string[];
+  parse_error?: string;
+  stdout_bytes?: number;
+  stderr_bytes?: number;
+  captured_at?: string;
+  working_directory?: string;
 }
 
 export interface LastSuccessfulInventorySnapshot {

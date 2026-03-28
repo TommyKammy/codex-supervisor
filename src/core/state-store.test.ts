@@ -264,6 +264,57 @@ test("StateStore sqlite roundtrip preserves snapshot-only persisted state", asyn
   });
 });
 
+test("StateStore roundtrip preserves inventory refresh diagnostics", async () => {
+  await withTempDir(async (dir) => {
+    const state: SupervisorStateFile = {
+      activeIssueNumber: null,
+      issues: {},
+      inventory_refresh_failure: {
+        source: "gh issue list",
+        message: "Failed to load full issue inventory.",
+        recorded_at: "2026-03-28T07:16:21.409Z",
+        diagnostics: [
+          {
+            transport: "primary",
+            source: "gh issue list",
+            message: "Failed to parse JSON from gh issue list: Bad control character in string literal",
+            artifact_path: "/tmp/inventory-refresh-failures/primary.json",
+            command: ["gh", "issue", "list", "--repo", "owner/repo"],
+            parse_error: "Failed to parse JSON from gh issue list: Bad control character in string literal",
+            stdout_bytes: 32766,
+            stderr_bytes: 14,
+            captured_at: "2026-03-28T07:16:21.409Z",
+            working_directory: "/tmp/workspaces/loop",
+          },
+          {
+            transport: "fallback",
+            source: "gh api repos/owner/repo/issues",
+            message: "Failed to parse JSON from gh api repos/owner/repo/issues page=2: Bad control character in string literal",
+            page: 2,
+            artifact_path: "/tmp/inventory-refresh-failures/fallback.json",
+            command: ["gh", "api", "repos/owner/repo/issues", "--method", "GET", "-f", "page=2"],
+            parse_error: "Failed to parse JSON from gh api repos/owner/repo/issues page=2: Bad control character in string literal",
+            stdout_bytes: 32766,
+            stderr_bytes: 9,
+            captured_at: "2026-03-28T07:16:22.000Z",
+            working_directory: "/tmp/workspaces/loop",
+          },
+        ],
+      },
+    };
+
+    const jsonStore = new StateStore(path.join(dir, "state.json"), { backend: "json" });
+    await jsonStore.save(state);
+    const loadedJson = await jsonStore.load();
+    assert.deepEqual(loadedJson.inventory_refresh_failure, state.inventory_refresh_failure);
+
+    const sqliteStore = new StateStore(path.join(dir, "state.sqlite"), { backend: "sqlite" });
+    await sqliteStore.save(state);
+    const loadedSqlite = await sqliteStore.load();
+    assert.deepEqual(loadedSqlite.inventory_refresh_failure, state.inventory_refresh_failure);
+  });
+});
+
 test("StateStore json load captures structured corruption findings for invalid JSON", async () => {
   await withTempDir(async (dir) => {
     const statePath = path.join(dir, "state.json");

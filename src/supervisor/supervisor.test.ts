@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createSupervisorLoopController, createSupervisorService, Supervisor } from "./index";
 import { createConfig } from "./supervisor-test-helpers";
 import { GitHubIssue, IssueRunRecord, SupervisorStateFile } from "../core/types";
+import { MALFORMED_INVENTORY_CAPTURE_DIR_ENV } from "../github";
 
 async function withStubbedDateNow<T>(nowIso: string, run: () => Promise<T>): Promise<T> {
   const originalDateNow = Date.now;
@@ -164,6 +165,31 @@ test("listLoopIssueInventory refreshes the full issue inventory after the reuse 
     (supervisor as unknown as { listLoopIssueInventory: () => Promise<GitHubIssue[]> }).listLoopIssueInventory());
 
   assert.equal(listAllIssuesCalls, 2);
+});
+
+test("listLoopIssueInventory enables malformed inventory capture for the loop path", async () => {
+  const config = createConfig({ stateFile: "/tmp/supervisor/state.json" });
+  const previousCaptureDir = process.env[MALFORMED_INVENTORY_CAPTURE_DIR_ENV];
+  let observedCaptureDir: string | undefined;
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listAllIssues: async () => {
+      observedCaptureDir = process.env[MALFORMED_INVENTORY_CAPTURE_DIR_ENV];
+      return [];
+    },
+  };
+
+  try {
+    await (supervisor as unknown as { listLoopIssueInventory: () => Promise<GitHubIssue[]> }).listLoopIssueInventory();
+    assert.equal(observedCaptureDir, "/tmp/supervisor/inventory-refresh-failures");
+    assert.equal(process.env[MALFORMED_INVENTORY_CAPTURE_DIR_ENV], previousCaptureDir);
+  } finally {
+    if (previousCaptureDir === undefined) {
+      delete process.env[MALFORMED_INVENTORY_CAPTURE_DIR_ENV];
+    } else {
+      process.env[MALFORMED_INVENTORY_CAPTURE_DIR_ENV] = previousCaptureDir;
+    }
+  }
 });
 
 test("listLoopIssueInventory records fetchedAtMs after the awaited refresh succeeds", async () => {

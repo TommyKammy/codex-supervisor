@@ -1,7 +1,7 @@
 import path from "node:path";
 import { runCommand } from "../core/command";
 import { loadConfig, summarizeCadenceDiagnostics, summarizeLocalCiContract, summarizeTrustDiagnostics } from "../core/config";
-import { GitHubClient } from "../github";
+import { GitHubClient, MALFORMED_INVENTORY_CAPTURE_DIR_ENV } from "../github";
 import { describeGsdIntegration } from "../gsd";
 import { issueJournalPath, trackedIssueJournalPath } from "../core/journal";
 import { acquireFileLock, LockHandle } from "../core/lock";
@@ -134,6 +134,7 @@ import { buildDetailedStatusModel, buildDetailedStatusSummaryLines } from "./sup
 import {
   buildInventoryOperatorStatus,
   formatInventoryOperatorPostureLine,
+  formatInventoryRefreshDiagnosticLines,
   formatInventoryRefreshStatusLine,
   formatLastSuccessfulInventorySnapshotStatusLine,
 } from "../inventory-refresh-state";
@@ -536,7 +537,7 @@ export class Supervisor {
     }
 
     try {
-      const issues = await this.github.listAllIssues();
+      const issues = await this.withLoopInventoryCapture(() => this.github.listAllIssues());
       this.cachedFullIssueInventory = {
         issues,
         fetchedAtMs: Date.now(),
@@ -545,6 +546,28 @@ export class Supervisor {
     } catch (error) {
       this.cachedFullIssueInventory = null;
       throw error;
+    }
+  }
+
+  private inventoryRefreshCaptureDir(): string {
+    return path.join(path.dirname(this.config.stateFile), "inventory-refresh-failures");
+  }
+
+  private async withLoopInventoryCapture<T>(operation: () => Promise<T>): Promise<T> {
+    const previousCaptureDir = process.env[MALFORMED_INVENTORY_CAPTURE_DIR_ENV];
+    if (previousCaptureDir && previousCaptureDir.trim() !== "") {
+      return operation();
+    }
+
+    process.env[MALFORMED_INVENTORY_CAPTURE_DIR_ENV] = this.inventoryRefreshCaptureDir();
+    try {
+      return await operation();
+    } finally {
+      if (previousCaptureDir === undefined) {
+        delete process.env[MALFORMED_INVENTORY_CAPTURE_DIR_ENV];
+      } else {
+        process.env[MALFORMED_INVENTORY_CAPTURE_DIR_ENV] = previousCaptureDir;
+      }
     }
   }
 
@@ -1033,6 +1056,7 @@ export class Supervisor {
     });
     const inventoryPostureLine = formatInventoryOperatorPostureLine(inventoryStatus);
     const inventoryRefreshStatusLine = formatInventoryRefreshStatusLine(state.inventory_refresh_failure);
+    const inventoryRefreshDiagnosticLines = formatInventoryRefreshDiagnosticLines(state.inventory_refresh_failure);
     const inventorySnapshotStatusLine = formatLastSuccessfulInventorySnapshotStatusLine(
       state.last_successful_inventory_snapshot,
     );
@@ -1099,6 +1123,7 @@ export class Supervisor {
             ...detailedStatusLines,
             inventoryPostureLine,
             ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
+            ...inventoryRefreshDiagnosticLines,
             ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
             ...githubRateLimitStatus.githubRateLimitLines,
           ];
@@ -1161,6 +1186,7 @@ export class Supervisor {
             ...detailedStatusLines,
             inventoryPostureLine,
             ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
+            ...inventoryRefreshDiagnosticLines,
             ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
             ...githubRateLimitStatus.githubRateLimitLines,
           ];
@@ -1195,6 +1221,7 @@ export class Supervisor {
             ...detailedStatusLines,
             inventoryPostureLine,
             ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
+            ...inventoryRefreshDiagnosticLines,
             ...githubRateLimitStatus.githubRateLimitLines,
           ];
         return {
@@ -1268,6 +1295,7 @@ export class Supervisor {
         ...detailedStatusLines,
         inventoryPostureLine,
         ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
+        ...inventoryRefreshDiagnosticLines,
         ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
         ...githubRateLimitStatus.githubRateLimitLines,
       ];

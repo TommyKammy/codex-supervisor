@@ -886,17 +886,22 @@ test("GitHubClient listAllIssues captures malformed gh issue list payloads when 
     const artifact = JSON.parse(await fs.readFile(path.join(captureDir, artifacts[0] ?? ""), "utf8")) as {
       source: string;
       command: string[];
-      stdout: { text: string; base64: string };
-      stderr: string;
+      stdout: { text: string; base64: string; bytes: number };
+      stderr: { text: string; bytes: number };
       parseError: string;
+      context: { repoSlug: string; workingDirectory: string };
     };
 
     assert.equal(artifact.source, "gh issue list");
     assert.deepEqual(artifact.command.slice(0, 2), ["gh", "issue"]);
-    assert.equal(artifact.stderr, "graphql transport stderr");
+    assert.equal(artifact.stderr.text, "graphql transport stderr");
+    assert.equal(artifact.stderr.bytes, Buffer.byteLength("graphql transport stderr", "utf8"));
     assert.match(artifact.parseError, /Failed to parse JSON from gh issue list/);
     assert.equal(artifact.stdout.text, "[{\"number\":500,\"title\":\"bad\njson\"}]");
+    assert.equal(artifact.stdout.bytes, Buffer.byteLength(artifact.stdout.text, "utf8"));
     assert.equal(Buffer.from(artifact.stdout.base64, "base64").toString("utf8"), artifact.stdout.text);
+    assert.equal(artifact.context.repoSlug, "owner/repo");
+    assert.match(artifact.context.workingDirectory, /codex-supervisor/);
   } finally {
     if (previousCaptureDir === undefined) {
       delete process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR;
@@ -962,13 +967,15 @@ test("GitHubClient listAllIssues captures malformed REST fallback pages with the
     const artifact = JSON.parse(await fs.readFile(path.join(captureDir, artifacts[1] ?? ""), "utf8")) as {
       source: string;
       page: number | null;
-      stderr: string;
-      stdout: { text: string; base64: string };
+      stderr: { text: string; bytes: number };
+      stdout: { text: string; base64: string; bytes: number };
     };
     assert.equal(artifact.source, "gh api repos/owner/repo/issues");
     assert.equal(artifact.page, 2);
-    assert.equal(artifact.stderr, "rest stderr");
+    assert.equal(artifact.stderr.text, "rest stderr");
+    assert.equal(artifact.stderr.bytes, Buffer.byteLength("rest stderr", "utf8"));
     assert.equal(artifact.stdout.text, "[{\"number\":499,\"title\":\"bad\njson\"}]");
+    assert.equal(artifact.stdout.bytes, Buffer.byteLength(artifact.stdout.text, "utf8"));
   } finally {
     if (previousCaptureDir === undefined) {
       delete process.env.CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_DIR;
