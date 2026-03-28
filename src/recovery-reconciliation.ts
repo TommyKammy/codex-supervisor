@@ -2,6 +2,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { runCommand } from "./core/command";
 import {
+  inferStateFromPullRequest,
+  syncCopilotReviewRequestObservation,
+  syncCopilotReviewTimeoutState,
+  syncReviewWaitWindow,
+} from "./pull-request-state";
+import {
+  blockedReasonForLifecycleState,
+  isOpenPullRequest,
+} from "./supervisor/supervisor-lifecycle";
+import { inferFailureContext } from "./supervisor/supervisor-failure-context";
+import {
   findHighRiskBlockingAmbiguity,
   findParentIssuesReadyToClose,
   hasAvailableIssueLabels,
@@ -1181,49 +1192,28 @@ export async function reconcileRecoverableBlockedIssueStates(
   issues: GitHubIssue[],
   deps: {
     shouldAutoRetryHandoffMissing: (record: IssueRunRecord, config: SupervisorConfig) => boolean;
-    inferStateFromPullRequest?: (
-      config: SupervisorConfig,
-      record: IssueRunRecord,
-      pr: NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
-      checks: PullRequestCheck[],
-      reviewThreads: ReviewThread[],
-    ) => IssueRunRecord["state"];
-    inferFailureContext?: (
-      config: SupervisorConfig,
-      record: IssueRunRecord,
-      pr: NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
-      checks: PullRequestCheck[],
-      reviewThreads: ReviewThread[],
-    ) => IssueRunRecord["last_failure_context"];
-    blockedReasonForLifecycleState?: (
-      config: SupervisorConfig,
-      record: IssueRunRecord,
-      pr: NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
-      checks: PullRequestCheck[],
-      reviewThreads: ReviewThread[],
-    ) => IssueRunRecord["blocked_reason"];
-    isOpenPullRequest?: (
-      pr: NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
-    ) => boolean;
-    syncReviewWaitWindow?: (
-      record: IssueRunRecord,
-      pr: NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
-    ) => Partial<IssueRunRecord>;
-    syncCopilotReviewRequestObservation?: (
-      config: SupervisorConfig,
-      record: IssueRunRecord,
-      pr: NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
-    ) => Partial<IssueRunRecord>;
-    syncCopilotReviewTimeoutState?: (
-      config: SupervisorConfig,
-      record: IssueRunRecord,
-      pr: NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
-    ) => Partial<IssueRunRecord>;
+    inferStateFromPullRequest?: typeof inferStateFromPullRequest;
+    inferFailureContext?: typeof inferFailureContext;
+    blockedReasonForLifecycleState?: typeof blockedReasonForLifecycleState;
+    isOpenPullRequest?: typeof isOpenPullRequest;
+    syncReviewWaitWindow?: typeof syncReviewWaitWindow;
+    syncCopilotReviewRequestObservation?: typeof syncCopilotReviewRequestObservation;
+    syncCopilotReviewTimeoutState?: typeof syncCopilotReviewTimeoutState;
   },
 ): Promise<RecoveryEvent[]> {
   let changed = false;
   const recoveryEvents: RecoveryEvent[] = [];
   const issuesByNumber = new Map(issues.map((issue) => [issue.number, issue]));
+  const inferStateFromPullRequestImpl = deps.inferStateFromPullRequest ?? inferStateFromPullRequest;
+  const inferFailureContextImpl = deps.inferFailureContext ?? inferFailureContext;
+  const blockedReasonForLifecycleStateImpl =
+    deps.blockedReasonForLifecycleState ?? blockedReasonForLifecycleState;
+  const isOpenPullRequestImpl = deps.isOpenPullRequest ?? isOpenPullRequest;
+  const syncReviewWaitWindowImpl = deps.syncReviewWaitWindow ?? syncReviewWaitWindow;
+  const syncCopilotReviewRequestObservationImpl =
+    deps.syncCopilotReviewRequestObservation ?? syncCopilotReviewRequestObservation;
+  const syncCopilotReviewTimeoutStateImpl =
+    deps.syncCopilotReviewTimeoutState ?? syncCopilotReviewTimeoutState;
 
   for (const record of Object.values(state.issues)) {
     if (record.state !== "blocked") {
@@ -1303,31 +1293,23 @@ export async function reconcileRecoverableBlockedIssueStates(
     }
 
     if (
-      record.state === "blocked" &&
       record.pr_number !== null &&
-      (record.blocked_reason === null || record.blocked_reason === "manual_review" || record.blocked_reason === "verification") &&
-      deps.inferStateFromPullRequest &&
-      deps.inferFailureContext &&
-      deps.blockedReasonForLifecycleState &&
-      deps.isOpenPullRequest &&
-      deps.syncReviewWaitWindow &&
-      deps.syncCopilotReviewRequestObservation &&
-      deps.syncCopilotReviewTimeoutState
+      (record.blocked_reason === null || record.blocked_reason === "manual_review" || record.blocked_reason === "verification")
     ) {
       const trackedPullRequest = await github.getPullRequestIfExists(record.pr_number);
-      if (!trackedPullRequest || !deps.isOpenPullRequest(trackedPullRequest)) {
+      if (!trackedPullRequest || !isOpenPullRequestImpl(trackedPullRequest)) {
         continue;
       }
 
       const checks = await github.getChecks(trackedPullRequest.number);
       const reviewThreads = await github.getUnresolvedReviewThreads(trackedPullRequest.number);
-      const reviewWaitPatch = deps.syncReviewWaitWindow(record, trackedPullRequest);
-      const copilotReviewRequestObservationPatch = deps.syncCopilotReviewRequestObservation(
+      const reviewWaitPatch = syncReviewWaitWindowImpl(record, trackedPullRequest);
+      const copilotReviewRequestObservationPatch = syncCopilotReviewRequestObservationImpl(
         config,
         record,
         trackedPullRequest,
       );
-      const copilotReviewTimeoutPatch = deps.syncCopilotReviewTimeoutState(config, record, trackedPullRequest);
+      const copilotReviewTimeoutPatch = syncCopilotReviewTimeoutStateImpl(config, record, trackedPullRequest);
       const recordForState: IssueRunRecord = {
         ...record,
         pr_number: trackedPullRequest.number,
@@ -1336,7 +1318,7 @@ export async function reconcileRecoverableBlockedIssueStates(
         ...copilotReviewRequestObservationPatch,
         ...copilotReviewTimeoutPatch,
       };
-      const nextState = deps.inferStateFromPullRequest(
+      const nextState = inferStateFromPullRequestImpl(
         config,
         recordForState,
         trackedPullRequest,
@@ -1347,17 +1329,44 @@ export async function reconcileRecoverableBlockedIssueStates(
         continue;
       }
 
+      const failureContext =
+        nextState === "blocked"
+          ? inferFailureContextImpl(config, recordForState, trackedPullRequest, checks, reviewThreads)
+          : null;
+      const nextBlockedReason =
+        nextState === "blocked"
+          ? blockedReasonForLifecycleStateImpl(config, recordForState, trackedPullRequest, checks, reviewThreads)
+          : null;
+
       if (nextState === "blocked") {
         const blockedPatch: Partial<IssueRunRecord> = {
+          state: "blocked",
+          last_error: failureContext ? truncate(failureContext.summary, 1000) : null,
+          last_failure_kind: null,
+          last_failure_context: failureContext,
+          last_blocker_signature: null,
+          ...applyFailureSignature(record, failureContext),
+          blocked_reason: nextBlockedReason,
           pr_number: trackedPullRequest.number,
           last_head_sha: trackedPullRequest.headRefOid,
           ...reviewWaitPatch,
           ...copilotReviewRequestObservationPatch,
           ...copilotReviewTimeoutPatch,
         };
+        const blockerSemanticsChanged =
+          nextBlockedReason !== record.blocked_reason
+          || (failureContext?.signature ?? null) !== record.last_failure_signature;
+        const nextPatch = blockerSemanticsChanged
+          ? {
+            ...blockedPatch,
+            repeated_blocker_count: 0,
+            timeout_retry_count: 0,
+            blocked_verification_retry_count: 0,
+          }
+          : blockedPatch;
 
-        if (needsRecordUpdate(record, blockedPatch)) {
-          const updated = stateStore.touch(record, blockedPatch);
+        if (needsRecordUpdate(record, nextPatch)) {
+          const updated = stateStore.touch(record, nextPatch);
           state.issues[String(record.issue_number)] = updated;
           changed = true;
         }
@@ -1368,8 +1377,8 @@ export async function reconcileRecoverableBlockedIssueStates(
         record,
         pr: trackedPullRequest,
         nextState,
-        failureContext: null,
-        blockedReason: null,
+        failureContext,
+        blockedReason: nextBlockedReason,
         reviewWaitPatch,
         copilotReviewRequestObservationPatch,
         copilotReviewTimeoutPatch,
