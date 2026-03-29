@@ -1131,18 +1131,18 @@ test("createSupervisorHttpServer exposes only the safe supervisor mutations over
 test("createSupervisorHttpServer serializes concurrent run-once requests", async (t) => {
   let activeRuns = 0;
   let maxConcurrentRuns = 0;
-  let releaseFirstRun: (() => void) | null = null;
+  let releaseFirstRun!: () => void;
   const firstRunGate = new Promise<void>((resolve) => {
     releaseFirstRun = resolve;
   });
-  let resolveSecondCycleAttempt: (() => void) | null = null;
+  let resolveSecondCycleAttempt!: () => void;
   const secondCycleAttempt = new Promise<void>((resolve) => {
     resolveSecondCycleAttempt = resolve;
   });
 
   const service = {
     ...createStubService(),
-    runOnce: async () => {
+    runOnce: async (_options: Parameters<SupervisorService["runOnce"]>[0]) => {
       activeRuns += 1;
       maxConcurrentRuns = Math.max(maxConcurrentRuns, activeRuns);
       try {
@@ -1162,7 +1162,7 @@ test("createSupervisorHttpServer serializes concurrent run-once requests", async
         return async (_command, options) => {
           callCount += 1;
           if (callCount === 2) {
-            resolveSecondCycleAttempt?.();
+            resolveSecondCycleAttempt();
           }
           if (lockHeld) {
             return "Skipped supervisor cycle: lock unavailable.";
@@ -1205,7 +1205,7 @@ test("createSupervisorHttpServer serializes concurrent run-once requests", async
   });
 
   await secondCycleAttempt;
-  releaseFirstRun?.();
+  releaseFirstRun();
 
   const [firstResponse, secondResponse] = await Promise.all([firstResponsePromise, secondResponsePromise]);
 
