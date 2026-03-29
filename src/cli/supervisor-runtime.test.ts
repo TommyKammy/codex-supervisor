@@ -1228,28 +1228,30 @@ test("runSupervisorCommand keeps the WebUI shell up after a managed restart requ
         acquireLoopRuntimeLock: async () => createLoopRuntimeLockHandle(),
         runCycle: async () => "unused",
       },
-      createWebUiService: async () => {
+      createWebUiWorker: async () => {
         recreateCalls += 1;
         return {
-          config: {} as SupervisorConfig,
-          pollIntervalMs: async () => 50,
-          runOnce: async () => "unused",
-          queryStatus: async () => createStatusDto(),
-          queryExplain: async () => {
-            throw new Error("unexpected queryExplain");
-          },
-          runRecoveryAction: async () => {
-            throw new Error("unexpected runRecoveryAction");
-          },
-          pruneOrphanedWorkspaces: async () => {
-            throw new Error("unexpected pruneOrphanedWorkspaces");
-          },
-          resetCorruptJsonState: async () => {
-            throw new Error("unexpected resetCorruptJsonState");
-          },
-          queryIssueLint: async () => createIssueLintDto(),
-          queryDoctor: async () => {
-            throw new Error("unexpected queryDoctor");
+          service: {
+            config: {} as SupervisorConfig,
+            pollIntervalMs: async () => 50,
+            runOnce: async () => "unused",
+            queryStatus: async () => createStatusDto(),
+            queryExplain: async () => {
+              throw new Error("unexpected queryExplain");
+            },
+            runRecoveryAction: async () => {
+              throw new Error("unexpected runRecoveryAction");
+            },
+            pruneOrphanedWorkspaces: async () => {
+              throw new Error("unexpected pruneOrphanedWorkspaces");
+            },
+            resetCorruptJsonState: async () => {
+              throw new Error("unexpected resetCorruptJsonState");
+            },
+            queryIssueLint: async () => createIssueLintDto(),
+            queryDoctor: async () => {
+              throw new Error("unexpected queryDoctor");
+            },
           },
         };
       },
@@ -1287,4 +1289,120 @@ test("runSupervisorCommand keeps the WebUI shell up after a managed restart requ
   assert.match(stdout[0] ?? "", /WebUI listening on http:\/\/127\.0\.0\.1:4310/);
   assert.doesNotMatch(stdout.join("\n"), /managed restart requested, shutting down WebUI for relaunch/);
   assert.match(stdout[1] ?? "", /received SIGTERM, shutting down WebUI/);
+});
+
+test("runSupervisorCommand keeps web run-once on the fresh loop controller after a managed restart", async (t) => {
+  const runCycleCalls: string[] = [];
+  let signalHandler: ((signal: NodeJS.Signals) => void) | undefined;
+
+  const previousManagedRestart = process.env.CODEX_SUPERVISOR_MANAGED_RESTART;
+  const previousManagedRestartLauncher = process.env.CODEX_SUPERVISOR_MANAGED_RESTART_LAUNCHER;
+  process.env.CODEX_SUPERVISOR_MANAGED_RESTART = "1";
+  process.env.CODEX_SUPERVISOR_MANAGED_RESTART_LAUNCHER = "systemd";
+  t.after(() => {
+    if (previousManagedRestart === undefined) {
+      delete process.env.CODEX_SUPERVISOR_MANAGED_RESTART;
+    } else {
+      process.env.CODEX_SUPERVISOR_MANAGED_RESTART = previousManagedRestart;
+    }
+    if (previousManagedRestartLauncher === undefined) {
+      delete process.env.CODEX_SUPERVISOR_MANAGED_RESTART_LAUNCHER;
+    } else {
+      process.env.CODEX_SUPERVISOR_MANAGED_RESTART_LAUNCHER = previousManagedRestartLauncher;
+    }
+  });
+
+  await runSupervisorCommand(
+    { command: "web", dryRun: false, why: false },
+    {
+      service: {
+        config: {} as SupervisorConfig,
+        pollIntervalMs: async () => 50,
+        runOnce: async () => "stale service runOnce",
+        queryStatus: async () => createStatusDto(),
+        queryExplain: async () => {
+          throw new Error("unexpected queryExplain");
+        },
+        runRecoveryAction: async () => {
+          throw new Error("unexpected runRecoveryAction");
+        },
+        pruneOrphanedWorkspaces: async () => {
+          throw new Error("unexpected pruneOrphanedWorkspaces");
+        },
+        resetCorruptJsonState: async () => {
+          throw new Error("unexpected resetCorruptJsonState");
+        },
+        queryIssueLint: async () => createIssueLintDto(),
+        queryDoctor: async () => {
+          throw new Error("unexpected queryDoctor");
+        },
+      },
+      loopController: {
+        acquireLoopRuntimeLock: async () => createLoopRuntimeLockHandle(),
+        runCycle: async () => {
+          runCycleCalls.push("initial");
+          return "initial cycle";
+        },
+      },
+      createWebUiWorker: async () => ({
+        service: {
+          config: {} as SupervisorConfig,
+          pollIntervalMs: async () => 50,
+          runOnce: async () => "replacement service runOnce",
+          queryStatus: async () => createStatusDto(),
+          queryExplain: async () => {
+            throw new Error("unexpected queryExplain");
+          },
+          runRecoveryAction: async () => {
+            throw new Error("unexpected runRecoveryAction");
+          },
+          pruneOrphanedWorkspaces: async () => {
+            throw new Error("unexpected pruneOrphanedWorkspaces");
+          },
+          resetCorruptJsonState: async () => {
+            throw new Error("unexpected resetCorruptJsonState");
+          },
+          queryIssueLint: async () => createIssueLintDto(),
+          queryDoctor: async () => {
+            throw new Error("unexpected queryDoctor");
+          },
+        },
+        loopController: {
+          acquireLoopRuntimeLock: async () => createLoopRuntimeLockHandle(),
+          runCycle: async () => {
+            runCycleCalls.push("replacement");
+            return "replacement cycle";
+          },
+        },
+      }),
+      createHttpServer: (_service, options) => ({
+        listen: (_port, _host, listeningListener) => {
+          listeningListener?.();
+          queueMicrotask(async () => {
+            assert.equal(await _service.runOnce({ dryRun: false }), "initial cycle");
+            await options?.managedRestart?.requestRestart();
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            assert.equal(await _service.runOnce({ dryRun: false }), "replacement cycle");
+            setImmediate(() => {
+              signalHandler?.("SIGTERM");
+            });
+          });
+        },
+        once: () => {},
+        close: (callback) => {
+          callback();
+        },
+        address: () => ({ address: "127.0.0.1", family: "IPv4", port: 4310 }),
+      }),
+      writeStdout: () => {},
+      writeStderr: (line) => {
+        throw new Error(`unexpected stderr: ${line}`);
+      },
+      registerStopSignals: (handler) => {
+        signalHandler = handler;
+      },
+    },
+  );
+
+  assert.deepEqual(runCycleCalls, ["initial", "replacement"]);
 });

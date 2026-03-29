@@ -101,11 +101,12 @@ test("runCli routes web through the supervisor runtime boundary", async () => {
         ...command,
         service: dependencies.service,
         loopController: dependencies.loopController,
+        webWorker: dependencies.createWebUiWorker?.(),
       };
     },
   });
 
-  assert.deepEqual(createdConfigs, [undefined, undefined]);
+  assert.deepEqual(createdConfigs, [undefined, undefined, undefined, undefined]);
   assert.deepEqual(runtimeCommand, {
     command: "web",
     dryRun: false,
@@ -113,6 +114,10 @@ test("runCli routes web through the supervisor runtime boundary", async () => {
     issueNumber: undefined,
     service,
     loopController,
+    webWorker: {
+      service,
+      loopController,
+    },
   });
 });
 
