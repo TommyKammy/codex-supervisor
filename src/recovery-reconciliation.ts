@@ -506,6 +506,54 @@ export function buildRecoveryEvent(issueNumber: number, reason: string): Recover
   };
 }
 
+function latestFiniteTimestamp(...values: Array<string | null | undefined>): number | null {
+  let latest: number | null = null;
+  for (const value of values) {
+    const parsed = Date.parse(value ?? "");
+    if (!Number.isFinite(parsed)) {
+      continue;
+    }
+    latest = latest === null ? parsed : Math.max(latest, parsed);
+  }
+  return latest;
+}
+
+function shouldReconsiderBlockedNoPrStaleManualStop(
+  record: Pick<
+    IssueRunRecord,
+    | "state"
+    | "blocked_reason"
+    | "pr_number"
+    | "last_failure_signature"
+    | "last_failure_context"
+    | "last_recovery_at"
+    | "updated_at"
+  >,
+  issue: Pick<GitHubIssue, "updatedAt">,
+): boolean {
+  if (
+    record.state !== "blocked" ||
+    record.blocked_reason !== "manual_review" ||
+    record.pr_number !== null ||
+    record.last_failure_signature !== STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE
+  ) {
+    return false;
+  }
+
+  const issueUpdatedAtMs = Date.parse(issue.updatedAt);
+  const localStopObservedAtMs = latestFiniteTimestamp(
+    record.last_failure_context?.updated_at,
+    record.last_recovery_at,
+    record.updated_at,
+  );
+
+  return (
+    Number.isFinite(issueUpdatedAtMs) &&
+    localStopObservedAtMs !== null &&
+    issueUpdatedAtMs > localStopObservedAtMs
+  );
+}
+
 export function applyRecoveryEvent(
   patch: Partial<IssueRunRecord>,
   recoveryEvent: RecoveryEvent,
@@ -1258,6 +1306,30 @@ export async function reconcileRecoverableBlockedIssueStates(
         copilot_review_timed_out_at: null,
         copilot_review_timeout_action: null,
         copilot_review_timeout_reason: null,
+        ...applyRecoveryEvent({}, recoveryEvent),
+      });
+      state.issues[String(record.issue_number)] = updated;
+      changed = true;
+      recoveryEvents.push(recoveryEvent);
+      continue;
+    }
+
+    if (shouldReconsiderBlockedNoPrStaleManualStop(record, issue)) {
+      const recoveryEvent = buildRecoveryEvent(
+        record.issue_number,
+        `github_issue_reconsidered: requeued issue #${record.issue_number} after GitHub issue updates arrived following a stale no-PR manual stop`,
+      );
+      const updated = stateStore.touch(record, {
+        state: "queued",
+        blocked_reason: null,
+        last_error: null,
+        last_failure_kind: null,
+        last_failure_context: null,
+        last_blocker_signature: null,
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+        stale_stabilizing_no_pr_recovery_count: 0,
+        codex_session_id: null,
         ...applyRecoveryEvent({}, recoveryEvent),
       });
       state.issues[String(record.issue_number)] = updated;
