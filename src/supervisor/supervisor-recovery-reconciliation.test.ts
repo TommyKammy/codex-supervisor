@@ -519,6 +519,191 @@ test("reconcileRecoverableBlockedIssueStates resumes conflicted tracked PR hando
   ]);
 });
 
+test("reconcileRecoverableBlockedIssueStates requeues stale no-PR manual-review stops after fresh GitHub issue updates", async () => {
+  const config = createConfig();
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 366,
+        state: "blocked",
+        blocked_reason: "manual_review",
+        pr_number: null,
+        codex_session_id: null,
+        last_error:
+          "Issue #366 re-entered stale stabilizing recovery without a tracked PR 3 times; manual intervention is required.",
+        last_failure_kind: null,
+        last_failure_context: {
+          category: "blocked",
+          summary:
+            "Issue #366 re-entered stale stabilizing recovery without a tracked PR 3 times; manual intervention is required.",
+          signature: "stale-stabilizing-no-pr-recovery-loop",
+          command: null,
+          details: [
+            "state=stabilizing",
+            "tracked_pr=none",
+            "branch_state=recoverable",
+            "repeat_count=3/3",
+          ],
+          url: null,
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
+        repeated_failure_signature_count: 0,
+        stale_stabilizing_no_pr_recovery_count: config.sameFailureSignatureRepeatLimit,
+        last_recovery_reason:
+          "stale_state_manual_stop: blocked issue #366 after repeated stale stabilizing recovery without a tracked PR",
+        last_recovery_at: "2026-03-13T00:20:00Z",
+        updated_at: "2026-03-13T00:20:00Z",
+      }),
+    ],
+  });
+  const issue = createIssue({
+    number: 366,
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected getPullRequestIfExists call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "queued");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 0);
+  assert.equal(
+    updated.last_recovery_reason,
+    "github_issue_reconsidered: requeued issue #366 after GitHub issue updates arrived following a stale no-PR manual stop",
+  );
+  assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "github_issue_reconsidered: requeued issue #366 after GitHub issue updates arrived following a stale no-PR manual stop",
+  ]);
+});
+
+test("reconcileRecoverableBlockedIssueStates keeps stale no-PR manual-review stops blocked when GitHub issue context is unchanged", async () => {
+  const config = createConfig();
+  const original = createRecord({
+    issue_number: 366,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    pr_number: null,
+    codex_session_id: null,
+    last_error:
+      "Issue #366 re-entered stale stabilizing recovery without a tracked PR 3 times; manual intervention is required.",
+    last_failure_kind: null,
+    last_failure_context: {
+      category: "blocked",
+      summary:
+        "Issue #366 re-entered stale stabilizing recovery without a tracked PR 3 times; manual intervention is required.",
+      signature: "stale-stabilizing-no-pr-recovery-loop",
+      command: null,
+      details: [
+        "state=stabilizing",
+        "tracked_pr=none",
+        "branch_state=recoverable",
+        "repeat_count=3/3",
+      ],
+      url: null,
+      updated_at: "2026-03-13T00:20:00Z",
+    },
+    last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
+    repeated_failure_signature_count: 0,
+    stale_stabilizing_no_pr_recovery_count: config.sameFailureSignatureRepeatLimit,
+    last_recovery_reason:
+      "stale_state_manual_stop: blocked issue #366 after repeated stale stabilizing recovery without a tracked PR",
+    last_recovery_at: "2026-03-13T00:20:00Z",
+    updated_at: "2026-03-13T00:20:00Z",
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+  const issue = createIssue({
+    number: 366,
+    updatedAt: "2026-03-13T00:20:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected getPullRequestIfExists call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+    },
+  );
+
+  assert.equal(saveCalls, 0);
+  assert.deepEqual(recoveryEvents, []);
+  assert.deepEqual(state.issues["366"], original);
+});
+
 test("reconcileRecoverableBlockedIssueStates clears stale same-head review-thread blockers after GitHub reports them resolved", async () => {
   const config = createConfig({
     reviewBotLogins: ["copilot-pull-request-reviewer"],
