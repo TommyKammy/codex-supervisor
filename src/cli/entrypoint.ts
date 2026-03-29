@@ -88,7 +88,7 @@ export async function runCli(
 
   const service = buildSupervisorService(options.configPath);
   const loopController =
-    options.command === "loop" || options.command === "run-once"
+    options.command === "loop" || options.command === "run-once" || options.command === "web"
       ? buildSupervisorLoopController(options.configPath)
       : undefined;
   if (!isRuntimeCommand(options.command)) {

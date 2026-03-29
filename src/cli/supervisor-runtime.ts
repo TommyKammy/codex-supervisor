@@ -42,7 +42,13 @@ interface SupervisorRuntimeDependencies {
   writeStdout?: (line: string) => void;
   writeStderr?: (line: string) => void;
   registerStopSignals?: (handler: (signal: NodeJS.Signals) => void) => void;
-  createHttpServer?: (service: SupervisorService, options?: { managedRestart?: ManagedRestartController | null }) => {
+  createHttpServer?: (
+    service: SupervisorService,
+    options?: {
+      loopController?: Pick<SupervisorLoopController, "runCycle">;
+      managedRestart?: ManagedRestartController | null;
+    },
+  ) => {
     listen: (port: number, host: string, listeningListener?: () => void) => void;
     once: (event: "error", listener: (error: Error) => void) => void;
     close: (callback: (error?: Error) => void) => void;
@@ -89,7 +95,7 @@ function registerProcessStopSignals(handler: (signal: NodeJS.Signals) => void): 
 }
 
 function requireLoopController(
-  command: "loop" | "run-once",
+  command: "loop" | "run-once" | "web",
   loopController?: SupervisorLoopController,
 ): SupervisorLoopController {
   if (!loopController) {
@@ -119,10 +125,15 @@ export async function runSupervisorCommand(
     writeStdout = (line) => console.log(line),
     writeStderr = (line) => console.error(line),
     registerStopSignals = registerProcessStopSignals,
-    createHttpServer = (createdService, serverOptions) => createSupervisorHttpServer({ service: createdService, managedRestart: serverOptions?.managedRestart }),
+    createHttpServer = (createdService, serverOptions) =>
+      createSupervisorHttpServer({
+        service: createdService,
+        loopController: serverOptions?.loopController,
+        managedRestart: serverOptions?.managedRestart,
+      }),
   } = dependencies;
   const cycleController =
-    options.command === "run-once" || options.command === "loop"
+    options.command === "run-once" || options.command === "loop" || options.command === "web"
       ? requireLoopController(options.command, loopController)
       : null;
 
@@ -211,7 +222,10 @@ export async function runSupervisorCommand(
         writeStdout,
       })
       : null;
-    const server = createHttpServer(shellService?.service ?? service, { managedRestart: shellService?.managedRestart ?? null });
+    const server = createHttpServer(shellService?.service ?? service, {
+      loopController: cycleController!,
+      managedRestart: shellService?.managedRestart ?? null,
+    });
     await new Promise<void>((resolve, reject) => {
       let settled = false;
       const complete = (error?: Error) => {

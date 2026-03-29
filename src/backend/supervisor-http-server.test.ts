@@ -1018,12 +1018,16 @@ test("createSupervisorHttpServer exposes only the safe supervisor mutations over
   const runOnceDryRunCalls: boolean[] = [];
   const recoveryCalls: { action: string; issueNumber: number }[] = [];
   const serviceCallCounts = { pruneCalls: 0, resetCalls: 0 };
+  const service = createStubService({
+    runOnceDryRunCalls,
+    recoveryCalls,
+    ...serviceCallCounts,
+  });
   const server = createSupervisorHttpServer({
-    service: createStubService({
-      runOnceDryRunCalls,
-      recoveryCalls,
-      ...serviceCallCounts,
-    }),
+    service,
+    loopController: {
+      runCycle: async (_command, options) => service.runOnce(options),
+    },
   });
   t.after(async () => {
     await closeServer(server);
@@ -1122,6 +1126,99 @@ test("createSupervisorHttpServer exposes only the safe supervisor mutations over
   });
   assert.equal(wrongMethodResponse.statusCode, 405);
   assert.deepEqual(wrongMethodResponse.body, { error: "Method not allowed." });
+});
+
+test("createSupervisorHttpServer serializes concurrent run-once requests", async (t) => {
+  let activeRuns = 0;
+  let maxConcurrentRuns = 0;
+  let releaseFirstRun: (() => void) | null = null;
+  const firstRunGate = new Promise<void>((resolve) => {
+    releaseFirstRun = resolve;
+  });
+  let resolveSecondCycleAttempt: (() => void) | null = null;
+  const secondCycleAttempt = new Promise<void>((resolve) => {
+    resolveSecondCycleAttempt = resolve;
+  });
+
+  const service = {
+    ...createStubService(),
+    runOnce: async () => {
+      activeRuns += 1;
+      maxConcurrentRuns = Math.max(maxConcurrentRuns, activeRuns);
+      try {
+        await firstRunGate;
+        return "run-once complete";
+      } finally {
+        activeRuns -= 1;
+      }
+    },
+  };
+  const server = createSupervisorHttpServer({
+    service,
+    loopController: {
+      runCycle: (() => {
+        let lockHeld = false;
+        let callCount = 0;
+        return async (_command, options) => {
+          callCount += 1;
+          if (callCount === 2) {
+            resolveSecondCycleAttempt?.();
+          }
+          if (lockHeld) {
+            return "Skipped supervisor cycle: lock unavailable.";
+          }
+          lockHeld = true;
+          try {
+            return await service.runOnce(options);
+          } finally {
+            lockHeld = false;
+          }
+        };
+      })(),
+    },
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const firstResponsePromise = readJson({
+    server,
+    path: "/api/commands/run-once",
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dryRun: false }),
+  });
+
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  const secondResponsePromise = readJson({
+    server,
+    path: "/api/commands/run-once",
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dryRun: false }),
+  });
+
+  await secondCycleAttempt;
+  releaseFirstRun?.();
+
+  const [firstResponse, secondResponse] = await Promise.all([firstResponsePromise, secondResponsePromise]);
+
+  assert.equal(firstResponse.statusCode, 200);
+  assert.equal(secondResponse.statusCode, 200);
+  assert.equal(maxConcurrentRuns, 1);
+  assert.deepEqual(
+    [firstResponse.body, secondResponse.body],
+    [
+      { command: "run-once", dryRun: false, summary: "run-once complete" },
+      { command: "run-once", dryRun: false, summary: "Skipped supervisor cycle: lock unavailable." },
+    ],
+  );
 });
 
 test("createSupervisorHttpServer accepts narrow setup config writes and returns refreshed readiness", async (t) => {
