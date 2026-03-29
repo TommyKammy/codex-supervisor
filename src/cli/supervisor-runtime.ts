@@ -37,7 +37,10 @@ type SupervisorRuntimeCommand = Extract<
 interface SupervisorRuntimeDependencies {
   service: SupervisorService;
   loopController?: SupervisorLoopController;
-  createWebUiService?: () => SupervisorService | Promise<SupervisorService>;
+  createWebUiWorker?: () => { service: SupervisorService; loopController?: SupervisorLoopController } | Promise<{
+    service: SupervisorService;
+    loopController?: SupervisorLoopController;
+  }>;
   ensureGsdInstalled?: (config: SupervisorConfig) => Promise<string | null>;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   writeStdout?: (line: string) => void;
@@ -218,10 +221,11 @@ export async function runSupervisorCommand(
   if (options.command === "web") {
     const managedRestartCapability = readManagedRestartCapabilityFromEnv(process.env);
     const mutationAuth = readWebUiMutationAuthFromEnv(process.env);
-    const shellService = managedRestartCapability && dependencies.createWebUiService
+    const shellService = managedRestartCapability && dependencies.createWebUiWorker
       ? createRestartableWebUiShellService({
         service,
-        recreateService: dependencies.createWebUiService,
+        loopController,
+        recreateWorker: dependencies.createWebUiWorker,
         capability: managedRestartCapability,
         writeStdout,
       })
