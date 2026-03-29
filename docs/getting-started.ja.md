@@ -31,6 +31,12 @@ npm install
 npm run build
 ```
 
+軽量な path hygiene check を単独で回したい時は次を使います。
+
+```bash
+npm run verify:paths
+```
+
 WebUI の browser smoke suite をローカルや CI で回したい時は次を使います。
 
 ```bash
@@ -43,7 +49,7 @@ npm run test:webui-smoke
 
 現在の state recovery ルール: missing JSON state は empty bootstrap として扱えますが、corrupted JSON state は同じではありません。corrupted JSON state は recovery event として扱い、operator が inspect して acknowledge または reset するまで durable recovery point だと見なしてはいけません。
 
-現在の workspace recovery ルール: `ensureWorkspace()` は local issue branch、remote issue branch、`origin/<defaultBranch>` からの fresh bootstrap の順で復元を試みます。missing local branch だけを理由に、既存の remote issue branch を無視して fresh bootstrap してはいけません。
+現在の workspace recovery ルール: `ensureWorkspace()` は local issue branch、remote issue branch、authoritative で fresh な default-branch ref からの fresh bootstrap の順で復元を試みます。missing local branch だけを理由に、既存の remote issue branch を無視して fresh bootstrap してはいけません。
 
 ## どの運用モードを使うか
 
@@ -104,10 +110,18 @@ candidate discovery は matching する open backlog 全体を評価します。
 
 - `## Summary`
 - `## Scope`
-- `Depends on`
-- `## Execution order`
+- `Depends on: none` または `Depends on: #...`
+- `Parallelizable: Yes/No`
+- `## Execution order`。standalone の `codex` issue でも `1 of 1` を書く
+- sequenced child issue なら canonical な `Part of: #...`
 - `## Acceptance criteria`
 - `## Verification`
+
+初心者向けの最短ルート:
+
+1. [README](../README.md) か [Issue metadata reference](./issue-metadata.md) のテンプレをそのまま使う
+2. standalone の `codex` issue なら `Depends on: none`、`Parallelizable: No`、`Execution order: 1 of 1` をまず入れる
+3. runnable だと決めつける前に `issue-lint` を 1 回通す
 
 最小例:
 
@@ -139,6 +153,19 @@ Parallelizable: No
 
 metadata の canonical な書式と scheduling への効き方は [Issue metadata reference](./issue-metadata.md) を参照してください。
 
+loop に渡す前に 1 issue を検査するには:
+
+```bash
+node dist/index.js issue-lint 123 --config /path/to/supervisor.config.json
+```
+
+結果の見方:
+
+- missing required metadata が出たら、まず issue body を直す
+- malformed scheduling metadata が出たら、supervisor の推測に頼らず canonical な書式へ直す
+- `issue-lint` が clean なのに選定がおかしいなら、`status` や `doctor` で candidate discovery や host 健康状態を確認する
+- 特定 issue がなぜ止まっているか見たい時は `node dist/index.js explain 123 --config /path/to/supervisor.config.json` を使う
+
 ## 最初の 1 パスを実行する
 
 いきなり常駐 loop にせず、まずは単発の supervised pass で挙動を確認します。
@@ -159,6 +186,13 @@ node dist/index.js status --config /path/to/supervisor.config.json
 
 もし違う issue を拾うなら、`status` や `doctor` で effective な candidate discovery 設定を確認し、そのうえでコードではなく issue metadata を先に直してください。issue 作成順を source of truth だと思わないでください。
 もし `status` や `doctor` が corrupted JSON state を報告したら、その state file を safe checkpoint として扱うのをやめ、recent operator action と file を確認してから明示的な acknowledge または reset を行ってください。
+
+初心者向けの切り分け:
+
+- `issue-lint`: issue body が execution-ready か
+- `status`: supervisor が今何をしているか
+- `doctor`: host や state に異常があるか
+- `explain <issue-number>`: その issue がなぜ blocked / skipped / not selected なのか
 
 ## run-once から loop に移る
 
@@ -217,6 +251,8 @@ loop が blocked issue に当たり続ける時は?
 - `run-once` を見ずに最初から `loop` を常駐させる
 - planning が残った issue をそのまま supervisor に渡す
 - issue の作成順を実行順だと思い込む
+- malformed または不足した issue body を「たぶん大丈夫」と扱う
+- `issue-lint` を飛ばして selection を手探りで debug する
 - README レベルの概要で十分だと考え、issue metadata を薄くする
 - config や local review の詳細をこのガイドだけに持たせようとする
 
