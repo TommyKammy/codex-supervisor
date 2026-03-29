@@ -1,6 +1,7 @@
 import type { CliOptions, SupervisorConfig } from "../core/types";
 import { createRestartableWebUiShellService } from "../backend/restartable-webui-shell-service";
 import { createSupervisorHttpServer } from "../backend/supervisor-http-server";
+import { WEBUI_MUTATION_AUTH_ENV_VAR, type WebUiMutationAuthOptions } from "../backend/webui-mutation-auth";
 import { sleep as defaultSleep } from "../core/utils";
 import { ensureGsdInstalled as defaultEnsureGsdInstalled } from "../gsd";
 import { readManagedRestartCapabilityFromEnv, type ManagedRestartController } from "../managed-restart";
@@ -50,6 +51,7 @@ interface SupervisorRuntimeDependencies {
     options?: {
       loopController?: Pick<SupervisorLoopController, "runCycle">;
       managedRestart?: ManagedRestartController | null;
+      mutationAuth?: WebUiMutationAuthOptions | null;
     },
   ) => {
     listen: (port: number, host: string, listeningListener?: () => void) => void;
@@ -133,6 +135,7 @@ export async function runSupervisorCommand(
         service: createdService,
         loopController: serverOptions?.loopController,
         managedRestart: serverOptions?.managedRestart,
+        mutationAuth: serverOptions?.mutationAuth,
       }),
   } = dependencies;
   const cycleController =
@@ -217,6 +220,7 @@ export async function runSupervisorCommand(
 
   if (options.command === "web") {
     const managedRestartCapability = readManagedRestartCapabilityFromEnv(process.env);
+    const mutationAuth = readWebUiMutationAuthFromEnv(process.env);
     const shellService = managedRestartCapability && dependencies.createWebUiWorker
       ? createRestartableWebUiShellService({
         service,
@@ -229,6 +233,7 @@ export async function runSupervisorCommand(
     const server = createHttpServer(shellService?.service ?? service, {
       loopController: cycleController!,
       managedRestart: shellService?.managedRestart ?? null,
+      mutationAuth,
     });
     await new Promise<void>((resolve, reject) => {
       let settled = false;
@@ -253,6 +258,15 @@ export async function runSupervisorCommand(
         }
 
         writeStdout(`WebUI listening on http://127.0.0.1:${address.port}`);
+        if (mutationAuth) {
+          writeStdout(
+            `WebUI mutation auth is enabled for this session via ${WEBUI_MUTATION_AUTH_ENV_VAR}. Restart the WebUI after changing this env var.`,
+          );
+        } else {
+          writeStdout(
+            `WebUI mutation routes are read-only in this session. Restart the WebUI with ${WEBUI_MUTATION_AUTH_ENV_VAR} set to enable them.`,
+          );
+        }
       });
       stopWebServer = () => {
         server.closeAllConnections?.();
@@ -305,4 +319,12 @@ export async function runSupervisorCommand(
   } finally {
     await loopRuntimeLock.release();
   }
+}
+
+function readWebUiMutationAuthFromEnv(env: NodeJS.ProcessEnv): WebUiMutationAuthOptions | null {
+  const token = env[WEBUI_MUTATION_AUTH_ENV_VAR]?.trim();
+  if (!token) {
+    return null;
+  }
+  return { token };
 }

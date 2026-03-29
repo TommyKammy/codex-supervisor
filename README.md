@@ -102,6 +102,15 @@ Then open [http://127.0.0.1:4310/setup](http://127.0.0.1:4310/setup) for first-r
 
 ![WebUI setup shell](./docs/images/webui-setup-shell.png)
 
+WebUI mutation routes now fail closed. To allow `POST` actions such as `run-once`, `requeue`, setup saves, or managed restart, start the WebUI with a local shared secret:
+
+```bash
+CODEX_SUPERVISOR_WEBUI_MUTATION_TOKEN=choose-a-long-random-token \
+node dist/index.js web --config /path/to/supervisor.config.json
+```
+
+The browser will prompt for that token on the first write action and then reuse it from local browser storage. Read-only routes remain available without the token.
+
 ## First Runnable Issue
 
 If you want the supervisor to work on the right thing, the fastest win is to author the issue body correctly before you start the loop.

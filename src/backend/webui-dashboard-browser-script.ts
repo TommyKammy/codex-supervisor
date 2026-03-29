@@ -25,6 +25,7 @@ import {
   humanizeTimelineValue,
   parseSelectedIssueNumber,
 } from "./webui-dashboard-browser-logic";
+import { WEBUI_MUTATION_AUTH_HEADER, WEBUI_MUTATION_AUTH_STORAGE_KEY } from "./webui-mutation-auth";
 
 const injectedBrowserLogic = [
   buildOverviewSummary,
@@ -154,6 +155,8 @@ export function renderDashboardBrowserScript(): string {
       ];
 
       const COMMAND_CORRELATION_WINDOW_MS = 15000;
+      const mutationAuthStorageKey = ${JSON.stringify(WEBUI_MUTATION_AUTH_STORAGE_KEY)};
+      const mutationAuthHeader = ${JSON.stringify(WEBUI_MUTATION_AUTH_HEADER)};
 
       function setText(element, value) {
         if (element) {
@@ -1595,23 +1598,117 @@ export function renderDashboardBrowserScript(): string {
       }
 
       async function postCommand(path, body) {
-        const response = await fetch(path, {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-          body: body ? JSON.stringify(body) : "{}",
-        });
+        return postMutationJson(path, body);
+      }
 
-        const payload = await response.json();
-        if (!response.ok) {
-          const message =
-            payload && typeof payload === "object" && "error" in payload ? payload.error : "Request failed";
+      function readStoredMutationAuthToken() {
+        try {
+          const value = window.localStorage && window.localStorage.getItem(mutationAuthStorageKey);
+          return value && value.trim().length > 0 ? value.trim() : null;
+        } catch {
+          return null;
+        }
+      }
+
+      function writeStoredMutationAuthToken(value) {
+        try {
+          if (!window.localStorage) {
+            return;
+          }
+          if (typeof value !== "string" || value.trim().length === 0) {
+            window.localStorage.removeItem(mutationAuthStorageKey);
+            return;
+          }
+          window.localStorage.setItem(mutationAuthStorageKey, value.trim());
+        } catch {}
+      }
+
+      function promptForMutationAuthToken() {
+        if (!window || typeof window.prompt !== "function") {
+          throw new Error("WebUI mutation auth requires a browser prompt to collect the token.");
+        }
+        const value = window.prompt("Enter the local WebUI mutation token.");
+        if (typeof value !== "string" || value.trim().length === 0) {
+          throw new Error("Mutation auth token is required for WebUI write actions.");
+        }
+        const normalized = value.trim();
+        writeStoredMutationAuthToken(normalized);
+        return normalized;
+      }
+
+      function buildMutationHeaders(token) {
+        const headers = {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        };
+        if (typeof token === "string" && token.length > 0) {
+          headers[mutationAuthHeader] = token;
+        }
+        return headers;
+      }
+
+      async function readMutationResponsePayload(response) {
+        const headers = response && response.headers;
+        const contentType =
+          headers && typeof headers.get === "function" ? String(headers.get("content-type") || "") : "";
+        const rawText = typeof response.text === "function" ? await response.text() : "";
+        if (!rawText) {
+          return { payload: null, rawText: "", parseError: false };
+        }
+        const prefersJson = contentType.toLowerCase().indexOf("application/json") !== -1;
+        try {
+          return {
+            payload: JSON.parse(rawText),
+            rawText,
+            parseError: false,
+          };
+        } catch {
+          return {
+            payload: null,
+            rawText,
+            parseError: prefersJson,
+          };
+        }
+      }
+
+      async function postMutationJson(path, body) {
+        let token = readStoredMutationAuthToken();
+
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const response = await fetch(path, {
+            method: "POST",
+            headers: buildMutationHeaders(token),
+            body: body ? JSON.stringify(body) : "{}",
+          });
+
+          const responsePayload = await readMutationResponsePayload(response);
+          const payload = responsePayload.payload;
+          if (response.ok) {
+            if (payload === null) {
+              throw new Error(path + ": Server returned invalid JSON response.");
+            }
+            return payload;
+          }
+
+          let message = "Request failed";
+          if (payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string") {
+            message = payload.error;
+          } else if (responsePayload.rawText.trim().length > 0) {
+            message = responsePayload.rawText.trim();
+          } else if (responsePayload.parseError) {
+            message = "Server returned invalid JSON response.";
+          }
+          if (response.status === 401) {
+            writeStoredMutationAuthToken(null);
+            if (attempt === 0) {
+              token = promptForMutationAuthToken();
+              continue;
+            }
+          }
           throw new Error(path + ": " + message);
         }
 
-        return payload;
+        throw new Error(path + ": Mutation auth required.");
       }
 
       async function runCommand(args) {
