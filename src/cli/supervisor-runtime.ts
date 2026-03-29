@@ -259,9 +259,13 @@ export async function runSupervisorCommand(
 
         writeStdout(`WebUI listening on http://127.0.0.1:${address.port}`);
         if (mutationAuth) {
-          writeStdout(`WebUI mutation auth enabled via ${WEBUI_MUTATION_AUTH_ENV_VAR}`);
+          writeStdout(
+            `WebUI mutation auth is enabled for this session via ${WEBUI_MUTATION_AUTH_ENV_VAR}. Restart the WebUI after changing this env var.`,
+          );
         } else {
-          writeStdout(`WebUI mutation routes are read-only until ${WEBUI_MUTATION_AUTH_ENV_VAR} is set.`);
+          writeStdout(
+            `WebUI mutation routes are read-only in this session. Restart the WebUI with ${WEBUI_MUTATION_AUTH_ENV_VAR} set to enable them.`,
+          );
         }
       });
       stopWebServer = () => {

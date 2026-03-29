@@ -10,7 +10,9 @@ import { renderSupervisorSetupHtml } from "./webui-setup";
 interface MockResponseLike {
   ok: boolean;
   status?: number;
+  headers?: { get(name: string): string | null };
   json(): Promise<unknown>;
+  text(): Promise<string>;
 }
 
 interface FetchCall {
@@ -65,6 +67,16 @@ class FakeStorage {
 
   clear(): void {
     this.entries.clear();
+  }
+}
+
+class ThrowingStorage extends FakeStorage {
+  setItem(): void {
+    throw new Error("setItem failed");
+  }
+
+  removeItem(): void {
+    throw new Error("removeItem failed");
   }
 }
 
@@ -261,10 +273,37 @@ function createDeferred<T>(): Deferred<T> {
 }
 
 function jsonResponse(body: unknown, statusCode = 200): MockResponseLike {
+  const normalizedBody = typeof body === "string" ? body : JSON.stringify(body);
   return {
     ok: statusCode >= 200 && statusCode < 300,
     status: statusCode,
+    headers: {
+      get(name: string): string | null {
+        return name.toLowerCase() === "content-type" ? "application/json; charset=utf-8" : null;
+      },
+    },
     async json(): Promise<unknown> {
+      return body;
+    },
+    async text(): Promise<string> {
+      return normalizedBody;
+    },
+  };
+}
+
+function textResponse(body: string, statusCode = 200, contentType = "text/plain; charset=utf-8"): MockResponseLike {
+  return {
+    ok: statusCode >= 200 && statusCode < 300,
+    status: statusCode,
+    headers: {
+      get(name: string): string | null {
+        return name.toLowerCase() === "content-type" ? contentType : null;
+      },
+    },
+    async json(): Promise<unknown> {
+      return JSON.parse(body);
+    },
+    async text(): Promise<string> {
       return body;
     },
   };
@@ -1523,6 +1562,31 @@ test("dashboard retries a mutation command after prompting for the local mutatio
   assert.equal(harness.remainingFetches.length, 0);
 });
 
+test("dashboard surfaces non-JSON mutation failures without throwing a parse error", async () => {
+  const harness = createDashboardHarness([
+    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    {
+      path: "/api/commands/run-once",
+      method: "POST",
+      body: JSON.stringify({ dryRun: false }),
+      response: textResponse("proxy failure", 502),
+    },
+  ]);
+  await harness.flush();
+
+  const runOnceButton = harness.document.getElementById("run-once-button");
+  const commandResult = harness.document.getElementById("command-result");
+  assert.ok(runOnceButton);
+  assert.ok(commandResult);
+
+  await runOnceButton.dispatch("click");
+  await harness.flush();
+
+  assert.match(commandResult.textContent, /"summary": "\/api\/commands\/run-once: proxy failure"/u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
 test("dashboard shows an in-flight safe command state until the command resolves", async () => {
   const runOnceResponse = createDeferred<MockResponseLike>();
   const harness = createDashboardHarness([
@@ -2223,6 +2287,276 @@ test("setup shell saves through the narrow setup config API and revalidates read
     harness.document.getElementById("setup-local-ci-details")?.textContent ?? "",
     /Configured: yes.*Command: npm run ci:local.*Source: config.*This repo-owned command is the canonical local verification step before PR publication or update.*When configured local CI fails, PR publication or ready-for-review promotion stays blocked until the repo-owned command passes again\./u,
   );
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("setup shell retries an authenticated save even when token storage is unavailable", async () => {
+  const storage = new ThrowingStorage();
+  const harness = createSetupHarness(
+    [
+      {
+        path: "/api/setup-readiness",
+        response: jsonResponse({
+          kind: "setup_readiness",
+          managedRestart: unavailableManagedRestart,
+          ready: false,
+          overallStatus: "missing",
+          configPath: "/tmp/supervisor.config.json",
+          fields: [
+            {
+              key: "reviewProvider",
+              label: "Review provider",
+              state: "missing",
+              value: null,
+              message: "Configure at least one review provider before first-run setup is complete.",
+              required: true,
+              metadata: {
+                source: "config",
+                editable: true,
+                valueType: "review_provider",
+              },
+            },
+          ],
+          blockers: [],
+          hostReadiness: { overallStatus: "pass", checks: [] },
+          providerPosture: {
+            profile: "none",
+            provider: "none",
+            reviewers: [],
+            signalSource: "none",
+            configured: false,
+            summary: "No review provider is configured.",
+          },
+          trustPosture: {
+            trustMode: "trusted_repo_and_authors",
+            executionSafetyMode: "unsandboxed_autonomous",
+            warning: null,
+            summary: "Trusted inputs with unsandboxed autonomous execution.",
+          },
+          localCiContract: {
+            configured: false,
+            command: null,
+            source: "config",
+            summary: "No repo-owned local CI contract is configured.",
+          },
+        }),
+      },
+      {
+        path: "/api/setup-config",
+        method: "POST",
+        body: JSON.stringify({
+          changes: {
+            reviewProvider: "codex",
+          },
+        }),
+        response: jsonResponse({ error: "Mutation auth required." }, 401),
+      },
+      {
+        path: "/api/setup-config",
+        method: "POST",
+        body: JSON.stringify({
+          changes: {
+            reviewProvider: "codex",
+          },
+        }),
+        response: jsonResponse({
+          kind: "setup_config_update",
+          managedRestart: unavailableManagedRestart,
+          configPath: "/tmp/supervisor.config.json",
+          backupPath: null,
+          updatedFields: ["reviewProvider"],
+          restartRequired: false,
+          restartScope: null,
+          restartTriggeredByFields: [],
+          document: {
+            reviewBotLogins: ["chatgpt-codex-connector"],
+          },
+          readiness: {
+            kind: "setup_readiness",
+            managedRestart: unavailableManagedRestart,
+            ready: true,
+            overallStatus: "configured",
+            configPath: "/tmp/supervisor.config.json",
+            fields: [],
+            blockers: [],
+            hostReadiness: { overallStatus: "pass", checks: [] },
+            providerPosture: {
+              profile: "codex",
+              provider: "codex",
+              reviewers: ["chatgpt-codex-connector"],
+              signalSource: "review_bot_logins",
+              configured: true,
+              summary: "Codex Connector is configured.",
+            },
+            trustPosture: {
+              trustMode: "trusted_repo_and_authors",
+              executionSafetyMode: "unsandboxed_autonomous",
+              warning: null,
+              summary: "Trusted inputs with unsandboxed autonomous execution.",
+            },
+            localCiContract: {
+              configured: false,
+              command: null,
+              source: "config",
+              summary: "No repo-owned local CI contract is configured.",
+            },
+          },
+        }),
+      },
+      {
+        path: "/api/setup-readiness",
+        response: jsonResponse({
+          kind: "setup_readiness",
+          managedRestart: unavailableManagedRestart,
+          ready: true,
+          overallStatus: "configured",
+          configPath: "/tmp/supervisor.config.json",
+          fields: [],
+          blockers: [],
+          hostReadiness: { overallStatus: "pass", checks: [] },
+          providerPosture: {
+            profile: "codex",
+            provider: "codex",
+            reviewers: ["chatgpt-codex-connector"],
+            signalSource: "review_bot_logins",
+            configured: true,
+            summary: "Codex Connector is configured.",
+          },
+          trustPosture: {
+            trustMode: "trusted_repo_and_authors",
+            executionSafetyMode: "unsandboxed_autonomous",
+            warning: null,
+            summary: "Trusted inputs with unsandboxed autonomous execution.",
+          },
+          localCiContract: {
+            configured: false,
+            command: null,
+            source: "config",
+            summary: "No repo-owned local CI contract is configured.",
+          },
+        }),
+      },
+    ],
+    {
+      localStorage: storage,
+      prompt: () => "prompted-secret",
+    },
+  );
+  await harness.flush();
+
+  const reviewProviderInput = harness.document.getElementById("setup-input-reviewProvider");
+  const setupForm = harness.document.getElementById("setup-form");
+  const saveStatus = harness.document.getElementById("setup-save-status");
+  assert.ok(reviewProviderInput);
+  assert.ok(setupForm);
+  assert.ok(saveStatus);
+
+  reviewProviderInput.value = "codex";
+  const submitPromise = setupForm.dispatch("submit", { preventDefault() {} });
+  await submitPromise;
+  await harness.flush();
+
+  assert.equal(harness.fetchCalls[1]?.headers?.[WEBUI_MUTATION_AUTH_HEADER], undefined);
+  assert.equal(harness.fetchCalls[2]?.headers?.[WEBUI_MUTATION_AUTH_HEADER], "prompted-secret");
+  assert.match(saveStatus.textContent ?? "", /Saved 1 setup field\./u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("setup shell does not prompt for a fresh token after the final 401 response", async () => {
+  let promptCount = 0;
+  const harness = createSetupHarness(
+    [
+      {
+        path: "/api/setup-readiness",
+        response: jsonResponse({
+          kind: "setup_readiness",
+          managedRestart: unavailableManagedRestart,
+          ready: false,
+          overallStatus: "missing",
+          configPath: "/tmp/supervisor.config.json",
+          fields: [
+            {
+              key: "reviewProvider",
+              label: "Review provider",
+              state: "missing",
+              value: null,
+              message: "Configure at least one review provider before first-run setup is complete.",
+              required: true,
+              metadata: {
+                source: "config",
+                editable: true,
+                valueType: "review_provider",
+              },
+            },
+          ],
+          blockers: [],
+          hostReadiness: { overallStatus: "pass", checks: [] },
+          providerPosture: {
+            profile: "none",
+            provider: "none",
+            reviewers: [],
+            signalSource: "none",
+            configured: false,
+            summary: "No review provider is configured.",
+          },
+          trustPosture: {
+            trustMode: "trusted_repo_and_authors",
+            executionSafetyMode: "unsandboxed_autonomous",
+            warning: null,
+            summary: "Trusted inputs with unsandboxed autonomous execution.",
+          },
+          localCiContract: {
+            configured: false,
+            command: null,
+            source: "config",
+            summary: "No repo-owned local CI contract is configured.",
+          },
+        }),
+      },
+      {
+        path: "/api/setup-config",
+        method: "POST",
+        body: JSON.stringify({
+          changes: {
+            reviewProvider: "codex",
+          },
+        }),
+        response: jsonResponse({ error: "Mutation auth required." }, 401),
+      },
+      {
+        path: "/api/setup-config",
+        method: "POST",
+        body: JSON.stringify({
+          changes: {
+            reviewProvider: "codex",
+          },
+        }),
+        response: jsonResponse({ error: "Mutation auth required." }, 401),
+      },
+    ],
+    {
+      prompt: () => {
+        promptCount += 1;
+        return "prompted-secret";
+      },
+    },
+  );
+  await harness.flush();
+
+  const reviewProviderInput = harness.document.getElementById("setup-input-reviewProvider");
+  const setupForm = harness.document.getElementById("setup-form");
+  const saveStatus = harness.document.getElementById("setup-save-status");
+  assert.ok(reviewProviderInput);
+  assert.ok(setupForm);
+  assert.ok(saveStatus);
+
+  reviewProviderInput.value = "codex";
+  const submitPromise = setupForm.dispatch("submit", { preventDefault() {} });
+  await submitPromise;
+  await harness.flush();
+
+  assert.equal(promptCount, 1);
+  assert.match(saveStatus.textContent ?? "", /Setup save failed: \/api\/setup-config: Mutation auth required\./u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 

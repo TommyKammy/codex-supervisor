@@ -140,14 +140,16 @@ export function renderSetupBrowserScript(): string {
       }
 
       function writeStoredMutationAuthToken(value) {
-        if (!window.localStorage) {
-          return;
-        }
-        if (typeof value !== "string" || value.trim().length === 0) {
-          window.localStorage.removeItem(mutationAuthStorageKey);
-          return;
-        }
-        window.localStorage.setItem(mutationAuthStorageKey, value.trim());
+        try {
+          if (!window.localStorage) {
+            return;
+          }
+          if (typeof value !== "string" || value.trim().length === 0) {
+            window.localStorage.removeItem(mutationAuthStorageKey);
+            return;
+          }
+          window.localStorage.setItem(mutationAuthStorageKey, value.trim());
+        } catch {}
       }
 
       function promptForMutationAuthToken() {
@@ -174,6 +176,30 @@ export function renderSetupBrowserScript(): string {
         return headers;
       }
 
+      async function readMutationResponsePayload(response) {
+        const headers = response && response.headers;
+        const contentType =
+          headers && typeof headers.get === "function" ? String(headers.get("content-type") || "") : "";
+        const rawText = typeof response.text === "function" ? await response.text() : "";
+        if (!rawText) {
+          return { payload: null, rawText: "", parseError: false };
+        }
+        const prefersJson = contentType.toLowerCase().indexOf("application/json") !== -1;
+        try {
+          return {
+            payload: JSON.parse(rawText),
+            rawText,
+            parseError: false,
+          };
+        } catch {
+          return {
+            payload: null,
+            rawText,
+            parseError: prefersJson,
+          };
+        }
+      }
+
       async function writeMutationJson(path, body) {
         let token = readStoredMutationAuthToken();
 
@@ -183,19 +209,29 @@ export function renderSetupBrowserScript(): string {
             headers: buildMutationHeaders(token),
             body: JSON.stringify(body),
           });
+          const responsePayload = await readMutationResponsePayload(response);
+          const payload = responsePayload.payload;
           if (response.ok) {
-            return response.json();
+            if (payload === null) {
+              throw new Error(path + ": Server returned invalid JSON response.");
+            }
+            return payload;
           }
 
           let message = "Request failed";
-          try {
-            const responseBody = await response.json();
-            message = responseBody.error || message;
-          } catch {}
+          if (payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string") {
+            message = payload.error;
+          } else if (responsePayload.rawText.trim().length > 0) {
+            message = responsePayload.rawText.trim();
+          } else if (responsePayload.parseError) {
+            message = "Server returned invalid JSON response.";
+          }
           if (response.status === 401) {
             writeStoredMutationAuthToken(null);
-            token = promptForMutationAuthToken();
-            continue;
+            if (attempt === 0) {
+              token = promptForMutationAuthToken();
+              continue;
+            }
           }
           throw new Error(path + ": " + message);
         }
