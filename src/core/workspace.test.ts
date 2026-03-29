@@ -404,7 +404,7 @@ test("ensureWorkspace rejects reusing an existing workspace on the wrong branch"
 
   await assert.rejects(
     () => ensureWorkspace(config, issueNumber, branch),
-    /expected branch/i,
+    /not a registered worktree/i,
   );
 });
 
@@ -419,7 +419,7 @@ test("ensureWorkspace rejects reusing an existing workspace on a detached HEAD",
 
   await assert.rejects(
     () => ensureWorkspace(config, issueNumber, branch),
-    /detached head/i,
+    /not a registered worktree/i,
   );
 });
 

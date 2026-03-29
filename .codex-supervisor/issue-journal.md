@@ -1,50 +1,51 @@
-# Issue #1115: Fail fast when issue journal path templates leave {issueNumber} unresolved
+# Issue #1194: Repair remaining workspace reuse test expectations after cross-host discrepancy investigation
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1115
-- Branch: codex/issue-1115
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1194
+- Branch: codex/issue-1194
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: resolving_conflict
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 9b5e4f0c349c6af0b95434e0ccc00c1d476eb454
+- Current phase: repairing_ci
+- Attempt count: 3 (implementation=1, repair=2)
+- Last head SHA: 6ff1ee862d311d754764a7a9bae30c1fcdf0995d
 - Blocked reason: none
-- Last failure signature: dirty:9b5e4f0c349c6af0b95434e0ccc00c1d476eb454
+- Last failure signature: build (ubuntu-latest):fail
 - Repeated failure signature count: 1
-- Updated at: 2026-03-27T12:37:25.971Z
+- Updated at: 2026-03-29T23:25:00.927Z
 
 ## Latest Codex Summary
-Draft PR is open at https://github.com/TommyKammy/codex-supervisor/pull/1117 from `codex/issue-1115`. I reran the focused regression set against the committed checkpoint `9b5e4f0`, and it passed cleanly.
+The remaining Ubuntu CI failure was still in `npm run verify:paths`, but the live Actions log showed the committed issue journal still contained the literal redacted workstation-path grep pattern in its recorded command list. I confirmed the worktree journal was already sanitized, committed that journal-only repair as `e6599a3`, and pushed it to `codex/issue-1194`.
 
-No implementation changes were needed this turn. I updated [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) with the PR state, verification rerun, commands run, and next handoff. The only local dirt now is that journal edit plus the existing supervisor runtime artifacts.
+Focused verification is green locally: `npm run verify:paths`, `npx tsx --test src/core/workspace.test.ts`, and `npm run build`. PR `#1195` has picked up commit `e6599a3`, and both GitHub Actions build jobs are now pending on run `23721656243`.
 
-Summary: Pushed `codex/issue-1115` to GitHub, opened draft PR #1117 for commit `9b5e4f0`, reran the focused tests, and updated the issue journal handoff.
-State hint: draft_pr
+Summary: Confirmed the last Ubuntu failure was caused by stale journal command text, committed the sanitized issue-journal repair as `e6599a3`, and pushed it so PR #1195 could rerun CI.
+State hint: repairing_ci
 Blocked reason: none
-Tests: `npx tsx --test src/journal.test.ts src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor-cycle-replay.test.ts`
-Next action: watch PR #1117 CI and address any failures or review feedback if they appear
-Failure signature: dirty:9b5e4f0c349c6af0b95434e0ccc00c1d476eb454
+Tests: `npm run verify:paths`; `npx tsx --test src/core/workspace.test.ts`; `npm run build`
+Next action: Monitor PR #1195 CI rerun on commit `e6599a3` and address any new check failures if they appear.
+Failure signature: build (ubuntu-latest):fail
 
 ## Active Failure Context
-- Category: conflict
-- Summary: PR #1117 has merge conflicts and needs a base-branch integration pass.
-- Command or source: git fetch origin && git merge origin/<default-branch>
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1117
+- Category: checks
+- Summary: PR #1195 has failing checks.
+- Command or source: gh pr checks
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1195
 - Details:
-  - mergeStateStatus=DIRTY
+  - build (ubuntu-latest) (pending/PENDING) https://github.com/TommyKammy/codex-supervisor/actions/runs/23721656243/job/69097592239
+  - build (macos-latest) (pending/PENDING) https://github.com/TommyKammy/codex-supervisor/actions/runs/23721656243/job/69097592210
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `issueJournalPath(...)` should be the fail-fast boundary for tokenized issue journal templates, rejecting unresolved `{issueNumber}` placeholders while leaving plain custom paths untouched.
-- What changed: added focused `src/journal.test.ts` coverage for unresolved-token failure, valid token substitution, and non-tokenized custom paths; updated `issueJournalPath(...)` to replace `{issueNumber}` only when an `issueNumber` is supplied and otherwise throw a clear error; threaded `issueNumber` through the selection, preparation, and supervisor call sites that derive `journal_path` from config.
+- Hypothesis: the Ubuntu-only CI failure was caused by stale committed journal content; specifically, the tracked command log still contained the redacted workstation-path regex placeholder, which `verify:paths` treats as a forbidden workstation-local path pattern.
+- What changed: confirmed from the live Ubuntu Actions log that `npm run verify:paths` was still failing on `.codex-supervisor/issue-journal.md:44`, verified the current worktree journal no longer contains that literal pattern, reran the focused local checks, committed the journal-only repair as `e6599a3`, and pushed it to rerun PR #1195.
 - Current blocker: none.
-- Next exact step: monitor draft PR #1117 and fix CI or review feedback if any integration path exposes a missed caller.
-- Verification gap: I have not run the full repo suite or an end-to-end supervisor loop; verification so far is limited to the journal helper and the narrow selection/preparation/replay tests that exercise journal-path persistence.
-- Files touched: `src/core/journal.ts`; `src/journal.test.ts`; `src/run-once-issue-preparation.ts`; `src/run-once-issue-selection.ts`; `src/supervisor/supervisor.ts`; `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low. The behavioral change is narrowly scoped to templates containing `{issueNumber}`; non-tokenized paths still resolve exactly as before.
-- Last focused command: `gh pr view 1117 --json number,state,isDraft,url,title`
-- What changed this turn: reread the required memory and journal files, confirmed the committed checkpoint at `9b5e4f0`, reran the focused journal-path-related tests as a combined command, pushed `codex/issue-1115` to the GitHub remote, and opened draft PR #1117 for review.
-- Exact failure reproduced this turn: `issueJournalPath("<redacted-local-path>", ".codex-supervisor/issues/{issueNumber}/issue-journal.md")` returned a resolved path that still contained the literal `{issueNumber}` token instead of rejecting the invalid durable path state.
-- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git branch --show-current`; `git status --short`; `git log --oneline --decorate -5`; `gh pr view --json number,state,isDraft,title,headRefName,baseRefName,url`; `git show --stat --oneline --decorate HEAD`; `git ls-remote --heads origin codex/issue-1115`; `npx tsx --test src/journal.test.ts src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor-cycle-replay.test.ts`; `git push -u origin codex/issue-1115`; `gh pr create --draft --base main --head codex/issue-1115 --title "Fail fast on unresolved issue journal templates" --body ...`; `git remote -v`; `gh repo view --json nameWithOwner,defaultBranchRef,url`; `git rev-list --left-right --count origin/main...codex/issue-1115`; `git push -u github codex/issue-1115`; `git rev-list --left-right --count github/main...codex/issue-1115`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `gh pr view 1117 --json number,state,isDraft,url,title`
+- Next exact step: monitor the rerun of the Ubuntu CI check for PR #1195 on commit `e6599a3` and address any newly surfaced failures if they appear.
+- Verification gap: I have not rerun the full repository suite; this turn only covered the directly affected path guard plus the previously relevant workspace test/build checks.
+- Files touched: `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low. The fix is documentation-only and removes operator-specific absolute paths from a tracked durable artifact.
+- Last focused command: `gh pr checks 1195`
+- What changed this turn: reread the required memory files and issue journal, inspected PR #1195 and the live GitHub Actions failure, confirmed the Ubuntu job was still failing in `npm run verify:paths`, traced that failure to the stale committed redacted workstation-path grep command text in the journal, verified the current sanitized journal plus the focused workspace/build checks locally, committed the repair, pushed `codex/issue-1194`, and confirmed the rerun is pending.
+- Exact failure reproduced this turn: `gh run view 23721502131 --job 69097197425 --log` showed `npm run verify:paths` failing on `.codex-supervisor/issue-journal.md:44` because the committed command log still contained the literal pattern `<redacted-local-path>`.
+- Commands run this turn: `sed -n '1,220p' <skill-path>/SKILL.md`; `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `gh auth status`; `python3 <skill-path>/inspect_pr_checks.py --repo . --pr 1195`; `gh pr checks 1195`; `gh run view 23721502131 --job 69097197425 --log`; `gh run view 23721502131 --json name,workflowName,conclusion,status,url,event,headBranch,headSha,jobs`; `git status --short`; `nl -ba .codex-supervisor/issue-journal.md | sed -n '34,56p'`; `git diff -- .codex-supervisor/issue-journal.md`; `rg -n '<redacted-local-path>' .codex-supervisor/issue-journal.md`; `git show HEAD:.codex-supervisor/issue-journal.md | nl -ba | sed -n '34,56p'`; `git show HEAD:.codex-supervisor/issue-journal.md | rg -n '<redacted-local-path>'`; `git branch --show-current`; `npm run verify:paths`; `npx tsx --test src/core/workspace.test.ts`; `npm run build`; `git add .codex-supervisor/issue-journal.md`; `git commit -m "Redact issue journal path-regex log"`; `git rev-parse HEAD`; `git push origin codex/issue-1194`; `gh pr checks 1195`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
