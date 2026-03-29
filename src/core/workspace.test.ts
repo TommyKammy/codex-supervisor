@@ -361,34 +361,36 @@ test("ensureWorkspace skips bootstrap-base resolution when restoring an existing
 test("diverged default-branch fixture remains reproducible when clones already check out main", async () => {
   await withTemporaryHomeGitConfig({ "init.defaultBranch": "main" }, async (env) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-main-clone-"));
-    const githubPath = path.join(root, "github.git");
-    const repoPath = path.join(root, "repo");
-    const clonePath = path.join(root, "clone");
+    try {
+      const githubPath = path.join(root, "github.git");
+      const repoPath = path.join(root, "repo");
+      const clonePath = path.join(root, "clone");
 
-    await execFileAsync("git", ["init", "--bare", githubPath], { env });
-    await execFileAsync("git", ["clone", githubPath, repoPath], { env });
-    await execFileAsync("git", ["-C", repoPath, "config", "user.name", "Codex Supervisor"], { env });
-    await execFileAsync("git", ["-C", repoPath, "config", "user.email", "codex@example.test"], { env });
-    await execFileAsync("git", ["-C", repoPath, "checkout", "-b", "main"], { env });
-    await fs.writeFile(path.join(repoPath, "README.md"), "fixture\n", "utf8");
-    await execFileAsync("git", ["-C", repoPath, "add", "README.md"], { env });
-    await execFileAsync("git", ["-C", repoPath, "commit", "-m", "Initial commit"], { env });
-    await execFileAsync("git", ["-C", repoPath, "push", "-u", "origin", "main"], { env });
+      await execFileAsync("git", ["init", "--bare", githubPath], { env });
+      await execFileAsync("git", ["clone", githubPath, repoPath], { env });
+      await execFileAsync("git", ["-C", repoPath, "config", "user.name", "Codex Supervisor"], { env });
+      await execFileAsync("git", ["-C", repoPath, "config", "user.email", "codex@example.test"], { env });
+      await execFileAsync("git", ["-C", repoPath, "checkout", "-b", "main"], { env });
+      await fs.writeFile(path.join(repoPath, "README.md"), "fixture\n", "utf8");
+      await execFileAsync("git", ["-C", repoPath, "add", "README.md"], { env });
+      await execFileAsync("git", ["-C", repoPath, "commit", "-m", "Initial commit"], { env });
+      await execFileAsync("git", ["-C", repoPath, "push", "-u", "origin", "main"], { env });
 
-    await execFileAsync("git", ["clone", githubPath, clonePath], { env });
-    const clonedHead = await execFileAsync("git", ["-C", clonePath, "symbolic-ref", "--short", "HEAD"], { env });
-    assert.equal(clonedHead.stdout.trim(), "main");
+      await execFileAsync("git", ["clone", githubPath, clonePath], { env });
+      const clonedHead = await execFileAsync("git", ["-C", clonePath, "symbolic-ref", "--short", "HEAD"], { env });
+      assert.equal(clonedHead.stdout.trim(), "main");
 
-    await assert.rejects(
-      () => execFileAsync("git", ["-C", clonePath, "checkout", "-b", "main", "origin/main"], { env }),
-      /already exists/i,
-    );
+      await assert.rejects(
+        () => execFileAsync("git", ["-C", clonePath, "checkout", "-b", "main", "origin/main"], { env }),
+        /already exists/i,
+      );
 
-    await execFileAsync("git", ["-C", clonePath, "checkout", "-B", "main", "origin/main"], { env });
-    const updatedHead = await execFileAsync("git", ["-C", clonePath, "symbolic-ref", "--short", "HEAD"], { env });
-    assert.equal(updatedHead.stdout.trim(), "main");
-
-    await fs.rm(root, { recursive: true, force: true });
+      await execFileAsync("git", ["-C", clonePath, "checkout", "-B", "main", "origin/main"], { env });
+      const updatedHead = await execFileAsync("git", ["-C", clonePath, "symbolic-ref", "--short", "HEAD"], { env });
+      assert.equal(updatedHead.stdout.trim(), "main");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 });
 
