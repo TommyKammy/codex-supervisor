@@ -179,6 +179,84 @@ export function formatWorkspaceRestoreStatusLine(restore: WorkspaceRestoreMetada
   return `workspace_restore source=${restore.source} ref=${restore.ref}`;
 }
 
+interface GitWorktreeEntry {
+  worktreePath: string;
+  branchRef: string | null;
+}
+
+function parseGitWorktreeList(stdout: string): GitWorktreeEntry[] {
+  const entries: GitWorktreeEntry[] = [];
+  let current: GitWorktreeEntry | null = null;
+
+  for (const rawLine of stdout.split("\n")) {
+    const line = rawLine.trim();
+    if (line === "") {
+      if (current) {
+        entries.push(current);
+        current = null;
+      }
+      continue;
+    }
+
+    if (line.startsWith("worktree ")) {
+      if (current) {
+        entries.push(current);
+      }
+      current = {
+        worktreePath: path.resolve(line.slice("worktree ".length).trim()),
+        branchRef: null,
+      };
+      continue;
+    }
+
+    if (line.startsWith("branch ") && current) {
+      current.branchRef = line.slice("branch ".length).trim();
+    }
+  }
+
+  if (current) {
+    entries.push(current);
+  }
+
+  return entries;
+}
+
+async function assertReusableExistingWorkspace(
+  config: Pick<SupervisorConfig, "repoPath">,
+  workspacePath: string,
+  branch: string,
+): Promise<void> {
+  const resolvedWorkspacePath = path.resolve(workspacePath);
+  const worktreeList = await runCommand("git", ["-C", config.repoPath, "worktree", "list", "--porcelain"]);
+  const worktreeEntry = parseGitWorktreeList(worktreeList.stdout).find(
+    (entry) => entry.worktreePath === resolvedWorkspacePath,
+  );
+
+  if (!worktreeEntry) {
+    throw new Error(`Existing workspace is not a registered worktree for repository ${config.repoPath}: ${workspacePath}`);
+  }
+
+  const headBranch = await runCommand(
+    "git",
+    ["-C", workspacePath, "symbolic-ref", "--quiet", "--short", "HEAD"],
+    { allowExitCodes: [0, 1] },
+  );
+  if (headBranch.exitCode !== 0) {
+    throw new Error(`Existing workspace is on a detached HEAD; expected branch ${branch}: ${workspacePath}`);
+  }
+
+  const actualBranch = headBranch.stdout.trim();
+  if (actualBranch !== branch) {
+    throw new Error(`Existing workspace is on branch ${actualBranch}; expected branch ${branch}: ${workspacePath}`);
+  }
+
+  if (worktreeEntry.branchRef !== `refs/heads/${branch}`) {
+    throw new Error(
+      `Existing workspace worktree metadata points at ${worktreeEntry.branchRef ?? "detached HEAD"}; expected refs/heads/${branch}: ${workspacePath}`,
+    );
+  }
+}
+
 export async function ensureWorkspace(
   config: SupervisorConfig,
   issueNumber: number,
@@ -191,6 +269,7 @@ export async function ensureWorkspace(
   const remoteBranchExists = await fetchIssueRemoteTrackingRef(config.repoPath, branch);
 
   if (fs.existsSync(path.join(workspacePath, ".git"))) {
+    await assertReusableExistingWorkspace(config, workspacePath, branch);
     return buildEnsuredWorkspace(workspacePath, {
       source: "existing_workspace",
       ref: branch,

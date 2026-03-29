@@ -338,6 +338,51 @@ test("ensureWorkspace skips bootstrap-base resolution when restoring an existing
   assert.equal(ensured.restore.ref, branch);
 });
 
+test("ensureWorkspace rejects reusing an existing workspace on the wrong branch", async () => {
+  const config = await createRepositoryFixture();
+  const issueNumber = 729;
+  const branch = `${config.branchPrefix}${issueNumber}`;
+  const ensured = await ensureWorkspace(config, issueNumber, branch);
+
+  await git(ensured.workspacePath, "checkout", "-b", "unexpected-branch");
+
+  await assert.rejects(
+    () => ensureWorkspace(config, issueNumber, branch),
+    /expected branch/i,
+  );
+});
+
+test("ensureWorkspace rejects reusing an existing workspace on a detached HEAD", async () => {
+  const config = await createRepositoryFixture();
+  const issueNumber = 731;
+  const branch = `${config.branchPrefix}${issueNumber}`;
+  const ensured = await ensureWorkspace(config, issueNumber, branch);
+  const headSha = await gitOutput(ensured.workspacePath, "rev-parse", "HEAD");
+
+  await git(ensured.workspacePath, "checkout", "--detach", headSha);
+
+  await assert.rejects(
+    () => ensureWorkspace(config, issueNumber, branch),
+    /detached head/i,
+  );
+});
+
+test("ensureWorkspace rejects reusing an existing workspace from a foreign repository", async () => {
+  const config = await createRepositoryFixture();
+  const foreignConfig = await createRepositoryFixture();
+  const issueNumber = 730;
+  const branch = `${config.branchPrefix}${issueNumber}`;
+  const workspacePath = path.join(config.workspaceRoot, `issue-${issueNumber}`);
+
+  await fs.mkdir(config.workspaceRoot, { recursive: true });
+  await execFileAsync("git", ["clone", foreignConfig.repoPath, workspacePath]);
+
+  await assert.rejects(
+    () => ensureWorkspace(config, issueNumber, branch),
+    /worktree|repository|workspace/i,
+  );
+});
+
 test("issue-scoped journals do not manufacture merge conflicts between unrelated issue branches", async () => {
   const config = await createRepositoryFixture();
   const issueA = 801;
