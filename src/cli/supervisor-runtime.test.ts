@@ -1368,6 +1368,7 @@ test("runSupervisorCommand keeps web run-once on the fresh loop controller after
           },
         },
         loopController: {
+          acquireLoopRuntimeLock: async () => createLoopRuntimeLockHandle(),
           runCycle: async () => {
             runCycleCalls.push("replacement");
             return "replacement cycle";
