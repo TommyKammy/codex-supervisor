@@ -16,6 +16,7 @@ import type { SupervisorExplainDto } from "../supervisor/supervisor-selection-st
 import type { SupervisorEventSink, SupervisorStatusDto } from "../supervisor";
 import type { JsonCorruptStateResetResult } from "../core/types";
 import type { SupervisorConfig } from "../core/types";
+import type { SupervisorLoopController } from "../supervisor/supervisor-loop-controller";
 import type { SupervisorService, SupervisorEventUnsubscribe } from "../supervisor";
 
 const RESTARTING_STATUS_MESSAGE = "The supervisor worker is restarting. The WebUI shell is still available and will reconnect automatically.";
@@ -41,9 +42,15 @@ export interface RestartableWebUiShellService extends SupervisorService {
   restartWorker: () => Promise<void>;
 }
 
+export interface RestartableWebUiWorker {
+  service: SupervisorService;
+  loopController?: Pick<SupervisorLoopController, "runCycle">;
+}
+
 export interface CreateRestartableWebUiShellServiceOptions {
   service: SupervisorService;
-  recreateService: () => SupervisorService | Promise<SupervisorService>;
+  loopController?: Pick<SupervisorLoopController, "runCycle">;
+  recreateWorker: () => RestartableWebUiWorker | Promise<RestartableWebUiWorker>;
   capability: ManagedRestartCapability;
   writeStdout?: (line: string) => void;
 }
@@ -55,6 +62,7 @@ export function createRestartableWebUiShellService(
   managedRestart: ManagedRestartController;
 } {
   let activeService = options.service;
+  let activeLoopController = options.loopController ?? null;
   let activeUnsubscribe = subscribeToActiveService(activeService);
   let workerPhase: "open" | "restarting" = "open";
   let restartPromise: Promise<void> | null = null;
@@ -101,9 +109,10 @@ export function createRestartableWebUiShellService(
     markRestarting();
     activeUnsubscribe();
     restartPromise = Promise.resolve()
-      .then(() => options.recreateService())
-      .then((nextService) => {
-        activeService = nextService;
+      .then(() => options.recreateWorker())
+      .then((nextWorker) => {
+        activeService = nextWorker.service;
+        activeLoopController = nextWorker.loopController ?? null;
         activeUnsubscribe = subscribeToActiveService(activeService);
         markOpen();
       })
@@ -171,6 +180,9 @@ export function createRestartableWebUiShellService(
     runOnce: async (runOptions: Pick<CliOptions, "dryRun">) => {
       if (workerPhase === "restarting") {
         rejectWhileRestarting();
+      }
+      if (activeLoopController) {
+        return activeLoopController.runCycle("run-once", runOptions);
       }
       return activeService.runOnce(runOptions);
     },

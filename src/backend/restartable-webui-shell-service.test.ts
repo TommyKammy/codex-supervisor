@@ -185,9 +185,9 @@ test("createRestartableWebUiShellService keys cached reconnect reads by request 
   const initialService = createStubService({ statusCalls, previewCalls });
   const shell = createRestartableWebUiShellService({
     service: initialService,
-    recreateService: async () => {
+    recreateWorker: async () => {
       await restartGate;
-      return createStubService();
+      return { service: createStubService() };
     },
     capability: {
       supported: true,
@@ -228,7 +228,7 @@ test("createRestartableWebUiShellService keys cached reconnect reads by request 
 test("createRestartableWebUiShellService restores the shell after a synchronous recreateService failure", async () => {
   const shell = createRestartableWebUiShellService({
     service: createStubService(),
-    recreateService: () => {
+    recreateWorker: () => {
       throw new Error("restart exploded");
     },
     capability: {
@@ -252,7 +252,7 @@ test("createRestartableWebUiShellService isolates synchronous subscriber failure
   });
   const shell = createRestartableWebUiShellService({
     service: createStubService({ eventSinkRef }),
-    recreateService: async () => createStubService(),
+    recreateWorker: async () => ({ service: createStubService() }),
     capability: {
       supported: true,
       launcher: "systemd",
@@ -296,4 +296,50 @@ test("createRestartableWebUiShellService isolates synchronous subscriber failure
   } finally {
     errorMock.mock.restore();
   }
+});
+
+test("createRestartableWebUiShellService keeps run-once paired with the fresh loop controller after restart", async () => {
+  const runCycleCalls: string[] = [];
+  const shell = createRestartableWebUiShellService({
+    service: createStubService({
+      statusByWhy: {
+        false: createStatusDto("initial", false),
+        true: createStatusDto("initial", true),
+      },
+    }),
+    loopController: {
+      runCycle: async () => {
+        runCycleCalls.push("initial");
+        return "run-once initial";
+      },
+    },
+    recreateWorker: async () => ({
+      service: createStubService({
+        statusByWhy: {
+          false: createStatusDto("replacement", false),
+          true: createStatusDto("replacement", true),
+        },
+      }),
+      loopController: {
+        runCycle: async () => {
+          runCycleCalls.push("replacement");
+          return "run-once replacement";
+        },
+      },
+    }),
+    capability: {
+      supported: true,
+      launcher: "systemd",
+      state: "ready",
+      summary: "Managed restart is available through the systemd launcher.",
+    },
+  });
+
+  assert.equal(await shell.service.runOnce({ dryRun: false }), "run-once initial");
+  await shell.service.restartWorker();
+
+  const reloadedStatus = await shell.service.queryStatus({ why: false });
+  assert.deepEqual(reloadedStatus.detailedStatusLines, ["status=replacement"]);
+  assert.equal(await shell.service.runOnce({ dryRun: false }), "run-once replacement");
+  assert.deepEqual(runCycleCalls, ["initial", "replacement"]);
 });

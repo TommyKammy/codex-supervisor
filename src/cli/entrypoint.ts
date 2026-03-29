@@ -39,7 +39,7 @@ export interface CliEntrypointDependencies {
     dependencies: {
       service: SupervisorService;
       loopController?: SupervisorLoopController;
-      createWebUiService?: () => SupervisorService;
+      createWebUiWorker?: () => { service: SupervisorService; loopController?: SupervisorLoopController };
     },
   ) => Promise<void>;
   writeStdout?: (line: string) => void;
@@ -88,7 +88,7 @@ export async function runCli(
 
   const service = buildSupervisorService(options.configPath);
   const loopController =
-    options.command === "loop" || options.command === "run-once"
+    options.command === "loop" || options.command === "run-once" || options.command === "web"
       ? buildSupervisorLoopController(options.configPath)
       : undefined;
   if (!isRuntimeCommand(options.command)) {
@@ -104,7 +104,12 @@ export async function runCli(
     {
       service,
       loopController,
-      createWebUiService: options.command === "web" ? () => buildSupervisorService(options.configPath) : undefined,
+      createWebUiWorker: options.command === "web"
+        ? () => ({
+          service: buildSupervisorService(options.configPath),
+          loopController: buildSupervisorLoopController(options.configPath),
+        })
+        : undefined,
     },
   );
 }

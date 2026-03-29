@@ -1375,10 +1375,10 @@ test("createSupervisorHttpServer keeps setup routes reachable while the worker i
   });
   const shell = createRestartableWebUiShellService({
     service: initialService,
-    recreateService: async () => {
+    recreateWorker: async () => {
       recreateCalls += 1;
       await restartGate;
-      return replacementService;
+      return { service: replacementService };
     },
     capability: {
       supported: true,
