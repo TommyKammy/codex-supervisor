@@ -72,6 +72,26 @@ async function gitOutput(cwd: string, ...args: string[]): Promise<string> {
   return result.stdout.trim();
 }
 
+async function withTemporaryHomeGitConfig<T>(
+  entries: Record<string, string>,
+  callback: (env: NodeJS.ProcessEnv) => Promise<T>,
+): Promise<T> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-git-config-"));
+  const home = path.join(root, "home");
+  await fs.mkdir(home, { recursive: true });
+
+  const env = { ...process.env, HOME: home };
+  for (const [key, value] of Object.entries(entries)) {
+    await execFileAsync("git", ["config", "--global", key, value], { env });
+  }
+
+  try {
+    return await callback(env);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+}
+
 async function withFakeGitFetch<T>(
   branch: string,
   stderrMessage: string,
@@ -180,7 +200,7 @@ async function createDivergedDefaultBranchFixture(): Promise<SupervisorConfig> {
   await execFileAsync("git", ["clone", githubPath, githubClonePath]);
   await git(githubClonePath, "config", "user.name", "GitHub Collaborator");
   await git(githubClonePath, "config", "user.email", "github@example.test");
-  await git(githubClonePath, "checkout", "-b", config.defaultBranch, `origin/${config.defaultBranch}`);
+  await git(githubClonePath, "checkout", "-B", config.defaultBranch, `origin/${config.defaultBranch}`);
   await fs.writeFile(path.join(githubClonePath, "github-only.txt"), "github-only change\n", "utf8");
   await git(githubClonePath, "add", "github-only.txt");
   await git(githubClonePath, "commit", "-m", "GitHub-only commit");
@@ -336,6 +356,40 @@ test("ensureWorkspace skips bootstrap-base resolution when restoring an existing
   assert.equal(ensured.workspacePath, path.join(config.workspaceRoot, `issue-${issueNumber}`));
   assert.equal(ensured.restore.source, "local_branch");
   assert.equal(ensured.restore.ref, branch);
+});
+
+test("diverged default-branch fixture remains reproducible when clones already check out main", async () => {
+  await withTemporaryHomeGitConfig({ "init.defaultBranch": "main" }, async (env) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-main-clone-"));
+    const githubPath = path.join(root, "github.git");
+    const repoPath = path.join(root, "repo");
+    const clonePath = path.join(root, "clone");
+
+    await execFileAsync("git", ["init", "--bare", githubPath], { env });
+    await execFileAsync("git", ["clone", githubPath, repoPath], { env });
+    await execFileAsync("git", ["-C", repoPath, "config", "user.name", "Codex Supervisor"], { env });
+    await execFileAsync("git", ["-C", repoPath, "config", "user.email", "codex@example.test"], { env });
+    await execFileAsync("git", ["-C", repoPath, "checkout", "-b", "main"], { env });
+    await fs.writeFile(path.join(repoPath, "README.md"), "fixture\n", "utf8");
+    await execFileAsync("git", ["-C", repoPath, "add", "README.md"], { env });
+    await execFileAsync("git", ["-C", repoPath, "commit", "-m", "Initial commit"], { env });
+    await execFileAsync("git", ["-C", repoPath, "push", "-u", "origin", "main"], { env });
+
+    await execFileAsync("git", ["clone", githubPath, clonePath], { env });
+    const clonedHead = await execFileAsync("git", ["-C", clonePath, "symbolic-ref", "--short", "HEAD"], { env });
+    assert.equal(clonedHead.stdout.trim(), "main");
+
+    await assert.rejects(
+      () => execFileAsync("git", ["-C", clonePath, "checkout", "-b", "main", "origin/main"], { env }),
+      /already exists/i,
+    );
+
+    await execFileAsync("git", ["-C", clonePath, "checkout", "-B", "main", "origin/main"], { env });
+    const updatedHead = await execFileAsync("git", ["-C", clonePath, "symbolic-ref", "--short", "HEAD"], { env });
+    assert.equal(updatedHead.stdout.trim(), "main");
+
+    await fs.rm(root, { recursive: true, force: true });
+  });
 });
 
 test("ensureWorkspace rejects reusing an existing workspace on the wrong branch", async () => {
