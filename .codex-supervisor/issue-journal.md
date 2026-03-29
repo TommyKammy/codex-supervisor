@@ -1,50 +1,36 @@
-# Issue #1115: Fail fast when issue journal path templates leave {issueNumber} unresolved
+# Issue #1194: Repair remaining workspace reuse test expectations after cross-host discrepancy investigation
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1115
-- Branch: codex/issue-1115
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1194
+- Branch: codex/issue-1194
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: resolving_conflict
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 9b5e4f0c349c6af0b95434e0ccc00c1d476eb454
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 16d70fd63fb08da66d08f400f8c5d333c5560262
 - Blocked reason: none
-- Last failure signature: dirty:9b5e4f0c349c6af0b95434e0ccc00c1d476eb454
-- Repeated failure signature count: 1
-- Updated at: 2026-03-27T12:37:25.971Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-29T22:34:49Z
 
 ## Latest Codex Summary
-Draft PR is open at https://github.com/TommyKammy/codex-supervisor/pull/1117 from `codex/issue-1115`. I reran the focused regression set against the committed checkpoint `9b5e4f0`, and it passed cleanly.
-
-No implementation changes were needed this turn. I updated [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md) with the PR state, verification rerun, commands run, and next handoff. The only local dirt now is that journal edit plus the existing supervisor runtime artifacts.
-
-Summary: Pushed `codex/issue-1115` to GitHub, opened draft PR #1117 for commit `9b5e4f0`, reran the focused tests, and updated the issue journal handoff.
-State hint: draft_pr
-Blocked reason: none
-Tests: `npx tsx --test src/journal.test.ts src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor-cycle-replay.test.ts`
-Next action: watch PR #1117 CI and address any failures or review feedback if they appear
-Failure signature: dirty:9b5e4f0c349c6af0b95434e0ccc00c1d476eb454
+- Reproduced the two remaining `src/core/workspace.test.ts` failures on macOS, confirmed both now fail on the earlier unregistered-worktree guard in `assertReusableExistingWorkspace(...)`, updated the wrong-branch and detached-HEAD expectations to match that fail-closed boundary, and reran the focused test file plus `npm run build` to green.
 
 ## Active Failure Context
-- Category: conflict
-- Summary: PR #1117 has merge conflicts and needs a base-branch integration pass.
-- Command or source: git fetch origin && git merge origin/<default-branch>
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1117
-- Details:
-  - mergeStateStatus=DIRTY
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `issueJournalPath(...)` should be the fail-fast boundary for tokenized issue journal templates, rejecting unresolved `{issueNumber}` placeholders while leaving plain custom paths untouched.
-- What changed: added focused `src/journal.test.ts` coverage for unresolved-token failure, valid token substitution, and non-tokenized custom paths; updated `issueJournalPath(...)` to replace `{issueNumber}` only when an `issueNumber` is supplied and otherwise throw a clear error; threaded `issueNumber` through the selection, preparation, and supervisor call sites that derive `journal_path` from config.
+- Hypothesis: the remaining workspace reuse failures are stale test expectations only; the current fail-closed behavior now rejects these reused workspaces at the earlier "not a registered worktree" boundary before branch-specific validation can run.
+- What changed: updated the wrong-branch and detached-HEAD assertions in `src/core/workspace.test.ts` to expect the current unregistered-worktree error emitted by `assertReusableExistingWorkspace(...)`.
 - Current blocker: none.
-- Next exact step: monitor draft PR #1117 and fix CI or review feedback if any integration path exposes a missed caller.
-- Verification gap: I have not run the full repo suite or an end-to-end supervisor loop; verification so far is limited to the journal helper and the narrow selection/preparation/replay tests that exercise journal-path persistence.
-- Files touched: `src/core/journal.ts`; `src/journal.test.ts`; `src/run-once-issue-preparation.ts`; `src/run-once-issue-selection.ts`; `src/supervisor/supervisor.ts`; `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low. The behavioral change is narrowly scoped to templates containing `{issueNumber}`; non-tokenized paths still resolve exactly as before.
-- Last focused command: `gh pr view 1117 --json number,state,isDraft,url,title`
-- What changed this turn: reread the required memory and journal files, confirmed the committed checkpoint at `9b5e4f0`, reran the focused journal-path-related tests as a combined command, pushed `codex/issue-1115` to the GitHub remote, and opened draft PR #1117 for review.
-- Exact failure reproduced this turn: `issueJournalPath("<redacted-local-path>", ".codex-supervisor/issues/{issueNumber}/issue-journal.md")` returned a resolved path that still contained the literal `{issueNumber}` token instead of rejecting the invalid durable path state.
-- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git branch --show-current`; `git status --short`; `git log --oneline --decorate -5`; `gh pr view --json number,state,isDraft,title,headRefName,baseRefName,url`; `git show --stat --oneline --decorate HEAD`; `git ls-remote --heads origin codex/issue-1115`; `npx tsx --test src/journal.test.ts src/run-once-issue-preparation.test.ts src/run-once-issue-selection.test.ts src/supervisor/supervisor-cycle-replay.test.ts`; `git push -u origin codex/issue-1115`; `gh pr create --draft --base main --head codex/issue-1115 --title "Fail fast on unresolved issue journal templates" --body ...`; `git remote -v`; `gh repo view --json nameWithOwner,defaultBranchRef,url`; `git rev-list --left-right --count origin/main...codex/issue-1115`; `git push -u github codex/issue-1115`; `git rev-list --left-right --count github/main...codex/issue-1115`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`; `gh pr view 1117 --json number,state,isDraft,url,title`
+- Next exact step: commit the focused test expectation repair, open or update the draft PR for `codex/issue-1194`, and monitor CI.
+- Verification gap: I have not run the full repo suite; verification this turn is limited to `npm run build` and `npx tsx --test src/core/workspace.test.ts`.
+- Files touched: `src/core/workspace.test.ts`; `.codex-supervisor/issue-journal.md`.
+- Rollback concern: low. The change is test-only and narrows expectations to the already-observed fail-closed error path.
+- Last focused command: `npm run build`
+- What changed this turn: reread the required memory and journal files, reproduced the two remaining workspace reuse failures, confirmed both now fail on the same unregistered-worktree guard, updated the two stale regex expectations, and reran focused verification to green.
+- Exact failure reproduced this turn: both `ensureWorkspace rejects reusing an existing workspace on the wrong branch` and `ensureWorkspace rejects reusing an existing workspace on a detached HEAD` rejected with `Existing workspace is not a registered worktree for repository ...` instead of the later branch-specific error text.
+- Commands run this turn: `sed -n '1,220p' /Users/tomoakikawada/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1194/AGENTS.generated.md`; `sed -n '1,260p' /Users/tomoakikawada/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1194/context-index.md`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `git branch --show-current`; `git status --short`; `git log --oneline --decorate -5`; `npx tsx --test src/core/workspace.test.ts`; `sed -n '360,440p' src/core/workspace.test.ts`; `sed -n '200,290p' src/core/workspace.ts`; `npm run build`; `date -u +"%Y-%m-%dT%H:%M:%SZ"`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
