@@ -85,11 +85,94 @@ Not a fit:
    node dist/index.js web --config /path/to/supervisor.config.json
    ```
 
+## WebUI
+
+The local WebUI gives you two operator-facing routes on the same supervisor service:
+
+- `/setup` for first-run setup, typed readiness, and guided config edits
+- `/dashboard` for steady-state issue, queue, and diagnostics monitoring
+
+Start it with:
+
+```bash
+node dist/index.js web --config /path/to/supervisor.config.json
+```
+
+Then open [http://127.0.0.1:4310/setup](http://127.0.0.1:4310/setup) for first-run setup or [http://127.0.0.1:4310/dashboard](http://127.0.0.1:4310/dashboard) for the operator dashboard.
+
+![WebUI setup shell](./docs/images/webui-setup-shell.png)
+
+## First Runnable Issue
+
+If you want the supervisor to work on the right thing, the fastest win is to author the issue body correctly before you start the loop.
+
+Copy one of these minimal runnable templates first, then replace the placeholder text. For a first issue, the safest defaults are:
+
+- `Depends on: none`
+- `Parallelizable: No`
+- `Execution order: 1 of 1`
+- add `Part of: #...` only when the issue is a sequenced child under an epic or tracking issue
+
+Minimal standalone `codex` issue:
+
+```md
+## Summary
+Add a short, concrete statement of the behavior change.
+
+## Scope
+- describe what changes
+- describe what stays unchanged
+
+Depends on: none
+Parallelizable: No
+
+## Execution order
+1 of 1
+
+## Acceptance criteria
+- list observable outcomes
+
+## Verification
+- `npm test -- path/to/focused.test.ts`
+```
+
+Minimal sequenced child issue:
+
+```md
+## Summary
+Describe one PR-sized change.
+
+## Scope
+- bound the change clearly
+- keep unrelated behavior unchanged
+
+Part of: #123
+Depends on: #122
+Parallelizable: No
+
+## Execution order
+2 of 4
+
+## Acceptance criteria
+- list observable outcomes
+
+## Verification
+- `npm test -- path/to/focused.test.ts`
+```
+
+Before trusting a new issue as runnable work, lint it directly:
+
+```bash
+node dist/index.js issue-lint 123 --config /path/to/supervisor.config.json
+```
+
+If `issue-lint` reports missing or malformed metadata, fix the issue body before running `run-once` or `loop`.
+
 Requirements: `gh auth status` must succeed, `codex` CLI must be installed, the managed repository should already have branch protection and CI in place, and the operator should only enable autonomous execution in a trusted repo with trusted GitHub authors. The current Codex runs use `--dangerously-bypass-approvals-and-sandbox`; see [Getting started](./docs/getting-started.md), [Configuration reference](./docs/configuration.md), and [Architecture](./docs/architecture.md) for the execution-safety boundary.
 
 State-file contract: missing JSON state is an empty bootstrap case, but corrupted JSON state is not. Treat corrupted JSON state as a recovery event, not a durable recovery point, until an operator has inspected it and performed an explicit acknowledgement or reset.
 
-Workspace restore contract: `ensureWorkspace()` should prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap a fresh issue branch from `origin/<defaultBranch>`. Bootstrapping from the default branch is the fallback path when no existing issue branch can be restored.
+Workspace restore contract: `ensureWorkspace()` should prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap a fresh issue branch from an authoritative fresh default-branch ref such as `origin/<defaultBranch>`. Bootstrapping from the default branch is the fallback path when no existing issue branch can be restored.
 
 Workspace cleanup contract: tracked done workspaces and orphaned workspaces are different cases. Tracked done workspace cleanup is the bounded delayed cleanup controlled by the done-workspace settings. An orphaned workspace is an untracked `issue-*` worktree under `workspaceRoot` that no longer has a live state entry; the explicit orphan prune flow only preserves candidates marked `locked`, `recent`, or `unsafe_target`, and abandoned orphan workspaces are only pruned through an explicit operator action rather than an implicit background cleanup. Run `node dist/index.js doctor --config /path/to/supervisor.config.json` and check `doctor_orphan_policy mode=explicit_only ...` when you need to confirm the effective orphan cleanup policy on a real setup.
 

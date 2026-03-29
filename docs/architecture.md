@@ -29,7 +29,7 @@ Pull-request hydration freshness contract:
 
 These are the recovery points after crashes, process restarts, or thread loss, but only while the persisted data remains readable.
 
-For issue workspaces, the intended restore precedence is: prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap a fresh issue branch from `origin/<defaultBranch>`. That default-branch bootstrap is the fallback path when no existing issue branch can be restored.
+For issue workspaces, the intended restore precedence is: prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap a fresh issue branch from an authoritative fresh default-branch ref such as `origin/<defaultBranch>`. That default-branch bootstrap is the fallback path when no existing issue branch can be restored.
 
 For workspace cleanup, keep tracked done workspaces separate from orphaned workspaces. Tracked done cleanup is the bounded cleanup policy for issue workspaces that still have supervisor state and have reached `done`. An orphaned workspace is an untracked canonical `issue-*` worktree under `workspaceRoot` that no longer has a live state entry. The explicit orphan prune path only preserves candidates marked `locked`, `recent`, or `unsafe_target`; there is no separate manual-keep state. Orphan pruning is an explicit operator action; the orphan grace setting only affects candidate eligibility for diagnostics and explicit prune commands, not background `runOnce` cleanup.
 
