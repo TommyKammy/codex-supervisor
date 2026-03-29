@@ -49,7 +49,7 @@ Current execution-safety rule: GitHub-authored issue bodies, review comments, an
 
 Current state-recovery rule: missing JSON state means there is no durable state yet, so the supervisor can bootstrap from empty state. Corrupted JSON state is not the same thing. Treat corrupted JSON state as a recovery event and not a durable recovery point until an operator has inspected the problem and completed an explicit acknowledgement or reset.
 
-Current workspace-recovery rule: when `ensureWorkspace()` needs to restore an issue workspace, it should prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap a fresh issue branch from `origin/<defaultBranch>`. Treat that default-branch bootstrap as the fallback when no existing issue branch can be restored, not as the normal response to every missing local branch.
+Current workspace-recovery rule: when `ensureWorkspace()` needs to restore an issue workspace, it should prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap a fresh issue branch from an authoritative fresh default-branch ref such as `origin/<defaultBranch>`. Treat that default-branch bootstrap as the fallback when no existing issue branch can be restored, not as the normal response to every missing local branch.
 
 ## Choose the operating mode
 
@@ -110,12 +110,47 @@ Before you run the supervisor, make sure each candidate issue includes:
 
 - a clear `## Summary`
 - a bounded `## Scope`
-- `Depends on` for prerequisites
-- `## Execution order` when sibling issues must run in sequence
+- explicit `Depends on` metadata such as `Depends on: none` or `Depends on: #123`
+- explicit `Parallelizable: Yes/No`
+- explicit `## Execution order`, including `1 of 1` for standalone `codex` issues
+- canonical `Part of: #...` metadata when the issue is a sequenced child
 - observable `## Acceptance criteria`
 - concrete `## Verification`
 
-Minimal example:
+Fastest safe path for a beginner:
+
+1. start from the standalone template in [README](../README.md) or the templates in [Issue metadata reference](./issue-metadata.md)
+2. write `Depends on: none`, `Parallelizable: No`, and `Execution order: 1 of 1` unless the issue is truly part of a sequence
+3. run `issue-lint` on that issue number before trusting it as runnable work
+
+Minimal standalone runnable issue:
+
+```md
+## Summary
+Refocus the getting-started guide on setup and operator flow.
+
+## Scope
+- keep the guide centered on setup and operation
+- remove duplicated deep-reference sections
+- keep links to deeper docs accurate
+
+Depends on: none
+Parallelizable: No
+
+## Execution order
+1 of 1
+
+## Acceptance criteria
+- the guide reads as a first-run setup and operation document
+- duplicated reference content is removed or shortened
+- related doc links are correct
+
+## Verification
+- review the getting-started flow for clarity
+- run `npm run build`
+```
+
+Minimal sequenced child issue:
 
 ```md
 ## Summary
@@ -143,7 +178,50 @@ Parallelizable: No
 - run npm run build
 ```
 
+Use the standalone form unless the work is truly one child in a series. Only add `Part of: #...` for sequenced child work.
+
 Use the [Issue metadata reference](./issue-metadata.md) for the canonical field rules and more examples.
+
+Before `run-once`, do this quick check:
+
+1. copy a minimal template and replace the placeholders with real behavior
+2. run `issue-lint` on the issue number
+3. if `issue-lint` is clean, run `run-once`
+4. if `run-once` still behaves strangely, inspect `status`, `explain`, or `doctor`
+
+Validate one issue before the loop:
+
+```bash
+node dist/index.js issue-lint 123 --config /path/to/supervisor.config.json
+```
+
+What to do with the result:
+
+- if `issue-lint` reports `missing_required=...`, fix the issue body before `run-once`
+- if `issue-lint` reports `metadata_errors=...`, normalize the issue body instead of guessing what the supervisor will infer
+- if `issue-lint` is clean but selection still looks wrong, use `status` or `doctor` to inspect candidate discovery and host health
+- if one issue keeps getting picked unexpectedly, run `node dist/index.js explain 123 --config /path/to/supervisor.config.json` to compare the issue body with the current runtime state
+
+Representative blocking messages:
+
+- `missing_required=scope, acceptance criteria, verification`
+  Fix the issue body by adding those sections.
+- `metadata_errors=depends on must appear exactly once; execution order must appear exactly once; parallelizable must appear exactly once`
+  Fix duplicate scheduling lines in the issue body.
+- `metadata_errors=depends on duplicates parent epic #900; remove it and keep only real blocking issues`
+  Keep `Part of: #900` for the epic and use `Depends on:` only for true prerequisites.
+- `metadata_errors=issue labels are missing; cannot evaluate label-gated execution policy`
+  Refresh the fetched issue payload or labels before trusting the result.
+
+Use `repair_guidance_N=...` as the direct next step. Those lines are generated specifically to tell you what to add or rewrite.
+
+How to tell “fix the issue” from “fix the host or config”:
+
+- If `issue-lint` says `execution_ready=no`, `missing_required=...`, or `metadata_errors=...`, fix the GitHub issue body.
+- If `doctor` says `doctor_check name=github_auth status=fail`, fix GitHub auth on the host.
+- If `doctor` says `doctor_check name=codex_cli status=fail`, fix the `codexBinary` path or install `codex`.
+- If `doctor` says `doctor_check name=state_file status=fail`, inspect or repair the local state file before trusting more runs.
+- If `doctor` says `doctor_warning kind=config detail=Active config still uses legacy shared issue journal path ...`, fix the supervisor config rather than the issue body.
 
 Issue readiness is not the same as trust. A perfectly structured issue is still not safe for autonomous execution when the GitHub-authored text comes from an untrusted repo or untrusted author set.
 
@@ -169,6 +247,13 @@ What to check after `run-once`:
 If the first pass picks the wrong issue, inspect `status` or `doctor` for the effective candidate discovery settings and then fix the issue metadata before running again. Do not treat issue creation time as the source of truth.
 If `status` or `doctor` reports corrupted JSON state, stop treating that file as a safe checkpoint. Inspect the file and recent operator actions first, then explicitly acknowledge the corruption or reset the state before trusting future runs.
 If full inventory refreshes intermittently fail with malformed JSON during `run-once` or `loop`, the supervisor automatically captures the raw failing payloads under `<dirname(stateFile)>/inventory-refresh-failures`. Each parse failure writes one timestamped JSON artifact such as `20260327T001537.030Z-gh-issue-list.json` or `20260327T001537.030Z-rest-page-2.json`, and the supervisor prunes older files after the newest 10 by default. Use `CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_LIMIT=<n>` if you need a different bound, then inspect or copy that directory from the host after the next failure.
+
+Beginner troubleshooting shortcut:
+
+- `issue-lint` answers “is this issue body execution-ready?”
+- `status` answers “what is the supervisor doing right now?”
+- `doctor` answers “is the host or state unhealthy?”
+- `explain <issue-number>` answers “why is this specific issue blocked, skipped, or not selected?”
 
 Execution metrics are retained independently of issue worktree cleanup. Terminal run summaries live under `<dirname(stateFile)>/execution-metrics/run-summaries/`, and `node dist/index.js rollup-execution-metrics --config /path/to/supervisor.config.json` writes `<dirname(stateFile)>/execution-metrics/daily-rollups.json` from those retained summaries.
 
@@ -329,6 +414,8 @@ Stop treating the issue as execution-ready. Tighten the issue body, split the wo
 - starting with `loop` before validating `run-once`
 - asking the supervisor to execute issues that still need planning
 - relying on issue creation time instead of explicit dependency metadata
+- treating a malformed or incomplete issue body as “probably good enough”
+- skipping `issue-lint` and debugging selection blind
 - treating README-level overview content as a substitute for issue metadata
 - expecting deep config or local-review details to live in this guide instead of the dedicated references
 

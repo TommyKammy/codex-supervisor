@@ -251,6 +251,56 @@ test("runSupervisorCommand fails fast for loop without a loop controller", async
   assert.equal(ensureGsdInstalledCalled, false);
 });
 
+test("runSupervisorCommand fails fast for web without a loop controller", async () => {
+  let registerStopSignalsCalled = false;
+  let ensureGsdInstalledCalled = false;
+
+  await assert.rejects(
+    runSupervisorCommand(
+      { command: "web", dryRun: false, why: false },
+      {
+        service: {
+          config: {} as SupervisorConfig,
+          pollIntervalMs: async () => 50,
+          runOnce: async () => {
+            throw new Error("unexpected runOnce");
+          },
+          queryStatus: async () => {
+            throw new Error("unexpected queryStatus");
+          },
+          queryExplain: async () => {
+            throw new Error("unexpected queryExplain");
+          },
+          runRecoveryAction: async () => {
+            throw new Error("unexpected runRecoveryAction");
+          },
+          pruneOrphanedWorkspaces: async () => {
+            throw new Error("unexpected pruneOrphanedWorkspaces");
+          },
+          resetCorruptJsonState: async () => {
+            throw new Error("unexpected resetCorruptJsonState");
+          },
+          queryIssueLint: async () => createIssueLintDto(),
+          queryDoctor: async () => {
+            throw new Error("unexpected queryDoctor");
+          },
+        },
+        ensureGsdInstalled: async () => {
+          ensureGsdInstalledCalled = true;
+          return null;
+        },
+        registerStopSignals: () => {
+          registerStopSignalsCalled = true;
+        },
+      },
+    ),
+    /Missing supervisor loop controller for web command/,
+  );
+
+  assert.equal(registerStopSignalsCalled, false);
+  assert.equal(ensureGsdInstalledCalled, false);
+});
+
 test("runSupervisorCommand re-reads the poll cadence between loop cycles", async () => {
   const sleepCalls: number[] = [];
   let signalHandler: ((signal: NodeJS.Signals) => void) | undefined;
@@ -952,6 +1002,10 @@ test("runSupervisorCommand starts the read-only WebUI server and shuts it down o
           throw new Error("unexpected queryDoctor");
         },
       },
+      loopController: {
+        acquireLoopRuntimeLock: async () => createLoopRuntimeLockHandle(),
+        runCycle: async () => "unused",
+      },
       ensureGsdInstalled: async () => {
         ensureGsdInstalledCalled = true;
         return null;
@@ -1021,6 +1075,10 @@ test("runSupervisorCommand closes active WebUI connections before closing the se
           throw new Error("unexpected queryDoctor");
         },
       },
+      loopController: {
+        acquireLoopRuntimeLock: async () => createLoopRuntimeLockHandle(),
+        runCycle: async () => "unused",
+      },
       createHttpServer: () => ({
         listen: (_port, _host, listeningListener) => {
           listeningListener?.();
@@ -1080,6 +1138,10 @@ test("runSupervisorCommand still shuts down the WebUI when a signal arrives befo
         queryDoctor: async () => {
           throw new Error("unexpected queryDoctor");
         },
+      },
+      loopController: {
+        acquireLoopRuntimeLock: async () => createLoopRuntimeLockHandle(),
+        runCycle: async () => "unused",
       },
       createHttpServer: () => ({
         listen: (_port, _host, listeningListener) => {
@@ -1161,6 +1223,10 @@ test("runSupervisorCommand keeps the WebUI shell up after a managed restart requ
         queryDoctor: async () => {
           throw new Error("unexpected queryDoctor");
         },
+      },
+      loopController: {
+        acquireLoopRuntimeLock: async () => createLoopRuntimeLockHandle(),
+        runCycle: async () => "unused",
       },
       createWebUiWorker: async () => {
         recreateCalls += 1;

@@ -10,7 +10,7 @@ Start from [supervisor.config.example.json](../supervisor.config.example.json), 
 - [supervisor.config.codex.json](../supervisor.config.codex.json)
 - [supervisor.config.coderabbit.json](../supervisor.config.coderabbit.json)
 
-`supervisor.config.json` is always the active file that the supervisor loads. The shipped provider profiles are starting points, so you can either copy one over `supervisor.config.json` and customize it for your repo or copy its `reviewBotLogins` into your existing `supervisor.config.json` and keep your other edits.
+The active file is whichever config path you pass with `--config`. `supervisor.config.json` is the common local default, and the shipped provider profiles are starting points, so you can either copy one over `supervisor.config.json` and customize it for your repo or copy its `reviewBotLogins` into your existing active config and keep your other edits.
 
 Requirements:
 
@@ -27,7 +27,7 @@ Pull-request hydration posture: fresh GitHub review facts are required before th
 
 State backend posture: a missing JSON state file is a normal empty bootstrap case, but corrupted JSON state is not a normal empty-state bootstrap case. When the JSON backend reports corrupted JSON state, treat it as a recovery event to inspect, acknowledge, or reset before relying on that state again. Until that explicit operator handling happens, corrupted JSON state is not a durable recovery point.
 
-Workspace restore posture: when `ensureWorkspace()` reconstructs an issue workspace, it should prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap a fresh issue branch from `origin/<defaultBranch>`. A missing local branch alone should not imply a fresh bootstrap when the remote issue branch still exists; bootstrapping from the default branch is the fallback only after both restore paths are unavailable.
+Workspace restore posture: when `ensureWorkspace()` reconstructs an issue workspace, it should prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap a fresh issue branch from an authoritative fresh default-branch ref such as `origin/<defaultBranch>`. A missing local branch alone should not imply a fresh bootstrap when the remote issue branch still exists; bootstrapping from the default branch is the fallback only after both restore paths are unavailable.
 
 ## Provider Profiles
 
@@ -65,7 +65,7 @@ Repository and workspace:
 - `repoPath`, `repoSlug`, `workspaceRoot`
 - `stateBackend`, `stateFile`, `stateBootstrapFile`
 - `branchPrefix`
-- issue-workspace restore precedence: local branch, then remote branch, then fallback bootstrap from `origin/<defaultBranch>`
+- issue-workspace restore precedence: local branch, then remote branch, then fallback bootstrap from an authoritative fresh default-branch ref such as `origin/<defaultBranch>`
 
 Operator diagnostics for state:
 

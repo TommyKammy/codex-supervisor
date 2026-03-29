@@ -82,13 +82,20 @@ test("runCli routes supervisor runtime commands through the supervisor runtime b
 });
 
 test("runCli routes web through the supervisor runtime boundary", async () => {
+  const createdConfigs: Array<string | undefined> = [];
   const service = { tag: "service" };
   const loopController = { tag: "loop-controller" };
   let runtimeCommand: Record<string, unknown> | undefined;
 
   await runCli(["web"], {
-    createSupervisorService: () => service as never,
-    createSupervisorLoopController: () => loopController as never,
+    createSupervisorService: (configPath) => {
+      createdConfigs.push(configPath);
+      return service as never;
+    },
+    createSupervisorLoopController: (configPath) => {
+      createdConfigs.push(configPath);
+      return loopController as never;
+    },
     runSupervisorCommand: async (command, dependencies) => {
       runtimeCommand = {
         ...command,
@@ -99,6 +106,7 @@ test("runCli routes web through the supervisor runtime boundary", async () => {
     },
   });
 
+  assert.deepEqual(createdConfigs, [undefined, undefined, undefined, undefined]);
   assert.deepEqual(runtimeCommand, {
     command: "web",
     dryRun: false,

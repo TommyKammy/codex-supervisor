@@ -54,6 +54,18 @@ Keep using the CLI when you want:
 - the replay or replay-corpus workflows
 - direct access to text output for debugging or logs
 
+For first-time issue authoring, a good operator pattern is:
+
+1. run `node dist/index.js issue-lint <issue-number> --config /path/to/supervisor.config.json`
+2. open the WebUI to inspect the same issue in `Issue details`
+3. use `Doctor` only if the issue looks correct but the loop still behaves unexpectedly
+
+Beginner rule of thumb:
+
+- if `Issue details` shows `execution_ready=no`, `missing_required=...`, or `metadata_errors=...`, fix the GitHub issue body
+- if `Doctor` shows `doctor_check name=github_auth status=fail`, `doctor_check name=codex_cli status=fail`, or `doctor_check name=state_file status=fail`, fix the host or config
+- if `Doctor` shows `doctor_warning kind=config ...`, fix the supervisor config rather than the issue body
+
 ## Current safe command surface
 
 The dashboard currently exposes only the same narrow safe commands that the CLI exposes:
@@ -71,12 +83,45 @@ At a high level:
 
 - `Status`: current operator-facing status, warnings, and readiness context
 - `Doctor`: host and state diagnostics
-- `Issue details`: focused details for the currently selected or inspected issue
+- `Issue details`: focused details for the currently selected or inspected issue, including the same issue-lint posture you should trust before calling an issue runnable
 - `Operator actions`: the safe command surface and the latest command result
 - `Live events`: recent SSE events from the supervisor
 - `Operator timeline`: recent commands, refreshes, and correlated live supervisor events
 
 The dashboard should favor current operator decisions and visibility over long historical dumps. Historical tracked-state browsing should live in dedicated history-oriented surfaces rather than overwhelming the main status and issue-detail panels.
+
+## Read `Issue details` and `Doctor` together
+
+Use the two panels for different questions:
+
+- `Issue details` answers "is this issue body runnable?"
+- `Doctor` answers "is the host, auth, config, or state unhealthy?"
+
+Representative `Issue details` / `issue-lint` signals:
+
+- `missing_required=scope, acceptance criteria, verification`
+  Add those sections to the issue body.
+- `metadata_errors=depends on must appear exactly once; execution order must appear exactly once; parallelizable must appear exactly once`
+  Remove duplicate scheduling lines and keep one valid declaration per field.
+- `metadata_errors=depends on duplicates parent epic #900; remove it and keep only real blocking issues`
+  Keep `Part of: #900` for the epic and move only real prerequisites into `Depends on:`.
+
+Representative `Doctor` signals:
+
+- `doctor_check name=github_auth status=fail`
+  Re-authenticate `gh` on the host.
+- `doctor_check name=codex_cli status=fail`
+  Install `codex` or fix `codexBinary` in config.
+- `doctor_check name=state_file status=fail`
+  Inspect or repair local state before trusting more runs.
+- `doctor_warning kind=config detail=Active config still uses legacy shared issue journal path ...`
+  Update the config to the issue-scoped journal path.
+
+Practical split:
+
+1. If `Issue details` is red, repair the issue first.
+2. If `Issue details` is clean but `Doctor` is red or warns, repair host/config/state next.
+3. If both look clean and selection still surprises you, inspect `Status` or run `explain <issue-number>`.
 
 ## Browser smoke suite
 

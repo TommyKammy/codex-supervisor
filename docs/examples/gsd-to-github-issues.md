@@ -31,11 +31,33 @@ Typical GitHub outputs:
 
 - one epic issue per phase
 - multiple child issues sized for one PR each
-- explicit `Depends on`, `Part of`, and `Execution order`
+- explicit `Depends on`, `Part of:`, `Parallelizable`, and `Execution order`
 
 ## Mapping rules
 
 Use these mapping rules when converting GSD output into GitHub Issues.
+
+### Phase and task translation table
+
+Use this when turning planning language into execution-ready issue fields.
+
+| GSD source | GitHub issue field | Rewrite rule |
+| --- | --- | --- |
+| phase goal in `ROADMAP.md` | epic `## Summary` | summarize the phase outcome in one sentence |
+| one atomic task or plan step | child `## Summary` | rewrite as one concrete behavior change |
+| constraints, preserved behavior, non-goals | `## Scope` | say what changes and what must stay unchanged |
+| sibling or prerequisite task | `Depends on:` | point only at real blocking issues |
+| sibling ordering inside the same phase | `## Execution order` | make the sequence explicit as `N of M` |
+| test plan, focused suite, or manual check | `## Verification` | name the exact command or target |
+| requirement bullets | `## Acceptance criteria` | rewrite as observable outcomes |
+
+Safe default when a child issue stands alone:
+
+- `Depends on: none`
+- `Parallelizable: No`
+- `Execution order: 1 of 1`
+
+Only add `Part of: #...` when the issue is actually a sequenced child under an epic or tracking issue.
 
 ### Phase to epic
 
@@ -48,6 +70,40 @@ Use these mapping rules when converting GSD output into GitHub Issues.
 - one atomic execution unit -> one child issue
 - each child issue should be small enough to finish as one PR
 - if a plan is still too large, split it before issue creation
+- if the issue is standalone, still write `Depends on: none`, `Parallelizable: No`, and `Execution order: 1 of 1`
+
+### Roadmap language is not enough by itself
+
+Roadmap language often explains intent, not executable work. Rewrite it before opening a `codex` issue.
+
+Too vague:
+
+```md
+## Summary
+Improve timeline persistence.
+```
+
+Better:
+
+```md
+## Summary
+Persist manual timeline row layout independently for `section`, `assignee`, and `status` swimlanes.
+```
+
+Too vague:
+
+```md
+## Verification
+- run tests
+```
+
+Better:
+
+```md
+## Verification
+- `npm test -- src/timeline-layout.test.ts`
+- run the focused cross-mode persistence E2E
+```
 
 ### Requirements to acceptance criteria
 
@@ -136,7 +192,7 @@ The GSD phase requires each swimlane mode to keep its own persisted layout inste
 - `2-2-PLAN.md`
 
 Depends on: #232
-Part of #227
+Part of: #227
 Parallelizable: No
 
 ## Execution order
@@ -156,6 +212,24 @@ Parallelizable: No
 - run the focused cross-mode persistence E2E
 ```
 
+## How to split epic work into child issues
+
+Use an epic when you are tracking a phase-sized outcome across several PRs. Use child issues for the actual runnable work.
+
+Good epic boundary:
+
+- one roadmap phase
+- one definition of done
+- several child issues that can land independently
+
+Good child boundary:
+
+- one behavior delta
+- one primary risk surface
+- one PR-sized implementation and verification loop
+
+If a child issue still sounds like roadmap language, it is probably still too large or too abstract.
+
 ## Splitting checklist
 
 Before opening child issues, check these questions.
@@ -165,8 +239,31 @@ Before opening child issues, check these questions.
 - Does it change one coherent thing?
 - Can the acceptance criteria be verified by tests or CI?
 - Would a failure here block later issues? If yes, make that dependency explicit.
+- If this is a standalone `codex` issue, can you still fill in `Depends on: none`, `Parallelizable: No|Yes`, and `Execution order: 1 of 1` without guessing?
 
 If any answer is "no", split the issue again.
+
+## Quick conversion checklist
+
+Before you open a `codex` issue from GSD output, confirm:
+
+- `## Summary` says one concrete behavior change
+- `## Scope` says what stays unchanged
+- `Depends on:` is explicit, even if the value is `none`
+- `Parallelizable:` is explicit
+- `## Execution order` is explicit, even for standalone work
+- `Part of:` is canonical when the issue is a sequenced child
+- `## Verification` names a focused command or manual target
+
+## Conversion anti-patterns
+
+These are the mistakes that most often turn good planning into non-runnable execution issues.
+
+- copying a phase title directly into `## Summary` without rewriting it as one concrete behavior change
+- keeping requirement language like "improve", "support better", or "handle properly" instead of observable acceptance criteria
+- putting the parent epic in `Depends on:` when it is not a real prerequisite
+- omitting `Execution order` because "the sequence is obvious from the roadmap"
+- pasting research into the issue body instead of linking to the planning docs
 
 ## What not to do
 

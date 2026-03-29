@@ -8,12 +8,14 @@ import {
 import type { SetupConfigPreviewSelectableReviewProviderProfile } from "../setup-config-preview";
 import type { SetupConfigUpdateResult } from "../setup-config-write";
 import type { SetupReadinessReport } from "../setup-readiness";
+import type { SupervisorLoopController } from "../supervisor/supervisor-loop-controller";
 import type { SupervisorEvent, SupervisorService } from "../supervisor";
 import { renderSupervisorDashboardHtml } from "./webui-dashboard";
 import { renderSupervisorSetupHtml } from "./webui-setup";
 
 export interface CreateSupervisorHttpServerOptions {
   service: SupervisorService;
+  loopController?: Pick<SupervisorLoopController, "runCycle">;
   managedRestart?: ManagedRestartController | null;
   heartbeatIntervalMs?: number;
   replayBufferSize?: number;
@@ -63,7 +65,7 @@ export function createSupervisorHttpServer(options: CreateSupervisorHttpServerOp
   });
   const server = http.createServer(async (request, response) => {
     try {
-      await handleRequest(request, response, options.service, events, options.managedRestart ?? null);
+      await handleRequest(request, response, options.service, options.loopController, events, options.managedRestart ?? null);
     } catch (error) {
       if (error instanceof HttpRequestError) {
         writeJson(response, error.statusCode, { error: error.message });
@@ -96,6 +98,7 @@ async function handleRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
   service: SupervisorService,
+  loopController: Pick<SupervisorLoopController, "runCycle"> | undefined,
   events: SupervisorSseEventStream,
   managedRestart: ManagedRestartController | null,
 ): Promise<void> {
@@ -110,7 +113,7 @@ async function handleRequest(
       return;
     }
 
-    await handleCommandRequest(request, response, pathname, service, managedRestart);
+    await handleCommandRequest(request, response, pathname, service, loopController, managedRestart);
     return;
   }
 
@@ -241,15 +244,19 @@ async function handleCommandRequest(
   response: http.ServerResponse,
   pathname: string,
   service: SupervisorService,
+  loopController: Pick<SupervisorLoopController, "runCycle"> | undefined,
   managedRestart: ManagedRestartController | null,
 ): Promise<void> {
   if (pathname === "/api/commands/run-once") {
+    if (!loopController) {
+      throw new Error("Missing supervisor loop controller for WebUI run-once command.");
+    }
     const body = await readJsonBody(request);
     const dryRun = body && typeof body === "object" && "dryRun" in body ? body.dryRun === true : false;
     const result: RunOnceCommandResultDto = {
       command: "run-once",
       dryRun,
-      summary: await service.runOnce({ dryRun }),
+      summary: await loopController.runCycle("run-once", { dryRun }),
     };
     writeJson(response, 200, result);
     return;
