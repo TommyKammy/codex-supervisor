@@ -14,7 +14,7 @@
 - Updated at: 2026-03-29T14:04:51.055Z
 
 ## Latest Codex Summary
-- None yet.
+- Added bounded recovery for blocked no-PR stale-loop manual stops when GitHub issue updates arrive after the local stop, verified with focused reconciliation tests and `npm run build`, committed as `0809c4e`, and opened draft PR #1191.
 
 ## Active Failure Context
 - None recorded.
@@ -24,10 +24,10 @@
 - Hypothesis: `reconcileRecoverableBlockedIssueStates` should requeue blocked no-PR stale-loop manual stops when the GitHub issue `updatedAt` moves forward after the local manual stop timestamp.
 - What changed: Added focused recovery tests for newer-vs-unchanged GitHub issue updates and implemented bounded requeue recovery for `blocked/manual_review` no-PR records with `last_failure_signature=stale-stabilizing-no-pr-recovery-loop`.
 - Current blocker: none
-- Next exact step: Commit the verified recovery/test change set and, if still no PR exists for `codex/issue-1190`, open a draft PR.
+- Next exact step: Monitor draft PR #1191 and expand verification only if follow-up review or CI signals require it.
 - Verification gap: No full `npm test` run yet; targeted recovery suite and `npm run build` passed.
 - Files touched: `src/recovery-reconciliation.ts`; `src/supervisor/supervisor-recovery-reconciliation.test.ts`
 - Rollback concern: Low; reconsideration is narrowly gated to no-PR stale-loop manual-review stops with a newer GitHub issue timestamp, and unchanged/manual-review tracked-PR paths are untouched.
-- Last focused command: `npm run build`
+- Last focused command: `gh pr create --repo TommyKammy/codex-supervisor --draft --base main --head codex/issue-1190 --title "Reconsider stale no-PR manual stops after issue updates" ...`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
