@@ -9,6 +9,7 @@ The dashboard is an operator surface over the same `SupervisorService` boundary 
 Run the local server against the same supervisor config you use for `run-once`, `loop`, and `status`:
 
 ```bash
+CODEX_SUPERVISOR_WEBUI_MUTATION_TOKEN=choose-a-long-random-token \
 node dist/index.js web --config /path/to/supervisor.config.json
 ```
 
@@ -17,6 +18,27 @@ The server binds to `127.0.0.1:4310` and serves:
 - the local operator dashboard
 - typed JSON endpoints for status, doctor, explain, and issue-lint
 - an SSE stream for live supervisor events
+
+## Local mutation auth
+
+Read-only WebUI routes stay available on localhost without extra auth, but every mutating `POST` route now requires both:
+
+- the `X-Codex-Supervisor-Mutation-Token` header with the exact value from `CODEX_SUPERVISOR_WEBUI_MUTATION_TOKEN`
+- a localhost request shape, including a localhost `Host` header and a same-origin localhost `Origin` header when the caller is a browser
+
+Threat model:
+
+- binding to `127.0.0.1` is not enough for mutation safety on its own
+- a different browser page, local script, or other localhost-reachable process must not be able to trigger supervisor mutations just because it can reach the port
+- the shared mutation token is the explicit operator proof for local mutation requests
+
+Operator flow:
+
+1. choose a long random token before starting `node dist/index.js web`
+2. keep that token local to the operator session
+3. on the first write action from `/setup` or `/dashboard`, enter the token when the browser prompts for it
+
+For direct local scripts that intentionally call a mutating WebUI endpoint, send the same header explicitly. If the env var is unset, mutating routes fail closed and the WebUI stays effectively read-only.
 
 ## Launcher-managed restart
 
@@ -75,7 +97,7 @@ The dashboard currently exposes only the same narrow safe commands that the CLI 
 - `prune-orphaned-workspaces`
 - `reset-corrupt-json-state`
 
-These commands still go through the backend service boundary. The browser does not mutate the state file directly.
+These commands still go through the backend service boundary. The browser does not mutate the state file directly, and each command now requires the local mutation token described above.
 
 ## Panel expectations
 

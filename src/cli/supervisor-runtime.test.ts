@@ -1043,7 +1043,8 @@ test("runSupervisorCommand starts the read-only WebUI server and shuts it down o
   assert.equal(listenedPort, 4310);
   assert.equal(closed, true);
   assert.match(stdout[0] ?? "", /WebUI listening on http:\/\/127\.0\.0\.1:4310/);
-  assert.match(stdout[1] ?? "", /received SIGTERM, shutting down WebUI/);
+  assert.match(stdout[1] ?? "", /WebUI mutation routes are read-only until CODEX_SUPERVISOR_WEBUI_MUTATION_TOKEN is set\./);
+  assert.match(stdout[2] ?? "", /received SIGTERM, shutting down WebUI/);
 });
 
 test("runSupervisorCommand closes active WebUI connections before closing the server", async () => {
@@ -1172,8 +1173,9 @@ test("runSupervisorCommand still shuts down the WebUI when a signal arrives befo
 
   assert.deepEqual(closeOrder, ["closeAllConnections", "close"]);
   assert.match(stdout[0] ?? "", /WebUI listening on http:\/\/127\.0\.0\.1:4310/);
-  assert.match(stdout[1] ?? "", /received SIGTERM, stopping after current cycle/);
-  assert.match(stdout[2] ?? "", /received SIGTERM, shutting down WebUI/);
+  assert.match(stdout[1] ?? "", /WebUI mutation routes are read-only until CODEX_SUPERVISOR_WEBUI_MUTATION_TOKEN is set\./);
+  assert.match(stdout[2] ?? "", /received SIGTERM, stopping after current cycle/);
+  assert.match(stdout[3] ?? "", /received SIGTERM, shutting down WebUI/);
 });
 
 test("runSupervisorCommand keeps the WebUI shell up after a managed restart request until an explicit stop arrives", async (t) => {
@@ -1285,6 +1287,7 @@ test("runSupervisorCommand keeps the WebUI shell up after a managed restart requ
   assert.equal(closeCalls, 1);
   assert.equal(recreateCalls, 1);
   assert.match(stdout[0] ?? "", /WebUI listening on http:\/\/127\.0\.0\.1:4310/);
+  assert.match(stdout[1] ?? "", /WebUI mutation routes are read-only until CODEX_SUPERVISOR_WEBUI_MUTATION_TOKEN is set\./);
   assert.doesNotMatch(stdout.join("\n"), /managed restart requested, shutting down WebUI for relaunch/);
-  assert.match(stdout[1] ?? "", /received SIGTERM, shutting down WebUI/);
+  assert.match(stdout[2] ?? "", /received SIGTERM, shutting down WebUI/);
 });

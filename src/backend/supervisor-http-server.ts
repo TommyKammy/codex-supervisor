@@ -12,11 +12,13 @@ import type { SupervisorLoopController } from "../supervisor/supervisor-loop-con
 import type { SupervisorEvent, SupervisorService } from "../supervisor";
 import { renderSupervisorDashboardHtml } from "./webui-dashboard";
 import { renderSupervisorSetupHtml } from "./webui-setup";
+import { WEBUI_MUTATION_AUTH_HEADER, type WebUiMutationAuthOptions } from "./webui-mutation-auth";
 
 export interface CreateSupervisorHttpServerOptions {
   service: SupervisorService;
   loopController?: Pick<SupervisorLoopController, "runCycle">;
   managedRestart?: ManagedRestartController | null;
+  mutationAuth?: WebUiMutationAuthOptions | null;
   heartbeatIntervalMs?: number;
   replayBufferSize?: number;
 }
@@ -65,7 +67,15 @@ export function createSupervisorHttpServer(options: CreateSupervisorHttpServerOp
   });
   const server = http.createServer(async (request, response) => {
     try {
-      await handleRequest(request, response, options.service, options.loopController, events, options.managedRestart ?? null);
+      await handleRequest(
+        request,
+        response,
+        options.service,
+        options.loopController,
+        events,
+        options.managedRestart ?? null,
+        options.mutationAuth ?? null,
+      );
     } catch (error) {
       if (error instanceof HttpRequestError) {
         writeJson(response, error.statusCode, { error: error.message });
@@ -101,6 +111,7 @@ async function handleRequest(
   loopController: Pick<SupervisorLoopController, "runCycle"> | undefined,
   events: SupervisorSseEventStream,
   managedRestart: ManagedRestartController | null,
+  mutationAuth: WebUiMutationAuthOptions | null,
 ): Promise<void> {
   const method = request.method ?? "GET";
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -113,6 +124,7 @@ async function handleRequest(
       return;
     }
 
+    authorizeMutationRequest(request, mutationAuth);
     await handleCommandRequest(request, response, pathname, service, loopController, managedRestart);
     return;
   }
@@ -123,6 +135,7 @@ async function handleRequest(
       writeJson(response, 405, { error: "Method not allowed." });
       return;
     }
+    authorizeMutationRequest(request, mutationAuth);
     if (!service.updateSetupConfig) {
       writeJson(response, 404, { error: "Not found." });
       return;
@@ -237,6 +250,85 @@ async function handleRequest(
   }
 
   writeJson(response, 404, { error: "Not found." });
+}
+
+function authorizeMutationRequest(
+  request: http.IncomingMessage,
+  mutationAuth: WebUiMutationAuthOptions | null,
+): void {
+  if (!isLocalHostHeader(request.headers.host)) {
+    throw new HttpRequestError(403, "Mutation requests must target a localhost host.");
+  }
+  if (!isAllowedLocalOrigin(request.headers.origin, request.headers.host)) {
+    throw new HttpRequestError(403, "Mutation requests must originate from the local WebUI origin.");
+  }
+  if (!mutationAuth?.token) {
+    throw new HttpRequestError(503, "Mutation auth is not configured.");
+  }
+
+  const providedToken = readSingleHeaderValue(request.headers[WEBUI_MUTATION_AUTH_HEADER]);
+  if (!providedToken || providedToken !== mutationAuth.token) {
+    throw new HttpRequestError(401, "Mutation auth required.");
+  }
+}
+
+function readSingleHeaderValue(value: string | string[] | undefined): string | null {
+  const normalized = Array.isArray(value) ? value[0] : value;
+  if (typeof normalized !== "string") {
+    return null;
+  }
+  const trimmed = normalized.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function isLocalHostHeader(hostHeader: string | string[] | undefined): boolean {
+  const value = readSingleHeaderValue(hostHeader);
+  if (!value) {
+    return false;
+  }
+
+  try {
+    return isLoopbackHostname(new URL(`http://${value}`).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function isAllowedLocalOrigin(originHeader: string | string[] | undefined, hostHeader: string | string[] | undefined): boolean {
+  const origin = readSingleHeaderValue(originHeader);
+  if (origin === null) {
+    return true;
+  }
+
+  const host = readSingleHeaderValue(hostHeader);
+  if (!host) {
+    return false;
+  }
+
+  try {
+    const originUrl = new URL(origin);
+    const hostUrl = new URL(`http://${host}`);
+    if (originUrl.protocol !== "http:") {
+      return false;
+    }
+    if (!isLoopbackHostname(originUrl.hostname)) {
+      return false;
+    }
+    return normalizePort(originUrl) === normalizePort(hostUrl);
+  } catch {
+    return false;
+  }
+}
+
+function normalizePort(url: URL): string {
+  if (url.port.length > 0) {
+    return url.port;
+  }
+  return url.protocol === "https:" ? "443" : "80";
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]" || hostname === "localhost";
 }
 
 async function handleCommandRequest(

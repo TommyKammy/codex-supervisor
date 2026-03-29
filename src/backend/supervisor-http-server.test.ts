@@ -9,6 +9,7 @@ import { buildActiveIssueChangedEvent, type SupervisorEvent, type SupervisorEven
 import type { SupervisorService } from "../supervisor";
 import { createRestartableWebUiShellService } from "./restartable-webui-shell-service";
 import { createSupervisorHttpServer } from "./supervisor-http-server";
+import { WEBUI_MUTATION_AUTH_HEADER } from "./webui-mutation-auth";
 
 const unavailableManagedRestart = {
   supported: false,
@@ -16,6 +17,20 @@ const unavailableManagedRestart = {
   state: "unavailable",
   summary: "Managed restart is unavailable because this WebUI process was not started with explicit launcher-backed restart support.",
 };
+
+const testMutationAuth = { token: "local-test-secret" };
+
+function mutationAuthHeaders(server: http.Server, headers?: http.OutgoingHttpHeaders): http.OutgoingHttpHeaders {
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Expected server to listen on an ephemeral port.");
+  }
+  return {
+    Origin: `http://127.0.0.1:${address.port}`,
+    [WEBUI_MUTATION_AUTH_HEADER]: testMutationAuth.token,
+    ...headers,
+  };
+}
 
 async function readJson(args: {
   server: http.Server;
@@ -1028,6 +1043,7 @@ test("createSupervisorHttpServer exposes only the safe supervisor mutations over
     loopController: {
       runCycle: async (_command, options) => service.runOnce(options),
     },
+    mutationAuth: testMutationAuth,
   });
   t.after(async () => {
     await closeServer(server);
@@ -1042,7 +1058,7 @@ test("createSupervisorHttpServer exposes only the safe supervisor mutations over
     server,
     path: "/api/commands/run-once",
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: mutationAuthHeaders(server, { "Content-Type": "application/json" }),
     body: JSON.stringify({ dryRun: true }),
   });
   assert.equal(runOnceResponse.statusCode, 200);
@@ -1057,7 +1073,7 @@ test("createSupervisorHttpServer exposes only the safe supervisor mutations over
     server,
     path: "/api/commands/requeue",
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: mutationAuthHeaders(server, { "Content-Type": "application/json" }),
     body: JSON.stringify({ issueNumber: 42 }),
   });
   assert.equal(requeueResponse.statusCode, 200);
@@ -1077,6 +1093,7 @@ test("createSupervisorHttpServer exposes only the safe supervisor mutations over
     server,
     path: "/api/commands/prune-orphaned-workspaces",
     method: "POST",
+    headers: mutationAuthHeaders(server),
   });
   assert.equal(pruneResponse.statusCode, 200);
   assert.deepEqual(pruneResponse.body, {
@@ -1091,6 +1108,7 @@ test("createSupervisorHttpServer exposes only the safe supervisor mutations over
     server,
     path: "/api/commands/reset-corrupt-json-state",
     method: "POST",
+    headers: mutationAuthHeaders(server),
   });
   assert.equal(resetResponse.statusCode, 200);
   assert.deepEqual(resetResponse.body, {
@@ -1106,7 +1124,7 @@ test("createSupervisorHttpServer exposes only the safe supervisor mutations over
     server,
     path: "/api/commands/requeue",
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: mutationAuthHeaders(server, { "Content-Type": "application/json" }),
     body: JSON.stringify({ issueNumber: 0 }),
   });
   assert.equal(invalidRequeueResponse.statusCode, 400);
@@ -1116,6 +1134,7 @@ test("createSupervisorHttpServer exposes only the safe supervisor mutations over
     server,
     path: "/api/commands/loop",
     method: "POST",
+    headers: mutationAuthHeaders(server),
   });
   assert.equal(blockedCommandResponse.statusCode, 404);
   assert.deepEqual(blockedCommandResponse.body, { error: "Not found." });
@@ -1126,6 +1145,76 @@ test("createSupervisorHttpServer exposes only the safe supervisor mutations over
   });
   assert.equal(wrongMethodResponse.statusCode, 405);
   assert.deepEqual(wrongMethodResponse.body, { error: "Method not allowed." });
+});
+
+test("createSupervisorHttpServer rejects unauthenticated mutation requests before supervisor actions run", async (t) => {
+  const runOnceDryRunCalls: boolean[] = [];
+  const server = createSupervisorHttpServer({
+    service: createStubService({ runOnceDryRunCalls }),
+    loopController: {
+      runCycle: async (_command, options) => {
+        runOnceDryRunCalls.push(options.dryRun);
+        return "run-once complete";
+      },
+    },
+    mutationAuth: testMutationAuth,
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const response = await readJson({
+    server,
+    path: "/api/commands/run-once",
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dryRun: true }),
+  });
+
+  assert.equal(response.statusCode, 401);
+  assert.deepEqual(response.body, { error: "Mutation auth required." });
+  assert.deepEqual(runOnceDryRunCalls, []);
+});
+
+test("createSupervisorHttpServer rejects cross-origin mutation requests before setup writes run", async (t) => {
+  const setupConfigUpdateCalls: Array<unknown> = [];
+  const server = createSupervisorHttpServer({
+    service: createStubService({ setupConfigUpdateCalls }),
+    mutationAuth: testMutationAuth,
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const response = await readJson({
+    server,
+    path: "/api/setup-config",
+    method: "POST",
+    headers: {
+      Origin: "http://attacker.example",
+      "Content-Type": "application/json",
+      [WEBUI_MUTATION_AUTH_HEADER]: testMutationAuth.token,
+    },
+    body: JSON.stringify({
+      changes: {
+        reviewProvider: "codex",
+      },
+    }),
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.deepEqual(response.body, { error: "Mutation requests must originate from the local WebUI origin." });
+  assert.deepEqual(setupConfigUpdateCalls, []);
 });
 
 test("createSupervisorHttpServer serializes concurrent run-once requests", async (t) => {
@@ -1176,6 +1265,7 @@ test("createSupervisorHttpServer serializes concurrent run-once requests", async
         };
       })(),
     },
+    mutationAuth: testMutationAuth,
   });
   t.after(async () => {
     await closeServer(server);
@@ -1190,7 +1280,7 @@ test("createSupervisorHttpServer serializes concurrent run-once requests", async
     server,
     path: "/api/commands/run-once",
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: mutationAuthHeaders(server, { "Content-Type": "application/json" }),
     body: JSON.stringify({ dryRun: false }),
   });
 
@@ -1200,7 +1290,7 @@ test("createSupervisorHttpServer serializes concurrent run-once requests", async
     server,
     path: "/api/commands/run-once",
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: mutationAuthHeaders(server, { "Content-Type": "application/json" }),
     body: JSON.stringify({ dryRun: false }),
   });
 
@@ -1225,6 +1315,7 @@ test("createSupervisorHttpServer accepts narrow setup config writes and returns 
   const setupConfigUpdateCalls: Array<unknown> = [];
   const server = createSupervisorHttpServer({
     service: createStubService({ setupConfigUpdateCalls }),
+    mutationAuth: testMutationAuth,
   });
   t.after(async () => {
     await closeServer(server);
@@ -1239,7 +1330,7 @@ test("createSupervisorHttpServer accepts narrow setup config writes and returns 
     server,
     path: "/api/setup-config",
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: mutationAuthHeaders(server, { "Content-Type": "application/json" }),
     body: JSON.stringify({
       changes: {
         reviewProvider: "codex",
@@ -1379,6 +1470,7 @@ test("createSupervisorHttpServer only accepts managed restart commands when laun
   let restartRequests = 0;
   const server = createSupervisorHttpServer({
     service: createStubService(),
+    mutationAuth: testMutationAuth,
     managedRestart: {
       capability: {
         supported: true,
@@ -1413,7 +1505,7 @@ test("createSupervisorHttpServer only accepts managed restart commands when laun
     server,
     path: "/api/commands/managed-restart",
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: mutationAuthHeaders(server, { "Content-Type": "application/json" }),
     body: JSON.stringify({}),
   });
   assert.equal(restartResponse.statusCode, 200);
@@ -1428,6 +1520,7 @@ test("createSupervisorHttpServer only accepts managed restart commands when laun
 test("createSupervisorHttpServer rejects managed restart commands for unmanaged WebUI sessions", async (t) => {
   const server = createSupervisorHttpServer({
     service: createStubService(),
+    mutationAuth: testMutationAuth,
   });
   t.after(async () => {
     await closeServer(server);
@@ -1442,7 +1535,7 @@ test("createSupervisorHttpServer rejects managed restart commands for unmanaged 
     server,
     path: "/api/commands/managed-restart",
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: mutationAuthHeaders(server, { "Content-Type": "application/json" }),
     body: JSON.stringify({}),
   });
   assert.equal(restartResponse.statusCode, 409);
@@ -1487,6 +1580,7 @@ test("createSupervisorHttpServer keeps setup routes reachable while the worker i
   const server = createSupervisorHttpServer({
     service: shell.service,
     managedRestart: shell.managedRestart,
+    mutationAuth: testMutationAuth,
   });
   t.after(async () => {
     await closeServer(server);
@@ -1505,7 +1599,7 @@ test("createSupervisorHttpServer keeps setup routes reachable while the worker i
     server,
     path: "/api/commands/managed-restart",
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: mutationAuthHeaders(server, { "Content-Type": "application/json" }),
     body: JSON.stringify({}),
   });
   assert.equal(restartResponse.statusCode, 200);
@@ -1577,6 +1671,7 @@ test("createSupervisorHttpServer surfaces no-op setup config writes without a re
         },
       },
     }),
+    mutationAuth: testMutationAuth,
   });
   t.after(async () => {
     await closeServer(server);
@@ -1591,7 +1686,7 @@ test("createSupervisorHttpServer surfaces no-op setup config writes without a re
     server,
     path: "/api/setup-config",
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: mutationAuthHeaders(server, { "Content-Type": "application/json" }),
     body: JSON.stringify({
       changes: {
         reviewProvider: "codex",
@@ -1649,6 +1744,7 @@ test("createSupervisorHttpServer rejects malformed setup config write requests b
   const setupConfigUpdateCalls: Array<unknown> = [];
   const server = createSupervisorHttpServer({
     service: createStubService({ setupConfigUpdateCalls }),
+    mutationAuth: testMutationAuth,
   });
   t.after(async () => {
     await closeServer(server);
@@ -1663,7 +1759,7 @@ test("createSupervisorHttpServer rejects malformed setup config write requests b
     server,
     path: "/api/setup-config",
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: mutationAuthHeaders(server, { "Content-Type": "application/json" }),
     body: JSON.stringify({ reviewProvider: "codex" }),
   });
 

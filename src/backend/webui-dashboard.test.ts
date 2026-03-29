@@ -4,10 +4,12 @@ import test from "node:test";
 import vm from "node:vm";
 import { renderSupervisorDashboardHtml } from "./webui-dashboard";
 import { DASHBOARD_PANEL_REGISTRY } from "./webui-dashboard-panel-layout";
+import { WEBUI_MUTATION_AUTH_HEADER, WEBUI_MUTATION_AUTH_STORAGE_KEY } from "./webui-mutation-auth";
 import { renderSupervisorSetupHtml } from "./webui-setup";
 
 interface MockResponseLike {
   ok: boolean;
+  status?: number;
   json(): Promise<unknown>;
 }
 
@@ -15,6 +17,7 @@ interface FetchCall {
   path: string;
   method: string;
   body: string | null;
+  headers: Record<string, string> | null;
 }
 
 interface QueuedFetchResponse {
@@ -260,6 +263,7 @@ function createDeferred<T>(): Deferred<T> {
 function jsonResponse(body: unknown, statusCode = 200): MockResponseLike {
   return {
     ok: statusCode >= 200 && statusCode < 300,
+    status: statusCode,
     async json(): Promise<unknown> {
       return body;
     },
@@ -434,6 +438,7 @@ function createDashboardHarness(
   options: {
     confirm?: () => boolean;
     localStorage?: FakeStorage;
+    prompt?: () => string | null;
   } = {},
 ) {
   MockEventSource.instances.length = 0;
@@ -441,9 +446,15 @@ function createDashboardHarness(
   return createHtmlHarness(html, queue, options);
 }
 
-function createSetupHarness(queue: QueuedFetchResponse[]) {
+function createSetupHarness(
+  queue: QueuedFetchResponse[],
+  options: {
+    localStorage?: FakeStorage;
+    prompt?: () => string | null;
+  } = {},
+) {
   const html = renderSupervisorSetupHtml();
-  return createHtmlHarness(html, queue, { manualTimers: createManualTimerController() });
+  return createHtmlHarness(html, queue, { manualTimers: createManualTimerController(), ...options });
 }
 
 function createHtmlHarness(
@@ -452,6 +463,7 @@ function createHtmlHarness(
   options: {
     confirm?: () => boolean;
     localStorage?: FakeStorage;
+    prompt?: () => string | null;
     manualTimers?: ManualTimerController;
   } = {},
 ) {
@@ -475,7 +487,10 @@ function createHtmlHarness(
   }
   const fetchCalls: FetchCall[] = [];
 
-  const fetch = async (path: string, init?: { method?: string; body?: string }): Promise<MockResponseLike> => {
+  const fetch = async (
+    path: string,
+    init?: { method?: string; body?: string; headers?: Record<string, string> },
+  ): Promise<MockResponseLike> => {
     const next = queue.shift();
     assert.ok(next, `Unexpected fetch for ${path}`);
     assert.equal(path, next.path);
@@ -487,6 +502,7 @@ function createHtmlHarness(
       path,
       method: init?.method ?? "GET",
       body: init?.body ?? null,
+      headers: init?.headers ?? null,
     });
     return await next.response;
   };
@@ -502,6 +518,7 @@ function createHtmlHarness(
     window: {
       confirm: options.confirm ?? (() => true),
       localStorage: options.localStorage ?? new FakeStorage(),
+      prompt: options.prompt ?? (() => null),
     },
     localStorage: options.localStorage ?? new FakeStorage(),
   };
@@ -1456,6 +1473,53 @@ test("dashboard preserves a successful command result when the refresh step fail
   assert.equal(statusWarning.textContent, "/api/status?why=true: Status refresh failed.");
   assert.equal(refreshState.textContent, "failed");
   assert.equal(freshnessState.textContent, "stale");
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard retries a mutation command after prompting for the local mutation token", async () => {
+  const storage = new FakeStorage();
+  const harness = createDashboardHarness(
+    [
+      { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+      { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+      {
+        path: "/api/commands/run-once",
+        method: "POST",
+        body: JSON.stringify({ dryRun: false }),
+        response: jsonResponse({ error: "Mutation auth required." }, 401),
+      },
+      {
+        path: "/api/commands/run-once",
+        method: "POST",
+        body: JSON.stringify({ dryRun: false }),
+        response: jsonResponse({
+          command: "run-once",
+          dryRun: false,
+          summary: "run-once complete",
+        }),
+      },
+      { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
+      { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    ],
+    {
+      localStorage: storage,
+      prompt: () => "prompted-secret",
+    },
+  );
+  await harness.flush();
+
+  const runOnceButton = harness.document.getElementById("run-once-button");
+  const commandStatus = harness.document.getElementById("command-status");
+  assert.ok(runOnceButton);
+  assert.ok(commandStatus);
+
+  await runOnceButton.dispatch("click");
+  await harness.flush();
+
+  assert.equal(storage.getItem(WEBUI_MUTATION_AUTH_STORAGE_KEY), "prompted-secret");
+  assert.equal(harness.fetchCalls[2]?.headers?.[WEBUI_MUTATION_AUTH_HEADER], undefined);
+  assert.equal(harness.fetchCalls[3]?.headers?.[WEBUI_MUTATION_AUTH_HEADER], "prompted-secret");
+  assert.equal(commandStatus.textContent, "run-once complete");
   assert.equal(harness.remainingFetches.length, 0);
 });
 
