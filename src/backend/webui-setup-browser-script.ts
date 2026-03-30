@@ -669,6 +669,14 @@ export function renderSetupBrowserScript(): string {
             }
             continue;
           }
+          if (field.key === "localCiCommand") {
+            if (rawValue !== "") {
+              changes.localCiCommand = rawValue;
+            } else if (field.value !== null) {
+              changes.localCiCommand = null;
+            }
+            continue;
+          }
           if (rawValue !== "") {
             changes[field.key] = rawValue;
           }

@@ -168,6 +168,10 @@ function buildFieldMessage(field: SetupReadinessField): string {
     return `${field.label} is configured.`;
   }
 
+  if (!field.required) {
+    return `${field.label} is optional.`;
+  }
+
   if (field.state === "missing") {
     return `${field.label} is required before first-run setup is complete.`;
   }

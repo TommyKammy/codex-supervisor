@@ -7,6 +7,7 @@ import type { SetupReadinessFieldKey } from "./setup-readiness";
 export type SetupConfigPreviewSelectableReviewProviderProfile = Exclude<ReviewProviderProfileId, "custom">;
 export type SetupConfigPreviewSource = "existing_config" | "scaffold_default" | "selected_review_provider_profile";
 export type SetupConfigPreviewFieldState = "unchanged" | "suggested";
+type SetupConfigPreviewFieldKey = Exclude<SetupReadinessFieldKey, "localCiCommand">;
 
 export interface SetupConfigPreviewSupportedProfile {
   id: SetupConfigPreviewSelectableReviewProviderProfile;
@@ -115,7 +116,7 @@ const KNOWN_CONFIG_KEYS = new Set([
   "mergeMethod",
   "draftPrAfterAttempt",
 ]);
-const SETUP_FIELD_LABELS: Record<SetupReadinessFieldKey, string> = {
+const SETUP_FIELD_LABELS: Record<SetupConfigPreviewFieldKey, string> = {
   repoPath: "Repository path",
   repoSlug: "Repository slug",
   defaultBranch: "Default branch",
@@ -123,7 +124,6 @@ const SETUP_FIELD_LABELS: Record<SetupReadinessFieldKey, string> = {
   stateFile: "State file",
   codexBinary: "Codex binary",
   branchPrefix: "Branch prefix",
-  localCiCommand: "Local CI command",
   reviewProvider: "Review provider",
 };
 const SUPPORTED_REVIEW_PROVIDER_PROFILES: SetupConfigPreviewSupportedProfile[] = [
@@ -225,7 +225,7 @@ function buildFieldChanges(args: {
   selectedReviewProviderProfile: ReviewProviderProfileId;
 }): SetupConfigPreviewFieldChange[] {
   const { rawDocument, previewDocument, selectedReviewProviderProfile } = args;
-  const keys: SetupReadinessFieldKey[] = [
+  const keys: SetupConfigPreviewFieldKey[] = [
     "repoPath",
     "repoSlug",
     "defaultBranch",
@@ -233,7 +233,6 @@ function buildFieldChanges(args: {
     "stateFile",
     "codexBinary",
     "branchPrefix",
-    "localCiCommand",
     "reviewProvider",
   ];
 

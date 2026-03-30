@@ -2587,6 +2587,280 @@ test("setup shell saves through the narrow setup config API and revalidates read
   assert.equal(harness.remainingFetches.length, 0);
 });
 
+test("setup shell clears localCiCommand and revalidates back to the advisory recommendation state", async () => {
+  const setupConfigResponse = createDeferred<MockResponseLike>();
+  const setupReadinessRefreshResponse = createDeferred<MockResponseLike>();
+  const harness = createSetupHarness([
+    {
+      path: "/api/setup-readiness",
+      response: jsonResponse({
+        kind: "setup_readiness",
+        managedRestart: unavailableManagedRestart,
+        ready: true,
+        overallStatus: "configured",
+        configPath: "/tmp/supervisor.config.json",
+        fields: [
+          {
+            key: "repoPath",
+            label: "Repository path",
+            state: "configured",
+            value: "/tmp/repo",
+            message: "Repository path is configured.",
+            required: true,
+            metadata: {
+              source: "config",
+              editable: true,
+              valueType: "directory_path",
+            },
+          },
+          {
+            key: "reviewProvider",
+            label: "Review provider",
+            state: "configured",
+            value: "chatgpt-codex-connector",
+            message: "Review provider posture is configured.",
+            required: true,
+            metadata: {
+              source: "config",
+              editable: true,
+              valueType: "review_provider",
+            },
+          },
+          {
+            key: "localCiCommand",
+            label: "Local CI command",
+            state: "configured",
+            value: "npm run ci:local",
+            message: "Local CI command is configured.",
+            required: false,
+            metadata: {
+              source: "config",
+              editable: true,
+              valueType: "text",
+            },
+          },
+        ],
+        blockers: [],
+        hostReadiness: {
+          overallStatus: "pass",
+          checks: [],
+        },
+        providerPosture: {
+          profile: "codex",
+          provider: "codex",
+          reviewers: ["chatgpt-codex-connector"],
+          signalSource: "review_bot_logins",
+          configured: true,
+          summary: "Codex Connector is configured.",
+        },
+        trustPosture: {
+          trustMode: "trusted_repo_and_authors",
+          executionSafetyMode: "unsandboxed_autonomous",
+          warning: null,
+          summary: "Trusted inputs with unsandboxed autonomous execution.",
+        },
+        localCiContract: {
+          configured: true,
+          command: "npm run ci:local",
+          source: "config",
+          summary: "Repo-owned local CI contract is configured.",
+        },
+      }),
+    },
+    {
+      path: "/api/setup-config",
+      method: "POST",
+      body: JSON.stringify({
+        changes: {
+          repoPath: "/tmp/repo",
+          localCiCommand: null,
+          reviewProvider: "codex",
+        },
+      }),
+      response: setupConfigResponse.promise,
+    },
+    {
+      path: "/api/setup-readiness",
+      response: setupReadinessRefreshResponse.promise,
+    },
+  ]);
+  await harness.flush();
+
+  const localCiInput = harness.document.getElementById("setup-input-localCiCommand");
+  const setupForm = harness.document.getElementById("setup-form");
+  const saveButton = harness.document.getElementById("setup-save-button");
+  const saveStatus = harness.document.getElementById("setup-save-status");
+  assert.ok(localCiInput);
+  assert.ok(setupForm);
+  assert.ok(saveButton);
+  assert.ok(saveStatus);
+
+  localCiInput.value = "";
+  const submitPromise = setupForm.dispatch("submit", {
+    preventDefault() {},
+  });
+  await harness.flush();
+
+  assert.equal(saveButton.disabled, true);
+  assert.match(saveStatus.textContent, /Saving setup changes\.\.\./u);
+
+  setupConfigResponse.resolve(jsonResponse({
+    kind: "setup_config_update",
+    managedRestart: unavailableManagedRestart,
+    configPath: "/tmp/supervisor.config.json",
+    backupPath: null,
+    updatedFields: ["repoPath", "localCiCommand", "reviewProvider"],
+    restartRequired: true,
+    restartScope: "supervisor",
+    restartTriggeredByFields: ["localCiCommand"],
+    document: {
+      repoPath: "/tmp/repo",
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    },
+    readiness: {
+      kind: "setup_readiness",
+      managedRestart: unavailableManagedRestart,
+      ready: true,
+      overallStatus: "configured",
+      configPath: "/tmp/supervisor.config.json",
+      fields: [],
+      blockers: [],
+      hostReadiness: { overallStatus: "pass", checks: [] },
+      providerPosture: {
+        profile: "codex",
+        provider: "codex",
+        reviewers: ["chatgpt-codex-connector"],
+        signalSource: "review_bot_logins",
+        configured: true,
+        summary: "Codex Connector is configured.",
+      },
+      trustPosture: {
+        trustMode: "trusted_repo_and_authors",
+        executionSafetyMode: "unsandboxed_autonomous",
+        warning: null,
+        summary: "Trusted inputs with unsandboxed autonomous execution.",
+      },
+      localCiContract: {
+        configured: false,
+        command: null,
+        recommendedCommand: "npm run verify:pre-pr",
+        source: "repo_script_candidate",
+        summary:
+          "Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: npm run verify:pre-pr.",
+      },
+    },
+  }));
+  await harness.flush();
+
+  assert.match(saveStatus.textContent, /Revalidating setup readiness\.\.\./u);
+
+  setupReadinessRefreshResponse.resolve(jsonResponse({
+    kind: "setup_readiness",
+    managedRestart: unavailableManagedRestart,
+    ready: true,
+    overallStatus: "configured",
+    configPath: "/tmp/supervisor.config.json",
+    fields: [
+      {
+        key: "repoPath",
+        label: "Repository path",
+        state: "configured",
+        value: "/tmp/repo",
+        message: "Repository path is configured.",
+        required: true,
+        metadata: {
+          source: "config",
+          editable: true,
+          valueType: "directory_path",
+        },
+      },
+      {
+        key: "reviewProvider",
+        label: "Review provider",
+        state: "configured",
+        value: "chatgpt-codex-connector",
+        message: "Review provider posture is configured.",
+        required: true,
+        metadata: {
+          source: "config",
+          editable: true,
+          valueType: "review_provider",
+        },
+      },
+      {
+        key: "localCiCommand",
+        label: "Local CI command",
+        state: "missing",
+        value: null,
+        message: "Local CI command is optional.",
+        required: false,
+        metadata: {
+          source: "config",
+          editable: true,
+          valueType: "text",
+        },
+      },
+    ],
+    blockers: [],
+    hostReadiness: {
+      overallStatus: "pass",
+      checks: [],
+    },
+    providerPosture: {
+      profile: "codex",
+      provider: "codex",
+      reviewers: ["chatgpt-codex-connector"],
+      signalSource: "review_bot_logins",
+      configured: true,
+      summary: "Codex Connector is configured.",
+    },
+    trustPosture: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: null,
+      summary: "Trusted inputs with unsandboxed autonomous execution.",
+    },
+    localCiContract: {
+      configured: false,
+      command: null,
+      recommendedCommand: "npm run verify:pre-pr",
+      source: "repo_script_candidate",
+      summary:
+        "Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: npm run verify:pre-pr.",
+    },
+  }));
+
+  await submitPromise;
+  await harness.flush();
+
+  assert.deepEqual(
+    harness.fetchCalls.map((call) => ({ path: call.path, method: call.method, body: call.body })),
+    [
+      { path: "/api/setup-readiness", method: "GET", body: null },
+      {
+        path: "/api/setup-config",
+        method: "POST",
+        body: JSON.stringify({
+          changes: {
+            repoPath: "/tmp/repo",
+            localCiCommand: null,
+            reviewProvider: "codex",
+          },
+        }),
+      },
+      { path: "/api/setup-readiness", method: "GET", body: null },
+    ],
+  );
+  assert.equal(saveButton.disabled, false);
+  assert.match(saveStatus.textContent ?? "", /Saved 3 setup fields\./u);
+  assert.match(harness.document.getElementById("setup-local-ci-summary")?.textContent ?? "", /Repo-owned local CI candidate exists but localCiCommand is unset\. Recommended command: npm run verify:pre-pr\./u);
+  assert.match(
+    harness.document.getElementById("setup-local-ci-details")?.textContent ?? "",
+    /Configured: no.*Command: none.*Source: repo script candidate.*Recommended command: npm run verify:pre-pr.*This repo already defines a repo-owned local CI entrypoint, but codex-supervisor will not run it until localCiCommand is configured\./u,
+  );
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
 test("setup shell retries an authenticated save even when token storage is unavailable", async () => {
   const storage = new ThrowingStorage();
   const harness = createSetupHarness(
