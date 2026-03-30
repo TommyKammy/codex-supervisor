@@ -2842,6 +2842,105 @@ test("reconcileStaleFailedIssueStates reclassifies stale failed tracked PRs to b
   assert.equal(saveCalls, 1);
 });
 
+test("reconcileStaleFailedIssueStates clears stale failed tracked PR state when GitHub resumes the issue in draft_pr on the same head", async () => {
+  const config = createConfig();
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 366,
+        state: "failed",
+        pr_number: 191,
+        last_head_sha: "head-191",
+        last_error: "Stopped after repeated repair attempts.",
+        last_failure_kind: "codex_failed",
+        last_failure_context: {
+          category: "codex",
+          summary: "Repair budget exhausted while waiting for PR recovery.",
+          signature: "repair-budget-exhausted",
+          command: null,
+          details: ["attempts=3/3"],
+          url: null,
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "repair-budget-exhausted",
+        repeated_failure_signature_count: 3,
+      }),
+    ],
+  });
+  const issue = createIssue({
+    title: "Recovery issue",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+  const pr = createPullRequest({
+    number: 191,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/191",
+    isDraft: true,
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-191",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  await reconcileStaleFailedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      inferStateFromPullRequest: () => "draft_pr",
+      inferFailureContext: () => null,
+      blockedReasonForLifecycleState: () => null,
+      isOpenPullRequest: () => true,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: () => ({}),
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "draft_pr");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_failure_kind, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(
+    updated.last_recovery_reason,
+    "tracked_pr_lifecycle_recovered: resumed issue #366 from failed to draft_pr using fresh tracked PR #191 facts at head head-191",
+  );
+  assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+});
+
 test("reconcileStaleFailedIssueStates reclassifies stale failed tracked PRs to blocked verification state", async () => {
   const config = createConfig();
   const failureContext = {
