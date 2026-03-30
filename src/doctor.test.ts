@@ -435,6 +435,60 @@ test("diagnoseSetupReadiness recommends a repo-owned local CI candidate when loc
   assert.equal(summary.ready, true);
 });
 
+test("diagnoseSetupReadiness still detects a repo-owned local CI candidate when the config is invalid", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "configs", "supervisor.config.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.mkdir(path.dirname(configPath), { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  await fs.writeFile(
+    path.join(repoPath, "package.json"),
+    JSON.stringify({
+      scripts: {
+        "verify:supervisor-pre-pr": "npm test",
+      },
+    }),
+    "utf8",
+  );
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: "../repo",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot,
+      stateFile: path.join(root, "state.json"),
+      codexBinary: process.execPath,
+      branchPrefix: "invalid branch prefix with spaces",
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    }),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.deepEqual(summary.localCiContract, {
+    configured: false,
+    command: null,
+    recommendedCommand: "npm run verify:supervisor-pre-pr",
+    source: "repo_script_candidate",
+    summary:
+      "Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: npm run verify:supervisor-pre-pr.",
+  });
+  assert.equal(summary.overallStatus, "invalid");
+  assert.equal(summary.ready, false);
+});
+
 test("diagnoseSetupReadiness prefers the configured local CI command over repo-owned candidates", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
   t.after(async () => {

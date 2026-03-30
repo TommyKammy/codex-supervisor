@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { loadConfigSummary, resolveConfigPath, summarizeLocalCiContract, summarizeTrustDiagnostics } from "./core/config";
 import type { LocalCiContractSummary, TrustDiagnosticsSummary } from "./core/types";
 import { diagnoseSupervisorHost, type DoctorCheck, type DoctorCheckStatus } from "./doctor";
@@ -371,6 +372,7 @@ export async function diagnoseSetupReadiness(
   const configSummary = loadConfigSummary(args.configPath);
   const configPath = resolveConfigPath(args.configPath);
   const rawConfig = readRawConfigDocument(configPath);
+  const rawConfigDocument = rawConfig ?? {};
   const fields = buildConfigFields({
     rawConfig,
     configSummary,
@@ -383,6 +385,15 @@ export async function diagnoseSetupReadiness(
     : null;
   const hostReadiness = buildHostReadiness(hostDiagnostics?.checks ?? null, hostDiagnostics?.overallStatus ?? null);
   const blockers = buildBlockers({ fields, hostReadiness });
+  const fallbackRepoPath =
+    typeof rawConfigDocument.repoPath === "string" && rawConfigDocument.repoPath.trim() !== ""
+      ? path.resolve(path.dirname(configPath), rawConfigDocument.repoPath)
+      : undefined;
+  const localCiContractConfig = configSummary.config ?? {
+    localCiCommand:
+      typeof rawConfigDocument.localCiCommand === "string" ? rawConfigDocument.localCiCommand : undefined,
+    repoPath: fallbackRepoPath,
+  };
 
   return {
     kind: "setup_readiness",
@@ -394,6 +405,6 @@ export async function diagnoseSetupReadiness(
     hostReadiness,
     providerPosture: buildProviderPosture(configSummary.config),
     trustPosture: buildTrustPosture(configSummary.config),
-    localCiContract: summarizeLocalCiContract(configSummary.config ?? { localCiCommand: undefined, repoPath: undefined }),
+    localCiContract: summarizeLocalCiContract(localCiContractConfig),
   };
 }
