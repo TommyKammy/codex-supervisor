@@ -14,6 +14,7 @@ export interface SetupConfigChanges {
   stateFile?: string;
   codexBinary?: string;
   branchPrefix?: string;
+  localCiCommand?: string;
   reviewProvider?: SetupConfigPreviewSelectableReviewProviderProfile;
 }
 
@@ -42,6 +43,7 @@ const CONFIGURABLE_FIELDS: SetupReadinessFieldKey[] = [
   "stateFile",
   "codexBinary",
   "branchPrefix",
+  "localCiCommand",
   "reviewProvider",
 ];
 
@@ -120,6 +122,9 @@ function normalizeSetupChanges(changes: unknown): SetupConfigChanges {
   if ("branchPrefix" in raw) {
     normalized.branchPrefix = assertGitRef(raw.branchPrefix, "branchPrefix");
   }
+  if ("localCiCommand" in raw) {
+    normalized.localCiCommand = assertNonEmptyString(raw.localCiCommand, "localCiCommand");
+  }
   if ("reviewProvider" in raw) {
     normalized.reviewProvider = assertReviewProvider(raw.reviewProvider);
   }
@@ -182,6 +187,9 @@ function applySetupChanges(document: Record<string, unknown>, changes: SetupConf
   if (changes.branchPrefix !== undefined) {
     nextDocument.branchPrefix = changes.branchPrefix;
   }
+  if (changes.localCiCommand !== undefined) {
+    nextDocument.localCiCommand = changes.localCiCommand;
+  }
   if (changes.reviewProvider !== undefined) {
     nextDocument.reviewBotLogins = [...REVIEW_PROVIDER_LOGIN_MAP[changes.reviewProvider]];
   }
@@ -242,6 +250,8 @@ function nextSemanticFieldValue(field: SetupReadinessFieldKey, changes: SetupCon
       return changes.codexBinary ?? null;
     case "branchPrefix":
       return changes.branchPrefix ?? null;
+    case "localCiCommand":
+      return changes.localCiCommand ?? null;
     case "reviewProvider":
       return changes.reviewProvider ?? null;
   }

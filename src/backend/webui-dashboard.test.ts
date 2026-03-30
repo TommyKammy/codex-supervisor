@@ -117,6 +117,7 @@ class FakeElement {
   readonly listeners = new Map<string, Array<(event: unknown) => unknown>>();
 
   parentElement: FakeElement | null = null;
+  hidden = false;
   value = "";
   disabled = false;
   type = "";
@@ -210,9 +211,19 @@ class FakeElement {
 class FakeDocument {
   private readonly elements = new Map<string, FakeElement>();
 
-  constructor(ids: string[]) {
-    for (const id of ids) {
-      this.elements.set(id, new FakeElement("div", id, this));
+  constructor(
+    elements: Array<{
+      tagName: string;
+      id: string;
+      hidden: boolean;
+      disabled: boolean;
+    }>,
+  ) {
+    for (const element of elements) {
+      const fakeElement = new FakeElement(element.tagName, element.id, this);
+      fakeElement.hidden = element.hidden;
+      fakeElement.disabled = element.disabled;
+      this.elements.set(element.id, fakeElement);
     }
   }
 
@@ -507,8 +518,19 @@ function createHtmlHarness(
   } = {},
 ) {
   MockEventSource.instances.length = 0;
-  const ids = Array.from(html.matchAll(/id="([^"]+)"/gu), (match) => match[1]);
-  const document = new FakeDocument(ids);
+  const elementDescriptors = Array.from(
+    html.matchAll(/<([a-z0-9-]+)([^>]*)\sid="([^"]+)"([^>]*)>/giu),
+    (match) => {
+      const attributes = `${match[2]} ${match[4]}`;
+      return {
+        tagName: match[1],
+        id: match[3],
+        hidden: /\bhidden\b/iu.test(attributes),
+        disabled: /\bdisabled\b/iu.test(attributes),
+      };
+    },
+  );
+  const document = new FakeDocument(elementDescriptors);
   const overviewGrid = document.getElementById("overview-grid");
   const detailsGrid = document.getElementById("details-grid");
   if (overviewGrid && detailsGrid) {
@@ -2022,7 +2044,21 @@ test("setup shell highlights a repo-owned local CI candidate when localCiCommand
         ready: true,
         overallStatus: "configured",
         configPath: "/tmp/supervisor.config.json",
-        fields: [],
+        fields: [
+          {
+            key: "localCiCommand",
+            label: "Local CI command",
+            state: "missing",
+            value: null,
+            message: "Local CI command is optional until you opt in to the repo-owned contract.",
+            required: false,
+            metadata: {
+              source: "config",
+              editable: true,
+              valueType: "text",
+            },
+          },
+        ],
         blockers: [],
         hostReadiness: { overallStatus: "pass", checks: [] },
         providerPosture: {
@@ -2060,7 +2096,217 @@ test("setup shell highlights a repo-owned local CI candidate when localCiCommand
     harness.document.getElementById("setup-local-ci-details")?.textContent ?? "",
     /Configured: no.*Command: none.*Source: repo script candidate.*Recommended command: npm run verify:pre-pr.*This repo already defines a repo-owned local CI entrypoint, but codex-supervisor will not run it until localCiCommand is configured.*This warning is advisory only; first-run setup readiness and blocker semantics stay unchanged until you opt in by configuring localCiCommand\./u,
   );
+  assert.equal(harness.document.getElementById("setup-input-localCiCommand")?.value, "");
+  const adoptButton = harness.document.getElementById("setup-local-ci-adopt-recommended");
+  assert.ok(adoptButton);
+  assert.equal(adoptButton.hidden, false);
+  assert.equal(adoptButton.disabled, false);
   assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("setup shell lets operators adopt the recommended local CI command and save it", async () => {
+  const setupConfigResponse = createDeferred<MockResponseLike>();
+  const setupReadinessRefreshResponse = createDeferred<MockResponseLike>();
+  const harness = createSetupHarness([
+    {
+      path: "/api/setup-readiness",
+      response: jsonResponse({
+        kind: "setup_readiness",
+        managedRestart: unavailableManagedRestart,
+        ready: true,
+        overallStatus: "configured",
+        configPath: "/tmp/supervisor.config.json",
+        fields: [
+          {
+            key: "localCiCommand",
+            label: "Local CI command",
+            state: "missing",
+            value: null,
+            message: "Local CI command is optional until you opt in to the repo-owned contract.",
+            required: false,
+            metadata: {
+              source: "config",
+              editable: true,
+              valueType: "text",
+            },
+          },
+        ],
+        blockers: [],
+        hostReadiness: { overallStatus: "pass", checks: [] },
+        providerPosture: {
+          profile: "codex",
+          provider: "codex",
+          reviewers: ["chatgpt-codex-connector"],
+          signalSource: "review_bot_logins",
+          configured: true,
+          summary: "Codex Connector is configured.",
+        },
+        trustPosture: {
+          trustMode: "trusted_repo_and_authors",
+          executionSafetyMode: "unsandboxed_autonomous",
+          warning: null,
+          summary: "Trusted inputs with unsandboxed autonomous execution.",
+        },
+        localCiContract: {
+          configured: false,
+          command: null,
+          recommendedCommand: "npm run verify:pre-pr",
+          source: "repo_script_candidate",
+          summary:
+            "Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: npm run verify:pre-pr.",
+        },
+      }),
+    },
+    {
+      path: "/api/setup-config",
+      method: "POST",
+      body: JSON.stringify({
+        changes: {
+          localCiCommand: "npm run verify:pre-pr",
+        },
+      }),
+      response: setupConfigResponse.promise,
+    },
+    {
+      path: "/api/setup-readiness",
+      response: setupReadinessRefreshResponse.promise,
+    },
+  ]);
+  await harness.flush();
+
+  const adoptButton = harness.document.getElementById("setup-local-ci-adopt-recommended");
+  const localCiInput = harness.document.getElementById("setup-input-localCiCommand");
+  const setupForm = harness.document.getElementById("setup-form");
+  const saveStatus = harness.document.getElementById("setup-save-status");
+  assert.ok(adoptButton);
+  assert.ok(localCiInput);
+  assert.ok(setupForm);
+  assert.ok(saveStatus);
+  assert.equal(adoptButton.hidden, false);
+  assert.equal(adoptButton.disabled, false);
+
+  await adoptButton.dispatch("click");
+  assert.equal(localCiInput.value, "npm run verify:pre-pr");
+
+  const submitPromise = setupForm.dispatch("submit", { preventDefault() {} });
+  await harness.flush();
+  assert.match(saveStatus.textContent ?? "", /Saving setup changes\.\.\./u);
+
+  setupConfigResponse.resolve(jsonResponse({
+    kind: "setup_config_update",
+    managedRestart: unavailableManagedRestart,
+    configPath: "/tmp/supervisor.config.json",
+    backupPath: null,
+    updatedFields: ["localCiCommand"],
+    restartRequired: true,
+    restartScope: "supervisor",
+    restartTriggeredByFields: ["localCiCommand"],
+    document: {
+      localCiCommand: "npm run verify:pre-pr",
+    },
+    readiness: {
+      kind: "setup_readiness",
+      managedRestart: unavailableManagedRestart,
+      ready: true,
+      overallStatus: "configured",
+      configPath: "/tmp/supervisor.config.json",
+      fields: [],
+      blockers: [],
+      hostReadiness: { overallStatus: "pass", checks: [] },
+      providerPosture: {
+        profile: "codex",
+        provider: "codex",
+        reviewers: ["chatgpt-codex-connector"],
+        signalSource: "review_bot_logins",
+        configured: true,
+        summary: "Codex Connector is configured.",
+      },
+      trustPosture: {
+        trustMode: "trusted_repo_and_authors",
+        executionSafetyMode: "unsandboxed_autonomous",
+        warning: null,
+        summary: "Trusted inputs with unsandboxed autonomous execution.",
+      },
+      localCiContract: {
+        configured: true,
+        command: "npm run verify:pre-pr",
+        source: "config",
+        summary: "Repo-owned local CI contract is configured.",
+      },
+    },
+  }));
+  await harness.flush();
+
+  setupReadinessRefreshResponse.resolve(jsonResponse({
+    kind: "setup_readiness",
+    managedRestart: unavailableManagedRestart,
+    ready: true,
+    overallStatus: "configured",
+    configPath: "/tmp/supervisor.config.json",
+    fields: [
+      {
+        key: "localCiCommand",
+        label: "Local CI command",
+        state: "configured",
+        value: "npm run verify:pre-pr",
+        message: "Local CI command is configured.",
+        required: false,
+        metadata: {
+          source: "config",
+          editable: true,
+          valueType: "text",
+        },
+      },
+    ],
+    blockers: [],
+    hostReadiness: { overallStatus: "pass", checks: [] },
+    providerPosture: {
+      profile: "codex",
+      provider: "codex",
+      reviewers: ["chatgpt-codex-connector"],
+      signalSource: "review_bot_logins",
+      configured: true,
+      summary: "Codex Connector is configured.",
+    },
+    trustPosture: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: null,
+      summary: "Trusted inputs with unsandboxed autonomous execution.",
+    },
+    localCiContract: {
+      configured: true,
+      command: "npm run verify:pre-pr",
+      source: "config",
+      summary: "Repo-owned local CI contract is configured.",
+    },
+  }));
+
+  await submitPromise;
+  await harness.flush();
+
+  assert.deepEqual(
+    harness.fetchCalls.map((call) => ({ path: call.path, method: call.method, body: call.body })),
+    [
+      { path: "/api/setup-readiness", method: "GET", body: null },
+      {
+        path: "/api/setup-config",
+        method: "POST",
+        body: JSON.stringify({
+          changes: {
+            localCiCommand: "npm run verify:pre-pr",
+          },
+        }),
+      },
+      { path: "/api/setup-readiness", method: "GET", body: null },
+    ],
+  );
+  assert.match(saveStatus.textContent ?? "", /Saved 1 setup field\./u);
+  assert.match(harness.document.getElementById("setup-local-ci-summary")?.textContent ?? "", /Repo-owned local CI contract is configured\./u);
+  assert.match(
+    harness.document.getElementById("setup-local-ci-details")?.textContent ?? "",
+    /Configured: yes.*Command: npm run verify:pre-pr.*Source: config.*This repo-owned command is the canonical local verification step before PR publication or update\./u,
+  );
 });
 
 test("setup shell saves through the narrow setup config API and revalidates readiness after the write", async () => {
