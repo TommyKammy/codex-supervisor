@@ -66,6 +66,14 @@ export interface DashboardInventoryStatusLike {
   } | null;
 }
 
+export interface DashboardLocalCiContractLike {
+  configured?: boolean | null;
+  command?: string | null;
+  recommendedCommand?: string | null;
+  source?: "config" | "repo_script_candidate" | null;
+  summary?: string | null;
+}
+
 export interface DashboardStatusLike {
   selectionSummary?: DashboardSelectionSummaryLike | null;
   activeIssue?: DashboardActiveIssueLike | null;
@@ -77,6 +85,7 @@ export interface DashboardStatusLike {
   whyLines?: string[] | null;
   candidateDiscovery?: DashboardCandidateDiscoveryLike | null;
   candidateDiscoverySummary?: string | null;
+  localCiContract?: DashboardLocalCiContractLike | null;
   inventoryStatus?: DashboardInventoryStatusLike | null;
   reconciliationWarning?: string | null;
   reconciliationPhase?: string | null;
@@ -377,6 +386,23 @@ export function formatCandidateDiscovery(status: DashboardStatusLike | null | un
 }
 
 export function buildStatusLines(status: DashboardStatusLike | null | undefined): string[] {
+  const localCiContract = status?.localCiContract ?? null;
+  const localCiLines =
+    localCiContract === null
+      ? []
+      : [
+        [
+          "local ci",
+          "configured=" + (localCiContract.configured ? "yes" : "no"),
+          "source=" + String(localCiContract.source ?? "config").replace(/_/gu, " "),
+          "command=" + (localCiContract.command ?? "none"),
+          "recommended command=" + (localCiContract.recommendedCommand ?? "none"),
+        ].join(" "),
+        ...(typeof localCiContract.summary === "string" && localCiContract.summary.trim() !== ""
+          ? [localCiContract.summary]
+          : []),
+      ];
+
   return [
     ...formatTrackedIssueSummary(status),
     ...formatRunnableIssues(status),
@@ -385,6 +411,7 @@ export function buildStatusLines(status: DashboardStatusLike | null | undefined)
     ...(status?.readinessLines ?? []),
     ...(status?.whyLines ?? []),
     ...formatCandidateDiscovery(status),
+    ...localCiLines,
     ...(status?.reconciliationWarning ? [status.reconciliationWarning] : []),
   ];
 }

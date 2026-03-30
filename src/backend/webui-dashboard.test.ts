@@ -366,6 +366,13 @@ function createManualTimerController(): ManualTimerController {
 function createStatus(args: {
   selectedIssueNumber?: number | null;
   includeWhyLines?: boolean;
+  localCiContract?: {
+    configured: boolean;
+    command: string | null;
+    recommendedCommand?: string | null;
+    source: "config" | "repo_script_candidate";
+    summary: string;
+  } | null;
   loopRuntime?: {
     state: "running" | "off" | "unknown";
     pid: number | null;
@@ -424,6 +431,7 @@ function createStatus(args: {
         ? ["selected_issue=none"]
         : [`selected_issue=#${selectedIssueNumber}`]
       : [],
+    localCiContract: args.localCiContract ?? null,
     candidateDiscoverySummary: null,
     candidateDiscovery: args.candidateDiscovery ?? null,
     reconciliationWarning: null,
@@ -948,6 +956,41 @@ test("dashboard keeps Summary focused on current state and only shows tracked is
   assert.match(
     statusLines.textContent,
     /candidate discovery fetch_window=250 strategy=paginated truncated=yes observed_matching_open_issues=251/u,
+  );
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard status panel surfaces advisory local CI posture without reopening setup", async () => {
+  const harness = createDashboardHarness([
+    {
+      path: "/api/status?why=true",
+      response: jsonResponse(
+        createStatus({
+          includeWhyLines: false,
+          localCiContract: {
+            configured: false,
+            command: null,
+            recommendedCommand: "npm run verify:supervisor-pre-pr",
+            source: "repo_script_candidate",
+            summary:
+              "Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: npm run verify:supervisor-pre-pr.",
+          },
+        }),
+      ),
+    },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+  ]);
+  await harness.flush();
+
+  const statusLines = harness.document.getElementById("status-lines");
+  assert.ok(statusLines);
+  assert.match(
+    statusLines.textContent,
+    /local ci configured=no source=repo script candidate command=none recommended command=npm run verify:supervisor-pre-pr/u,
+  );
+  assert.match(
+    statusLines.textContent,
+    /Repo-owned local CI candidate exists but localCiCommand is unset\. Recommended command: npm run verify:supervisor-pre-pr\./u,
   );
   assert.equal(harness.remainingFetches.length, 0);
 });
