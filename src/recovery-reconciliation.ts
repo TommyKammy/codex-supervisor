@@ -1132,11 +1132,7 @@ export async function reconcileStaleFailedIssueStates(
       record: IssueRunRecord,
       pr: NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
     ) => Partial<IssueRunRecord>;
-    syncCopilotReviewTimeoutState: (
-      config: SupervisorConfig,
-      record: IssueRunRecord,
-      pr: NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
-    ) => Partial<IssueRunRecord>;
+    syncCopilotReviewTimeoutState: typeof syncCopilotReviewTimeoutState;
     inferGitHubWaitStep?: (
       config: SupervisorConfig,
       record: IssueRunRecord,
