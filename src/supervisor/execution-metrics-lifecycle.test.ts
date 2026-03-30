@@ -58,3 +58,34 @@ test("buildExecutionMetricsRunSummaryArtifact rejects negative chronology", () =
     /Invalid execution metrics chronology/u,
   );
 });
+
+test("buildExecutionMetricsRunSummaryArtifact omits derived recovery timing when retained recovery predates the latest failure", () => {
+  assert.deepEqual(
+    buildExecutionMetricsRunSummaryArtifact({
+      issueNumber: 893,
+      terminalState: "blocked",
+      issueCreatedAt: "2026-03-24T00:00:00Z",
+      startedAt: "2026-03-24T00:01:00Z",
+      finishedAt: "2026-03-24T00:06:00Z",
+      blockedReason: "verification",
+      failureContext: {
+        category: "blocked",
+        summary: "Verification is still blocked.",
+        signature: "verification-blocked",
+        command: null,
+        details: [],
+        url: null,
+        updated_at: "2026-03-24T00:05:00Z",
+      },
+      lastRecoveryReason: "tracked_pr_lifecycle_recovered: reused PR facts",
+      lastRecoveryAt: "2026-03-24T00:04:00Z",
+    }).recoveryMetrics,
+    {
+      classification: "latest_recovery",
+      reason: "tracked_pr_lifecycle_recovered",
+      occurrenceCount: 1,
+      lastRecoveredAt: "2026-03-24T00:04:00Z",
+      timeToLatestRecoveryMs: null,
+    },
+  );
+});

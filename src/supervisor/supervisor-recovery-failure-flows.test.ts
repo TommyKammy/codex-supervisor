@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test, { mock } from "node:test";
-import { GitHubIssue, IssueRunRecord, SupervisorStateFile } from "../core/types";
+import { GitHubIssue, GitHubPullRequest, IssueRunRecord, SupervisorStateFile } from "../core/types";
 import { recoverUnexpectedCodexTurnFailure } from "./supervisor-failure-helpers";
 import { Supervisor } from "./supervisor";
 import {
@@ -266,6 +266,99 @@ test("recoverUnexpectedCodexTurnFailure preserves tracked PR lifecycle state whi
     "pr_number=56",
     "pr_head=head-56",
   ]);
+});
+
+test("handlePostTurnMergeAndCompletion keeps blocked tracked-PR state when retained recovery predates the latest failure", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 119;
+  const workspace = path.join(fixture.workspaceRoot, `issue-${issueNumber}`);
+  await fs.mkdir(workspace, { recursive: true });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch: branchName(fixture.config, issueNumber),
+        workspace,
+        journal_path: path.join(workspace, ".codex-supervisor", "issue-journal.md"),
+        pr_number: 219,
+        blocked_reason: "verification",
+        last_error: "Configured local CI command failed before marking PR #219 ready.",
+        last_failure_context: {
+          category: "blocked",
+          summary: "Configured local CI command failed before marking PR #219 ready.",
+          signature: "local-ci-gate-failed",
+          command: null,
+          details: [],
+          url: null,
+          updated_at: "2026-03-13T00:22:00Z",
+        },
+        last_failure_signature: "local-ci-gate-failed",
+        repeated_failure_signature_count: 1,
+        last_recovery_reason:
+          "tracked_pr_lifecycle_recovered: resumed issue #119 from failed to blocked using fresh tracked PR #219 facts at head head-219",
+        last_recovery_at: "2026-03-13T00:21:00Z",
+      }),
+    },
+  };
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Chronology-safe blocked PR transition",
+    body: executionReadyBody("Keep blocked tracked-PR transitions running when recovery timing is stale."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:22:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: 219,
+    title: "Recover blocked draft PR",
+    url: "https://example.test/pr/219",
+    state: "OPEN",
+    createdAt: "2026-03-13T00:10:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: branchName(fixture.config, issueNumber),
+    headRefOid: "head-219",
+    mergedAt: null,
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    enableAutoMerge: async () => {
+      throw new Error("unexpected enableAutoMerge call");
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(result.state, "blocked");
+  assert.equal(result.blocked_reason, "verification");
+  assert.equal(state.activeIssueNumber, issueNumber);
+
+  const artifact = JSON.parse(
+    await fs.readFile(path.join(workspace, ".codex-supervisor", "execution-metrics", "run-summary.json"), "utf8"),
+  ) as {
+    terminalState: string;
+    recoveryMetrics: { lastRecoveredAt: string; timeToLatestRecoveryMs: number | null } | null;
+  };
+  assert.equal(artifact.terminalState, "blocked");
+  assert.equal(artifact.recoveryMetrics?.lastRecoveredAt, "2026-03-13T00:21:00Z");
+  assert.equal(artifact.recoveryMetrics?.timeToLatestRecoveryMs, null);
 });
 
 test("recoverUnexpectedCodexTurnFailure records unavailable workspace inspection distinctly", async () => {

@@ -135,7 +135,11 @@ function buildRecoveryMetrics(args: {
   }
 
   const derivedRecoveryDelay =
-    args.failureMetrics === null ? null : durationMs(args.failureMetrics.lastOccurredAt, lastRecoveredAt);
+    args.failureMetrics === null
+      ? null
+      : Date.parse(lastRecoveredAt) < Date.parse(args.failureMetrics.lastOccurredAt)
+        ? null
+        : durationMs(args.failureMetrics.lastOccurredAt, lastRecoveredAt);
   return {
     classification: "latest_recovery",
     reason: parseRecoveryReasonCategory(latestRecoveryReason),
