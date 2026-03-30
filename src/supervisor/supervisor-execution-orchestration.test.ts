@@ -417,7 +417,7 @@ test("prepareIssueExecutionContext blocks PR publication when configured local C
 
   assert.equal(
     result,
-    "Issue #91 blocked: Configured local CI command failed before opening a pull request.",
+    "Issue #91 blocked: Configured local CI command failed before opening a pull request. Remediation target: repo-owned command.",
   );
   assert.equal(createPullRequestCalls, 0);
   assert.equal(pushBranchCalls, 0);
