@@ -407,6 +407,23 @@ test("derivePullRequestLifecycleSnapshot records provider-success observation an
   });
 });
 
+test("derivePullRequestLifecycleSnapshot projects the current tracked PR identity and head into the lifecycle boundary", () => {
+  const config = createConfig();
+  const record = createRecord({
+    pr_number: null,
+    last_head_sha: "head-old",
+  });
+  const pr = createPullRequest({
+    number: 191,
+    headRefOid: "head-new-191",
+  });
+
+  const snapshot = derivePullRequestLifecycleSnapshot(config, record, pr, [], []);
+
+  assert.equal(snapshot.recordForState.pr_number, 191);
+  assert.equal(snapshot.recordForState.last_head_sha, "head-new-191");
+});
+
 test("shouldRunCodex only returns true for actionable supervisor states", () => {
   const config = createConfig();
   const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
