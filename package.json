@@ -10,6 +10,7 @@
     "guardrails:check": "tsx src/committed-guardrails-cli.ts check",
     "guardrails:fix": "tsx src/committed-guardrails-cli.ts fix",
     "verify:paths": "tsx scripts/check-workstation-local-paths.ts",
+    "verify:supervisor-pre-pr": "npm run verify:paths && npm run build",
     "verify:pre-pr": "npm run verify:paths && npm run build && npm test",
     "test": "tsx --test \"src/**/*.test.ts\"",
     "test:managed-restart-regressions": "tsx --test src/managed-restart.test.ts src/backend/supervisor-http-server.test.ts src/backend/webui-dashboard.test.ts src/managed-restart-launcher-assets.test.ts src/ci-workflow.test.ts",
