@@ -80,7 +80,7 @@ import { AgentRunner, createCodexAgentRunner } from "./agent-runner";
 import { syncRetainedExecutionMetricsDailyRollups } from "./execution-metrics-aggregation";
 import {
   executionMetricsRetentionRootPath,
-  syncExecutionMetricsRunSummary,
+  syncExecutionMetricsRunSummarySafely,
 } from "./execution-metrics-run-summary";
 import { syncPostMergeAuditArtifactSafely } from "./post-merge-audit-artifact";
 import { summarizePostMergeAuditPatterns, type PostMergeAuditPatternSummaryDto } from "./post-merge-audit-summary";
@@ -773,13 +773,14 @@ export class Supervisor {
         state.issues[String(record.issue_number)] = record;
         state.activeIssueNumber = null;
         await this.stateStore.save(state);
-        await syncExecutionMetricsRunSummary({
+        await syncExecutionMetricsRunSummarySafely({
           previousRecord: lifecycle.recordForState,
           nextRecord: record,
           issue,
           pullRequest: pr,
           recoveryEvents,
           retentionRootPath: executionMetricsRetentionRootPath(this.config.stateFile),
+          warningContext: "persisting",
         });
         await syncJournal(record);
         return prependRecoveryLog(
@@ -963,13 +964,14 @@ export class Supervisor {
 
     state.issues[String(nextRecord.issue_number)] = nextRecord;
     await this.stateStore.save(state);
-    await syncExecutionMetricsRunSummary({
+    await syncExecutionMetricsRunSummarySafely({
       previousRecord: record,
       nextRecord,
       issue,
       pullRequest: currentPr,
       recoveryEvents,
       retentionRootPath: executionMetricsRetentionRootPath(this.config.stateFile),
+      warningContext: "persisting",
     });
     await syncPostMergeAuditArtifactSafely({
       config: this.config,

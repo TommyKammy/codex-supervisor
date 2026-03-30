@@ -1,51 +1,45 @@
-# Issue #1194: Repair remaining workspace reuse test expectations after cross-host discrepancy investigation
+# Issue #1198: Execution metrics chronology bug: keep stale recovery timestamps from aborting terminal loop transitions
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1194
-- Branch: codex/issue-1194
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1198
+- Branch: codex/issue-1198
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: repairing_ci
-- Attempt count: 3 (implementation=1, repair=2)
-- Last head SHA: 6ff1ee862d311d754764a7a9bae30c1fcdf0995d
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 5068bed67cd7a718b9c53c42bf7f046cb177f624
 - Blocked reason: none
-- Last failure signature: build (ubuntu-latest):fail
-- Repeated failure signature count: 1
-- Updated at: 2026-03-29T23:25:00.927Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-03-30T04:16:39.242Z
 
 ## Latest Codex Summary
-The remaining Ubuntu CI failure was still in `npm run verify:paths`, but the live Actions log showed the committed issue journal still contained the literal redacted workstation-path grep pattern in its recorded command list. I confirmed the worktree journal was already sanitized, committed that journal-only repair as `e6599a3`, and pushed it to `codex/issue-1194`.
+- Hardened execution-metrics chronology handling so stale retained recovery timestamps no longer abort terminal transitions. Derived recovery timing is now omitted when `last_recovery_at` predates the latest failure, and the remaining terminal supervisor persistence sites now use the safe execution-metrics wrapper.
 
-Focused verification is green locally: `npm run verify:paths`, `npx tsx --test src/core/workspace.test.ts`, and `npm run build`. PR `#1195` has picked up commit `e6599a3`, and both GitHub Actions build jobs are now pending on run `23721656243`.
+- Added focused regression coverage for the stale-recovery chronology case in the lifecycle builder and for the blocked tracked-PR terminal persistence path in `handlePostTurnMergeAndCompletion`.
 
-Summary: Confirmed the last Ubuntu failure was caused by stale journal command text, committed the sanitized issue-journal repair as `e6599a3`, and pushed it so PR #1195 could rerun CI.
-State hint: repairing_ci
+Summary: Hardened stale recovery chronology handling, routed remaining terminal execution-metrics sync calls through the safe wrapper, and added focused regressions for the lifecycle builder and blocked tracked-PR terminal path.
+State hint: local_review
 Blocked reason: none
-Tests: `npm run verify:paths`; `npx tsx --test src/core/workspace.test.ts`; `npm run build`
-Next action: Monitor PR #1195 CI rerun on commit `e6599a3` and address any new check failures if they appear.
-Failure signature: build (ubuntu-latest):fail
+Tests: `npx tsx --test --test-name-pattern "buildExecutionMetricsRunSummaryArtifact|handlePostTurnMergeAndCompletion keeps blocked tracked-PR state" src/supervisor/execution-metrics-lifecycle.test.ts src/supervisor/supervisor-recovery-failure-flows.test.ts`; `npx tsx --test src/post-turn-pull-request.test.ts`; `npm run build`
+Next action: stage the fix, commit the focused chronology-hardening change, and open or update the branch for supervisor review.
+Failure signature: none
 
 ## Active Failure Context
-- Category: checks
-- Summary: PR #1195 has failing checks.
-- Command or source: gh pr checks
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1195
-- Details:
-  - build (ubuntu-latest) (pending/PENDING) https://github.com/TommyKammy/codex-supervisor/actions/runs/23721656243/job/69097592239
-  - build (macos-latest) (pending/PENDING) https://github.com/TommyKammy/codex-supervisor/actions/runs/23721656243/job/69097592210
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the Ubuntu-only CI failure was caused by stale committed journal content; specifically, the tracked command log still contained the redacted workstation-path regex placeholder, which `verify:paths` treats as a forbidden workstation-local path pattern.
-- What changed: confirmed from the live Ubuntu Actions log that `npm run verify:paths` was still failing on `.codex-supervisor/issue-journal.md:44`, verified the current worktree journal no longer contains that literal pattern, reran the focused local checks, committed the journal-only repair as `e6599a3`, and pushed it to rerun PR #1195.
+- Hypothesis: stale retained `last_recovery_at` values were still feeding recovery timing derivation during terminal execution-metrics persistence, so blocked or done transitions could throw `Invalid execution metrics chronology` even when the terminal state update itself was otherwise valid.
+- What changed: reproduced the failure narrowly in execution-metrics lifecycle handling, changed stale recovery timing derivation to degrade to `timeToLatestRecoveryMs: null` instead of throwing, routed the remaining terminal supervisor sync sites in `src/supervisor/supervisor.ts` through `syncExecutionMetricsRunSummarySafely`, and added regression coverage for the blocked tracked-PR terminal path.
 - Current blocker: none.
-- Next exact step: monitor the rerun of the Ubuntu CI check for PR #1195 on commit `e6599a3` and address any newly surfaced failures if they appear.
-- Verification gap: I have not rerun the full repository suite; this turn only covered the directly affected path guard plus the previously relevant workspace test/build checks.
-- Files touched: `.codex-supervisor/issue-journal.md`.
-- Rollback concern: low. The fix is documentation-only and removes operator-specific absolute paths from a tracked durable artifact.
-- Last focused command: `gh pr checks 1195`
-- What changed this turn: reread the required memory files and issue journal, inspected PR #1195 and the live GitHub Actions failure, confirmed the Ubuntu job was still failing in `npm run verify:paths`, traced that failure to the stale committed redacted workstation-path grep command text in the journal, verified the current sanitized journal plus the focused workspace/build checks locally, committed the repair, pushed `codex/issue-1194`, and confirmed the rerun is pending.
-- Exact failure reproduced this turn: `gh run view 23721502131 --job 69097197425 --log` showed `npm run verify:paths` failing on `.codex-supervisor/issue-journal.md:44` because the committed command log still contained the literal pattern `<redacted-local-path>`.
-- Commands run this turn: `sed -n '1,220p' <skill-path>/SKILL.md`; `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,260p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `gh auth status`; `python3 <skill-path>/inspect_pr_checks.py --repo . --pr 1195`; `gh pr checks 1195`; `gh run view 23721502131 --job 69097197425 --log`; `gh run view 23721502131 --json name,workflowName,conclusion,status,url,event,headBranch,headSha,jobs`; `git status --short`; `nl -ba .codex-supervisor/issue-journal.md | sed -n '34,56p'`; `git diff -- .codex-supervisor/issue-journal.md`; `rg -n '<redacted-local-path>' .codex-supervisor/issue-journal.md`; `git show HEAD:.codex-supervisor/issue-journal.md | nl -ba | sed -n '34,56p'`; `git show HEAD:.codex-supervisor/issue-journal.md | rg -n '<redacted-local-path>'`; `git branch --show-current`; `npm run verify:paths`; `npx tsx --test src/core/workspace.test.ts`; `npm run build`; `git add .codex-supervisor/issue-journal.md`; `git commit -m "Redact issue journal path-regex log"`; `git rev-parse HEAD`; `git push origin codex/issue-1194`; `gh pr checks 1195`
+- Next exact step: create a checkpoint commit for the chronology-hardening fix and leave the worktree ready for PR/update work.
+- Verification gap: `npm test -- src/...` is not a reliable focused verifier in this repo because the npm wrapper still expands to the suite-wide `src/**/*.test.ts` glob. I used direct `npx tsx --test ...` invocations for the affected files instead. One pre-existing environment-sensitive test in `src/supervisor/supervisor-recovery-failure-flows.test.ts` (`runOnce recovers when post-codex refresh throws after leaving a dirty worktree`) still diverts into stale-state cleanup in this worktree when the whole file runs, which appears unrelated to this change.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/execution-metrics-lifecycle.ts`, `src/supervisor/execution-metrics-lifecycle.test.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-recovery-failure-flows.test.ts`.
+- Rollback concern: low. The runtime change is narrowly scoped to stale recovery timing derivation and safe execution-metrics persistence wrapping for terminal supervisor paths.
+- Last focused command: `npm run build`
+- What changed this turn: read the required memory and journal files, traced the chronology throw from `buildRecoveryMetrics()` into the remaining direct terminal sync sites in `src/supervisor/supervisor.ts`, added focused reproductions, implemented the stale-recovery degrade-to-null behavior, wrapped the remaining terminal sync sites with the safe wrapper, reran focused file-scoped tests with `npx tsx --test`, and verified the TypeScript build.
+- Exact failure reproduced this turn: a blocked tracked-PR terminal persistence path with `last_failure_context.updated_at=2026-03-13T00:22:00Z` and retained `last_recovery_at=2026-03-13T00:21:00Z` previously threw `Invalid execution metrics chronology: 2026-03-13T00:22:00Z must be at or before 2026-03-13T00:21:00Z.` while persisting execution metrics.
+- Commands run this turn: `sed -n '1,220p' /Users/tomoakikawada/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1198/AGENTS.generated.md`; `sed -n '1,220p' /Users/tomoakikawada/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1198/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `rg -n "Invalid execution metrics chronology|last_recovery_at|execution metrics|execution-metrics" src .`; `git status --short`; `sed -n '1,220p' src/supervisor/execution-metrics-lifecycle.ts`; `sed -n '1,220p' src/supervisor/execution-metrics-run-summary.ts`; `sed -n '180,320p' src/supervisor/supervisor-recovery-failure-flows.test.ts`; `sed -n '1,220p' src/supervisor/execution-metrics-lifecycle.test.ts`; `sed -n '1,260p' src/post-turn-pull-request.test.ts`; `rg -n "syncExecutionMetricsRunSummary\\(|syncExecutionMetricsRunSummarySafely\\(" src`; `sed -n '740,820p' src/supervisor/supervisor.ts`; `sed -n '930,990p' src/supervisor/supervisor.ts`; `sed -n '1,220p' src/turn-execution-publication-gate.ts`; `rg -n "applyCodexTurnPublicationGate\\(|syncExecutionMetricsRunSummary: async|syncExecutionMetricsRunSummary\\(" src/run-once-turn-execution.ts src/post-turn-pull-request.ts src -g'*.ts'`; `sed -n '520,700p' src/run-once-turn-execution.ts`; `sed -n '820,930p' src/supervisor/supervisor.ts`; `sed -n '1,120p' src/supervisor/supervisor-pr-readiness.test.ts`; `npx tsx --test src/supervisor/execution-metrics-lifecycle.test.ts src/supervisor/supervisor-recovery-failure-flows.test.ts`; `npx tsx --test src/post-turn-pull-request.test.ts`; `npx tsx --test --test-name-pattern "buildExecutionMetricsRunSummaryArtifact|handlePostTurnMergeAndCompletion keeps blocked tracked-PR state" src/supervisor/execution-metrics-lifecycle.test.ts src/supervisor/supervisor-recovery-failure-flows.test.ts`; `npm run build`; `git diff -- src/supervisor/execution-metrics-lifecycle.ts src/supervisor/supervisor.ts src/supervisor/execution-metrics-lifecycle.test.ts src/supervisor/supervisor-recovery-failure-flows.test.ts .codex-supervisor/issue-journal.md`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
