@@ -70,6 +70,50 @@ test("runLocalCiGate classifies non-zero exits as repo-owned-command remediation
   assert.equal(result.latestResult?.remediation_target, "repo_owned_command");
 });
 
+test("runLocalCiGate keeps nested missing binaries inside the configured command as non-zero exits", async () => {
+  const failure = Object.assign(
+    new Error("Command failed: sh -lc +1 args\nexitCode=127\n> ci:local\n> missing-binary\nsh: missing-binary: not found"),
+    {
+      stdout: "> ci:local\n> missing-binary",
+      stderr: "sh: missing-binary: not found",
+    },
+  );
+
+  const result = await runLocalCiGate({
+    config: { localCiCommand: "npm run ci:local" },
+    workspacePath: "/tmp/workspaces/issue-102",
+    gateLabel: "before marking PR #116 ready",
+    runLocalCiCommand: async () => {
+      throw failure;
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.failureContext?.signature, "local-ci-gate-non_zero_exit");
+  assert.equal(result.latestResult?.failure_class, "non_zero_exit");
+  assert.equal(result.latestResult?.remediation_target, "repo_owned_command");
+});
+
+test("runLocalCiGate classifies a missing configured entrypoint as supervisor-config remediation", async () => {
+  const failure = Object.assign(new Error("Command failed: sh -lc +1 args\nexitCode=127\nsh: pnpm: not found"), {
+    stderr: "sh: pnpm: not found",
+  });
+
+  const result = await runLocalCiGate({
+    config: { localCiCommand: "pnpm run ci:local" },
+    workspacePath: "/tmp/workspaces/issue-102",
+    gateLabel: "before opening a pull request",
+    runLocalCiCommand: async () => {
+      throw failure;
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.failureContext?.signature, "local-ci-gate-missing_command");
+  assert.equal(result.latestResult?.failure_class, "missing_command");
+  assert.equal(result.latestResult?.remediation_target, "supervisor_config");
+});
+
 test("runLocalCiGate preserves stdout and stderr details from command failures", async () => {
   const failure = Object.assign(new Error("Command failed: sh -lc +1 args\nexitCode=1"), {
     stdout: "lint summary\n1 file checked",

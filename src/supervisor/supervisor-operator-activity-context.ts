@@ -83,7 +83,11 @@ export interface SupervisorLocalCiStatusDto {
 }
 
 function isLocalCiBlockingFailureSignature(signature: string | null): boolean {
-  return signature === "local-ci-gate-missing_command" || signature === "local-ci-gate-non_zero_exit";
+  return (
+    signature === "local-ci-gate-failed" ||
+    signature === "local-ci-gate-missing_command" ||
+    signature === "local-ci-gate-non_zero_exit"
+  );
 }
 
 function retrySummaryHasLoopRisk(context: Pick<SupervisorIssueActivityContextDto, "retryContext" | "repeatedRecovery">): boolean {

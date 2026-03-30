@@ -24,29 +24,80 @@ type ErrorWithOutput = Error & {
   stderr?: string;
 };
 
-function isMissingCommandError(error: unknown): boolean {
+function stripWrappingQuotes(value: string): string {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+
+  return value;
+}
+
+function configuredCommandMarkers(command: string): string[] {
+  const tokens = command.match(/"[^"]*"|'[^']*'|\S+/g)?.map(stripWrappingQuotes) ?? [];
+  const markers = new Set<string>();
+  const addMarker = (value: string | undefined): void => {
+    const trimmed = value?.trim();
+    if (trimmed) {
+      markers.add(trimmed.toLowerCase());
+    }
+  };
+
+  addMarker(command);
+  addMarker(tokens[0]);
+
+  if ((tokens[0] === "npm" || tokens[0] === "pnpm") && tokens[1] === "run") {
+    addMarker(tokens[2]);
+  }
+
+  if (tokens[0] === "yarn") {
+    if (tokens[1] === "run") {
+      addMarker(tokens[2]);
+    } else if (tokens[1] && !tokens[1].startsWith("-")) {
+      addMarker(tokens[1]);
+    }
+  }
+
+  return [...markers];
+}
+
+function lineMentionsConfiguredCommand(line: string, markers: string[]): boolean {
+  const normalizedLine = line.toLowerCase();
+  return markers.some((marker) => normalizedLine.includes(marker));
+}
+
+function isMissingCommandError(error: unknown, command: string): boolean {
   if (!(error instanceof Error)) {
     return false;
   }
 
   const commandError = error as ErrorWithOutput;
-  const haystack = [error.message, commandError.stderr, commandError.stdout].filter((value): value is string => typeof value === "string");
   if (commandError.code === "ENOENT") {
     return true;
   }
 
-  return haystack.some((value) =>
-    /\b(command not found|not found|missing script)\b/i.test(value) ||
-    /\bexitCode=127\b/i.test(value),
-  );
+  const markers = configuredCommandMarkers(command);
+  const lines = [error.message, commandError.stderr, commandError.stdout]
+    .filter((value): value is string => typeof value === "string")
+    .flatMap((value) => value.split(/\r?\n/));
+
+  return lines.some((line) => {
+    if (!lineMentionsConfiguredCommand(line, markers)) {
+      return false;
+    }
+
+    return /\b(command not found|not found|missing script)\b/i.test(line);
+  });
 }
 
 function localCiFailureSignature(failureClass: Exclude<LocalCiFailureClass, "unset_contract">): string {
   return `local-ci-gate-${failureClass}`;
 }
 
-function classifyLocalCiFailure(error: unknown): Exclude<LocalCiFailureClass, "unset_contract"> {
-  return isMissingCommandError(error) ? "missing_command" : "non_zero_exit";
+function classifyLocalCiFailure(error: unknown, command: string): Exclude<LocalCiFailureClass, "unset_contract"> {
+  return isMissingCommandError(error, command) ? "missing_command" : "non_zero_exit";
 }
 
 function remediationTargetForFailureClass(failureClass: LocalCiFailureClass): LocalCiRemediationTarget {
@@ -173,7 +224,7 @@ export async function runLocalCiGate(args: {
       },
     };
   } catch (error) {
-    const failureClass = classifyLocalCiFailure(error);
+    const failureClass = classifyLocalCiFailure(error, command);
     const summary = buildSummary({ failureClass, gateLabel: args.gateLabel, passed: false });
     return {
       ok: false,
