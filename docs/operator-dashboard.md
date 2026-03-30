@@ -88,6 +88,12 @@ Beginner rule of thumb:
 - if `Doctor` shows `doctor_check name=github_auth status=fail`, `doctor_check name=codex_cli status=fail`, or `doctor_check name=state_file status=fail`, fix the host or config
 - if `Doctor` shows `doctor_warning kind=config ...`, fix the supervisor config rather than the issue body
 
+Read the local CI posture the same way:
+
+- `No repo-owned local CI contract is configured.` No canonical repo-owned local gate is active, so local CI is not blocking PR publication yet.
+- `Repo-owned local CI candidate exists but localCiCommand is unset.` The repo already defines a likely entrypoint, but codex-supervisor will not run it until `localCiCommand` is configured. This warning is advisory only.
+- `Repo-owned local CI contract is configured.` The configured command is now the active fail-closed gate. When configured local CI fails, PR publication stays blocked and ready-for-review promotion stays blocked until the repo-owned command passes again.
+
 ## Current safe command surface
 
 The dashboard currently exposes only the same narrow safe commands that the CLI exposes:
@@ -144,6 +150,14 @@ Practical split:
 1. If `Issue details` is red, repair the issue first.
 2. If `Issue details` is clean but `Doctor` is red or warns, repair host/config/state next.
 3. If both look clean and selection still surprises you, inspect `Status` or run `explain <issue-number>`.
+
+In short: `Issue details` tells you when to fix the issue first, and `Doctor` tells you when to repair host/config/state next.
+
+Use that same split when local CI is involved:
+
+- If `Issue details` is red because `issue-lint` reports missing sections or malformed metadata, fix the GitHub issue body first.
+- If `Issue details` is clean but `Doctor` or setup/readiness shows `Repo-owned local CI candidate exists but localCiCommand is unset.`, decide whether to adopt the repo script by updating supervisor config; this is not an issue-authoring failure.
+- If `Issue details` is clean and the configured local CI gate fails, repair the repo or host until the configured command passes again.
 
 ## Browser smoke suite
 

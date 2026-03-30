@@ -113,6 +113,37 @@ test("getting-started defines the repo-owned local CI contract for pre-PR verifi
   assert.match(content, /ready-for-review promotion stays blocked/i);
 });
 
+test("operator-facing docs explain steady-state local CI posture and remediation flow", async () => {
+  const [gettingStarted, operatorDashboard, configuration] = await Promise.all([
+    readGettingStarted(),
+    fs.readFile(path.join(process.cwd(), "docs", "operator-dashboard.md"), "utf8"),
+    fs.readFile(path.join(process.cwd(), "docs", "configuration.md"), "utf8"),
+  ]);
+
+  for (const content of [gettingStarted, operatorDashboard, configuration]) {
+    assert.match(content, /No repo-owned local CI contract is configured\./);
+    assert.match(
+      content,
+      /Repo-owned local CI candidate exists but localCiCommand is unset\./,
+    );
+    assert.match(content, /This warning is advisory only/i);
+    assert.match(content, /Repo-owned local CI contract is configured\./);
+    assert.match(content, /when configured local CI fails/i);
+    assert.match(content, /PR publication stays blocked/i);
+  }
+
+  assert.match(gettingStarted, /fix the GitHub issue body/i);
+  assert.match(gettingStarted, /fix GitHub auth on the host/i);
+  assert.match(gettingStarted, /fix the supervisor config rather than the issue body/i);
+
+  assert.match(operatorDashboard, /Issue details.*fix the issue first/si);
+  assert.match(operatorDashboard, /Doctor.*repair host\/config\/state next/si);
+
+  assert.match(configuration, /repo script candidate/i);
+  assert.match(configuration, /codex-supervisor will not run it until localCiCommand is configured/i);
+  assert.match(configuration, /preserve backward compatibility by not inventing one/i);
+});
+
 test("getting-started points operators to doctor for the effective orphan cleanup policy", async () => {
   const content = await readGettingStarted();
 

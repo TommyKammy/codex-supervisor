@@ -116,6 +116,9 @@ Repository-owned local CI policy:
 - the repo is the source of truth for the command contents; the supervisor should only run the configured entrypoint and observe its exit status
 - exit code `0` means the repo-declared local verification passed; any non-zero exit code means the repo-declared local verification failed
 - if no local CI contract is configured, preserve backward compatibility by not inventing one from workflow YAML or changed-file heuristics
+- `No repo-owned local CI contract is configured.` means no canonical repo-owned local gate is active.
+- `Repo-owned local CI candidate exists but localCiCommand is unset.` means setup/readiness found a repo script candidate. The source is `repo script candidate`. codex-supervisor will not run it until localCiCommand is configured. This warning is advisory only.
+- `Repo-owned local CI contract is configured.` means the configured command is active and fail-closed. When configured local CI fails, PR publication stays blocked until the command passes again.
 
 Workspace cleanup:
 
