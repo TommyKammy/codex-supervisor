@@ -417,7 +417,7 @@ test("prepareIssueExecutionContext blocks PR publication when configured local C
 
   assert.equal(
     result,
-    "Issue #91 blocked: Configured local CI command failed before opening a pull request.",
+    "Issue #91 blocked: Configured local CI command failed before opening a pull request. Remediation target: repo-owned command.",
   );
   assert.equal(createPullRequestCalls, 0);
   assert.equal(pushBranchCalls, 0);
@@ -506,6 +506,111 @@ test("runOnce reclaims a stale stabilizing issue without carrying mismatched tra
   assert.equal(record.last_codex_summary, "Stale summary mentioning PR #527 from another issue.");
   assert.equal(resolveCalls, 2);
   assert.deepEqual(resolvedPrNumbers, [527, null]);
+});
+
+test("runOnce clears stale failed tracked PR recovery on the same head before continuing the cycle", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 91;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: issueNumber,
+        state: "failed",
+        branch,
+        pr_number: 191,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        last_head_sha: "head-191",
+        attempt_count: 3,
+        implementation_attempt_count: 1,
+        repair_attempt_count: 2,
+        last_error: "Stopped after repeated repair attempts.",
+        last_failure_kind: "codex_failed",
+        last_failure_context: {
+          category: "codex",
+          summary: "Repair budget exhausted while waiting for PR recovery.",
+          signature: "repair-budget-exhausted",
+          command: null,
+          details: ["attempts=3/3"],
+          url: null,
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "repair-budget-exhausted",
+        repeated_failure_signature_count: 3,
+      }),
+    ],
+  });
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Recover stale failed tracked PR state through runOnce",
+    body: executionReadyBody("Recover stale failed tracked PR state through runOnce."),
+    updatedAt: "2026-03-13T00:21:00Z",
+    labels: [],
+  });
+  const pr = createPullRequest({
+    number: 191,
+    title: "Recovery implementation",
+    isDraft: true,
+    headRefName: branch,
+    headRefOid: "head-191",
+  });
+
+  let getPullRequestCalls = 0;
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      assert.equal(branchName, branch);
+      assert.equal(prNumber, pr.number);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return [];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return [];
+    },
+    getPullRequestIfExists: async (prNumber: number) => {
+      getPullRequestCalls += 1;
+      assert.equal(prNumber, pr.number);
+      return pr;
+    },
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(message, /Dry run: would invoke Codex for issue #91\./);
+  assert.match(message, /state=draft_pr/);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(persisted.activeIssueNumber, issueNumber);
+  assert.equal(getPullRequestCalls, 2);
+  assert.equal(record.state, "draft_pr");
+  assert.equal(record.last_error, null);
+  assert.equal(record.last_failure_kind, null);
+  assert.equal(record.last_failure_context, null);
+  assert.equal(record.last_failure_signature, null);
+  assert.equal(record.repeated_failure_signature_count, 0);
+  assert.equal(
+    record.last_recovery_reason,
+    "tracked_pr_lifecycle_recovered: resumed issue #91 from failed to draft_pr using fresh tracked PR #191 facts at head head-191",
+  );
+  assert.ok(record.last_recovery_at);
 });
 
 test("runOnce blocks an interrupted active turn before selecting the next runnable issue", async () => {
