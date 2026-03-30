@@ -117,6 +117,7 @@ class FakeElement {
   readonly listeners = new Map<string, Array<(event: unknown) => unknown>>();
 
   parentElement: FakeElement | null = null;
+  hidden = false;
   value = "";
   disabled = false;
   type = "";
@@ -210,9 +211,19 @@ class FakeElement {
 class FakeDocument {
   private readonly elements = new Map<string, FakeElement>();
 
-  constructor(ids: string[]) {
-    for (const id of ids) {
-      this.elements.set(id, new FakeElement("div", id, this));
+  constructor(
+    elements: Array<{
+      tagName: string;
+      id: string;
+      hidden: boolean;
+      disabled: boolean;
+    }>,
+  ) {
+    for (const element of elements) {
+      const fakeElement = new FakeElement(element.tagName, element.id, this);
+      fakeElement.hidden = element.hidden;
+      fakeElement.disabled = element.disabled;
+      this.elements.set(element.id, fakeElement);
     }
   }
 
@@ -507,8 +518,19 @@ function createHtmlHarness(
   } = {},
 ) {
   MockEventSource.instances.length = 0;
-  const ids = Array.from(html.matchAll(/id="([^"]+)"/gu), (match) => match[1]);
-  const document = new FakeDocument(ids);
+  const elementDescriptors = Array.from(
+    html.matchAll(/<([a-z0-9-]+)([^>]*)\sid="([^"]+)"([^>]*)>/giu),
+    (match) => {
+      const attributes = `${match[2]} ${match[4]}`;
+      return {
+        tagName: match[1],
+        id: match[3],
+        hidden: /\bhidden\b/iu.test(attributes),
+        disabled: /\bdisabled\b/iu.test(attributes),
+      };
+    },
+  );
+  const document = new FakeDocument(elementDescriptors);
   const overviewGrid = document.getElementById("overview-grid");
   const detailsGrid = document.getElementById("details-grid");
   if (overviewGrid && detailsGrid) {
@@ -2075,7 +2097,10 @@ test("setup shell highlights a repo-owned local CI candidate when localCiCommand
     /Configured: no.*Command: none.*Source: repo script candidate.*Recommended command: npm run verify:pre-pr.*This repo already defines a repo-owned local CI entrypoint, but codex-supervisor will not run it until localCiCommand is configured.*This warning is advisory only; first-run setup readiness and blocker semantics stay unchanged until you opt in by configuring localCiCommand\./u,
   );
   assert.equal(harness.document.getElementById("setup-input-localCiCommand")?.value, "");
-  assert.ok(harness.document.getElementById("setup-local-ci-adopt-recommended"));
+  const adoptButton = harness.document.getElementById("setup-local-ci-adopt-recommended");
+  assert.ok(adoptButton);
+  assert.equal(adoptButton.hidden, false);
+  assert.equal(adoptButton.disabled, false);
   assert.equal(harness.remainingFetches.length, 0);
 });
 
@@ -2157,6 +2182,8 @@ test("setup shell lets operators adopt the recommended local CI command and save
   assert.ok(localCiInput);
   assert.ok(setupForm);
   assert.ok(saveStatus);
+  assert.equal(adoptButton.hidden, false);
+  assert.equal(adoptButton.disabled, false);
 
   await adoptButton.dispatch("click");
   assert.equal(localCiInput.value, "npm run verify:pre-pr");

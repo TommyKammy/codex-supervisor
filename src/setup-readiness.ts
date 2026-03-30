@@ -308,7 +308,7 @@ function buildBlockers(args: {
   const blockers: SetupReadinessBlocker[] = [];
 
   for (const field of args.fields) {
-    if (field.state === "configured" || !field.required) {
+    if (field.state === "configured" || (!field.required && field.state === "missing")) {
       continue;
     }
 
@@ -369,7 +369,7 @@ function buildBlockers(args: {
 }
 
 function overallStatusFromFields(fields: SetupReadinessField[]): SetupReadinessOverallStatus {
-  if (fields.some((field) => field.required && field.state === "invalid")) {
+  if (fields.some((field) => field.state === "invalid")) {
     return "invalid";
   }
 
