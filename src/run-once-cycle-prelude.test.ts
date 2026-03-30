@@ -1270,6 +1270,86 @@ test("runOnceCyclePrelude rehydrates stale failed tracked PRs during degraded in
   assert.equal(result.state.issues["77"]?.last_failure_signature, null);
 });
 
+test("runOnceCyclePrelude rehydrates an active stale failed tracked PR during degraded inventory refresh", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 77,
+    issues: {
+      "77": createRecord({
+        issue_number: 77,
+        state: "failed",
+        pr_number: 170,
+        last_head_sha: "head-old-170",
+        last_failure_signature: "repair-budget-exhausted",
+        repeated_failure_signature_count: 3,
+        blocked_reason: null,
+        last_error: "Stopped after repeated repair attempts.",
+        last_failure_kind: "codex_failed",
+      }),
+    },
+  };
+  const staleFailedCalls: Array<{
+    loadedState: SupervisorStateFile;
+    loadedIssues: GitHubIssue[];
+  }> = [];
+
+  const result = await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+      save: async () => undefined,
+    },
+    carryoverRecoveryEvents: [],
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => {
+      throw new Error("Failed to parse JSON from gh issue list: Unexpected token ] in JSON at position 1");
+    },
+    reserveRunnableIssueSelection: async () => {
+      throw new Error("unexpected reserveRunnableIssueSelection call");
+    },
+    reconcileTrackedMergedButOpenIssues: async () => [],
+    reconcileMergedIssueClosures: async () => {
+      throw new Error("unexpected reconcileMergedIssueClosures call");
+    },
+    reconcileStaleFailedIssueStates: async (loadedState, loadedIssues) => {
+      staleFailedCalls.push({ loadedState, loadedIssues });
+      loadedState.issues["77"] = {
+        ...loadedState.issues["77"]!,
+        state: "draft_pr",
+        last_error: null,
+        last_failure_kind: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+        last_recovery_reason:
+          "tracked_pr_lifecycle_recovered: resumed issue #77 from failed to draft_pr using fresh tracked PR #170 facts at head head-old-170",
+      };
+    },
+    reconcileRecoverableBlockedIssueStates: async () => {
+      throw new Error("unexpected reconcileRecoverableBlockedIssueStates call");
+    },
+    reconcileParentEpicClosures: async () => {
+      throw new Error("unexpected reconcileParentEpicClosures call");
+    },
+    cleanupExpiredDoneWorkspaces: async () => {
+      throw new Error("unexpected cleanupExpiredDoneWorkspaces call");
+    },
+  });
+
+  assert.ok(!("kind" in result));
+  assert.deepEqual(staleFailedCalls, [
+    {
+      loadedState: state,
+      loadedIssues: [],
+    },
+  ]);
+  assert.equal(result.state.issues["77"]?.state, "draft_pr");
+  assert.equal(result.state.issues["77"]?.last_error, null);
+  assert.equal(result.state.issues["77"]?.last_failure_kind, null);
+  assert.equal(result.state.issues["77"]?.last_failure_context, null);
+  assert.equal(result.state.issues["77"]?.last_failure_signature, null);
+  assert.equal(result.state.issues["77"]?.repeated_failure_signature_count, 0);
+});
+
 test("runOnceCyclePrelude rehydrates blocked tracked PRs during degraded inventory refresh", async () => {
   const state: SupervisorStateFile = {
     activeIssueNumber: null,
