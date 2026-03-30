@@ -673,3 +673,59 @@ test("explain reuses the recorded recovery reason for a recovered tracked PR iss
     /^latest_recovery issue=#101 at=2026-03-19T00:20:00Z reason=tracked_pr_head_advanced detail=resumed issue #101 from blocked to reproducing after tracked PR #191 advanced from head-old-191 to head-new-191$/m,
   );
 });
+
+test("explain does not report local_state failed after tracked PR recovery resumes the issue in draft_pr", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 102;
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Tracked PR recovery clears stale failed explain diagnostics",
+    body: executionReadyBody("Explain should reflect the resumed tracked PR lifecycle state."),
+    createdAt: "2026-03-18T00:00:00Z",
+    updatedAt: "2026-03-18T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "draft_pr",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: 192,
+        last_recovery_reason:
+          "tracked_pr_lifecycle_recovered: resumed issue #102 from failed to draft_pr using fresh tracked PR #192 facts at head head-192",
+        last_recovery_at: "2026-03-19T00:20:00Z",
+        blocked_reason: null,
+        last_error: null,
+        last_failure_kind: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(explanation, /^state=draft_pr$/m);
+  assert.match(explanation, /^runnable=yes$/m);
+  assert.match(
+    explanation,
+    /^latest_recovery issue=#102 at=2026-03-19T00:20:00Z reason=tracked_pr_lifecycle_recovered detail=resumed issue #102 from failed to draft_pr using fresh tracked PR #192 facts at head head-192$/m,
+  );
+  assert.doesNotMatch(explanation, /^reason_\d+=local_state failed$/m);
+  assert.doesNotMatch(explanation, /^reason_\d+=blocked_failure /m);
+});
