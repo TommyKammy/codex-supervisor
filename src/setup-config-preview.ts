@@ -89,6 +89,7 @@ const KNOWN_CONFIG_KEYS = new Set([
   "issueJournalRelativePath",
   "issueJournalMaxChars",
   "issueLabel",
+  "localCiCommand",
   "issueSearch",
   "candidateDiscoveryFetchWindow",
   "skipTitlePrefixes",
@@ -122,6 +123,7 @@ const SETUP_FIELD_LABELS: Record<SetupReadinessFieldKey, string> = {
   stateFile: "State file",
   codexBinary: "Codex binary",
   branchPrefix: "Branch prefix",
+  localCiCommand: "Local CI command",
   reviewProvider: "Review provider",
 };
 const SUPPORTED_REVIEW_PROVIDER_PROFILES: SetupConfigPreviewSupportedProfile[] = [
@@ -231,6 +233,7 @@ function buildFieldChanges(args: {
     "stateFile",
     "codexBinary",
     "branchPrefix",
+    "localCiCommand",
     "reviewProvider",
   ];
 
