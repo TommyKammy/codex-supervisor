@@ -49,6 +49,7 @@ import {
   sameIssueJournalFingerprint,
 } from "./interrupted-turn-marker";
 import { mergeConflictDetected } from "./supervisor/supervisor-status-rendering";
+import { projectTrackedPrLifecycle } from "./tracked-pr-lifecycle-projection";
 
 const OWNER_GUARDED_ACTIVE_STATES = new Set<RunState>([
   "planning",
@@ -1131,11 +1132,7 @@ export async function reconcileStaleFailedIssueStates(
       record: IssueRunRecord,
       pr: NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
     ) => Partial<IssueRunRecord>;
-    syncCopilotReviewTimeoutState: (
-      config: SupervisorConfig,
-      record: IssueRunRecord,
-      pr: NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
-    ) => Partial<IssueRunRecord>;
+    syncCopilotReviewTimeoutState: typeof syncCopilotReviewTimeoutState;
     inferGitHubWaitStep?: (
       config: SupervisorConfig,
       record: IssueRunRecord,
@@ -1183,43 +1180,43 @@ export async function reconcileStaleFailedIssueStates(
 
     const checks = await github.getChecks(pr.number);
     const reviewThreads = await github.getUnresolvedReviewThreads(pr.number);
-    const reviewWaitPatch = deps.syncReviewWaitWindow(record, pr);
-    const copilotReviewRequestObservationPatch = deps.syncCopilotReviewRequestObservation(config, record, pr);
-    const copilotReviewTimeoutPatch = deps.syncCopilotReviewTimeoutState(config, record, pr);
-    const recordForState: IssueRunRecord = {
-      ...record,
-      pr_number: pr.number,
-      last_head_sha: pr.headRefOid,
-      ...reviewWaitPatch,
-      ...copilotReviewRequestObservationPatch,
-      ...copilotReviewTimeoutPatch,
-    };
-    const nextState = deps.inferStateFromPullRequest(config, recordForState, pr, checks, reviewThreads);
+    const projection = projectTrackedPrLifecycle({
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+      inferStateFromPullRequest: deps.inferStateFromPullRequest,
+      blockedReasonForLifecycleState: deps.blockedReasonForLifecycleState,
+      syncReviewWaitWindow: deps.syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation: deps.syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState: deps.syncCopilotReviewTimeoutState,
+    });
+    const nextState = projection.nextState;
     await updateReconciliationProgress?.({
       waitStep:
         nextState === "waiting_ci"
-          ? (deps.inferGitHubWaitStep?.(config, recordForState, pr, checks) ?? null)
+          ? (deps.inferGitHubWaitStep?.(config, projection.recordForState, pr, checks) ?? null)
           : null,
     });
 
-    if (nextState === "failed") {
+    if (projection.shouldSuppressRecovery) {
       continue;
     }
 
     const failureContext =
-      nextState === "blocked" ? deps.inferFailureContext(config, recordForState, pr, checks, reviewThreads) : null;
+      nextState === "blocked"
+        ? deps.inferFailureContext(config, projection.recordForState, pr, checks, reviewThreads)
+        : null;
     const { patch, recoveryEvent } = buildTrackedPrStaleFailureRecovery({
       record,
       pr,
       nextState,
       failureContext,
-      blockedReason:
-        nextState === "blocked"
-          ? deps.blockedReasonForLifecycleState(config, recordForState, pr, checks, reviewThreads)
-          : null,
-      reviewWaitPatch,
-      copilotReviewRequestObservationPatch,
-      copilotReviewTimeoutPatch,
+      blockedReason: projection.nextBlockedReason,
+      reviewWaitPatch: projection.reviewWaitPatch,
+      copilotReviewRequestObservationPatch: projection.copilotReviewRequestObservationPatch,
+      copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
     });
 
     const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
@@ -1381,40 +1378,28 @@ export async function reconcileRecoverableBlockedIssueStates(
 
       const checks = await github.getChecks(trackedPullRequest.number);
       const reviewThreads = await github.getUnresolvedReviewThreads(trackedPullRequest.number);
-      const reviewWaitPatch = syncReviewWaitWindowImpl(record, trackedPullRequest);
-      const copilotReviewRequestObservationPatch = syncCopilotReviewRequestObservationImpl(
+      const projection = projectTrackedPrLifecycle({
         config,
         record,
-        trackedPullRequest,
-      );
-      const copilotReviewTimeoutPatch = syncCopilotReviewTimeoutStateImpl(config, record, trackedPullRequest);
-      const recordForState: IssueRunRecord = {
-        ...record,
-        pr_number: trackedPullRequest.number,
-        last_head_sha: trackedPullRequest.headRefOid,
-        ...reviewWaitPatch,
-        ...copilotReviewRequestObservationPatch,
-        ...copilotReviewTimeoutPatch,
-      };
-      const nextState = inferStateFromPullRequestImpl(
-        config,
-        recordForState,
-        trackedPullRequest,
+        pr: trackedPullRequest,
         checks,
         reviewThreads,
-      );
-      if (nextState === "failed") {
+        inferStateFromPullRequest: inferStateFromPullRequestImpl,
+        blockedReasonForLifecycleState: blockedReasonForLifecycleStateImpl,
+        syncReviewWaitWindow: syncReviewWaitWindowImpl,
+        syncCopilotReviewRequestObservation: syncCopilotReviewRequestObservationImpl,
+        syncCopilotReviewTimeoutState: syncCopilotReviewTimeoutStateImpl,
+      });
+      const nextState = projection.nextState;
+      if (projection.shouldSuppressRecovery) {
         continue;
       }
 
       const failureContext =
         nextState === "blocked"
-          ? inferFailureContextImpl(config, recordForState, trackedPullRequest, checks, reviewThreads)
+          ? inferFailureContextImpl(config, projection.recordForState, trackedPullRequest, checks, reviewThreads)
           : null;
-      const nextBlockedReason =
-        nextState === "blocked"
-          ? blockedReasonForLifecycleStateImpl(config, recordForState, trackedPullRequest, checks, reviewThreads)
-          : null;
+      const nextBlockedReason = projection.nextBlockedReason;
 
       if (nextState === "blocked") {
         const blockedPatch: Partial<IssueRunRecord> = {
@@ -1427,9 +1412,9 @@ export async function reconcileRecoverableBlockedIssueStates(
           blocked_reason: nextBlockedReason,
           pr_number: trackedPullRequest.number,
           last_head_sha: trackedPullRequest.headRefOid,
-          ...reviewWaitPatch,
-          ...copilotReviewRequestObservationPatch,
-          ...copilotReviewTimeoutPatch,
+          ...projection.reviewWaitPatch,
+          ...projection.copilotReviewRequestObservationPatch,
+          ...projection.copilotReviewTimeoutPatch,
         };
         const blockerSemanticsChanged =
           nextBlockedReason !== record.blocked_reason
@@ -1457,9 +1442,9 @@ export async function reconcileRecoverableBlockedIssueStates(
         nextState,
         failureContext,
         blockedReason: nextBlockedReason,
-        reviewWaitPatch,
-        copilotReviewRequestObservationPatch,
-        copilotReviewTimeoutPatch,
+        reviewWaitPatch: projection.reviewWaitPatch,
+        copilotReviewRequestObservationPatch: projection.copilotReviewRequestObservationPatch,
+        copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
       });
       const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
       state.issues[String(record.issue_number)] = updated;
