@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { loadConfig } from "./core/config";
 import {
-  buildTrackedPrStaleFailureRecovery,
+  buildTrackedPrStaleFailureConvergencePatch,
   cleanupExpiredDoneWorkspaces,
   inspectOrphanedWorkspacePruneCandidates,
   pruneOrphanedWorkspacesForOperator,
@@ -14,7 +14,7 @@ import {
 import { type SupervisorStateFile } from "./core/types";
 import { createConfig, createPullRequest, createRecord } from "./turn-execution-test-helpers";
 
-test("buildTrackedPrStaleFailureRecovery marks tracked head advances distinctly from stale lifecycle refreshes", () => {
+test("buildTrackedPrStaleFailureConvergencePatch clears stale failure state when a tracked PR advances heads", () => {
   const record = createRecord({
     issue_number: 366,
     state: "failed",
@@ -29,7 +29,7 @@ test("buildTrackedPrStaleFailureRecovery marks tracked head advances distinctly 
     headRefOid: "head-new-191",
   });
 
-  const { recoveryEvent, patch } = buildTrackedPrStaleFailureRecovery({
+  const patch = buildTrackedPrStaleFailureConvergencePatch({
     record,
     pr,
     nextState: "addressing_review",
@@ -37,10 +37,6 @@ test("buildTrackedPrStaleFailureRecovery marks tracked head advances distinctly 
     blockedReason: null,
   });
 
-  assert.equal(
-    recoveryEvent.reason,
-    "tracked_pr_head_advanced: resumed issue #366 from failed to addressing_review after tracked PR #191 advanced from head-old-191 to head-new-191",
-  );
   assert.deepEqual(patch, {
     state: "addressing_review",
     last_error: null,
@@ -58,7 +54,7 @@ test("buildTrackedPrStaleFailureRecovery marks tracked head advances distinctly 
   });
 });
 
-test("buildTrackedPrStaleFailureRecovery preserves blocked tracked-PR recovery policy at the same head", () => {
+test("buildTrackedPrStaleFailureConvergencePatch preserves blocked tracked-PR recovery policy at the same head", () => {
   const failureContext = {
     category: "review" as const,
     summary: "Manual review is required before the PR can proceed.",
@@ -84,7 +80,7 @@ test("buildTrackedPrStaleFailureRecovery preserves blocked tracked-PR recovery p
     headRefOid: "head-191",
   });
 
-  const { recoveryEvent, patch } = buildTrackedPrStaleFailureRecovery({
+  const patch = buildTrackedPrStaleFailureConvergencePatch({
     record,
     pr,
     nextState: "blocked",
@@ -96,10 +92,6 @@ test("buildTrackedPrStaleFailureRecovery preserves blocked tracked-PR recovery p
     },
   });
 
-  assert.equal(
-    recoveryEvent.reason,
-    "tracked_pr_lifecycle_recovered: resumed issue #366 from failed to blocked using fresh tracked PR #191 facts at head head-191",
-  );
   assert.deepEqual(patch, {
     state: "blocked",
     last_error: failureContext.summary,
