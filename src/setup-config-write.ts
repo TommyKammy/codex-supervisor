@@ -14,6 +14,7 @@ export interface SetupConfigChanges {
   stateFile?: string;
   codexBinary?: string;
   branchPrefix?: string;
+  localCiCommand?: string | null;
   reviewProvider?: SetupConfigPreviewSelectableReviewProviderProfile;
 }
 
@@ -42,6 +43,7 @@ const CONFIGURABLE_FIELDS: SetupReadinessFieldKey[] = [
   "stateFile",
   "codexBinary",
   "branchPrefix",
+  "localCiCommand",
   "reviewProvider",
 ];
 
@@ -87,6 +89,18 @@ function assertReviewProvider(value: unknown): SetupConfigPreviewSelectableRevie
   throw new Error("reviewProvider must be one of none, copilot, codex, or coderabbit.");
 }
 
+function normalizeLocalCiCommand(value: unknown): string | null {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== "string") {
+    throw new Error("localCiCommand must be a string or null.");
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
 function normalizeSetupChanges(changes: unknown): SetupConfigChanges {
   if (!changes || typeof changes !== "object" || Array.isArray(changes)) {
     throw new Error("changes must be an object.");
@@ -119,6 +133,9 @@ function normalizeSetupChanges(changes: unknown): SetupConfigChanges {
   }
   if ("branchPrefix" in raw) {
     normalized.branchPrefix = assertGitRef(raw.branchPrefix, "branchPrefix");
+  }
+  if ("localCiCommand" in raw) {
+    normalized.localCiCommand = normalizeLocalCiCommand(raw.localCiCommand);
   }
   if ("reviewProvider" in raw) {
     normalized.reviewProvider = assertReviewProvider(raw.reviewProvider);
@@ -182,6 +199,13 @@ function applySetupChanges(document: Record<string, unknown>, changes: SetupConf
   if (changes.branchPrefix !== undefined) {
     nextDocument.branchPrefix = changes.branchPrefix;
   }
+  if ("localCiCommand" in changes) {
+    if (changes.localCiCommand === null) {
+      delete nextDocument.localCiCommand;
+    } else {
+      nextDocument.localCiCommand = changes.localCiCommand;
+    }
+  }
   if (changes.reviewProvider !== undefined) {
     nextDocument.reviewBotLogins = [...REVIEW_PROVIDER_LOGIN_MAP[changes.reviewProvider]];
   }
@@ -242,6 +266,8 @@ function nextSemanticFieldValue(field: SetupReadinessFieldKey, changes: SetupCon
       return changes.codexBinary ?? null;
     case "branchPrefix":
       return changes.branchPrefix ?? null;
+    case "localCiCommand":
+      return changes.localCiCommand ?? null;
     case "reviewProvider":
       return changes.reviewProvider ?? null;
   }

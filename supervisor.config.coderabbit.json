@@ -1,6 +1,6 @@
 {
   "repoPath": ".",
-  "repoSlug": "TommyKammy/codex-supervisor",
+  "repoSlug": "REPLACE_ME",
   "defaultBranch": "main",
   "workspaceRoot": "./.local/worktrees",
   "stateBackend": "json",
@@ -64,7 +64,9 @@
   "issueJournalRelativePath": ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
   "issueJournalMaxChars": 6000,
   "issueLabel": "codex",
-  "skipTitlePrefixes": [],
+  "skipTitlePrefixes": [
+    "Epic:"
+  ],
   "branchPrefix": "codex/issue-",
   "pollIntervalSeconds": 120,
   "copilotReviewWaitMinutes": 10,

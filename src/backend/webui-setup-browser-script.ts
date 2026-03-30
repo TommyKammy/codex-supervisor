@@ -36,6 +36,7 @@ export function renderSetupBrowserScript(): string {
         "stateFile",
         "codexBinary",
         "branchPrefix",
+        "localCiCommand",
         "reviewProvider",
       ];
       const reviewProviderOptions = [
@@ -652,6 +653,14 @@ export function renderSetupBrowserScript(): string {
           if (field.key === "reviewProvider") {
             if (rawValue !== "") {
               changes.reviewProvider = rawValue;
+            }
+            continue;
+          }
+          if (field.key === "localCiCommand") {
+            if (rawValue !== "") {
+              changes.localCiCommand = rawValue;
+            } else if (field.value !== null) {
+              changes.localCiCommand = null;
             }
             continue;
           }

@@ -15,6 +15,7 @@ export type SetupReadinessFieldKey =
   | "stateFile"
   | "codexBinary"
   | "branchPrefix"
+  | "localCiCommand"
   | "reviewProvider";
 
 export type SetupReadinessFieldValueType =
@@ -108,6 +109,7 @@ const SETUP_FIELD_DEFINITIONS: Array<{ key: Exclude<SetupReadinessFieldKey, "rev
   { key: "stateFile", label: "State file" },
   { key: "codexBinary", label: "Codex binary" },
   { key: "branchPrefix", label: "Branch prefix" },
+  { key: "localCiCommand", label: "Local CI command" },
 ];
 
 const SETUP_FIELD_METADATA: Record<SetupReadinessFieldKey, SetupReadinessFieldMetadata> = {
@@ -118,6 +120,7 @@ const SETUP_FIELD_METADATA: Record<SetupReadinessFieldKey, SetupReadinessFieldMe
   stateFile: { source: "config", editable: true, valueType: "file_path" },
   codexBinary: { source: "config", editable: true, valueType: "executable_path" },
   branchPrefix: { source: "config", editable: true, valueType: "text" },
+  localCiCommand: { source: "config", editable: true, valueType: "text" },
   reviewProvider: { source: "config", editable: true, valueType: "review_provider" },
 };
 
@@ -153,6 +156,10 @@ function buildFieldMessage(field: SetupReadinessField): string {
     return `${field.label} is configured.`;
   }
 
+  if (!field.required) {
+    return `${field.label} is optional.`;
+  }
+
   if (field.state === "missing") {
     return `${field.label} is required before first-run setup is complete.`;
   }
@@ -182,7 +189,7 @@ function buildConfigFields(args: {
       state,
       value: resolvedConfig !== null ? displayValue(resolvedConfig[key]) : displayValue(rawConfig?.[key]),
       message: "",
-      required: true,
+      required: key !== "localCiCommand",
       metadata: SETUP_FIELD_METADATA[key],
     };
     return {

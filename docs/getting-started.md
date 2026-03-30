@@ -273,6 +273,7 @@ type SetupReadinessFieldKey =
   | "stateFile"
   | "codexBinary"
   | "branchPrefix"
+  | "localCiCommand"
   | "reviewProvider";
 type SetupReadinessFieldValueType =
   | "directory_path"
