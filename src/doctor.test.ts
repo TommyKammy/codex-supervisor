@@ -588,6 +588,73 @@ test("renderDoctorReport surfaces merge-critical recheck cadence visibility", ()
   assert.match(report, /doctor_local_ci configured=true source=config command=npm run ci:local summary=Repo-owned local CI contract is configured\./);
 });
 
+test("renderDoctorReport surfaces advisory local CI posture when a repo-owned candidate exists", () => {
+  const report = renderDoctorReport({
+    overallStatus: "pass",
+    trustDiagnostics: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+      configWarning: null,
+    },
+    checks: [],
+    cadenceDiagnostics: {
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: null,
+      mergeCriticalEffectiveSeconds: 120,
+      mergeCriticalRecheckEnabled: false,
+    },
+    candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
+    candidateDiscoveryWarning: null,
+    localCiContract: {
+      configured: false,
+      command: null,
+      recommendedCommand: "npm run verify:supervisor-pre-pr",
+      source: "repo_script_candidate",
+      summary:
+        "Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: npm run verify:supervisor-pre-pr.",
+    },
+  } as Awaited<ReturnType<typeof diagnoseSupervisorHost>>);
+
+  assert.match(
+    report,
+    /doctor_local_ci configured=false source=repo_script_candidate command=none summary=Repo-owned local CI candidate exists but localCiCommand is unset\. Recommended command: npm run verify:supervisor-pre-pr\./,
+  );
+});
+
+test("renderDoctorReport surfaces absent local CI posture when no repo-owned contract exists", () => {
+  const report = renderDoctorReport({
+    overallStatus: "pass",
+    trustDiagnostics: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+      configWarning: null,
+    },
+    checks: [],
+    cadenceDiagnostics: {
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: null,
+      mergeCriticalEffectiveSeconds: 120,
+      mergeCriticalRecheckEnabled: false,
+    },
+    candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
+    candidateDiscoveryWarning: null,
+    localCiContract: {
+      configured: false,
+      command: null,
+      recommendedCommand: null,
+      source: "config",
+      summary: "No repo-owned local CI contract is configured.",
+    },
+  } as Awaited<ReturnType<typeof diagnoseSupervisorHost>>);
+
+  assert.match(
+    report,
+    /doctor_local_ci configured=false source=config command=none summary=No repo-owned local CI contract is configured\./,
+  );
+});
+
 test("renderDoctorReport omits execution-safety warnings when trust posture does not require one", () => {
   const report = renderDoctorReport({
     overallStatus: "pass",
