@@ -118,6 +118,8 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking
     summary: "Configured local CI command passed before marking PR #116 ready.",
     ran_at: result.record.latest_local_ci_result?.ran_at ?? "",
     head_sha: "head-116",
+    failure_class: null,
+    remediation_target: null,
   });
   assert.equal(readyCalls, 1);
   assert.equal(localCiCalls, 1);
@@ -221,8 +223,11 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion 
   assert.equal(result.record.state, "blocked");
   assert.equal(result.record.blocked_reason, "verification");
   assert.equal(result.record.last_failure_kind, null);
-  assert.equal(result.record.last_failure_signature, "local-ci-gate-failed");
-  assert.match(result.record.last_error ?? "", /Configured local CI command failed before marking PR #116 ready\./);
+  assert.equal(result.record.last_failure_signature, "local-ci-gate-non_zero_exit");
+  assert.match(
+    result.record.last_error ?? "",
+    /Configured local CI command failed before marking PR #116 ready\. Remediation target: repo-owned command\./,
+  );
 });
 
 test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion when workstation-local path hygiene fails", async () => {

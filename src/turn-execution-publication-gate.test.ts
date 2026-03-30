@@ -161,7 +161,7 @@ test("applyCodexTurnPublicationGate blocks draft PR creation when local CI fails
   assert.equal(result.message, "Local CI gate blocked pull request creation for issue #102.");
   assert.equal(result.record.state, "blocked");
   assert.equal(result.record.blocked_reason, "verification");
-  assert.equal(result.record.last_failure_signature, "local-ci-gate-failed");
+  assert.equal(result.record.last_failure_signature, "local-ci-gate-non_zero_exit");
   assert.equal(result.pr, null);
   assert.equal(saveCalls, 1);
   assert.equal(syncJournalCalls, 1);

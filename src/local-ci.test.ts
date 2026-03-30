@@ -2,6 +2,74 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { runLocalCiGate } from "./local-ci";
 
+test("runLocalCiGate reports an unset local CI contract as a non-blocking issue-body remediation", async () => {
+  const result = await runLocalCiGate({
+    config: { localCiCommand: "" },
+    workspacePath: "/tmp/workspaces/issue-102",
+    gateLabel: "before opening a pull request",
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.failureContext, null);
+  assert.deepEqual(result.latestResult, {
+    outcome: "not_configured",
+    summary: "No repo-owned local CI contract is configured before opening a pull request. Remediation target: issue body.",
+    ran_at: result.latestResult?.ran_at ?? "",
+    head_sha: null,
+    failure_class: "unset_contract",
+    remediation_target: "issue_body",
+  });
+});
+
+test("runLocalCiGate classifies missing configured commands as supervisor-config remediation", async () => {
+  const failure = Object.assign(new Error("Command failed: sh -lc +1 args\nexitCode=127\nnpm error Missing script: \"ci:local\""), {
+    stderr: "npm error Missing script: \"ci:local\"",
+  });
+
+  const result = await runLocalCiGate({
+    config: { localCiCommand: "npm run ci:local" },
+    workspacePath: "/tmp/workspaces/issue-102",
+    gateLabel: "before opening a pull request",
+    runLocalCiCommand: async () => {
+      throw failure;
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.failureContext?.signature, "local-ci-gate-missing_command");
+  assert.equal(
+    result.failureContext?.summary,
+    "Configured local CI command is unavailable before opening a pull request. Remediation target: supervisor config.",
+  );
+  assert.equal(result.latestResult?.failure_class, "missing_command");
+  assert.equal(result.latestResult?.remediation_target, "supervisor_config");
+});
+
+test("runLocalCiGate classifies non-zero exits as repo-owned-command remediation", async () => {
+  const failure = Object.assign(new Error("Command failed: sh -lc +1 args\nexitCode=1"), {
+    stdout: "lint summary\n1 file checked",
+    stderr: "tests failed\n1 assertion",
+  });
+
+  const result = await runLocalCiGate({
+    config: { localCiCommand: "npm run ci:local" },
+    workspacePath: "/tmp/workspaces/issue-102",
+    gateLabel: "before marking PR #116 ready",
+    runLocalCiCommand: async () => {
+      throw failure;
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.failureContext?.signature, "local-ci-gate-non_zero_exit");
+  assert.equal(
+    result.failureContext?.summary,
+    "Configured local CI command failed before marking PR #116 ready. Remediation target: repo-owned command.",
+  );
+  assert.equal(result.latestResult?.failure_class, "non_zero_exit");
+  assert.equal(result.latestResult?.remediation_target, "repo_owned_command");
+});
+
 test("runLocalCiGate preserves stdout and stderr details from command failures", async () => {
   const failure = Object.assign(new Error("Command failed: sh -lc +1 args\nexitCode=1"), {
     stdout: "lint summary\n1 file checked",
@@ -18,6 +86,7 @@ test("runLocalCiGate preserves stdout and stderr details from command failures",
   });
 
   assert.equal(result.ok, false);
+  assert.equal(result.failureContext?.signature, "local-ci-gate-non_zero_exit");
   assert.deepEqual(result.failureContext?.details, [
     "Command failed: sh -lc +1 args\nexitCode=1",
     "stdout:\nlint summary\n1 file checked",

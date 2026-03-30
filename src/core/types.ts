@@ -85,11 +85,17 @@ export interface LocalCiContractSummary {
   summary: string;
 }
 
+export type LocalCiResultOutcome = "passed" | "failed" | "not_configured";
+export type LocalCiFailureClass = "missing_command" | "non_zero_exit" | "unset_contract";
+export type LocalCiRemediationTarget = "issue_body" | "repo_owned_command" | "supervisor_config";
+
 export interface LatestLocalCiResult {
-  outcome: "passed" | "failed";
+  outcome: LocalCiResultOutcome;
   summary: string;
   ran_at: string;
   head_sha: string | null;
+  failure_class: LocalCiFailureClass | null;
+  remediation_target: LocalCiRemediationTarget | null;
 }
 
 export interface SupervisorConfig {

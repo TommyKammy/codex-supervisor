@@ -78,6 +78,12 @@ export interface SupervisorLocalCiStatusDto {
   headSha: string | null;
   headStatus: "current" | "stale" | "unknown";
   context: "blocking" | "warning" | "notice";
+  failureClass: LatestLocalCiResult["failure_class"];
+  remediationTarget: LatestLocalCiResult["remediation_target"];
+}
+
+function isLocalCiBlockingFailureSignature(signature: string | null): boolean {
+  return signature === "local-ci-gate-missing_command" || signature === "local-ci-gate-non_zero_exit";
 }
 
 function retrySummaryHasLoopRisk(context: Pick<SupervisorIssueActivityContextDto, "retryContext" | "repeatedRecovery">): boolean {
@@ -164,6 +170,8 @@ export function formatLocalCiStatusLine(
     "local_ci_result",
     `outcome=${localCiStatus.outcome}`,
     `context=${localCiStatus.context}`,
+    `failure_class=${localCiStatus.failureClass ?? "none"}`,
+    `remediation_target=${localCiStatus.remediationTarget ?? "none"}`,
     `head=${localCiStatus.headStatus}`,
     `head_sha=${localCiStatus.headSha ?? "none"}`,
     `ran_at=${localCiStatus.ranAt}`,
@@ -210,7 +218,9 @@ function buildLocalCiStatusDto(
   const context =
     result.outcome === "passed"
       ? "notice"
-      : record.blocked_reason === "verification" && record.last_failure_signature === "local-ci-gate-failed"
+      : result.outcome === "not_configured"
+        ? "notice"
+        : record.blocked_reason === "verification" && isLocalCiBlockingFailureSignature(record.last_failure_signature)
         ? "blocking"
         : "warning";
 
@@ -221,6 +231,8 @@ function buildLocalCiStatusDto(
     headSha: result.head_sha,
     headStatus,
     context,
+    failureClass: result.failure_class,
+    remediationTarget: result.remediation_target,
   };
 }
 

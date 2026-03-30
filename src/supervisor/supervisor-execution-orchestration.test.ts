@@ -423,7 +423,7 @@ test("prepareIssueExecutionContext blocks PR publication when configured local C
   assert.equal(pushBranchCalls, 0);
   assert.equal(state.issues[String(issueNumber)]?.state, "blocked");
   assert.equal(state.issues[String(issueNumber)]?.blocked_reason, "verification");
-  assert.equal(state.issues[String(issueNumber)]?.last_failure_signature, "local-ci-gate-failed");
+  assert.equal(state.issues[String(issueNumber)]?.last_failure_signature, "local-ci-gate-non_zero_exit");
   assert.match(state.issues[String(issueNumber)]?.last_failure_context?.details[0] ?? "", /local ci failed/);
 });
 

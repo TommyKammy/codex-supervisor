@@ -288,13 +288,13 @@ test("handlePostTurnMergeAndCompletion keeps blocked tracked-PR state when retai
         last_failure_context: {
           category: "blocked",
           summary: "Configured local CI command failed before marking PR #219 ready.",
-          signature: "local-ci-gate-failed",
+          signature: "local-ci-gate-non_zero_exit",
           command: null,
           details: [],
           url: null,
           updated_at: "2026-03-13T00:22:00Z",
         },
-        last_failure_signature: "local-ci-gate-failed",
+        last_failure_signature: "local-ci-gate-non_zero_exit",
         repeated_failure_signature_count: 1,
         last_recovery_reason:
           "tracked_pr_lifecycle_recovered: resumed issue #119 from failed to blocked using fresh tracked PR #219 facts at head head-219",

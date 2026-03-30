@@ -959,6 +959,8 @@ test("statusReport exposes typed operator activity context for the active issue"
           summary: "Configured local CI command failed before marking PR #58 ready.",
           ran_at: "2026-03-22T00:10:00Z",
           head_sha: "head-new-58",
+          failure_class: "non_zero_exit",
+          remediation_target: "repo_owned_command",
         },
         review_wait_started_at: "2099-01-01T00:00:30.000Z",
         review_wait_head_sha: "head-new-58",
@@ -1032,6 +1034,8 @@ Expose typed operator-facing issue detail fields.
       headSha: "head-new-58",
       headStatus: "current",
       context: "warning",
+      failureClass: "non_zero_exit",
+      remediationTarget: "repo_owned_command",
     },
     latestRecovery: {
       issueNumber,
