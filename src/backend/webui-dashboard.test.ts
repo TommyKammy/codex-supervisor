@@ -2012,6 +2012,57 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
   assert.equal(harness.remainingFetches.length, 0);
 });
 
+test("setup shell highlights a repo-owned local CI candidate when localCiCommand is unset", async () => {
+  const harness = createSetupHarness([
+    {
+      path: "/api/setup-readiness",
+      response: jsonResponse({
+        kind: "setup_readiness",
+        managedRestart: unavailableManagedRestart,
+        ready: true,
+        overallStatus: "configured",
+        configPath: "/tmp/supervisor.config.json",
+        fields: [],
+        blockers: [],
+        hostReadiness: { overallStatus: "pass", checks: [] },
+        providerPosture: {
+          profile: "codex",
+          provider: "codex",
+          reviewers: ["chatgpt-codex-connector"],
+          signalSource: "review_bot_logins",
+          configured: true,
+          summary: "Codex Connector is configured.",
+        },
+        trustPosture: {
+          trustMode: "trusted_repo_and_authors",
+          executionSafetyMode: "unsandboxed_autonomous",
+          warning: null,
+          summary: "Trusted inputs with unsandboxed autonomous execution.",
+        },
+        localCiContract: {
+          configured: false,
+          command: null,
+          recommendedCommand: "npm run verify:pre-pr",
+          source: "repo_script_candidate",
+          summary:
+            "Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: npm run verify:pre-pr.",
+        },
+      }),
+    },
+  ]);
+  await harness.flush();
+
+  assert.match(
+    harness.document.getElementById("setup-local-ci-summary")?.textContent ?? "",
+    /Repo-owned local CI candidate exists but localCiCommand is unset\. Recommended command: npm run verify:pre-pr\./u,
+  );
+  assert.match(
+    harness.document.getElementById("setup-local-ci-details")?.textContent ?? "",
+    /Configured: no.*Command: none.*Source: repo script candidate.*Recommended command: npm run verify:pre-pr.*This repo already defines a repo-owned local CI entrypoint, but codex-supervisor will not run it until localCiCommand is configured.*This warning is advisory only; first-run setup readiness and blocker semantics stay unchanged until you opt in by configuring localCiCommand\./u,
+  );
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
 test("setup shell saves through the narrow setup config API and revalidates readiness after the write", async () => {
   const setupConfigResponse = createDeferred<MockResponseLike>();
   const setupReadinessRefreshResponse = createDeferred<MockResponseLike>();

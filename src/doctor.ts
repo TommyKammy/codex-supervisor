@@ -620,7 +620,7 @@ export async function diagnoseBootstrapReadiness(
 }
 
 export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
-  const localCiContract = diagnostics.localCiContract ?? summarizeLocalCiContract({ localCiCommand: undefined });
+  const localCiContract = diagnostics.localCiContract ?? summarizeLocalCiContract({ localCiCommand: undefined, repoPath: undefined });
   const mergeCriticalRecheckSeconds =
     diagnostics.cadenceDiagnostics.mergeCriticalRecheckSeconds === null
       ? "disabled"

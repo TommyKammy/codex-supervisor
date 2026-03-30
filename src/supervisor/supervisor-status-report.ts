@@ -85,6 +85,7 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
   const localCiContract = dto.localCiContract ?? {
     configured: false,
     command: null,
+    recommendedCommand: null,
     source: "config" as const,
     summary: "No repo-owned local CI contract is configured.",
   };

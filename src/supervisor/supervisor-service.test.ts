@@ -184,6 +184,7 @@ test("createSupervisorService exposes a dedicated typed setup readiness query", 
     localCiContract: {
       configured: false,
       command: null,
+      recommendedCommand: null,
       source: "config",
       summary: "No repo-owned local CI contract is configured.",
     },
@@ -210,6 +211,7 @@ test("createSupervisorService preserves typed operator observability fields on s
     localCiContract: {
       configured: true,
       command: "npm run ci:local",
+      recommendedCommand: null,
       source: "config",
       summary: "Repo-owned local CI contract is configured.",
     },

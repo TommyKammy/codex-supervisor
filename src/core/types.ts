@@ -80,7 +80,8 @@ export interface CandidateDiscoveryDiagnostics {
 export interface LocalCiContractSummary {
   configured: boolean;
   command: string | null;
-  source: "config";
+  recommendedCommand: string | null;
+  source: "config" | "repo_script_candidate";
   summary: string;
 }
 

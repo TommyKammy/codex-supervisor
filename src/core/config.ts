@@ -23,6 +23,7 @@ const DEFAULT_CONFIG_FILE = "supervisor.config.json";
 export const DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW = 100;
 export const LEGACY_SHARED_ISSUE_JOURNAL_RELATIVE_PATH = ".codex-supervisor/issue-journal.md";
 export const PREFERRED_ISSUE_JOURNAL_RELATIVE_PATH = ".codex-supervisor/issues/{issueNumber}/issue-journal.md";
+const LOCAL_CI_SCRIPT_CANDIDATES = ["verify:supervisor-pre-pr", "verify:pre-pr", "ci:local"] as const;
 const REQUIRED_STRING_CONFIG_FIELDS = [
   "repoPath",
   "repoSlug",
@@ -285,22 +286,74 @@ export function summarizeCadenceDiagnostics(
 }
 
 export function summarizeLocalCiContract(
-  config: Pick<SupervisorConfig, "localCiCommand">,
+  config: Pick<SupervisorConfig, "localCiCommand"> & { repoPath?: string },
 ): LocalCiContractSummary {
   const command =
     typeof config.localCiCommand === "string" && config.localCiCommand.trim() !== ""
       ? config.localCiCommand.trim()
       : null;
+  const recommendedCommand = findRepoOwnedLocalCiCandidate(config.repoPath);
+
+  if (command !== null) {
+    return {
+      configured: true,
+      command,
+      recommendedCommand: null,
+      source: "config",
+      summary: "Repo-owned local CI contract is configured.",
+    };
+  }
+
+  if (recommendedCommand !== null) {
+    return {
+      configured: false,
+      command: null,
+      recommendedCommand,
+      source: "repo_script_candidate",
+      summary: `Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: ${recommendedCommand}.`,
+    };
+  }
 
   return {
-    configured: command !== null,
-    command,
+    configured: false,
+    command: null,
+    recommendedCommand: null,
     source: "config",
-    summary:
-      command === null
-        ? "No repo-owned local CI contract is configured."
-        : "Repo-owned local CI contract is configured.",
+    summary: "No repo-owned local CI contract is configured.",
   };
+}
+
+function findRepoOwnedLocalCiCandidate(repoPath: string | undefined): string | null {
+  if (typeof repoPath !== "string" || repoPath.trim() === "") {
+    return null;
+  }
+
+  const packageJsonPath = path.join(repoPath, "package.json");
+  if (!fs.existsSync(packageJsonPath)) {
+    return null;
+  }
+
+  try {
+    const packageJson = parseJson<Record<string, unknown>>(fs.readFileSync(packageJsonPath, "utf8"), packageJsonPath);
+    const scripts =
+      packageJson.scripts && typeof packageJson.scripts === "object" && !Array.isArray(packageJson.scripts)
+        ? packageJson.scripts as Record<string, unknown>
+        : null;
+    if (scripts === null) {
+      return null;
+    }
+
+    for (const scriptName of LOCAL_CI_SCRIPT_CANDIDATES) {
+      const scriptCommand = scripts[scriptName];
+      if (typeof scriptCommand === "string" && scriptCommand.trim() !== "") {
+        return `npm run ${scriptName}`;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 export function loadConfigSummary(configPath?: string): ConfigLoadSummary {
