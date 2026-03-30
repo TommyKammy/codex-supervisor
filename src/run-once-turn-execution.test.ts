@@ -491,8 +491,11 @@ test("executeCodexTurnPhase blocks draft PR creation when configured local CI fa
   assert.equal(syncJournalCalls, 1);
   assert.equal(state.issues["102"]?.state, "blocked");
   assert.equal(state.issues["102"]?.blocked_reason, "verification");
-  assert.equal(state.issues["102"]?.last_failure_signature, "local-ci-gate-failed");
-  assert.match(state.issues["102"]?.last_error ?? "", /Configured local CI command failed before opening a pull request\./);
+  assert.equal(state.issues["102"]?.last_failure_signature, "local-ci-gate-non_zero_exit");
+  assert.match(
+    state.issues["102"]?.last_error ?? "",
+    /Configured local CI command failed before opening a pull request\. Remediation target: repo-owned command\./,
+  );
 });
 
 test("executeCodexTurnPhase blocks branch publication when workstation-local path hygiene fails", async () => {
@@ -1214,7 +1217,7 @@ test("executeCodexTurnPhase keeps local-CI blocked outcomes isolated from execut
     assert.equal(recoverCalls, 0, String(recoveredError));
     assert.equal(state.issues["102"]?.state, "blocked");
     assert.equal(state.issues["102"]?.blocked_reason, "verification");
-    assert.equal(state.issues["102"]?.last_failure_signature, "local-ci-gate-failed");
+    assert.equal(state.issues["102"]?.last_failure_signature, "local-ci-gate-non_zero_exit");
     assert.equal(consoleWarnings.length, 1);
     assert.match(
       String(consoleWarnings[0]?.[0] ?? ""),

@@ -100,6 +100,8 @@ function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
       summary: "Configured local CI command passed before opening a pull request.",
       ran_at: "2026-03-16T10:02:30Z",
       head_sha: "head-407",
+      failure_class: null,
+      remediation_target: null,
     },
     external_review_head_sha: null,
     external_review_misses_path: null,
@@ -235,6 +237,8 @@ test("buildSupervisorCycleDecisionSnapshot keeps the decision inputs narrow and 
     summary: "Configured local CI command passed before opening a pull request.",
     ran_at: "2026-03-16T10:02:30Z",
     head_sha: "head-407",
+    failure_class: null,
+    remediation_target: null,
   });
   assert.equal(snapshot.decision.nextState, "addressing_review");
   assert.equal(snapshot.decision.shouldRunCodex, true);
@@ -247,6 +251,8 @@ test("buildSupervisorCycleDecisionSnapshot keeps the decision inputs narrow and 
     headSha: "head-407",
     headStatus: "current",
     context: "notice",
+    failureClass: null,
+    remediationTarget: null,
   });
 });
 
@@ -277,6 +283,8 @@ test("writeSupervisorCycleDecisionSnapshot serializes one cycle into the workspa
     summary: "Configured local CI command passed before opening a pull request.",
     ran_at: "2026-03-16T10:02:30Z",
     head_sha: "head-407",
+    failure_class: null,
+    remediation_target: null,
   });
   assert.equal(persisted.github.pullRequest?.number, 88);
   assert.equal(persisted.decision.nextState, "addressing_review");

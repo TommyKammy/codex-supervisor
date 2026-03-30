@@ -194,6 +194,8 @@ test("buildIssueExplainDto exposes typed operator activity context", async () =>
           summary: "Configured local CI command failed before marking PR #605 ready.",
           ran_at: "2026-03-22T00:10:00Z",
           head_sha: "head-new-605",
+          failure_class: "non_zero_exit",
+          remediation_target: "repo_owned_command",
         },
         blocked_reason: null,
         last_error: null,
@@ -249,6 +251,8 @@ test("buildIssueExplainDto exposes typed operator activity context", async () =>
       headSha: "head-new-605",
       headStatus: "current",
       context: "warning",
+      failureClass: "non_zero_exit",
+      remediationTarget: "repo_owned_command",
     },
     latestRecovery: {
       issueNumber,
