@@ -753,6 +753,9 @@ ${renderSetupNavigation()}
                   </div>
                   <div class="panel-body">
                     <p id="setup-local-ci-summary" class="hint">Loading typed local CI contract…</p>
+                    <div id="setup-local-ci-actions" class="actions">
+                      <button id="setup-local-ci-adopt-recommended" class="button" type="button" hidden disabled>Use recommended command</button>
+                    </div>
                     <ul id="setup-local-ci-details" class="list list--plain checklist-grid">
                       <li>Loading local CI contract details…</li>
                     </ul>

@@ -335,7 +335,7 @@ test("diagnoseSetupReadiness returns typed first-run setup state distinct from d
       ["stateFile", "configured", "config", true, "file_path"],
       ["codexBinary", "configured", "config", true, "executable_path"],
       ["branchPrefix", "configured", "config", true, "text"],
-      ["localCiCommand", "configured", "config", true, "text"],
+      ["localCiCommand", "missing", "config", true, "text"],
       ["reviewProvider", "missing", "config", true, "review_provider"],
     ],
   );

@@ -90,6 +90,7 @@ const KNOWN_CONFIG_KEYS = new Set([
   "issueJournalRelativePath",
   "issueJournalMaxChars",
   "issueLabel",
+  "localCiCommand",
   "issueSearch",
   "candidateDiscoveryFetchWindow",
   "skipTitlePrefixes",
