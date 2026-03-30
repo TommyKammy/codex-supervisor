@@ -351,6 +351,12 @@ Minimum expectations for that contract:
 
 Backward compatibility stays simple: if no local CI contract is configured, `codex-supervisor` keeps the existing behavior. It does not invent a fallback verification command, and it continues to rely on the issue's `## Verification` guidance plus normal operator/repo workflow instead of pretending a canonical local CI entrypoint exists when the repo has not declared one.
 
+Steady-state posture to read after setup:
+
+- `No repo-owned local CI contract is configured.` That means no canonical repo-owned pre-PR command is active, so PR publication does not depend on `localCiCommand` yet.
+- `Repo-owned local CI candidate exists but localCiCommand is unset.` That means the repo already exposes a likely script candidate, but the supervisor has not opted into it yet. This warning is advisory only. Setup readiness stays unchanged until you configure `localCiCommand`, and codex-supervisor will not run the candidate just because it exists.
+- `Repo-owned local CI contract is configured.` That means the configured command is the active fail-closed gate before PR publication or ready-for-review promotion.
+
 Operator impact: when configured local CI fails, PR publication stays blocked and ready-for-review promotion stays blocked until the repo-owned command passes again. Setup/readiness and WebUI guidance should make that visible so operators can tell the difference between a missing contract and a failing configured contract.
 
 Explicit non-goal: `codex-supervisor` does not infer or reconstruct workflow logic from GitHub Actions YAML, other workflow YAML, or changed-file heuristics as a substitute for this contract. If a repo wants a canonical pre-PR local verification command, the repo must expose that command directly.
