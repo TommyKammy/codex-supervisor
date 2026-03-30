@@ -394,6 +394,6 @@ export async function diagnoseSetupReadiness(
     hostReadiness,
     providerPosture: buildProviderPosture(configSummary.config),
     trustPosture: buildTrustPosture(configSummary.config),
-    localCiContract: summarizeLocalCiContract(configSummary.config ?? { localCiCommand: undefined }),
+    localCiContract: summarizeLocalCiContract(configSummary.config ?? { localCiCommand: undefined, repoPath: undefined }),
   };
 }
