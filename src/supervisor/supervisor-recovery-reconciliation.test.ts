@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { GitHubIssue, GitHubPullRequest, IssueRunRecord, SupervisorStateFile } from "../core/types";
 import {
+  buildTrackedPrStaleFailureConvergencePatch,
   formatRecoveryLog,
   requeueIssueForOperator,
   reconcileMergedIssueClosures,
@@ -2745,6 +2746,82 @@ test("reconcileStaleFailedIssueStates rehydrates stale failed tracked PRs from d
   );
   assert.ok(updated.last_recovery_at);
   assert.equal(saveCalls, 1);
+});
+
+test("buildTrackedPrStaleFailureConvergencePatch isolates persisted tracked PR recovery state from recovery-event formatting", () => {
+  const failureContext = {
+    category: "review" as const,
+    summary: "Verification still requires a human decision before the tracked PR can continue.",
+    signature: "verification:human-decision",
+    command: "npm test",
+    details: ["suite=supervisor"],
+    url: null,
+    updated_at: "2026-03-13T00:25:00Z",
+  };
+  const record = createRecord({
+    issue_number: 366,
+    state: "failed",
+    pr_number: 191,
+    last_head_sha: "head-190",
+    last_error: "Stopped after repeated test failures.",
+    last_failure_kind: "codex_failed",
+    last_failure_context: {
+      category: "codex",
+      summary: "Repair budget exhausted while waiting for PR recovery.",
+      signature: "repair-budget-exhausted",
+      command: null,
+      details: ["attempts=3/3"],
+      url: null,
+      updated_at: "2026-03-13T00:20:00Z",
+    },
+    last_blocker_signature: "review:old",
+    last_failure_signature: "verification:human-decision",
+    repeated_failure_signature_count: 2,
+    repeated_blocker_count: 3,
+    timeout_retry_count: 2,
+    blocked_verification_retry_count: 1,
+  });
+
+  const patch = buildTrackedPrStaleFailureConvergencePatch({
+    record,
+    pr: {
+      number: 191,
+      headRefOid: "head-191",
+    },
+    nextState: "blocked",
+    failureContext,
+    blockedReason: "verification",
+    reviewWaitPatch: {
+      review_wait_started_at: "2026-03-13T00:24:00Z",
+      review_wait_head_sha: "head-191",
+    },
+    copilotReviewRequestObservationPatch: {
+      copilot_review_requested_observed_at: "2026-03-13T00:24:30Z",
+    },
+    copilotReviewTimeoutPatch: {
+      copilot_review_timed_out_at: null,
+    },
+  });
+
+  assert.deepEqual(patch, {
+    state: "blocked",
+    last_error: failureContext.summary,
+    last_failure_kind: null,
+    last_failure_context: failureContext,
+    last_blocker_signature: null,
+    last_failure_signature: failureContext.signature,
+    repeated_failure_signature_count: 3,
+    blocked_reason: "verification",
+    repeated_blocker_count: 0,
+    timeout_retry_count: 0,
+    blocked_verification_retry_count: 0,
+    pr_number: 191,
+    last_head_sha: "head-191",
+    review_wait_started_at: "2026-03-13T00:24:00Z",
+    review_wait_head_sha: "head-191",
+    copilot_review_requested_observed_at: "2026-03-13T00:24:30Z",
+    copilot_review_timed_out_at: null,
+  });
 });
 
 test("reconcileStaleFailedIssueStates reclassifies stale failed tracked PRs to blocked manual_review state", async () => {
