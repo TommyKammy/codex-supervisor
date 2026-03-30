@@ -26,7 +26,9 @@ export function renderSetupBrowserScript(): string {
         trustPosture: document.getElementById("setup-trust-posture"),
         trustDetails: document.getElementById("setup-trust-details"),
         localCiSummary: document.getElementById("setup-local-ci-summary"),
+        localCiActions: document.getElementById("setup-local-ci-actions"),
         localCiDetails: document.getElementById("setup-local-ci-details"),
+        localCiAdoptRecommended: document.getElementById("setup-local-ci-adopt-recommended"),
       };
       const editableFieldOrder = [
         "repoPath",
@@ -36,6 +38,7 @@ export function renderSetupBrowserScript(): string {
         "stateFile",
         "codexBinary",
         "branchPrefix",
+        "localCiCommand",
         "reviewProvider",
       ];
       const reviewProviderOptions = [
@@ -353,6 +356,12 @@ export function renderSetupBrowserScript(): string {
         if (elements.saveButton) {
           elements.saveButton.disabled = disabled;
         }
+        if (elements.localCiAdoptRecommended) {
+          elements.localCiAdoptRecommended.disabled =
+            disabled ||
+            elements.localCiAdoptRecommended.hidden ||
+            !document.getElementById("setup-input-localCiCommand");
+        }
         syncRestartButton();
         for (const field of editableFields(currentReport || {})) {
           const input = document.getElementById("setup-input-" + field.key);
@@ -609,6 +618,11 @@ export function renderSetupBrowserScript(): string {
           summary: "No repo-owned local CI contract is configured.",
         };
         setText(elements.localCiSummary, localCiContract.summary);
+        if (elements.localCiAdoptRecommended) {
+          const canAdoptRecommended = Boolean(localCiContract.recommendedCommand) && Boolean(document.getElementById("setup-input-localCiCommand"));
+          elements.localCiAdoptRecommended.hidden = !canAdoptRecommended;
+          elements.localCiAdoptRecommended.disabled = saveInFlight || !canAdoptRecommended;
+        }
         renderChecklist(
           elements.localCiDetails,
           [{
@@ -740,9 +754,26 @@ export function renderSetupBrowserScript(): string {
         }
       }
 
+      function handleAdoptRecommendedLocalCiClick() {
+        if (!currentReport || !currentReport.localCiContract || !currentReport.localCiContract.recommendedCommand) {
+          return;
+        }
+
+        const localCiInput = document.getElementById("setup-input-localCiCommand");
+        if (!localCiInput) {
+          return;
+        }
+
+        localCiInput.value = currentReport.localCiContract.recommendedCommand;
+        setSaveStatus("Recommended local CI command copied into the setup field. Save to opt in.");
+      }
+
       async function bootstrap() {
         if (elements.form) {
           elements.form.addEventListener("submit", handleSetupSubmit);
+        }
+        if (elements.localCiAdoptRecommended) {
+          elements.localCiAdoptRecommended.addEventListener("click", handleAdoptRecommendedLocalCiClick);
         }
         if (elements.restartButton) {
           elements.restartButton.addEventListener("click", handleManagedRestartClick);

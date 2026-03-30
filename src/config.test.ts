@@ -1069,6 +1069,66 @@ test("updateSetupConfig reports no restart requirement when a typed setup write 
   assert.equal(result.readiness.providerPosture.profile, "codex");
 });
 
+test("updateSetupConfig accepts localCiCommand through the setup-owned write surface", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-update-local-ci-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  const repoPath = path.join(tempDir, "repo");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.writeFile(
+    path.join(repoPath, "package.json"),
+    JSON.stringify({
+      scripts: {
+        "verify:pre-pr": "npm test",
+      },
+    }),
+    "utf8",
+  );
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      {
+        repoPath,
+        repoSlug: "owner/repo",
+        defaultBranch: "main",
+        workspaceRoot: path.join(tempDir, "worktrees"),
+        stateFile: path.join(tempDir, "state.json"),
+        codexBinary: process.execPath,
+        branchPrefix: "codex/issue-",
+        reviewBotLogins: ["chatgpt-codex-connector"],
+        experimentalFlag: true,
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  const result = await updateSetupConfig({
+    configPath,
+    changes: {
+      localCiCommand: "npm run verify:pre-pr",
+    },
+  });
+
+  const updatedDocument = JSON.parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown>;
+  assert.deepEqual(result.updatedFields, ["localCiCommand"]);
+  assert.equal(result.restartRequired, true);
+  assert.equal(result.restartScope, "supervisor");
+  assert.deepEqual(result.restartTriggeredByFields, ["localCiCommand"]);
+  assert.equal(updatedDocument.localCiCommand, "npm run verify:pre-pr");
+  assert.equal(updatedDocument.experimentalFlag, true);
+  assert.deepEqual(result.readiness.localCiContract, {
+    configured: true,
+    command: "npm run verify:pre-pr",
+    recommendedCommand: null,
+    source: "config",
+    summary: "Repo-owned local CI contract is configured.",
+  });
+});
+
 test("updateSetupConfig rejects invalid setup field values before touching the config file", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-update-invalid-"));
   t.after(async () => {

@@ -15,6 +15,7 @@ export type SetupReadinessFieldKey =
   | "stateFile"
   | "codexBinary"
   | "branchPrefix"
+  | "localCiCommand"
   | "reviewProvider";
 
 export type SetupReadinessFieldValueType =
@@ -100,14 +101,19 @@ interface DiagnoseSetupReadinessArgs {
 
 type RawConfigDocument = Record<string, unknown> | null;
 
-const SETUP_FIELD_DEFINITIONS: Array<{ key: Exclude<SetupReadinessFieldKey, "reviewProvider">; label: string }> = [
-  { key: "repoPath", label: "Repository path" },
-  { key: "repoSlug", label: "Repository slug" },
-  { key: "defaultBranch", label: "Default branch" },
-  { key: "workspaceRoot", label: "Workspace root" },
-  { key: "stateFile", label: "State file" },
-  { key: "codexBinary", label: "Codex binary" },
-  { key: "branchPrefix", label: "Branch prefix" },
+const SETUP_FIELD_DEFINITIONS: Array<{
+  key: Exclude<SetupReadinessFieldKey, "reviewProvider">;
+  label: string;
+  required: boolean;
+}> = [
+  { key: "repoPath", label: "Repository path", required: true },
+  { key: "repoSlug", label: "Repository slug", required: true },
+  { key: "defaultBranch", label: "Default branch", required: true },
+  { key: "workspaceRoot", label: "Workspace root", required: true },
+  { key: "stateFile", label: "State file", required: true },
+  { key: "codexBinary", label: "Codex binary", required: true },
+  { key: "branchPrefix", label: "Branch prefix", required: true },
+  { key: "localCiCommand", label: "Local CI command", required: false },
 ];
 
 const SETUP_FIELD_METADATA: Record<SetupReadinessFieldKey, SetupReadinessFieldMetadata> = {
@@ -118,6 +124,7 @@ const SETUP_FIELD_METADATA: Record<SetupReadinessFieldKey, SetupReadinessFieldMe
   stateFile: { source: "config", editable: true, valueType: "file_path" },
   codexBinary: { source: "config", editable: true, valueType: "executable_path" },
   branchPrefix: { source: "config", editable: true, valueType: "text" },
+  localCiCommand: { source: "config", editable: true, valueType: "text" },
   reviewProvider: { source: "config", editable: true, valueType: "review_provider" },
 };
 
@@ -149,6 +156,14 @@ function displayValue(value: unknown): string | null {
 }
 
 function buildFieldMessage(field: SetupReadinessField): string {
+  if (field.key === "localCiCommand") {
+    if (field.state === "configured") {
+      return "Local CI command is configured.";
+    }
+
+    return "Local CI command is optional until you opt in to the repo-owned contract.";
+  }
+
   if (field.state === "configured") {
     return `${field.label} is configured.`;
   }
@@ -166,23 +181,22 @@ function buildConfigFields(args: {
 }): SetupReadinessField[] {
   const { rawConfig, configSummary } = args;
   const resolvedConfig = configSummary.config;
-  const fields = SETUP_FIELD_DEFINITIONS.map(({ key, label }) => {
+  const fields = SETUP_FIELD_DEFINITIONS.map(({ key, label, required }) => {
+    const resolvedValue = resolvedConfig !== null ? displayValue(resolvedConfig[key]) : displayValue(rawConfig?.[key]);
     const state: SetupFieldState = configSummary.missingRequiredFields.includes(key)
       ? "missing"
       : configSummary.invalidFields.includes(key)
         ? "invalid"
-        : resolvedConfig !== null
-          ? "configured"
-          : displayValue(rawConfig?.[key]) === null
-            ? "missing"
-            : "configured";
+        : resolvedValue === null
+          ? "missing"
+          : "configured";
     const field: SetupReadinessField = {
       key,
       label,
       state,
-      value: resolvedConfig !== null ? displayValue(resolvedConfig[key]) : displayValue(rawConfig?.[key]),
+      value: resolvedValue,
       message: "",
-      required: true,
+      required,
       metadata: SETUP_FIELD_METADATA[key],
     };
     return {
@@ -294,7 +308,7 @@ function buildBlockers(args: {
   const blockers: SetupReadinessBlocker[] = [];
 
   for (const field of args.fields) {
-    if (field.state === "configured") {
+    if (field.state === "configured" || !field.required) {
       continue;
     }
 
@@ -355,11 +369,11 @@ function buildBlockers(args: {
 }
 
 function overallStatusFromFields(fields: SetupReadinessField[]): SetupReadinessOverallStatus {
-  if (fields.some((field) => field.state === "invalid")) {
+  if (fields.some((field) => field.required && field.state === "invalid")) {
     return "invalid";
   }
 
-  if (fields.some((field) => field.state === "missing")) {
+  if (fields.some((field) => field.required && field.state === "missing")) {
     return "missing";
   }
 
