@@ -567,6 +567,7 @@ test("statusReport exposes the typed local CI contract summary from config", asy
   assert.deepEqual(report.localCiContract, {
     configured: true,
     command: "npm run ci:local",
+    recommendedCommand: null,
     source: "config",
     summary: "Repo-owned local CI contract is configured.",
   });
