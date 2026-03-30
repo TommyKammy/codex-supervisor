@@ -5,38 +5,36 @@
 - Branch: codex/issue-1221
 - Workspace: .
 - Journal: .codex-supervisor/issues/1221/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: ced59de15d5323cc890005f50ab95be5d9f9d6b2
+- Current phase: resolving_conflict
+- Attempt count: 4 (implementation=3, repair=1)
+- Last head SHA: 70c9202cf641c5e9ef26fa4fc547b7d8bdeb0332
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-30T23:24:16.232Z
+- Last failure signature: dirty:70c9202cf641c5e9ef26fa4fc547b7d8bdeb0332
+- Repeated failure signature count: 1
+- Updated at: 2026-03-30T23:37:26.827Z
 
 ## Latest Codex Summary
-Separated the tracked-PR stale-failure persisted patch from recovery-event generation in [src/recovery-reconciliation.ts](src/recovery-reconciliation.ts). The new exported helper, `buildTrackedPrStaleFailureConvergencePatch`, now owns the authoritative state patch, while recovery events are built explicitly at the call sites. I also added a direct regression test in [src/supervisor/supervisor-recovery-reconciliation.test.ts](src/supervisor/supervisor-recovery-reconciliation.test.ts) so stale failure-field clearing and resumed blocked-state assembly can be exercised without depending on recovery-event text.
+PR #1225 was dirty against `main`, so I stashed the tracked journal edit, fetched `github/main` to `0fb5238`, merged it into `codex/issue-1221`, resolved the single content conflict in `src/recovery-reconciliation.ts` by keeping the dedicated tracked-PR convergence patch boundary on top of the new shared lifecycle projection, reran the focused recovery tests plus `src/tracked-pr-lifecycle-projection.test.ts`, rebuilt successfully, and pushed the refreshed branch. This journal update records the conflict-repair handoff.
 
-Follow-up stabilization restored local dev dependencies with `npm ci`, exposed a stale test import in [src/recovery-reconciliation.test.ts](src/recovery-reconciliation.test.ts) during `npm run build`, and updated that test to target `buildTrackedPrStaleFailureConvergencePatch` directly instead of the removed mixed-responsibility helper. Focused regression tests and the TypeScript build now pass.
-
-Summary: Separated tracked PR stale-failure convergence patch assembly from recovery-event generation, then fixed the remaining stale test import so focused tests and `npm run build` both pass.
-State hint: stabilizing
+Summary: Merged `github/main` into `codex/issue-1221`, resolved the tracked-PR recovery conflict, reverified, and pushed PR #1225
+State hint: waiting_ci
 Blocked reason: none
-Tests: `npm ci` completed; `npx tsx --test src/recovery-reconciliation.test.ts` passed; `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts` passed; `npm run build` passed
-Next action: Commit the stabilization fix and leave the branch ready for review or draft PR creation
+Tests: `npx tsx --test src/recovery-reconciliation.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts src/tracked-pr-lifecycle-projection.test.ts`; `npm run build`
+Next action: Monitor PR #1225 after the merge-repair push and address any CI or review feedback from `codex/issue-1221`
 Failure signature: none
 
 ## Active Failure Context
-- None recorded.
+- None recorded. The prior PR dirty state was cleared by merging `github/main` at `0fb5238` and pushing `eb043e3`.
 
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: The stale failed tracked-PR reconciliation path mixed persisted-state patch construction with recovery-event formatting; a patch-only helper should preserve behavior while making the convergence boundary directly testable.
-- What changed: Added `buildTrackedPrStaleFailureConvergencePatch` in `src/recovery-reconciliation.ts`, updated stale-failed and blocked tracked-PR recovery call sites to build the recovery event separately, added a focused direct unit test in `src/supervisor/supervisor-recovery-reconciliation.test.ts`, and updated `src/recovery-reconciliation.test.ts` to stop importing the removed `buildTrackedPrStaleFailureRecovery` helper.
+- What changed: Merged `github/main` at `0fb5238` into `codex/issue-1221`, resolved the only content conflict in `src/recovery-reconciliation.ts` by keeping `buildTrackedPrStaleFailureConvergencePatch` and `buildTrackedPrResumeRecoveryEvent` while adopting the shared `projectTrackedPrLifecycle` projection from `main`, reran the focused recovery/orchestration tests plus `src/tracked-pr-lifecycle-projection.test.ts`, rebuilt successfully, and pushed merge commit `eb043e3` to PR #1225.
 - Current blocker: none
-- Next exact step: Commit the test-fix checkpoint and either open or update the draft PR from `codex/issue-1221`.
-- Verification gap: none for the requested focused tests and build; the focused recovery test run still emits the existing expected execution-metrics chronology warnings in fixture scenarios while passing.
-- Files touched: src/recovery-reconciliation.ts; src/supervisor/supervisor-recovery-reconciliation.test.ts; src/recovery-reconciliation.test.ts; .codex-supervisor/issues/1221/issue-journal.md
-- Rollback concern: Low; the change keeps recovery-event strings intact and only separates persisted patch assembly from event generation.
-- Last focused command: npm run build
+- Next exact step: Wait for CI on PR #1225 and address any follow-up review or check failures from the refreshed branch if they appear.
+- Verification gap: none for the focused recovery/orchestration tests, the lifecycle projection test, and the TypeScript build; the test run still emits the existing expected execution-metrics chronology warnings in fixture scenarios while passing.
+- Files touched: src/recovery-reconciliation.ts; src/supervisor/supervisor-recovery-reconciliation.test.ts; src/supervisor/tracked-pr-mismatch.ts; src/tracked-pr-lifecycle-projection.ts; src/tracked-pr-lifecycle-projection.test.ts; .codex-supervisor/issues/1220/issue-journal.md; .codex-supervisor/issues/1221/issue-journal.md
+- Rollback concern: Low; the resolution preserved the explicit persisted tracked-PR convergence patch boundary while taking the new shared lifecycle projection from `main`.
+- Last focused commands: `git fetch github main`; `git merge github/main`; `npx tsx --test src/recovery-reconciliation.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts src/tracked-pr-lifecycle-projection.test.ts`; `npm run build`; `git push github codex/issue-1221`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
