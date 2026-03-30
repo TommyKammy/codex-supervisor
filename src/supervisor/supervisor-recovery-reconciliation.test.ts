@@ -34,6 +34,17 @@ import {
   executionReadyBody,
 } from "./supervisor-test-helpers";
 
+function noCopilotReviewTimeoutPatch(): Pick<
+  IssueRunRecord,
+  "copilot_review_timed_out_at" | "copilot_review_timeout_action" | "copilot_review_timeout_reason"
+> {
+  return {
+    copilot_review_timed_out_at: null,
+    copilot_review_timeout_action: null,
+    copilot_review_timeout_reason: null,
+  };
+}
+
 test("requeueIssueForOperator requeues a blocked issue with no tracked PR", async () => {
   const original = createRecord({
     issue_number: 366,
@@ -2612,7 +2623,7 @@ test("reconcileStaleFailedIssueStates records a recovery reason when a tracked P
       isOpenPullRequest: () => true,
       syncReviewWaitWindow: () => ({}),
       syncCopilotReviewRequestObservation: () => ({}),
-      syncCopilotReviewTimeoutState: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
     },
   );
 
@@ -2718,7 +2729,7 @@ test("reconcileStaleFailedIssueStates rehydrates stale failed tracked PRs from d
       isOpenPullRequest: () => true,
       syncReviewWaitWindow: () => ({}),
       syncCopilotReviewRequestObservation: () => ({}),
-      syncCopilotReviewTimeoutState: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
     },
   );
 
@@ -2899,7 +2910,7 @@ test("reconcileStaleFailedIssueStates reclassifies stale failed tracked PRs to b
       isOpenPullRequest: () => true,
       syncReviewWaitWindow: () => ({}),
       syncCopilotReviewRequestObservation: () => ({}),
-      syncCopilotReviewTimeoutState: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
     },
   );
 
@@ -2998,7 +3009,7 @@ test("reconcileStaleFailedIssueStates clears stale failed tracked PR state when 
       isOpenPullRequest: () => true,
       syncReviewWaitWindow: () => ({}),
       syncCopilotReviewRequestObservation: () => ({}),
-      syncCopilotReviewTimeoutState: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
     },
   );
 
@@ -3097,7 +3108,7 @@ test("reconcileStaleFailedIssueStates reclassifies stale failed tracked PRs to b
       isOpenPullRequest: () => true,
       syncReviewWaitWindow: () => ({}),
       syncCopilotReviewRequestObservation: () => ({}),
-      syncCopilotReviewTimeoutState: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
     },
   );
 

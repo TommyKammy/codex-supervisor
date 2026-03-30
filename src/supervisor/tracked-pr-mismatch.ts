@@ -7,13 +7,7 @@ import type {
   RunState,
   SupervisorConfig,
 } from "../core/types";
-import {
-  blockedReasonFromReviewState,
-  inferStateFromPullRequest,
-  syncCopilotReviewRequestObservation,
-  syncCopilotReviewTimeoutState,
-  syncReviewWaitWindow,
-} from "../pull-request-state";
+import { projectTrackedPrLifecycle } from "../tracked-pr-lifecycle-projection";
 
 export interface TrackedPrMismatch {
   issueNumber: number;
@@ -42,17 +36,15 @@ export function buildTrackedPrMismatch(
     return null;
   }
 
-  const recordForState: IssueRunRecord = {
-    ...record,
-    pr_number: pr.number,
-    last_head_sha: pr.headRefOid,
-    ...syncReviewWaitWindow(record, pr),
-    ...syncCopilotReviewRequestObservation(config, record, pr),
-    ...syncCopilotReviewTimeoutState(config, record, pr),
-  };
-  const githubState = inferStateFromPullRequest(config, recordForState, pr, checks, reviewThreads);
-  const githubBlockedReason =
-    githubState === "blocked" ? blockedReasonFromReviewState(config, recordForState, pr, checks, reviewThreads) : null;
+  const projection = projectTrackedPrLifecycle({
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+  });
+  const githubState = projection.nextState;
+  const githubBlockedReason = projection.nextBlockedReason;
   const mismatch =
     isBlockedLikeState(record.state) &&
     (githubState !== record.state || (githubState === "blocked" && githubBlockedReason !== record.blocked_reason));
