@@ -331,6 +331,106 @@ test("runOnce reconciles tracked PR state before reserving a new runnable issue"
   assert.equal(persisted.issues[String(unrelatedIssueNumber)]?.pr_number, 192);
 });
 
+test("runOnce converges stale failed tracked PR state before selecting the resumed issue", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 366;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: issueNumber,
+        state: "failed",
+        branch,
+        pr_number: 191,
+        last_head_sha: "head-191",
+        last_error: "Stopped after repeated repair attempts.",
+        last_failure_kind: "codex_failed",
+        last_failure_context: {
+          category: "codex",
+          summary: "Repair budget exhausted while waiting for PR recovery.",
+          signature: "repair-budget-exhausted",
+          command: null,
+          details: ["attempts=3/3"],
+          url: null,
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "repair-budget-exhausted",
+        repeated_failure_signature_count: 3,
+      }),
+    ],
+  });
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Converge stale failed tracked PR state",
+    body: executionReadyBody("Recover the authoritative tracked PR lifecycle state before selection."),
+  });
+  const pr = createPullRequest({
+    number: 191,
+    title: "Recovery implementation",
+    isDraft: true,
+    headRefName: branch,
+    headRefOid: "head-191",
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async (requestedIssueNumber: number) => {
+      assert.equal(requestedIssueNumber, issueNumber);
+      return issue;
+    },
+    resolvePullRequestForBranch: async (requestedBranch: string, prNumber: number | null) => {
+      assert.equal(requestedBranch, branch);
+      assert.equal(prNumber, pr.number);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return [];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return [];
+    },
+    getPullRequestIfExists: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return pr;
+    },
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(message, /Dry run: would invoke Codex for issue #366\./);
+  assert.match(message, /state=draft_pr/);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(persisted.activeIssueNumber, issueNumber);
+  assert.equal(record.state, "draft_pr");
+  assert.equal(record.pr_number, pr.number);
+  assert.ok(record.last_head_sha);
+  assert.equal(record.last_error, null);
+  assert.equal(record.last_failure_kind, null);
+  assert.equal(record.last_failure_context, null);
+  assert.equal(record.last_failure_signature, null);
+  assert.equal(record.repeated_failure_signature_count, 0);
+  assert.equal(
+    record.last_recovery_reason,
+    "tracked_pr_lifecycle_recovered: resumed issue #366 from failed to draft_pr using fresh tracked PR #191 facts at head head-191",
+  );
+  assert.ok(record.last_recovery_at);
+});
+
 test("prepareIssueExecutionContext blocks PR publication when configured local CI fails before draft PR creation", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.localCiCommand = "npm run ci:local";
