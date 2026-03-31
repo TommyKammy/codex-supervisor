@@ -1,45 +1,50 @@
-# Issue #1198: Execution metrics chronology bug: keep stale recovery timestamps from aborting terminal loop transitions
+# Issue #1264: [codex] Fix remaining release-blocking browser smoke regressions
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1198
-- Branch: codex/issue-1198
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1264
+- Branch: codex/issue-1264
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: draft_pr
+- Current phase: repairing_ci
 - Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: d4bb3f1578ff9c95af34c5393341f04fe6bf5b99
+- Last head SHA: e64bec8de17b131baea5f1e858c135331ff0c0f6
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-30T04:37:44.775Z
+- Last failure signature: build (ubuntu-latest):fail
+- Repeated failure signature count: 1
+- Updated at: 2026-03-31T14:01:33.889Z
 
 ## Latest Codex Summary
-PR `#1199` passed both GitHub build jobs, and I marked it ready for review after confirming there was no surfaced CI failure to repair.
+Updated [src/backend/webui-dashboard-browser-smoke.test.ts](src/backend/webui-dashboard-browser-smoke.test.ts) so the WebUI smoke harness no longer hard-fails when `CHROME_BIN` is unset on macOS. It now keeps the explicit env override, keeps the existing PATH lookup, and falls back to standard local Chrome/Chromium app-bundle paths under `/Applications` and `$HOME/Applications`. I also added a focused resolver regression test in the same file.
 
-I did not rerun local code verification in this turn because the only new change was the PR state transition after the already-green focused test/build pass. The worktree is still clean aside from untracked supervisor runtime artifacts under `.codex-supervisor/`.
+The targeted smoke suite now passes locally without any environment override, `npm run build` passes, and the checkpoint is pushed on `codex/issue-1264` with draft PR #1269 open: https://github.com/TommyKammy/codex-supervisor/pull/1269. CI is currently running on that PR.
 
-Summary: PR #1199 is ready for review after passing the current GitHub checks
+Summary: Restored browser smoke execution by fixing Chrome discovery fallback in the smoke harness, verified locally, pushed the branch, and opened draft PR #1269.
 State hint: waiting_ci
 Blocked reason: none
-Tests: `gh pr checks 1199` showed `build (ubuntu-latest)=pass`, `build (macos-latest)=pass`, and `CodeRabbit=pass (Review skipped)`; prior focused local verification remains `npx tsx --test --test-name-pattern "buildExecutionMetricsRunSummaryArtifact|handlePostTurnMergeAndCompletion keeps blocked tracked-PR state" src/supervisor/execution-metrics-lifecycle.test.ts src/supervisor/supervisor-recovery-failure-flows.test.ts`, `npx tsx --test src/post-turn-pull-request.test.ts`, and `npm run build`
-Next action: watch PR #1199 for review feedback or any newly triggered checks after the ready-for-review transition
-Failure signature: none
+Tests: `npx tsx --test src/backend/webui-dashboard-browser-smoke.test.ts`; `npm run build`
+Next action: Watch PR #1269 CI on macOS and Ubuntu, then address any fallout or move the draft toward review once checks finish.
+Failure signature: build (ubuntu-latest):fail
 
 ## Active Failure Context
-- None recorded.
+- Category: checks
+- Summary: PR #1269 has failing checks.
+- Command or source: gh pr checks
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1269
+- Details:
+  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23800368842/job/69358801268
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: stale retained `last_recovery_at` values were still feeding recovery timing derivation during terminal execution-metrics persistence, so blocked or done transitions could throw `Invalid execution metrics chronology` even when the terminal state update itself was otherwise valid.
-- What changed: reproduced the failure narrowly in execution-metrics lifecycle handling, changed stale recovery timing derivation to degrade to `timeToLatestRecoveryMs: null` instead of throwing, routed the remaining terminal supervisor sync sites in `src/supervisor/supervisor.ts` through `syncExecutionMetricsRunSummarySafely`, added regression coverage for the blocked tracked-PR terminal path, committed the fix, pushed `codex/issue-1198`, opened PR #1199, and marked it ready for review after the current GitHub checks passed.
+- Hypothesis: the Ubuntu CI failure is no longer a live browser-smoke regression. The current blocker is `npm run verify:paths`, which rejects workstation-local absolute paths introduced by the new resolver regression test fixture.
+- What changed: inspected PR #1269's failing Actions log with `gh` and the bundled CI inspector, confirmed `build (ubuntu-latest)` failed in `npm run verify:paths`, and reproduced that failure locally. The only remaining findings were macOS workstation-style absolute path literals in `src/backend/webui-dashboard-browser-smoke.test.ts`, so I replaced that fixture `HOME` value with `/tmp/example-home` while keeping the resolver assertions unchanged. Re-ran `npm run verify:paths`, `npx tsx --test src/backend/webui-dashboard-browser-smoke.test.ts`, and `npm run build`; all now pass locally.
 - Current blocker: none.
-- Next exact step: watch PR #1199 for review feedback or any newly triggered checks after the ready-for-review transition and repair anything that surfaces.
-- Verification gap: `npm test -- src/...` is not a reliable focused verifier in this repo because the npm wrapper still expands to the suite-wide `src/**/*.test.ts` glob. I used direct `npx tsx --test ...` invocations for the affected files instead. One pre-existing environment-sensitive test in `src/supervisor/supervisor-recovery-failure-flows.test.ts` (`runOnce recovers when post-codex refresh throws after leaving a dirty worktree`) still diverts into stale-state cleanup in this worktree when the whole file runs, which appears unrelated to this change.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/execution-metrics-lifecycle.ts`, `src/supervisor/execution-metrics-lifecycle.test.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-recovery-failure-flows.test.ts`.
-- Rollback concern: low. The runtime change is narrowly scoped to stale recovery timing derivation and safe execution-metrics persistence wrapping for terminal supervisor paths.
-- Last focused command: `gh pr ready 1199`
-- What changed this turn: resumed from the open PR handoff, checked live PR #1199 status, confirmed both GitHub build jobs were passing, marked the PR ready for review, and updated this journal with the new waiting-for-review state.
-- Exact failure reproduced this turn: a blocked tracked-PR terminal persistence path with `last_failure_context.updated_at=2026-03-13T00:22:00Z` and retained `last_recovery_at=2026-03-13T00:21:00Z` previously threw `Invalid execution metrics chronology: 2026-03-13T00:22:00Z must be at or before 2026-03-13T00:21:00Z.` while persisting execution metrics.
-- Commands run this turn: `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git branch --show-current`; `gh pr checks 1199`; `git status --short`; `gh pr ready 1199`
+- Next exact step: commit the focused verify-paths repair, push `codex/issue-1264`, and recheck PR #1269 until the Ubuntu CI job reruns cleanly.
+- Verification gap: local verification covered the repo path-policy check, the targeted browser smoke suite, and a full TypeScript build. I did not run the repo-wide `npm test` glob because this issue is still scoped to the smoke harness plus its supporting test fixture.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-smoke.test.ts`.
+- Rollback concern: low. This turn only changes a regression-test fixture value and the journal handoff; runtime behavior is unchanged.
+- Last focused command: `npm run build`
+- What changed this turn: read the required memory files and the issue journal, used `gh` plus the bundled CI inspector to inspect PR #1269, reproduced the Ubuntu `verify:paths` failure locally, patched the new resolver test fixture to avoid a forbidden workstation-local path literal, and reran the focused local verifiers successfully.
+- Exact failure reproduced this turn: `npm run verify:paths` failed with `Forbidden workstation-local absolute path references found` because the new resolver regression test fixture used a macOS workstation-style absolute home path.
+- Commands run this turn: `sed -n '1,220p' <redacted-local-path>`; `sed -n '1,320p' .codex-supervisor/issue-journal.md`; `gh auth status`; `git branch --show-current && git status --short && git log --oneline --decorate -5`; `python3 <redacted-local-path> --repo . --pr 1269 --json`; `gh pr checks 1269 --json name,state,bucket,link,startedAt,completedAt,workflow`; `sed -n '1,220p' src/workstation-local-paths.ts`; `nl -ba src/backend/webui-dashboard-browser-smoke.test.ts | sed -n '240,310p'`; `nl -ba .codex-supervisor/issue-journal.md | sed -n '24,44p'`; `npm run verify:paths`; `rg -n "function resolveChromeExecutable|resolveChromeExecutable\\(" src/backend/webui-dashboard-browser-smoke.test.ts`; `sed -n '150,235p' src/backend/webui-dashboard-browser-smoke.test.ts`; `npx tsx --test src/backend/webui-dashboard-browser-smoke.test.ts`; `npm run build`; `rg -n '<workstation-path-pattern>' .codex-supervisor/issue-journal.md`; `git status --short`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
