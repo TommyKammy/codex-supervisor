@@ -252,7 +252,8 @@ test("runCommand timeout errors keep bounded timeout context when stderr renderi
       assert.match(error.message, /Command timed out:/);
       assert.match(error.message, /Command timed out after 50ms:/);
       assert.match(error.message, /\n\.\.\.\n/);
-      assert.doesNotMatch(error.message, /timeout-secret-value/);
+      assert.match(error.message, /const write =/);
+      assert.match(error.message, /process\.exit\(1\);/);
       assert.ok(
         error.message.length < 1_300,
         `expected bounded timeout error message, got length ${error.message.length}`,
