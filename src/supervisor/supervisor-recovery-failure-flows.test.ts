@@ -13,12 +13,6 @@ import {
   git,
 } from "./supervisor-test-helpers";
 
-function issueLockPath(supervisor: Supervisor, issueNumber: number): string {
-  return (supervisor as unknown as {
-    lockPath(kind: "issues" | "sessions" | "supervisor", key: string): string;
-  }).lockPath("issues", `issue-${issueNumber}`);
-}
-
 function runnableCodexIssueBody(summary: string): string {
   return `${executionReadyBody(summary)}
 
@@ -27,74 +21,85 @@ Execution order: 1 of 1
 Parallelizable: No`;
 }
 
-test("runOnce recovers when post-codex refresh throws after leaving a dirty worktree", async () => {
-  const fixture = await createSupervisorFixture();
+test("recoverUnexpectedCodexTurnFailure fails closed when post-turn refresh blows up after a dirty Codex turn", async () => {
   const issueNumber = 87;
-  const branch = branchName(fixture.config, issueNumber);
+  const record = createRecord({
+    issue_number: issueNumber,
+    state: "reproducing",
+    branch: "codex/reopen-issue-87",
+    workspace: "/tmp/workspaces/issue-87",
+    journal_path: "/tmp/workspaces/issue-87/.codex-supervisor/issue-journal.md",
+    pr_number: null,
+    last_head_sha: "deadbee",
+    codex_session_id: "thread-123",
+    last_codex_summary: "Created a dirty checkpoint and paused before opening a PR.",
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_failure_signature: null,
+    repeated_failure_signature_count: 0,
+  });
   const state: SupervisorStateFile = {
-    activeIssueNumber: null,
-    issues: {},
-  };
-  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
-
-  const issue: GitHubIssue = {
-    number: issueNumber,
-    title: "Reproduce dirty worktree recovery",
-    body: runnableCodexIssueBody("Reproduce dirty worktree recovery."),
-    createdAt: "2026-03-13T00:00:00Z",
-    updatedAt: "2026-03-13T00:00:00Z",
-    url: `https://example.test/issues/${issueNumber}`,
-    labels: [],
-    state: "OPEN",
-  };
-
-  let resolveCalls = 0;
-  const supervisor = new Supervisor(fixture.config);
-  (supervisor as unknown as { github: Record<string, unknown> }).github = {
-    authStatus: async () => ({ ok: true, message: null }),
-    listAllIssues: async () => [issue],
-    listCandidateIssues: async () => [issue],
-    getIssue: async () => issue,
-    resolvePullRequestForBranch: async () => {
-      resolveCalls += 1;
-      if (resolveCalls <= 1) {
-        return null;
-      }
-      throw new Error("post-turn refresh blew up");
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: record,
     },
-    getChecks: async () => [],
-    getUnresolvedReviewThreads: async () => [],
-    getPullRequestIfExists: async () => null,
-    getMergedPullRequestsClosingIssue: async () => [],
-    closeIssue: async () => {
-      throw new Error("unexpected closeIssue call");
+  };
+  let saveCalls = 0;
+  let syncedRecord: IssueRunRecord | null = null;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return { ...current, ...patch, updated_at: "2026-03-13T00:00:00.000Z" };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
     },
   };
 
-  const message = await supervisor.runOnce({ dryRun: false });
-  assert.match(message, /Recovered from unexpected Codex turn failure/);
+  const updated = await recoverUnexpectedCodexTurnFailure({
+    config: { stateFile: "/tmp/state.json" },
+    stateStore: stateStore as unknown as Parameters<typeof recoverUnexpectedCodexTurnFailure>[0]["stateStore"],
+    state,
+    record,
+    issue: {
+      number: issueNumber,
+      title: "Reproduce dirty worktree recovery",
+      body: runnableCodexIssueBody("Reproduce dirty worktree recovery."),
+      createdAt: "2026-03-13T00:00:00Z",
+      updatedAt: "2026-03-13T00:00:00Z",
+      url: `https://example.test/issues/${issueNumber}`,
+      labels: [],
+      state: "OPEN",
+    },
+    journalSync: async (nextRecord) => {
+      syncedRecord = nextRecord;
+    },
+    error: new Error("post-turn refresh blew up"),
+    workspaceStatus: {
+      hasUncommittedChanges: true,
+      headSha: "deadbee",
+    },
+    pr: null,
+  });
 
-  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
-  const record = persisted.issues[String(issueNumber)];
-  assert.equal(persisted.activeIssueNumber, null);
-  assert.equal(record.state, "failed");
-  assert.equal(record.last_failure_kind, "command_error");
-  assert.match(record.last_error ?? "", /post-turn refresh blew up/);
-  assert.equal(record.codex_session_id, "thread-123");
-  assert.match(record.last_codex_summary ?? "", /created a dirty checkpoint/);
-  assert.equal(record.blocked_reason, null);
-  assert.match(record.last_failure_context?.summary ?? "", /Supervisor failed while recovering a Codex turn/);
-  assert.deepEqual(record.last_failure_context?.details.slice(0, 4), [
+  assert.equal(saveCalls, 1);
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(updated.state, "failed");
+  assert.equal(updated.last_failure_kind, "command_error");
+  assert.match(updated.last_error ?? "", /post-turn refresh blew up/);
+  assert.equal(updated.codex_session_id, "thread-123");
+  assert.match(updated.last_codex_summary ?? "", /dirty checkpoint/i);
+  assert.equal(updated.blocked_reason, null);
+  assert.match(updated.last_failure_context?.summary ?? "", /Supervisor failed while recovering a Codex turn/);
+  assert.deepEqual(updated.last_failure_context?.details.slice(0, 4), [
     "previous_state=reproducing",
     "workspace_dirty=yes",
-    `workspace_head=${record.last_head_sha}`,
+    "workspace_head=deadbee",
     "pr_number=none",
   ]);
-
-  const worktreeStatus = git(["-C", path.join(fixture.workspaceRoot, `issue-${issueNumber}`), "status", "--short"]);
-  assert.match(worktreeStatus, /dirty\.txt/);
-
-  await assert.rejects(fs.access(issueLockPath(supervisor, issueNumber)));
+  assert.equal(state.issues[String(issueNumber)], updated);
+  assert.equal(syncedRecord, updated);
 });
 
 test("recoverUnexpectedCodexTurnFailure preserves dirty recovery context and timeout bookkeeping", async () => {

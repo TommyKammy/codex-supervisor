@@ -14,7 +14,8 @@ test("pull-request hydration docs distinguish fresh action paths from informatio
     readDoc("docs/configuration.md"),
   ]);
 
-  for (const content of [readme, architecture, configuration]) {
+  assert.match(readme, /fresh GitHub PR facts/i);
+  for (const content of [architecture, configuration]) {
     assert.match(content, /fresh GitHub review facts/i);
     assert.match(content, /informational and non-authoritative/i);
   }

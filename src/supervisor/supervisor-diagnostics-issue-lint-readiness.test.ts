@@ -13,11 +13,7 @@ test("issue lint reports a complete execution-ready issue as clean", async () =>
     number: 102,
     title: "Execution-ready codex issue",
     labels: [{ name: "codex" }],
-    body: `${executionReadyBody("Issue lint should accept an execution-ready issue.")}
-
-Depends on: none
-Execution order: 1 of 1
-Parallelizable: No`,
+    body: executionReadyBody("Issue lint should accept an execution-ready issue."),
     createdAt: "2026-03-19T00:00:00Z",
     updatedAt: "2026-03-19T00:00:00Z",
     url: "https://example.test/issues/102",
