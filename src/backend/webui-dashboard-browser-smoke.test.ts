@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { accessSync, constants } from "node:fs";
 import http from "node:http";
 import test from "node:test";
 import { chromium, type Browser, type Dialog, type Page } from "playwright-core";
@@ -164,21 +165,64 @@ async function launchBrowser(): Promise<Browser> {
   });
 }
 
-function resolveChromeExecutable(): string {
-  const explicitPath = process.env.CHROME_BIN;
+function resolveChromeExecutable(args?: {
+  env?: NodeJS.ProcessEnv;
+  which?: (candidate: string) => string | null;
+  fileExists?: (candidate: string) => boolean;
+}): string {
+  const env = args?.env ?? process.env;
+  const explicitPath = env.CHROME_BIN;
   if (explicitPath && explicitPath.trim().length > 0) {
-    return explicitPath;
+    return explicitPath.trim();
   }
 
+  const which = args?.which ?? resolveExecutableOnPath;
   for (const candidate of ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"]) {
-    try {
-      return execFileSync("which", [candidate], { encoding: "utf8" }).trim();
-    } catch {
-      continue;
+    const resolved = which(candidate);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  const fileExists = args?.fileExists ?? isExecutableFile;
+  for (const candidate of chromeAppBundleCandidates(env)) {
+    if (fileExists(candidate)) {
+      return candidate;
     }
   }
 
   throw new Error("Set CHROME_BIN to a local Chrome/Chromium executable for the WebUI smoke test.");
+}
+
+function resolveExecutableOnPath(candidate: string): string | null {
+  try {
+    const resolved = execFileSync("which", [candidate], { encoding: "utf8" }).trim();
+    return resolved.length > 0 ? resolved : null;
+  } catch {
+    return null;
+  }
+}
+
+function chromeAppBundleCandidates(env: NodeJS.ProcessEnv): string[] {
+  const homeApplications = env.HOME ? `${env.HOME}/Applications` : null;
+  const applicationRoots = ["/Applications", homeApplications].filter((value): value is string => Boolean(value));
+  const browserApps = [
+    { appName: "Google Chrome.app", binaryName: "Google Chrome" },
+    { appName: "Chromium.app", binaryName: "Chromium" },
+  ];
+
+  return applicationRoots.flatMap((root) =>
+    browserApps.map((browserApp) => `${root}/${browserApp.appName}/Contents/MacOS/${browserApp.binaryName}`),
+  );
+}
+
+function isExecutableFile(candidate: string): boolean {
+  try {
+    accessSync(candidate, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function waitForCodeText(page: Page, id: string, pattern: RegExp): Promise<void> {
@@ -209,6 +253,35 @@ function acceptDialogs(page: Page): void {
     await dialog.accept();
   });
 }
+
+test("browser smoke resolves Chrome binaries from explicit, PATH, and macOS bundle sources", () => {
+  assert.equal(
+    resolveChromeExecutable({
+      env: { CHROME_BIN: "  /tmp/custom-chrome  " },
+      which: () => null,
+      fileExists: () => false,
+    }),
+    "/tmp/custom-chrome",
+  );
+
+  assert.equal(
+    resolveChromeExecutable({
+      env: { HOME: "/Users/example" },
+      which: (candidate) => (candidate === "chromium" ? "/usr/local/bin/chromium" : null),
+      fileExists: () => false,
+    }),
+    "/usr/local/bin/chromium",
+  );
+
+  assert.equal(
+    resolveChromeExecutable({
+      env: { HOME: "/Users/example" },
+      which: () => null,
+      fileExists: (candidate) => candidate === "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    }),
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  );
+});
 
 test("browser smoke loads the read-only dashboard against the live HTTP fixture", async (t) => {
   const server = createSupervisorHttpServer({

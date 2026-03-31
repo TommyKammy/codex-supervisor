@@ -1,45 +1,36 @@
-# Issue #1198: Execution metrics chronology bug: keep stale recovery timestamps from aborting terminal loop transitions
+# Issue #1264: [codex] Fix remaining release-blocking browser smoke regressions
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1198
-- Branch: codex/issue-1198
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1264
+- Branch: codex/issue-1264
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: draft_pr
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: d4bb3f1578ff9c95af34c5393341f04fe6bf5b99
+- Current phase: stabilizing
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: cfa082799f7e41b2c4b66e5b6093d7e73b50f6d9
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-03-30T04:37:44.775Z
+- Last failure signature: handoff-missing
+- Repeated failure signature count: 1
+- Updated at: 2026-03-31T13:34:03.272Z
 
 ## Latest Codex Summary
-PR `#1199` passed both GitHub build jobs, and I marked it ready for review after confirming there was no surfaced CI failure to repair.
-
-I did not rerun local code verification in this turn because the only new change was the PR state transition after the already-green focused test/build pass. The worktree is still clean aside from untracked supervisor runtime artifacts under `.codex-supervisor/`.
-
-Summary: PR #1199 is ready for review after passing the current GitHub checks
-State hint: waiting_ci
-Blocked reason: none
-Tests: `gh pr checks 1199` showed `build (ubuntu-latest)=pass`, `build (macos-latest)=pass`, and `CodeRabbit=pass (Review skipped)`; prior focused local verification remains `npx tsx --test --test-name-pattern "buildExecutionMetricsRunSummaryArtifact|handlePostTurnMergeAndCompletion keeps blocked tracked-PR state" src/supervisor/execution-metrics-lifecycle.test.ts src/supervisor/supervisor-recovery-failure-flows.test.ts`, `npx tsx --test src/post-turn-pull-request.test.ts`, and `npm run build`
-Next action: watch PR #1199 for review feedback or any newly triggered checks after the ready-for-review transition
-Failure signature: none
+- Reproduced the remaining browser-smoke blocker as harness-level Chrome discovery failure on macOS, taught the smoke harness to resolve local Chrome/Chromium app bundles when `CHROME_BIN` and PATH lookups are absent, added resolver regression coverage, and verified the smoke suite plus `npm run build`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: stale retained `last_recovery_at` values were still feeding recovery timing derivation during terminal execution-metrics persistence, so blocked or done transitions could throw `Invalid execution metrics chronology` even when the terminal state update itself was otherwise valid.
-- What changed: reproduced the failure narrowly in execution-metrics lifecycle handling, changed stale recovery timing derivation to degrade to `timeToLatestRecoveryMs: null` instead of throwing, routed the remaining terminal supervisor sync sites in `src/supervisor/supervisor.ts` through `syncExecutionMetricsRunSummarySafely`, added regression coverage for the blocked tracked-PR terminal path, committed the fix, pushed `codex/issue-1198`, opened PR #1199, and marked it ready for review after the current GitHub checks passed.
+- Hypothesis: the remaining release-blocking browser smoke failures on `main` were not flow regressions inside the dashboard itself; the harness had become too strict about browser discovery and now failed before any smoke flow could execute in macOS worktrees unless `CHROME_BIN` was set manually.
+- What changed: reproduced the blocker locally, confirmed every browser smoke flow passed once `CHROME_BIN` pointed at `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`, then updated `src/backend/webui-dashboard-browser-smoke.test.ts` so `resolveChromeExecutable` trims `CHROME_BIN`, keeps the existing PATH lookup, and falls back to standard macOS Google Chrome/Chromium app-bundle paths under `/Applications` and `$HOME/Applications`. Added a focused resolver regression test covering explicit env override, PATH resolution, and macOS app-bundle fallback.
 - Current blocker: none.
-- Next exact step: watch PR #1199 for review feedback or any newly triggered checks after the ready-for-review transition and repair anything that surfaces.
-- Verification gap: `npm test -- src/...` is not a reliable focused verifier in this repo because the npm wrapper still expands to the suite-wide `src/**/*.test.ts` glob. I used direct `npx tsx --test ...` invocations for the affected files instead. One pre-existing environment-sensitive test in `src/supervisor/supervisor-recovery-failure-flows.test.ts` (`runOnce recovers when post-codex refresh throws after leaving a dirty worktree`) still diverts into stale-state cleanup in this worktree when the whole file runs, which appears unrelated to this change.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/execution-metrics-lifecycle.ts`, `src/supervisor/execution-metrics-lifecycle.test.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-recovery-failure-flows.test.ts`.
-- Rollback concern: low. The runtime change is narrowly scoped to stale recovery timing derivation and safe execution-metrics persistence wrapping for terminal supervisor paths.
-- Last focused command: `gh pr ready 1199`
-- What changed this turn: resumed from the open PR handoff, checked live PR #1199 status, confirmed both GitHub build jobs were passing, marked the PR ready for review, and updated this journal with the new waiting-for-review state.
-- Exact failure reproduced this turn: a blocked tracked-PR terminal persistence path with `last_failure_context.updated_at=2026-03-13T00:22:00Z` and retained `last_recovery_at=2026-03-13T00:21:00Z` previously threw `Invalid execution metrics chronology: 2026-03-13T00:22:00Z must be at or before 2026-03-13T00:21:00Z.` while persisting execution metrics.
-- Commands run this turn: `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git branch --show-current`; `gh pr checks 1199`; `git status --short`; `gh pr ready 1199`
+- Next exact step: commit the harness fix, push `codex/issue-1264`, open a draft PR if one does not exist yet, and watch CI for any environment-specific browser smoke fallout.
+- Verification gap: local verification covered the targeted browser smoke suite and a full TypeScript build. I did not run the repo-wide `npm test` glob because this issue is scoped to the WebUI smoke harness and the targeted verifier already exercises the affected flows end-to-end in a real browser.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/backend/webui-dashboard-browser-smoke.test.ts`.
+- Rollback concern: low. The runtime-facing change is limited to test-harness browser executable discovery, and the added regression test constrains the fallback order.
+- Last focused command: `npm run build`
+- What changed this turn: read the required memory files, noticed the journal handoff had stale notes from another issue, verified `codex/issue-1264` was still identical to `main`, reproduced the smoke-suite blocker as missing Chrome discovery without `CHROME_BIN`, patched the harness fallback logic, and reran the smoke suite successfully without any environment override.
+- Exact failure reproduced this turn: `npx tsx --test src/backend/webui-dashboard-browser-smoke.test.ts` failed all five smoke flows immediately with `Error: Set CHROME_BIN to a local Chrome/Chromium executable for the WebUI smoke test.` from `resolveChromeExecutable` before the dashboard fixture loaded.
+- Commands run this turn: `sed -n '1,220p' /Users/tomoakikawada/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1264/AGENTS.generated.md`; `sed -n '1,220p' /Users/tomoakikawada/Dev/codex-supervisor-self/.local/memory/TommyKammy-codex-supervisor/issue-1264/context-index.md`; `sed -n '1,260p' .codex-supervisor/issue-journal.md`; `git branch --show-current && git status --short`; `git log --oneline --decorate -8`; `git diff --stat origin/main...HEAD`; `git diff --name-only origin/main...HEAD`; `rg -n "read-only|safe command|first-run|effective-save|launcher-managed|restart" src/backend/webui-dashboard-browser-smoke.test.ts`; `npx tsx --test src/backend/webui-dashboard-browser-smoke.test.ts`; `which chromium chromium-browser google-chrome google-chrome-stable chrome || true`; `ls -1 /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome /Applications/Chromium.app/Contents/MacOS/Chromium 2>/dev/null || true`; `fd -HI "(chrome|chromium)$" "$HOME/Library/Caches/ms-playwright" /Applications 2>/dev/null | head -n 40`; `CHROME_BIN='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' npx tsx --test src/backend/webui-dashboard-browser-smoke.test.ts`; `sed -n '1,260p' src/backend/webui-dashboard-browser-smoke.test.ts`; `git show 054b8cd -- src/backend/webui-dashboard-browser-smoke.test.ts`; `rg -n "CHROME_BIN|resolveChromeExecutable|chromium.launch|playwright-core" -S src test .`; `cat package.json`; `npx tsx --test src/backend/webui-dashboard-browser-smoke.test.ts`; `npm run build`; `git status --short`; `git diff -- src/backend/webui-dashboard-browser-smoke.test.ts`; `git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || true`; `git ls-files --stage .codex-supervisor/issue-journal.md`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
