@@ -2,6 +2,7 @@ import type {
   BlockedReason,
   GitHubPullRequest,
   IssueRunRecord,
+  LatestLocalCiResult,
   PullRequestCheck,
   ReviewThread,
   RunState,
@@ -19,10 +20,73 @@ export interface TrackedPrMismatch {
   staleLocalBlocker: boolean;
   summaryLine: string;
   guidanceLine: string;
+  detailLines: string[];
 }
 
 function isBlockedLikeState(state: RunState): boolean {
   return state === "blocked" || state === "failed";
+}
+
+function localCiHeadStatus(record: IssueRunRecord, pr: GitHubPullRequest, result: LatestLocalCiResult): "current" | "stale" | "unknown" {
+  const currentHeadSha = pr.headRefOid ?? record.last_head_sha ?? null;
+  if (result.head_sha === null || currentHeadSha === null) {
+    return "unknown";
+  }
+  return result.head_sha === currentHeadSha ? "current" : "stale";
+}
+
+function summarizeGitHubChecks(checks: PullRequestCheck[], pr: GitHubPullRequest): "green" | "failing" | "pending" | "unknown" {
+  if (checks.some((check) => check.bucket === "fail")) {
+    return "failing";
+  }
+  if (checks.some((check) => check.bucket === "pending")) {
+    return "pending";
+  }
+  if (checks.some((check) => check.bucket === "pass") || pr.currentHeadCiGreenAt) {
+    return "green";
+  }
+  return "unknown";
+}
+
+function buildTrackedPrHostLocalCiDetailLines(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
+): string[] {
+  const result = record.latest_local_ci_result ?? null;
+  if (record.blocked_reason !== "verification" || result?.outcome !== "failed") {
+    return [];
+  }
+
+  const detailLines = [
+    [
+      "tracked_pr_host_local_ci",
+      `issue=#${record.issue_number}`,
+      `pr=#${pr.number}`,
+      `github_checks=${summarizeGitHubChecks(checks, pr)}`,
+      `head_sha=${pr.headRefOid}`,
+      `outcome=${result.outcome}`,
+      `failure_class=${result.failure_class ?? "none"}`,
+      `remediation_target=${result.remediation_target ?? "none"}`,
+      `head=${localCiHeadStatus(record, pr, result)}`,
+      `summary=${result.summary.replace(/\r?\n/g, "\\n")}`,
+    ].join(" "),
+  ];
+
+  if (result.failure_class === "workspace_toolchain_missing" && !config.workspacePreparationCommand) {
+    detailLines.push(
+      [
+        "tracked_pr_host_local_ci_gap",
+        `issue=#${record.issue_number}`,
+        `pr=#${pr.number}`,
+        "workspace_preparation_command=unset",
+        "gap=missing_workspace_prerequisite_visibility",
+      ].join(" "),
+    );
+  }
+
+  return detailLines;
 }
 
 export function buildTrackedPrMismatch(
@@ -77,5 +141,6 @@ export function buildTrackedPrMismatch(
     ].join(" "),
     guidanceLine:
       "recovery_guidance=Tracked PR facts are fresher than local state; run the supervisor again to refresh tracked PR state. Explicit requeue is unavailable for tracked PR work.",
+    detailLines: buildTrackedPrHostLocalCiDetailLines(config, record, pr, checks),
   };
 }

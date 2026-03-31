@@ -469,6 +469,7 @@ async function diagnoseWorktrees(
       `orphan_prune_candidate issue_number=${candidate.issueNumber} eligibility=${candidate.eligibility} workspace=${candidate.workspacePath} branch=${candidate.branch ?? "none"} modified_at=${candidate.modifiedAt ?? "unknown"} reason=${candidate.reason}`
     );
     const trackedPrMismatchDetails: string[] = [];
+    let trackedPrMismatchCount = 0;
     if (github?.getPullRequestIfExists && github.getChecks && github.getUnresolvedReviewThreads) {
       for (const record of Object.values(state.issues)) {
         if (record.pr_number === null) {
@@ -488,7 +489,8 @@ async function diagnoseWorktrees(
             continue;
           }
 
-          trackedPrMismatchDetails.push(mismatch.summaryLine, mismatch.guidanceLine);
+          trackedPrMismatchCount += 1;
+          trackedPrMismatchDetails.push(mismatch.summaryLine, ...mismatch.detailLines, mismatch.guidanceLine);
         } catch {
           // Degrade doctor diagnostics when tracked PR hydration fails.
         }
@@ -513,9 +515,9 @@ async function diagnoseWorktrees(
         `recent=${orphanCandidates.filter((candidate) => candidate.eligibility === "recent").length}`,
         `unsafe_target=${orphanCandidates.filter((candidate) => candidate.eligibility === "unsafe_target").length}`,
       ].join(" ");
-    const mismatchSummary = trackedPrMismatchDetails.length === 0
+    const mismatchSummary = trackedPrMismatchCount === 0
       ? null
-      : `tracked PR mismatch candidates=${trackedPrMismatchDetails.length / 2}`;
+      : `tracked PR mismatch candidates=${trackedPrMismatchCount}`;
 
     return {
       name: "worktrees",

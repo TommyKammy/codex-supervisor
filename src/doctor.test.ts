@@ -1013,6 +1013,99 @@ test("diagnoseSupervisorHost exposes tracked PR mismatches when GitHub is ready 
   );
 });
 
+test("diagnoseSupervisorHost exposes host-local CI blocker details for tracked PR mismatches", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const workspace = path.join(workspaceRoot, "issue-171");
+  const stateFile = path.join(root, "state.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  await fs.writeFile(path.join(repoPath, "README.md"), "fixture\n", "utf8");
+  execFileSync("git", ["add", "README.md"], { cwd: repoPath });
+  execFileSync("git", ["commit", "-m", "fixture"], {
+    cwd: repoPath,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Codex",
+      GIT_AUTHOR_EMAIL: "codex@example.com",
+      GIT_COMMITTER_NAME: "Codex",
+      GIT_COMMITTER_EMAIL: "codex@example.com",
+    },
+  });
+  execFileSync("git", ["-C", repoPath, "worktree", "add", "-b", "codex/reopen-issue-171", workspace], {
+    encoding: "utf8",
+  });
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+    stateFile,
+    codexBinary: process.execPath,
+  });
+  const trackedState: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "171": createRecord({
+        issue_number: 171,
+        state: "blocked",
+        branch: "codex/reopen-issue-171",
+        workspace,
+        pr_number: 271,
+        blocked_reason: "verification",
+        last_head_sha: "head-ready-271",
+        last_failure_signature: "local-ci-gate-workspace_toolchain_missing",
+        latest_local_ci_result: {
+          outcome: "failed",
+          summary:
+            "Configured local CI command could not run before marking PR #271 ready because the workspace toolchain is unavailable. Remediation target: workspace environment.",
+          ran_at: "2026-03-13T00:10:00Z",
+          head_sha: "head-ready-271",
+          execution_mode: "legacy_shell_string",
+          failure_class: "workspace_toolchain_missing",
+          remediation_target: "workspace_environment",
+        },
+      }),
+    },
+  };
+  const readyPr = createPullRequest({
+    number: 271,
+    headRefName: "codex/reopen-issue-171",
+    headRefOid: "head-ready-271",
+    currentHeadCiGreenAt: "2026-03-13T00:12:00Z",
+  });
+
+  const diagnostics = await diagnoseSupervisorHost({
+    config,
+    authStatus: async () => ({ ok: true, message: null }),
+    loadState: async () => trackedState,
+    github: {
+      getCandidateDiscoveryDiagnostics: async () => ({
+        fetchWindow: 100,
+        observedMatchingOpenIssues: 1,
+        truncated: false,
+      }),
+      getPullRequestIfExists: async () => readyPr,
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [],
+    },
+  });
+
+  assert.match(
+    renderDoctorReport(diagnostics),
+    /doctor_detail name=worktrees detail=tracked_pr_host_local_ci issue=#171 pr=#271 github_checks=green head_sha=head-ready-271 outcome=failed failure_class=workspace_toolchain_missing remediation_target=workspace_environment head=current summary=Configured local CI command could not run before marking PR #271 ready because the workspace toolchain is unavailable\. Remediation target: workspace environment\./,
+  );
+  assert.match(
+    renderDoctorReport(diagnostics),
+    /doctor_detail name=worktrees detail=tracked_pr_host_local_ci_gap issue=#171 pr=#271 workspace_preparation_command=unset gap=missing_workspace_prerequisite_visibility/,
+  );
+});
+
 test("diagnoseSupervisorHost caps rendered sqlite corruption details and summarizes omissions", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
   t.after(async () => {

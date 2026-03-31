@@ -1104,7 +1104,7 @@ export class Supervisor {
           continue;
         }
 
-        trackedPrMismatchLines.push(mismatch.summaryLine, mismatch.guidanceLine);
+        trackedPrMismatchLines.push(mismatch.summaryLine, ...mismatch.detailLines, mismatch.guidanceLine);
       } catch {
         // Degrade status diagnostics if tracked PR hydration fails.
       }
