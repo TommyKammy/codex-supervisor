@@ -32,7 +32,10 @@ export interface TrackedPrLifecycleProjection {
   recordForState: IssueRunRecord;
   reviewWaitPatch: Partial<IssueRunRecord>;
   copilotReviewRequestObservationPatch: Partial<IssueRunRecord>;
-  copilotReviewTimeoutPatch: Partial<IssueRunRecord>;
+  copilotReviewTimeoutPatch: Pick<
+    IssueRunRecord,
+    "copilot_review_timed_out_at" | "copilot_review_timeout_action" | "copilot_review_timeout_reason"
+  >;
   nextState: RunState;
   nextBlockedReason: BlockedReason | null;
   shouldSuppressRecovery: boolean;
