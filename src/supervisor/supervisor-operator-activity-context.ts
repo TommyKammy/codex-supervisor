@@ -86,6 +86,7 @@ function isLocalCiBlockingFailureSignature(signature: string | null): boolean {
   return (
     signature === "local-ci-gate-failed" ||
     signature === "local-ci-gate-missing_command" ||
+    signature === "local-ci-gate-workspace_toolchain_missing" ||
     signature === "local-ci-gate-non_zero_exit"
   );
 }

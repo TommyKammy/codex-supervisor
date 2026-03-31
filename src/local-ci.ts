@@ -92,18 +92,43 @@ function isMissingCommandError(error: unknown, command: string): boolean {
   });
 }
 
+function isMissingWorkspaceToolchainError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const commandError = error as ErrorWithOutput;
+  const lines = [error.message, commandError.stderr, commandError.stdout]
+    .filter((value): value is string => typeof value === "string")
+    .flatMap((value) => value.split(/\r?\n/))
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+
+  return lines.some((line) => /\bis not installed in this workspace\b/i.test(line));
+}
+
 function localCiFailureSignature(failureClass: Exclude<LocalCiFailureClass, "unset_contract">): string {
   return `local-ci-gate-${failureClass}`;
 }
 
 function classifyLocalCiFailure(error: unknown, command: string): Exclude<LocalCiFailureClass, "unset_contract"> {
-  return isMissingCommandError(error, command) ? "missing_command" : "non_zero_exit";
+  if (isMissingCommandError(error, command)) {
+    return "missing_command";
+  }
+
+  if (isMissingWorkspaceToolchainError(error)) {
+    return "workspace_toolchain_missing";
+  }
+
+  return "non_zero_exit";
 }
 
 function remediationTargetForFailureClass(failureClass: LocalCiFailureClass): LocalCiRemediationTarget {
   switch (failureClass) {
     case "missing_command":
       return "supervisor_config";
+    case "workspace_toolchain_missing":
+      return "workspace_environment";
     case "non_zero_exit":
       return "repo_owned_command";
     case "unset_contract":
@@ -127,6 +152,14 @@ function buildSummary(args: {
           `Configured local CI command is unavailable ${args.gateLabel}. Remediation target: supervisor config.`,
           1000,
         ) ?? "Configured local CI command is unavailable. Remediation target: supervisor config."
+      );
+    case "workspace_toolchain_missing":
+      return (
+        truncate(
+          `Configured local CI command could not run ${args.gateLabel} because the workspace toolchain is unavailable. Remediation target: workspace environment.`,
+          1000,
+        ) ??
+        "Configured local CI command could not run because the workspace toolchain is unavailable. Remediation target: workspace environment."
       );
     case "non_zero_exit":
       return (
