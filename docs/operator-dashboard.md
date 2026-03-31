@@ -94,6 +94,14 @@ Read the local CI posture the same way:
 - `Repo-owned local CI candidate exists but localCiCommand is unset.` The repo already defines a likely entrypoint, but codex-supervisor will not run it until `localCiCommand` is configured. This warning is advisory only.
 - `Repo-owned local CI contract is configured.` The configured command is now the active fail-closed gate. When configured local CI fails, PR publication stays blocked and ready-for-review promotion stays blocked until the repo-owned command passes again.
 
+If local CI is configured, remember that the config can now use either:
+
+- structured execution mode for an explicit executable plus arguments
+- explicit shell mode for a deliberately shell-driven command
+- a legacy shell-string config kept only for backward compatibility
+
+Use the [Configuration reference](./configuration.md) when you need to confirm which execution mode is active or when a local CI failure looks like a workspace toolchain problem instead of a repo command failure.
+
 ## Current safe command surface
 
 The dashboard currently exposes only the same narrow safe commands that the CLI exposes:

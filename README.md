@@ -1,45 +1,61 @@
 # codex-supervisor
 
-Deterministic GitHub issue, PR, CI, and review supervision for `codex exec` and `gh`.
+Keep Codex moving through execution-ready GitHub issues without babysitting every CI run, review thread, or merge step.
 
-`codex-supervisor` keeps the execution loop outside the chat thread: it stores local state, works in per-issue worktrees, and keeps re-reading GitHub before every next action.
-
-Pull-request hydration contract: action-taking supervisor paths must rely on fresh GitHub review facts. Any retained cached hydration data is informational and non-authoritative; it can help diagnostics and operator visibility, but it must not be the authority for review readiness, merge readiness, or similar PR decisions.
+`codex-supervisor` wraps `codex exec` and `gh` in a durable outer loop: it keeps local state, works in per-issue worktrees, re-reads GitHub on each cycle, and requires fresh GitHub PR facts before action-taking review or merge transitions.
 
 Japanese overview: [docs/README.ja.md](./docs/README.ja.md)  
 Japanese getting started: [docs/getting-started.ja.md](./docs/getting-started.ja.md)
+
+## The Problem
+
+Codex CLI is powerful, but long-running execution often breaks at the edges:
+
+- Codex stops mid-task and the next session has to reconstruct context
+- CI fails and nothing automatically picks up the repair loop
+- review feedback arrives after the original session is gone
+- draft PRs, local state, and GitHub state can drift unless something keeps reconciling them
+
+`codex-supervisor` is the outer loop that keeps that work moving. You author execution-ready GitHub issues, and the supervisor keeps re-checking the repo, worktree, PR, CI, and review state needed to advance them safely.
 
 ## What It Is
 
 Use `codex-supervisor` when you want Codex to work through execution-ready GitHub issues in a durable, explicit loop:
 
-- re-read issue, PR, checks, reviews, and mergeability from GitHub
+- re-read issue state on each cycle and require fresh PR review facts before action-taking PR transitions
 - select the next runnable issue instead of trusting chat history
 - run each turn in a dedicated worktree with a persistent issue journal
 - keep moving through draft PR, CI repair, review fixes, and merge
+
+```mermaid
+flowchart LR
+    A["Execution-ready GitHub issues"] --> B["codex-supervisor loop"]
+    B --> C["Per-issue worktree + journal"]
+    C --> D["Draft PR"]
+    D --> E{"Checks and reviews"}
+    E -->|pass| F["Merge-ready PR"]
+    E -->|fail or changes requested| B
+    B -->|select next runnable issue| A
+```
 
 GitHub-authored issue bodies, PR review comments, and related GitHub text are execution inputs, not trusted instructions by default. Treat that GitHub-authored text as part of the supervisor trust boundary and use the autonomous loop only in repos where the operator trusts both the repository and the GitHub authors who can supply that text.
 
 If you want the setup flow, first-run commands, and operator decisions, start with [Getting started](./docs/getting-started.md).
 If you are an AI agent entering the repo, start with the [AI agent handoff](./docs/agent-instructions.md) before reading the detailed references.
+If you need the narrower freshness and durability contracts, use [Architecture](./docs/architecture.md) and [Configuration reference](./docs/configuration.md) instead of treating this README as the full runtime spec.
 
 ## Who It Is For
 
-Best fit:
-
-- solo development or one clearly owned automation lane
-- repos with execution-ready issues and explicit dependency order
-- branch-protected repos with a stable PR and CI workflow
-- teams that want GitHub, not chat memory, to stay the source of truth
-
-Not a fit:
-
-- multi-author repos with frequent overlapping changes
-- backlogs whose priority and dependency order are mostly implicit
-- issue trackers full of discussion prompts instead of executable tasks
-- workflows that expect the supervisor to invent planning or coordination policy
+| Good fit | Not a fit |
+| --- | --- |
+| solo development or one clearly owned automation lane | multi-author repos with frequent overlapping changes |
+| repos with execution-ready issues and explicit dependency order | backlogs whose priority and dependency order are mostly implicit |
+| branch-protected repos with a stable PR and CI workflow | issue trackers full of discussion prompts instead of executable tasks |
+| teams that want GitHub, not chat memory, to stay the source of truth | workflows that expect the supervisor to invent planning or coordination policy |
 
 ## Quick Start
+
+Prerequisites: Node.js 18+, `gh auth status`, and `codex` CLI available from your shell.
 
 1. Install dependencies and build the CLI.
 
@@ -47,14 +63,6 @@ Not a fit:
    npm install
    npm run build
    ```
-
-   For the operator dashboard browser smoke suite, run:
-
-   ```bash
-   npm run test:webui-smoke
-   ```
-
-   The smoke harness launches a local Chrome/Chromium binary through `playwright-core` against an in-process HTTP fixture. If your browser executable is not on a standard `google-chrome`, `google-chrome-stable`, `chromium`, or `chromium-browser` path, set `CHROME_BIN=/path/to/browser`.
 
 2. Create your active config from the base example.
 
@@ -75,7 +83,11 @@ Not a fit:
    ```bash
    node dist/index.js run-once --config /path/to/supervisor.config.json
    node dist/index.js status --config /path/to/supervisor.config.json
-   node dist/index.js rollup-execution-metrics --config /path/to/supervisor.config.json
+   ```
+
+6. Start the durable loop only after the first pass looks sane.
+
+   ```bash
    node dist/index.js loop --config /path/to/supervisor.config.json
    ```
 
@@ -179,13 +191,16 @@ If `issue-lint` reports missing or malformed metadata, fix the issue body before
 
 Requirements: `gh auth status` must succeed, `codex` CLI must be installed, the managed repository should already have branch protection and CI in place, and the operator should only enable autonomous execution in a trusted repo with trusted GitHub authors. The current Codex runs use `--dangerously-bypass-approvals-and-sandbox`; see [Getting started](./docs/getting-started.md), [Configuration reference](./docs/configuration.md), and [Architecture](./docs/architecture.md) for the execution-safety boundary.
 
-State-file contract: missing JSON state is an empty bootstrap case, but corrupted JSON state is not. Treat corrupted JSON state as a recovery event, not a durable recovery point, until an operator has inspected it and performed an explicit acknowledgement or reset.
+## Operational Boundaries
 
-Workspace restore contract: `ensureWorkspace()` should prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap a fresh issue branch from an authoritative fresh default-branch ref such as `origin/<defaultBranch>`. Bootstrapping from the default branch is the fallback path when no existing issue branch can be restored.
+The README is the product overview, not the full runtime spec, but a few safety contracts matter even on a first read:
 
-Workspace cleanup contract: tracked done workspaces and orphaned workspaces are different cases. Tracked done workspace cleanup is the bounded delayed cleanup controlled by the done-workspace settings. An orphaned workspace is an untracked `issue-*` worktree under `workspaceRoot` that no longer has a live state entry; the explicit orphan prune flow only preserves candidates marked `locked`, `recent`, or `unsafe_target`, and abandoned orphan workspaces are only pruned through an explicit operator action rather than an implicit background cleanup. Run `node dist/index.js doctor --config /path/to/supervisor.config.json` and check `doctor_orphan_policy mode=explicit_only ...` when you need to confirm the effective orphan cleanup policy on a real setup.
+- missing JSON state is a normal bootstrap case, but corrupted JSON state is a recovery event that needs operator handling before that state is trusted again
+- corrupted JSON state is not a durable recovery point until the operator completes an explicit acknowledgement or reset
+- workspace restore prefers an existing local issue branch first, then an existing remote issue branch, and only then falls back to a fresh `origin/<defaultBranch>` bootstrap as the fallback path
+- tracked done workspaces and orphaned workspaces are different cleanup cases; orphan workspaces are preserved or pruned through explicit operator-driven orphan cleanup, and the preserve cases are `locked`, `recent`, and `unsafe_target`
 
-Execution metrics durability contract: terminal run summaries are retained under `<dirname(stateFile)>/execution-metrics/run-summaries/`, so worktree cleanup does not remove the aggregation source. Run `node dist/index.js rollup-execution-metrics --config /path/to/supervisor.config.json` to write the current daily rollup to `<dirname(stateFile)>/execution-metrics/daily-rollups.json`.
+Use [Configuration reference](./docs/configuration.md), [Getting started](./docs/getting-started.md), and [Architecture](./docs/architecture.md) when you need the detailed state, workspace, cleanup, or freshness contracts.
 
 ## Provider Profiles
 

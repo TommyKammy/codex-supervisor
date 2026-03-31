@@ -120,6 +120,18 @@ Repository-owned local CI policy:
 - `Repo-owned local CI candidate exists but localCiCommand is unset.` means setup/readiness found a repo script candidate. The source is `repo script candidate`. codex-supervisor will not run it until localCiCommand is configured. This warning is advisory only.
 - `Repo-owned local CI contract is configured.` means the configured command is active and fail-closed. When configured local CI fails, PR publication stays blocked until the command passes again.
 
+`localCiCommand` execution modes:
+
+- structured mode: configure an explicit executable plus argument list. This is the preferred mode because the supervisor runs the declared program directly without shell expansion.
+- explicit shell mode: configure a shell command intentionally when you really need shell grammar such as pipes or compound commands. Treat this as the high-risk escape hatch.
+- legacy shell-string mode: older string configs still work for backward compatibility, but they run through the shell and should be migrated to structured mode when practical.
+
+Operator rule of thumb:
+
+- prefer structured mode for repo-owned commands such as `npm`, `pnpm`, `cargo`, or `make`
+- use explicit shell mode only when the repo contract truly depends on shell syntax
+- if a configured local CI gate fails, inspect whether the failure came from the repo-owned command itself or from missing workspace toolchain prerequisites before changing the issue body
+
 Workspace cleanup:
 
 - `maxDoneWorkspaces`
@@ -127,6 +139,13 @@ Workspace cleanup:
 - `cleanupOrphanedWorkspacesAfterHours`
 
 `maxDoneWorkspaces` and `cleanupDoneWorkspacesAfterHours` apply only to tracked done workspaces. `cleanupOrphanedWorkspacesAfterHours` does not enable background orphan cleanup; it defines the age gate used when `doctor` reports orphan prune candidates and when the operator runs `prune-orphaned-workspaces`. An orphaned workspace is an untracked canonical issue workspace that no longer has a live state entry. The explicit `prune-orphaned-workspaces` path only preserves candidates whose eligibility is `locked`, `recent`, or `unsafe_target`; there is no separate manual-keep marker outside those states. The default orphan grace period is 24 hours, so `cleanupOrphanedWorkspacesAfterHours` keeps recently touched orphan workspaces in the `recent` state until that window expires. When you need to verify the live effective policy, run `doctor` and inspect `doctor_orphan_policy mode=explicit_only background_prune=false operator_prune=true grace_hours=... preserved=locked,recent,unsafe_target`.
+
+Setup config backup posture:
+
+- setup writes now keep a rotating local backup chain instead of overwriting a single `.bak` forever
+- the newest backup still lives at `<configPath>.bak`, and older snapshots rotate to numbered siblings such as `<configPath>.bak.1`
+- treat those backups as local operator rollback aids, not as a substitute for version control or host backups
+- if you automate config edits outside the setup flow, preserve the same expectation that backups are bounded and local rather than an infinite history log
 
 ## Operator Dashboard
 
