@@ -1,6 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import { loadConfigSummary, resolveConfigPath, summarizeLocalCiContract, summarizeTrustDiagnostics } from "./core/config";
+import {
+  displayLocalCiCommand,
+  loadConfigSummary,
+  resolveConfigPath,
+  summarizeLocalCiContract,
+  summarizeTrustDiagnostics,
+} from "./core/config";
 import type { LocalCiContractSummary, TrustDiagnosticsSummary } from "./core/types";
 import { diagnoseSupervisorHost, type DoctorCheck, type DoctorCheckStatus } from "./doctor";
 import { reviewProviderProfileFromConfig } from "./core/review-providers";
@@ -145,6 +151,10 @@ function displayValue(value: unknown): string | null {
   if (typeof value === "string") {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return displayLocalCiCommand(value as Parameters<typeof displayLocalCiCommand>[0]);
   }
 
   if (Array.isArray(value)) {

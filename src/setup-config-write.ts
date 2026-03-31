@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { loadConfigSummary, resolveConfigPath } from "./core/config";
+import { displayLocalCiCommand, loadConfigSummary, resolveConfigPath } from "./core/config";
 import { reviewProviderProfileFromConfig } from "./core/review-providers";
 import { isValidGitRefName, parseJson, writeJsonAtomic } from "./core/utils";
 import type { SetupConfigPreviewSelectableReviewProviderProfile } from "./setup-config-preview";
@@ -241,6 +241,14 @@ function currentSemanticFieldValue(args: {
       reviewBotLogins,
       configuredReviewProviders: undefined,
     }).profile;
+  }
+
+  if (field === "localCiCommand") {
+    if (resolvedConfig !== null) {
+      return displayLocalCiCommand(resolvedConfig.localCiCommand);
+    }
+
+    return displayStringValue(existingDocument.localCiCommand);
   }
 
   if (resolvedConfig !== null) {

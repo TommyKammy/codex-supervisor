@@ -320,6 +320,41 @@ test("loadConfig exposes an optional repo-owned local CI command", async (t) => 
   assert.equal(config.localCiCommand, "npm run ci:local");
 });
 
+test("loadConfig accepts a structured repo-owned local CI command", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      localCiCommand: {
+        mode: "structured",
+        executable: "npm",
+        args: ["run", "ci:local"],
+      },
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+
+  assert.deepEqual(config.localCiCommand, {
+    mode: "structured",
+    executable: "npm",
+    args: ["run", "ci:local"],
+  });
+});
+
 test("loadConfig falls back to the default candidate discovery fetch window for invalid values", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
   t.after(async () => {
