@@ -45,6 +45,18 @@ function formatCommandErrorStderr(stderr: string): string | null {
     return trimmed;
   }
 
+  const timeoutSummaryMatch = trimmed.match(/Command timed out after [^\n]+/);
+  if (timeoutSummaryMatch) {
+    const timeoutSummary = timeoutSummaryMatch[0];
+    const availableLength = Math.max(
+      COMMAND_ERROR_STDERR_LIMIT - timeoutSummary.length - OUTPUT_TRUNCATION_MARKER.length * 2,
+      0,
+    );
+    const prefixLength = Math.ceil(availableLength / 2);
+    const suffixLength = Math.floor(availableLength / 2);
+    return `${trimmed.slice(0, prefixLength)}${OUTPUT_TRUNCATION_MARKER}${timeoutSummary}${OUTPUT_TRUNCATION_MARKER}${trimmed.slice(trimmed.length - suffixLength)}`;
+  }
+
   const availableLength = COMMAND_ERROR_STDERR_LIMIT - OUTPUT_TRUNCATION_MARKER.length;
   const prefixLength = Math.ceil(availableLength / 2);
   const suffixLength = Math.floor(availableLength / 2);
@@ -100,6 +112,25 @@ function renderBoundedOutput(buffer: BoundedOutputBuffer): string {
   return buffer.truncated ? `${buffer.head}${OUTPUT_TRUNCATION_MARKER}${buffer.tail}` : buffer.head;
 }
 
+function appendRequiredTextPreservingBoundedOutput(renderedOutput: string, requiredText: string): string {
+  if (requiredText.length === 0 || renderedOutput.includes(requiredText)) {
+    return renderedOutput;
+  }
+
+  const suffix = `${renderedOutput.endsWith("\n") || renderedOutput.length === 0 ? "" : "\n"}${requiredText}`;
+  if (renderedOutput.length + suffix.length <= COMMAND_OUTPUT_CAPTURE_LIMIT) {
+    return `${renderedOutput}${suffix}`;
+  }
+
+  const availableLength = Math.max(COMMAND_OUTPUT_CAPTURE_LIMIT - suffix.length - OUTPUT_TRUNCATION_MARKER.length, 0);
+  const headLength = Math.ceil(availableLength / 2);
+  const tailLength = Math.floor(availableLength / 2);
+  const head = renderedOutput.slice(0, headLength);
+  const tail = tailLength > 0 ? renderedOutput.slice(renderedOutput.length - tailLength) : "";
+
+  return `${head}${OUTPUT_TRUNCATION_MARKER}${tail}${suffix}`;
+}
+
 export function renderCommandSummary(command: string, args: string[], visibleArgCount = 2): string {
   const visibleArgs = args.slice(0, visibleArgCount);
   const omittedCount = Math.max(args.length - visibleArgs.length, 0);
@@ -129,6 +160,7 @@ export async function runCommand(
     let killHandle: NodeJS.Timeout | undefined;
     let settled = false;
     let timedOut = false;
+    let timeoutMessage: string | null = null;
 
     const settleReject = (error: Error): void => {
       if (settled) {
@@ -179,7 +211,7 @@ export async function runCommand(
 
         timedOut = true;
         const pid = child.pid;
-        const timeoutMessage = `Command timed out after ${options.timeoutMs}ms: ${commandSummary}`;
+        timeoutMessage = `Command timed out after ${options.timeoutMs}ms: ${commandSummary}`;
         const stderr = renderBoundedOutput(stderrBuffer);
         appendBoundedOutput(
           stderrBuffer,
@@ -217,7 +249,12 @@ export async function runCommand(
     child.on("close", (code) => {
       const exitCode = code ?? 1;
       const stdout = renderBoundedOutput(stdoutBuffer);
-      const stderr = renderBoundedOutput(stderrBuffer);
+      const stderr = timedOut
+        ? appendRequiredTextPreservingBoundedOutput(
+            renderBoundedOutput(stderrBuffer),
+            timeoutMessage ? `${timeoutMessage}\n` : "",
+          )
+        : renderBoundedOutput(stderrBuffer);
       if (timedOut) {
         settleReject(
           new CommandExecutionError(

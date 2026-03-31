@@ -264,3 +264,56 @@ test("runCommand timeout errors bound noisy stderr while keeping timeout context
     },
   );
 });
+
+test("runCommand timeout errors preserve timeout summaries when stderr is already noisy before the timeout", async () => {
+  const stderrPrefix = "pre-timeout-prefix";
+  const stderrSuffix = "pre-timeout-suffix";
+
+  await assert.rejects(
+    () =>
+      runCommand(
+        process.execPath,
+        [
+          "-e",
+          `
+            const write = (chunk) => new Promise((resolve, reject) => {
+              process.stderr.write(chunk, (error) => {
+                if (error) {
+                  reject(error);
+                  return;
+                }
+                resolve(undefined);
+              });
+            });
+            (async () => {
+              await write(${JSON.stringify(`${stderrPrefix}\n`)});
+              for (let i = 0; i < 200; i += 1) {
+                await write("q".repeat(1000));
+              }
+              await write(${JSON.stringify(`\n${stderrSuffix}\n`)});
+              setInterval(() => {}, 1000);
+            })().catch((error) => {
+              console.error(error);
+              process.exit(1);
+            });
+          `,
+        ],
+        {
+          timeoutMs: 50,
+        },
+      ),
+    (error: unknown) => {
+      assert.ok(error instanceof CommandExecutionError);
+      assert.equal(error.timedOut, true);
+      assert.match(error.message, /Command timed out:/);
+      assert.match(error.message, /Command timed out after 50ms:/);
+      assert.match(error.message, new RegExp(stderrPrefix));
+      assert.match(error.message, /\n\.\.\.\n/);
+      assert.match(error.stderr, new RegExp(stderrPrefix));
+      assert.match(error.stderr, new RegExp(stderrSuffix));
+      assert.match(error.stderr, /Command timed out after 50ms:/);
+      assert.match(error.stderr, /\n\.\.\.\n/);
+      return true;
+    },
+  );
+});
