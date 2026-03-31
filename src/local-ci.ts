@@ -149,6 +149,10 @@ function resolveLocalCiCommand(command: LocalCiCommandConfig | undefined): Resol
   };
 }
 
+function isResolvedLocalCiCommand(command: ResolvedLocalCiCommand | LocalCiCommandConfig): command is ResolvedLocalCiCommand {
+  return typeof command === "object" && command !== null && "displayCommand" in command && "executionMode" in command;
+}
+
 function localCiFailureSignature(failureClass: Exclude<LocalCiFailureClass, "unset_contract">): string {
   return `local-ci-gate-${failureClass}`;
 }
@@ -260,8 +264,7 @@ function buildFailureDetails(error: unknown, executionMode: LocalCiExecutionMode
 }
 
 export async function executeLocalCiCommand(command: ResolvedLocalCiCommand | LocalCiCommandConfig, workspacePath: string): Promise<void> {
-  const resolvedCommand =
-    "displayCommand" in command && "executionMode" in command ? command : resolveLocalCiCommand(command);
+  const resolvedCommand = isResolvedLocalCiCommand(command) ? command : resolveLocalCiCommand(command);
   if (!resolvedCommand) {
     throw new Error("Local CI command is not configured.");
   }
@@ -276,13 +279,18 @@ export async function executeLocalCiCommand(command: ResolvedLocalCiCommand | Lo
   };
 
   if (resolvedCommand.executionMode === "structured") {
-    await runCommand(resolvedCommand.config.executable, resolvedCommand.config.args ?? [], options);
+    const structuredCommand = resolvedCommand.config as Exclude<LocalCiCommandConfig, string> & {
+      mode: "structured";
+      executable: string;
+      args?: string[];
+    };
+    await runCommand(structuredCommand.executable, structuredCommand.args ?? [], options);
     return;
   }
 
   const shellCommand = typeof resolvedCommand.config === "string"
     ? resolvedCommand.config
-    : resolvedCommand.config.command;
+    : (resolvedCommand.config as { command: string }).command;
   await runCommand("sh", ["-lc", shellCommand], options);
 }
 

@@ -959,6 +959,7 @@ test("statusReport exposes typed operator activity context for the active issue"
           summary: "Configured local CI command failed before marking PR #58 ready.",
           ran_at: "2026-03-22T00:10:00Z",
           head_sha: "head-new-58",
+          execution_mode: "legacy_shell_string",
           failure_class: "non_zero_exit",
           remediation_target: "repo_owned_command",
         },
