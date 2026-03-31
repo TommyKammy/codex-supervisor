@@ -425,18 +425,29 @@ function parseLastEventId(value: string | string[] | undefined): number | null {
 async function readJsonBody(request: http.IncomingMessage): Promise<unknown> {
   const contentLength = readContentLengthHeader(request.headers["content-length"]);
   if (contentLength !== null && contentLength > MAX_JSON_BODY_BYTES) {
+    await drainRequestBody(request);
     throw new HttpRequestError(413, "Request body exceeds the maximum JSON size.");
   }
 
   let payload = "";
   let payloadBytes = 0;
+  let oversized = false;
   request.setEncoding("utf8");
   for await (const chunk of request) {
+    if (oversized) {
+      continue;
+    }
     payloadBytes += Buffer.byteLength(chunk);
     if (payloadBytes > MAX_JSON_BODY_BYTES) {
-      throw new HttpRequestError(413, "Request body exceeds the maximum JSON size.");
+      oversized = true;
+      payload = "";
+      continue;
     }
     payload += chunk;
+  }
+
+  if (oversized) {
+    throw new HttpRequestError(413, "Request body exceeds the maximum JSON size.");
   }
 
   if (payload.length === 0) {
@@ -447,6 +458,13 @@ async function readJsonBody(request: http.IncomingMessage): Promise<unknown> {
     return JSON.parse(payload) as unknown;
   } catch {
     throw new HttpRequestError(400, "Request body must be valid JSON.");
+  }
+}
+
+async function drainRequestBody(request: http.IncomingMessage): Promise<void> {
+  request.resume();
+  for await (const _chunk of request) {
+    // Drain the request so the client receives an HTTP error instead of a reset.
   }
 }
 
