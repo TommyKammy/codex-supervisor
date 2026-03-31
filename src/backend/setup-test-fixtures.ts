@@ -60,6 +60,37 @@ const DEFAULT_CONFIG_PREVIEW_VALIDATION: SetupConfigPreviewValidation = {
   error: null,
 };
 
+function cloneReviewBotLogins(reviewBotLogins: string[]): string[] {
+  return [...reviewBotLogins];
+}
+
+function cloneSupportedReviewProviderProfiles(
+  profiles: SetupConfigPreviewSupportedProfile[],
+): SetupConfigPreviewSupportedProfile[] {
+  return profiles.map((profile) => ({
+    ...profile,
+    reviewBotLogins: cloneReviewBotLogins(profile.reviewBotLogins),
+  }));
+}
+
+function cloneSetupConfigPreviewValidation(
+  validation: SetupConfigPreviewValidation,
+): SetupConfigPreviewValidation {
+  return {
+    ...validation,
+    missingRequiredFields: [...validation.missingRequiredFields],
+    invalidFields: [...validation.invalidFields],
+  };
+}
+
+function cloneSetupDocumentRecord(document: Record<string, unknown>): Record<string, unknown> {
+  const reviewBotLogins = document.reviewBotLogins;
+  return {
+    ...document,
+    reviewBotLogins: Array.isArray(reviewBotLogins) ? [...reviewBotLogins] : reviewBotLogins,
+  };
+}
+
 const DEFAULT_SETUP_FIELD_FIXTURES: Record<SetupReadinessFieldKey, Omit<SetupReadinessField, "key">> = {
   repoPath: {
     label: "Repository path",
@@ -192,10 +223,14 @@ export function createSetupField(
   key: SetupReadinessFieldKey,
   overrides: Partial<SetupReadinessField> = {},
 ): SetupReadinessField {
-  return {
+  const field = {
     key,
     ...DEFAULT_SETUP_FIELD_FIXTURES[key],
     ...overrides,
+  };
+  return {
+    ...field,
+    metadata: { ...field.metadata },
   };
 }
 
@@ -281,10 +316,10 @@ export function createSetupReadinessReport(
 }
 
 export function createSetupDocument(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
+  return cloneSetupDocumentRecord({
     ...DEFAULT_SETUP_DOCUMENT,
     ...overrides,
-  };
+  });
 }
 
 export function createSetupConfigPreviewFieldChange(
@@ -305,18 +340,24 @@ export function createSetupConfigPreviewFieldChange(
 export function createSetupConfigPreview(
   overrides: Partial<SetupConfigPreview> = {},
 ): SetupConfigPreview {
-  return {
-    kind: "setup_config_preview",
-    mode: "patch",
+  const preview = {
+    kind: "setup_config_preview" as const,
+    mode: "patch" as const,
     configPath: DEFAULT_CONFIG_PATH,
-    writesConfig: false,
-    selectedReviewProviderProfile: "codex",
+    writesConfig: false as const,
+    selectedReviewProviderProfile: "codex" as const,
     supportedReviewProviderProfiles: DEFAULT_SUPPORTED_REVIEW_PROVIDER_PROFILES,
     preservedUnknownFields: ["experimentalFlag"],
     document: createSetupDocument(),
     fieldChanges: [createSetupConfigPreviewFieldChange()],
     validation: DEFAULT_CONFIG_PREVIEW_VALIDATION,
     ...overrides,
+  };
+  return {
+    ...preview,
+    supportedReviewProviderProfiles: cloneSupportedReviewProviderProfiles(preview.supportedReviewProviderProfiles),
+    document: cloneSetupDocumentRecord(preview.document),
+    validation: cloneSetupConfigPreviewValidation(preview.validation),
   };
 }
 
