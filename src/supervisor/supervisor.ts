@@ -920,13 +920,16 @@ export class Supervisor {
         localReviewHighSeverityNeedsRetry(this.config, lifecycle.recordForState, currentPr)
           ? localReviewFailureContext(lifecycle.recordForState)
           : null);
+      const staleReadyToMerge = currentPr.headRefOid !== pr.headRefOid && lifecycle.nextState === "ready_to_merge";
 
-      if (lifecycle.nextState !== "ready_to_merge") {
+      if (lifecycle.nextState !== "ready_to_merge" || staleReadyToMerge) {
         nextRecord = this.stateStore.touch(nextRecord, {
           ...lifecyclePatch,
-          state: lifecycle.nextState,
+          state: staleReadyToMerge ? "stabilizing" : lifecycle.nextState,
           last_error:
-            lifecycle.nextState === "blocked" && effectiveFailureContext
+            staleReadyToMerge
+              ? nextRecord.last_error
+              : lifecycle.nextState === "blocked" && effectiveFailureContext
               ? truncate(effectiveFailureContext.summary, 1000)
               : lifecycle.nextState === "local_review_fix" &&
                   localReviewHighSeverityNeedsRetry(this.config, lifecycle.recordForState, currentPr)
@@ -935,7 +938,9 @@ export class Supervisor {
           last_failure_context: effectiveFailureContext,
           ...applyFailureSignature(nextRecord, effectiveFailureContext),
           blocked_reason:
-            lifecycle.nextState === "blocked"
+            staleReadyToMerge
+              ? null
+              : lifecycle.nextState === "blocked"
               ? blockedReasonForLifecycleState(
                   this.config,
                   lifecycle.recordForState,

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { ensureWorkspace } from "../core/workspace";
 import { Supervisor } from "./supervisor";
 import { GitHubIssue, GitHubPullRequest, PullRequestCheck, ReviewThread, SupervisorStateFile } from "../core/types";
 import {
@@ -22,33 +23,32 @@ async function withStubbedDateNow<T>(nowIso: string, run: () => Promise<T>): Pro
   }
 }
 
+function runnableCodexIssueBody(summary: string): string {
+  return `${executionReadyBody(summary)}
+
+Depends on: none
+Execution order: 1 of 1
+Parallelizable: No`;
+}
+
 test("runOnce marks a clean draft PR ready and enables auto-merge after the turn", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 92;
   const branch = branchName(fixture.config, issueNumber);
   const state: SupervisorStateFile = {
-    activeIssueNumber: issueNumber,
-    issues: {
-      [String(issueNumber)]: createRecord({
-        issue_number: issueNumber,
-        state: "stabilizing",
-        branch,
-        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
-        journal_path: null,
-        pr_number: 113,
-        blocked_reason: null,
-      }),
-    },
+    activeIssueNumber: null,
+    issues: {},
   };
   await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 
   const issue: GitHubIssue = {
     number: issueNumber,
     title: "Extract post-turn PR transitions",
-    body: "",
+    body: runnableCodexIssueBody("Extract post-turn PR transitions."),
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const draftPr: GitHubPullRequest = {
@@ -91,7 +91,7 @@ test("runOnce marks a clean draft PR ready and enables auto-merge after the turn
     getIssue: async () => issue,
     resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
       assert.equal(branchName, branch);
-      assert.equal(prNumber, 113);
+      assert.equal(prNumber, null);
       return draftPr;
     },
     getChecks: async (prNumber: number) => {
@@ -147,28 +147,19 @@ test("runOnce waits for Copilot propagation after marking a draft PR ready", asy
     reviewBotLogins: ["copilot-pull-request-reviewer"],
   });
   const state: SupervisorStateFile = {
-    activeIssueNumber: issueNumber,
-    issues: {
-      [String(issueNumber)]: createRecord({
-        issue_number: issueNumber,
-        state: "stabilizing",
-        branch,
-        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
-        journal_path: null,
-        pr_number: 114,
-        blocked_reason: null,
-      }),
-    },
+    activeIssueNumber: null,
+    issues: {},
   };
   await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 
   const issue: GitHubIssue = {
     number: issueNumber,
     title: "Honor the refreshed review-wait snapshot after ready for review",
-    body: "",
+    body: runnableCodexIssueBody("Honor the refreshed review-wait snapshot after ready for review."),
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const draftPr: GitHubPullRequest = {
@@ -212,7 +203,7 @@ test("runOnce waits for Copilot propagation after marking a draft PR ready", asy
     getIssue: async () => issue,
     resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
       assert.equal(branchName, branch);
-      assert.equal(prNumber, 114);
+      assert.equal(prNumber, null);
       return draftPr;
     },
     getChecks: async (prNumber: number) => {
@@ -319,6 +310,7 @@ test("handlePostTurnPullRequestTransitions refreshes PR state after marking read
   let snapshotLoads = 0;
   let syncJournalCalls = 0;
   const supervisor = new Supervisor(fixture.config);
+  await ensureWorkspace(fixture.config, issueNumber, branch);
   (supervisor as unknown as { loadOpenPullRequestSnapshot: (prNumber: number) => Promise<unknown> }).loadOpenPullRequestSnapshot = async (
     prNumber: number,
   ) => {
@@ -755,10 +747,11 @@ test("runOnce records an observed Copilot request time when GitHub omits the req
   const issue: GitHubIssue = {
     number: issueNumber,
     title: "Persist observed Copilot request time",
-    body: executionReadyBody("Persist observed Copilot request time."),
+    body: runnableCodexIssueBody("Persist observed Copilot request time."),
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
   const pr: GitHubPullRequest = {
