@@ -1,3 +1,5 @@
+import { buildBrowserLocalCiStatusLines } from "./webui-browser-script-helpers";
+
 export interface DashboardSelectionSummaryLike {
   selectedIssueNumber?: number | null;
 }
@@ -7,8 +9,6 @@ export interface DashboardActiveIssueLike {
   state?: string | null;
   branch?: string | null;
 }
-
-import { buildLocalCiContractStatusLines } from "./webui-local-ci-browser-helpers";
 
 export interface DashboardTrackedIssueLike {
   issueNumber: number;
@@ -396,7 +396,7 @@ export function buildStatusLines(status: DashboardStatusLike | null | undefined)
     ...(status?.readinessLines ?? []),
     ...(status?.whyLines ?? []),
     ...formatCandidateDiscovery(status),
-    ...buildLocalCiContractStatusLines(status?.localCiContract ?? null),
+    ...buildBrowserLocalCiStatusLines(status?.localCiContract ?? null),
     ...(status?.reconciliationWarning ? [status.reconciliationWarning] : []),
   ];
 }

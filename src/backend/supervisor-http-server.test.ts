@@ -7,16 +7,17 @@ import type { SetupConfigPreview } from "../setup-config-preview";
 import type { SetupConfigUpdateResult } from "../setup-config-write";
 import { buildActiveIssueChangedEvent, type SupervisorEvent, type SupervisorEventSink } from "../supervisor";
 import type { SupervisorService } from "../supervisor";
+import {
+  createSetupConfigPreview,
+  createSetupConfigUpdateResult,
+  createSetupReadinessReport,
+  createUnavailableManagedRestart,
+} from "./setup-test-fixtures";
 import { createRestartableWebUiShellService } from "./restartable-webui-shell-service";
 import { createSupervisorHttpServer } from "./supervisor-http-server";
 import { WEBUI_MUTATION_AUTH_HEADER } from "./webui-mutation-auth";
 
-const unavailableManagedRestart = {
-  supported: false,
-  launcher: null,
-  state: "unavailable",
-  summary: "Managed restart is unavailable because this WebUI process was not started with explicit launcher-backed restart support.",
-};
+const unavailableManagedRestart = createUnavailableManagedRestart();
 
 const testMutationAuth = { token: "local-test-secret" };
 
@@ -297,182 +298,10 @@ function createStubService(args?: {
     candidateDiscoverySummary: "candidate_discovery fetch_window=100 strategy=paginated",
     candidateDiscoveryWarning: null,
   };
-  const setupReadinessReport: SetupReadinessReport = args?.setupReadinessReport ?? {
-    kind: "setup_readiness",
-    ready: false,
-    overallStatus: "missing",
-    configPath: "/tmp/supervisor.config.json",
-    fields: [
-      {
-        key: "repoPath",
-        label: "Repository path",
-        state: "configured",
-        value: "/tmp/repo",
-        message: "Repository path is configured.",
-        required: true,
-        metadata: {
-          source: "config",
-          editable: true,
-          valueType: "directory_path",
-        },
-      },
-      {
-        key: "repoSlug",
-        label: "Repository slug",
-        state: "configured",
-        value: "owner/repo",
-        message: "Repository slug is configured.",
-        required: true,
-        metadata: {
-          source: "config",
-          editable: true,
-          valueType: "repo_slug",
-        },
-      },
-      {
-        key: "workspaceRoot",
-        label: "Workspace root",
-        state: "configured",
-        value: "/tmp/worktrees",
-        message: "Workspace root is configured.",
-        required: true,
-        metadata: {
-          source: "config",
-          editable: true,
-          valueType: "directory_path",
-        },
-      },
-      {
-        key: "reviewProvider",
-        label: "Review provider",
-        state: "missing",
-        value: null,
-        message: "Configure at least one review provider before first-run setup is complete.",
-        required: true,
-        metadata: {
-          source: "config",
-          editable: true,
-          valueType: "review_provider",
-        },
-      },
-    ],
-    blockers: [
-      {
-        code: "missing_review_provider",
-        message: "Configure at least one review provider before first-run setup is complete.",
-        fieldKeys: ["reviewProvider"],
-        remediation: {
-          kind: "configure_review_provider",
-          summary: "Configure at least one review provider before first-run setup is complete.",
-          fieldKeys: ["reviewProvider"],
-        },
-      },
-    ],
-    hostReadiness: {
-      overallStatus: "pass",
-      checks: [
-        {
-          name: "github_auth",
-          status: "pass",
-          summary: "GitHub auth ok.",
-          details: [],
-        },
-      ],
-    },
-    providerPosture: {
-      profile: "none",
-      provider: "none",
-      reviewers: [],
-      signalSource: "none",
-      configured: false,
-      summary: "No review provider is configured.",
-    },
-    trustPosture: {
-      trustMode: "trusted_repo_and_authors",
-      executionSafetyMode: "unsandboxed_autonomous",
-      warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
-      summary: "Trusted inputs with unsandboxed autonomous execution.",
-    },
-  };
-  const setupConfigPreview: SetupConfigPreview = args?.setupConfigPreview ?? {
-    kind: "setup_config_preview",
-    mode: "patch",
-    configPath: "/tmp/supervisor.config.json",
-    writesConfig: false,
-    selectedReviewProviderProfile: "codex",
-    supportedReviewProviderProfiles: [
-      {
-        id: "none",
-        label: "No provider selected yet",
-        reviewBotLogins: [],
-      },
-      {
-        id: "copilot",
-        label: "GitHub Copilot",
-        reviewBotLogins: ["copilot-pull-request-reviewer"],
-      },
-      {
-        id: "codex",
-        label: "Codex Connector",
-        reviewBotLogins: ["chatgpt-codex-connector"],
-      },
-      {
-        id: "coderabbit",
-        label: "CodeRabbit",
-        reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
-      },
-    ],
-    preservedUnknownFields: ["experimentalFlag"],
-    document: {
-      repoPath: ".",
-      repoSlug: "owner/repo",
-      defaultBranch: "main",
-      workspaceRoot: "/tmp/worktrees",
-      stateFile: "/tmp/state.json",
-      codexBinary: "codex",
-      branchPrefix: "codex/issue-",
-      reviewBotLogins: ["chatgpt-codex-connector"],
-      experimentalFlag: true,
-    },
-    fieldChanges: [
-      {
-        key: "reviewProvider",
-        label: "Review provider",
-        currentValue: null,
-        previewValue: ["chatgpt-codex-connector"],
-        source: "selected_review_provider_profile",
-        state: "suggested",
-        summary: "Applies the Codex Connector review provider profile.",
-      },
-    ],
-    validation: {
-      status: "ready",
-      missingRequiredFields: [],
-      invalidFields: [],
-      error: null,
-    },
-  };
-  const setupConfigUpdateResult: SetupConfigUpdateResult = args?.setupConfigUpdateResult ?? {
-    kind: "setup_config_update",
-    configPath: "/tmp/supervisor.config.json",
-    backupPath: "/tmp/supervisor.config.json.bak",
-    updatedFields: ["reviewProvider"],
-    restartRequired: true,
-    restartScope: "supervisor",
-    restartTriggeredByFields: ["reviewProvider"],
-    document: {
-      repoPath: ".",
-      repoSlug: "owner/repo",
-      defaultBranch: "main",
-      workspaceRoot: "/tmp/worktrees",
-      stateFile: "/tmp/state.json",
-      codexBinary: "codex",
-      branchPrefix: "codex/issue-",
-      reviewBotLogins: ["chatgpt-codex-connector"],
-      experimentalFlag: true,
-    },
-    readiness: setupReadinessReport,
-  };
+  const setupReadinessReport: SetupReadinessReport = args?.setupReadinessReport ?? createSetupReadinessReport();
+  const setupConfigPreview: SetupConfigPreview = args?.setupConfigPreview ?? createSetupConfigPreview();
+  const setupConfigUpdateResult: SetupConfigUpdateResult =
+    args?.setupConfigUpdateResult ?? createSetupConfigUpdateResult({ readiness: setupReadinessReport });
 
   const eventSubscribers = new Set<SupervisorEventSink>();
 
