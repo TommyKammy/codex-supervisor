@@ -2,6 +2,15 @@ import assert from "node:assert/strict";
 import { setImmediate as waitForTurn } from "node:timers/promises";
 import test from "node:test";
 import vm from "node:vm";
+import {
+  createSetupConfigUpdateResult,
+  createSetupField,
+  createSetupProviderPosture,
+  createSetupReadinessReport,
+  createSetupTrustPosture,
+  createUnavailableManagedRestart,
+  withManagedRestart,
+} from "./setup-test-fixtures";
 import { renderSupervisorDashboardHtml } from "./webui-dashboard";
 import { DASHBOARD_PANEL_REGISTRY } from "./webui-dashboard-panel-layout";
 import { WEBUI_MUTATION_AUTH_HEADER, WEBUI_MUTATION_AUTH_STORAGE_KEY } from "./webui-mutation-auth";
@@ -43,12 +52,7 @@ interface ManualTimerController {
 
 const SAMPLE_MACOS_WORKSPACE_ROOT = `/${"Users"}/example/dev/work`;
 
-const unavailableManagedRestart = {
-  supported: false,
-  launcher: null,
-  state: "unavailable",
-  summary: "Managed restart is unavailable because this WebUI process was not started with explicit launcher-backed restart support.",
-};
+const unavailableManagedRestart = createUnavailableManagedRestart();
 
 class FakeStorage {
   private readonly entries = new Map<string, string>();
@@ -677,60 +681,31 @@ test("setup page reuses the dashboard-grade admin shell with stable setup sectio
 });
 
 test("dashboard page renders repository identity from setup readiness data", () => {
-  const html = renderSupervisorDashboardHtml({
-    kind: "setup_readiness",
+  const html = renderSupervisorDashboardHtml(createSetupReadinessReport({
     ready: true,
     overallStatus: "configured",
-    configPath: "/tmp/supervisor.config.json",
     fields: [
-      {
-        key: "repoSlug",
-        label: "Repository slug",
-        state: "configured",
-        value: "owner/<repo>\"",
-        message: "Repository slug is configured.",
-        required: true,
-        metadata: { source: "config", editable: true, valueType: "repo_slug" },
-      },
-      {
-        key: "repoPath",
-        label: "Repository path",
-        state: "configured",
-        value: "/Users/<example>/dev/\"repo",
-        message: "Repository path is configured.",
-        required: true,
-        metadata: { source: "config", editable: true, valueType: "directory_path" },
-      },
-      {
-        key: "workspaceRoot",
-        label: "Workspace root",
-        state: "configured",
-        value: `${SAMPLE_MACOS_WORKSPACE_ROOT}"trees`,
-        message: "Workspace root is configured.",
-        required: true,
-        metadata: { source: "config", editable: true, valueType: "directory_path" },
-      },
+      createSetupField("repoSlug", { value: "owner/<repo>\"" }),
+      createSetupField("repoPath", { value: "/Users/<example>/dev/\"repo" }),
+      createSetupField("workspaceRoot", { value: `${SAMPLE_MACOS_WORKSPACE_ROOT}"trees` }),
     ],
     blockers: [],
     hostReadiness: {
       overallStatus: "pass",
       checks: [],
     },
-    providerPosture: {
+    providerPosture: createSetupProviderPosture({
       profile: "codex",
       provider: "codex",
       reviewers: ["codex"],
       signalSource: "reviewBotLogins",
       configured: true,
       summary: "Review provider posture uses codex via reviewBotLogins.",
-    },
-    trustPosture: {
-      trustMode: "trusted_repo_and_authors",
-      executionSafetyMode: "unsandboxed_autonomous",
+    }),
+    trustPosture: createSetupTrustPosture({
       warning: null,
-      summary: "Trusted inputs with unsandboxed autonomous execution.",
-    },
-  });
+    }),
+  }));
 
   assert.match(html, /id="repo-slug-value" class="masthead-repo">owner\/&lt;repo&gt;&quot;</u);
   assert.match(html, /id="repo-path-value" class="context-path">\/Users\/&lt;example&gt;\/dev\/&quot;repo</u);
@@ -1962,39 +1937,10 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
   const harness = createSetupHarness([
     {
       path: "/api/setup-readiness",
-      response: jsonResponse({
-        kind: "setup_readiness",
-        managedRestart: unavailableManagedRestart,
-        ready: false,
-        overallStatus: "missing",
-        configPath: "/tmp/supervisor.config.json",
+      response: jsonResponse(withManagedRestart(createSetupReadinessReport({
         fields: [
-          {
-            key: "repoPath",
-            label: "Repository path",
-            state: "configured",
-            value: "/tmp/repo",
-            message: "Repository path is configured.",
-            required: true,
-            metadata: {
-              source: "config",
-              editable: true,
-              valueType: "directory_path",
-            },
-          },
-          {
-            key: "reviewProvider",
-            label: "Review provider",
-            state: "missing",
-            value: null,
-            message: "Configure at least one review provider before first-run setup is complete.",
-            required: true,
-            metadata: {
-              source: "config",
-              editable: true,
-              valueType: "review_provider",
-            },
-          },
+          createSetupField("repoPath"),
+          createSetupField("reviewProvider"),
           {
             key: "sessionName",
             label: "Session name",
@@ -2002,18 +1948,6 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
             value: null,
             message: "Session name is optional.",
             required: false,
-          },
-        ],
-        blockers: [
-          {
-            code: "missing_review_provider",
-            message: "Configure at least one review provider before first-run setup is complete.",
-            fieldKeys: ["reviewProvider"],
-            remediation: {
-              kind: "configure_review_provider",
-              summary: "Configure at least one review provider before first-run setup is complete.",
-              fieldKeys: ["reviewProvider"],
-            },
           },
         ],
         hostReadiness: {
@@ -2025,27 +1959,13 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
             details: ["Authenticated as octocat."],
           }],
         },
-        providerPosture: {
-          profile: "none",
-          provider: "none",
-          reviewers: [],
-          signalSource: "none",
-          configured: false,
-          summary: "No review provider is configured.",
-        },
-        trustPosture: {
-          trustMode: "trusted_repo_and_authors",
-          executionSafetyMode: "unsandboxed_autonomous",
-          warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
-          summary: "Trusted inputs with unsandboxed autonomous execution.",
-        },
         localCiContract: {
           configured: false,
           command: null,
           source: "config",
           summary: "No repo-owned local CI contract is configured.",
         },
-      }),
+      }), unavailableManagedRestart)),
     },
   ]);
   await harness.flush();
@@ -2081,43 +2001,23 @@ test("setup shell highlights a repo-owned local CI candidate when localCiCommand
   const harness = createSetupHarness([
     {
       path: "/api/setup-readiness",
-      response: jsonResponse({
-        kind: "setup_readiness",
-        managedRestart: unavailableManagedRestart,
+      response: jsonResponse(withManagedRestart(createSetupReadinessReport({
         ready: true,
         overallStatus: "configured",
-        configPath: "/tmp/supervisor.config.json",
         fields: [
-          {
-            key: "localCiCommand",
-            label: "Local CI command",
-            state: "missing",
-            value: null,
-            message: "Local CI command is optional until you opt in to the repo-owned contract.",
-            required: false,
-            metadata: {
-              source: "config",
-              editable: true,
-              valueType: "text",
-            },
-          },
+          createSetupField("localCiCommand"),
         ],
         blockers: [],
         hostReadiness: { overallStatus: "pass", checks: [] },
-        providerPosture: {
+        providerPosture: createSetupProviderPosture({
           profile: "codex",
           provider: "codex",
           reviewers: ["chatgpt-codex-connector"],
           signalSource: "review_bot_logins",
           configured: true,
           summary: "Codex Connector is configured.",
-        },
-        trustPosture: {
-          trustMode: "trusted_repo_and_authors",
-          executionSafetyMode: "unsandboxed_autonomous",
-          warning: null,
-          summary: "Trusted inputs with unsandboxed autonomous execution.",
-        },
+        }),
+        trustPosture: createSetupTrustPosture({ warning: null }),
         localCiContract: {
           configured: false,
           command: null,
@@ -2126,7 +2026,7 @@ test("setup shell highlights a repo-owned local CI candidate when localCiCommand
           summary:
             "Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: npm run verify:pre-pr.",
         },
-      }),
+      }), unavailableManagedRestart)),
     },
   ]);
   await harness.flush();
@@ -2153,43 +2053,23 @@ test("setup shell lets operators adopt the recommended local CI command and save
   const harness = createSetupHarness([
     {
       path: "/api/setup-readiness",
-      response: jsonResponse({
-        kind: "setup_readiness",
-        managedRestart: unavailableManagedRestart,
+      response: jsonResponse(withManagedRestart(createSetupReadinessReport({
         ready: true,
         overallStatus: "configured",
-        configPath: "/tmp/supervisor.config.json",
         fields: [
-          {
-            key: "localCiCommand",
-            label: "Local CI command",
-            state: "missing",
-            value: null,
-            message: "Local CI command is optional until you opt in to the repo-owned contract.",
-            required: false,
-            metadata: {
-              source: "config",
-              editable: true,
-              valueType: "text",
-            },
-          },
+          createSetupField("localCiCommand"),
         ],
         blockers: [],
         hostReadiness: { overallStatus: "pass", checks: [] },
-        providerPosture: {
+        providerPosture: createSetupProviderPosture({
           profile: "codex",
           provider: "codex",
           reviewers: ["chatgpt-codex-connector"],
           signalSource: "review_bot_logins",
           configured: true,
           summary: "Codex Connector is configured.",
-        },
-        trustPosture: {
-          trustMode: "trusted_repo_and_authors",
-          executionSafetyMode: "unsandboxed_autonomous",
-          warning: null,
-          summary: "Trusted inputs with unsandboxed autonomous execution.",
-        },
+        }),
+        trustPosture: createSetupTrustPosture({ warning: null }),
         localCiContract: {
           configured: false,
           command: null,
@@ -2198,7 +2078,7 @@ test("setup shell lets operators adopt the recommended local CI command and save
           summary:
             "Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: npm run verify:pre-pr.",
         },
-      }),
+      }), unavailableManagedRestart)),
     },
     {
       path: "/api/setup-config",
@@ -2235,95 +2115,66 @@ test("setup shell lets operators adopt the recommended local CI command and save
   await harness.flush();
   assert.match(saveStatus.textContent ?? "", /Saving setup changes\.\.\./u);
 
-  setupConfigResponse.resolve(jsonResponse({
-    kind: "setup_config_update",
-    managedRestart: unavailableManagedRestart,
-    configPath: "/tmp/supervisor.config.json",
+  setupConfigResponse.resolve(jsonResponse(withManagedRestart(createSetupConfigUpdateResult({
     backupPath: null,
     updatedFields: ["localCiCommand"],
-    restartRequired: true,
-    restartScope: "supervisor",
     restartTriggeredByFields: ["localCiCommand"],
     document: {
       localCiCommand: "npm run verify:pre-pr",
     },
-    readiness: {
-      kind: "setup_readiness",
-      managedRestart: unavailableManagedRestart,
+    readiness: createSetupReadinessReport({
       ready: true,
       overallStatus: "configured",
-      configPath: "/tmp/supervisor.config.json",
       fields: [],
       blockers: [],
       hostReadiness: { overallStatus: "pass", checks: [] },
-      providerPosture: {
+      providerPosture: createSetupProviderPosture({
         profile: "codex",
         provider: "codex",
         reviewers: ["chatgpt-codex-connector"],
         signalSource: "review_bot_logins",
         configured: true,
         summary: "Codex Connector is configured.",
-      },
-      trustPosture: {
-        trustMode: "trusted_repo_and_authors",
-        executionSafetyMode: "unsandboxed_autonomous",
-        warning: null,
-        summary: "Trusted inputs with unsandboxed autonomous execution.",
-      },
+      }),
+      trustPosture: createSetupTrustPosture({ warning: null }),
       localCiContract: {
         configured: true,
         command: "npm run verify:pre-pr",
         source: "config",
         summary: "Repo-owned local CI contract is configured.",
       },
-    },
-  }));
+    }),
+  }), unavailableManagedRestart)));
   await harness.flush();
 
-  setupReadinessRefreshResponse.resolve(jsonResponse({
-    kind: "setup_readiness",
-    managedRestart: unavailableManagedRestart,
+  setupReadinessRefreshResponse.resolve(jsonResponse(withManagedRestart(createSetupReadinessReport({
     ready: true,
     overallStatus: "configured",
-    configPath: "/tmp/supervisor.config.json",
     fields: [
-      {
-        key: "localCiCommand",
-        label: "Local CI command",
+      createSetupField("localCiCommand", {
         state: "configured",
         value: "npm run verify:pre-pr",
         message: "Local CI command is configured.",
-        required: false,
-        metadata: {
-          source: "config",
-          editable: true,
-          valueType: "text",
-        },
-      },
+      }),
     ],
     blockers: [],
     hostReadiness: { overallStatus: "pass", checks: [] },
-    providerPosture: {
+    providerPosture: createSetupProviderPosture({
       profile: "codex",
       provider: "codex",
       reviewers: ["chatgpt-codex-connector"],
       signalSource: "review_bot_logins",
       configured: true,
       summary: "Codex Connector is configured.",
-    },
-    trustPosture: {
-      trustMode: "trusted_repo_and_authors",
-      executionSafetyMode: "unsandboxed_autonomous",
-      warning: null,
-      summary: "Trusted inputs with unsandboxed autonomous execution.",
-    },
+    }),
+    trustPosture: createSetupTrustPosture({ warning: null }),
     localCiContract: {
       configured: true,
       command: "npm run verify:pre-pr",
       source: "config",
       summary: "Repo-owned local CI contract is configured.",
     },
-  }));
+  }), unavailableManagedRestart)));
 
   await submitPromise;
   await harness.flush();
