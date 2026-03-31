@@ -55,6 +55,7 @@ const REVIEW_PROVIDER_LOGIN_MAP: Record<SetupConfigPreviewSelectableReviewProvid
   codex: ["chatgpt-codex-connector"],
   coderabbit: ["coderabbitai", "coderabbitai[bot]"],
 };
+const SETUP_CONFIG_BACKUP_RETENTION = 5;
 
 function assertNonEmptyString(value: unknown, fieldName: string): string {
   if (typeof value !== "string" || value.trim() === "") {
@@ -289,6 +290,25 @@ function determineRestartTriggeredFields(args: {
   });
 }
 
+async function rotateSetupConfigBackups(backupPath: string): Promise<void> {
+  for (let index = SETUP_CONFIG_BACKUP_RETENTION - 1; index >= 1; index -= 1) {
+    const destinationPath = `${backupPath}.${index}`;
+    if (index === SETUP_CONFIG_BACKUP_RETENTION - 1) {
+      await fs.rm(destinationPath, { force: true });
+    }
+
+    const sourcePath = index === 1 ? backupPath : `${backupPath}.${index - 1}`;
+    try {
+      await fs.rename(sourcePath, destinationPath);
+    } catch (error) {
+      const maybeErr = error as NodeJS.ErrnoException;
+      if (maybeErr.code !== "ENOENT") {
+        throw error;
+      }
+    }
+  }
+}
+
 export async function updateSetupConfig(args: UpdateSetupConfigArgs): Promise<SetupConfigUpdateResult> {
   const configPath = resolveConfigPath(args.configPath);
   const changes = normalizeSetupChanges(args.changes);
@@ -305,6 +325,7 @@ export async function updateSetupConfig(args: UpdateSetupConfigArgs): Promise<Se
   if (existing.rawContents !== null) {
     backupPath = `${configPath}.bak`;
     await fs.mkdir(path.dirname(backupPath), { recursive: true });
+    await rotateSetupConfigBackups(backupPath);
     await fs.writeFile(backupPath, existing.rawContents, "utf8");
   }
 
