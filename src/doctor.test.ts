@@ -643,6 +643,107 @@ test("diagnoseSetupReadiness surfaces a structured local CI command as configure
   assert.equal(summary.ready, true);
 });
 
+test("diagnoseSetupReadiness preserves structured local CI warnings when config is otherwise invalid", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath,
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot,
+      stateFile: path.join(root, "state.json"),
+      codexBinary: process.execPath,
+      branchPrefix: "codex/issue-[",
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      localCiCommand: {
+        mode: "structured",
+        executable: "npm",
+        args: ["run", "ci:local"],
+      },
+    }),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.overallStatus, "invalid");
+  assert.deepEqual(summary.localCiContract, {
+    configured: true,
+    command: "npm run ci:local",
+    recommendedCommand: null,
+    source: "config",
+    summary: "Repo-owned local CI contract is configured.",
+    warning:
+      "localCiCommand is configured but workspacePreparationCommand is unset. Configure a repo-owned workspacePreparationCommand so preserved issue worktrees can prepare toolchains before host-local CI runs. GitHub checks can stay green while host-local CI still blocks tracked PR progress.",
+  });
+});
+
+test("diagnoseSetupReadiness suppresses the local CI warning when invalid config still carries a structured workspace preparation command", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath,
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot,
+      stateFile: path.join(root, "state.json"),
+      codexBinary: process.execPath,
+      branchPrefix: "codex/issue-[",
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      localCiCommand: {
+        mode: "structured",
+        executable: "npm",
+        args: ["run", "ci:local"],
+      },
+      workspacePreparationCommand: {
+        mode: "shell",
+        command: "npm ci",
+      },
+    }),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.overallStatus, "invalid");
+  assert.deepEqual(summary.localCiContract, {
+    configured: true,
+    command: "npm run ci:local",
+    recommendedCommand: null,
+    source: "config",
+    summary: "Repo-owned local CI contract is configured.",
+    warning: null,
+  });
+});
+
 test("renderDoctorReport surfaces merge-critical recheck cadence visibility", () => {
   const diagnostics = {
     overallStatus: "pass",
@@ -1057,6 +1158,7 @@ test("diagnoseSupervisorHost exposes tracked PR mismatches when GitHub is ready 
     workspaceRoot,
     stateFile,
     codexBinary: process.execPath,
+    localCiCommand: "npm run ci:local",
   });
   const trackedState: SupervisorStateFile = {
     activeIssueNumber: null,
@@ -1143,6 +1245,7 @@ test("diagnoseSupervisorHost exposes host-local CI blocker details for tracked P
     workspaceRoot,
     stateFile,
     codexBinary: process.execPath,
+    localCiCommand: "npm run ci:local",
   });
   const trackedState: SupervisorStateFile = {
     activeIssueNumber: null,

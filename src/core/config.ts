@@ -102,7 +102,7 @@ function normalizeStringArray(value: unknown, fieldName: string): string[] {
   });
 }
 
-function normalizeLocalCiCommand(value: unknown): LocalCiCommandConfig | undefined {
+export function normalizeLocalCiCommand(value: unknown): LocalCiCommandConfig | undefined {
   if (typeof value === "string") {
     const trimmed = value.trim();
     return trimmed !== "" ? trimmed : undefined;
