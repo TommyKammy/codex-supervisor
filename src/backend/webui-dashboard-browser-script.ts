@@ -3,7 +3,6 @@ import {
   buildNextIssueSummary,
   buildOverviewSummary,
   buildPrimaryActionSummary,
-  buildStatusLines,
   collectTrackedIssues,
   collectIssueShortcuts,
   describeCommandSelectionChange,
@@ -25,9 +24,17 @@ import {
   humanizeTimelineValue,
   parseSelectedIssueNumber,
 } from "./webui-dashboard-browser-logic";
+import {
+  buildLocalCiContractStatusLines,
+  formatLocalCiContractSource,
+  normalizeLocalCiContract,
+} from "./webui-local-ci-browser-helpers";
 import { WEBUI_MUTATION_AUTH_HEADER, WEBUI_MUTATION_AUTH_STORAGE_KEY } from "./webui-mutation-auth";
 
 const injectedBrowserLogic = [
+  normalizeLocalCiContract,
+  formatLocalCiContractSource,
+  buildLocalCiContractStatusLines,
   buildOverviewSummary,
   buildNextIssueSummary,
   buildPrimaryActionSummary,
@@ -43,7 +50,6 @@ const injectedBrowserLogic = [
   formatRetryContextSummary,
   formatRecoveryLoopSummary,
   formatRecentPhaseChanges,
-  buildStatusLines,
   collectIssueShortcuts,
   describeCommandSelectionChange,
   describeConnectionHealth,
@@ -60,6 +66,20 @@ const injectedBrowserLogic = [
 export function renderDashboardBrowserScript(): string {
   return `
       ${injectedBrowserLogic}
+
+      function buildStatusLines(status) {
+        return [
+          ...formatTrackedIssueSummary(status),
+          ...formatRunnableIssues(status),
+          ...formatBlockedIssues(status),
+          ...(status?.detailedStatusLines ?? []),
+          ...(status?.readinessLines ?? []),
+          ...(status?.whyLines ?? []),
+          ...formatCandidateDiscovery(status),
+          ...buildLocalCiContractStatusLines(status?.localCiContract ?? null),
+          ...(status?.reconciliationWarning ? [status.reconciliationWarning] : []),
+        ];
+      }
 
       const state = {
         selectedIssueNumber: null,

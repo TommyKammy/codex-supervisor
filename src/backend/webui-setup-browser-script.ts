@@ -1,7 +1,22 @@
+import {
+  buildLocalCiContractChecklistItems,
+  canAdoptRecommendedLocalCiCommand,
+  formatLocalCiContractSource,
+  normalizeLocalCiContract,
+} from "./webui-local-ci-browser-helpers";
 import { WEBUI_MUTATION_AUTH_HEADER, WEBUI_MUTATION_AUTH_STORAGE_KEY } from "./webui-mutation-auth";
 
 export function renderSetupBrowserScript(): string {
   return `
+      ${[
+        normalizeLocalCiContract,
+        formatLocalCiContractSource,
+        canAdoptRecommendedLocalCiCommand,
+        buildLocalCiContractChecklistItems,
+      ]
+        .map((helper) => helper.toString().replace(/__name\([^;]+;\s*/gu, ""))
+        .join("\n\n")}
+
       const elements = {
         form: document.getElementById("setup-form"),
         formSummary: document.getElementById("setup-form-summary"),
@@ -357,10 +372,14 @@ export function renderSetupBrowserScript(): string {
           elements.saveButton.disabled = disabled;
         }
         if (elements.localCiAdoptRecommended) {
+          const normalizedLocalCiContract = normalizeLocalCiContract(currentReport && currentReport.localCiContract);
           elements.localCiAdoptRecommended.disabled =
             disabled ||
             elements.localCiAdoptRecommended.hidden ||
-            !document.getElementById("setup-input-localCiCommand");
+            !canAdoptRecommendedLocalCiCommand(
+              normalizedLocalCiContract,
+              Boolean(document.getElementById("setup-input-localCiCommand")),
+            );
         }
         syncRestartButton();
         for (const field of editableFields(currentReport || {})) {
@@ -610,46 +629,19 @@ export function renderSetupBrowserScript(): string {
             : [],
           "No trust posture details reported.",
         );
-        const localCiContract = report.localCiContract || {
-          configured: false,
-          command: null,
-          recommendedCommand: null,
-          source: "config",
-          summary: "No repo-owned local CI contract is configured.",
-        };
+        const localCiContract = normalizeLocalCiContract(report.localCiContract);
         setText(elements.localCiSummary, localCiContract.summary);
         if (elements.localCiAdoptRecommended) {
-          const canAdoptRecommended = Boolean(localCiContract.recommendedCommand) && Boolean(document.getElementById("setup-input-localCiCommand"));
+          const canAdoptRecommended = canAdoptRecommendedLocalCiCommand(
+            localCiContract,
+            Boolean(document.getElementById("setup-input-localCiCommand")),
+          );
           elements.localCiAdoptRecommended.hidden = !canAdoptRecommended;
           elements.localCiAdoptRecommended.disabled = saveInFlight || !canAdoptRecommended;
         }
         renderChecklist(
           elements.localCiDetails,
-          [{
-            title: "Configured: " + (localCiContract.configured ? "yes" : "no"),
-            tone: "",
-            meta: [
-              "Command: " + (localCiContract.command || "none"),
-              "Source: " + formatToken(localCiContract.source || "unknown"),
-              ...(localCiContract.recommendedCommand
-                ? ["Recommended command: " + localCiContract.recommendedCommand]
-                : []),
-            ],
-            notes: localCiContract.configured
-              ? [
-                "This repo-owned command is the canonical local verification step before PR publication or update.",
-                "When configured local CI fails, PR publication or ready-for-review promotion stays blocked until the repo-owned command passes again.",
-              ]
-              : localCiContract.recommendedCommand
-                ? [
-                  "This repo already defines a repo-owned local CI entrypoint, but codex-supervisor will not run it until localCiCommand is configured.",
-                  "This warning is advisory only; first-run setup readiness and blocker semantics stay unchanged until you opt in by configuring localCiCommand.",
-                ]
-              : [
-                "If the repo does not declare this contract, codex-supervisor falls back to the issue's ## Verification guidance and operator workflow.",
-                "When configured local CI fails, PR publication or ready-for-review promotion stays blocked until the repo-owned command passes again.",
-              ],
-          }],
+          buildLocalCiContractChecklistItems(localCiContract),
           "No local CI contract details reported.",
         );
       }
