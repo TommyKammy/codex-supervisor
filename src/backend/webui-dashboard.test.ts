@@ -1941,14 +1941,7 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
         fields: [
           createSetupField("repoPath"),
           createSetupField("reviewProvider"),
-          {
-            key: "sessionName",
-            label: "Session name",
-            state: "missing",
-            value: null,
-            message: "Session name is optional.",
-            required: false,
-          },
+          createSetupField("localCiCommand"),
         ],
         hostReadiness: {
           overallStatus: "pass",
@@ -1962,6 +1955,7 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
         localCiContract: {
           configured: false,
           command: null,
+          recommendedCommand: null,
           source: "config",
           summary: "No repo-owned local CI contract is configured.",
         },
@@ -1983,7 +1977,7 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
   assert.match(harness.document.getElementById("setup-field-summary")?.textContent ?? "", /1 of 2 required setup fields configured\./u);
   assert.match(harness.document.getElementById("setup-fields")?.textContent ?? "", /Repository path \[Configured\].*Current value: \/tmp\/repo.*Type: directory path.*Repository path is configured\./u);
   assert.match(harness.document.getElementById("setup-fields")?.textContent ?? "", /Review provider \[Missing\].*Current value: Unset.*Type: review provider.*Configure at least one review provider before first-run setup is complete\./u);
-  assert.match(harness.document.getElementById("setup-fields")?.textContent ?? "", /Session name \[Missing\].*Current value: Unset.*Required: no \| Source: unknown \| Type: unknown.*Session name is optional\./u);
+  assert.match(harness.document.getElementById("setup-fields")?.textContent ?? "", /Local CI command \[Missing\].*Current value: Unset.*Required: no \| Source: config \| Type: text.*Local CI command is optional until you opt in to the repo-owned contract\./u);
   assert.match(harness.document.getElementById("setup-host-summary")?.textContent ?? "", /Overall host readiness: Pass across 1 check\./u);
   assert.match(harness.document.getElementById("setup-host-checks")?.textContent ?? "", /Github Auth \[Pass\].*GitHub auth ok\..*Detail: Authenticated as octocat\./u);
   assert.match(harness.document.getElementById("setup-provider-posture")?.textContent ?? "", /No review provider is configured\./u);
@@ -2140,6 +2134,7 @@ test("setup shell lets operators adopt the recommended local CI command and save
       localCiContract: {
         configured: true,
         command: "npm run verify:pre-pr",
+        recommendedCommand: "npm run verify:pre-pr",
         source: "config",
         summary: "Repo-owned local CI contract is configured.",
       },
@@ -2171,6 +2166,7 @@ test("setup shell lets operators adopt the recommended local CI command and save
     localCiContract: {
       configured: true,
       command: "npm run verify:pre-pr",
+      recommendedCommand: "npm run verify:pre-pr",
       source: "config",
       summary: "Repo-owned local CI contract is configured.",
     },
