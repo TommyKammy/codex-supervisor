@@ -278,10 +278,14 @@ export function renderSetupBrowserScript(): string {
           elements.saveButton.disabled = disabled;
         }
         if (elements.localCiAdoptRecommended) {
+          const normalizedLocalCiContract = normalizeBrowserLocalCiContract(currentReport && currentReport.localCiContract);
           elements.localCiAdoptRecommended.disabled =
             disabled ||
             elements.localCiAdoptRecommended.hidden ||
-            !document.getElementById("setup-input-localCiCommand");
+            !canAdoptBrowserLocalCiRecommendedCommand(
+              normalizedLocalCiContract,
+              Boolean(document.getElementById("setup-input-localCiCommand")),
+            );
         }
         syncRestartButton();
         for (const field of editableFields(currentReport || {})) {
