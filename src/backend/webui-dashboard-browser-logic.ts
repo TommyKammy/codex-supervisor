@@ -1,3 +1,5 @@
+import { buildBrowserLocalCiStatusLines } from "./webui-browser-script-helpers";
+
 export interface DashboardSelectionSummaryLike {
   selectedIssueNumber?: number | null;
 }
@@ -386,23 +388,6 @@ export function formatCandidateDiscovery(status: DashboardStatusLike | null | un
 }
 
 export function buildStatusLines(status: DashboardStatusLike | null | undefined): string[] {
-  const localCiContract = status?.localCiContract ?? null;
-  const localCiLines =
-    localCiContract === null
-      ? []
-      : [
-        [
-          "local ci",
-          "configured=" + (localCiContract.configured ? "yes" : "no"),
-          "source=" + String(localCiContract.source ?? "config").replace(/_/gu, " "),
-          "command=" + (localCiContract.command ?? "none"),
-          "recommended command=" + (localCiContract.recommendedCommand ?? "none"),
-        ].join(" "),
-        ...(typeof localCiContract.summary === "string" && localCiContract.summary.trim() !== ""
-          ? [localCiContract.summary]
-          : []),
-      ];
-
   return [
     ...formatTrackedIssueSummary(status),
     ...formatRunnableIssues(status),
@@ -411,7 +396,7 @@ export function buildStatusLines(status: DashboardStatusLike | null | undefined)
     ...(status?.readinessLines ?? []),
     ...(status?.whyLines ?? []),
     ...formatCandidateDiscovery(status),
-    ...localCiLines,
+    ...buildBrowserLocalCiStatusLines(status?.localCiContract ?? null),
     ...(status?.reconciliationWarning ? [status.reconciliationWarning] : []),
   ];
 }

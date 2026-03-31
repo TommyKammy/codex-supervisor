@@ -1,7 +1,34 @@
 import { WEBUI_MUTATION_AUTH_HEADER, WEBUI_MUTATION_AUTH_STORAGE_KEY } from "./webui-mutation-auth";
+import {
+  buildBrowserLocalCiChecklistEntries,
+  buildMutationHeaders,
+  canAdoptBrowserLocalCiRecommendedCommand,
+  formatBrowserToken,
+  normalizeBrowserLocalCiContract,
+  postMutationJsonWithAuth,
+  promptForMutationAuthToken,
+  readMutationResponsePayload,
+  readStoredMutationAuthToken,
+  writeStoredMutationAuthToken,
+} from "./webui-browser-script-helpers";
 
 export function renderSetupBrowserScript(): string {
   return `
+      ${[
+        formatBrowserToken,
+        normalizeBrowserLocalCiContract,
+        buildBrowserLocalCiChecklistEntries,
+        canAdoptBrowserLocalCiRecommendedCommand,
+        readStoredMutationAuthToken,
+        writeStoredMutationAuthToken,
+        promptForMutationAuthToken,
+        buildMutationHeaders,
+        readMutationResponsePayload,
+        postMutationJsonWithAuth,
+      ]
+        .map((helper) => helper.toString().replace(/__name\([^;]+;\s*/gu, ""))
+        .join("\n\n")}
+
       const elements = {
         form: document.getElementById("setup-form"),
         formSummary: document.getElementById("setup-form-summary"),
@@ -130,116 +157,10 @@ export function renderSetupBrowserScript(): string {
       }
 
       async function writeJson(path, body) {
-        return writeMutationJson(path, body);
-      }
-
-      function readStoredMutationAuthToken() {
-        try {
-          const value = window.localStorage && window.localStorage.getItem(mutationAuthStorageKey);
-          return value && value.trim().length > 0 ? value.trim() : null;
-        } catch {
-          return null;
-        }
-      }
-
-      function writeStoredMutationAuthToken(value) {
-        try {
-          if (!window.localStorage) {
-            return;
-          }
-          if (typeof value !== "string" || value.trim().length === 0) {
-            window.localStorage.removeItem(mutationAuthStorageKey);
-            return;
-          }
-          window.localStorage.setItem(mutationAuthStorageKey, value.trim());
-        } catch {}
-      }
-
-      function promptForMutationAuthToken() {
-        if (!window || typeof window.prompt !== "function") {
-          throw new Error("WebUI mutation auth requires a browser prompt to collect the token.");
-        }
-        const value = window.prompt("Enter the local WebUI mutation token.");
-        if (typeof value !== "string" || value.trim().length === 0) {
-          throw new Error("Mutation auth token is required for WebUI write actions.");
-        }
-        const normalized = value.trim();
-        writeStoredMutationAuthToken(normalized);
-        return normalized;
-      }
-
-      function buildMutationHeaders(token) {
-        const headers = {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        };
-        if (typeof token === "string" && token.length > 0) {
-          headers[mutationAuthHeader] = token;
-        }
-        return headers;
-      }
-
-      async function readMutationResponsePayload(response) {
-        const headers = response && response.headers;
-        const contentType =
-          headers && typeof headers.get === "function" ? String(headers.get("content-type") || "") : "";
-        const rawText = typeof response.text === "function" ? await response.text() : "";
-        if (!rawText) {
-          return { payload: null, rawText: "", parseError: false };
-        }
-        const prefersJson = contentType.toLowerCase().indexOf("application/json") !== -1;
-        try {
-          return {
-            payload: JSON.parse(rawText),
-            rawText,
-            parseError: false,
-          };
-        } catch {
-          return {
-            payload: null,
-            rawText,
-            parseError: prefersJson,
-          };
-        }
-      }
-
-      async function writeMutationJson(path, body) {
-        let token = readStoredMutationAuthToken();
-
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-          const response = await fetch(path, {
-            method: "POST",
-            headers: buildMutationHeaders(token),
-            body: JSON.stringify(body),
-          });
-          const responsePayload = await readMutationResponsePayload(response);
-          const payload = responsePayload.payload;
-          if (response.ok) {
-            if (payload === null) {
-              throw new Error(path + ": Server returned invalid JSON response.");
-            }
-            return payload;
-          }
-
-          let message = "Request failed";
-          if (payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string") {
-            message = payload.error;
-          } else if (responsePayload.rawText.trim().length > 0) {
-            message = responsePayload.rawText.trim();
-          } else if (responsePayload.parseError) {
-            message = "Server returned invalid JSON response.";
-          }
-          if (response.status === 401) {
-            writeStoredMutationAuthToken(null);
-            if (attempt === 0) {
-              token = promptForMutationAuthToken();
-              continue;
-            }
-          }
-          throw new Error(path + ": " + message);
-        }
-
-        throw new Error(path + ": Mutation auth required.");
+        return postMutationJsonWithAuth(fetch, window, path, body, {
+          mutationAuthStorageKey,
+          mutationAuthHeader,
+        });
       }
 
       function summarizeFields(fields) {
@@ -610,46 +531,19 @@ export function renderSetupBrowserScript(): string {
             : [],
           "No trust posture details reported.",
         );
-        const localCiContract = report.localCiContract || {
-          configured: false,
-          command: null,
-          recommendedCommand: null,
-          source: "config",
-          summary: "No repo-owned local CI contract is configured.",
-        };
+        const localCiContract = normalizeBrowserLocalCiContract(report.localCiContract || null);
         setText(elements.localCiSummary, localCiContract.summary);
         if (elements.localCiAdoptRecommended) {
-          const canAdoptRecommended = Boolean(localCiContract.recommendedCommand) && Boolean(document.getElementById("setup-input-localCiCommand"));
+          const canAdoptRecommended = canAdoptBrowserLocalCiRecommendedCommand(
+            localCiContract,
+            Boolean(document.getElementById("setup-input-localCiCommand")),
+          );
           elements.localCiAdoptRecommended.hidden = !canAdoptRecommended;
           elements.localCiAdoptRecommended.disabled = saveInFlight || !canAdoptRecommended;
         }
         renderChecklist(
           elements.localCiDetails,
-          [{
-            title: "Configured: " + (localCiContract.configured ? "yes" : "no"),
-            tone: "",
-            meta: [
-              "Command: " + (localCiContract.command || "none"),
-              "Source: " + formatToken(localCiContract.source || "unknown"),
-              ...(localCiContract.recommendedCommand
-                ? ["Recommended command: " + localCiContract.recommendedCommand]
-                : []),
-            ],
-            notes: localCiContract.configured
-              ? [
-                "This repo-owned command is the canonical local verification step before PR publication or update.",
-                "When configured local CI fails, PR publication or ready-for-review promotion stays blocked until the repo-owned command passes again.",
-              ]
-              : localCiContract.recommendedCommand
-                ? [
-                  "This repo already defines a repo-owned local CI entrypoint, but codex-supervisor will not run it until localCiCommand is configured.",
-                  "This warning is advisory only; first-run setup readiness and blocker semantics stay unchanged until you opt in by configuring localCiCommand.",
-                ]
-              : [
-                "If the repo does not declare this contract, codex-supervisor falls back to the issue's ## Verification guidance and operator workflow.",
-                "When configured local CI fails, PR publication or ready-for-review promotion stays blocked until the repo-owned command passes again.",
-              ],
-          }],
+          buildBrowserLocalCiChecklistEntries(localCiContract),
           "No local CI contract details reported.",
         );
       }
