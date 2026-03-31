@@ -32,7 +32,7 @@ import {
   SupervisorStateFile,
 } from "./core/types";
 import { nowIso, truncate } from "./core/utils";
-import { runLocalCiGate, type LocalCiCommandRunner } from "./local-ci";
+import { runLocalCiGate, runWorkspacePreparationGate, type LocalCiCommandRunner } from "./local-ci";
 import {
   runWorkstationLocalPathGate,
   type WorkstationLocalPathGateResult,
@@ -234,6 +234,7 @@ export interface HandlePostTurnPullRequestTransitionsArgs {
   manualReviewThreads: (config: SupervisorConfig, reviewThreads: ReviewThread[]) => ReviewThread[];
   mergeConflictDetected: (pr: GitHubPullRequest) => boolean;
   runLocalReviewImpl?: typeof runLocalReview;
+  runWorkspacePreparationCommand?: LocalCiCommandRunner;
   runLocalCiCommand?: LocalCiCommandRunner;
   runWorkstationLocalPathGate?: (args: { workspacePath: string; gateLabel: string }) => Promise<WorkstationLocalPathGateResult>;
   emitEvent?: SupervisorEventSink;
@@ -420,6 +421,33 @@ export async function handlePostTurnPullRequestTransitionsPhase(
             ?? `Tracked durable artifacts failed workstation-local path hygiene before marking PR #${refreshed.pr.number} ready.`,
           1000,
         ),
+        last_failure_kind: null,
+        last_failure_context: failureContext,
+        ...args.applyFailureSignature(record, failureContext),
+        blocked_reason: "verification",
+      });
+      state.issues[String(record.issue_number)] = record;
+      await stateStore.save(state);
+      await syncJournal(record);
+      return {
+        record,
+        pr: refreshed.pr,
+        checks: refreshed.checks,
+        reviewThreads: refreshed.reviewThreads,
+      };
+    }
+
+    const workspacePreparationGate = await runWorkspacePreparationGate({
+      config,
+      workspacePath,
+      gateLabel: `before marking PR #${refreshed.pr.number} ready`,
+      runWorkspacePreparationCommand: args.runWorkspacePreparationCommand,
+    });
+    if (!workspacePreparationGate.ok) {
+      const failureContext = workspacePreparationGate.failureContext;
+      record = stateStore.touch(record, {
+        state: "blocked",
+        last_error: truncate(failureContext?.summary, 1000),
         last_failure_kind: null,
         last_failure_context: failureContext,
         ...args.applyFailureSignature(record, failureContext),

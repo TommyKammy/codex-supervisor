@@ -1,5 +1,5 @@
 import { GitHubClient } from "./github";
-import { runLocalCiGate, type LocalCiCommandRunner } from "./local-ci";
+import { runLocalCiGate, runWorkspacePreparationGate, type LocalCiCommandRunner } from "./local-ci";
 import { StateStore } from "./core/state-store";
 import {
   FailureContext,
@@ -44,7 +44,7 @@ export type CodexTurnPublicationGateResult =
   | CodexTurnPublicationGateReadyResult;
 
 export async function applyCodexTurnPublicationGate(args: {
-  config: Pick<SupervisorConfig, "draftPrAfterAttempt" | "localCiCommand">;
+  config: Pick<SupervisorConfig, "draftPrAfterAttempt" | "workspacePreparationCommand" | "localCiCommand">;
   stateStore: Pick<StateStore, "touch" | "save">;
   state: SupervisorStateFile;
   record: IssueRunRecord;
@@ -60,6 +60,7 @@ export async function applyCodexTurnPublicationGate(args: {
     record: IssueRunRecord,
     failureContext: FailureContext | null,
   ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
+  runWorkspacePreparationCommand?: LocalCiCommandRunner;
   runLocalCiCommand?: LocalCiCommandRunner;
   runWorkstationLocalPathGate?: (args: {
     workspacePath: string;
@@ -102,6 +103,36 @@ export async function applyCodexTurnPublicationGate(args: {
       return {
         kind: "blocked",
         message: `Workstation-local path hygiene blocked pull request creation for issue #${record.issue_number}.`,
+        record,
+        pr: null,
+        checks: [],
+        reviewThreads: [],
+      };
+    }
+
+    const workspacePreparationGate = await runWorkspacePreparationGate({
+      config: args.config,
+      workspacePath: args.workspacePath,
+      gateLabel: "before opening a pull request",
+      runWorkspacePreparationCommand: args.runWorkspacePreparationCommand,
+    });
+    if (!workspacePreparationGate.ok) {
+      const failureContext = workspacePreparationGate.failureContext;
+      record = args.stateStore.touch(record, {
+        state: "blocked",
+        last_error: truncate(failureContext?.summary, 1000),
+        last_failure_kind: null,
+        last_failure_context: failureContext,
+        ...args.applyFailureSignature(record, failureContext),
+        blocked_reason: "verification",
+      });
+      args.state.issues[String(record.issue_number)] = record;
+      await args.stateStore.save(args.state);
+      await args.syncExecutionMetricsRunSummary(record);
+      await args.syncJournal(record);
+      return {
+        kind: "blocked",
+        message: `Workspace preparation blocked pull request creation for issue #${record.issue_number}.`,
         record,
         pr: null,
         checks: [],

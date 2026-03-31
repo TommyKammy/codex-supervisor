@@ -85,6 +85,13 @@ export interface LocalCiContractSummary {
   summary: string;
 }
 
+export interface WorkspacePreparationContractSummary {
+  configured: boolean;
+  command: string | null;
+  source: "config";
+  summary: string;
+}
+
 export interface StructuredLocalCiCommandConfig {
   mode: "structured";
   executable: string;
@@ -165,6 +172,7 @@ export interface SupervisorConfig {
   issueJournalMaxChars: number;
   issueLabel?: string;
   issueSearch?: string;
+  workspacePreparationCommand?: LocalCiCommandConfig;
   localCiCommand?: LocalCiCommandConfig;
   candidateDiscoveryFetchWindow?: number;
   skipTitlePrefixes: string[];

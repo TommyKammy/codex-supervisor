@@ -232,6 +232,211 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion 
   );
 });
 
+test("handlePostTurnPullRequestTransitionsPhase runs workspace preparation before local CI", async () => {
+  const config = createConfig({
+    workspacePreparationCommand: "npm ci",
+    localCiCommand: "npm run ci:local",
+  });
+  const issue = createIssue({ title: "Prepare workspace before ready promotion" });
+  const draftPr = createPullRequest({ title: "Prepare before ready", isDraft: true });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: { "102": createRecord({ state: "draft_pr", pr_number: draftPr.number }) },
+  };
+  const callOrder: string[] = [];
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      markPullRequestReady: async () => undefined,
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: draftPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "draft_pr",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runWorkspacePreparationCommand: async (command, cwd) => {
+      callOrder.push(`prepare:${command.displayCommand}:${cwd}`);
+    },
+    runLocalCiCommand: async (command, cwd) => {
+      callOrder.push(`local-ci:${command.displayCommand}:${cwd}`);
+    },
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: draftPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "draft_pr");
+  assert.deepEqual(callOrder, [
+    "prepare:npm ci:/tmp/workspaces/issue-102",
+    "local-ci:npm run ci:local:/tmp/workspaces/issue-102",
+  ]);
+});
+
+test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion when workspace preparation fails", async () => {
+  const config = createConfig({
+    workspacePreparationCommand: "npm ci",
+    localCiCommand: "npm run ci:local",
+  });
+  const issue = createIssue({ title: "Gate ready promotion on workspace preparation" });
+  const draftPr = createPullRequest({ title: "Gate ready promotion", isDraft: true });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: { "102": createRecord({ state: "draft_pr", pr_number: draftPr.number }) },
+  };
+  let readyCalls = 0;
+  let localCiCalls = 0;
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      markPullRequestReady: async () => {
+        readyCalls += 1;
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: draftPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "draft_pr",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runWorkspacePreparationCommand: async () => {
+      throw new Error("Command failed: sh -lc +1 args\nexitCode=1\nnpm error missing node_modules");
+    },
+    runLocalCiCommand: async () => {
+      localCiCalls += 1;
+    },
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: draftPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(readyCalls, 0);
+  assert.equal(localCiCalls, 0);
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.blocked_reason, "verification");
+  assert.equal(result.record.last_failure_signature, "workspace-preparation-gate-non_zero_exit");
+  assert.match(
+    result.record.last_error ?? "",
+    /Configured workspace preparation command failed before marking PR #116 ready\. Remediation target: workspace environment\./,
+  );
+});
+
 test("handlePostTurnPullRequestTransitionsPhase reports workspace toolchain failures as workspace-environment remediation", async () => {
   const config = createConfig({ localCiCommand: "npm run ci:local" });
   const issue = createIssue({ title: "Gate ready promotion on missing workspace toolchain" });

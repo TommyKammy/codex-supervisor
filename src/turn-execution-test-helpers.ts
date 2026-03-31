@@ -44,6 +44,7 @@ export function createConfig(overrides: Partial<SupervisorConfig> = {}): Supervi
     candidateDiscoveryFetchWindow: 100,
     skipTitlePrefixes: [],
     branchPrefix: "codex/issue-",
+    workspacePreparationCommand: undefined,
     pollIntervalSeconds: 60,
     copilotReviewWaitMinutes: 10,
     copilotReviewTimeoutAction: "continue",

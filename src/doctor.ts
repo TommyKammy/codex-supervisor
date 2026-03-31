@@ -3,7 +3,14 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { GitHubClient } from "./github";
 import { runCommand } from "./core/command";
-import { summarizeCadenceDiagnostics, summarizeLocalCiContract, summarizeTrustDiagnostics, type ConfigLoadSummary, loadConfigSummary } from "./core/config";
+import {
+  summarizeCadenceDiagnostics,
+  summarizeLocalCiContract,
+  summarizeTrustDiagnostics,
+  summarizeWorkspacePreparationContract,
+  type ConfigLoadSummary,
+  loadConfigSummary,
+} from "./core/config";
 import { parseJson } from "./core/utils";
 import {
   type CandidateDiscoveryDiagnostics,
@@ -14,6 +21,7 @@ import {
   type SupervisorConfig,
   type SupervisorStateFile,
   type TrustDiagnosticsSummary,
+  type WorkspacePreparationContractSummary,
 } from "./core/types";
 import { inspectOrphanedWorkspacePruneCandidates } from "./recovery-reconciliation";
 import {
@@ -40,6 +48,7 @@ export interface DoctorDiagnostics {
   candidateDiscoverySummary: string;
   candidateDiscoveryWarning: string | null;
   orphanPolicySummary?: string;
+  workspacePreparationContract?: WorkspacePreparationContractSummary;
   localCiContract?: LocalCiContractSummary;
 }
 
@@ -560,6 +569,7 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
     candidateDiscoverySummary: formatCandidateDiscoveryBehaviorLine(args.config, "doctor_candidate_discovery"),
     candidateDiscoveryWarning,
     orphanPolicySummary: formatOrphanPolicySummary(args.config),
+    workspacePreparationContract: summarizeWorkspacePreparationContract(args.config),
     localCiContract: summarizeLocalCiContract(args.config),
   };
 }
@@ -620,6 +630,9 @@ export async function diagnoseBootstrapReadiness(
 }
 
 export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
+  const workspacePreparationContract =
+    diagnostics.workspacePreparationContract
+    ?? summarizeWorkspacePreparationContract({ workspacePreparationCommand: undefined });
   const localCiContract = diagnostics.localCiContract ?? summarizeLocalCiContract({ localCiCommand: undefined, repoPath: undefined });
   const mergeCriticalRecheckSeconds =
     diagnostics.cadenceDiagnostics.mergeCriticalRecheckSeconds === null
@@ -634,6 +647,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     `doctor_cadence poll_interval_seconds=${diagnostics.cadenceDiagnostics.pollIntervalSeconds} merge_critical_recheck_seconds=${mergeCriticalRecheckSeconds} merge_critical_effective_seconds=${diagnostics.cadenceDiagnostics.mergeCriticalEffectiveSeconds} enabled=${diagnostics.cadenceDiagnostics.mergeCriticalRecheckEnabled}`,
     diagnostics.candidateDiscoverySummary,
     ...(diagnostics.orphanPolicySummary ? [diagnostics.orphanPolicySummary] : []),
+    `doctor_workspace_preparation configured=${workspacePreparationContract.configured} source=${workspacePreparationContract.source} command=${sanitizeDoctorValue(workspacePreparationContract.command ?? "none")} summary=${sanitizeDoctorValue(workspacePreparationContract.summary)}`,
     `doctor_local_ci configured=${localCiContract.configured} source=${localCiContract.source} command=${sanitizeDoctorValue(localCiContract.command ?? "none")} summary=${sanitizeDoctorValue(localCiContract.summary)}`,
     ...trustWarnings.map((warning) => renderDoctorWarningLine(warning, sanitizeDoctorValue)),
     ...(candidateDiscoveryWarning === null ? [] : [renderDoctorWarningLine(candidateDiscoveryWarning, sanitizeDoctorValue)]),
