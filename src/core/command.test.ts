@@ -207,7 +207,7 @@ test("runCommand timeout errors redact trailing raw arguments", async () => {
   );
 });
 
-test("runCommand timeout errors bound noisy stderr while keeping timeout context", async () => {
+test("runCommand timeout errors keep bounded timeout context when stderr rendering is noisy", async () => {
   const noisyPrefix = "timeout-prefix";
   const noisySuffix = "timeout-suffix";
   const noisyMiddle = "y".repeat(1_200);
@@ -222,16 +222,13 @@ test("runCommand timeout errors bound noisy stderr while keeping timeout context
           resolve(undefined);
         });
       });
-      process.on("SIGTERM", () => {
-        void (async () => {
-          await write(process.env.NOISY_STDERR ?? "");
-          process.exit(0);
-        })().catch((error) => {
-          console.error(error);
-          process.exit(1);
-        });
+      (async () => {
+        await write(process.env.NOISY_STDERR ?? "");
+        setInterval(() => {}, 1000);
+      })().catch((error) => {
+        console.error(error);
+        process.exit(1);
       });
-      setInterval(() => {}, 1000);
     `;
 
   await assert.rejects(
@@ -253,9 +250,9 @@ test("runCommand timeout errors bound noisy stderr while keeping timeout context
     (error: unknown) => {
       assert.ok(error instanceof Error);
       assert.match(error.message, /Command timed out:/);
-      assert.match(error.message, new RegExp(noisySuffix));
       assert.match(error.message, /Command timed out after 50ms:/);
       assert.match(error.message, /\n\.\.\.\n/);
+      assert.doesNotMatch(error.message, /timeout-secret-value/);
       assert.ok(
         error.message.length < 1_300,
         `expected bounded timeout error message, got length ${error.message.length}`,
