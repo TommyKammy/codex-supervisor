@@ -617,6 +617,12 @@ test("renderDoctorReport surfaces merge-critical recheck cadence visibility", ()
     candidateDiscoveryWarning: null,
     orphanPolicySummary:
       "doctor_orphan_policy mode=explicit_only background_prune=false operator_prune=true grace_hours=24 preserved=locked,recent,unsafe_target",
+    workspacePreparationContract: {
+      configured: true,
+      command: "npm ci",
+      source: "config",
+      summary: "Repo-owned workspace preparation contract is configured.",
+    },
     localCiContract: {
       configured: true,
       command: "npm run ci:local",
@@ -633,7 +639,50 @@ test("renderDoctorReport surfaces merge-critical recheck cadence visibility", ()
     report,
     /doctor_orphan_policy mode=explicit_only background_prune=false operator_prune=true grace_hours=24 preserved=locked,recent,unsafe_target/,
   );
+  assert.match(
+    report,
+    /doctor_workspace_preparation configured=true source=config command=npm ci summary=Repo-owned workspace preparation contract is configured\./,
+  );
   assert.match(report, /doctor_local_ci configured=true source=config command=npm run ci:local summary=Repo-owned local CI contract is configured\./);
+});
+
+test("renderDoctorReport surfaces absent workspace preparation posture when no repo-owned contract exists", () => {
+  const report = renderDoctorReport({
+    overallStatus: "pass",
+    trustDiagnostics: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+      configWarning: null,
+    },
+    checks: [],
+    cadenceDiagnostics: {
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: null,
+      mergeCriticalEffectiveSeconds: 120,
+      mergeCriticalRecheckEnabled: false,
+    },
+    candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
+    candidateDiscoveryWarning: null,
+    workspacePreparationContract: {
+      configured: false,
+      command: null,
+      source: "config",
+      summary: "No repo-owned workspace preparation contract is configured.",
+    },
+    localCiContract: {
+      configured: false,
+      command: null,
+      recommendedCommand: null,
+      source: "config",
+      summary: "No repo-owned local CI contract is configured.",
+    },
+  } as Awaited<ReturnType<typeof diagnoseSupervisorHost>>);
+
+  assert.match(
+    report,
+    /doctor_workspace_preparation configured=false source=config command=none summary=No repo-owned workspace preparation contract is configured\./,
+  );
 });
 
 test("renderDoctorReport surfaces advisory local CI posture when a repo-owned candidate exists", () => {

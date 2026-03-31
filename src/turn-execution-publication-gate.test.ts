@@ -168,6 +168,146 @@ test("applyCodexTurnPublicationGate blocks draft PR creation when local CI fails
   assert.equal(createPullRequestCalls, 0);
 });
 
+test("applyCodexTurnPublicationGate runs workspace preparation before local CI", async () => {
+  const issue = createIssue({ title: "Prepare workspace before local CI" });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "stabilizing",
+        pr_number: null,
+        implementation_attempt_count: 1,
+      }),
+    },
+  };
+  const callOrder: string[] = [];
+
+  const result = await applyCodexTurnPublicationGate({
+    config: createConfig({
+      workspacePreparationCommand: "npm ci",
+      localCiCommand: "npm run ci:local",
+    }),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    state,
+    record: state.issues["102"]!,
+    issue,
+    workspacePath: "/tmp/workspaces/issue-102",
+    workspaceStatus: {
+      branch: "codex/issue-102",
+      headSha: "head-102",
+      hasUncommittedChanges: false,
+      baseAhead: 1,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      createPullRequest: async () => createPullRequest({ number: 200, isDraft: true, headRefOid: "head-102" }),
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    syncJournal: async () => undefined,
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    runWorkspacePreparationCommand: async (command, cwd) => {
+      callOrder.push(`prepare:${command.displayCommand}:${cwd}`);
+    },
+    runLocalCiCommand: async (command, cwd) => {
+      callOrder.push(`local-ci:${command.displayCommand}:${cwd}`);
+    },
+    syncExecutionMetricsRunSummary: async () => undefined,
+  });
+
+  assert.equal(result.kind, "ready");
+  assert.deepEqual(callOrder, [
+    "prepare:npm ci:/tmp/workspaces/issue-102",
+    "local-ci:npm run ci:local:/tmp/workspaces/issue-102",
+  ]);
+});
+
+test("applyCodexTurnPublicationGate blocks draft PR creation when workspace preparation fails", async () => {
+  const issue = createIssue({ title: "Gate draft PR creation on workspace preparation" });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "stabilizing",
+        pr_number: null,
+        implementation_attempt_count: 1,
+      }),
+    },
+  };
+  let runLocalCiCalls = 0;
+
+  const result = await applyCodexTurnPublicationGate({
+    config: createConfig({
+      workspacePreparationCommand: "npm ci",
+      localCiCommand: "npm run ci:local",
+    }),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    state,
+    record: state.issues["102"]!,
+    issue,
+    workspacePath: "/tmp/workspaces/issue-102",
+    workspaceStatus: {
+      branch: "codex/issue-102",
+      headSha: "head-102",
+      hasUncommittedChanges: false,
+      baseAhead: 1,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    syncJournal: async () => undefined,
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    runWorkspacePreparationCommand: async () => {
+      throw new Error("Command failed: sh -lc +1 args\nexitCode=1\nnpm error missing node_modules");
+    },
+    runLocalCiCommand: async () => {
+      runLocalCiCalls += 1;
+    },
+    syncExecutionMetricsRunSummary: async () => undefined,
+  });
+
+  assert.equal(result.kind, "blocked");
+  assert.equal(result.message, "Workspace preparation blocked pull request creation for issue #102.");
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.blocked_reason, "verification");
+  assert.equal(result.record.last_failure_signature, "workspace-preparation-gate-non_zero_exit");
+  assert.match(result.record.last_error ?? "", /workspace environment/i);
+  assert.equal(runLocalCiCalls, 0);
+});
+
 test("applyCodexTurnPublicationGate opens a draft PR after the gate passes", async () => {
   const issue = createIssue({ title: "Open draft PR" });
   const draftPr = createPullRequest({ number: 200, isDraft: true, headRefOid: "head-102" });

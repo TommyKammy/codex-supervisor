@@ -19,6 +19,11 @@ export interface LocalCiGateResult {
   latestResult: LatestLocalCiResult | null;
 }
 
+export interface WorkspacePreparationGateResult {
+  ok: boolean;
+  failureContext: FailureContext | null;
+}
+
 interface ResolvedLocalCiCommand {
   config: LocalCiCommandConfig;
   displayCommand: string;
@@ -182,6 +187,12 @@ function remediationTargetForFailureClass(failureClass: LocalCiFailureClass): Lo
   }
 }
 
+function workspacePreparationFailureSignature(
+  failureClass: Exclude<LocalCiFailureClass, "unset_contract">,
+): string {
+  return `workspace-preparation-gate-${failureClass}`;
+}
+
 function buildSummary(args: {
   failureClass: LocalCiFailureClass | null;
   gateLabel: string;
@@ -261,6 +272,36 @@ function buildFailureDetails(error: unknown, executionMode: LocalCiExecutionMode
     renderFailureOutput("stdout", outputError?.stdout),
     renderFailureOutput("stderr", outputError?.stderr),
   ].filter((detail): detail is string => detail !== null);
+}
+
+function buildWorkspacePreparationSummary(args: {
+  failureClass: Exclude<LocalCiFailureClass, "unset_contract">;
+  gateLabel: string;
+}): string {
+  switch (args.failureClass) {
+    case "missing_command":
+      return (
+        truncate(
+          `Configured workspace preparation command is unavailable ${args.gateLabel}. Remediation target: workspace environment.`,
+          1000,
+        ) ?? "Configured workspace preparation command is unavailable. Remediation target: workspace environment."
+      );
+    case "workspace_toolchain_missing":
+      return (
+        truncate(
+          `Configured workspace preparation command could not run ${args.gateLabel} because the workspace toolchain is unavailable. Remediation target: workspace environment.`,
+          1000,
+        ) ??
+        "Configured workspace preparation command could not run because the workspace toolchain is unavailable. Remediation target: workspace environment."
+      );
+    case "non_zero_exit":
+      return (
+        truncate(
+          `Configured workspace preparation command failed ${args.gateLabel}. Remediation target: workspace environment.`,
+          1000,
+        ) ?? "Configured workspace preparation command failed. Remediation target: workspace environment."
+      );
+  }
 }
 
 export async function executeLocalCiCommand(command: ResolvedLocalCiCommand | LocalCiCommandConfig, workspacePath: string): Promise<void> {
@@ -355,6 +396,44 @@ export async function runLocalCiGate(args: {
         execution_mode: command.executionMode,
         failure_class: failureClass,
         remediation_target: remediationTargetForFailureClass(failureClass),
+      },
+    };
+  }
+}
+
+export async function runWorkspacePreparationGate(args: {
+  config: Pick<SupervisorConfig, "workspacePreparationCommand">;
+  workspacePath: string;
+  gateLabel: string;
+  runWorkspacePreparationCommand?: LocalCiCommandRunner;
+}): Promise<WorkspacePreparationGateResult> {
+  const command = resolveLocalCiCommand(args.config.workspacePreparationCommand);
+  if (!command) {
+    return {
+      ok: true,
+      failureContext: null,
+    };
+  }
+
+  try {
+    await (args.runWorkspacePreparationCommand ?? executeLocalCiCommand)(command, args.workspacePath);
+    return {
+      ok: true,
+      failureContext: null,
+    };
+  } catch (error) {
+    const failureClass = classifyLocalCiFailure(error, command.displayCommand);
+    const summary = buildWorkspacePreparationSummary({ failureClass, gateLabel: args.gateLabel });
+    return {
+      ok: false,
+      failureContext: {
+        category: "blocked",
+        summary,
+        signature: workspacePreparationFailureSignature(failureClass),
+        command: command.displayCommand,
+        details: buildFailureDetails(error, command.executionMode),
+        url: null,
+        updated_at: nowIso(),
       },
     };
   }

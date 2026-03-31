@@ -17,6 +17,7 @@ import {
   SupervisorConfig,
   TrustDiagnosticsSummary,
   TrustMode,
+  WorkspacePreparationContractSummary,
 } from "./types";
 import { DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH } from "./journal";
 import { mapConfiguredReviewProviders } from "./review-providers";
@@ -397,6 +398,27 @@ export function summarizeLocalCiContract(
   };
 }
 
+export function summarizeWorkspacePreparationContract(
+  config: Pick<SupervisorConfig, "workspacePreparationCommand">,
+): WorkspacePreparationContractSummary {
+  const command = displayLocalCiCommand(config.workspacePreparationCommand);
+  if (command !== null) {
+    return {
+      configured: true,
+      command,
+      source: "config",
+      summary: "Repo-owned workspace preparation contract is configured.",
+    };
+  }
+
+  return {
+    configured: false,
+    command: null,
+    source: "config",
+    summary: "No repo-owned workspace preparation contract is configured.",
+  };
+}
+
 function findRepoOwnedLocalCiCandidate(repoPath: string | undefined): string | null {
   if (typeof repoPath !== "string" || repoPath.trim() === "") {
     return null;
@@ -621,6 +643,7 @@ function parseSupervisorConfigDocument(raw: Record<string, unknown>, resolvedPat
         : 6000,
     issueLabel: typeof raw.issueLabel === "string" ? raw.issueLabel : undefined,
     issueSearch: typeof raw.issueSearch === "string" ? raw.issueSearch : undefined,
+    workspacePreparationCommand: normalizeLocalCiCommand(raw.workspacePreparationCommand),
     localCiCommand: normalizeLocalCiCommand(raw.localCiCommand),
     candidateDiscoveryFetchWindow:
       typeof raw.candidateDiscoveryFetchWindow === "number" &&
