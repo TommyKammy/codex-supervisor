@@ -31,12 +31,12 @@ Failure signature: none
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: Tracked draft PRs were already transitioning to `blocked` on host-local workspace-preparation and local-CI gates, but no PR conversation comment was emitted from that post-turn path.
-- What changed: Added best-effort tracked-PR blocker commenting in the draft-to-ready gate for workspace preparation and local CI failures, persisted dedupe markers by PR head plus blocker signature, added a GitHub `issue comment` client method, and covered comment emission, dedupe, and comment-failure behavior with focused tests.
+- What changed: Added best-effort tracked-PR blocker commenting in the draft-to-ready gate for workspace preparation and local CI failures, persisted dedupe markers by PR head plus blocker signature, added a GitHub `issue comment` client method, covered comment emission, dedupe, and comment-failure behavior with focused tests, pushed `codex/issue-1271`, and opened draft PR #1273.
 - Current blocker: none
-- Next exact step: Push `codex/issue-1271` to `github` and open a draft PR against `main` with the verified checkpoint.
+- Next exact step: Monitor draft PR #1273 (`https://github.com/TommyKammy/codex-supervisor/pull/1273`) for review or CI feedback and address any follow-up deltas in this worktree.
 - Verification gap: none for the requested local scope after `npm ci`; requested targeted tests and `npm run build` passed.
 - Files touched: src/post-turn-pull-request.ts; src/post-turn-pull-request.test.ts; src/github/github.ts; src/core/types.ts; src/core/state-store.ts; src/turn-execution-test-helpers.ts
 - Rollback concern: Low; the new PR comment path is best-effort and only persists dedupe markers after a successful comment, so reverting is isolated to tracked draft-PR blocker notification behavior.
-- Last focused command: gh repo view --json nameWithOwner,defaultBranchRef
+- Last focused command: gh pr view 1273 --json number,title,state,isDraft,url,headRefName,baseRefName
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
