@@ -12,6 +12,7 @@ import {
   syncCopilotReviewTimeoutState,
   syncReviewWaitWindow,
 } from "../pull-request-state";
+import { projectTrackedPrLifecycle } from "../tracked-pr-lifecycle-projection";
 import {
   localReviewHighSeverityNeedsBlock,
   localReviewRetryLoopStalled,
@@ -138,30 +139,38 @@ export function derivePullRequestLifecycleSnapshot(
   reviewThreads: ReviewThread[],
   recordPatch: Partial<IssueRunRecord> = {},
 ): PullRequestLifecycleSnapshot {
-  const baseRecord = { ...record, ...recordPatch };
-  const reviewWaitPatch = syncReviewWaitWindow(baseRecord, pr);
-  const copilotRequestObservationPatch = syncCopilotReviewRequestObservation(config, baseRecord, pr);
-  const recordForState = {
-    ...baseRecord,
-    ...reviewWaitPatch,
-    ...copilotRequestObservationPatch,
+  const baseRecord = {
+    ...record,
+    ...recordPatch,
+    pr_number: pr.number,
+    last_head_sha: pr.headRefOid,
   };
-  const mergeLatencyVisibilityPatch = syncMergeLatencyVisibility(config, recordForState, pr, reviewThreads);
-  const copilotTimeoutPatch = syncCopilotReviewTimeoutState(config, recordForState, pr);
+  const trackedPrProjection = projectTrackedPrLifecycle({
+    config,
+    record: baseRecord,
+    pr,
+    checks,
+    reviewThreads,
+  });
+  const mergeLatencyVisibilityPatch = syncMergeLatencyVisibility(
+    config,
+    trackedPrProjection.recordForState,
+    pr,
+    reviewThreads,
+  );
   const finalizedRecordForState = {
-    ...recordForState,
+    ...trackedPrProjection.recordForState,
     ...mergeLatencyVisibilityPatch,
-    ...copilotTimeoutPatch,
   };
 
   return {
     recordForState: finalizedRecordForState,
     nextState: inferStateFromPullRequest(config, finalizedRecordForState, pr, checks, reviewThreads),
     failureContext: inferFailureContext(config, finalizedRecordForState, pr, checks, reviewThreads),
-    reviewWaitPatch,
-    copilotRequestObservationPatch,
+    reviewWaitPatch: trackedPrProjection.reviewWaitPatch,
+    copilotRequestObservationPatch: trackedPrProjection.copilotReviewRequestObservationPatch,
     mergeLatencyVisibilityPatch,
-    copilotTimeoutPatch,
+    copilotTimeoutPatch: trackedPrProjection.copilotReviewTimeoutPatch,
   };
 }
 
