@@ -29,6 +29,7 @@ Preserve readiness and selection-why summary output.
     updatedAt: "2026-03-19T00:00:00Z",
     url: "https://example.test/issues/604",
     state: "OPEN",
+    labels: [],
     ...overrides,
   };
 }

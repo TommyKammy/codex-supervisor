@@ -38,6 +38,7 @@ Parallelizable: No`,
     updatedAt: "2026-03-19T00:00:00Z",
     url: "https://example.test/issues/603",
     state: "OPEN",
+    labels: [],
     ...overrides,
   };
 }
