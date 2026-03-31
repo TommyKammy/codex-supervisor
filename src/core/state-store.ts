@@ -142,6 +142,8 @@ function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
     last_runtime_failure_context: value.last_runtime_failure_context ?? null,
     last_blocker_signature: value.last_blocker_signature ?? null,
     last_failure_signature: value.last_failure_signature ?? null,
+    last_host_local_pr_blocker_comment_signature: value.last_host_local_pr_blocker_comment_signature ?? null,
+    last_host_local_pr_blocker_comment_head_sha: value.last_host_local_pr_blocker_comment_head_sha ?? null,
     blocked_reason: value.blocked_reason ?? null,
     review_follow_up_head_sha: value.review_follow_up_head_sha ?? null,
     review_follow_up_remaining: value.review_follow_up_remaining ?? 0,
@@ -750,6 +752,14 @@ export class StateStore {
         hasOwn(patch, "last_blocker_signature") ? patch.last_blocker_signature ?? null : record.last_blocker_signature ?? null,
       last_failure_signature:
         hasOwn(patch, "last_failure_signature") ? patch.last_failure_signature ?? null : record.last_failure_signature ?? null,
+      last_host_local_pr_blocker_comment_signature:
+        hasOwn(patch, "last_host_local_pr_blocker_comment_signature")
+          ? patch.last_host_local_pr_blocker_comment_signature ?? null
+          : record.last_host_local_pr_blocker_comment_signature ?? null,
+      last_host_local_pr_blocker_comment_head_sha:
+        hasOwn(patch, "last_host_local_pr_blocker_comment_head_sha")
+          ? patch.last_host_local_pr_blocker_comment_head_sha ?? null
+          : record.last_host_local_pr_blocker_comment_head_sha ?? null,
       blocked_reason:
         hasOwn(patch, "blocked_reason") ? patch.blocked_reason ?? null : record.blocked_reason ?? null,
       updated_at: nowIso(),
