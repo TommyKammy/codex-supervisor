@@ -25,6 +25,7 @@ import {
   GitHubIssue,
   GitHubPullRequest,
   IssueRunRecord,
+  LatestLocalCiResult,
   PullRequestCheck,
   ReviewThread,
   RunState,
@@ -78,6 +79,105 @@ export interface PullRequestLifecycleSnapshot {
     IssueRunRecord,
     "copilot_review_timed_out_at" | "copilot_review_timeout_action" | "copilot_review_timeout_reason"
   >;
+}
+
+type HostLocalTrackedPrBlockerGateType = "workspace_preparation" | "local_ci";
+
+function workspacePreparationFailureClass(
+  signature: string | null | undefined,
+): Exclude<LatestLocalCiResult["failure_class"], "unset_contract"> | null {
+  if (!signature?.startsWith("workspace-preparation-gate-")) {
+    return null;
+  }
+
+  const failureClass = signature.slice("workspace-preparation-gate-".length);
+  switch (failureClass) {
+    case "missing_command":
+    case "workspace_toolchain_missing":
+    case "non_zero_exit":
+      return failureClass;
+    default:
+      return null;
+  }
+}
+
+function buildTrackedPrHostLocalBlockerComment(args: {
+  pr: Pick<GitHubPullRequest, "headRefOid">;
+  gateType: HostLocalTrackedPrBlockerGateType;
+  blockerSignature: string;
+  failureClass: string;
+  remediationTarget: string;
+  summary: string;
+}): string {
+  return [
+    `Supervisor host-local ${args.gateType} blocker on tracked PR head \`${args.pr.headRefOid}\`.`,
+    "",
+    `- gate type: \`${args.gateType}\``,
+    `- blocker signature: \`${args.blockerSignature}\``,
+    `- failure class: \`${args.failureClass}\``,
+    `- remediation target: \`${args.remediationTarget}\``,
+    `- summary: ${args.summary}`,
+    "",
+    "GitHub checks may still be green because this blocker is host-local to the supervisor workspace.",
+  ].join("\n");
+}
+
+async function maybeCommentOnTrackedPrHostLocalBlocker(args: {
+  github: Partial<Pick<GitHubClient, "addIssueComment">>;
+  stateStore: Pick<StateStore, "touch" | "save">;
+  state: SupervisorStateFile;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  syncJournal: IssueJournalSync;
+  gateType: HostLocalTrackedPrBlockerGateType;
+  blockerSignature: string | null;
+  failureClass: string | null;
+  remediationTarget: string | null;
+  summary: string | null;
+}): Promise<IssueRunRecord> {
+  if (!args.github.addIssueComment) {
+    return args.record;
+  }
+
+  if (!args.blockerSignature || !args.failureClass || !args.remediationTarget || !args.summary) {
+    return args.record;
+  }
+
+  if (
+    args.record.last_host_local_pr_blocker_comment_head_sha === args.pr.headRefOid
+    && args.record.last_host_local_pr_blocker_comment_signature === args.blockerSignature
+  ) {
+    return args.record;
+  }
+
+  try {
+    await args.github.addIssueComment(
+      args.pr.number,
+      buildTrackedPrHostLocalBlockerComment({
+        pr: args.pr,
+        gateType: args.gateType,
+        blockerSignature: args.blockerSignature,
+        failureClass: args.failureClass,
+        remediationTarget: args.remediationTarget,
+        summary: args.summary,
+      }),
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `Failed to post tracked PR host-local blocker comment for PR #${args.pr.number}: ${truncate(message, 500) ?? "unknown error"}`,
+    );
+    return args.record;
+  }
+
+  const updatedRecord = args.stateStore.touch(args.record, {
+    last_host_local_pr_blocker_comment_head_sha: args.pr.headRefOid,
+    last_host_local_pr_blocker_comment_signature: args.blockerSignature,
+  });
+  args.state.issues[String(updatedRecord.issue_number)] = updatedRecord;
+  await args.stateStore.save(args.state);
+  await args.syncJournal(updatedRecord);
+  return updatedRecord;
 }
 
 function escapeRegExp(input: string): string {
@@ -210,7 +310,7 @@ export interface HandlePostTurnPullRequestTransitionsArgs {
   config: SupervisorConfig;
   stateStore: Pick<StateStore, "touch" | "save">;
   github: Pick<GitHubClient, "getPullRequest" | "getChecks" | "getUnresolvedReviewThreads" | "markPullRequestReady"> &
-    Partial<Pick<GitHubClient, "createIssue">>;
+    Partial<Pick<GitHubClient, "createIssue" | "addIssueComment">>;
   context: PostTurnPullRequestContext;
   derivePullRequestLifecycleSnapshot: (
     record: IssueRunRecord,
@@ -456,6 +556,19 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       state.issues[String(record.issue_number)] = record;
       await stateStore.save(state);
       await syncJournal(record);
+      record = await maybeCommentOnTrackedPrHostLocalBlocker({
+        github,
+        stateStore,
+        state,
+        record,
+        pr: refreshed.pr,
+        syncJournal,
+        gateType: "workspace_preparation",
+        blockerSignature: failureContext?.signature ?? null,
+        failureClass: workspacePreparationFailureClass(failureContext?.signature),
+        remediationTarget: "workspace_environment",
+        summary: failureContext?.summary ?? null,
+      });
       return {
         record,
         pr: refreshed.pr,
@@ -489,6 +602,19 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       state.issues[String(record.issue_number)] = record;
       await stateStore.save(state);
       await syncJournal(record);
+      record = await maybeCommentOnTrackedPrHostLocalBlocker({
+        github,
+        stateStore,
+        state,
+        record,
+        pr: refreshed.pr,
+        syncJournal,
+        gateType: "local_ci",
+        blockerSignature: failureContext?.signature ?? null,
+        failureClass: localCiGate.latestResult?.failure_class ?? null,
+        remediationTarget: localCiGate.latestResult?.remediation_target ?? null,
+        summary: failureContext?.summary ?? localCiGate.latestResult?.summary ?? null,
+      });
       return {
         record,
         pr: refreshed.pr,

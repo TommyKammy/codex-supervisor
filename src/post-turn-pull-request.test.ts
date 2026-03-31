@@ -545,6 +545,322 @@ test("handlePostTurnPullRequestTransitionsPhase reports workspace toolchain fail
   );
 });
 
+test("handlePostTurnPullRequestTransitionsPhase comments once when workspace preparation host-local blockers stop tracked PR progress", async () => {
+  const config = createConfig({
+    workspacePreparationCommand: "npm ci",
+    localCiCommand: "npm run ci:local",
+  });
+  const issue = createIssue({ title: "Comment on tracked PR host-local blockers" });
+  const draftPr = createPullRequest({ title: "Tracked PR host-local blocker", isDraft: true });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: { "102": createRecord({ state: "draft_pr", pr_number: draftPr.number }) },
+  };
+  const comments: Array<{ prNumber: number; body: string }> = [];
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      markPullRequestReady: async () => {
+        throw new Error("unexpected markPullRequestReady call");
+      },
+      addIssueComment: async (prNumber: number, body: string) => {
+        comments.push({ prNumber, body });
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: draftPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "draft_pr",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runWorkspacePreparationCommand: async () => {
+      throw Object.assign(new Error("workspace toolchain is not installed in this workspace"), {
+        stderr: "workspace toolchain is not installed in this workspace",
+      });
+    },
+    runLocalCiCommand: async () => {
+      throw new Error("unexpected local CI call");
+    },
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: draftPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "blocked");
+  assert.equal(comments.length, 1);
+  assert.equal(comments[0]?.prNumber, 116);
+  assert.match(comments[0]?.body ?? "", /host-local workspace_preparation blocker/i);
+  assert.match(comments[0]?.body ?? "", /head `head-116`/);
+  assert.match(comments[0]?.body ?? "", /failure class: `workspace_toolchain_missing`/);
+  assert.match(comments[0]?.body ?? "", /remediation target: `workspace_environment`/);
+  assert.match(comments[0]?.body ?? "", /GitHub checks may still be green/i);
+});
+
+test("handlePostTurnPullRequestTransitionsPhase dedupes tracked PR host-local blocker comments on the same head and signature", async () => {
+  const config = createConfig({
+    workspacePreparationCommand: "npm ci",
+    localCiCommand: "npm run ci:local",
+  });
+  const issue = createIssue({ title: "Deduplicate tracked PR host-local blocker comments" });
+  const draftPr = createPullRequest({ title: "Tracked PR host-local blocker", isDraft: true });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "draft_pr",
+        pr_number: draftPr.number,
+        last_host_local_pr_blocker_comment_head_sha: "head-116",
+        last_host_local_pr_blocker_comment_signature: "workspace-preparation-gate-workspace_toolchain_missing",
+      }),
+    },
+  };
+  let commentCalls = 0;
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      markPullRequestReady: async () => {
+        throw new Error("unexpected markPullRequestReady call");
+      },
+      addIssueComment: async () => {
+        commentCalls += 1;
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: draftPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "draft_pr",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runWorkspacePreparationCommand: async () => {
+      throw Object.assign(new Error("workspace toolchain is not installed in this workspace"), {
+        stderr: "workspace toolchain is not installed in this workspace",
+      });
+    },
+    runLocalCiCommand: async () => {
+      throw new Error("unexpected local CI call");
+    },
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: draftPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "blocked");
+  assert.equal(commentCalls, 0);
+});
+
+test("handlePostTurnPullRequestTransitionsPhase keeps blocker state authoritative when tracked PR comment posting fails", async () => {
+  const config = createConfig({ localCiCommand: "npm run ci:local" });
+  const issue = createIssue({ title: "Best-effort tracked PR blocker comments" });
+  const draftPr = createPullRequest({ title: "Tracked PR local CI blocker", isDraft: true });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: { "102": createRecord({ state: "draft_pr", pr_number: draftPr.number }) },
+  };
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      markPullRequestReady: async () => {
+        throw new Error("unexpected markPullRequestReady call");
+      },
+      addIssueComment: async () => {
+        throw new Error("GitHub comment transport unavailable");
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: draftPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "draft_pr",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => {
+      throw Object.assign(new Error("tsc is not installed in this workspace"), {
+        stderr: "tsc is not installed in this workspace",
+      });
+    },
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: draftPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.blocked_reason, "verification");
+  assert.equal(result.record.last_failure_signature, "local-ci-gate-workspace_toolchain_missing");
+});
+
 test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion when workstation-local path hygiene fails", async () => {
   const config = createConfig({ localCiCommand: "npm run ci:local" });
   const issue = createIssue({ title: "Gate ready promotion on path hygiene" });

@@ -1064,6 +1064,18 @@ export class GitHubClient {
     );
   }
 
+  async addIssueComment(issueNumber: number, body: string): Promise<void> {
+    await this.runGhCommand([
+      "issue",
+      "comment",
+      String(issueNumber),
+      "--repo",
+      this.config.repoSlug,
+      "--body",
+      body,
+    ]);
+  }
+
   async closeIssue(issueNumber: number, comment?: string): Promise<void> {
     const args = [
       "issue",

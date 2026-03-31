@@ -358,6 +358,8 @@ export interface IssueRunRecord {
   last_runtime_failure_context?: FailureContext | null;
   last_blocker_signature: string | null;
   last_failure_signature: string | null;
+  last_host_local_pr_blocker_comment_signature?: string | null;
+  last_host_local_pr_blocker_comment_head_sha?: string | null;
   blocked_reason: BlockedReason;
   processed_review_thread_ids: string[];
   processed_review_thread_fingerprints: string[];
