@@ -1,6 +1,9 @@
+import { displayLocalCiCommand } from "./core/config";
 import { runCommand } from "./core/command";
 import {
   FailureContext,
+  LocalCiCommandConfig,
+  LocalCiExecutionMode,
   LatestLocalCiResult,
   LocalCiFailureClass,
   LocalCiRemediationTarget,
@@ -16,7 +19,13 @@ export interface LocalCiGateResult {
   latestResult: LatestLocalCiResult | null;
 }
 
-export type LocalCiCommandRunner = (command: string, workspacePath: string) => Promise<void>;
+interface ResolvedLocalCiCommand {
+  config: LocalCiCommandConfig;
+  displayCommand: string;
+  executionMode: LocalCiExecutionMode;
+}
+
+export type LocalCiCommandRunner = (command: ResolvedLocalCiCommand, workspacePath: string) => Promise<void>;
 
 type ErrorWithOutput = Error & {
   code?: string;
@@ -107,6 +116,43 @@ function isMissingWorkspaceToolchainError(error: unknown): boolean {
   return lines.some((line) => /\bis not installed in this workspace\b/i.test(line));
 }
 
+function resolveLocalCiCommand(command: LocalCiCommandConfig | undefined): ResolvedLocalCiCommand | null {
+  if (typeof command === "string") {
+    const trimmed = command.trim();
+    if (trimmed === "") {
+      return null;
+    }
+
+    return {
+      config: trimmed,
+      displayCommand: trimmed,
+      executionMode: "legacy_shell_string",
+    };
+  }
+
+  if (!command) {
+    return null;
+  }
+
+  if (command.mode === "structured") {
+    return {
+      config: command,
+      displayCommand: displayLocalCiCommand(command) ?? command.executable,
+      executionMode: "structured",
+    };
+  }
+
+  return {
+    config: command,
+    displayCommand: displayLocalCiCommand(command) ?? command.command,
+    executionMode: "shell",
+  };
+}
+
+function isResolvedLocalCiCommand(command: ResolvedLocalCiCommand | LocalCiCommandConfig): command is ResolvedLocalCiCommand {
+  return typeof command === "object" && command !== null && "displayCommand" in command && "executionMode" in command;
+}
+
 function localCiFailureSignature(failureClass: Exclude<LocalCiFailureClass, "unset_contract">): string {
   return `local-ci-gate-${failureClass}`;
 }
@@ -180,6 +226,17 @@ function buildSummary(args: {
   }
 }
 
+function renderExecutionMode(mode: LocalCiExecutionMode): string {
+  switch (mode) {
+    case "structured":
+      return "structured";
+    case "shell":
+      return "shell";
+    case "legacy_shell_string":
+      return "legacy shell-string";
+  }
+}
+
 function renderFailureOutput(label: "stdout" | "stderr", output: string | undefined): string | null {
   if (typeof output !== "string") {
     return null;
@@ -193,27 +250,48 @@ function renderFailureOutput(label: "stdout" | "stderr", output: string | undefi
   return `${label}:\n${truncatePreservingStartAndEnd(trimmed, 1500) ?? trimmed}`;
 }
 
-function buildFailureDetails(error: unknown): string[] {
+function buildFailureDetails(error: unknown, executionMode: LocalCiExecutionMode | null): string[] {
   const message =
     truncatePreservingStartAndEnd(error instanceof Error ? error.message : String(error), 1500) ?? "unknown error";
   const outputError = error instanceof Error ? (error as ErrorWithOutput) : null;
 
   return [
+    executionMode ? `execution mode: ${renderExecutionMode(executionMode)}` : null,
     message,
     renderFailureOutput("stdout", outputError?.stdout),
     renderFailureOutput("stderr", outputError?.stderr),
   ].filter((detail): detail is string => detail !== null);
 }
 
-export async function executeLocalCiCommand(command: string, workspacePath: string): Promise<void> {
-  await runCommand("sh", ["-lc", command], {
+export async function executeLocalCiCommand(command: ResolvedLocalCiCommand | LocalCiCommandConfig, workspacePath: string): Promise<void> {
+  const resolvedCommand = isResolvedLocalCiCommand(command) ? command : resolveLocalCiCommand(command);
+  if (!resolvedCommand) {
+    throw new Error("Local CI command is not configured.");
+  }
+
+  const options = {
     cwd: workspacePath,
     env: {
       ...process.env,
       CI: "1",
     },
     timeoutMs: LOCAL_CI_COMMAND_TIMEOUT_MS,
-  });
+  };
+
+  if (resolvedCommand.executionMode === "structured") {
+    const structuredCommand = resolvedCommand.config as Exclude<LocalCiCommandConfig, string> & {
+      mode: "structured";
+      executable: string;
+      args?: string[];
+    };
+    await runCommand(structuredCommand.executable, structuredCommand.args ?? [], options);
+    return;
+  }
+
+  const shellCommand = typeof resolvedCommand.config === "string"
+    ? resolvedCommand.config
+    : (resolvedCommand.config as { command: string }).command;
+  await runCommand("sh", ["-lc", shellCommand], options);
 }
 
 export async function runLocalCiGate(args: {
@@ -222,10 +300,7 @@ export async function runLocalCiGate(args: {
   gateLabel: string;
   runLocalCiCommand?: LocalCiCommandRunner;
 }): Promise<LocalCiGateResult> {
-  const command =
-    typeof args.config.localCiCommand === "string" && args.config.localCiCommand.trim() !== ""
-      ? args.config.localCiCommand.trim()
-      : null;
+  const command = resolveLocalCiCommand(args.config.localCiCommand);
   const ranAt = nowIso();
   if (!command) {
     return {
@@ -236,6 +311,7 @@ export async function runLocalCiGate(args: {
         summary: buildSummary({ failureClass: "unset_contract", gateLabel: args.gateLabel, passed: false }),
         ran_at: ranAt,
         head_sha: null,
+        execution_mode: null,
         failure_class: "unset_contract",
         remediation_target: remediationTargetForFailureClass("unset_contract"),
       },
@@ -252,12 +328,13 @@ export async function runLocalCiGate(args: {
         summary: buildSummary({ failureClass: null, gateLabel: args.gateLabel, passed: true }),
         ran_at: ranAt,
         head_sha: null,
+        execution_mode: command.executionMode,
         failure_class: null,
         remediation_target: null,
       },
     };
   } catch (error) {
-    const failureClass = classifyLocalCiFailure(error, command);
+    const failureClass = classifyLocalCiFailure(error, command.displayCommand);
     const summary = buildSummary({ failureClass, gateLabel: args.gateLabel, passed: false });
     return {
       ok: false,
@@ -265,8 +342,8 @@ export async function runLocalCiGate(args: {
         category: "blocked",
         summary,
         signature: localCiFailureSignature(failureClass),
-        command,
-        details: buildFailureDetails(error),
+        command: command.displayCommand,
+        details: buildFailureDetails(error, command.executionMode),
         url: null,
         updated_at: ranAt,
       },
@@ -275,6 +352,7 @@ export async function runLocalCiGate(args: {
         summary,
         ran_at: ranAt,
         head_sha: null,
+        execution_mode: command.executionMode,
         failure_class: failureClass,
         remediation_target: remediationTargetForFailureClass(failureClass),
       },

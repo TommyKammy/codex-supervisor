@@ -93,7 +93,8 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking
     manualReviewThreads: () => [],
     mergeConflictDetected: () => false,
     runLocalCiCommand: async (command, cwd) => {
-      assert.equal(command, "npm run ci:local");
+      assert.equal(command.displayCommand, "npm run ci:local");
+      assert.equal(command.executionMode, "legacy_shell_string");
       assert.equal(cwd, path.join("/tmp/workspaces", "issue-102"));
       localCiCalls += 1;
     },
@@ -118,6 +119,7 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking
     summary: "Configured local CI command passed before marking PR #116 ready.",
     ran_at: result.record.latest_local_ci_result?.ran_at ?? "",
     head_sha: "head-116",
+    execution_mode: "legacy_shell_string",
     failure_class: null,
     remediation_target: null,
   });
@@ -328,6 +330,7 @@ test("handlePostTurnPullRequestTransitionsPhase reports workspace toolchain fail
       "Configured local CI command could not run before marking PR #116 ready because the workspace toolchain is unavailable. Remediation target: workspace environment.",
     ran_at: result.record.latest_local_ci_result?.ran_at ?? "",
     head_sha: draftPr.headRefOid,
+    execution_mode: "legacy_shell_string",
     failure_class: "workspace_toolchain_missing",
     remediation_target: "workspace_environment",
   });

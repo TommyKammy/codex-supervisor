@@ -85,6 +85,24 @@ export interface LocalCiContractSummary {
   summary: string;
 }
 
+export interface StructuredLocalCiCommandConfig {
+  mode: "structured";
+  executable: string;
+  args?: string[];
+}
+
+export interface ShellLocalCiCommandConfig {
+  mode: "shell";
+  command: string;
+}
+
+export type LocalCiCommandConfig =
+  | string
+  | StructuredLocalCiCommandConfig
+  | ShellLocalCiCommandConfig;
+
+export type LocalCiExecutionMode = "structured" | "shell" | "legacy_shell_string";
+
 export type LocalCiResultOutcome = "passed" | "failed" | "not_configured";
 export type LocalCiFailureClass =
   | "missing_command"
@@ -102,6 +120,7 @@ export interface LatestLocalCiResult {
   summary: string;
   ran_at: string;
   head_sha: string | null;
+  execution_mode: LocalCiExecutionMode | null;
   failure_class: LocalCiFailureClass | null;
   remediation_target: LocalCiRemediationTarget | null;
 }
@@ -146,7 +165,7 @@ export interface SupervisorConfig {
   issueJournalMaxChars: number;
   issueLabel?: string;
   issueSearch?: string;
-  localCiCommand?: string;
+  localCiCommand?: LocalCiCommandConfig;
   candidateDiscoveryFetchWindow?: number;
   skipTitlePrefixes: string[];
   branchPrefix: string;

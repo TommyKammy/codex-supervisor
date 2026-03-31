@@ -15,6 +15,7 @@ test("buildIssueActivityContext keeps the legacy local CI failure signature bloc
         summary: "Configured local CI command failed before marking PR #1210 ready.",
         ran_at: "2026-03-30T13:30:00Z",
         head_sha: "head-1207",
+        execution_mode: "legacy_shell_string",
         failure_class: "non_zero_exit",
         remediation_target: "repo_owned_command",
       },

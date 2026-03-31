@@ -543,6 +543,54 @@ test("diagnoseSetupReadiness prefers the configured local CI command over repo-o
   assert.equal(summary.ready, true);
 });
 
+test("diagnoseSetupReadiness surfaces a structured local CI command as configured", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath,
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot,
+      stateFile: path.join(root, "state.json"),
+      codexBinary: process.execPath,
+      branchPrefix: "codex/issue-",
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      localCiCommand: {
+        mode: "structured",
+        executable: "npm",
+        args: ["run", "ci:local"],
+      },
+    }),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.deepEqual(summary.localCiContract, {
+    configured: true,
+    command: "npm run ci:local",
+    recommendedCommand: null,
+    source: "config",
+    summary: "Repo-owned local CI contract is configured.",
+  });
+  assert.equal(summary.fields.find((field) => field.key === "localCiCommand")?.value, "npm run ci:local");
+  assert.equal(summary.ready, true);
+});
+
 test("renderDoctorReport surfaces merge-critical recheck cadence visibility", () => {
   const diagnostics = {
     overallStatus: "pass",

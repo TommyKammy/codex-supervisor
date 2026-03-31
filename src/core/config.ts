@@ -4,13 +4,16 @@ import {
   CadenceDiagnosticsSummary,
   CopilotReviewTimeoutAction,
   ExecutionSafetyMode,
+  LocalCiCommandConfig,
   LocalCiContractSummary,
   LocalReviewHighSeverityAction,
   LocalReviewPolicy,
   LocalReviewReviewerThresholdConfig,
   LocalReviewReviewerType,
+  ShellLocalCiCommandConfig,
   ReasoningEffort,
   RunState,
+  StructuredLocalCiCommandConfig,
   SupervisorConfig,
   TrustDiagnosticsSummary,
   TrustMode,
@@ -80,6 +83,80 @@ function resolveCommandLikeValue(baseDir: string, value: string): string {
   }
 
   return /[\\/]/.test(value) ? resolveMaybeRelative(baseDir, value) : value;
+}
+
+function normalizeStringArray(value: unknown, fieldName: string): string[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`${fieldName} must be an array of strings.`);
+  }
+
+  return value.map((entry, index) => {
+    if (typeof entry !== "string") {
+      throw new Error(`${fieldName}[${index}] must be a string.`);
+    }
+
+    return entry;
+  });
+}
+
+function normalizeLocalCiCommand(value: unknown): LocalCiCommandConfig | undefined {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed !== "" ? trimmed : undefined;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const raw = value as Record<string, unknown>;
+  if (raw.mode === "structured") {
+    if (typeof raw.executable !== "string" || raw.executable.trim() === "") {
+      throw new Error("localCiCommand.executable must be a non-empty string.");
+    }
+
+    const structuredCommand: StructuredLocalCiCommandConfig = {
+      mode: "structured",
+      executable: raw.executable.trim(),
+    };
+
+    if ("args" in raw) {
+      structuredCommand.args = normalizeStringArray(raw.args, "localCiCommand.args");
+    }
+
+    return structuredCommand;
+  }
+
+  if (raw.mode === "shell") {
+    if (typeof raw.command !== "string" || raw.command.trim() === "") {
+      throw new Error("localCiCommand.command must be a non-empty string.");
+    }
+
+    const shellCommand: ShellLocalCiCommandConfig = {
+      mode: "shell",
+      command: raw.command.trim(),
+    };
+    return shellCommand;
+  }
+
+  throw new Error("localCiCommand must be a non-empty string or an object with mode structured|shell.");
+}
+
+export function displayLocalCiCommand(command: LocalCiCommandConfig | undefined): string | null {
+  if (typeof command === "string") {
+    const trimmed = command.trim();
+    return trimmed !== "" ? trimmed : null;
+  }
+
+  if (!command) {
+    return null;
+  }
+
+  if (command.mode === "structured") {
+    return [command.executable, ...(command.args ?? [])].join(" ").trim() || null;
+  }
+
+  return command.command.trim() || null;
 }
 
 function assertString(value: unknown, label: string): string {
@@ -288,10 +365,7 @@ export function summarizeCadenceDiagnostics(
 export function summarizeLocalCiContract(
   config: Pick<SupervisorConfig, "localCiCommand"> & { repoPath?: string },
 ): LocalCiContractSummary {
-  const command =
-    typeof config.localCiCommand === "string" && config.localCiCommand.trim() !== ""
-      ? config.localCiCommand.trim()
-      : null;
+  const command = displayLocalCiCommand(config.localCiCommand);
   const recommendedCommand = findRepoOwnedLocalCiCandidate(config.repoPath);
 
   if (command !== null) {
@@ -547,10 +621,7 @@ function parseSupervisorConfigDocument(raw: Record<string, unknown>, resolvedPat
         : 6000,
     issueLabel: typeof raw.issueLabel === "string" ? raw.issueLabel : undefined,
     issueSearch: typeof raw.issueSearch === "string" ? raw.issueSearch : undefined,
-    localCiCommand:
-      typeof raw.localCiCommand === "string" && raw.localCiCommand.trim() !== ""
-        ? raw.localCiCommand.trim()
-        : undefined,
+    localCiCommand: normalizeLocalCiCommand(raw.localCiCommand),
     candidateDiscoveryFetchWindow:
       typeof raw.candidateDiscoveryFetchWindow === "number" &&
       Number.isFinite(raw.candidateDiscoveryFetchWindow) &&
