@@ -11,6 +11,7 @@ import {
   createUnavailableManagedRestart,
   withManagedRestart,
 } from "./setup-test-fixtures";
+import { MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING } from "../core/config";
 import { renderSupervisorDashboardHtml } from "./webui-dashboard";
 import { DASHBOARD_PANEL_REGISTRY } from "./webui-dashboard-panel-layout";
 import { WEBUI_MUTATION_AUTH_HEADER, WEBUI_MUTATION_AUTH_STORAGE_KEY } from "./webui-mutation-auth";
@@ -981,7 +982,7 @@ test("dashboard status panel surfaces tracked PR host-local CI blockers", async 
           detailedStatusLines: [
             "tracked_pr_mismatch issue=#171 pr=#271 github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=verification stale_local_blocker=yes",
             "tracked_pr_host_local_ci issue=#171 pr=#271 github_checks=green head_sha=head-ready-271 outcome=failed failure_class=workspace_toolchain_missing remediation_target=workspace_environment head=current summary=Configured local CI command could not run before marking PR #271 ready because the workspace toolchain is unavailable. Remediation target: workspace environment.",
-            "tracked_pr_host_local_ci_gap issue=#171 pr=#271 workspace_preparation_command=unset gap=missing_workspace_prerequisite_visibility likely_cause=localCiCommand is configured but workspacePreparationCommand is unset. Configure a repo-owned workspacePreparationCommand so preserved issue worktrees can prepare toolchains before host-local CI runs. GitHub checks can stay green while host-local CI still blocks tracked PR progress.",
+            `tracked_pr_host_local_ci_gap issue=#171 pr=#271 workspace_preparation_command=unset gap=missing_workspace_prerequisite_visibility likely_cause=${MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING}`,
           ],
         }),
       ),
@@ -2537,8 +2538,7 @@ test("setup shell warns when localCiCommand is configured without workspacePrepa
           recommendedCommand: null,
           source: "config",
           summary: "Repo-owned local CI contract is configured.",
-          warning:
-            "localCiCommand is configured but workspacePreparationCommand is unset. Configure a repo-owned workspacePreparationCommand so preserved issue worktrees can prepare toolchains before host-local CI runs. GitHub checks can stay green while host-local CI still blocks tracked PR progress.",
+          warning: MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING,
         },
       }), unavailableManagedRestart)),
     },

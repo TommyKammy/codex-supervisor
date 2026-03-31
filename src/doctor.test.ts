@@ -6,6 +6,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { StateStore } from "./core/state-store";
+import { MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING } from "./core/config";
 import { createConfig, createPullRequest, createRecord } from "./turn-execution-test-helpers";
 import { diagnoseBootstrapReadiness, diagnoseSupervisorHost, loadStateReadonlyForDoctor, renderDoctorReport } from "./doctor";
 import { type SupervisorStateFile } from "./core/types";
@@ -896,8 +897,7 @@ test("renderDoctorReport warns when localCiCommand is configured without workspa
       command: null,
       source: "config",
       summary: "No repo-owned workspace preparation contract is configured.",
-      warning:
-        "localCiCommand is configured but workspacePreparationCommand is unset. Configure a repo-owned workspacePreparationCommand so preserved issue worktrees can prepare toolchains before host-local CI runs. GitHub checks can stay green while host-local CI still blocks tracked PR progress.",
+      warning: null,
     },
     localCiContract: {
       configured: true,
@@ -905,15 +905,12 @@ test("renderDoctorReport warns when localCiCommand is configured without workspa
       recommendedCommand: null,
       source: "config",
       summary: "Repo-owned local CI contract is configured.",
-      warning:
-        "localCiCommand is configured but workspacePreparationCommand is unset. Configure a repo-owned workspacePreparationCommand so preserved issue worktrees can prepare toolchains before host-local CI runs. GitHub checks can stay green while host-local CI still blocks tracked PR progress.",
+      warning: MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING,
     },
   } as Awaited<ReturnType<typeof diagnoseSupervisorHost>>);
 
-  assert.match(
-    report,
-    /doctor_warning kind=config detail=localCiCommand is configured but workspacePreparationCommand is unset\. Configure a repo-owned workspacePreparationCommand so preserved issue worktrees can prepare toolchains before host-local CI runs\. GitHub checks can stay green while host-local CI still blocks tracked PR progress\./,
-  );
+  assert.equal(report.includes(`doctor_warning kind=config detail=${MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING}`), true);
+  assert.equal(report.split(MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING).length - 1, 1);
 });
 
 test("renderDoctorReport surfaces absent local CI posture when no repo-owned contract exists", () => {
