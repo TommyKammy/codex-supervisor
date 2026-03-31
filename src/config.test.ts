@@ -1029,6 +1029,79 @@ test("updateSetupConfig preserves unrelated fields, writes a backup, and refresh
   assert.equal(result.readiness.providerPosture.profile, "codex");
 });
 
+test("updateSetupConfig rotates multiple backups across consecutive writes with bounded retention", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-update-rotate-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      {
+        repoPath: ".",
+        repoSlug: "owner/repo",
+        defaultBranch: "main",
+        workspaceRoot: "./worktrees",
+        stateFile: "./state.json",
+        codexBinary: "codex",
+        branchPrefix: "codex/issue-",
+        reviewBotLogins: [],
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  const firstResult = await updateSetupConfig({
+    configPath,
+    changes: {
+      reviewProvider: "codex",
+    },
+  });
+  const secondResult = await updateSetupConfig({
+    configPath,
+    changes: {
+      branchPrefix: "codex/task-",
+    },
+  });
+  for (let index = 0; index < 6; index += 1) {
+    await updateSetupConfig({
+      configPath,
+      changes: {
+        defaultBranch: `main-${index}`,
+      },
+    });
+  }
+
+  assert.ok(firstResult.backupPath);
+  assert.ok(secondResult.backupPath);
+  assert.equal(firstResult.backupPath, secondResult.backupPath);
+
+  const backupPaths = (await fs.readdir(tempDir))
+    .filter((entry) => entry.startsWith("supervisor.config.json.bak"))
+    .sort()
+    .map((entry) => path.join(tempDir, entry));
+
+  assert.deepEqual(backupPaths, [
+    path.join(tempDir, "supervisor.config.json.bak"),
+    path.join(tempDir, "supervisor.config.json.bak.1"),
+    path.join(tempDir, "supervisor.config.json.bak.2"),
+    path.join(tempDir, "supervisor.config.json.bak.3"),
+    path.join(tempDir, "supervisor.config.json.bak.4"),
+  ]);
+
+  const secondBackupDocument = JSON.parse(await fs.readFile(secondResult.backupPath, "utf8")) as Record<string, unknown>;
+  const oldestRetainedBackup = JSON.parse(
+    await fs.readFile(path.join(tempDir, "supervisor.config.json.bak.4"), "utf8"),
+  ) as Record<string, unknown>;
+
+  assert.deepEqual(secondBackupDocument.reviewBotLogins, ["chatgpt-codex-connector"]);
+  assert.equal(secondBackupDocument.defaultBranch, "main-4");
+  assert.equal(oldestRetainedBackup.defaultBranch, "main-0");
+});
+
 test("updateSetupConfig reports no restart requirement when a typed setup write is a no-op", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-update-noop-"));
   t.after(async () => {
