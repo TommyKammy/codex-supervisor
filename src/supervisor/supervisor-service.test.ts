@@ -187,6 +187,7 @@ test("createSupervisorService exposes a dedicated typed setup readiness query", 
       recommendedCommand: null,
       source: "config",
       summary: "No repo-owned local CI contract is configured.",
+      warning: null,
     },
   };
 
@@ -214,6 +215,7 @@ test("createSupervisorService preserves typed operator observability fields on s
       recommendedCommand: null,
       source: "config",
       summary: "Repo-owned local CI contract is configured.",
+      warning: null,
     },
     activeIssue: {
       issueNumber: 42,

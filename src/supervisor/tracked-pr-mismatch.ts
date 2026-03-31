@@ -8,6 +8,10 @@ import type {
   RunState,
   SupervisorConfig,
 } from "../core/types";
+import {
+  buildMissingWorkspacePreparationContractWarning,
+  MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING,
+} from "../core/config";
 import { projectTrackedPrLifecycle } from "../tracked-pr-lifecycle-projection";
 
 export interface TrackedPrMismatch {
@@ -75,6 +79,9 @@ function buildTrackedPrHostLocalCiDetailLines(
   ];
 
   if (result.failure_class === "workspace_toolchain_missing" && !config.workspacePreparationCommand) {
+    const warning =
+      buildMissingWorkspacePreparationContractWarning(config)
+      ?? MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING;
     detailLines.push(
       [
         "tracked_pr_host_local_ci_gap",
@@ -82,6 +89,7 @@ function buildTrackedPrHostLocalCiDetailLines(
         `pr=#${pr.number}`,
         "workspace_preparation_command=unset",
         "gap=missing_workspace_prerequisite_visibility",
+        `likely_cause=${(warning ?? "missing workspace preparation contract").replace(/\r?\n/g, "\\n")}`,
       ].join(" "),
     );
   }

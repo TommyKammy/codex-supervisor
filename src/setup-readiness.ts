@@ -420,6 +420,10 @@ export async function diagnoseSetupReadiness(
   const localCiContractConfig = configSummary.config ?? {
     localCiCommand:
       typeof rawConfigDocument.localCiCommand === "string" ? rawConfigDocument.localCiCommand : undefined,
+    workspacePreparationCommand:
+      typeof rawConfigDocument.workspacePreparationCommand === "string"
+        ? rawConfigDocument.workspacePreparationCommand
+        : undefined,
     repoPath: fallbackRepoPath,
   };
 

@@ -1261,6 +1261,8 @@ test("updateSetupConfig accepts localCiCommand through the setup-owned write sur
     recommendedCommand: null,
     source: "config",
     summary: "Repo-owned local CI contract is configured.",
+    warning:
+      "localCiCommand is configured but workspacePreparationCommand is unset. Configure a repo-owned workspacePreparationCommand so preserved issue worktrees can prepare toolchains before host-local CI runs. GitHub checks can stay green while host-local CI still blocks tracked PR progress.",
   });
 });
 
@@ -1322,6 +1324,7 @@ test("updateSetupConfig clears localCiCommand back to the unset state", async (t
     recommendedCommand: "npm run verify:pre-pr",
     source: "repo_script_candidate",
     summary: "Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: npm run verify:pre-pr.",
+    warning: null,
   });
 });
 
