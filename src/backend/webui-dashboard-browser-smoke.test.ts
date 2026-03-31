@@ -266,7 +266,7 @@ test("browser smoke resolves Chrome binaries from explicit, PATH, and macOS bund
 
   assert.equal(
     resolveChromeExecutable({
-      env: { HOME: "/Users/example" },
+      env: { HOME: "/tmp/example-home" },
       which: (candidate) => (candidate === "chromium" ? "/usr/local/bin/chromium" : null),
       fileExists: () => false,
     }),
@@ -275,7 +275,7 @@ test("browser smoke resolves Chrome binaries from explicit, PATH, and macOS bund
 
   assert.equal(
     resolveChromeExecutable({
-      env: { HOME: "/Users/example" },
+      env: { HOME: "/tmp/example-home" },
       which: () => null,
       fileExists: (candidate) => candidate === "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     }),
