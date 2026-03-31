@@ -268,6 +268,8 @@ test("runCommand timeout errors bound noisy stderr while keeping timeout context
 test("runCommand timeout errors preserve timeout summaries when stderr is already noisy before the timeout", async () => {
   const stderrPrefix = "pre-timeout-prefix";
   const stderrSuffix = "pre-timeout-suffix";
+  const noisyWriteCount = 70;
+  const timeoutMs = 250;
 
   await assert.rejects(
     () =>
@@ -287,7 +289,7 @@ test("runCommand timeout errors preserve timeout summaries when stderr is alread
             });
             (async () => {
               await write(${JSON.stringify(`${stderrPrefix}\n`)});
-              for (let i = 0; i < 200; i += 1) {
+              for (let i = 0; i < ${noisyWriteCount}; i += 1) {
                 await write("q".repeat(1000));
               }
               await write(${JSON.stringify(`\n${stderrSuffix}\n`)});
@@ -299,20 +301,47 @@ test("runCommand timeout errors preserve timeout summaries when stderr is alread
           `,
         ],
         {
-          timeoutMs: 50,
+          timeoutMs,
         },
       ),
     (error: unknown) => {
       assert.ok(error instanceof CommandExecutionError);
       assert.equal(error.timedOut, true);
       assert.match(error.message, /Command timed out:/);
-      assert.match(error.message, /Command timed out after 50ms:/);
+      assert.match(error.message, new RegExp(`Command timed out after ${timeoutMs}ms:`));
       assert.match(error.message, new RegExp(stderrPrefix));
       assert.match(error.message, /\n\.\.\.\n/);
       assert.match(error.stderr, new RegExp(stderrPrefix));
       assert.match(error.stderr, new RegExp(stderrSuffix));
-      assert.match(error.stderr, /Command timed out after 50ms:/);
+      assert.match(error.stderr, new RegExp(`Command timed out after ${timeoutMs}ms:`));
       assert.match(error.stderr, /\n\.\.\.\n/);
+      return true;
+    },
+  );
+});
+
+test("runCommand timeout errors bound long timeout summaries", async () => {
+  const timeoutMs = 10;
+  const longInlineScript = `setInterval(() => {}, 1000); /* ${"very-long-timeout-summary ".repeat(4_000)} */`;
+
+  await assert.rejects(
+    () =>
+      runCommand(process.execPath, [
+        "-e",
+        longInlineScript,
+      ], {
+        timeoutMs,
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof CommandExecutionError);
+      assert.equal(error.timedOut, true);
+      const renderedStderr = error.message.split("\n").slice(2).join("\n");
+      assert.match(error.message, new RegExp(`Command timed out after ${timeoutMs}ms:`));
+      assert.match(error.message, /\n\.\.\.\n/);
+      assert.ok(renderedStderr.length <= 500, `expected bounded rendered stderr, got length ${renderedStderr.length}`);
+      assert.match(error.stderr, new RegExp(`Command timed out after ${timeoutMs}ms:`));
+      assert.match(error.stderr, /\n\.\.\.\n/);
+      assert.ok(error.stderr.length <= 65_536, `expected bounded stderr capture, got length ${error.stderr.length}`);
       return true;
     },
   );

@@ -35,6 +35,25 @@ export class CommandExecutionError extends Error {
   }
 }
 
+function truncatePreservingEnds(value: string, limit: number): string {
+  if (limit <= 0) {
+    return "";
+  }
+
+  if (value.length <= limit) {
+    return value;
+  }
+
+  if (limit <= OUTPUT_TRUNCATION_MARKER.length) {
+    return OUTPUT_TRUNCATION_MARKER.slice(0, limit);
+  }
+
+  const availableLength = limit - OUTPUT_TRUNCATION_MARKER.length;
+  const prefixLength = Math.ceil(availableLength / 2);
+  const suffixLength = Math.floor(availableLength / 2);
+  return `${value.slice(0, prefixLength)}${OUTPUT_TRUNCATION_MARKER}${suffixLength > 0 ? value.slice(-suffixLength) : ""}`;
+}
+
 function formatCommandErrorStderr(stderr: string): string | null {
   const trimmed = stderr.trim();
   if (trimmed === "") {
@@ -47,7 +66,10 @@ function formatCommandErrorStderr(stderr: string): string | null {
 
   const timeoutSummaryMatch = trimmed.match(/Command timed out after [^\n]+/);
   if (timeoutSummaryMatch) {
-    const timeoutSummary = timeoutSummaryMatch[0];
+    const timeoutSummary = truncatePreservingEnds(
+      timeoutSummaryMatch[0],
+      Math.max(COMMAND_ERROR_STDERR_LIMIT - OUTPUT_TRUNCATION_MARKER.length * 2, 0),
+    );
     const availableLength = Math.max(
       COMMAND_ERROR_STDERR_LIMIT - timeoutSummary.length - OUTPUT_TRUNCATION_MARKER.length * 2,
       0,
@@ -117,9 +139,21 @@ function appendRequiredTextPreservingBoundedOutput(renderedOutput: string, requi
     return renderedOutput;
   }
 
-  const suffix = `${renderedOutput.endsWith("\n") || renderedOutput.length === 0 ? "" : "\n"}${requiredText}`;
-  if (renderedOutput.length + suffix.length <= COMMAND_OUTPUT_CAPTURE_LIMIT) {
-    return `${renderedOutput}${suffix}`;
+  const separator = renderedOutput.endsWith("\n") || renderedOutput.length === 0 ? "" : "\n";
+  if (renderedOutput.length + separator.length + requiredText.length <= COMMAND_OUTPUT_CAPTURE_LIMIT) {
+    return `${renderedOutput}${separator}${requiredText}`;
+  }
+
+  const boundedRequiredText = truncatePreservingEnds(
+    requiredText,
+    Math.max(
+      COMMAND_OUTPUT_CAPTURE_LIMIT - separator.length - (renderedOutput.length === 0 ? 0 : OUTPUT_TRUNCATION_MARKER.length),
+      0,
+    ),
+  );
+  const suffix = `${separator}${boundedRequiredText}`;
+  if (renderedOutput.length === 0) {
+    return suffix;
   }
 
   const availableLength = Math.max(COMMAND_OUTPUT_CAPTURE_LIMIT - suffix.length - OUTPUT_TRUNCATION_MARKER.length, 0);
