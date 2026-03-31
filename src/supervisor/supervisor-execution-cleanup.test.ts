@@ -881,6 +881,7 @@ test("runOnce releases the current issue lock before restarting after a merged P
     number: mergedIssueNumber,
     title: "Merged PR issue",
     body: executionReadyBody("Merged PR issue."),
+    labels: [],
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${mergedIssueNumber}`,
@@ -890,6 +891,7 @@ test("runOnce releases the current issue lock before restarting after a merged P
     number: nextIssueNumber,
     title: "Next runnable issue",
     body: executionReadyBody("Next runnable issue."),
+    labels: [],
     createdAt: "2026-03-13T00:05:00Z",
     updatedAt: "2026-03-13T00:05:00Z",
     url: `https://example.test/issues/${nextIssueNumber}`,
@@ -979,6 +981,7 @@ test("runOnce releases the issue lock when budget failure persistence throws", a
     number: issueNumber,
     title: "Budget exhausted issue",
     body: executionReadyBody("Budget exhausted issue."),
+    labels: [],
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
@@ -1050,6 +1053,7 @@ test("runOnce clears a stale active issue reservation before selecting the next 
     number: staleIssueNumber,
     title: "Previously active issue",
     body: executionReadyBody("Previously active issue."),
+    labels: [],
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${staleIssueNumber}`,
@@ -1059,6 +1063,7 @@ test("runOnce clears a stale active issue reservation before selecting the next 
     number: nextIssueNumber,
     title: "Higher-priority runnable issue",
     body: executionReadyBody("Higher-priority runnable issue."),
+    labels: [],
     createdAt: "2026-03-13T00:05:00Z",
     updatedAt: "2026-03-13T00:05:00Z",
     url: `https://example.test/issues/${nextIssueNumber}`,
@@ -1195,6 +1200,7 @@ test("runOnce reserves the next runnable issue before broad merged-PR reconcilia
     number: nextIssueNumber,
     title: "Next runnable issue",
     body: executionReadyBody("Next runnable issue."),
+    labels: [],
     createdAt: "2026-03-13T00:05:00Z",
     updatedAt: "2026-03-13T00:05:00Z",
     url: `https://example.test/issues/${nextIssueNumber}`,
@@ -1204,6 +1210,7 @@ test("runOnce reserves the next runnable issue before broad merged-PR reconcilia
     number: mergedIssueNumber,
     title: "Merged implementation issue",
     body: "",
+    labels: [],
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:21:00Z",
     url: `https://example.test/issues/${mergedIssueNumber}`,
@@ -1257,12 +1264,16 @@ test("runOnce reserves the next runnable issue before broad merged-PR reconcilia
   };
 
   const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(
+    message,
+    /recovery issue=#91 reason=merged_pr_convergence: tracked PR #191 merged; marked issue #91 done/,
+  );
   assert.match(message, new RegExp(`Dry run: would invoke Codex for issue #${nextIssueNumber}\\.`));
 
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
   assert.equal(persisted.activeIssueNumber, nextIssueNumber);
-  assert.equal(persisted.issues[String(mergedIssueNumber)]?.state, "merging");
+  assert.equal(persisted.issues[String(mergedIssueNumber)]?.state, "done");
   assert.equal(persisted.issues[String(mergedIssueNumber)]?.pr_number, 191);
-  assert.equal(persisted.issues[String(mergedIssueNumber)]?.last_head_sha, state.issues[String(mergedIssueNumber)]?.last_head_sha);
+  assert.equal(persisted.issues[String(mergedIssueNumber)]?.last_head_sha, "merged-head-191");
   assert.equal(persisted.issues[String(nextIssueNumber)]?.branch, nextBranch);
 });
