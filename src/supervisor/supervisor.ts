@@ -985,9 +985,7 @@ export class Supervisor {
   }
 
   async acquireSupervisorLock(label: "loop" | "run-once"): Promise<LockHandle> {
-    const lock = await acquireFileLock(this.lockPath("supervisor", "run"), `supervisor-${label}`, {
-      allowAmbiguousOwnerCleanup: true,
-    });
+    const lock = await acquireFileLock(this.lockPath("supervisor", "run"), `supervisor-${label}`);
     if (lock.acquired) {
       return lock;
     }

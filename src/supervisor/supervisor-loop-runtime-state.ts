@@ -15,9 +15,7 @@ export function supervisorLoopRuntimeLockPath(stateFile: string): string {
 }
 
 export async function acquireSupervisorLoopRuntimeLock(stateFile: string): Promise<LockHandle> {
-  return acquireFileLock(supervisorLoopRuntimeLockPath(stateFile), LOOP_RUNTIME_LOCK_LABEL, {
-    allowAmbiguousOwnerCleanup: true,
-  });
+  return acquireFileLock(supervisorLoopRuntimeLockPath(stateFile), LOOP_RUNTIME_LOCK_LABEL);
 }
 
 export async function inspectSupervisorLoopRuntimeLock(stateFile: string): Promise<ExistingLockState> {
