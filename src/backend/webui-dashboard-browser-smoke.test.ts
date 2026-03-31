@@ -9,6 +9,8 @@ import type { SetupReadinessFieldKey, SetupReadinessReport } from "../setup-read
 import type { SupervisorService } from "../supervisor";
 import { createSupervisorHttpServer } from "./supervisor-http-server";
 
+const testMutationAuth = { token: "local-test-secret" };
+
 async function listen(server: http.Server): Promise<number> {
   await new Promise<void>((resolve, reject) => {
     server.listen(0, "127.0.0.1", () => resolve());
@@ -190,6 +192,24 @@ async function waitForCodeText(page: Page, id: string, pattern: RegExp): Promise
   );
 }
 
+async function openDashboardDetails(page: Page): Promise<void> {
+  await page.click("#details-disclosure > summary");
+  await page.waitForFunction(() => {
+    const disclosure = document.getElementById("details-disclosure");
+    return disclosure instanceof HTMLDetailsElement && disclosure.open;
+  });
+}
+
+function acceptDialogs(page: Page): void {
+  page.on("dialog", async (dialog: Dialog) => {
+    if (dialog.type() === "prompt") {
+      await dialog.accept(testMutationAuth.token);
+      return;
+    }
+    await dialog.accept();
+  });
+}
+
 test("browser smoke loads the read-only dashboard against the live HTTP fixture", async (t) => {
   const server = createSupervisorHttpServer({
     service: createStubService(),
@@ -211,7 +231,8 @@ test("browser smoke loads the read-only dashboard against the live HTTP fixture"
   await page.waitForFunction(() => document.getElementById("doctor-overall")?.textContent === "pass");
   await waitForCodeText(page, "status-lines", /tracked_issues=0/u);
 
-  assert.equal(await page.textContent(".topbar-title h1"), "Operator dashboard");
+  assert.equal(await page.textContent(".masthead-brand-name"), "codex-supervisor");
+  assert.equal(await page.textContent("#selected-issue-heading"), "No issue loaded");
   assert.equal(await page.textContent("#selected-issue-badge"), "none");
   assert.equal(await page.textContent("#connection-state"), "connected");
   assert.match((await page.textContent("#command-result")) ?? "", /Structured command result JSON appears here\./u);
@@ -222,6 +243,7 @@ test("browser smoke runs a confirmed safe command through the dashboard", async 
   const pruneCalls: number[] = [];
   const server = createSupervisorHttpServer({
     service: createStubService({ pruneCalls }),
+    mutationAuth: testMutationAuth,
   });
   t.after(async () => {
     await closeServer(server);
@@ -234,12 +256,11 @@ test("browser smoke runs a confirmed safe command through the dashboard", async 
 
   const port = await listen(server);
   const page = await browser.newPage();
-  page.on("dialog", async (dialog: Dialog) => {
-    await dialog.accept();
-  });
+  acceptDialogs(page);
   await page.goto(`http://127.0.0.1:${port}/`);
 
   await page.waitForFunction(() => document.getElementById("doctor-overall")?.textContent === "pass");
+  await openDashboardDetails(page);
   await page.click("#prune-workspaces-button");
   await page.waitForFunction(() => document.getElementById("command-status")?.textContent === "Pruned 0 orphaned workspaces.");
   await waitForCodeText(page, "command-result", /"action": "prune-orphaned-workspaces"/u);
@@ -544,6 +565,7 @@ test("browser smoke completes the first-run setup flow through the narrow config
   const readinessCalls: number[] = [];
   const server = createSupervisorHttpServer({
     service: createFirstRunSetupService({ updateCalls, readinessCalls }),
+    mutationAuth: testMutationAuth,
   });
   t.after(async () => {
     await closeServer(server);
@@ -556,6 +578,7 @@ test("browser smoke completes the first-run setup flow through the narrow config
 
   const port = await listen(server);
   const page = await browser.newPage();
+  acceptDialogs(page);
   await page.goto(`http://127.0.0.1:${port}/`);
 
   await page.waitForSelector("[data-setup-root]");
@@ -594,6 +617,7 @@ test("browser smoke reports when a setup save is already effective", async (t) =
   const readinessCalls: number[] = [];
   const server = createSupervisorHttpServer({
     service: createFirstRunSetupService({ updateCalls, readinessCalls, restartRequired: false }),
+    mutationAuth: testMutationAuth,
   });
   t.after(async () => {
     await closeServer(server);
@@ -606,6 +630,7 @@ test("browser smoke reports when a setup save is already effective", async (t) =
 
   const port = await listen(server);
   const page = await browser.newPage();
+  acceptDialogs(page);
   await page.goto(`http://127.0.0.1:${port}/`);
 
   await page.waitForSelector("[data-setup-root]");
@@ -637,6 +662,7 @@ test("browser smoke enables launcher-managed restart only when capability is pre
   let restartRequests = 0;
   const server = createSupervisorHttpServer({
     service: createFirstRunSetupService({ updateCalls, readinessCalls }),
+    mutationAuth: testMutationAuth,
     managedRestart: {
       capability: {
         supported: true,
@@ -665,6 +691,7 @@ test("browser smoke enables launcher-managed restart only when capability is pre
 
   const port = await listen(server);
   const page = await browser.newPage();
+  acceptDialogs(page);
   await page.goto(`http://127.0.0.1:${port}/`);
 
   await page.waitForSelector("[data-setup-root]");
@@ -686,11 +713,15 @@ test("browser smoke enables launcher-managed restart only when capability is pre
 
   await page.click("#setup-restart-button");
   await page.waitForFunction(
-    () => document.getElementById("setup-restart-guidance")?.textContent ===
-      "Managed restart requested through the systemd launcher. The worker is reconnecting while this WebUI shell stays available.",
+    () => document.getElementById("setup-save-status")?.textContent === "Restarted worker reconnected.",
   );
 
   assert.equal(restartRequests, 1);
   assert.equal(await page.isDisabled("#setup-restart-button"), true);
+  assert.equal(await page.textContent("#setup-restart-status"), "Saved and effective");
+  assert.match(
+    (await page.textContent("#setup-restart-guidance")) ?? "",
+    /Managed restart is available through the systemd launcher\./u,
+  );
   assert.ok(readinessCalls.length >= 2);
 });
