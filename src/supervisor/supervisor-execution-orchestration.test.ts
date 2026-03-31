@@ -24,6 +24,13 @@ import {
   executionReadyBody,
   git,
 } from "./supervisor-test-helpers";
+import {
+  createTrackedIssue,
+  createTrackedPullRequest,
+  createTrackedSupervisorRecord,
+  trackedIssuePaths,
+  writeSupervisorState,
+} from "../orchestration-test-helpers";
 import { captureIssueJournalFingerprint, interruptedTurnMarkerPath } from "../interrupted-turn-marker";
 
 test("runOnce records timeout bookkeeping when Codex exits non-zero", async () => {
@@ -53,15 +60,11 @@ test("runOnce records timeout bookkeeping when Codex exits non-zero", async () =
     ],
   });
   const issueNumber = 89;
-  const branch = branchName(fixture.config, issueNumber);
   const state: SupervisorStateFile = createSupervisorState({
     activeIssueNumber: issueNumber,
     issues: [
-      createRecord({
-        issue_number: issueNumber,
+      createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, issueNumber, {
         state: "stabilizing",
-        branch,
-        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
         journal_path: null,
         codex_session_id: null,
         timeout_retry_count: 0,
@@ -74,10 +77,9 @@ test("runOnce records timeout bookkeeping when Codex exits non-zero", async () =
       }),
     ],
   });
-  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  await writeSupervisorState(fixture.stateFile, state);
 
-  const issue = createIssue({
-    number: issueNumber,
+  const issue = createTrackedIssue(issueNumber, {
     title: "Capture timeout failure bookkeeping",
   });
 
@@ -171,20 +173,18 @@ test("runOnce dry-run selects an issue and hydrates workspace and PR context bef
   const issueNumber = 91;
   const branch = branchName(fixture.config, issueNumber);
   const state: SupervisorStateFile = createSupervisorState();
-  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  await writeSupervisorState(fixture.stateFile, state);
 
-  const issue = createIssue({
-    number: issueNumber,
+  const issue = createTrackedIssue(issueNumber, {
     title: "Extract supervisor setup helpers",
     body: executionReadyBody("Extract supervisor setup helpers."),
     labels: [],
   });
-  const pr = createPullRequest({
+  const pr = createTrackedPullRequest(fixture.config, issueNumber, {
     number: 112,
     title: "Draft setup refactor",
     createdAt: "2026-03-13T00:10:00Z",
     isDraft: true,
-    headRefName: branch,
     headRefOid: "head-112",
   });
   const checks: PullRequestCheck[] = [];
@@ -252,28 +252,23 @@ test("runOnce reconciles tracked PR state before reserving a new runnable issue"
   const selectedIssueNumber = 91;
   const unrelatedIssueNumber = 92;
   const selectedBranch = branchName(fixture.config, selectedIssueNumber);
-  const unrelatedBranch = branchName(fixture.config, unrelatedIssueNumber);
   const state: SupervisorStateFile = createSupervisorState({
     issues: [
-      createRecord({
-        issue_number: unrelatedIssueNumber,
+      createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, unrelatedIssueNumber, {
         state: "waiting_ci",
-        branch: unrelatedBranch,
         pr_number: 192,
         codex_session_id: null,
       }),
     ],
   });
-  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  await writeSupervisorState(fixture.stateFile, state);
 
-  const selectedIssue = createIssue({
-    number: selectedIssueNumber,
+  const selectedIssue = createTrackedIssue(selectedIssueNumber, {
     title: "Reserve the next runnable issue before broad reconciliation",
     body: executionReadyBody("Reserve the runnable issue before unrelated reconciliation."),
     labels: [],
   });
-  const unrelatedIssue = createIssue({
-    number: unrelatedIssueNumber,
+  const unrelatedIssue = createTrackedIssue(unrelatedIssueNumber, {
     title: "Slow unrelated reconciliation target",
     body: executionReadyBody("Remain unrelated to the selected runnable issue."),
     createdAt: "2026-03-13T00:05:00Z",
@@ -281,11 +276,10 @@ test("runOnce reconciles tracked PR state before reserving a new runnable issue"
     labels: [],
   });
 
-  const unrelatedPr = createPullRequest({
+  const unrelatedPr = createTrackedPullRequest(fixture.config, unrelatedIssueNumber, {
     number: 192,
     title: "Existing tracked PR",
     createdAt: "2026-03-13T00:03:00Z",
-    headRefName: unrelatedBranch,
     headRefOid: "head-192",
   });
 
@@ -337,10 +331,8 @@ test("runOnce converges stale failed tracked PR state before selecting the resum
   const branch = branchName(fixture.config, issueNumber);
   const state: SupervisorStateFile = createSupervisorState({
     issues: [
-      createRecord({
-        issue_number: issueNumber,
+      createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, issueNumber, {
         state: "failed",
-        branch,
         pr_number: 191,
         last_head_sha: "head-191",
         last_error: "Stopped after repeated repair attempts.",
@@ -359,18 +351,16 @@ test("runOnce converges stale failed tracked PR state before selecting the resum
       }),
     ],
   });
-  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  await writeSupervisorState(fixture.stateFile, state);
 
-  const issue = createIssue({
-    number: issueNumber,
+  const issue = createTrackedIssue(issueNumber, {
     title: "Converge stale failed tracked PR state",
     body: executionReadyBody("Recover the authoritative tracked PR lifecycle state before selection."),
   });
-  const pr = createPullRequest({
+  const pr = createTrackedPullRequest(fixture.config, issueNumber, {
     number: 191,
     title: "Recovery implementation",
     isDraft: true,
-    headRefName: branch,
     headRefOid: "head-191",
   });
 
@@ -436,13 +426,9 @@ test("prepareIssueExecutionContext blocks PR publication when configured local C
   fixture.config.localCiCommand = "npm run ci:local";
   const issueNumber = 91;
   const branch = branchName(fixture.config, issueNumber);
-  const record = createRecord({
-    issue_number: issueNumber,
+  const record = createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, issueNumber, {
     state: "stabilizing",
-    branch,
     pr_number: null,
-    workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
-    journal_path: path.join(fixture.workspaceRoot, `issue-${issueNumber}`, ".codex-supervisor", "issue-journal.md"),
     blocked_reason: null,
     last_error: null,
     last_failure_kind: null,
@@ -455,8 +441,7 @@ test("prepareIssueExecutionContext blocks PR publication when configured local C
     issues: [record],
   });
 
-  const issue = createIssue({
-    number: issueNumber,
+  const issue = createTrackedIssue(issueNumber, {
     title: "Gate PR publication on local CI",
     body: executionReadyBody("Run configured local CI before opening the PR."),
   });
@@ -534,11 +519,8 @@ test("runOnce reclaims a stale stabilizing issue without carrying mismatched tra
   const state: SupervisorStateFile = createSupervisorState({
     activeIssueNumber: issueNumber,
     issues: [
-      createRecord({
-        issue_number: issueNumber,
+      createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, issueNumber, {
         state: "stabilizing",
-        branch,
-        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
         journal_path: null,
         pr_number: 527,
         codex_session_id: "stale-session",
@@ -547,10 +529,9 @@ test("runOnce reclaims a stale stabilizing issue without carrying mismatched tra
       }),
     ],
   });
-  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  await writeSupervisorState(fixture.stateFile, state);
 
-  const issue = createIssue({
-    number: issueNumber,
+  const issue = createTrackedIssue(issueNumber, {
     title: "Recover stale stabilizing reservation",
     body: executionReadyBody("Recover stale stabilizing reservation."),
   });
@@ -614,12 +595,9 @@ test("runOnce clears stale failed tracked PR recovery on the same head before co
   const branch = branchName(fixture.config, issueNumber);
   const state: SupervisorStateFile = createSupervisorState({
     issues: [
-      createRecord({
-        issue_number: issueNumber,
+      createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, issueNumber, {
         state: "failed",
-        branch,
         pr_number: 191,
-        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
         journal_path: null,
         last_head_sha: "head-191",
         attempt_count: 3,
@@ -641,20 +619,18 @@ test("runOnce clears stale failed tracked PR recovery on the same head before co
       }),
     ],
   });
-  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  await writeSupervisorState(fixture.stateFile, state);
 
-  const issue = createIssue({
-    number: issueNumber,
+  const issue = createTrackedIssue(issueNumber, {
     title: "Recover stale failed tracked PR state through runOnce",
     body: executionReadyBody("Recover stale failed tracked PR state through runOnce."),
     updatedAt: "2026-03-13T00:21:00Z",
     labels: [],
   });
-  const pr = createPullRequest({
+  const pr = createTrackedPullRequest(fixture.config, issueNumber, {
     number: 191,
     title: "Recovery implementation",
     isDraft: true,
-    headRefName: branch,
     headRefOid: "head-191",
   });
 
@@ -719,29 +695,33 @@ test("runOnce blocks an interrupted active turn before selecting the next runnab
   const nextIssueNumber = 92;
   const interruptedBranch = branchName(fixture.config, interruptedIssueNumber);
   const nextBranch = branchName(fixture.config, nextIssueNumber);
-  const interruptedWorkspace = path.join(fixture.workspaceRoot, `issue-${interruptedIssueNumber}`);
-  const interruptedJournalPath = path.join(interruptedWorkspace, ".codex-supervisor", "issue-journal.md");
+  const { workspacePath: interruptedWorkspace, journalPath: interruptedJournalPath } = trackedIssuePaths(
+    fixture.workspaceRoot,
+    interruptedIssueNumber,
+  );
   const state: SupervisorStateFile = {
     activeIssueNumber: interruptedIssueNumber,
     issues: {
-      [String(interruptedIssueNumber)]: createRecord({
-        issue_number: interruptedIssueNumber,
-        state: "implementing",
-        branch: interruptedBranch,
-        workspace: interruptedWorkspace,
-        journal_path: interruptedJournalPath,
-        pr_number: null,
-        codex_session_id: "stale-session",
-        blocked_reason: null,
-        last_error: null,
-        last_failure_context: null,
-        last_failure_signature: null,
-        repeated_failure_signature_count: 0,
-        updated_at: "2026-03-26T00:00:00.000Z",
-      }),
+      [String(interruptedIssueNumber)]: createTrackedSupervisorRecord(
+        fixture.config,
+        fixture.workspaceRoot,
+        interruptedIssueNumber,
+        {
+          state: "implementing",
+          branch: interruptedBranch,
+          pr_number: null,
+          codex_session_id: "stale-session",
+          blocked_reason: null,
+          last_error: null,
+          last_failure_context: null,
+          last_failure_signature: null,
+          repeated_failure_signature_count: 0,
+          updated_at: "2026-03-26T00:00:00.000Z",
+        },
+      ),
     },
   };
-  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  await writeSupervisorState(fixture.stateFile, state);
   await fs.mkdir(path.dirname(interruptedJournalPath), { recursive: true });
   await fs.writeFile(interruptedJournalPath, "# issue journal\n", "utf8");
   const initialJournalFingerprint = await captureIssueJournalFingerprint(interruptedJournalPath);

@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { executeCodexTurnPhase } from "./run-once-turn-execution";
 import { FailureContextCategory, GitHubIssue, GitHubPullRequest, IssueRunRecord, SupervisorStateFile } from "./core/types";
+import { createCodexTurnContext, createWorkspaceStatus } from "./orchestration-test-helpers";
 import { createConfig, createIssue, createPullRequest, createRecord, createReviewThread } from "./turn-execution-test-helpers";
 import { AgentRunner, AgentTurnRequest } from "./supervisor/agent-runner";
 import { interruptedTurnMarkerPath } from "./interrupted-turn-marker";
@@ -60,6 +61,18 @@ test("executeCodexTurnPhase does not mark review threads processed for a refresh
   let journalReads = 0;
   let resolveCalls = 0;
   const resolvePurposes: Array<"status" | "action" | undefined> = [];
+  const context = createCodexTurnContext({
+    state,
+    record: state.issues["102"]!,
+    issue,
+    pr: initialPr,
+    checks: [],
+    reviewThreads,
+    workspaceStatus: {
+      branch: "codex/issue-102",
+      headSha: "head-b",
+    },
+  });
   const result = await executeCodexTurnPhase({
     config,
     stateStore: {
@@ -81,36 +94,7 @@ test("executeCodexTurnPhase does not mark review threads processed for a refresh
         throw new Error("unexpected getExternalReviewSurface call");
       },
     },
-    context: {
-      state,
-      record: state.issues["102"]!,
-      issue,
-      previousCodexSummary: null,
-      previousError: null,
-      workspacePath: path.join("/tmp/workspaces", "issue-102"),
-      journalPath: path.join("/tmp/workspaces/issue-102", ".codex-supervisor", "issue-journal.md"),
-      syncJournal: async () => undefined,
-      memoryArtifacts: {
-        alwaysReadFiles: [],
-        onDemandFiles: [],
-        contextIndexPath: "/tmp/context-index.md",
-        agentsPath: "/tmp/AGENTS.generated.md",
-      },
-      workspaceStatus: {
-        branch: "codex/issue-102",
-        headSha: "head-b",
-        hasUncommittedChanges: false,
-        baseAhead: 0,
-        baseBehind: 0,
-        remoteBranchExists: true,
-        remoteAhead: 0,
-        remoteBehind: 0,
-      },
-      pr: initialPr,
-      checks: [],
-      reviewThreads,
-      options: { dryRun: false },
-    },
+    context,
     acquireSessionLock: async () => null,
     classifyFailure: () => "command_error",
     buildCodexFailureContext: (category, summary, details) => ({
@@ -150,16 +134,7 @@ test("executeCodexTurnPhase does not mark review threads processed for a refresh
     recoverUnexpectedCodexTurnFailure: async () => {
       throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
     },
-    getWorkspaceStatus: async () => ({
-      branch: "codex/issue-102",
-      headSha: "head-b",
-      hasUncommittedChanges: false,
-      baseAhead: 0,
-      baseBehind: 0,
-      remoteBranchExists: true,
-      remoteAhead: 0,
-      remoteBehind: 0,
-    }),
+    getWorkspaceStatus: async () => createWorkspaceStatus({ branch: "codex/issue-102", headSha: "head-b" }),
     pushBranch: async () => {
       throw new Error("unexpected pushBranch call");
     },
@@ -212,6 +187,25 @@ test("executeCodexTurnPhase skips prompt preparation side effects when the sessi
     },
   };
   let syncJournalCalls = 0;
+  const context = createCodexTurnContext({
+    state,
+    record: state.issues["102"]!,
+    issue,
+    syncJournal: async () => {
+      syncJournalCalls += 1;
+    },
+    workspaceStatus: {
+      branch: "codex/issue-102",
+      headSha: "head-a",
+    },
+    pr: createPullRequest({
+      title: "Session-locked review turn",
+      reviewDecision: "CHANGES_REQUESTED",
+      headRefOid: "head-a",
+    }),
+    checks: [],
+    reviewThreads: [createReviewThread()],
+  });
 
   const result = await executeCodexTurnPhase({
     config: createConfig(),
@@ -236,42 +230,7 @@ test("executeCodexTurnPhase skips prompt preparation side effects when the sessi
         throw new Error("unexpected getExternalReviewSurface call");
       },
     },
-    context: {
-      state,
-      record: state.issues["102"]!,
-      issue,
-      previousCodexSummary: null,
-      previousError: null,
-      workspacePath: path.join("/tmp/workspaces", "issue-102"),
-      journalPath: path.join("/tmp/workspaces/issue-102", ".codex-supervisor", "issue-journal.md"),
-      syncJournal: async () => {
-        syncJournalCalls += 1;
-      },
-      memoryArtifacts: {
-        alwaysReadFiles: [],
-        onDemandFiles: [],
-        contextIndexPath: "/tmp/context-index.md",
-        agentsPath: "/tmp/AGENTS.generated.md",
-      },
-      workspaceStatus: {
-        branch: "codex/issue-102",
-        headSha: "head-a",
-        hasUncommittedChanges: false,
-        baseAhead: 0,
-        baseBehind: 0,
-        remoteBranchExists: true,
-        remoteAhead: 0,
-        remoteBehind: 0,
-      },
-      pr: createPullRequest({
-        title: "Session-locked review turn",
-        reviewDecision: "CHANGES_REQUESTED",
-        headRefOid: "head-a",
-      }),
-      checks: [],
-      reviewThreads: [createReviewThread()],
-      options: { dryRun: false },
-    },
+    context,
     acquireSessionLock: async () => ({
       sessionId: "session-102",
       acquired: false,
@@ -331,6 +290,22 @@ test("executeCodexTurnPhase blocks draft PR creation when configured local CI fa
   };
   let createPullRequestCalls = 0;
   let syncJournalCalls = 0;
+  const context = createCodexTurnContext({
+    state,
+    record: state.issues["102"]!,
+    issue,
+    syncJournal: async () => {
+      syncJournalCalls += 1;
+    },
+    workspaceStatus: {
+      branch: "codex/issue-102",
+      headSha: "head-b",
+      baseAhead: 1,
+    },
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+  });
 
   const result = await executeCodexTurnPhase({
     config: createConfig({ localCiCommand: "npm run ci:local" }),
@@ -350,38 +325,7 @@ test("executeCodexTurnPhase blocks draft PR creation when configured local CI fa
         throw new Error("unexpected getExternalReviewSurface call");
       },
     },
-    context: {
-      state,
-      record: state.issues["102"]!,
-      issue,
-      previousCodexSummary: null,
-      previousError: null,
-      workspacePath: path.join("/tmp/workspaces", "issue-102"),
-      journalPath: path.join("/tmp/workspaces/issue-102", ".codex-supervisor", "issue-journal.md"),
-      syncJournal: async () => {
-        syncJournalCalls += 1;
-      },
-      memoryArtifacts: {
-        alwaysReadFiles: [],
-        onDemandFiles: [],
-        contextIndexPath: "/tmp/context-index.md",
-        agentsPath: "/tmp/AGENTS.generated.md",
-      },
-      workspaceStatus: {
-        branch: "codex/issue-102",
-        headSha: "head-b",
-        hasUncommittedChanges: false,
-        baseAhead: 1,
-        baseBehind: 0,
-        remoteBranchExists: true,
-        remoteAhead: 0,
-        remoteBehind: 0,
-      },
-      pr: null,
-      checks: [],
-      reviewThreads: [],
-      options: { dryRun: false },
-    },
+    context,
     acquireSessionLock: async () => null,
     classifyFailure: () => "command_error",
     buildCodexFailureContext: (category, summary, details) => ({
@@ -421,16 +365,7 @@ test("executeCodexTurnPhase blocks draft PR creation when configured local CI fa
     recoverUnexpectedCodexTurnFailure: async () => {
       throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
     },
-    getWorkspaceStatus: async () => ({
-      branch: "codex/issue-102",
-      headSha: "head-b",
-      hasUncommittedChanges: false,
-      baseAhead: 1,
-      baseBehind: 0,
-      remoteBranchExists: true,
-      remoteAhead: 0,
-      remoteBehind: 0,
-    }),
+    getWorkspaceStatus: async () => createWorkspaceStatus({ branch: "codex/issue-102", headSha: "head-b", baseAhead: 1 }),
     pushBranch: async () => undefined,
     readIssueJournal: (() => {
       let readCount = 0;
@@ -513,6 +448,21 @@ test("executeCodexTurnPhase blocks branch publication when workstation-local pat
   };
   let pushBranchCalls = 0;
   let syncJournalCalls = 0;
+  const context = createCodexTurnContext({
+    state,
+    record: state.issues["102"]!,
+    issue,
+    syncJournal: async () => {
+      syncJournalCalls += 1;
+    },
+    workspaceStatus: {
+      branch: "codex/issue-102",
+      headSha: "head-a",
+    },
+    pr,
+    checks: [],
+    reviewThreads: [],
+  });
 
   const result = await executeCodexTurnPhase({
     config: createConfig({ localCiCommand: "npm run ci:local" }),
@@ -531,38 +481,7 @@ test("executeCodexTurnPhase blocks branch publication when workstation-local pat
         throw new Error("unexpected getExternalReviewSurface call");
       },
     },
-    context: {
-      state,
-      record: state.issues["102"]!,
-      issue,
-      previousCodexSummary: null,
-      previousError: null,
-      workspacePath: path.join("/tmp/workspaces", "issue-102"),
-      journalPath: path.join("/tmp/workspaces/issue-102", ".codex-supervisor", "issue-journal.md"),
-      syncJournal: async () => {
-        syncJournalCalls += 1;
-      },
-      memoryArtifacts: {
-        alwaysReadFiles: [],
-        onDemandFiles: [],
-        contextIndexPath: "/tmp/context-index.md",
-        agentsPath: "/tmp/AGENTS.generated.md",
-      },
-      workspaceStatus: {
-        branch: "codex/issue-102",
-        headSha: "head-a",
-        hasUncommittedChanges: false,
-        baseAhead: 0,
-        baseBehind: 0,
-        remoteBranchExists: true,
-        remoteAhead: 0,
-        remoteBehind: 0,
-      },
-      pr,
-      checks: [],
-      reviewThreads: [],
-      options: { dryRun: false },
-    },
+    context,
     acquireSessionLock: async () => null,
     classifyFailure: () => "command_error",
     buildCodexFailureContext: (category, summary, details) => ({
@@ -602,16 +521,7 @@ test("executeCodexTurnPhase blocks branch publication when workstation-local pat
     recoverUnexpectedCodexTurnFailure: async () => {
       throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
     },
-    getWorkspaceStatus: async () => ({
-      branch: "codex/issue-102",
-      headSha: "head-b",
-      hasUncommittedChanges: false,
-      baseAhead: 0,
-      baseBehind: 0,
-      remoteBranchExists: true,
-      remoteAhead: 1,
-      remoteBehind: 0,
-    }),
+    getWorkspaceStatus: async () => createWorkspaceStatus({ branch: "codex/issue-102", headSha: "head-b", remoteAhead: 1 }),
     pushBranch: async () => {
       pushBranchCalls += 1;
     },
