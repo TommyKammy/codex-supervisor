@@ -27,6 +27,8 @@ const DEFAULT_CONFIG_FILE = "supervisor.config.json";
 export const DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW = 100;
 export const LEGACY_SHARED_ISSUE_JOURNAL_RELATIVE_PATH = ".codex-supervisor/issue-journal.md";
 export const PREFERRED_ISSUE_JOURNAL_RELATIVE_PATH = ".codex-supervisor/issues/{issueNumber}/issue-journal.md";
+export const MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING =
+  "localCiCommand is configured but workspacePreparationCommand is unset. Configure a repo-owned workspacePreparationCommand so preserved issue worktrees can prepare toolchains before host-local CI runs. GitHub checks can stay green while host-local CI still blocks tracked PR progress.";
 const LOCAL_CI_SCRIPT_CANDIDATES = ["verify:supervisor-pre-pr", "verify:pre-pr", "ci:local"] as const;
 const REQUIRED_STRING_CONFIG_FIELDS = [
   "repoPath",
@@ -100,7 +102,7 @@ function normalizeStringArray(value: unknown, fieldName: string): string[] {
   });
 }
 
-function normalizeLocalCiCommand(value: unknown): LocalCiCommandConfig | undefined {
+export function normalizeLocalCiCommand(value: unknown): LocalCiCommandConfig | undefined {
   if (typeof value === "string") {
     const trimmed = value.trim();
     return trimmed !== "" ? trimmed : undefined;
@@ -364,10 +366,11 @@ export function summarizeCadenceDiagnostics(
 }
 
 export function summarizeLocalCiContract(
-  config: Pick<SupervisorConfig, "localCiCommand"> & { repoPath?: string },
+  config: Pick<SupervisorConfig, "localCiCommand" | "workspacePreparationCommand"> & { repoPath?: string },
 ): LocalCiContractSummary {
   const command = displayLocalCiCommand(config.localCiCommand);
   const recommendedCommand = findRepoOwnedLocalCiCandidate(config.repoPath);
+  const warning = buildMissingWorkspacePreparationContractWarning(config);
 
   if (command !== null) {
     return {
@@ -376,6 +379,7 @@ export function summarizeLocalCiContract(
       recommendedCommand: null,
       source: "config",
       summary: "Repo-owned local CI contract is configured.",
+      warning,
     };
   }
 
@@ -386,6 +390,7 @@ export function summarizeLocalCiContract(
       recommendedCommand,
       source: "repo_script_candidate",
       summary: `Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: ${recommendedCommand}.`,
+      warning: null,
     };
   }
 
@@ -395,19 +400,22 @@ export function summarizeLocalCiContract(
     recommendedCommand: null,
     source: "config",
     summary: "No repo-owned local CI contract is configured.",
+    warning: null,
   };
 }
 
 export function summarizeWorkspacePreparationContract(
-  config: Pick<SupervisorConfig, "workspacePreparationCommand">,
+  config: Pick<SupervisorConfig, "workspacePreparationCommand" | "localCiCommand">,
 ): WorkspacePreparationContractSummary {
   const command = displayLocalCiCommand(config.workspacePreparationCommand);
+  const warning = buildMissingWorkspacePreparationContractWarning(config);
   if (command !== null) {
     return {
       configured: true,
       command,
       source: "config",
       summary: "Repo-owned workspace preparation contract is configured.",
+      warning: null,
     };
   }
 
@@ -416,7 +424,18 @@ export function summarizeWorkspacePreparationContract(
     command: null,
     source: "config",
     summary: "No repo-owned workspace preparation contract is configured.",
+    warning,
   };
+}
+
+export function buildMissingWorkspacePreparationContractWarning(
+  config: Pick<SupervisorConfig, "localCiCommand" | "workspacePreparationCommand">,
+): string | null {
+  if (displayLocalCiCommand(config.localCiCommand) === null || displayLocalCiCommand(config.workspacePreparationCommand) !== null) {
+    return null;
+  }
+
+  return MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING;
 }
 
 function findRepoOwnedLocalCiCandidate(repoPath: string | undefined): string | null {

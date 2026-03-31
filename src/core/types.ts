@@ -83,6 +83,7 @@ export interface LocalCiContractSummary {
   recommendedCommand: string | null;
   source: "config" | "repo_script_candidate";
   summary: string;
+  warning?: string | null;
 }
 
 export interface WorkspacePreparationContractSummary {
@@ -90,6 +91,7 @@ export interface WorkspacePreparationContractSummary {
   command: string | null;
   source: "config";
   summary: string;
+  warning?: string | null;
 }
 
 export interface StructuredLocalCiCommandConfig {

@@ -11,6 +11,7 @@ export type BrowserLocalCiContractLike = {
   recommendedCommand?: string | null;
   source?: string | null;
   summary?: string | null;
+  warning?: string | null;
 };
 
 export type BrowserHostLike = {
@@ -59,6 +60,7 @@ export function normalizeBrowserLocalCiContract(
     recommendedCommand: localCiContract?.recommendedCommand ?? null,
     source: localCiContract?.source ?? "config",
     summary: localCiContract?.summary ?? "No repo-owned local CI contract is configured.",
+    warning: localCiContract?.warning ?? null,
   };
 }
 
@@ -76,6 +78,7 @@ export function buildBrowserLocalCiStatusLines(
       "source=" + formatBrowserToken(normalized.source),
       "command=" + (normalized.command ?? "none"),
       "recommended command=" + (normalized.recommendedCommand ?? "none"),
+      "warning=" + (normalized.warning ?? "none"),
     ].join(" "),
     ...(typeof normalized.summary === "string" && normalized.summary.trim() !== "" ? [normalized.summary] : []),
   ];
@@ -93,7 +96,12 @@ export function buildBrowserLocalCiChecklistEntries(
       "Source: " + formatBrowserToken(normalized.source),
       ...(normalized.recommendedCommand ? ["Recommended command: " + normalized.recommendedCommand] : []),
     ],
-    notes: normalized.configured
+    notes: normalized.warning
+      ? [
+        "Warning: " + normalized.warning,
+        "This warning is advisory only; configure a repo-owned workspacePreparationCommand so preserved issue worktrees can prepare toolchains before host-local CI runs.",
+      ]
+      : normalized.configured
       ? [
         "This repo-owned command is the canonical local verification step before PR publication or update.",
         "When configured local CI fails, PR publication or ready-for-review promotion stays blocked until the repo-owned command passes again.",

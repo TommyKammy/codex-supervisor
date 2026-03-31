@@ -33,7 +33,7 @@ test("shared local CI helpers preserve advisory recommendation wording across su
   };
 
   assert.deepEqual(buildBrowserLocalCiStatusLines(contract), [
-    "local ci configured=no source=repo script candidate command=none recommended command=npm run verify:pre-pr",
+    "local ci configured=no source=repo script candidate command=none recommended command=npm run verify:pre-pr warning=none",
     "Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: npm run verify:pre-pr.",
   ]);
 

@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   displayLocalCiCommand,
   loadConfigSummary,
+  normalizeLocalCiCommand,
   resolveConfigPath,
   summarizeLocalCiContract,
   summarizeTrustDiagnostics,
@@ -163,6 +164,14 @@ function displayValue(value: unknown): string | null {
   }
 
   return null;
+}
+
+function tryNormalizeLocalCiCommand(value: unknown): ReturnType<typeof normalizeLocalCiCommand> {
+  try {
+    return normalizeLocalCiCommand(value);
+  } catch {
+    return undefined;
+  }
 }
 
 function buildFieldMessage(field: SetupReadinessField): string {
@@ -418,8 +427,8 @@ export async function diagnoseSetupReadiness(
       ? path.resolve(path.dirname(configPath), rawConfigDocument.repoPath)
       : undefined;
   const localCiContractConfig = configSummary.config ?? {
-    localCiCommand:
-      typeof rawConfigDocument.localCiCommand === "string" ? rawConfigDocument.localCiCommand : undefined,
+    localCiCommand: tryNormalizeLocalCiCommand(rawConfigDocument.localCiCommand),
+    workspacePreparationCommand: tryNormalizeLocalCiCommand(rawConfigDocument.workspacePreparationCommand),
     repoPath: fallbackRepoPath,
   };
 

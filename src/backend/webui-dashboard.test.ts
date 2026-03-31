@@ -11,6 +11,7 @@ import {
   createUnavailableManagedRestart,
   withManagedRestart,
 } from "./setup-test-fixtures";
+import { MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING } from "../core/config";
 import { renderSupervisorDashboardHtml } from "./webui-dashboard";
 import { DASHBOARD_PANEL_REGISTRY } from "./webui-dashboard-panel-layout";
 import { WEBUI_MUTATION_AUTH_HEADER, WEBUI_MUTATION_AUTH_STORAGE_KEY } from "./webui-mutation-auth";
@@ -981,7 +982,7 @@ test("dashboard status panel surfaces tracked PR host-local CI blockers", async 
           detailedStatusLines: [
             "tracked_pr_mismatch issue=#171 pr=#271 github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=verification stale_local_blocker=yes",
             "tracked_pr_host_local_ci issue=#171 pr=#271 github_checks=green head_sha=head-ready-271 outcome=failed failure_class=workspace_toolchain_missing remediation_target=workspace_environment head=current summary=Configured local CI command could not run before marking PR #271 ready because the workspace toolchain is unavailable. Remediation target: workspace environment.",
-            "tracked_pr_host_local_ci_gap issue=#171 pr=#271 workspace_preparation_command=unset gap=missing_workspace_prerequisite_visibility",
+            `tracked_pr_host_local_ci_gap issue=#171 pr=#271 workspace_preparation_command=unset gap=missing_workspace_prerequisite_visibility likely_cause=${MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING}`,
           ],
         }),
       ),
@@ -994,6 +995,7 @@ test("dashboard status panel surfaces tracked PR host-local CI blockers", async 
   assert.ok(statusLines);
   assert.match(statusLines.textContent, /tracked_pr_host_local_ci issue=#171 pr=#271 github_checks=green/u);
   assert.match(statusLines.textContent, /failure_class=workspace_toolchain_missing remediation_target=workspace_environment/u);
+  assert.match(statusLines.textContent, /likely_cause=localCiCommand is configured but workspacePreparationCommand is unset\./u);
   assert.match(statusLines.textContent, /workspace_preparation_command=unset gap=missing_workspace_prerequisite_visibility/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
@@ -2501,6 +2503,55 @@ test("setup shell saves through the narrow setup config API and revalidates read
   assert.match(
     harness.document.getElementById("setup-local-ci-details")?.textContent ?? "",
     /Configured: yes.*Command: npm run ci:local.*Source: config.*This repo-owned command is the canonical local verification step before PR publication or update.*When configured local CI fails, PR publication or ready-for-review promotion stays blocked until the repo-owned command passes again\./u,
+  );
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("setup shell warns when localCiCommand is configured without workspacePreparationCommand", async () => {
+  const harness = createSetupHarness([
+    {
+      path: "/api/setup-readiness",
+      response: jsonResponse(withManagedRestart(createSetupReadinessReport({
+        ready: true,
+        overallStatus: "configured",
+        fields: [
+          createSetupField("localCiCommand", {
+            state: "configured",
+            value: "npm run ci:local",
+            message: "Local CI command is configured.",
+          }),
+        ],
+        blockers: [],
+        hostReadiness: { overallStatus: "pass", checks: [] },
+        providerPosture: createSetupProviderPosture({
+          profile: "codex",
+          provider: "codex",
+          reviewers: ["chatgpt-codex-connector"],
+          signalSource: "review_bot_logins",
+          configured: true,
+          summary: "Codex Connector is configured.",
+        }),
+        trustPosture: createSetupTrustPosture({ warning: null }),
+        localCiContract: {
+          configured: true,
+          command: "npm run ci:local",
+          recommendedCommand: null,
+          source: "config",
+          summary: "Repo-owned local CI contract is configured.",
+          warning: MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING,
+        },
+      }), unavailableManagedRestart)),
+    },
+  ]);
+  await harness.flush();
+
+  assert.match(
+    harness.document.getElementById("setup-local-ci-summary")?.textContent ?? "",
+    /Repo-owned local CI contract is configured\./u,
+  );
+  assert.match(
+    harness.document.getElementById("setup-local-ci-details")?.textContent ?? "",
+    /Warning: localCiCommand is configured but workspacePreparationCommand is unset\..*GitHub checks can stay green while host-local CI still blocks tracked PR progress\./u,
   );
   assert.equal(harness.remainingFetches.length, 0);
 });

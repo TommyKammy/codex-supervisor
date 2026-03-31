@@ -8,6 +8,9 @@ import type {
   RunState,
   SupervisorConfig,
 } from "../core/types";
+import {
+  buildMissingWorkspacePreparationContractWarning,
+} from "../core/config";
 import { projectTrackedPrLifecycle } from "../tracked-pr-lifecycle-projection";
 
 export interface TrackedPrMismatch {
@@ -75,6 +78,9 @@ function buildTrackedPrHostLocalCiDetailLines(
   ];
 
   if (result.failure_class === "workspace_toolchain_missing" && !config.workspacePreparationCommand) {
+    const warning =
+      buildMissingWorkspacePreparationContractWarning(config)
+      ?? "workspacePreparationCommand is unset while host-local CI reported missing workspace toolchain prerequisites.";
     detailLines.push(
       [
         "tracked_pr_host_local_ci_gap",
@@ -82,6 +88,7 @@ function buildTrackedPrHostLocalCiDetailLines(
         `pr=#${pr.number}`,
         "workspace_preparation_command=unset",
         "gap=missing_workspace_prerequisite_visibility",
+        `likely_cause=${warning.replace(/\r?\n/g, "\\n")}`,
       ].join(" "),
     );
   }

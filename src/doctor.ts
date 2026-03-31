@@ -634,14 +634,18 @@ export async function diagnoseBootstrapReadiness(
 export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
   const workspacePreparationContract =
     diagnostics.workspacePreparationContract
-    ?? summarizeWorkspacePreparationContract({ workspacePreparationCommand: undefined });
-  const localCiContract = diagnostics.localCiContract ?? summarizeLocalCiContract({ localCiCommand: undefined, repoPath: undefined });
+    ?? summarizeWorkspacePreparationContract({ workspacePreparationCommand: undefined, localCiCommand: undefined });
+  const localCiContract =
+    diagnostics.localCiContract
+    ?? summarizeLocalCiContract({ localCiCommand: undefined, workspacePreparationCommand: undefined, repoPath: undefined });
   const mergeCriticalRecheckSeconds =
     diagnostics.cadenceDiagnostics.mergeCriticalRecheckSeconds === null
       ? "disabled"
       : String(diagnostics.cadenceDiagnostics.mergeCriticalRecheckSeconds);
   const trustWarnings = buildTrustAndConfigWarnings(diagnostics.trustDiagnostics);
   const candidateDiscoveryWarning = buildWarning("candidate_discovery", diagnostics.candidateDiscoveryWarning);
+  const workspacePreparationWarning = workspacePreparationContract.warning ?? localCiContract.warning ?? null;
+  const configWarnings = workspacePreparationWarning === null ? [] : [renderDoctorWarningLine(buildWarning("config", workspacePreparationWarning)!, sanitizeDoctorValue)];
 
   return [
     `doctor overall=${diagnostics.overallStatus} checks=${diagnostics.checks.length}`,
@@ -652,6 +656,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     `doctor_workspace_preparation configured=${workspacePreparationContract.configured} source=${workspacePreparationContract.source} command=${sanitizeDoctorValue(workspacePreparationContract.command ?? "none")} summary=${sanitizeDoctorValue(workspacePreparationContract.summary)}`,
     `doctor_local_ci configured=${localCiContract.configured} source=${localCiContract.source} command=${sanitizeDoctorValue(localCiContract.command ?? "none")} summary=${sanitizeDoctorValue(localCiContract.summary)}`,
     ...trustWarnings.map((warning) => renderDoctorWarningLine(warning, sanitizeDoctorValue)),
+    ...configWarnings,
     ...(candidateDiscoveryWarning === null ? [] : [renderDoctorWarningLine(candidateDiscoveryWarning, sanitizeDoctorValue)]),
     ...diagnostics.checks.map(
       (check) =>
