@@ -14,6 +14,7 @@ test("runOnce routes supervisor turn execution through an injected agent runner"
     number: issueNumber,
     title: "Use the shared agent runner for supervisor turns",
     body: executionReadyBody("Use the shared agent runner for supervisor turns."),
+    labels: [],
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,

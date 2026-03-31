@@ -222,6 +222,12 @@ ${summary}
 ## Scope
 - keep the test fixture execution-ready
 
+Depends on: none
+Parallelizable: No
+
+## Execution order
+1 of 1
+
 ## Acceptance criteria
 - supervisor treats this issue as runnable
 

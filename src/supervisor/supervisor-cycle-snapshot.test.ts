@@ -238,6 +238,7 @@ test("buildSupervisorCycleDecisionSnapshot keeps the decision inputs narrow and 
     summary: "Configured local CI command passed before opening a pull request.",
     ran_at: "2026-03-16T10:02:30Z",
     head_sha: "head-407",
+    execution_mode: "legacy_shell_string",
     failure_class: null,
     remediation_target: null,
   });
@@ -284,6 +285,7 @@ test("writeSupervisorCycleDecisionSnapshot serializes one cycle into the workspa
     summary: "Configured local CI command passed before opening a pull request.",
     ran_at: "2026-03-16T10:02:30Z",
     head_sha: "head-407",
+    execution_mode: "legacy_shell_string",
     failure_class: null,
     remediation_target: null,
   });
