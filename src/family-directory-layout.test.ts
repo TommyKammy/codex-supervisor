@@ -21,8 +21,13 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
     "doctor.ts",
     "gsd.ts",
     "index.ts",
+    "interrupted-turn-marker.ts",
+    "inventory-refresh-state.ts",
     "local-ci.ts",
+    "managed-restart.ts",
     "no-pull-request-state.ts",
+    "orchestration-test-helpers.ts",
+    "persisted-artifact-promotion.ts",
     "post-turn-pull-request.ts",
     "pull-request-failure-context.ts",
     "pull-request-state-test-helpers.ts",
@@ -38,10 +43,15 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
     "setup-config-preview.ts",
     "setup-config-write.ts",
     "setup-readiness.ts",
+    "tracked-pr-lifecycle-projection.ts",
     "turn-execution-failure-helpers.ts",
     "turn-execution-orchestration.ts",
+    "turn-execution-publication-gate.ts",
     "turn-execution-test-helpers.ts",
     "verifier-guardrails.ts",
+    "warning-formatting.ts",
+    "workstation-local-path-gate.ts",
+    "workstation-local-paths.ts",
   ],
 } as const;
 
@@ -121,6 +131,7 @@ const EXPECTED_FAMILY_FILES = {
   ],
   supervisor: [
     "agent-runner.ts",
+    "artifact-test-helpers.ts",
     "execution-metrics-aggregation.ts",
     "execution-metrics-debugging.ts",
     "execution-metrics-lifecycle.ts",
@@ -151,6 +162,7 @@ const EXPECTED_FAMILY_FILES = {
     "supervisor-failure-helpers.ts",
     "supervisor-lifecycle.ts",
     "supervisor-loop-controller.ts",
+    "supervisor-loop-runtime-state.ts",
     "supervisor-mutation-report.ts",
     "supervisor-operator-activity-context.ts",
     "supervisor-pre-merge-evaluation.ts",
@@ -171,6 +183,7 @@ const EXPECTED_FAMILY_FILES = {
     "supervisor-test-helpers.ts",
     "supervisor-trust-gate.ts",
     "supervisor.ts",
+    "tracked-pr-mismatch.ts",
   ],
 } as const;
 
