@@ -238,6 +238,7 @@ test("formatDetailedStatus renders core lines before appended summaries", () => 
       "pr_state=OPEN draft=no merge_state=CLEAN review_decision=none head_sha=deadbeef",
       "checks=none",
       "review_threads bot_pending=0 bot_unresolved=0 manual=0",
+      "review_follow_up state=inactive remaining=0 head_sha=none actionable=0",
       "handoff_summary=blocked\\nneeds reproduction",
       "local_review_routing generic=inherit->gpt-5-codex(1) specialists=gpt-5-codex(1) verifier=gpt-5-codex",
       "change_classes=backend, docs, tests",
