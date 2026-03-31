@@ -16,7 +16,7 @@
 ## Latest Codex Summary
 Extracted the shared WebUI browser-script helper boundary into [webui-browser-script-helpers.ts](src/backend/webui-browser-script-helpers.ts) and added focused coverage in [webui-browser-script-helpers.test.ts](src/backend/webui-browser-script-helpers.test.ts). Setup and dashboard now reuse the same local CI presentation rules and authenticated mutation POST handling through [webui-setup-browser-script.ts](src/backend/webui-setup-browser-script.ts), [webui-dashboard-browser-script.ts](src/backend/webui-dashboard-browser-script.ts), and [webui-dashboard-browser-logic.ts](src/backend/webui-dashboard-browser-logic.ts). I kept the dashboard’s browser `buildStatusLines` as a local injected wrapper so the inline script does not depend on module import shims at runtime.
 
-Re-ran focused verification with `npx tsx --test src/backend/webui-browser-script-helpers.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build`, both of which passed again. Pushed `codex/issue-1236` to `github` at `bfce22a` and opened draft PR #1238: https://github.com/TommyKammy/codex-supervisor/pull/1238.
+Re-ran focused verification with `npx tsx --test src/backend/webui-browser-script-helpers.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts` and `npm run build`, both of which passed again. Pushed `codex/issue-1236` to `github`, opened draft PR #1238: https://github.com/TommyKammy/codex-supervisor/pull/1238, and then pushed the follow-up journal checkpoint at `30e3eb4` (`chore: update issue 1236 journal`).
 
 Summary: Verification is green for the shared browser-helper refactor, the branch is pushed, and draft PR #1238 now tracks review/CI.
 State hint: draft_pr
