@@ -832,6 +832,90 @@ test("statusReport exposes typed loop runtime state from the host runtime marker
   assert.match(report.loopRuntime?.startedAt ?? "", /^\d{4}-\d{2}-\d{2}T/u);
 });
 
+test("acquireSupervisorLock fails closed on ambiguous-owner run locks", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const lockPath = path.resolve(path.dirname(fixture.stateFile), "locks", "supervisor", "run.lock");
+  await fs.mkdir(path.dirname(lockPath), { recursive: true });
+  await fs.writeFile(
+    lockPath,
+    `${JSON.stringify({
+      pid: 999_999,
+      label: "supervisor-loop",
+      acquired_at: "2026-03-20T00:00:00.000Z",
+      host: "other-host",
+      owner: "other-user",
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const supervisor = new Supervisor(fixture.config);
+  const lock = await supervisor.acquireSupervisorLock("run-once");
+
+  assert.equal(lock.acquired, false);
+  assert.match(lock.reason ?? "", /ambiguous owner/i);
+  assert.deepEqual(JSON.parse(await fs.readFile(lockPath, "utf8")), {
+    pid: 999_999,
+    label: "supervisor-loop",
+    acquired_at: "2026-03-20T00:00:00.000Z",
+    host: "other-host",
+    owner: "other-user",
+  });
+});
+
+test("acquireLoopRuntimeLock fails closed on ambiguous-owner loop runtime locks and keeps diagnostics visible", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const lockPath = path.resolve(path.dirname(fixture.stateFile), "locks", "supervisor", "loop-runtime.lock");
+  await fs.mkdir(path.dirname(lockPath), { recursive: true });
+  await fs.writeFile(
+    lockPath,
+    `${JSON.stringify({
+      pid: 999_999,
+      label: "supervisor-loop-runtime",
+      acquired_at: "2026-03-20T00:00:00.000Z",
+      host: "other-host",
+      owner: "other-user",
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const lock = await supervisor.acquireLoopRuntimeLock();
+
+  assert.equal(lock.acquired, false);
+  assert.match(lock.reason ?? "", /ambiguous owner/i);
+  assert.deepEqual(JSON.parse(await fs.readFile(lockPath, "utf8")), {
+    pid: 999_999,
+    label: "supervisor-loop-runtime",
+    acquired_at: "2026-03-20T00:00:00.000Z",
+    host: "other-host",
+    owner: "other-user",
+  });
+
+  const report = await supervisor.statusReport();
+  assert.deepEqual(report.loopRuntime, {
+    state: "unknown",
+    pid: 999_999,
+    startedAt: "2026-03-20T00:00:00.000Z",
+    detail: "supervisor-loop-runtime",
+  });
+});
+
 test("statusReport exposes typed active-issue and selection summary fields alongside legacy lines", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {
