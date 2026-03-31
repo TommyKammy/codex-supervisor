@@ -2411,6 +2411,88 @@ test("status surfaces tracked PR mismatches when GitHub is ready but local state
   );
 });
 
+test("status surfaces host-local CI blocker details for tracked PR mismatches", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 171;
+  const prNumber = 271;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        blocked_reason: "verification",
+        last_error:
+          "Configured local CI command could not run before marking PR #271 ready because the workspace toolchain is unavailable. Remediation target: workspace environment.",
+        last_head_sha: "head-ready-271",
+        last_failure_signature: "local-ci-gate-workspace_toolchain_missing",
+        latest_local_ci_result: {
+          outcome: "failed",
+          summary:
+            "Configured local CI command could not run before marking PR #271 ready because the workspace toolchain is unavailable. Remediation target: workspace environment.",
+          ran_at: "2026-03-13T00:10:00Z",
+          head_sha: "head-ready-271",
+          execution_mode: "legacy_shell_string",
+          failure_class: "workspace_toolchain_missing",
+          remediation_target: "workspace_environment",
+        },
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Tracked PR host-local CI blocker",
+    body: executionReadyBody("Surface host-local tracked PR blockers even when GitHub is green."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const readyPr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: "head-ready-271",
+    currentHeadCiGreenAt: "2026-03-13T00:12:00Z",
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [trackedIssue],
+    listAllIssues: async () => [trackedIssue],
+    getPullRequestIfExists: async () => readyPr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^tracked_pr_host_local_ci issue=#171 pr=#271 github_checks=green head_sha=head-ready-271 outcome=failed failure_class=workspace_toolchain_missing remediation_target=workspace_environment head=current summary=Configured local CI command could not run before marking PR #271 ready because the workspace toolchain is unavailable\. Remediation target: workspace environment\.$/m,
+  );
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^tracked_pr_host_local_ci_gap issue=#171 pr=#271 workspace_preparation_command=unset gap=missing_workspace_prerequisite_visibility$/m,
+  );
+
+  const status = await supervisor.status();
+  assert.match(
+    status,
+    /^tracked_pr_host_local_ci issue=#171 pr=#271 github_checks=green head_sha=head-ready-271 outcome=failed failure_class=workspace_toolchain_missing remediation_target=workspace_environment head=current summary=Configured local CI command could not run before marking PR #271 ready because the workspace toolchain is unavailable\. Remediation target: workspace environment\.$/m,
+  );
+  assert.match(
+    status,
+    /^tracked_pr_host_local_ci_gap issue=#171 pr=#271 workspace_preparation_command=unset gap=missing_workspace_prerequisite_visibility$/m,
+  );
+});
+
 test("status does not surface tracked PR mismatch diagnostics after tracked PR recovery persists draft_pr state", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 172;
