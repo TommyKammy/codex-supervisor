@@ -19,40 +19,32 @@ function issueLockPath(supervisor: Supervisor, issueNumber: number): string {
   }).lockPath("issues", `issue-${issueNumber}`);
 }
 
+function runnableCodexIssueBody(summary: string): string {
+  return `${executionReadyBody(summary)}
+
+Depends on: none
+Execution order: 1 of 1
+Parallelizable: No`;
+}
+
 test("runOnce recovers when post-codex refresh throws after leaving a dirty worktree", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 87;
   const branch = branchName(fixture.config, issueNumber);
   const state: SupervisorStateFile = {
-    activeIssueNumber: issueNumber,
-    issues: {
-      [String(issueNumber)]: createRecord({
-        issue_number: issueNumber,
-        state: "stabilizing",
-        branch,
-        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
-        journal_path: null,
-        attempt_count: 1,
-        implementation_attempt_count: 1,
-        repair_attempt_count: 0,
-        last_error: null,
-        last_failure_kind: null,
-        last_failure_context: null,
-        last_failure_signature: null,
-        repeated_failure_signature_count: 0,
-        blocked_reason: null,
-      }),
-    },
+    activeIssueNumber: null,
+    issues: {},
   };
   await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 
   const issue: GitHubIssue = {
     number: issueNumber,
     title: "Reproduce dirty worktree recovery",
-    body: executionReadyBody("Reproduce dirty worktree recovery."),
+    body: runnableCodexIssueBody("Reproduce dirty worktree recovery."),
     createdAt: "2026-03-13T00:00:00Z",
     updatedAt: "2026-03-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
     state: "OPEN",
   };
 
@@ -65,7 +57,7 @@ test("runOnce recovers when post-codex refresh throws after leaving a dirty work
     getIssue: async () => issue,
     resolvePullRequestForBranch: async () => {
       resolveCalls += 1;
-      if (resolveCalls <= 2) {
+      if (resolveCalls <= 1) {
         return null;
       }
       throw new Error("post-turn refresh blew up");
@@ -93,7 +85,7 @@ test("runOnce recovers when post-codex refresh throws after leaving a dirty work
   assert.equal(record.blocked_reason, null);
   assert.match(record.last_failure_context?.summary ?? "", /Supervisor failed while recovering a Codex turn/);
   assert.deepEqual(record.last_failure_context?.details.slice(0, 4), [
-    "previous_state=stabilizing",
+    "previous_state=reproducing",
     "workspace_dirty=yes",
     `workspace_head=${record.last_head_sha}`,
     "pr_number=none",
