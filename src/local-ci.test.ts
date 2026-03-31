@@ -114,6 +114,33 @@ test("runLocalCiGate classifies a missing configured entrypoint as supervisor-co
   assert.equal(result.latestResult?.remediation_target, "supervisor_config");
 });
 
+test("runLocalCiGate classifies missing workspace toolchains separately from repo-owned command failures", async () => {
+  const failure = Object.assign(
+    new Error("Command failed: sh -lc +1 args\nexitCode=1\ntsc is not installed in this workspace"),
+    {
+      stderr: "tsc is not installed in this workspace",
+    },
+  );
+
+  const result = await runLocalCiGate({
+    config: { localCiCommand: "npm run ci:local" },
+    workspacePath: "/tmp/workspaces/issue-102",
+    gateLabel: "before marking PR #116 ready",
+    runLocalCiCommand: async () => {
+      throw failure;
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.failureContext?.signature, "local-ci-gate-workspace_toolchain_missing");
+  assert.equal(
+    result.failureContext?.summary,
+    "Configured local CI command could not run before marking PR #116 ready because the workspace toolchain is unavailable. Remediation target: workspace environment.",
+  );
+  assert.equal(result.latestResult?.failure_class, "workspace_toolchain_missing");
+  assert.equal(result.latestResult?.remediation_target, "workspace_environment");
+});
+
 test("runLocalCiGate preserves stdout and stderr details from command failures", async () => {
   const failure = Object.assign(new Error("Command failed: sh -lc +1 args\nexitCode=1"), {
     stdout: "lint summary\n1 file checked",
