@@ -22,7 +22,7 @@ Summary: Fixed the two unresolved timeout-summary review findings on PR #1267, a
 State hint: addressing_review
 Blocked reason: none
 Tests: `npx tsx --test src/core/command.test.ts src/supervisor/agent-runner.test.ts`, `npm run build`
-Next action: Push the review-fix commit to `codex/issue-1265`, then re-check PR #1267 for updated CI and remaining unresolved review threads.
+Next action: Re-check PR #1267 for updated CI and remaining unresolved review threads after the pushed review-fix commit.
 Failure signature: PRRT_kwDORgvdZ8538dAU|PRRT_kwDORgvdZ8538dAc
 
 ## Active Failure Context
@@ -38,7 +38,7 @@ Failure signature: PRRT_kwDORgvdZ8538dAU|PRRT_kwDORgvdZ8538dAc
 - Hypothesis: The remaining review blockers were valid: preserved timeout text needed its own truncation guard, and the pre-timeout noisy-stderr fixture needed more timing margin to stay deterministic on slower runners.
 - What changed: Added `truncatePreservingEnds()` in `src/core/command.ts`, capped preserved timeout text in both `formatCommandErrorStderr()` and `appendRequiredTextPreservingBoundedOutput()`, reduced the noisy pre-timeout fixture to 70 writes with a 250ms timeout in `src/core/command.test.ts`, and added a long-timeout-summary regression test that exercises both the 500-character rendered stderr budget and the 64 KiB captured stderr budget.
 - Current blocker: none
-- Next exact step: Commit and push the review-fix changes on `codex/issue-1265`, then refresh PR #1267 status.
+- Next exact step: Refresh PR #1267 status and verify whether the two automated review threads clear against commit `86a2e40`.
 - Verification gap: none for the requested focused tests; both the focused timeout suite and `npm run build` passed after the review fixes.
 - Files touched: src/core/command.ts; src/core/command.test.ts
 - Rollback concern: Low; changes are limited to timeout error rendering and one focused regression test.
