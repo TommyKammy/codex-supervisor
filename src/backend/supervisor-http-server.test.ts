@@ -1597,6 +1597,67 @@ test("createSupervisorHttpServer rejects malformed setup config write requests b
   assert.deepEqual(setupConfigUpdateCalls, []);
 });
 
+test("createSupervisorHttpServer preserves the malformed JSON error contract for setup config writes", async (t) => {
+  const setupConfigUpdateCalls: Array<unknown> = [];
+  const server = createSupervisorHttpServer({
+    service: createStubService({ setupConfigUpdateCalls }),
+    mutationAuth: testMutationAuth,
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const response = await readJson({
+    server,
+    path: "/api/setup-config",
+    method: "POST",
+    headers: mutationAuthHeaders(server, { "Content-Type": "application/json" }),
+    body: "{\"changes\":",
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(response.body, { error: "Request body must be valid JSON." });
+  assert.deepEqual(setupConfigUpdateCalls, []);
+});
+
+test("createSupervisorHttpServer rejects oversized setup config write requests before calling the service", async (t) => {
+  const setupConfigUpdateCalls: Array<unknown> = [];
+  const server = createSupervisorHttpServer({
+    service: createStubService({ setupConfigUpdateCalls }),
+    mutationAuth: testMutationAuth,
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const response = await readJson({
+    server,
+    path: "/api/setup-config",
+    method: "POST",
+    headers: mutationAuthHeaders(server, { "Content-Type": "application/json" }),
+    body: JSON.stringify({
+      changes: {
+        reviewProvider: "codex",
+        notes: "x".repeat(1024 * 1024),
+      },
+    }),
+  });
+
+  assert.equal(response.statusCode, 413);
+  assert.deepEqual(response.body, { error: "Request body exceeds the maximum JSON size." });
+  assert.deepEqual(setupConfigUpdateCalls, []);
+});
+
 test("createSupervisorHttpServer serves a dashboard shell with only the safe operator command actions", async (t) => {
   const server = createSupervisorHttpServer({
     service: createStubService(),

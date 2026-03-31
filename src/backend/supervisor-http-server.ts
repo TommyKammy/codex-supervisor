@@ -60,6 +60,8 @@ interface SseClientConnection {
   heartbeat: NodeJS.Timeout;
 }
 
+const MAX_JSON_BODY_BYTES = 256 * 1024;
+
 export function createSupervisorHttpServer(options: CreateSupervisorHttpServerOptions): http.Server {
   const events = new SupervisorSseEventStream(options.service, {
     heartbeatIntervalMs: options.heartbeatIntervalMs ?? 15_000,
@@ -421,9 +423,19 @@ function parseLastEventId(value: string | string[] | undefined): number | null {
 }
 
 async function readJsonBody(request: http.IncomingMessage): Promise<unknown> {
+  const contentLength = readContentLengthHeader(request.headers["content-length"]);
+  if (contentLength !== null && contentLength > MAX_JSON_BODY_BYTES) {
+    throw new HttpRequestError(413, "Request body exceeds the maximum JSON size.");
+  }
+
   let payload = "";
+  let payloadBytes = 0;
   request.setEncoding("utf8");
   for await (const chunk of request) {
+    payloadBytes += Buffer.byteLength(chunk);
+    if (payloadBytes > MAX_JSON_BODY_BYTES) {
+      throw new HttpRequestError(413, "Request body exceeds the maximum JSON size.");
+    }
     payload += chunk;
   }
 
@@ -436,6 +448,19 @@ async function readJsonBody(request: http.IncomingMessage): Promise<unknown> {
   } catch {
     throw new HttpRequestError(400, "Request body must be valid JSON.");
   }
+}
+
+function readContentLengthHeader(value: string | string[] | undefined): number | null {
+  const header = readSingleHeaderValue(value);
+  if (!header) {
+    return null;
+  }
+
+  const contentLength = Number.parseInt(header, 10);
+  if (!Number.isFinite(contentLength) || contentLength < 0) {
+    return null;
+  }
+  return contentLength;
 }
 
 function readPositiveInteger(body: unknown, fieldName: string): number | null {
