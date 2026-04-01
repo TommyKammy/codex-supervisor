@@ -80,7 +80,8 @@ function extractJournalIssueNumber(content: string | null | undefined): number |
     return null;
   }
 
-  const match = content.match(/^# Issue #(\d+):/m);
+  const [header = ""] = content.split(/\r?\n/, 1);
+  const match = header.match(/^(?:\uFEFF)?# Issue #(\d+):/);
   if (!match) {
     return null;
   }

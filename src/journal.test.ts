@@ -427,6 +427,48 @@ test("syncIssueJournal drops preserved notes when an existing legacy journal bel
   assert.match(content, /- Next exact step:\s*$/m);
 });
 
+test("syncIssueJournal ignores embedded issue headers below the top journal header", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-header-only-"));
+  const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
+  const otherIssue: GitHubIssue = {
+    ...issue,
+    number: 1277,
+    title: "Tracked PR recovery can remain stuck in failed local state after fresh PR head is observed",
+    url: "https://example.test/issues/1277",
+  };
+
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    `Not a canonical header
+
+## Codex Working Notes
+### Current Handoff
+- What changed: copied notes from #1264.
+
+### Scratchpad
+# Issue #1264: stale embedded note that should not drive journal reuse
+`,
+    "utf8",
+  );
+
+  await syncIssueJournal({
+    issue: otherIssue,
+    record: createRecord({
+      issue_number: otherIssue.number,
+      branch: "codex/issue-1277",
+      workspace: tempDir,
+      journal_path: journalPath,
+    }),
+    journalPath,
+  });
+
+  const content = await fs.readFile(journalPath, "utf8");
+  assert.match(content, /^# Issue #1277:/m);
+  assert.match(content, /- What changed: copied notes from #1264\./);
+  assert.match(content, /stale embedded note that should not drive journal reuse/);
+});
+
 test("syncIssueJournal keeps wrapped next steps and preserves extra legacy actions", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-next-step-"));
   const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
