@@ -730,6 +730,7 @@ export function buildTrackedPrStaleFailureConvergencePatch(args: {
     ...applyFailureSignature(record, failureContext),
     blocked_reason: nextState === "blocked" ? blockedReason : null,
     repeated_blocker_count: 0,
+    repair_attempt_count: 0,
     timeout_retry_count: 0,
     blocked_verification_retry_count: 0,
     pr_number: pr.number,

@@ -729,3 +729,61 @@ test("explain does not report local_state failed after tracked PR recovery resum
   assert.doesNotMatch(explanation, /^reason_\d+=local_state failed$/m);
   assert.doesNotMatch(explanation, /^reason_\d+=blocked_failure /m);
 });
+
+test("explain does not report local_state failed after tracked PR recovery resumes the issue in addressing_review", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = ["copilot-pull-request-reviewer"];
+  const issueNumber = 103;
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Tracked PR recovery clears stale failed review diagnostics",
+    body: executionReadyBody("Explain should reflect the resumed tracked PR review lifecycle state."),
+    createdAt: "2026-03-18T00:00:00Z",
+    updatedAt: "2026-03-18T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "addressing_review",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: 193,
+        last_head_sha: "head-193",
+        blocked_reason: null,
+        last_error: null,
+        last_failure_kind: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+        last_recovery_reason:
+          "tracked_pr_lifecycle_recovered: resumed issue #103 from failed to addressing_review using fresh tracked PR #193 facts at head head-193",
+        last_recovery_at: "2026-03-19T00:20:00Z",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(explanation, /^state=addressing_review$/m);
+  assert.match(explanation, /^runnable=yes$/m);
+  assert.match(
+    explanation,
+    /^latest_recovery issue=#103 at=2026-03-19T00:20:00Z reason=tracked_pr_lifecycle_recovered detail=resumed issue #103 from failed to addressing_review using fresh tracked PR #193 facts at head head-193$/m,
+  );
+  assert.doesNotMatch(explanation, /^reason_\d+=local_state failed$/m);
+  assert.doesNotMatch(explanation, /^reason_\d+=blocked_failure /m);
+});
