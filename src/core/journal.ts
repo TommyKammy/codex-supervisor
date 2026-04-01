@@ -75,6 +75,20 @@ function buildNotesTemplate(): string {
 
 const NOTES_TEMPLATE = buildNotesTemplate();
 
+function extractJournalIssueNumber(content: string | null | undefined): number | null {
+  if (!content) {
+    return null;
+  }
+
+  const match = content.match(/^# Issue #(\d+):/m);
+  if (!match) {
+    return null;
+  }
+
+  const issueNumber = Number.parseInt(match[1], 10);
+  return Number.isNaN(issueNumber) ? null : issueNumber;
+}
+
 function splitCurrentHandoff(notes: string): { handoffLines: string[]; remainderLines: string[] } {
   const lines = notes.split("\n");
   const handoffHeaderIndex = lines.findIndex((line) => line.trim() === "### Current Handoff");
@@ -567,7 +581,11 @@ export async function syncIssueJournal(args: {
   const { issue, record, journalPath, maxChars = 6000 } = args;
   await ensureDir(path.dirname(journalPath));
   const existing = await readIssueJournal(journalPath);
-  const notes = existing ? normalizeDurableIssueJournalContent(preserveCodexNotes(existing), record.workspace) : null;
+  const existingIssueNumber = extractJournalIssueNumber(existing);
+  const notes =
+    existing && (existingIssueNumber === null || existingIssueNumber === issue.number)
+      ? normalizeDurableIssueJournalContent(preserveCodexNotes(existing), record.workspace)
+      : null;
   const snapshot = buildSupervisorSnapshot({ issue, record, journalPath });
   const nextContent = `${snapshot}\n${notes ? compactCodexNotes(notes, maxChars) : NOTES_TEMPLATE}`;
   await writeFileAtomic(journalPath, nextContent);

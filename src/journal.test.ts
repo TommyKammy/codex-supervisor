@@ -380,6 +380,53 @@ test("syncIssueJournal preserves legacy handoff content by normalizing old field
   assert.match(content, /### Scratchpad\n- Existing note\./);
 });
 
+test("syncIssueJournal drops preserved notes when an existing legacy journal belongs to a different issue", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-cross-issue-"));
+  const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
+  const otherIssue: GitHubIssue = {
+    ...issue,
+    number: 1277,
+    title: "Tracked PR recovery can remain stuck in failed local state after fresh PR head is observed",
+    url: "https://example.test/issues/1277",
+  };
+
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    `# Issue #1264: [codex] Fix remaining release-blocking browser smoke regressions
+
+## Codex Working Notes
+### Current Handoff
+- Hypothesis: stale browser smoke handoff leaked across issues.
+- What changed: reproduced PR #1269 fallout.
+- Current blocker: verify:paths
+- Next exact step: push codex/issue-1264.
+
+### Scratchpad
+- Existing note.
+`,
+    "utf8",
+  );
+
+  await syncIssueJournal({
+    issue: otherIssue,
+    record: createRecord({
+      issue_number: otherIssue.number,
+      branch: "codex/issue-1277",
+      workspace: tempDir,
+      journal_path: journalPath,
+    }),
+    journalPath,
+  });
+
+  const content = await fs.readFile(journalPath, "utf8");
+  assert.match(content, /^# Issue #1277:/m);
+  assert.doesNotMatch(content, /stale browser smoke handoff leaked across issues/);
+  assert.doesNotMatch(content, /push codex\/issue-1264/);
+  assert.match(content, /- Hypothesis:\s*$/m);
+  assert.match(content, /- Next exact step:\s*$/m);
+});
+
 test("syncIssueJournal keeps wrapped next steps and preserves extra legacy actions", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-next-step-"));
   const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
