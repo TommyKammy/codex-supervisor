@@ -197,11 +197,8 @@ export async function runOnceCyclePrelude(
         emitRecoveryEvents(activeMergedEvents);
       }
 
-      const hasFailedTrackedPrRecords = Object.values(state.issues).some((record) =>
-        record.state === "failed"
-          && record.pr_number !== null,
-      );
-      if (allowDegradedContinuation && hasFailedTrackedPrRecords) {
+      const hasFailedRecords = Object.values(state.issues).some((record) => record.state === "failed");
+      if (allowDegradedContinuation && hasFailedRecords) {
         await setReconciliationPhase("stale_failed_issue_states");
         await args.reconcileStaleFailedIssueStates(state, [], updateReconciliationProgress);
       }
