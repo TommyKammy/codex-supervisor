@@ -19,6 +19,7 @@ import {
   createIssue,
   createPullRequest,
   createRecord,
+  createReviewThread,
   createSupervisorState,
   createSupervisorFixture,
   executionReadyBody,
@@ -688,6 +689,111 @@ test("runOnce clears stale failed tracked PR recovery on the same head before co
   assert.equal(
     record.last_recovery_reason,
     "tracked_pr_lifecycle_recovered: resumed issue #91 from failed to draft_pr using fresh tracked PR #191 facts at head head-191",
+  );
+  assert.ok(record.last_recovery_at);
+});
+
+test("runOnce does not re-fail recovered tracked PR review work on the same head after repair budget exhaustion", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.maxRepairAttemptsPerIssue = 2;
+  fixture.config.reviewBotLogins = ["copilot-pull-request-reviewer"];
+  const issueNumber = 91;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, issueNumber, {
+        state: "failed",
+        pr_number: 191,
+        journal_path: null,
+        last_head_sha: "head-191",
+        attempt_count: 3,
+        implementation_attempt_count: 1,
+        repair_attempt_count: 2,
+        last_error: "Stopped after repeated repair attempts.",
+        last_failure_kind: "command_error",
+        last_failure_context: {
+          category: "codex",
+          summary: "Repair budget exhausted while waiting for PR recovery.",
+          signature: "repair-budget-exhausted",
+          command: null,
+          details: ["attempts=2/2"],
+          url: null,
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "repair-budget-exhausted",
+        repeated_failure_signature_count: 3,
+      }),
+    ],
+  });
+  await writeSupervisorState(fixture.stateFile, state);
+
+  const issue = createTrackedIssue(issueNumber, {
+    title: "Recover stale failed tracked PR review state through runOnce",
+    body: executionReadyBody("Recover stale failed tracked PR review state through runOnce."),
+    updatedAt: "2026-03-13T00:21:00Z",
+    labels: [],
+  });
+  const pr = createTrackedPullRequest(fixture.config, issueNumber, {
+    number: 191,
+    title: "Recovery implementation",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    headRefOid: "head-191",
+  });
+  const reviewThreads = [createReviewThread()];
+
+  let getPullRequestCalls = 0;
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      assert.equal(branchName, branch);
+      assert.equal(prNumber, pr.number);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return [];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return reviewThreads;
+    },
+    getPullRequestIfExists: async (prNumber: number) => {
+      getPullRequestCalls += 1;
+      assert.equal(prNumber, pr.number);
+      return pr;
+    },
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(message, /Dry run: would invoke Codex for issue #91\./);
+  assert.match(message, /state=addressing_review/);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(persisted.activeIssueNumber, issueNumber);
+  assert.equal(getPullRequestCalls, 2);
+  assert.equal(record.state, "addressing_review");
+  assert.equal(record.repair_attempt_count, 0);
+  assert.equal(record.last_error, null);
+  assert.equal(record.last_failure_kind, null);
+  assert.match(record.last_failure_context?.summary ?? "", /unresolved automated review thread/);
+  assert.equal(record.last_failure_signature, "thread-1");
+  assert.equal(record.repeated_failure_signature_count, 1);
+  assert.equal(
+    record.last_recovery_reason,
+    "tracked_pr_lifecycle_recovered: resumed issue #91 from failed to addressing_review using fresh tracked PR #191 facts at head head-191",
   );
   assert.ok(record.last_recovery_at);
 });

@@ -2647,3 +2647,73 @@ test("status does not surface tracked PR mismatch diagnostics after tracked PR r
     /^latest_recovery issue=#172 at=2026-03-13T00:20:00Z reason=tracked_pr_lifecycle_recovered detail=resumed issue #172 from failed to draft_pr using fresh tracked PR #272 facts at head head-272$/m,
   );
 });
+
+test("status does not surface tracked PR mismatch diagnostics after tracked PR recovery persists addressing_review state", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = ["copilot-pull-request-reviewer"];
+  const issueNumber = 173;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "addressing_review",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: 273,
+        blocked_reason: null,
+        last_error: null,
+        last_head_sha: "head-273",
+        last_failure_kind: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+        last_recovery_reason:
+          "tracked_pr_lifecycle_recovered: resumed issue #173 from failed to addressing_review using fresh tracked PR #273 facts at head head-273",
+        last_recovery_at: "2026-03-13T00:20:00Z",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Tracked PR review recovery converged",
+    body: executionReadyBody("Status should reflect the resumed tracked PR review lifecycle state."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const reviewPr = createPullRequest({
+    number: 273,
+    headRefName: branch,
+    headRefOid: "head-273",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [trackedIssue],
+    listAllIssues: async () => [trackedIssue],
+    getPullRequestIfExists: async () => reviewPr,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+  assert.doesNotMatch(report.detailedStatusLines.join("\n"), /^tracked_pr_mismatch /m);
+  assert.doesNotMatch(report.detailedStatusLines.join("\n"), /^recovery_guidance=/m);
+
+  const status = await supervisor.status();
+  assert.doesNotMatch(status, /^tracked_pr_mismatch /m);
+  assert.doesNotMatch(status, /^recovery_guidance=/m);
+  assert.match(
+    status,
+    /^latest_recovery issue=#173 at=2026-03-13T00:20:00Z reason=tracked_pr_lifecycle_recovered detail=resumed issue #173 from failed to addressing_review using fresh tracked PR #273 facts at head head-273$/m,
+  );
+});
