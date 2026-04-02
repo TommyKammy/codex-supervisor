@@ -178,7 +178,7 @@ async function classifyFailedNoPrBranchRecovery(args: {
       .filter((paths) =>
         paths.some((relativePath) => !isIgnoredSupervisorArtifactPath(relativePath, journalRelativePath)));
 
-    if (baseAhead > 0 && meaningfulBaseDiff.length > 0) {
+    if (baseAhead > 0 && meaningfulBaseDiff.length > 0 && meaningfulWorkspaceChanges.length === 0) {
       return { state: "recoverable", headSha: headResult.stdout.trim() || null };
     }
 

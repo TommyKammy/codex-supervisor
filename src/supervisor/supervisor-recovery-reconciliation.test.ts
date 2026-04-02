@@ -2778,6 +2778,108 @@ test("reconcileStaleFailedIssueStates requeues failed no-PR issues when the work
   assert.equal(saveCalls, 1);
 });
 
+test("reconcileStaleFailedIssueStates does not requeue failed no-PR issues when the workspace branch is ahead but still has non-artifact edits", async () => {
+  const { repoPath, rootPath, baseHead } = await createRepositoryWithOrigin();
+  const journalPath = path.join(repoPath, ".codex-supervisor", "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n");
+  await runCommand("git", ["-C", repoPath, "checkout", "-b", "codex/reopen-issue-366"]);
+  await fs.writeFile(path.join(repoPath, "feature.txt"), "recoverable checkpoint\n");
+  await runCommand("git", ["-C", repoPath, "add", "feature.txt"]);
+  await runCommand("git", ["-C", repoPath, "commit", "-m", "recoverable checkpoint"]);
+  await fs.writeFile(path.join(repoPath, "feature.txt"), "recoverable checkpoint\nextra dirty edit\n");
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot: rootPath,
+  });
+  const original = createRecord({
+    issue_number: 366,
+    state: "failed",
+    branch: "codex/reopen-issue-366",
+    workspace: repoPath,
+    journal_path: journalPath,
+    pr_number: null,
+    last_head_sha: baseHead,
+    last_error: "Selected model is at capacity. Please try a different model.",
+    last_failure_kind: "codex_exit",
+    last_failure_context: {
+      category: "codex",
+      summary: "Selected model is at capacity. Please try a different model.",
+      signature: "provider-capacity",
+      command: null,
+      details: ["provider=codex"],
+      url: null,
+      updated_at: "2026-03-13T00:20:00Z",
+    },
+    last_failure_signature: "provider-capacity",
+    repeated_failure_signature_count: 1,
+    codex_session_id: "session-366",
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+  const issue = createIssue({
+    number: 366,
+    title: "Keep dirty recoverable branch manual",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  await reconcileStaleFailedIssueStates(
+    {
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected getPullRequestIfExists call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      inferStateFromPullRequest: () => "draft_pr",
+      inferFailureContext: () => null,
+      blockedReasonForLifecycleState: () => null,
+      isOpenPullRequest: () => true,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
+    },
+  );
+
+  assert.deepEqual(state.issues["366"], original);
+  assert.equal(saveCalls, 0);
+});
+
 test("reconcileStaleFailedIssueStates does not requeue failed no-PR issues when only supervisor-local artifacts are dirty", async () => {
   const { repoPath, rootPath, baseHead } = await createRepositoryWithOrigin();
   const journalPath = path.join(repoPath, ".codex-supervisor", "issues", "366", "issue-journal.md");
