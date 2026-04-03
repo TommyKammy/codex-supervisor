@@ -182,6 +182,10 @@ function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current:
     signals.push(`head_advanced ${previous.headRefOid}->${current.headRefOid}`);
   }
 
+  if (previous !== null && previous.mergeStateStatus !== current.mergeStateStatus) {
+    signals.push(`merge_state_changed ${previous.mergeStateStatus ?? "none"}->${current.mergeStateStatus ?? "none"}`);
+  }
+
   const previousChecks = previous?.checks.join("|") ?? null;
   const currentChecks = current.checks.join("|");
   if (previousChecks !== null && previousChecks !== currentChecks) {
@@ -220,14 +224,7 @@ export function summarizeTrackedPrProgress(
   reviewThreads: ReviewThread[],
 ): { snapshot: string; summary: string | null } {
   const current = buildTrackedPrProgressSnapshot(pr, checks, reviewThreads);
-  const previous =
-    parseTrackedPrProgressSnapshot(record.last_tracked_pr_progress_snapshot) ??
-    (record.last_head_sha
-      ? {
-          ...current,
-          headRefOid: record.last_head_sha,
-        }
-      : null);
+  const previous = parseTrackedPrProgressSnapshot(record.last_tracked_pr_progress_snapshot);
   const signals = listChangedSignals(previous, current);
 
   return {
@@ -257,6 +254,7 @@ export function determineTrackedPrRepeatFailureDisposition(args: {
   reviewThreads: ReviewThread[];
 }): TrackedPrRepeatFailureDisposition {
   const { snapshot, summary } = summarizeTrackedPrProgress(args.record, args.pr, args.checks, args.reviewThreads);
+  const missingProgressBaseline = !args.record.last_tracked_pr_progress_snapshot;
   const overRepeatLimit =
     args.record.last_failure_signature !== null &&
     args.record.repeated_failure_signature_count >= args.config.sameFailureSignatureRepeatLimit;
@@ -266,6 +264,15 @@ export function determineTrackedPrRepeatFailureDisposition(args: {
       shouldStop: false,
       progressSnapshot: snapshot,
       progressSummary: summary,
+      decision: "retry_on_progress",
+    };
+  }
+
+  if (missingProgressBaseline) {
+    return {
+      shouldStop: false,
+      progressSnapshot: snapshot,
+      progressSummary: "progress_baseline_initialized",
       decision: "retry_on_progress",
     };
   }
