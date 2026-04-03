@@ -169,7 +169,7 @@ test("handleAuthFailure blocks the active issue and preserves failure tracking f
   assert.equal(updated.blocked_reason, "unknown");
 });
 
-test("runOnce dry-run selects an issue and hydrates workspace and PR context before Codex", async () => {
+test("runOnce dry-run selects an issue and hydrates workspace and PR context before tracked draft PR progression", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 91;
   const branch = branchName(fixture.config, issueNumber);
@@ -195,6 +195,12 @@ test("runOnce dry-run selects an issue and hydrates workspace and PR context bef
   let checksCalls = 0;
   let reviewThreadCalls = 0;
   const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { loadOpenPullRequestSnapshot: (prNumber: number) => Promise<unknown> }).loadOpenPullRequestSnapshot = async (
+    prNumber: number,
+  ) => {
+    assert.equal(prNumber, pr.number);
+    return { pr, checks, reviewThreads };
+  };
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     authStatus: async () => ({ ok: true, message: null }),
     listAllIssues: async () => [issue],
@@ -227,8 +233,8 @@ test("runOnce dry-run selects an issue and hydrates workspace and PR context bef
   };
 
   const message = await supervisor.runOnce({ dryRun: true });
-  assert.match(message, /Dry run: would invoke Codex for issue #91\./);
   assert.match(message, /state=draft_pr/);
+  assert.doesNotMatch(message, /would invoke Codex/u);
 
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
   const record = persisted.issues[String(issueNumber)];
@@ -366,6 +372,12 @@ test("runOnce converges stale failed tracked PR state before selecting the resum
   });
 
   const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { loadOpenPullRequestSnapshot: (prNumber: number) => Promise<unknown> }).loadOpenPullRequestSnapshot = async (
+    prNumber: number,
+  ) => {
+    assert.equal(prNumber, pr.number);
+    return { pr, checks: [], reviewThreads: [] };
+  };
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     authStatus: async () => ({ ok: true, message: null }),
     listAllIssues: async () => [issue],
@@ -401,8 +413,8 @@ test("runOnce converges stale failed tracked PR state before selecting the resum
   };
 
   const message = await supervisor.runOnce({ dryRun: true });
-  assert.match(message, /Dry run: would invoke Codex for issue #366\./);
   assert.match(message, /state=draft_pr/);
+  assert.doesNotMatch(message, /would invoke Codex/u);
 
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
   const record = persisted.issues[String(issueNumber)];
@@ -640,6 +652,12 @@ test("runOnce clears stale failed tracked PR recovery on the same head before co
 
   let getPullRequestCalls = 0;
   const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { loadOpenPullRequestSnapshot: (prNumber: number) => Promise<unknown> }).loadOpenPullRequestSnapshot = async (
+    prNumber: number,
+  ) => {
+    assert.equal(prNumber, pr.number);
+    return { pr, checks: [], reviewThreads: [] };
+  };
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     authStatus: async () => ({ ok: true, message: null }),
     listAllIssues: async () => [issue],
@@ -673,8 +691,8 @@ test("runOnce clears stale failed tracked PR recovery on the same head before co
   };
 
   const message = await supervisor.runOnce({ dryRun: true });
-  assert.match(message, /Dry run: would invoke Codex for issue #91\./);
   assert.match(message, /state=draft_pr/);
+  assert.doesNotMatch(message, /would invoke Codex/u);
 
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
   const record = persisted.issues[String(issueNumber)];
