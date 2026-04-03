@@ -43,7 +43,6 @@ import {
   STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
 } from "./no-pull-request-state";
 import { applyFailureSignature } from "./supervisor/supervisor-failure-helpers";
-import { hasAttemptBudgetRemaining } from "./supervisor/supervisor-execution-policy";
 import {
   captureIssueJournalFingerprint,
   clearInterruptedTurnMarker,
@@ -129,6 +128,28 @@ function parseGitStatusPorcelainV1Paths(statusOutput: string): string[][] {
   return entries;
 }
 
+function normalizeGitPath(targetPath: string): string {
+  try {
+    return fs.realpathSync.native?.(targetPath) ?? fs.realpathSync(targetPath);
+  } catch {
+    return path.resolve(targetPath);
+  }
+}
+
+function parseGitWorktreePaths(stdout: string): Set<string> {
+  const worktreePaths = new Set<string>();
+
+  for (const rawLine of stdout.split("\n")) {
+    if (!rawLine.startsWith("worktree ")) {
+      continue;
+    }
+
+    worktreePaths.add(normalizeGitPath(rawLine.slice("worktree ".length).trim()));
+  }
+
+  return worktreePaths;
+}
+
 function buildFailedNoPrBranchFailureContext(args: {
   record: Pick<IssueRunRecord, "issue_number">;
   branchRecoveryState: Exclude<FailedNoPrBranchRecoveryState, "recoverable">;
@@ -185,6 +206,15 @@ async function classifyFailedNoPrBranchRecovery(args: {
   const gitProbeTimeoutMs = config.codexExecTimeoutMinutes * 60_000;
 
   try {
+    const worktreeListResult = await runCommand(
+      "git",
+      ["-C", config.repoPath, "worktree", "list", "--porcelain"],
+      { timeoutMs: gitProbeTimeoutMs },
+    );
+    if (!parseGitWorktreePaths(worktreeListResult.stdout).has(normalizeGitPath(record.workspace))) {
+      return { state: "manual_review_required", headSha: null };
+    }
+
     await runCommand("git", ["-C", config.repoPath, "fetch", "origin", config.defaultBranch], {
       timeoutMs: gitProbeTimeoutMs,
     });
@@ -218,7 +248,7 @@ async function classifyFailedNoPrBranchRecovery(args: {
       return { state: "recoverable", headSha: headResult.stdout.trim() || null };
     }
 
-    if (baseAhead === 0 && meaningfulBaseDiff.length === 0 && meaningfulWorkspaceChanges.length === 0) {
+    if (meaningfulBaseDiff.length === 0 && meaningfulWorkspaceChanges.length === 0) {
       return { state: "already_satisfied_on_main", headSha: headResult.stdout.trim() || null };
     }
 
@@ -229,11 +259,13 @@ async function classifyFailedNoPrBranchRecovery(args: {
 }
 
 function shouldAutoRecoverFailedNoPr(record: IssueRunRecord, config: SupervisorConfig): boolean {
+  const staleNoPrRepeatLimit = Math.max(config.sameFailureSignatureRepeatLimit, 1);
+
   return (
     record.state === "failed" &&
     record.pr_number === null &&
     record.last_failure_kind !== "codex_failed" &&
-    hasAttemptBudgetRemaining(record, config, "implementation")
+    (record.stale_stabilizing_no_pr_recovery_count ?? 0) < staleNoPrRepeatLimit
   );
 }
 
