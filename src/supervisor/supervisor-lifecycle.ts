@@ -366,7 +366,6 @@ export function shouldRunCodex(
 
   const inferred = inferStateFromPullRequest(config, record, pr, checks, reviewThreads);
   return (
-    inferred === "draft_pr" ||
     inferred === "repairing_ci" ||
     inferred === "resolving_conflict" ||
     inferred === "addressing_review" ||
