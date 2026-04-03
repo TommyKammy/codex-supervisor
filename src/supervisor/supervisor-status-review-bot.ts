@@ -379,13 +379,14 @@ export function externalSignalReadinessDiagnostics(
     (thread) => !thread.isResolved && !thread.isOutdated,
   );
   const observed = summarizeObservedReviewSignal(config, activeRecord, pr, reviewThreads, configuredBotReviewThreads);
+  const topLevelReviewEffect = configuredBotTopLevelReviewEffect(config, pr, reviewThreads, configuredBotReviewThreads);
   const reviewSignalSource = reviewProviderProfileFromConfig(config).signalSource;
   const review =
     !repoExpectsConfiguredBotReview(config)
       ? "disabled"
-      : unresolvedConfiguredThreads.length > 0
+      : unresolvedConfiguredThreads.length > 0 || topLevelReviewEffect === "blocking"
         ? "feedback_present"
-        : observed.hasSignal
+        : observed.hasSignal || topLevelReviewEffect !== "none"
           ? "signal_observed"
           : observed.observedReview === "copilot_requested"
             ? "pending_delivery"
@@ -397,10 +398,11 @@ export function externalSignalReadinessDiagnostics(
               ? "repo_not_configured"
               : "awaiting_signal";
 
+  const hasRepoReadinessGap = ci === "repo_not_configured" || review === "repo_not_configured";
   const status =
     ci === "failing" || review === "feedback_present"
       ? "blocked_by_ci_or_review_feedback"
-      : ci === "repo_not_configured" && (!repoExpectsConfiguredBotReview(config) || review === "repo_not_configured")
+      : hasRepoReadinessGap
         ? "repo_not_ready_for_expected_signals"
         : ci === "awaiting_signal" || review === "awaiting_signal" || review === "pending_delivery"
           ? "awaiting_expected_signals"
