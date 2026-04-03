@@ -362,6 +362,10 @@ export function externalSignalReadinessDiagnostics(
   const hasFailingChecks = checks.some((check) => check.bucket === "fail");
   const hasPendingChecks = checks.some((check) => check.bucket === "pending" || check.bucket === "cancel");
   const hasPassingChecks = checks.some((check) => check.bucket === "pass" || check.bucket === "skipping");
+  // TODO: `.github/workflows/*` absence is only a bootstrap heuristic. Repos can emit
+  // checks from external CI providers or GitHub Apps without committed Actions workflows,
+  // so readiness detection should eventually consider those integrations before falling
+  // back to `repo_not_configured` when no signal has been observed yet.
   const ci =
     hasFailingChecks
       ? "failing"

@@ -274,13 +274,43 @@ test("externalSignalReadinessDiagnostics marks bootstrap repos without workflows
   );
 });
 
-test("externalSignalReadinessDiagnostics treats blocking configured-bot top-level reviews as feedback", async (t) => {
-  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-configured-review-"));
-  await fs.mkdir(path.join(repoPath, ".github", "workflows"), { recursive: true });
-  await fs.writeFile(path.join(repoPath, ".github", "workflows", "ci.yml"), "name: CI\n");
+test("externalSignalReadinessDiagnostics treats observed external checks as CI signals without workflows", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-external-checks-"));
   t.after(async () => {
     await fs.rm(repoPath, { recursive: true, force: true });
   });
+
+  assert.deepEqual(
+    externalSignalReadinessDiagnostics(
+      createConfig({
+        repoPath,
+        reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      }),
+      createRecord(),
+      createPr({
+        currentHeadCiGreenAt: null,
+        configuredBotCurrentHeadObservedAt: null,
+      }),
+      [{ bucket: "pass" }],
+      [],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "awaiting_expected_signals",
+      ci: "passing",
+      review: "awaiting_signal",
+      workflows: "absent",
+    },
+  );
+});
+
+test("externalSignalReadinessDiagnostics treats blocking configured-bot top-level reviews as feedback", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-configured-review-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+  await fs.mkdir(path.join(repoPath, ".github", "workflows"), { recursive: true });
+  await fs.writeFile(path.join(repoPath, ".github", "workflows", "ci.yml"), "name: CI\n");
 
   assert.deepEqual(
     externalSignalReadinessDiagnostics(
