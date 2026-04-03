@@ -22,9 +22,9 @@
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: Repeated identical tracked-PR failures should only terminally stop when authoritative tracked PR facts have not advanced since the prior occurrence; PR head/check/review lifecycle progress should keep the lane retryable.
-- What changed: Added tracked PR progress snapshot/decision fields on run records, taught the supervisor repeated-failure gate to suppress the blunt stop when tracked PR progress advanced, and surfaced the decision in explain output. Added a focused orchestration regression and explain coverage.
+- What changed: Added tracked PR progress snapshot/decision fields on run records, taught the supervisor repeated-failure gate to suppress the blunt stop when tracked PR progress advanced, and surfaced the decision in explain output. Added a focused orchestration regression and explain coverage. Committed as `604db04` and opened draft PR #1285.
 - Current blocker: none
-- Next exact step: Commit the change set and let the supervisor continue from implementing/stabilizing with the narrower tracked-PR stop policy.
+- Next exact step: Let CI run on draft PR #1285 and continue supervisor verification against the narrowed tracked-PR stop policy if review or checks surface follow-up work.
 - Verification gap: No additional gap after the focused issue verification set and `npm run build`.
 - Files touched: .codex-supervisor/issue-journal.md; src/core/types.ts; src/pull-request-state-test-helpers.ts; src/supervisor/supervisor-execution-orchestration.test.ts; src/supervisor/supervisor-lifecycle.ts; src/supervisor/supervisor-selection-issue-explain.test.ts; src/supervisor/supervisor-selection-issue-explain.ts; src/supervisor/supervisor-test-helpers.ts; src/supervisor/supervisor.ts
 - Rollback concern: The new suppression path is intentionally scoped to tracked PR lanes; if the progress snapshot proves too permissive, the main rollback point is the tracked PR progress signal set in `src/supervisor/supervisor-lifecycle.ts`.
