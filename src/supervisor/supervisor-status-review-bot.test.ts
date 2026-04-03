@@ -1,10 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import {
   configuredBotInitialGraceWaitWindow,
   configuredBotSettledWaitWindow,
   configuredBotRateLimitWaitWindow,
   configuredBotTopLevelReviewEffect,
+  externalSignalReadinessDiagnostics,
   configuredReviewStatusLabel,
   inferReviewBotProfile,
   reviewBotDiagnostics,
@@ -237,6 +241,37 @@ test("reviewBotDiagnostics tracks observed review signal precedence", () => {
     observedReview: "none",
     nextCheck: "provider_setup_or_delivery",
   });
+});
+
+test("externalSignalReadinessDiagnostics marks bootstrap repos without workflows as not ready for expected signals", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-bootstrap-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  assert.deepEqual(
+    externalSignalReadinessDiagnostics(
+      createConfig({
+        repoPath,
+        reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      }),
+      createRecord(),
+      createPr({
+        isDraft: true,
+        currentHeadCiGreenAt: null,
+        configuredBotCurrentHeadObservedAt: null,
+      }),
+      [],
+      [],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "repo_not_ready_for_expected_signals",
+      ci: "repo_not_configured",
+      review: "repo_not_configured",
+      workflows: "absent",
+    },
+  );
 });
 
 test("configured review helpers preserve top-level status semantics", () => {

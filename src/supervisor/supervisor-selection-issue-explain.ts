@@ -17,6 +17,7 @@ import {
   shouldAutoRetryHandoffMissing,
   shouldEnforceExecutionReady,
 } from "./supervisor-execution-policy";
+import { configuredReviewBotLogins } from "../core/review-providers";
 import { shouldAutoRetryTimeout } from "./supervisor-failure-helpers";
 import { buildStaleStabilizingNoPrRecoveryWarningLine } from "../no-pull-request-state";
 import {
@@ -30,6 +31,7 @@ import {
   loadStatusChangedFiles,
 } from "./supervisor-status-rendering";
 import { formatLatestRecoveryStatusLine } from "./supervisor-detailed-status-assembly";
+import { externalSignalReadinessDiagnostics } from "./supervisor-status-review-bot";
 import { readIssueJournal, summarizeIssueJournalHandoff } from "../core/journal";
 import { formatInventoryRefreshDiagnosticLines, formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
 import { buildTrackedPrMismatch } from "./tracked-pr-mismatch";
@@ -72,6 +74,7 @@ export interface SupervisorExplainDto {
   activityContext: SupervisorIssueActivityContextDto | null;
   trackedPrRetryabilitySummary?: string | null;
   trackedPrMismatchSummary: string | null;
+  externalSignalReadinessSummary?: string | null;
   recoveryGuidance: string | null;
   selectionReason: string | null;
   reasons: string[];
@@ -265,6 +268,27 @@ export async function buildIssueExplainDto(
     record && pr && !trackedPrHydrationFailed
       ? buildTrackedPrMismatch(config, record, pr, explainChecks, explainReviewThreads)
       : null;
+  const externalSignalReadinessSummary =
+    record && pr && !trackedPrHydrationFailed
+      ? (() => {
+        const configuredBotLogins = new Set(configuredReviewBotLogins(config));
+        const readiness = externalSignalReadinessDiagnostics(
+          config,
+          record,
+          pr,
+          explainChecks,
+          explainReviewThreads,
+          (_innerConfig, innerReviewThreads) =>
+            innerReviewThreads.filter((thread) =>
+              thread.comments.nodes.some((comment) => {
+                const login = comment.author?.login?.toLowerCase();
+                return login !== undefined && configuredBotLogins.has(login);
+              })
+            ),
+        );
+        return `external_signal_readiness status=${readiness.status} ci=${readiness.ci} review=${readiness.review} workflows=${readiness.workflows}`;
+      })()
+      : null;
 
   if (matchingSkipPrefix) {
     reasons.push(`skip_title_prefix ${matchingSkipPrefix}`);
@@ -343,6 +367,7 @@ export async function buildIssueExplainDto(
         ].join(" ")
         : null,
     trackedPrMismatchSummary: trackedPrMismatch?.summaryLine ?? null,
+    externalSignalReadinessSummary,
     recoveryGuidance: trackedPrMismatch?.guidanceLine ?? null,
     selectionReason,
     reasons,
@@ -370,6 +395,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(localCiStatusLine ? [localCiStatusLine] : []),
     ...(dto.trackedPrRetryabilitySummary ? [dto.trackedPrRetryabilitySummary] : []),
     ...(dto.trackedPrMismatchSummary ? [dto.trackedPrMismatchSummary] : []),
+    ...(dto.externalSignalReadinessSummary ? [dto.externalSignalReadinessSummary] : []),
     ...(dto.recoveryGuidance ? [dto.recoveryGuidance] : []),
     ...(retrySummaryLine ? [retrySummaryLine] : []),
     ...(recoveryLoopSummaryLine ? [recoveryLoopSummaryLine] : []),

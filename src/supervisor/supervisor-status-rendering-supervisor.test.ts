@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { formatDetailedStatus, summarizeChecks } from "./supervisor-status-rendering";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, SupervisorConfig } from "../core/types";
@@ -559,6 +562,48 @@ test("formatDetailedStatus surfaces active review-bot profile and missing extern
   assert.match(
     status,
     /review_bot_diagnostics status=missing_provider_signal observed_review=none expected_reviewers=chatgpt-codex-connector next_check=provider_setup_or_delivery/,
+  );
+});
+
+test("formatDetailedStatus marks bootstrap repos without workflows as not ready for expected external signals", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-status-bootstrap-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  const status = formatDetailedStatus({
+    config: createConfig({
+      repoPath,
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    }),
+    activeRecord: createRecord({
+      pr_number: 44,
+      state: "draft_pr",
+      blocked_reason: null,
+      copilot_review_timed_out_at: null,
+      copilot_review_timeout_action: null,
+      copilot_review_timeout_reason: null,
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr: createPullRequest({
+      number: 44,
+      isDraft: true,
+      headRefName: "codex/issue-38",
+      reviewDecision: "REVIEW_REQUIRED",
+      copilotReviewState: "not_requested",
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      currentHeadCiGreenAt: null,
+      configuredBotCurrentHeadObservedAt: null,
+    }),
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(
+    status,
+    /external_signal_readiness status=repo_not_ready_for_expected_signals ci=repo_not_configured review=repo_not_configured workflows=absent/,
   );
 });
 

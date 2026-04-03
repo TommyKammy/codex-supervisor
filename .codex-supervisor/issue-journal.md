@@ -1,17 +1,17 @@
-# Issue #1284: [codex] Make repeated-failure stop less blunt for tracked PR repair lanes
+# Issue #1275: Improve diagnostics when a tracked PR is waiting on CI/review signals the repo cannot produce yet
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1284
-- Branch: codex/issue-1284
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1275
+- Branch: codex/issue-1275
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: f0c4370e9edb176c38fdb3861cf72eac18e41faa
+- Last head SHA: ae50bab6df620055f78f30a1f707fa78509aba91
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-04-03T10:01:46.142Z
+- Updated at: 2026-04-03T12:38:00.624Z
 
 ## Latest Codex Summary
 - None yet.
@@ -21,13 +21,13 @@
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: Repeated identical tracked-PR failures should only terminally stop when authoritative tracked PR facts have not advanced since the prior occurrence; PR head/check/review lifecycle progress should keep the lane retryable.
-- What changed: Added tracked PR progress snapshot/decision fields on run records, taught the supervisor repeated-failure gate to suppress the blunt stop when tracked PR progress advanced, and surfaced the decision in explain output. Added a focused orchestration regression and explain coverage. Committed as `604db04` and opened draft PR #1285.
+- Hypothesis: The tracked-PR diagnostics only classified "missing provider signal" and "checks=none", so bootstrap repos with no workflows/check runs were being reported like a PR-specific wait instead of a repo capability mismatch.
+- What changed: Added `external_signal_readiness` diagnostics that classify CI and configured review-provider readiness using current PR facts plus local workflow presence, surfaced the line in `status` and `explain`, and added focused regressions for the bootstrap no-workflows/no-checks/no-provider-signal case.
 - Current blocker: none
-- Next exact step: Let CI run on draft PR #1285 and continue supervisor verification against the narrowed tracked-PR stop policy if review or checks surface follow-up work.
-- Verification gap: No additional gap after the focused issue verification set and `npm run build`.
-- Files touched: .codex-supervisor/issue-journal.md; src/core/types.ts; src/pull-request-state-test-helpers.ts; src/supervisor/supervisor-execution-orchestration.test.ts; src/supervisor/supervisor-lifecycle.ts; src/supervisor/supervisor-selection-issue-explain.test.ts; src/supervisor/supervisor-selection-issue-explain.ts; src/supervisor/supervisor-test-helpers.ts; src/supervisor/supervisor.ts
-- Rollback concern: The new suppression path is intentionally scoped to tracked PR lanes; if the progress snapshot proves too permissive, the main rollback point is the tracked PR progress signal set in `src/supervisor/supervisor-lifecycle.ts`.
-- Last focused command: npx tsx --test src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts
+- Next exact step: Commit the diagnostic change set on `codex/issue-1275`.
+- Verification gap: none for the requested focused suite and TypeScript build; no broader end-to-end GitHub live run was performed.
+- Files touched: .codex-supervisor/issue-journal.md; src/supervisor/supervisor-detailed-status-assembly.ts; src/supervisor/supervisor-diagnostics-explain.test.ts; src/supervisor/supervisor-diagnostics-status-selection.test.ts; src/supervisor/supervisor-selection-issue-explain.ts; src/supervisor/supervisor-status-rendering-supervisor.test.ts; src/supervisor/supervisor-status-review-bot.test.ts; src/supervisor/supervisor-status-review-bot.ts
+- Rollback concern: The new readiness classification uses local `.github/workflows/*` presence as a diagnostic heuristic; if a repo emits external checks without committed workflows, the line could over-classify that case as repo-not-configured.
+- Last focused command: npm run build
 ### Scratchpad
-- `npm run build` passed after making `trackedPrRetryabilitySummary` optional for existing DTO test doubles.
+- Keep this section short. The supervisor may compact older notes automatically.

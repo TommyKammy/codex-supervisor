@@ -383,6 +383,68 @@ Expose stale tracked PR mismatch diagnostics.
   );
 });
 
+test("explain reports bootstrap repos as not ready for expected CI and review signals", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 181;
+  const prNumber = 281;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "draft_pr",
+        branch,
+        pr_number: prNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        blocked_reason: null,
+        last_error: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Bootstrap repo lacks CI and provider signals",
+    body: executionReadyBody("Explain should surface repo readiness mismatch for missing PR signals."),
+    createdAt: "2026-03-13T00:05:00Z",
+    updatedAt: "2026-03-13T00:05:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => issue,
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    resolvePullRequestForBranch: async () =>
+      createPullRequest({
+        number: prNumber,
+        headRefName: branch,
+        isDraft: true,
+        reviewDecision: "REVIEW_REQUIRED",
+        copilotReviewState: "not_requested",
+        currentHeadCiGreenAt: null,
+        configuredBotCurrentHeadObservedAt: null,
+      }),
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+  assert.match(
+    explanation,
+    /^external_signal_readiness status=repo_not_ready_for_expected_signals ci=repo_not_configured review=repo_not_configured workflows=absent$/m,
+  );
+});
+
 test("explain degrades gracefully when tracked PR mismatch hydration fails", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 172;
