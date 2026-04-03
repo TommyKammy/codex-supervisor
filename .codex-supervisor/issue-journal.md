@@ -22,9 +22,9 @@
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: The tracked-PR diagnostics only classified "missing provider signal" and "checks=none", so bootstrap repos with no workflows/check runs were being reported like a PR-specific wait instead of a repo capability mismatch.
-- What changed: Added `external_signal_readiness` diagnostics that classify CI and configured review-provider readiness using current PR facts plus local workflow presence, surfaced the line in `status` and `explain`, and added focused regressions for the bootstrap no-workflows/no-checks/no-provider-signal case.
+- What changed: Added `external_signal_readiness` diagnostics that classify CI and configured review-provider readiness using current PR facts plus local workflow presence, surfaced the line in `status` and `explain`, added focused regressions for the bootstrap no-workflows/no-checks/no-provider-signal case, committed the change as `df53631`, and opened draft PR #1288.
 - Current blocker: none
-- Next exact step: Commit the diagnostic change set on `codex/issue-1275`.
+- Next exact step: Monitor draft PR #1288 CI and review feedback, then address any follow-up if GitHub surfaces regressions.
 - Verification gap: none for the requested focused suite and TypeScript build; no broader end-to-end GitHub live run was performed.
 - Files touched: .codex-supervisor/issue-journal.md; src/supervisor/supervisor-detailed-status-assembly.ts; src/supervisor/supervisor-diagnostics-explain.test.ts; src/supervisor/supervisor-diagnostics-status-selection.test.ts; src/supervisor/supervisor-selection-issue-explain.ts; src/supervisor/supervisor-status-rendering-supervisor.test.ts; src/supervisor/supervisor-status-review-bot.test.ts; src/supervisor/supervisor-status-review-bot.ts
 - Rollback concern: The new readiness classification uses local `.github/workflows/*` presence as a diagnostic heuristic; if a repo emits external checks without committed workflows, the line could over-classify that case as repo-not-configured.
