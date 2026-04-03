@@ -1375,32 +1375,51 @@ export async function reconcileStaleFailedIssueStates(
       const branchRecovery = await classifyFailedNoPrBranchRecovery({ config, record });
       if (branchRecovery.state !== "recoverable") {
         const branchRecoveryState = branchRecovery.state;
-        const failureContext = buildFailedNoPrBranchFailureContext({
-          record,
-          branchRecoveryState,
-          headSha: branchRecovery.headSha,
-          defaultBranch: config.defaultBranch,
-        });
+        const shouldMarkAlreadySatisfiedOnMain = branchRecoveryState === "already_satisfied_on_main";
+        const failureContext = shouldMarkAlreadySatisfiedOnMain
+          ? null
+          : buildFailedNoPrBranchFailureContext({
+              record,
+              branchRecoveryState,
+              headSha: branchRecovery.headSha,
+              defaultBranch: config.defaultBranch,
+            });
         const recoveryEvent = buildRecoveryEvent(
           record.issue_number,
-          branchRecoveryState === "already_satisfied_on_main"
-            ? `failed_no_pr_already_satisfied: blocked issue #${record.issue_number} after failed no-PR recovery found no meaningful branch changes relative to origin/${config.defaultBranch}`
+          shouldMarkAlreadySatisfiedOnMain
+            ? branchRecovery.headSha === record.last_head_sha
+              ? `already_satisfied_on_main: marked issue #${record.issue_number} done after failed no-PR recovery found no meaningful branch changes`
+              : `already_satisfied_on_main: marked issue #${record.issue_number} done after failed no-PR recovery found only supervisor-owned branch divergence`
             : `failed_no_pr_manual_review: blocked issue #${record.issue_number} after failed no-PR recovery found an unsafe or ambiguous workspace state`,
         );
-        const patch: Partial<IssueRunRecord> = {
-          state: "blocked",
-          pr_number: null,
-          codex_session_id: null,
-          blocked_reason: "manual_review",
-          last_error: truncate(failureContext.summary, 1000),
-          last_failure_kind: null,
-          last_failure_context: failureContext,
-          last_blocker_signature: null,
-          repeated_blocker_count: 0,
-          stale_stabilizing_no_pr_recovery_count: 0,
-          last_head_sha: branchRecovery.headSha ?? record.last_head_sha,
-          ...applyFailureSignature(record, failureContext),
-        };
+        const patch: Partial<IssueRunRecord> = shouldMarkAlreadySatisfiedOnMain
+          ? doneResetPatch({
+              pr_number: null,
+              codex_session_id: null,
+              last_head_sha: branchRecovery.headSha ?? record.last_head_sha,
+            })
+          : (() => {
+              const manualReviewFailureContext = buildFailedNoPrBranchFailureContext({
+                record,
+                branchRecoveryState,
+                headSha: branchRecovery.headSha,
+                defaultBranch: config.defaultBranch,
+              });
+              return {
+                state: "blocked",
+                pr_number: null,
+                codex_session_id: null,
+                blocked_reason: "manual_review",
+                last_error: truncate(manualReviewFailureContext.summary, 1000),
+                last_failure_kind: null,
+                last_failure_context: manualReviewFailureContext,
+                last_blocker_signature: null,
+                repeated_blocker_count: 0,
+                stale_stabilizing_no_pr_recovery_count: 0,
+                last_head_sha: branchRecovery.headSha ?? record.last_head_sha,
+                ...applyFailureSignature(record, manualReviewFailureContext),
+              };
+            })();
         const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
         state.issues[String(record.issue_number)] = updated;
         changed = true;
