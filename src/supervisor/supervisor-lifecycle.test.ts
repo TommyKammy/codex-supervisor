@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  determineTrackedPrRepeatFailureDisposition,
   derivePullRequestLifecycleSnapshot,
   resetNoPrLifecycleFailureTracking,
   selectSupervisorPollIntervalMs,
   shouldRunCodex,
+  summarizeTrackedPrProgress,
 } from "./supervisor-lifecycle";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
 
@@ -230,6 +232,61 @@ test("derivePullRequestLifecycleSnapshot keeps silent CodeRabbit repos in waitin
 
     assert.equal(snapshot.nextState, "waiting_ci");
   });
+});
+
+test("summarizeTrackedPrProgress treats merge state changes as tracked PR progress", () => {
+  const record = createRecord({
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: "head123",
+      reviewDecision: null,
+      mergeStateStatus: "UNKNOWN",
+      copilotReviewState: null,
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotCurrentHeadStatusState: null,
+      currentHeadCiGreenAt: null,
+      configuredBotRateLimitedAt: null,
+      configuredBotDraftSkipAt: null,
+      configuredBotTopLevelReviewStrength: null,
+      configuredBotTopLevelReviewSubmittedAt: null,
+      checks: ["build:pass:SUCCESS:CI"],
+      unresolvedReviewThreadIds: [],
+    }),
+  });
+  const pr = createPullRequest({
+    mergeStateStatus: "CLEAN",
+  });
+
+  const result = summarizeTrackedPrProgress(record, pr, [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }], []);
+
+  assert.match(result.summary ?? "", /merge_state_changed UNKNOWN->CLEAN/);
+});
+
+test("determineTrackedPrRepeatFailureDisposition keeps upgraded tracked PR records retryable while initializing the progress baseline", () => {
+  const record = createRecord({
+    last_failure_signature: "build (ubuntu-latest):fail",
+    repeated_failure_signature_count: 3,
+    last_tracked_pr_progress_snapshot: null,
+    last_head_sha: "head123",
+  });
+  const pr = createPullRequest({
+    mergeStateStatus: "CLEAN",
+    reviewDecision: "APPROVED",
+  });
+
+  const result = determineTrackedPrRepeatFailureDisposition({
+    record,
+    config: createConfig({ sameFailureSignatureRepeatLimit: 3 }),
+    pr,
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [],
+  });
+
+  assert.equal(result.shouldStop, false);
+  assert.equal(result.decision, "retry_on_progress");
+  assert.equal(result.progressSummary, "progress_baseline_initialized");
+  assert.match(result.progressSnapshot, /"mergeStateStatus":"CLEAN"/);
 });
 
 test("derivePullRequestLifecycleSnapshot re-arms CodeRabbit waiting after ready-for-review when draft skip was the latest prior signal", () => {
@@ -493,6 +550,9 @@ test("resetNoPrLifecycleFailureTracking preserves stale no-PR recovery tracking 
     provider_success_observed_at: null,
     provider_success_head_sha: null,
     merge_readiness_last_evaluated_at: null,
+    last_tracked_pr_progress_snapshot: null,
+    last_tracked_pr_progress_summary: null,
+    last_tracked_pr_repeat_failure_decision: null,
     last_failure_context: record.last_failure_context,
     last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
     repeated_failure_signature_count: 0,

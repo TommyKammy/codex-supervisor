@@ -190,6 +190,8 @@ test("buildIssueExplainDto exposes typed operator activity context", async () =>
         blocked_verification_retry_count: 1,
         repeated_failure_signature_count: 4,
         last_failure_signature: "tracked-pr-refresh-loop",
+        last_tracked_pr_progress_summary: "head_advanced head-old-605->head-new-605",
+        last_tracked_pr_repeat_failure_decision: "retry_on_progress",
         latest_local_ci_result: {
           outcome: "failed",
           summary: "Configured local CI command failed before marking PR #605 ready.",
@@ -298,6 +300,10 @@ test("buildIssueExplainDto exposes typed operator activity context", async () =>
   assert.match(
     rendered,
     /^retry_summary timeout=2 verification=1 same_failure_signature=4 last_failure_signature=tracked-pr-refresh-loop apparent_no_progress=yes$/m,
+  );
+  assert.match(
+    rendered,
+    /^tracked_pr_repeat_failure decision=retry_on_progress signal=head_advanced_head-old-605->head-new-605$/m,
   );
   assert.match(
     rendered,

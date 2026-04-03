@@ -99,11 +99,190 @@ export function selectSupervisorPollIntervalMs(config: SupervisorConfig, record:
   return config.pollIntervalSeconds * 1000;
 }
 
+interface TrackedPrProgressSnapshot {
+  headRefOid: string;
+  reviewDecision: string | null;
+  mergeStateStatus: string | null;
+  copilotReviewState: string | null;
+  copilotReviewRequestedAt: string | null;
+  copilotReviewArrivedAt: string | null;
+  configuredBotCurrentHeadObservedAt: string | null;
+  configuredBotCurrentHeadStatusState: string | null;
+  currentHeadCiGreenAt: string | null;
+  configuredBotRateLimitedAt: string | null;
+  configuredBotDraftSkipAt: string | null;
+  configuredBotTopLevelReviewStrength: string | null;
+  configuredBotTopLevelReviewSubmittedAt: string | null;
+  checks: string[];
+  unresolvedReviewThreadIds: string[];
+}
+
+export interface TrackedPrRepeatFailureDisposition {
+  shouldStop: boolean;
+  progressSnapshot: string;
+  progressSummary: string | null;
+  decision: "retry_on_progress" | "stop_no_progress";
+}
+
+function buildTrackedPrProgressSnapshot(
+  pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
+  reviewThreads: ReviewThread[],
+): TrackedPrProgressSnapshot {
+  return {
+    headRefOid: pr.headRefOid,
+    reviewDecision: pr.reviewDecision,
+    mergeStateStatus: pr.mergeStateStatus,
+    copilotReviewState: pr.copilotReviewState ?? null,
+    copilotReviewRequestedAt: pr.copilotReviewRequestedAt ?? null,
+    copilotReviewArrivedAt: pr.copilotReviewArrivedAt ?? null,
+    configuredBotCurrentHeadObservedAt: pr.configuredBotCurrentHeadObservedAt ?? null,
+    configuredBotCurrentHeadStatusState: pr.configuredBotCurrentHeadStatusState ?? null,
+    currentHeadCiGreenAt: pr.currentHeadCiGreenAt ?? null,
+    configuredBotRateLimitedAt: pr.configuredBotRateLimitedAt ?? null,
+    configuredBotDraftSkipAt: pr.configuredBotDraftSkipAt ?? null,
+    configuredBotTopLevelReviewStrength: pr.configuredBotTopLevelReviewStrength ?? null,
+    configuredBotTopLevelReviewSubmittedAt: pr.configuredBotTopLevelReviewSubmittedAt ?? null,
+    checks: checks
+      .map((check) => `${check.name}:${check.bucket}:${check.state}:${check.workflow ?? "none"}`)
+      .sort(),
+    unresolvedReviewThreadIds: reviewThreads
+      .filter((thread) => !thread.isResolved)
+      .map((thread) => thread.id)
+      .sort(),
+  };
+}
+
+function parseTrackedPrProgressSnapshot(snapshot: string | null | undefined): TrackedPrProgressSnapshot | null {
+  if (!snapshot) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(snapshot);
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      typeof parsed.headRefOid !== "string" ||
+      !Array.isArray(parsed.checks) ||
+      !Array.isArray(parsed.unresolvedReviewThreadIds)
+    ) {
+      return null;
+    }
+    return parsed as TrackedPrProgressSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current: TrackedPrProgressSnapshot): string[] {
+  const signals: string[] = [];
+
+  if (previous?.headRefOid && previous.headRefOid !== current.headRefOid) {
+    signals.push(`head_advanced ${previous.headRefOid}->${current.headRefOid}`);
+  }
+
+  if (previous !== null && previous.mergeStateStatus !== current.mergeStateStatus) {
+    signals.push(`merge_state_changed ${previous.mergeStateStatus ?? "none"}->${current.mergeStateStatus ?? "none"}`);
+  }
+
+  const previousChecks = previous?.checks.join("|") ?? null;
+  const currentChecks = current.checks.join("|");
+  if (previousChecks !== null && previousChecks !== currentChecks) {
+    signals.push("ci_state_changed");
+  }
+
+  const reviewSignalChanged =
+    (previous?.reviewDecision ?? null) !== current.reviewDecision ||
+    (previous?.copilotReviewState ?? null) !== current.copilotReviewState ||
+    (previous?.configuredBotTopLevelReviewStrength ?? null) !== current.configuredBotTopLevelReviewStrength ||
+    (previous?.configuredBotTopLevelReviewSubmittedAt ?? null) !== current.configuredBotTopLevelReviewSubmittedAt ||
+    (previous?.unresolvedReviewThreadIds.join("|") ?? null) !== current.unresolvedReviewThreadIds.join("|");
+  if (previous !== null && reviewSignalChanged) {
+    signals.push("review_state_changed");
+  }
+
+  const botLifecycleChanged =
+    (previous?.configuredBotCurrentHeadObservedAt ?? null) !== current.configuredBotCurrentHeadObservedAt ||
+    (previous?.configuredBotCurrentHeadStatusState ?? null) !== current.configuredBotCurrentHeadStatusState ||
+    (previous?.currentHeadCiGreenAt ?? null) !== current.currentHeadCiGreenAt ||
+    (previous?.configuredBotRateLimitedAt ?? null) !== current.configuredBotRateLimitedAt ||
+    (previous?.configuredBotDraftSkipAt ?? null) !== current.configuredBotDraftSkipAt ||
+    (previous?.copilotReviewRequestedAt ?? null) !== current.copilotReviewRequestedAt ||
+    (previous?.copilotReviewArrivedAt ?? null) !== current.copilotReviewArrivedAt;
+  if (previous !== null && botLifecycleChanged && !signals.includes("ci_state_changed")) {
+    signals.push("ci_state_changed");
+  }
+
+  return signals;
+}
+
+export function summarizeTrackedPrProgress(
+  record: Pick<IssueRunRecord, "last_head_sha" | "last_tracked_pr_progress_snapshot">,
+  pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
+  reviewThreads: ReviewThread[],
+): { snapshot: string; summary: string | null } {
+  const current = buildTrackedPrProgressSnapshot(pr, checks, reviewThreads);
+  const previous = parseTrackedPrProgressSnapshot(record.last_tracked_pr_progress_snapshot);
+  const signals = listChangedSignals(previous, current);
+
+  return {
+    snapshot: JSON.stringify(current),
+    summary: signals.length > 0 ? signals.join(" | ") : null,
+  };
+}
+
 export function shouldStopForRepeatedFailureSignature(record: IssueRunRecord, config: SupervisorConfig): boolean {
   return (
     record.last_failure_signature !== null &&
     record.repeated_failure_signature_count >= config.sameFailureSignatureRepeatLimit
   );
+}
+
+export function determineTrackedPrRepeatFailureDisposition(args: {
+  record: Pick<
+    IssueRunRecord,
+    | "last_failure_signature"
+    | "repeated_failure_signature_count"
+    | "last_head_sha"
+    | "last_tracked_pr_progress_snapshot"
+  >;
+  config: Pick<SupervisorConfig, "sameFailureSignatureRepeatLimit">;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): TrackedPrRepeatFailureDisposition {
+  const { snapshot, summary } = summarizeTrackedPrProgress(args.record, args.pr, args.checks, args.reviewThreads);
+  const missingProgressBaseline = !args.record.last_tracked_pr_progress_snapshot;
+  const overRepeatLimit =
+    args.record.last_failure_signature !== null &&
+    args.record.repeated_failure_signature_count >= args.config.sameFailureSignatureRepeatLimit;
+
+  if (!overRepeatLimit) {
+    return {
+      shouldStop: false,
+      progressSnapshot: snapshot,
+      progressSummary: summary,
+      decision: "retry_on_progress",
+    };
+  }
+
+  if (missingProgressBaseline) {
+    return {
+      shouldStop: false,
+      progressSnapshot: snapshot,
+      progressSummary: "progress_baseline_initialized",
+      decision: "retry_on_progress",
+    };
+  }
+
+  return {
+    shouldStop: summary === null,
+    progressSnapshot: snapshot,
+    progressSummary: summary ?? "no_meaningful_tracked_pr_progress",
+    decision: summary === null ? "stop_no_progress" : "retry_on_progress",
+  };
 }
 
 export function blockedReasonForLifecycleState(
@@ -218,6 +397,9 @@ export function resetNoPrLifecycleFailureTracking(
   | "last_failure_context"
   | "last_failure_signature"
   | "repeated_failure_signature_count"
+  | "last_tracked_pr_progress_snapshot"
+  | "last_tracked_pr_progress_summary"
+  | "last_tracked_pr_repeat_failure_decision"
   | "stale_stabilizing_no_pr_recovery_count"
   | "blocked_reason"
 > {
@@ -237,6 +419,9 @@ export function resetNoPrLifecycleFailureTracking(
     provider_success_observed_at: null,
     provider_success_head_sha: null,
     merge_readiness_last_evaluated_at: null,
+    last_tracked_pr_progress_snapshot: null,
+    last_tracked_pr_progress_summary: null,
+    last_tracked_pr_repeat_failure_decision: null,
     last_failure_context: preserveFailureTracking ? record.last_failure_context : null,
     last_failure_signature: preserveFailureTracking ? record.last_failure_signature : null,
     repeated_failure_signature_count: preserveGenericFailureCount ? record.repeated_failure_signature_count : 0,
