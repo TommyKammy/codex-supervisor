@@ -10,7 +10,7 @@ export interface WorkstationLocalPathGateResult {
 }
 
 function renderFinding(finding: WorkstationLocalPathMatch): string {
-  return `${finding.filePath}:${finding.line} matched ${finding.prefix} via ${JSON.stringify(finding.match)}`;
+  return `${finding.filePath}:${finding.line} matched ${finding.prefix} (${finding.reason}) via ${JSON.stringify(finding.match)}`;
 }
 
 export async function runWorkstationLocalPathGate(args: {

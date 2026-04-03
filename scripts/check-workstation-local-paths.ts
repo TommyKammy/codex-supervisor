@@ -64,7 +64,9 @@ async function main(): Promise<void> {
   }
 
   const renderedFindings = findings
-    .map((finding) => `- ${finding.filePath}:${finding.line} matched ${finding.prefix} via ${JSON.stringify(finding.match)}`)
+    .map(
+      (finding) => `- ${finding.filePath}:${finding.line} matched ${finding.prefix} (${finding.reason}) via ${JSON.stringify(finding.match)}`,
+    )
     .join("\n");
   const renderedExclusions = [...excludedPaths].sort().map((entry) => `- ${entry}`).join("\n");
 

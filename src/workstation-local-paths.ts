@@ -14,11 +14,35 @@ const MACOS_USERS_PREFIX = `/${"Users"}/`;
 const WINDOWS_PATH_SEPARATOR = String.fromCharCode(92);
 const WINDOWS_USERS_PREFIX = `C:${WINDOWS_PATH_SEPARATOR}${"Users"}${WINDOWS_PATH_SEPARATOR}`;
 const PATH_TOKEN_PATTERN = String.raw`[^\s"'` + "`" + String.raw`<>]+`;
+const COMPOUND_PATH_SEPARATORS = new Set([":", ";"]);
+const ABSOLUTE_PATH_PREFIXES = [UNIX_HOME_PREFIX, MACOS_USERS_PREFIX, WINDOWS_USERS_PREFIX] as const;
+// Keep this allowlist intentionally short so container defaults stop tripping the gate
+// without weakening workstation-home detection for typical developer paths.
+const KNOWN_CONTAINER_HOME_OWNERS = new Set(["node"]);
+const UNIX_HOME_OWNER_PATTERN = new RegExp(`^${escapeForRegex(UNIX_HOME_PREFIX)}([^/]+)(?:/|$)`);
 
-const FORBIDDEN_PATTERNS: ReadonlyArray<{ label: string; regex: RegExp }> = [
-  { label: UNIX_HOME_PREFIX, regex: new RegExp(`${escapeForRegex(UNIX_HOME_PREFIX)}${PATH_TOKEN_PATTERN}`, "g") },
-  { label: MACOS_USERS_PREFIX, regex: new RegExp(`${escapeForRegex(MACOS_USERS_PREFIX)}${PATH_TOKEN_PATTERN}`, "g") },
-  { label: WINDOWS_USERS_PREFIX, regex: new RegExp(`${escapeForRegex(WINDOWS_USERS_PREFIX)}${PATH_TOKEN_PATTERN}`, "g") },
+export interface WorkstationLocalPathClassification {
+  blocked: boolean;
+  label: string;
+  reason: string;
+}
+
+const CANDIDATE_PATTERNS: ReadonlyArray<{
+  regex: RegExp;
+  classify: (candidate: string) => WorkstationLocalPathClassification | null;
+}> = [
+  {
+    regex: new RegExp(`${escapeForRegex(UNIX_HOME_PREFIX)}${PATH_TOKEN_PATTERN}`, "g"),
+    classify: classifyWorkstationLocalPathCandidate,
+  },
+  {
+    regex: new RegExp(`${escapeForRegex(MACOS_USERS_PREFIX)}${PATH_TOKEN_PATTERN}`, "g"),
+    classify: classifyWorkstationLocalPathCandidate,
+  },
+  {
+    regex: new RegExp(`${escapeForRegex(WINDOWS_USERS_PREFIX)}${PATH_TOKEN_PATTERN}`, "g"),
+    classify: classifyWorkstationLocalPathCandidate,
+  },
 ];
 
 export interface WorkstationLocalPathMatch {
@@ -26,6 +50,7 @@ export interface WorkstationLocalPathMatch {
   line: number;
   match: string;
   prefix: string;
+  reason: string;
 }
 
 function escapeForRegex(value: string): string {
@@ -35,6 +60,52 @@ function escapeForRegex(value: string): string {
 export function normalizeRepoRelativePath(filePath: string): string {
   const slashNormalized = filePath.replace(/\\/g, "/");
   return path.posix.normalize(slashNormalized).replace(/^(?:\.\/)+/, "");
+}
+
+function extractUnixHomeOwner(candidate: string): string | null {
+  const match = candidate.match(UNIX_HOME_OWNER_PATTERN);
+  return match?.[1] ?? null;
+}
+
+export function classifyWorkstationLocalPathCandidate(candidate: string): WorkstationLocalPathClassification | null {
+  if (candidate.startsWith(MACOS_USERS_PREFIX)) {
+    return {
+      blocked: true,
+      label: "/Users/<user>/",
+      reason: "macOS user home directory",
+    };
+  }
+
+  if (candidate.startsWith(WINDOWS_USERS_PREFIX)) {
+    return {
+      blocked: true,
+      label: "C:\\Users\\<user>\\",
+      reason: "Windows user home directory",
+    };
+  }
+
+  if (!candidate.startsWith(UNIX_HOME_PREFIX)) {
+    return null;
+  }
+
+  const owner = extractUnixHomeOwner(candidate);
+  if (!owner) {
+    return null;
+  }
+
+  if (KNOWN_CONTAINER_HOME_OWNERS.has(owner.toLowerCase())) {
+    return {
+      blocked: false,
+      label: `${UNIX_HOME_PREFIX}${owner}/`,
+      reason: `allowed known container home owner "${owner}"`,
+    };
+  }
+
+  return {
+    blocked: true,
+    label: "/home/<user>/",
+    reason: "Linux user home directory",
+  };
 }
 
 function gitTrackedFiles(workspacePath: string): string[] {
@@ -55,21 +126,62 @@ function isBinary(contents: Buffer): boolean {
   return contents.includes(0);
 }
 
+function startsWithAbsolutePathPrefix(candidate: string, index: number): boolean {
+  return ABSOLUTE_PATH_PREFIXES.some((prefix) => candidate.startsWith(prefix, index));
+}
+
+function splitCompoundCandidate(candidate: string): string[] {
+  const parts: string[] = [];
+  let segmentStart = 0;
+
+  for (let index = 1; index < candidate.length; index += 1) {
+    const separator = candidate[index - 1];
+    if (!COMPOUND_PATH_SEPARATORS.has(separator)) {
+      continue;
+    }
+
+    if (!startsWithAbsolutePathPrefix(candidate, index)) {
+      continue;
+    }
+
+    parts.push(candidate.slice(segmentStart, index - 1));
+    segmentStart = index;
+  }
+
+  parts.push(candidate.slice(segmentStart));
+  return parts.filter((part) => part.length > 0);
+}
+
 function collectMatches(filePath: string, contents: string): WorkstationLocalPathMatch[] {
   const matches: WorkstationLocalPathMatch[] = [];
+  const seen = new Set<string>();
   const lines = contents.split(/\r?\n/);
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex];
-    for (const pattern of FORBIDDEN_PATTERNS) {
+    for (const pattern of CANDIDATE_PATTERNS) {
       pattern.regex.lastIndex = 0;
       for (const match of line.matchAll(pattern.regex)) {
-        matches.push({
-          filePath,
-          line: lineIndex + 1,
-          match: match[0],
-          prefix: pattern.label,
-        });
+        for (const candidate of splitCompoundCandidate(match[0])) {
+          const classification = pattern.classify(candidate);
+          if (!classification?.blocked) {
+            continue;
+          }
+
+          const findingKey = `${lineIndex + 1}\0${candidate}\0${classification.label}`;
+          if (seen.has(findingKey)) {
+            continue;
+          }
+          seen.add(findingKey);
+
+          matches.push({
+            filePath,
+            line: lineIndex + 1,
+            match: candidate,
+            prefix: classification.label,
+            reason: classification.reason,
+          });
+        }
       }
     }
   }

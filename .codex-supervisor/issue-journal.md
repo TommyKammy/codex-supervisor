@@ -1,48 +1,48 @@
-# Issue #1281: Auto-resume failed no-PR issues when the workspace branch is already ahead and recoverable
+# Issue #1276: Avoid false positives when workstation-local path hygiene sees container paths like /home/node/.n8n
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1281
-- Branch: codex/issue-1281
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1276
+- Branch: codex/issue-1276
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 6 (implementation=1, repair=5)
-- Last head SHA: c3d26e5e74ddbc192266bac6f13b6ae58df1f513
+- Current phase: failed
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: c875106faf3ac1578c4f40e11e4e78dde49710b2
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ854owd9
-- Repeated failure signature count: 1
-- Updated at: 2026-04-03T01:31:51.436Z
+- Last failure signature: build (ubuntu-latest):fail
+- Repeated failure signature count: 3
+- Updated at: 2026-04-03T07:42:26.894Z
 
 ## Latest Codex Summary
-Updated [recovery-reconciliation.ts](src/recovery-reconciliation.ts#L131) so failed no-PR recovery now also verifies the preserved worktree is still checked out on `record.branch` before classifying `HEAD` as recoverable. Added focused regressions in [supervisor-recovery-reconciliation.test.ts](src/supervisor/supervisor-recovery-reconciliation.test.ts#L3435) for a registered worktree switched to a different branch and for detached `HEAD`, both of which now fail closed to manual review.
+The CodeRabbit finding was valid. I updated [src/workstation-local-paths.ts](src/workstation-local-paths.ts) so compound tokens are split at `:` or `;` when the next segment starts with `<redacted-local-path>`, `<redacted-local-path>`, or `<redacted-local-path>`, then each segment is classified independently and deduped across matcher passes. That closes the `<redacted-local-path>.` bypass and keeps mixed-prefix path lists from reporting duplicates.
 
-Committed as `8e7597c` and pushed to `codex/issue-1281` for PR `#1282`. Local verification passed with `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts` and `npm run build`. I have not replied to or resolved the GitHub review thread.
+I added focused regressions in [src/workstation-local-paths.test.ts](src/workstation-local-paths.test.ts) for the reported Unix path-list case and a mixed Unix/macOS list, updated [issue-journal.md](.codex-supervisor/issue-journal.md), and pushed the branch. PR `#1283` now points at `c875106`; GitHub currently shows merge state `UNSTABLE`, which is expected immediately after the fresh push.
 
-Summary: Added a branch-identity guard to failed no-PR recovery, covered wrong-branch and detached-HEAD fallbacks with regressions, and verified the change locally.
+Summary: Fixed the compound-token review finding by splitting and independently classifying absolute home-path segments, added regressions for same-prefix and mixed-prefix path lists, updated the journal, and pushed `codex/issue-1276` to `c875106`
 State hint: addressing_review
 Blocked reason: none
-Tests: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm run build`
-Next action: Watch PR #1282 for refreshed review status and CI on commit `8e7597c`; reply to or resolve threads only if explicitly instructed.
-Failure signature: PRRT_kwDORgvdZ854owd9
+Tests: `npx tsx --test src/workstation-local-paths.test.ts src/local-ci.test.ts`; `npm run build`
+Next action: Monitor CI on PR `#1283` at `c875106` and resolve or reply to review thread `PRRT_kwDORgvdZ854q4Ck` if explicitly asked
+Failure signature: build (ubuntu-latest):fail
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1282#discussion_r3031030925
+- Category: checks
+- Summary: PR #1283 has failing checks.
+- Command or source: gh pr checks
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1283
 - Details:
-  - src/recovery-reconciliation.ts:255 summary=_⚠️ Potential issue_ | _🟠 Major_ 🧩 Analysis chain 🏁 Script executed: Repository: TommyKammy/codex-supervisor Length of output: 3386 --- 🏁 Script executed: Repository: TommyK... url=https://github.com/TommyKammy/codex-supervisor/pull/1282#discussion_r3031030925
+  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23938197065/job/69818727704
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: Failed no-PR records were stranded because stale-failed reconciliation skipped every `pr_number == null` record; a strict ahead-of-default-branch probe can safely auto-requeue transient no-PR failures.
-- What changed: Tightened failed no-PR recovery so the branch probe only runs for registered supervisor worktrees, only when the preserved checkout still reports `record.branch`, canonicalizes worktree paths before comparison, classifies artifact-only ahead commits as `already_satisfied_on_main`, and uses the stale no-PR repeat budget instead of the implementation-lane gate.
+- Hypothesis: Compound tokens need to be split into independent absolute-path candidates before classification; otherwise an allowlisted segment can hide a later workstation-local path in the same token.
+- What changed: `collectMatches()` now splits matched tokens on `:`/`;` whenever the next segment starts with `<redacted-local-path>`, `<redacted-local-path>`, or `<redacted-local-path>`, classifies each segment independently, and dedupes cross-pattern findings so mixed-prefix path lists stay clean. Added direct regressions for the reported `<redacted-local-path>.` bypass and a mixed-prefix Unix/macOS path-list case.
 - Current blocker: none
-- Next exact step: Watch PR #1282 for refreshed thread/CI state after pushed commit `8e7597c`; reply or resolve only if explicitly instructed.
-- Verification gap: Focused recovery reconciliation coverage passed and `npm run build` passed; I did not rerun the full `npm test` suite because the package script expands to the entire repository test matrix.
-- Files touched: src/recovery-reconciliation.ts; src/supervisor/supervisor-recovery-reconciliation.test.ts; .codex-supervisor/issue-journal.md
-- Rollback concern: The new worktree registration guard will refuse recovery for preserved checkouts that are safe Git clones but not actual supervisor worktrees; if any operator relied on clone-based recovery outside the managed worktree model, those cases now require manual review.
-- Last focused command: git push origin codex/issue-1281
+- Next exact step: Monitor CI on PR #1283 for commit `5d3d8a7`, then resolve or reply to thread `PRRT_kwDORgvdZ854q4Ck` if explicitly asked.
+- Verification gap: This turn reran the issue’s focused path/local-CI slice and `npm run build`, but it did not rerun the separate detector CLI test file or a supervisor end-to-end flow.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/workstation-local-paths.ts`, `src/workstation-local-paths.test.ts`
+- Rollback concern: Compound splitting now covers all known workstation-home prefixes after list delimiters, so if more prefixes are introduced later they need to be added to the splitter and corresponding regressions.
+- Last focused command: `npm run build`
 ### Scratchpad
-- Keep this section short. The supervisor may compact older notes automatically.
-- CodeRabbit thread PRRT_kwDORgvdZ854owd9 was valid: the probe trusted `HEAD` inside a registered worktree without verifying it still matched `record.branch`.
-- Added regressions for wrong-branch and detached-HEAD worktrees because both could otherwise misclassify foreign commits as recoverable no-PR state.
+- Commands run this turn: `gh auth status`; `gh pr view 1283 --json number,url,isDraft,reviewDecision,mergeStateStatus,headRefName,baseRefName`; `gh api graphql ... reviewThreads ...`; `npx tsx --test src/workstation-local-paths.test.ts src/local-ci.test.ts`; `npm run build`; `git commit -m "Handle compound workstation path candidates"`; `git push origin codex/issue-1276`; `git commit -m "Split compound workstation path tokens"`; `git push origin codex/issue-1276`; `gh pr view 1283 --json number,url,reviewDecision,mergeStateStatus,isDraft,headRefOid`
+- Active review status: CodeRabbit thread `PRRT_kwDORgvdZ854q4Ck` is still open on GitHub, but the reported bypass is now fixed locally and covered by regression.
