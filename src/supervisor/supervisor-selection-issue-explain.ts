@@ -70,6 +70,7 @@ export interface SupervisorExplainDto {
   latestRecoverySummary: string | null;
   staleRecoveryWarningSummary: string | null;
   activityContext: SupervisorIssueActivityContextDto | null;
+  trackedPrRetryabilitySummary?: string | null;
   trackedPrMismatchSummary: string | null;
   recoveryGuidance: string | null;
   selectionReason: string | null;
@@ -333,6 +334,14 @@ export async function buildIssueExplainDto(
         preMergeEvaluation,
       })
       : null,
+    trackedPrRetryabilitySummary:
+      record?.last_tracked_pr_repeat_failure_decision && record.last_tracked_pr_progress_summary
+        ? [
+          "tracked_pr_repeat_failure",
+          `decision=${record.last_tracked_pr_repeat_failure_decision}`,
+          `signal=${record.last_tracked_pr_progress_summary.replace(/\s+/g, "_")}`,
+        ].join(" ")
+        : null,
     trackedPrMismatchSummary: trackedPrMismatch?.summaryLine ?? null,
     recoveryGuidance: trackedPrMismatch?.guidanceLine ?? null,
     selectionReason,
@@ -359,6 +368,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(dto.externalReviewFollowUpSummary ? [dto.externalReviewFollowUpSummary] : []),
     ...(preMergeEvaluationLine ? [preMergeEvaluationLine] : []),
     ...(localCiStatusLine ? [localCiStatusLine] : []),
+    ...(dto.trackedPrRetryabilitySummary ? [dto.trackedPrRetryabilitySummary] : []),
     ...(dto.trackedPrMismatchSummary ? [dto.trackedPrMismatchSummary] : []),
     ...(dto.recoveryGuidance ? [dto.recoveryGuidance] : []),
     ...(retrySummaryLine ? [retrySummaryLine] : []),

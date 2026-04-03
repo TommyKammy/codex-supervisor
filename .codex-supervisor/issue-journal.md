@@ -1,48 +1,33 @@
-# Issue #1276: Avoid false positives when workstation-local path hygiene sees container paths like /home/node/.n8n
+# Issue #1284: [codex] Make repeated-failure stop less blunt for tracked PR repair lanes
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1276
-- Branch: codex/issue-1276
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1284
+- Branch: codex/issue-1284
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: failed
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: c875106faf3ac1578c4f40e11e4e78dde49710b2
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: f0c4370e9edb176c38fdb3861cf72eac18e41faa
 - Blocked reason: none
-- Last failure signature: build (ubuntu-latest):fail
-- Repeated failure signature count: 3
-- Updated at: 2026-04-03T07:42:26.894Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-04-03T10:01:46.142Z
 
 ## Latest Codex Summary
-The CodeRabbit finding was valid. I updated [src/workstation-local-paths.ts](src/workstation-local-paths.ts) so compound tokens are split at `:` or `;` when the next segment starts with `<redacted-local-path>`, `<redacted-local-path>`, or `<redacted-local-path>`, then each segment is classified independently and deduped across matcher passes. That closes the `<redacted-local-path>.` bypass and keeps mixed-prefix path lists from reporting duplicates.
-
-I added focused regressions in [src/workstation-local-paths.test.ts](src/workstation-local-paths.test.ts) for the reported Unix path-list case and a mixed Unix/macOS list, updated [issue-journal.md](.codex-supervisor/issue-journal.md), and pushed the branch. PR `#1283` now points at `c875106`; GitHub currently shows merge state `UNSTABLE`, which is expected immediately after the fresh push.
-
-Summary: Fixed the compound-token review finding by splitting and independently classifying absolute home-path segments, added regressions for same-prefix and mixed-prefix path lists, updated the journal, and pushed `codex/issue-1276` to `c875106`
-State hint: addressing_review
-Blocked reason: none
-Tests: `npx tsx --test src/workstation-local-paths.test.ts src/local-ci.test.ts`; `npm run build`
-Next action: Monitor CI on PR `#1283` at `c875106` and resolve or reply to review thread `PRRT_kwDORgvdZ854q4Ck` if explicitly asked
-Failure signature: build (ubuntu-latest):fail
+- None yet.
 
 ## Active Failure Context
-- Category: checks
-- Summary: PR #1283 has failing checks.
-- Command or source: gh pr checks
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1283
-- Details:
-  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/23938197065/job/69818727704
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: Compound tokens need to be split into independent absolute-path candidates before classification; otherwise an allowlisted segment can hide a later workstation-local path in the same token.
-- What changed: `collectMatches()` now splits matched tokens on `:`/`;` whenever the next segment starts with `<redacted-local-path>`, `<redacted-local-path>`, or `<redacted-local-path>`, classifies each segment independently, and dedupes cross-pattern findings so mixed-prefix path lists stay clean. Added direct regressions for the reported `<redacted-local-path>.` bypass and a mixed-prefix Unix/macOS path-list case.
+- Hypothesis: Repeated identical tracked-PR failures should only terminally stop when authoritative tracked PR facts have not advanced since the prior occurrence; PR head/check/review lifecycle progress should keep the lane retryable.
+- What changed: Added tracked PR progress snapshot/decision fields on run records, taught the supervisor repeated-failure gate to suppress the blunt stop when tracked PR progress advanced, and surfaced the decision in explain output. Added a focused orchestration regression and explain coverage.
 - Current blocker: none
-- Next exact step: Monitor CI on PR #1283 for commit `5d3d8a7`, then resolve or reply to thread `PRRT_kwDORgvdZ854q4Ck` if explicitly asked.
-- Verification gap: This turn reran the issue’s focused path/local-CI slice and `npm run build`, but it did not rerun the separate detector CLI test file or a supervisor end-to-end flow.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/workstation-local-paths.ts`, `src/workstation-local-paths.test.ts`
-- Rollback concern: Compound splitting now covers all known workstation-home prefixes after list delimiters, so if more prefixes are introduced later they need to be added to the splitter and corresponding regressions.
-- Last focused command: `npm run build`
+- Next exact step: Commit the change set and let the supervisor continue from implementing/stabilizing with the narrower tracked-PR stop policy.
+- Verification gap: No additional gap after the focused issue verification set and `npm run build`.
+- Files touched: .codex-supervisor/issue-journal.md; src/core/types.ts; src/pull-request-state-test-helpers.ts; src/supervisor/supervisor-execution-orchestration.test.ts; src/supervisor/supervisor-lifecycle.ts; src/supervisor/supervisor-selection-issue-explain.test.ts; src/supervisor/supervisor-selection-issue-explain.ts; src/supervisor/supervisor-test-helpers.ts; src/supervisor/supervisor.ts
+- Rollback concern: The new suppression path is intentionally scoped to tracked PR lanes; if the progress snapshot proves too permissive, the main rollback point is the tracked PR progress signal set in `src/supervisor/supervisor-lifecycle.ts`.
+- Last focused command: npx tsx --test src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts
 ### Scratchpad
-- Commands run this turn: `gh auth status`; `gh pr view 1283 --json number,url,isDraft,reviewDecision,mergeStateStatus,headRefName,baseRefName`; `gh api graphql ... reviewThreads ...`; `npx tsx --test src/workstation-local-paths.test.ts src/local-ci.test.ts`; `npm run build`; `git commit -m "Handle compound workstation path candidates"`; `git push origin codex/issue-1276`; `git commit -m "Split compound workstation path tokens"`; `git push origin codex/issue-1276`; `gh pr view 1283 --json number,url,reviewDecision,mergeStateStatus,isDraft,headRefOid`
-- Active review status: CodeRabbit thread `PRRT_kwDORgvdZ854q4Ck` is still open on GitHub, but the reported bypass is now fixed locally and covered by regression.
+- `npm run build` passed after making `trackedPrRetryabilitySummary` optional for existing DTO test doubles.

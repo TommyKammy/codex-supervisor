@@ -118,6 +118,7 @@ import { updateSetupConfig, type SetupConfigChanges } from "../setup-config-writ
 import { diagnoseSetupReadiness } from "../setup-readiness";
 import {
   blockedReasonForLifecycleState,
+  determineTrackedPrRepeatFailureDisposition,
   derivePullRequestLifecycleSnapshot,
   isOpenPullRequest,
   resetNoPrLifecycleFailureTracking,
@@ -759,34 +760,55 @@ export class Supervisor {
             ? blockedReasonForLifecycleState(this.config, lifecycle.recordForState, pr, checks, reviewThreads)
             : null,
       });
+      const trackedPrRepeatFailureDisposition = determineTrackedPrRepeatFailureDisposition({
+        record,
+        config: this.config,
+        pr,
+        checks,
+        reviewThreads,
+      });
+      record = this.stateStore.touch(record, {
+        last_tracked_pr_progress_snapshot: trackedPrRepeatFailureDisposition.progressSnapshot,
+        last_tracked_pr_progress_summary: trackedPrRepeatFailureDisposition.progressSummary,
+        last_tracked_pr_repeat_failure_decision: null,
+      });
       emitSupervisorEvent(this.onEvent, maybeBuildReviewWaitChangedEvent(context.record, record, pr.number));
 
       if (effectiveFailureContext && shouldStopForRepeatedFailureSignature(record, this.config)) {
-        record = this.stateStore.touch(record, {
-          state: "failed",
-          last_error:
-            `Repeated identical failure signature ${record.repeated_failure_signature_count} times: ` +
-            `${record.last_failure_signature ?? "unknown"}`,
-          last_failure_kind: "command_error",
-          blocked_reason: null,
-        });
-        state.issues[String(record.issue_number)] = record;
-        state.activeIssueNumber = null;
-        await this.stateStore.save(state);
-        await syncExecutionMetricsRunSummarySafely({
-          previousRecord: lifecycle.recordForState,
-          nextRecord: record,
-          issue,
-          pullRequest: pr,
-          recoveryEvents,
-          retentionRootPath: executionMetricsRetentionRootPath(this.config.stateFile),
-          warningContext: "persisting",
-        });
-        await syncJournal(record);
-        return prependRecoveryLog(
-          `Issue #${record.issue_number} stopped after repeated identical failure signatures.`,
-          recoveryLog,
-        );
+        if (!trackedPrRepeatFailureDisposition.shouldStop) {
+          record = this.stateStore.touch(record, {
+            last_tracked_pr_progress_summary: trackedPrRepeatFailureDisposition.progressSummary,
+            last_tracked_pr_repeat_failure_decision: trackedPrRepeatFailureDisposition.decision,
+          });
+        } else {
+          record = this.stateStore.touch(record, {
+            state: "failed",
+            last_error:
+              `Repeated identical failure signature ${record.repeated_failure_signature_count} times: ` +
+              `${record.last_failure_signature ?? "unknown"}`,
+            last_failure_kind: "command_error",
+            last_tracked_pr_progress_summary: trackedPrRepeatFailureDisposition.progressSummary,
+            last_tracked_pr_repeat_failure_decision: trackedPrRepeatFailureDisposition.decision,
+            blocked_reason: null,
+          });
+          state.issues[String(record.issue_number)] = record;
+          state.activeIssueNumber = null;
+          await this.stateStore.save(state);
+          await syncExecutionMetricsRunSummarySafely({
+            previousRecord: lifecycle.recordForState,
+            nextRecord: record,
+            issue,
+            pullRequest: pr,
+            recoveryEvents,
+            retentionRootPath: executionMetricsRetentionRootPath(this.config.stateFile),
+            warningContext: "persisting",
+          });
+          await syncJournal(record);
+          return prependRecoveryLog(
+            `Issue #${record.issue_number} stopped after repeated identical failure signatures.`,
+            recoveryLog,
+          );
+        }
       }
     } else {
       const nextState = inferStateWithoutPullRequest(record, workspaceStatus);

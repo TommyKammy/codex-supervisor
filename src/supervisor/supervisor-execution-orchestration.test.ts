@@ -798,6 +798,109 @@ test("runOnce does not re-fail recovered tracked PR review work on the same head
   assert.ok(record.last_recovery_at);
 });
 
+test("runOnce keeps tracked PR repair work retryable when the same failure repeats after PR head progress", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.sameFailureSignatureRepeatLimit = 3;
+  const issueNumber = 91;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, issueNumber, {
+        state: "repairing_ci",
+        pr_number: 191,
+        journal_path: null,
+        last_head_sha: "head-old-191",
+        last_failure_signature: "build (ubuntu-latest):fail",
+        repeated_failure_signature_count: 2,
+        last_tracked_pr_progress_snapshot: JSON.stringify({
+          headRefOid: "head-old-191",
+          reviewDecision: null,
+          mergeStateStatus: "DIRTY",
+          copilotReviewState: null,
+          copilotReviewRequestedAt: null,
+          copilotReviewArrivedAt: null,
+          configuredBotCurrentHeadObservedAt: null,
+          configuredBotCurrentHeadStatusState: null,
+          currentHeadCiGreenAt: null,
+          configuredBotRateLimitedAt: null,
+          configuredBotDraftSkipAt: null,
+          configuredBotTopLevelReviewStrength: null,
+          configuredBotTopLevelReviewSubmittedAt: null,
+          checks: ["build (ubuntu-latest):fail:FAILURE:none"],
+          unresolvedReviewThreadIds: [],
+        }),
+        last_tracked_pr_progress_summary: null,
+        last_tracked_pr_repeat_failure_decision: null,
+      }),
+    ],
+  });
+  await writeSupervisorState(fixture.stateFile, state);
+
+  const issue = createTrackedIssue(issueNumber, {
+    title: "Keep tracked repair retryable after PR head progress",
+    body: executionReadyBody("Tracked PR progress should suppress blunt repeated-failure stops."),
+  });
+  const pr = createTrackedPullRequest(fixture.config, issueNumber, {
+    number: 191,
+    title: "Repair implementation",
+    isDraft: false,
+    headRefOid: "head-new-191",
+    mergeStateStatus: "DIRTY",
+  });
+  const checks: PullRequestCheck[] = [
+    {
+      name: "build (ubuntu-latest)",
+      state: "FAILURE",
+      bucket: "fail",
+    },
+  ];
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      assert.equal(branchName, branch);
+      assert.equal(prNumber, pr.number);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return checks;
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return [];
+    },
+    getPullRequestIfExists: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return pr;
+    },
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(message, /Dry run: would invoke Codex for issue #91\./);
+  assert.match(message, /state=repairing_ci/);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(record.state, "repairing_ci");
+  assert.equal(record.last_failure_signature, "build (ubuntu-latest):fail");
+  assert.equal(record.repeated_failure_signature_count, 3);
+  assert.equal(record.last_tracked_pr_repeat_failure_decision, "retry_on_progress");
+  assert.match(record.last_tracked_pr_progress_summary ?? "", /head_advanced head-old-191->head-new-191/);
+  assert.equal(record.last_error, null);
+});
+
 test("runOnce blocks an interrupted active turn before selecting the next runnable issue", async () => {
   const fixture = await createSupervisorFixture();
   const interruptedIssueNumber = 91;
@@ -2055,5 +2158,5 @@ Ship the ready issue.
   assert.equal(persisted.activeIssueNumber, readyIssueNumber);
   assert.equal(persisted.issues[String(readyIssueNumber)]?.branch, readyBranch);
   assert.equal(persisted.issues[String(blockedIssueNumber)], undefined);
-  assert.equal(persisted.issues[String(dependencyIssueNumber)]?.state, "failed");
+  assert.equal(persisted.issues[String(dependencyIssueNumber)]?.state, "blocked");
 });

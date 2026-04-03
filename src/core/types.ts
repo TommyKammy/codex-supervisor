@@ -360,6 +360,9 @@ export interface IssueRunRecord {
   last_runtime_failure_context?: FailureContext | null;
   last_blocker_signature: string | null;
   last_failure_signature: string | null;
+  last_tracked_pr_progress_snapshot?: string | null;
+  last_tracked_pr_progress_summary?: string | null;
+  last_tracked_pr_repeat_failure_decision?: "retry_on_progress" | "stop_no_progress" | null;
   last_host_local_pr_blocker_comment_signature?: string | null;
   last_host_local_pr_blocker_comment_head_sha?: string | null;
   blocked_reason: BlockedReason;
