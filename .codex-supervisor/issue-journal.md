@@ -37,11 +37,11 @@ Failure signature: PRRT_kwDORgvdZ854q4Ck
 - Hypothesis: Compound tokens need to be split into independent absolute-path candidates before classification; otherwise an allowlisted segment can hide a later workstation-local path in the same token.
 - What changed: `collectMatches()` now splits matched tokens on `:`/`;` whenever the next segment starts with `/home/`, `/Users/`, or `C:\\Users\\`, classifies each segment independently, and dedupes cross-pattern findings so mixed-prefix path lists stay clean. Added direct regressions for the reported `/home/node/...:/home/alice/...` bypass and a mixed-prefix Unix/macOS path-list case.
 - Current blocker: none
-- Next exact step: Push the follow-up review-fix checkpoint to PR #1283, then monitor CI and resolve or reply to thread `PRRT_kwDORgvdZ854q4Ck` if explicitly asked.
+- Next exact step: Monitor CI on PR #1283 for commit `5d3d8a7`, then resolve or reply to thread `PRRT_kwDORgvdZ854q4Ck` if explicitly asked.
 - Verification gap: This turn reran the issue’s focused path/local-CI slice and `npm run build`, but it did not rerun the separate detector CLI test file or a supervisor end-to-end flow.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/workstation-local-paths.ts`, `src/workstation-local-paths.test.ts`
 - Rollback concern: Compound splitting now covers all known workstation-home prefixes after list delimiters, so if more prefixes are introduced later they need to be added to the splitter and corresponding regressions.
 - Last focused command: `npm run build`
 ### Scratchpad
-- Commands run this turn: `gh auth status`; `gh pr view 1283 --json number,url,isDraft,reviewDecision,mergeStateStatus,headRefName,baseRefName`; `gh api graphql ... reviewThreads ...`; `npx tsx --test src/workstation-local-paths.test.ts src/local-ci.test.ts`; `npm run build`; `git commit -m "Handle compound workstation path candidates"`; `git push origin codex/issue-1276`
+- Commands run this turn: `gh auth status`; `gh pr view 1283 --json number,url,isDraft,reviewDecision,mergeStateStatus,headRefName,baseRefName`; `gh api graphql ... reviewThreads ...`; `npx tsx --test src/workstation-local-paths.test.ts src/local-ci.test.ts`; `npm run build`; `git commit -m "Handle compound workstation path candidates"`; `git push origin codex/issue-1276`; `git commit -m "Split compound workstation path tokens"`; `git push origin codex/issue-1276`; `gh pr view 1283 --json number,url,reviewDecision,mergeStateStatus,isDraft,headRefOid`
 - Active review status: CodeRabbit thread `PRRT_kwDORgvdZ854q4Ck` is still open on GitHub, but the reported bypass is now fixed locally and covered by regression.
