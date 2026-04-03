@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { runCommand } from "./core/command";
+import { trackedIssueJournalPath } from "./core/journal";
 import {
   inferStateFromPullRequest,
   syncCopilotReviewRequestObservation,
@@ -81,6 +82,204 @@ function sanitizeRecoveryReason(reason: string): string {
 }
 
 type StaleStabilizingNoPrBranchState = "recoverable" | "already_satisfied_on_main";
+type FailedNoPrBranchRecoveryState = "recoverable" | "already_satisfied_on_main" | "manual_review_required";
+const FAILED_NO_PR_ALREADY_SATISFIED_SIGNATURE = "failed-no-pr-already-satisfied-on-main";
+const FAILED_NO_PR_MANUAL_REVIEW_SIGNATURE = "failed-no-pr-manual-review-required";
+
+function isIgnoredSupervisorArtifactPath(
+  relativePath: string,
+  journalRelativePath: string,
+): boolean {
+  return relativePath === journalRelativePath
+    || relativePath === ".codex-supervisor/turn-in-progress.json"
+    || relativePath === ".codex-supervisor/replay"
+    || relativePath.startsWith(".codex-supervisor/replay/")
+    || relativePath === ".codex-supervisor/pre-merge"
+    || relativePath.startsWith(".codex-supervisor/pre-merge/")
+    || relativePath === ".codex-supervisor/execution-metrics"
+    || relativePath.startsWith(".codex-supervisor/execution-metrics/");
+}
+
+function parseGitStatusPorcelainV1Paths(statusOutput: string): string[][] {
+  const fields = statusOutput.split("\0");
+  const entries: string[][] = [];
+
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index];
+    if (field.length < 4) {
+      continue;
+    }
+
+    const statusCode = field.slice(0, 2);
+    const paths = [field.slice(3)].filter((entry) => entry.length > 0);
+    if (statusCode.includes("R") || statusCode.includes("C")) {
+      const pairedPath = fields[index + 1] ?? "";
+      if (pairedPath.length > 0) {
+        paths.push(pairedPath);
+        index += 1;
+      }
+    }
+
+    if (paths.length > 0) {
+      entries.push(paths);
+    }
+  }
+
+  return entries;
+}
+
+function normalizeGitPath(targetPath: string): string {
+  try {
+    return fs.realpathSync.native?.(targetPath) ?? fs.realpathSync(targetPath);
+  } catch {
+    return path.resolve(targetPath);
+  }
+}
+
+function parseGitWorktreePaths(stdout: string): Set<string> {
+  const worktreePaths = new Set<string>();
+
+  for (const rawLine of stdout.split("\n")) {
+    if (!rawLine.startsWith("worktree ")) {
+      continue;
+    }
+
+    worktreePaths.add(normalizeGitPath(rawLine.slice("worktree ".length).trim()));
+  }
+
+  return worktreePaths;
+}
+
+function buildFailedNoPrBranchFailureContext(args: {
+  record: Pick<IssueRunRecord, "issue_number">;
+  branchRecoveryState: Exclude<FailedNoPrBranchRecoveryState, "recoverable">;
+  headSha: string | null;
+  defaultBranch: string;
+}): NonNullable<IssueRunRecord["last_failure_context"]> {
+  const { record, branchRecoveryState, headSha, defaultBranch } = args;
+  const branchSummary = branchRecoveryState === "already_satisfied_on_main"
+    ? `Issue #${record.issue_number} failed without a tracked PR, and the preserved branch no longer differs from origin/${defaultBranch}. Confirm whether the implementation already landed elsewhere before requeueing manually.`
+    : `Issue #${record.issue_number} failed without a tracked PR, and the preserved workspace is not safe for automatic recovery. Manual review is required.`;
+  const operatorAction = branchRecoveryState === "already_satisfied_on_main"
+    ? "operator_action=confirm whether the implementation already landed elsewhere or requeue manually if more work is still required"
+    : "operator_action=inspect the preserved workspace and resolve the unsafe or ambiguous branch state before requeueing manually";
+
+  return {
+    category: "blocked",
+    summary: branchSummary,
+    signature: branchRecoveryState === "already_satisfied_on_main"
+      ? FAILED_NO_PR_ALREADY_SATISFIED_SIGNATURE
+      : FAILED_NO_PR_MANUAL_REVIEW_SIGNATURE,
+    command: null,
+    details: [
+      "state=failed",
+      "tracked_pr=none",
+      `branch_state=${branchRecoveryState}`,
+      `default_branch=origin/${defaultBranch}`,
+      `head_sha=${headSha ?? "unknown"}`,
+      operatorAction,
+    ],
+    url: null,
+    updated_at: nowIso(),
+  };
+}
+
+async function classifyFailedNoPrBranchRecovery(args: {
+  config: Pick<
+    SupervisorConfig,
+    "repoPath" | "defaultBranch" | "issueJournalRelativePath" | "codexExecTimeoutMinutes" | "workspaceRoot" | "branchPrefix"
+  >;
+  record: Pick<IssueRunRecord, "issue_number" | "workspace" | "journal_path" | "branch">;
+}): Promise<{ state: FailedNoPrBranchRecoveryState; headSha: string | null }> {
+  const { config, record } = args;
+  if (!isSafeCleanupTarget(config, record.workspace, record.branch) || !fs.existsSync(path.join(record.workspace, ".git"))) {
+    return { state: "manual_review_required", headSha: null };
+  }
+
+  const journalPath = trackedIssueJournalPath(
+    record.workspace,
+    record.journal_path,
+    config.issueJournalRelativePath,
+    record.issue_number,
+  );
+  const journalRelativePath = path.relative(record.workspace, journalPath).replace(/\\/g, "/");
+  const gitProbeTimeoutMs = config.codexExecTimeoutMinutes * 60_000;
+
+  try {
+    const worktreeListResult = await runCommand(
+      "git",
+      ["-C", config.repoPath, "worktree", "list", "--porcelain"],
+      { timeoutMs: gitProbeTimeoutMs },
+    );
+    if (!parseGitWorktreePaths(worktreeListResult.stdout).has(normalizeGitPath(record.workspace))) {
+      return { state: "manual_review_required", headSha: null };
+    }
+
+    const branchResult = await runCommand(
+      "git",
+      ["-C", record.workspace, "symbolic-ref", "--quiet", "--short", "HEAD"],
+      {
+        allowExitCodes: [0, 1],
+        timeoutMs: gitProbeTimeoutMs,
+      },
+    );
+    if (branchResult.exitCode !== 0 || branchResult.stdout.trim() !== record.branch) {
+      return { state: "manual_review_required", headSha: null };
+    }
+
+    await runCommand("git", ["-C", config.repoPath, "fetch", "origin", config.defaultBranch], {
+      timeoutMs: gitProbeTimeoutMs,
+    });
+    const [headResult, baseAheadResult, baseDiffResult, workspaceStatusResult] = await Promise.all([
+      runCommand("git", ["-C", record.workspace, "rev-parse", "HEAD"], {
+        timeoutMs: gitProbeTimeoutMs,
+      }),
+      runCommand(
+        "git",
+        ["-C", record.workspace, "rev-list", "--left-right", "--count", `origin/${config.defaultBranch}...HEAD`],
+        { timeoutMs: gitProbeTimeoutMs },
+      ),
+      runCommand("git", ["-C", record.workspace, "diff", "--name-only", `origin/${config.defaultBranch}...HEAD`], {
+        timeoutMs: gitProbeTimeoutMs,
+      }),
+      runCommand("git", ["-C", record.workspace, "status", "--porcelain=v1", "-z", "--untracked-files=all"], {
+        timeoutMs: gitProbeTimeoutMs,
+      }),
+    ]);
+
+    const [, baseAheadRaw = "0"] = baseAheadResult.stdout.trim().split(/\s+/);
+    const baseAhead = Number(baseAheadRaw) || 0;
+    const meaningfulBaseDiff = baseDiffResult.stdout
+      .split("\n")
+      .filter((line) => line.length > 0 && !isIgnoredSupervisorArtifactPath(line, journalRelativePath));
+    const meaningfulWorkspaceChanges = parseGitStatusPorcelainV1Paths(workspaceStatusResult.stdout)
+      .filter((paths) =>
+        paths.some((relativePath) => !isIgnoredSupervisorArtifactPath(relativePath, journalRelativePath)));
+
+    if (baseAhead > 0 && meaningfulBaseDiff.length > 0 && meaningfulWorkspaceChanges.length === 0) {
+      return { state: "recoverable", headSha: headResult.stdout.trim() || null };
+    }
+
+    if (meaningfulBaseDiff.length === 0 && meaningfulWorkspaceChanges.length === 0) {
+      return { state: "already_satisfied_on_main", headSha: headResult.stdout.trim() || null };
+    }
+
+    return { state: "manual_review_required", headSha: headResult.stdout.trim() || null };
+  } catch {
+    return { state: "manual_review_required", headSha: null };
+  }
+}
+
+function shouldAutoRecoverFailedNoPr(record: IssueRunRecord, config: SupervisorConfig): boolean {
+  const staleNoPrRepeatLimit = Math.max(config.sameFailureSignatureRepeatLimit, 1);
+
+  return (
+    record.state === "failed" &&
+    record.pr_number === null &&
+    record.last_failure_kind !== "codex_failed" &&
+    (record.stale_stabilizing_no_pr_recovery_count ?? 0) < staleNoPrRepeatLimit
+  );
+}
 
 function matchesTrackedBranch(
   record: Pick<IssueRunRecord, "branch">,
@@ -1145,7 +1344,7 @@ export async function reconcileStaleFailedIssueStates(
   const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
 
   for (const record of Object.values(state.issues)) {
-    if (record.state !== "failed" || record.pr_number === null) {
+    if (record.state !== "failed") {
       continue;
     }
 
@@ -1165,6 +1364,91 @@ export async function reconcileStaleFailedIssueStates(
     }
 
     if (issueState !== "OPEN") {
+      continue;
+    }
+
+    if (record.pr_number === null) {
+      if (!shouldAutoRecoverFailedNoPr(record, config)) {
+        continue;
+      }
+
+      const branchRecovery = await classifyFailedNoPrBranchRecovery({ config, record });
+      if (branchRecovery.state !== "recoverable") {
+        const branchRecoveryState = branchRecovery.state;
+        const failureContext = buildFailedNoPrBranchFailureContext({
+          record,
+          branchRecoveryState,
+          headSha: branchRecovery.headSha,
+          defaultBranch: config.defaultBranch,
+        });
+        const recoveryEvent = buildRecoveryEvent(
+          record.issue_number,
+          branchRecoveryState === "already_satisfied_on_main"
+            ? `failed_no_pr_already_satisfied: blocked issue #${record.issue_number} after failed no-PR recovery found no meaningful branch changes relative to origin/${config.defaultBranch}`
+            : `failed_no_pr_manual_review: blocked issue #${record.issue_number} after failed no-PR recovery found an unsafe or ambiguous workspace state`,
+        );
+        const patch: Partial<IssueRunRecord> = {
+          state: "blocked",
+          pr_number: null,
+          codex_session_id: null,
+          blocked_reason: "manual_review",
+          last_error: truncate(failureContext.summary, 1000),
+          last_failure_kind: null,
+          last_failure_context: failureContext,
+          last_blocker_signature: null,
+          repeated_blocker_count: 0,
+          stale_stabilizing_no_pr_recovery_count: 0,
+          last_head_sha: branchRecovery.headSha ?? record.last_head_sha,
+          ...applyFailureSignature(record, failureContext),
+        };
+        const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
+        state.issues[String(record.issue_number)] = updated;
+        changed = true;
+        continue;
+      }
+
+      const repeatLimit = Math.max(config.sameFailureSignatureRepeatLimit, 1);
+      const nextRepeatCount = (record.stale_stabilizing_no_pr_recovery_count ?? 0) + 1;
+      const shouldStopRepeatedRecovery = nextRepeatCount >= repeatLimit;
+      const failureContext = {
+        category: "blocked" as const,
+        summary: shouldStopRepeatedRecovery
+          ? `Issue #${record.issue_number} re-entered recoverable failed no-PR recovery ${nextRepeatCount} times; manual intervention is required.`
+          : `Issue #${record.issue_number} re-entered recoverable failed no-PR recovery; the supervisor will retry while the repeat count remains below ${repeatLimit}.`,
+        signature: STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
+        command: null,
+        details: [
+          "state=failed",
+          "tracked_pr=none",
+          "branch_state=recoverable",
+          `repeat_count=${nextRepeatCount}/${repeatLimit}`,
+          "operator_action=confirm whether the implementation already landed elsewhere or retarget the tracked issue manually",
+        ],
+        url: null,
+        updated_at: nowIso(),
+      };
+      const recoveryEvent = buildRecoveryEvent(
+        record.issue_number,
+        shouldStopRepeatedRecovery
+          ? `stale_state_manual_stop: blocked issue #${record.issue_number} after repeated recoverable failed no-PR recovery without a tracked PR`
+          : `failed_no_pr_branch_recovery: requeued issue #${record.issue_number} from failed to queued after finding a recoverable no-PR branch ahead of origin/${config.defaultBranch} at ${branchRecovery.headSha ?? "unknown"}`,
+      );
+      const patch: Partial<IssueRunRecord> = {
+        state: shouldStopRepeatedRecovery ? "blocked" : "queued",
+        pr_number: null,
+        codex_session_id: null,
+        blocked_reason: shouldStopRepeatedRecovery ? "manual_review" : null,
+        last_error: truncate(failureContext.summary, 1000),
+        last_failure_kind: null,
+        last_failure_context: failureContext,
+        last_failure_signature: failureContext.signature,
+        repeated_failure_signature_count: 0,
+        stale_stabilizing_no_pr_recovery_count: nextRepeatCount,
+        last_head_sha: branchRecovery.headSha ?? record.last_head_sha,
+      };
+      const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
+      state.issues[String(record.issue_number)] = updated;
+      changed = true;
       continue;
     }
 
