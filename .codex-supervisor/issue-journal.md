@@ -34,14 +34,14 @@ Failure signature: PRRT_kwDORgvdZ854q4Ck
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: Same-prefix compound candidates like `<redacted-local-path>` must be split before classification; otherwise an allowlisted first segment can hide a later workstation-local segment in the same token.
-- What changed: Split same-prefix compound candidate matches on `:`/`;` before classification in `collectMatches()`, so `/home/node/...:/home/alice/...` now reports the blocked workstation segment while keeping the container allowlist intact. Added a direct regression in `src/workstation-local-paths.test.ts` for the colon-delimited Unix path-list case.
+- Hypothesis: Compound tokens need to be split into independent absolute-path candidates before classification; otherwise an allowlisted segment can hide a later workstation-local path in the same token.
+- What changed: `collectMatches()` now splits matched tokens on `:`/`;` whenever the next segment starts with `/home/`, `/Users/`, or `C:\\Users\\`, classifies each segment independently, and dedupes cross-pattern findings so mixed-prefix path lists stay clean. Added direct regressions for the reported `/home/node/...:/home/alice/...` bypass and a mixed-prefix Unix/macOS path-list case.
 - Current blocker: none
-- Next exact step: Commit and push the review-fix checkpoint to PR #1283, then resolve or reply to the automated review thread if explicitly asked.
+- Next exact step: Push the follow-up review-fix checkpoint to PR #1283, then monitor CI and resolve or reply to thread `PRRT_kwDORgvdZ854q4Ck` if explicitly asked.
 - Verification gap: This turn reran the issue’s focused path/local-CI slice and `npm run build`, but it did not rerun the separate detector CLI test file or a supervisor end-to-end flow.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/workstation-local-paths.ts`, `src/workstation-local-paths.test.ts`
-- Rollback concern: Compound splitting is intentionally limited to same-prefix matches so the fix closes the bypass without changing how mixed-prefix findings are surfaced.
+- Rollback concern: Compound splitting now covers all known workstation-home prefixes after list delimiters, so if more prefixes are introduced later they need to be added to the splitter and corresponding regressions.
 - Last focused command: `npm run build`
 ### Scratchpad
-- Commands run this turn: `gh auth status`; `gh pr view 1283 --json number,url,isDraft,reviewDecision,mergeStateStatus,headRefName,baseRefName`; `gh api graphql ... reviewThreads ...`; `npx tsx --test src/workstation-local-paths.test.ts src/local-ci.test.ts`; `npm run build`
+- Commands run this turn: `gh auth status`; `gh pr view 1283 --json number,url,isDraft,reviewDecision,mergeStateStatus,headRefName,baseRefName`; `gh api graphql ... reviewThreads ...`; `npx tsx --test src/workstation-local-paths.test.ts src/local-ci.test.ts`; `npm run build`; `git commit -m "Handle compound workstation path candidates"`; `git push origin codex/issue-1276`
 - Active review status: CodeRabbit thread `PRRT_kwDORgvdZ854q4Ck` is still open on GitHub, but the reported bypass is now fixed locally and covered by regression.

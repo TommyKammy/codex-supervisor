@@ -164,3 +164,39 @@ test("findForbiddenWorkstationLocalPaths still reports workstation homes inside 
     ],
   );
 });
+
+test("findForbiddenWorkstationLocalPaths classifies mixed-prefix path lists without duplicate findings", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.join(repoPath, "config"), { recursive: true });
+  await fs.writeFile(
+    path.join(repoPath, "config", "paths.env"),
+    [`DEV_PATHS=${buildUnixHomePath("node", ".n8n")}:${buildMacHomePath("alice", "Dev", "private-repo")}`, ""].join("\n"),
+    "utf8",
+  );
+  git(repoPath, "add", "config/paths.env");
+
+  const findings = await findForbiddenWorkstationLocalPaths(repoPath);
+
+  assert.deepEqual(
+    findings.map((finding) => ({
+      filePath: finding.filePath,
+      line: finding.line,
+      prefix: finding.prefix,
+      reason: finding.reason,
+      match: finding.match,
+    })),
+    [
+      {
+        filePath: "config/paths.env",
+        line: 1,
+        prefix: "/Users/<user>/",
+        reason: "macOS user home directory",
+        match: buildMacHomePath("alice", "Dev", "private-repo"),
+      },
+    ],
+  );
+});

@@ -14,6 +14,8 @@ const MACOS_USERS_PREFIX = `/${"Users"}/`;
 const WINDOWS_PATH_SEPARATOR = String.fromCharCode(92);
 const WINDOWS_USERS_PREFIX = `C:${WINDOWS_PATH_SEPARATOR}${"Users"}${WINDOWS_PATH_SEPARATOR}`;
 const PATH_TOKEN_PATTERN = String.raw`[^\s"'` + "`" + String.raw`<>]+`;
+const COMPOUND_PATH_SEPARATORS = new Set([":", ";"]);
+const ABSOLUTE_PATH_PREFIXES = [UNIX_HOME_PREFIX, MACOS_USERS_PREFIX, WINDOWS_USERS_PREFIX] as const;
 // Keep this allowlist intentionally short so container defaults stop tripping the gate
 // without weakening workstation-home detection for typical developer paths.
 const KNOWN_CONTAINER_HOME_OWNERS = new Set(["node"]);
@@ -26,22 +28,18 @@ export interface WorkstationLocalPathClassification {
 }
 
 const CANDIDATE_PATTERNS: ReadonlyArray<{
-  prefix: string;
   regex: RegExp;
   classify: (candidate: string) => WorkstationLocalPathClassification | null;
 }> = [
   {
-    prefix: UNIX_HOME_PREFIX,
     regex: new RegExp(`${escapeForRegex(UNIX_HOME_PREFIX)}${PATH_TOKEN_PATTERN}`, "g"),
     classify: classifyWorkstationLocalPathCandidate,
   },
   {
-    prefix: MACOS_USERS_PREFIX,
     regex: new RegExp(`${escapeForRegex(MACOS_USERS_PREFIX)}${PATH_TOKEN_PATTERN}`, "g"),
     classify: classifyWorkstationLocalPathCandidate,
   },
   {
-    prefix: WINDOWS_USERS_PREFIX,
     regex: new RegExp(`${escapeForRegex(WINDOWS_USERS_PREFIX)}${PATH_TOKEN_PATTERN}`, "g"),
     classify: classifyWorkstationLocalPathCandidate,
   },
@@ -128,17 +126,21 @@ function isBinary(contents: Buffer): boolean {
   return contents.includes(0);
 }
 
-function splitCompoundCandidate(candidate: string, prefix: string): string[] {
+function startsWithAbsolutePathPrefix(candidate: string, index: number): boolean {
+  return ABSOLUTE_PATH_PREFIXES.some((prefix) => candidate.startsWith(prefix, index));
+}
+
+function splitCompoundCandidate(candidate: string): string[] {
   const parts: string[] = [];
   let segmentStart = 0;
 
   for (let index = 1; index < candidate.length; index += 1) {
     const separator = candidate[index - 1];
-    if (separator !== ":" && separator !== ";") {
+    if (!COMPOUND_PATH_SEPARATORS.has(separator)) {
       continue;
     }
 
-    if (!candidate.startsWith(prefix, index)) {
+    if (!startsWithAbsolutePathPrefix(candidate, index)) {
       continue;
     }
 
@@ -152,6 +154,7 @@ function splitCompoundCandidate(candidate: string, prefix: string): string[] {
 
 function collectMatches(filePath: string, contents: string): WorkstationLocalPathMatch[] {
   const matches: WorkstationLocalPathMatch[] = [];
+  const seen = new Set<string>();
   const lines = contents.split(/\r?\n/);
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
@@ -159,11 +162,17 @@ function collectMatches(filePath: string, contents: string): WorkstationLocalPat
     for (const pattern of CANDIDATE_PATTERNS) {
       pattern.regex.lastIndex = 0;
       for (const match of line.matchAll(pattern.regex)) {
-        for (const candidate of splitCompoundCandidate(match[0], pattern.prefix)) {
+        for (const candidate of splitCompoundCandidate(match[0])) {
           const classification = pattern.classify(candidate);
           if (!classification?.blocked) {
             continue;
           }
+
+          const findingKey = `${lineIndex + 1}\0${candidate}\0${classification.label}`;
+          if (seen.has(findingKey)) {
+            continue;
+          }
+          seen.add(findingKey);
 
           matches.push({
             filePath,
