@@ -3432,6 +3432,266 @@ test("reconcileStaleFailedIssueStates blocks failed no-PR issues for manual revi
   assert.equal(saveCalls, 1);
 });
 
+test("reconcileStaleFailedIssueStates blocks failed no-PR issues for manual review when the worktree is on a different branch", async () => {
+  const { repoPath, workspaceRoot, baseHead } = await createRepositoryWithOrigin();
+  const workspacePath = await createIssueWorktree({
+    repoPath,
+    workspaceRoot,
+    issueNumber: 366,
+    branch: "codex/reopen-issue-366",
+  });
+  const journalPath = path.join(workspacePath, ".codex-supervisor", "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n");
+  await runCommand("git", ["-C", workspacePath, "switch", "-c", "codex/other-issue-366"]);
+  await fs.writeFile(path.join(workspacePath, "feature.txt"), "meaningful change\n");
+  await runCommand("git", ["-C", workspacePath, "add", "feature.txt"]);
+  await runCommand("git", ["-C", workspacePath, "commit", "-m", "meaningful checkpoint on wrong branch"]);
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 366,
+        state: "failed",
+        branch: "codex/reopen-issue-366",
+        workspace: workspacePath,
+        journal_path: journalPath,
+        pr_number: null,
+        last_head_sha: baseHead,
+        last_error: "Selected model is at capacity. Please try a different model.",
+        last_failure_kind: "codex_exit",
+        last_failure_context: {
+          category: "codex",
+          summary: "Selected model is at capacity. Please try a different model.",
+          signature: "provider-capacity",
+          command: null,
+          details: ["provider=codex"],
+          url: null,
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "provider-capacity",
+        repeated_failure_signature_count: 1,
+        codex_session_id: "session-366",
+      }),
+    ],
+  });
+  const issue = createIssue({
+    number: 366,
+    title: "Reject failed no-PR worktree on wrong branch",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  await reconcileStaleFailedIssueStates(
+    {
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected getPullRequestIfExists call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      inferStateFromPullRequest: () => "draft_pr",
+      inferFailureContext: () => null,
+      blockedReasonForLifecycleState: () => null,
+      isOpenPullRequest: () => true,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "blocked");
+  assert.equal(updated.pr_number, null);
+  assert.equal(updated.codex_session_id, null);
+  assert.equal(updated.blocked_reason, "manual_review");
+  assert.equal(updated.last_failure_kind, null);
+  assert.equal(updated.last_head_sha, baseHead);
+  assert.equal(updated.last_failure_context?.signature, "failed-no-pr-manual-review-required");
+  assert.match(updated.last_error ?? "", /not safe for automatic recovery/i);
+  assert.deepEqual(updated.last_failure_context?.details ?? [], [
+    "state=failed",
+    "tracked_pr=none",
+    "branch_state=manual_review_required",
+    "default_branch=origin/main",
+    "head_sha=unknown",
+    "operator_action=inspect the preserved workspace and resolve the unsafe or ambiguous branch state before requeueing manually",
+  ]);
+  assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 0);
+  assert.equal(
+    updated.last_recovery_reason,
+    "failed_no_pr_manual_review: blocked issue #366 after failed no-PR recovery found an unsafe or ambiguous workspace state",
+  );
+  assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+});
+
+test("reconcileStaleFailedIssueStates blocks failed no-PR issues for manual review when the worktree HEAD is detached", async () => {
+  const { repoPath, workspaceRoot, baseHead } = await createRepositoryWithOrigin();
+  const workspacePath = await createIssueWorktree({
+    repoPath,
+    workspaceRoot,
+    issueNumber: 366,
+    branch: "codex/reopen-issue-366",
+  });
+  const journalPath = path.join(workspacePath, ".codex-supervisor", "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n");
+  await fs.writeFile(path.join(workspacePath, "feature.txt"), "meaningful change\n");
+  await runCommand("git", ["-C", workspacePath, "add", "feature.txt"]);
+  await runCommand("git", ["-C", workspacePath, "commit", "-m", "meaningful checkpoint on issue branch"]);
+  await runCommand("git", ["-C", workspacePath, "checkout", "--detach", "HEAD"]);
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 366,
+        state: "failed",
+        branch: "codex/reopen-issue-366",
+        workspace: workspacePath,
+        journal_path: journalPath,
+        pr_number: null,
+        last_head_sha: baseHead,
+        last_error: "Selected model is at capacity. Please try a different model.",
+        last_failure_kind: "codex_exit",
+        last_failure_context: {
+          category: "codex",
+          summary: "Selected model is at capacity. Please try a different model.",
+          signature: "provider-capacity",
+          command: null,
+          details: ["provider=codex"],
+          url: null,
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "provider-capacity",
+        repeated_failure_signature_count: 1,
+        codex_session_id: "session-366",
+      }),
+    ],
+  });
+  const issue = createIssue({
+    number: 366,
+    title: "Reject failed no-PR detached worktree",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  await reconcileStaleFailedIssueStates(
+    {
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected getPullRequestIfExists call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      inferStateFromPullRequest: () => "draft_pr",
+      inferFailureContext: () => null,
+      blockedReasonForLifecycleState: () => null,
+      isOpenPullRequest: () => true,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "blocked");
+  assert.equal(updated.pr_number, null);
+  assert.equal(updated.codex_session_id, null);
+  assert.equal(updated.blocked_reason, "manual_review");
+  assert.equal(updated.last_failure_kind, null);
+  assert.equal(updated.last_head_sha, baseHead);
+  assert.equal(updated.last_failure_context?.signature, "failed-no-pr-manual-review-required");
+  assert.match(updated.last_error ?? "", /not safe for automatic recovery/i);
+  assert.deepEqual(updated.last_failure_context?.details ?? [], [
+    "state=failed",
+    "tracked_pr=none",
+    "branch_state=manual_review_required",
+    "default_branch=origin/main",
+    "head_sha=unknown",
+    "operator_action=inspect the preserved workspace and resolve the unsafe or ambiguous branch state before requeueing manually",
+  ]);
+  assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 0);
+  assert.equal(
+    updated.last_recovery_reason,
+    "failed_no_pr_manual_review: blocked issue #366 after failed no-PR recovery found an unsafe or ambiguous workspace state",
+  );
+  assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+});
+
 test("reconcileStaleFailedIssueStates rehydrates stale failed tracked PRs from direct issue facts when inventory refresh is degraded", async () => {
   const config = createConfig();
   const state: SupervisorStateFile = {

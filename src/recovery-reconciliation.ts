@@ -215,6 +215,18 @@ async function classifyFailedNoPrBranchRecovery(args: {
       return { state: "manual_review_required", headSha: null };
     }
 
+    const branchResult = await runCommand(
+      "git",
+      ["-C", record.workspace, "symbolic-ref", "--quiet", "--short", "HEAD"],
+      {
+        allowExitCodes: [0, 1],
+        timeoutMs: gitProbeTimeoutMs,
+      },
+    );
+    if (branchResult.exitCode !== 0 || branchResult.stdout.trim() !== record.branch) {
+      return { state: "manual_review_required", headSha: null };
+    }
+
     await runCommand("git", ["-C", config.repoPath, "fetch", "origin", config.defaultBranch], {
       timeoutMs: gitProbeTimeoutMs,
     });
