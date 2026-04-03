@@ -26,18 +26,22 @@ export interface WorkstationLocalPathClassification {
 }
 
 const CANDIDATE_PATTERNS: ReadonlyArray<{
+  prefix: string;
   regex: RegExp;
   classify: (candidate: string) => WorkstationLocalPathClassification | null;
 }> = [
   {
+    prefix: UNIX_HOME_PREFIX,
     regex: new RegExp(`${escapeForRegex(UNIX_HOME_PREFIX)}${PATH_TOKEN_PATTERN}`, "g"),
     classify: classifyWorkstationLocalPathCandidate,
   },
   {
+    prefix: MACOS_USERS_PREFIX,
     regex: new RegExp(`${escapeForRegex(MACOS_USERS_PREFIX)}${PATH_TOKEN_PATTERN}`, "g"),
     classify: classifyWorkstationLocalPathCandidate,
   },
   {
+    prefix: WINDOWS_USERS_PREFIX,
     regex: new RegExp(`${escapeForRegex(WINDOWS_USERS_PREFIX)}${PATH_TOKEN_PATTERN}`, "g"),
     classify: classifyWorkstationLocalPathCandidate,
   },
@@ -124,6 +128,28 @@ function isBinary(contents: Buffer): boolean {
   return contents.includes(0);
 }
 
+function splitCompoundCandidate(candidate: string, prefix: string): string[] {
+  const parts: string[] = [];
+  let segmentStart = 0;
+
+  for (let index = 1; index < candidate.length; index += 1) {
+    const separator = candidate[index - 1];
+    if (separator !== ":" && separator !== ";") {
+      continue;
+    }
+
+    if (!candidate.startsWith(prefix, index)) {
+      continue;
+    }
+
+    parts.push(candidate.slice(segmentStart, index - 1));
+    segmentStart = index;
+  }
+
+  parts.push(candidate.slice(segmentStart));
+  return parts.filter((part) => part.length > 0);
+}
+
 function collectMatches(filePath: string, contents: string): WorkstationLocalPathMatch[] {
   const matches: WorkstationLocalPathMatch[] = [];
   const lines = contents.split(/\r?\n/);
@@ -133,18 +159,20 @@ function collectMatches(filePath: string, contents: string): WorkstationLocalPat
     for (const pattern of CANDIDATE_PATTERNS) {
       pattern.regex.lastIndex = 0;
       for (const match of line.matchAll(pattern.regex)) {
-        const classification = pattern.classify(match[0]);
-        if (!classification?.blocked) {
-          continue;
-        }
+        for (const candidate of splitCompoundCandidate(match[0], pattern.prefix)) {
+          const classification = pattern.classify(candidate);
+          if (!classification?.blocked) {
+            continue;
+          }
 
-        matches.push({
-          filePath,
-          line: lineIndex + 1,
-          match: match[0],
-          prefix: classification.label,
-          reason: classification.reason,
-        });
+          matches.push({
+            filePath,
+            line: lineIndex + 1,
+            match: candidate,
+            prefix: classification.label,
+            reason: classification.reason,
+          });
+        }
       }
     }
   }

@@ -126,3 +126,41 @@ test("findForbiddenWorkstationLocalPaths ignores /home/node container paths whil
     ],
   );
 });
+
+test("findForbiddenWorkstationLocalPaths still reports workstation homes inside colon-delimited Unix path lists", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.join(repoPath, "config"), { recursive: true });
+  await fs.writeFile(
+    path.join(repoPath, "config", "paths.env"),
+    [`N8N_DATA_PATHS=${buildUnixHomePath("node", ".n8n")}:${buildUnixHomePath("alice", "dev", "private-repo")}`, ""].join(
+      "\n",
+    ),
+    "utf8",
+  );
+  git(repoPath, "add", "config/paths.env");
+
+  const findings = await findForbiddenWorkstationLocalPaths(repoPath);
+
+  assert.deepEqual(
+    findings.map((finding) => ({
+      filePath: finding.filePath,
+      line: finding.line,
+      prefix: finding.prefix,
+      reason: finding.reason,
+      match: finding.match,
+    })),
+    [
+      {
+        filePath: "config/paths.env",
+        line: 1,
+        prefix: "/home/<user>/",
+        reason: "Linux user home directory",
+        match: buildUnixHomePath("alice", "dev", "private-repo"),
+      },
+    ],
+  );
+});

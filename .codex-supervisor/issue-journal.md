@@ -5,31 +5,43 @@
 - Branch: codex/issue-1276
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: ea962f52332c59d4594cdfde2a6730110b3f5822
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: 3bd1ee656ba375d8fa46be157bc0029fad8a9fa9
 - Blocked reason: none
-- Last failure signature: handoff-missing
+- Last failure signature: PRRT_kwDORgvdZ854q4Ck
 - Repeated failure signature count: 1
-- Updated at: 2026-04-03T03:42:34.878Z
+- Updated at: 2026-04-03T07:19:29.006Z
 
 ## Latest Codex Summary
-- Added an owner-aware workstation path classifier so `verify:paths` still blocks Linux/macOS/Windows workstation home directories but no longer treats the known container home `/home/node/...` as forbidden by default.
-- Improved blocked-path diagnostics to include the classification reason and added direct matcher regressions for `/home/node/.n8n` alongside Linux/macOS/Windows workstation paths.
-- Verified with `npx tsx --test src/workstation-local-paths.test.ts src/local-ci.test.ts`, `npx tsx --test src/workstation-local-path-detector.test.ts`, and `npm run build`; committed as `4181181` and opened draft PR #1283.
+Narrowed workstation path hygiene in [src/workstation-local-paths.ts](src/workstation-local-paths.ts) so Linux `<redacted-local-path>` matches are classified by home owner instead of blanket-blocked, which now allows the known container path `<redacted-local-path>` while still blocking Linux/macOS/Windows workstation home directories. I also made the rendered diagnostics include the classification reason in [src/workstation-local-path-gate.ts](src/workstation-local-path-gate.ts) and [scripts/check-workstation-local-paths.ts](scripts/check-workstation-local-paths.ts), and added direct regressions in [src/workstation-local-paths.test.ts](src/workstation-local-paths.test.ts).
+
+The work is committed and pushed on `codex/issue-1276`, the journal handoff is updated, and draft PR `#1283` is open: https://github.com/TommyKammy/codex-supervisor/pull/1283. Tracked files are clean; only transient untracked `.codex-supervisor` scratch files remain in the worktree.
+
+Summary: Allowed `<redacted-local-path>.` container paths in `verify:paths`, kept workstation home blocking intact, added direct regressions, pushed commits `4181181` and `96d71ea`, and opened draft PR #1283
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/workstation-local-paths.test.ts src/local-ci.test.ts`; `npx tsx --test src/workstation-local-path-detector.test.ts`; `npm run build`
+Next action: Watch draft PR #1283 for CI and review feedback, then promote it when ready
+Failure signature: PRRT_kwDORgvdZ854q4Ck
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1283#discussion_r3031769997
+- Details:
+  - src/workstation-local-paths.ts:43 summary=_⚠️ Potential issue_ | _🟠 Major_ **Don't let `:/home/...` compound tokens bypass the `node` allowlist.** `PATH_TOKEN_PATTERN` still spans `:`, so a value like `<redacted-local-path>. url=https://github.com/TommyKammy/codex-supervisor/pull/1283#discussion_r3031769997
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The false positive comes from treating every `/home/` path as a workstation path instead of classifying the home-owner segment.
-- What changed: Added an owner-aware workstation path classifier, allowed the known container home `/home/node/`, enriched blocked diagnostics with a classification reason, and added direct regression tests for Linux/macOS/Windows workstation paths plus the `/home/node/.n8n` container case.
+- Hypothesis: Same-prefix compound candidates like `<redacted-local-path>` must be split before classification; otherwise an allowlisted first segment can hide a later workstation-local segment in the same token.
+- What changed: Split same-prefix compound candidate matches on `:`/`;` before classification in `collectMatches()`, so `/home/node/...:/home/alice/...` now reports the blocked workstation segment while keeping the container allowlist intact. Added a direct regression in `src/workstation-local-paths.test.ts` for the colon-delimited Unix path-list case.
 - Current blocker: none
-- Next exact step: Watch draft PR #1283 for CI and review feedback, then promote once the branch is ready.
-- Verification gap: No dedicated end-to-end supervisor phase test was rerun; validation is currently focused on the matcher, detector CLI, local CI slice, and `npm run build`.
-- Files touched: `.codex-supervisor/issue-journal.md`, `scripts/check-workstation-local-paths.ts`, `src/workstation-local-path-gate.ts`, `src/workstation-local-paths.ts`, `src/workstation-local-paths.test.ts`
-- Rollback concern: The `/home/node/` allowlist is intentionally narrow; if other container users need to be allowed later, expand it carefully to avoid weakening workstation-home detection.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-1276 --title "Avoid false positives for container home paths in verify:paths" --body ...`
+- Next exact step: Commit and push the review-fix checkpoint to PR #1283, then resolve or reply to the automated review thread if explicitly asked.
+- Verification gap: This turn reran the issue’s focused path/local-CI slice and `npm run build`, but it did not rerun the separate detector CLI test file or a supervisor end-to-end flow.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/workstation-local-paths.ts`, `src/workstation-local-paths.test.ts`
+- Rollback concern: Compound splitting is intentionally limited to same-prefix matches so the fix closes the bypass without changing how mixed-prefix findings are surfaced.
+- Last focused command: `npm run build`
 ### Scratchpad
-- Keep this section short. The supervisor may compact older notes automatically.
+- Commands run this turn: `gh auth status`; `gh pr view 1283 --json number,url,isDraft,reviewDecision,mergeStateStatus,headRefName,baseRefName`; `gh api graphql ... reviewThreads ...`; `npx tsx --test src/workstation-local-paths.test.ts src/local-ci.test.ts`; `npm run build`
+- Active review status: CodeRabbit thread `PRRT_kwDORgvdZ854q4Ck` is still open on GitHub, but the reported bypass is now fixed locally and covered by regression.
