@@ -110,6 +110,34 @@ test("StateStore json roundtrip preserves the active reservation and retry count
   });
 });
 
+test("StateStore json load normalizes tracked PR progress bookkeeping fields", async () => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.json");
+    await fs.writeFile(
+      statePath,
+      `${JSON.stringify({
+        activeIssueNumber: 402,
+        issues: {
+          "402": createRecord(402, {
+            last_tracked_pr_progress_snapshot: undefined,
+            last_tracked_pr_progress_summary: undefined,
+            last_tracked_pr_repeat_failure_decision: undefined,
+          }),
+        },
+      }, null, 2)}\n`,
+      "utf8",
+    );
+
+    const store = new StateStore(statePath, { backend: "json" });
+    const loaded = await store.load();
+    const record = loaded.issues["402"];
+
+    assert.equal(record?.last_tracked_pr_progress_snapshot, null);
+    assert.equal(record?.last_tracked_pr_progress_summary, null);
+    assert.equal(record?.last_tracked_pr_repeat_failure_decision, null);
+  });
+});
+
 test("StateStore json roundtrip preserves tracked merged reconciliation resume progress", async () => {
   await withTempDir(async (dir) => {
     const store = new StateStore(path.join(dir, "state.json"), { backend: "json" });

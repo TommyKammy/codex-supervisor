@@ -898,6 +898,7 @@ test("runOnce keeps tracked PR repair work retryable when the same failure repea
   assert.equal(record.repeated_failure_signature_count, 3);
   assert.equal(record.last_tracked_pr_repeat_failure_decision, "retry_on_progress");
   assert.match(record.last_tracked_pr_progress_summary ?? "", /head_advanced head-old-191->head-new-191/);
+  assert.match(record.last_tracked_pr_progress_snapshot ?? "", /"headRefOid":"head-new-191"/);
   assert.equal(record.last_error, null);
 });
 

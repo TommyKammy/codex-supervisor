@@ -159,7 +159,17 @@ function parseTrackedPrProgressSnapshot(snapshot: string | null | undefined): Tr
   }
 
   try {
-    return JSON.parse(snapshot) as TrackedPrProgressSnapshot;
+    const parsed = JSON.parse(snapshot);
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      typeof parsed.headRefOid !== "string" ||
+      !Array.isArray(parsed.checks) ||
+      !Array.isArray(parsed.unresolvedReviewThreadIds)
+    ) {
+      return null;
+    }
+    return parsed as TrackedPrProgressSnapshot;
   } catch {
     return null;
   }

@@ -820,6 +820,8 @@ export class Supervisor {
     const shouldExecuteCodex = shouldRunCodex(record, pr, checks, reviewThreads, this.config);
 
     if (shouldExecuteCodex) {
+      state.issues[String(record.issue_number)] = record;
+      await this.stateStore.save(state);
       const codexTurn = await this.executeCodexTurn({
         state,
         record,
