@@ -27,7 +27,10 @@ import {
   syncCopilotReviewTimeoutState,
   syncReviewWaitWindow,
 } from "../pull-request-state";
-import { inferStateWithoutPullRequest } from "../no-pull-request-state";
+import {
+  hasStaleStabilizingNoPrRecoveryBudgetRemaining,
+  inferStateWithoutPullRequest,
+} from "../no-pull-request-state";
 import {
   hasProcessedReviewThread,
   localReviewBlocksReady,
@@ -587,7 +590,10 @@ export class Supervisor {
 
     let { record, issue, issueLock } = runnableIssue;
     const budgetLaneBeforeWorkspace = attemptLane(record, null);
-    if (!hasAttemptBudgetRemaining(record, this.config, budgetLaneBeforeWorkspace)) {
+    const staleNoPrRecoveryBudgetApplies =
+      budgetLaneBeforeWorkspace === "implementation"
+      && hasStaleStabilizingNoPrRecoveryBudgetRemaining(record, this.config);
+    if (!staleNoPrRecoveryBudgetApplies && !hasAttemptBudgetRemaining(record, this.config, budgetLaneBeforeWorkspace)) {
       try {
         const used = attemptsUsedForLane(record, budgetLaneBeforeWorkspace);
         const max = attemptBudgetForLane(this.config, budgetLaneBeforeWorkspace);
