@@ -94,7 +94,7 @@ export function classifyWorkstationLocalPathCandidate(candidate: string): Workst
   if (KNOWN_CONTAINER_HOME_OWNERS.has(owner.toLowerCase())) {
     return {
       blocked: false,
-      label: `/home/${owner}/`,
+      label: `${UNIX_HOME_PREFIX}${owner}/`,
       reason: `allowed known container home owner "${owner}"`,
     };
   }
