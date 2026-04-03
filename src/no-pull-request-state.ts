@@ -91,6 +91,29 @@ export function buildStaleStabilizingNoPrRecoveryWarningLine(
   ].join(" ");
 }
 
+export function hasStaleStabilizingNoPrRecoveryBudgetRemaining(
+  record: Pick<
+    IssueRunRecord,
+    | "pr_number"
+    | "state"
+    | "last_failure_signature"
+    | "repeated_failure_signature_count"
+    | "stale_stabilizing_no_pr_recovery_count"
+  >,
+  config: Pick<SupervisorConfig, "sameFailureSignatureRepeatLimit">,
+): boolean {
+  if (record.pr_number !== null || record.state !== "queued") {
+    return false;
+  }
+
+  const repeatedCount = getStaleStabilizingNoPrRecoveryCount(record);
+  if (repeatedCount <= 0) {
+    return false;
+  }
+
+  return repeatedCount < Math.max(config.sameFailureSignatureRepeatLimit, 1);
+}
+
 export function inferStateWithoutPullRequest(
   record: IssueRunRecord,
   workspaceStatus: WorkspaceStatus,

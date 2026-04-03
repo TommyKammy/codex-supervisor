@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   inferStateWithoutPullRequest,
+  hasStaleStabilizingNoPrRecoveryBudgetRemaining,
   STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
   shouldPreserveNoPrFailureTracking,
   shouldPreserveStaleStabilizingNoPrRecoveryTracking,
@@ -218,6 +219,45 @@ test("shouldPreserveStaleStabilizingNoPrRecoveryTracking only keeps stale stabil
         last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
       }),
       "stabilizing",
+    ),
+    false,
+  );
+});
+
+test("hasStaleStabilizingNoPrRecoveryBudgetRemaining only unlocks queued stale no-PR retries below the repeat limit", () => {
+  assert.equal(
+    hasStaleStabilizingNoPrRecoveryBudgetRemaining(
+      createRecord({
+        state: "queued",
+        pr_number: null,
+        last_failure_signature: STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
+        stale_stabilizing_no_pr_recovery_count: 2,
+      }),
+      { sameFailureSignatureRepeatLimit: 3 },
+    ),
+    true,
+  );
+  assert.equal(
+    hasStaleStabilizingNoPrRecoveryBudgetRemaining(
+      createRecord({
+        state: "queued",
+        pr_number: null,
+        last_failure_signature: STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
+        stale_stabilizing_no_pr_recovery_count: 3,
+      }),
+      { sameFailureSignatureRepeatLimit: 3 },
+    ),
+    false,
+  );
+  assert.equal(
+    hasStaleStabilizingNoPrRecoveryBudgetRemaining(
+      createRecord({
+        state: "stabilizing",
+        pr_number: null,
+        last_failure_signature: STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
+        stale_stabilizing_no_pr_recovery_count: 2,
+      }),
+      { sameFailureSignatureRepeatLimit: 3 },
     ),
     false,
   );
