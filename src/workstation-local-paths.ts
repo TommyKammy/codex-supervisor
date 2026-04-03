@@ -14,11 +14,33 @@ const MACOS_USERS_PREFIX = `/${"Users"}/`;
 const WINDOWS_PATH_SEPARATOR = String.fromCharCode(92);
 const WINDOWS_USERS_PREFIX = `C:${WINDOWS_PATH_SEPARATOR}${"Users"}${WINDOWS_PATH_SEPARATOR}`;
 const PATH_TOKEN_PATTERN = String.raw`[^\s"'` + "`" + String.raw`<>]+`;
+// Keep this allowlist intentionally short so container defaults stop tripping the gate
+// without weakening workstation-home detection for typical developer paths.
+const KNOWN_CONTAINER_HOME_OWNERS = new Set(["node"]);
+const UNIX_HOME_OWNER_PATTERN = new RegExp(`^${escapeForRegex(UNIX_HOME_PREFIX)}([^/]+)(?:/|$)`);
 
-const FORBIDDEN_PATTERNS: ReadonlyArray<{ label: string; regex: RegExp }> = [
-  { label: UNIX_HOME_PREFIX, regex: new RegExp(`${escapeForRegex(UNIX_HOME_PREFIX)}${PATH_TOKEN_PATTERN}`, "g") },
-  { label: MACOS_USERS_PREFIX, regex: new RegExp(`${escapeForRegex(MACOS_USERS_PREFIX)}${PATH_TOKEN_PATTERN}`, "g") },
-  { label: WINDOWS_USERS_PREFIX, regex: new RegExp(`${escapeForRegex(WINDOWS_USERS_PREFIX)}${PATH_TOKEN_PATTERN}`, "g") },
+export interface WorkstationLocalPathClassification {
+  blocked: boolean;
+  label: string;
+  reason: string;
+}
+
+const CANDIDATE_PATTERNS: ReadonlyArray<{
+  regex: RegExp;
+  classify: (candidate: string) => WorkstationLocalPathClassification | null;
+}> = [
+  {
+    regex: new RegExp(`${escapeForRegex(UNIX_HOME_PREFIX)}${PATH_TOKEN_PATTERN}`, "g"),
+    classify: classifyWorkstationLocalPathCandidate,
+  },
+  {
+    regex: new RegExp(`${escapeForRegex(MACOS_USERS_PREFIX)}${PATH_TOKEN_PATTERN}`, "g"),
+    classify: classifyWorkstationLocalPathCandidate,
+  },
+  {
+    regex: new RegExp(`${escapeForRegex(WINDOWS_USERS_PREFIX)}${PATH_TOKEN_PATTERN}`, "g"),
+    classify: classifyWorkstationLocalPathCandidate,
+  },
 ];
 
 export interface WorkstationLocalPathMatch {
@@ -26,6 +48,7 @@ export interface WorkstationLocalPathMatch {
   line: number;
   match: string;
   prefix: string;
+  reason: string;
 }
 
 function escapeForRegex(value: string): string {
@@ -35,6 +58,52 @@ function escapeForRegex(value: string): string {
 export function normalizeRepoRelativePath(filePath: string): string {
   const slashNormalized = filePath.replace(/\\/g, "/");
   return path.posix.normalize(slashNormalized).replace(/^(?:\.\/)+/, "");
+}
+
+function extractUnixHomeOwner(candidate: string): string | null {
+  const match = candidate.match(UNIX_HOME_OWNER_PATTERN);
+  return match?.[1] ?? null;
+}
+
+export function classifyWorkstationLocalPathCandidate(candidate: string): WorkstationLocalPathClassification | null {
+  if (candidate.startsWith(MACOS_USERS_PREFIX)) {
+    return {
+      blocked: true,
+      label: "/Users/<user>/",
+      reason: "macOS user home directory",
+    };
+  }
+
+  if (candidate.startsWith(WINDOWS_USERS_PREFIX)) {
+    return {
+      blocked: true,
+      label: "C:\\Users\\<user>\\",
+      reason: "Windows user home directory",
+    };
+  }
+
+  if (!candidate.startsWith(UNIX_HOME_PREFIX)) {
+    return null;
+  }
+
+  const owner = extractUnixHomeOwner(candidate);
+  if (!owner) {
+    return null;
+  }
+
+  if (KNOWN_CONTAINER_HOME_OWNERS.has(owner.toLowerCase())) {
+    return {
+      blocked: false,
+      label: `/home/${owner}/`,
+      reason: `allowed known container home owner "${owner}"`,
+    };
+  }
+
+  return {
+    blocked: true,
+    label: "/home/<user>/",
+    reason: "Linux user home directory",
+  };
 }
 
 function gitTrackedFiles(workspacePath: string): string[] {
@@ -61,14 +130,20 @@ function collectMatches(filePath: string, contents: string): WorkstationLocalPat
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex];
-    for (const pattern of FORBIDDEN_PATTERNS) {
+    for (const pattern of CANDIDATE_PATTERNS) {
       pattern.regex.lastIndex = 0;
       for (const match of line.matchAll(pattern.regex)) {
+        const classification = pattern.classify(match[0]);
+        if (!classification?.blocked) {
+          continue;
+        }
+
         matches.push({
           filePath,
           line: lineIndex + 1,
           match: match[0],
-          prefix: pattern.label,
+          prefix: classification.label,
+          reason: classification.reason,
         });
       }
     }
