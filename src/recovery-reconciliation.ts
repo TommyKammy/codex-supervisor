@@ -84,6 +84,8 @@ function sanitizeRecoveryReason(reason: string): string {
 
 type StaleStabilizingNoPrBranchState = "recoverable" | "already_satisfied_on_main";
 type FailedNoPrBranchRecoveryState = "recoverable" | "already_satisfied_on_main" | "manual_review_required";
+const FAILED_NO_PR_ALREADY_SATISFIED_SIGNATURE = "failed-no-pr-already-satisfied-on-main";
+const FAILED_NO_PR_MANUAL_REVIEW_SIGNATURE = "failed-no-pr-manual-review-required";
 
 function isIgnoredSupervisorArtifactPath(
   relativePath: string,
@@ -125,6 +127,40 @@ function parseGitStatusPorcelainV1Paths(statusOutput: string): string[][] {
   }
 
   return entries;
+}
+
+function buildFailedNoPrBranchFailureContext(args: {
+  record: Pick<IssueRunRecord, "issue_number">;
+  branchRecoveryState: Exclude<FailedNoPrBranchRecoveryState, "recoverable">;
+  headSha: string | null;
+  defaultBranch: string;
+}): NonNullable<IssueRunRecord["last_failure_context"]> {
+  const { record, branchRecoveryState, headSha, defaultBranch } = args;
+  const branchSummary = branchRecoveryState === "already_satisfied_on_main"
+    ? `Issue #${record.issue_number} failed without a tracked PR, and the preserved branch no longer differs from origin/${defaultBranch}. Confirm whether the implementation already landed elsewhere before requeueing manually.`
+    : `Issue #${record.issue_number} failed without a tracked PR, and the preserved workspace is not safe for automatic recovery. Manual review is required.`;
+  const operatorAction = branchRecoveryState === "already_satisfied_on_main"
+    ? "operator_action=confirm whether the implementation already landed elsewhere or requeue manually if more work is still required"
+    : "operator_action=inspect the preserved workspace and resolve the unsafe or ambiguous branch state before requeueing manually";
+
+  return {
+    category: "blocked",
+    summary: branchSummary,
+    signature: branchRecoveryState === "already_satisfied_on_main"
+      ? FAILED_NO_PR_ALREADY_SATISFIED_SIGNATURE
+      : FAILED_NO_PR_MANUAL_REVIEW_SIGNATURE,
+    command: null,
+    details: [
+      "state=failed",
+      "tracked_pr=none",
+      `branch_state=${branchRecoveryState}`,
+      `default_branch=origin/${defaultBranch}`,
+      `head_sha=${headSha ?? "unknown"}`,
+      operatorAction,
+    ],
+    url: null,
+    updated_at: nowIso(),
+  };
 }
 
 async function classifyFailedNoPrBranchRecovery(args: {
@@ -1294,6 +1330,36 @@ export async function reconcileStaleFailedIssueStates(
 
       const branchRecovery = await classifyFailedNoPrBranchRecovery({ config, record });
       if (branchRecovery.state !== "recoverable") {
+        const branchRecoveryState = branchRecovery.state;
+        const failureContext = buildFailedNoPrBranchFailureContext({
+          record,
+          branchRecoveryState,
+          headSha: branchRecovery.headSha,
+          defaultBranch: config.defaultBranch,
+        });
+        const recoveryEvent = buildRecoveryEvent(
+          record.issue_number,
+          branchRecoveryState === "already_satisfied_on_main"
+            ? `failed_no_pr_already_satisfied: blocked issue #${record.issue_number} after failed no-PR recovery found no meaningful branch changes relative to origin/${config.defaultBranch}`
+            : `failed_no_pr_manual_review: blocked issue #${record.issue_number} after failed no-PR recovery found an unsafe or ambiguous workspace state`,
+        );
+        const patch: Partial<IssueRunRecord> = {
+          state: "blocked",
+          pr_number: null,
+          codex_session_id: null,
+          blocked_reason: "manual_review",
+          last_error: truncate(failureContext.summary, 1000),
+          last_failure_kind: null,
+          last_failure_context: failureContext,
+          last_blocker_signature: null,
+          repeated_blocker_count: 0,
+          stale_stabilizing_no_pr_recovery_count: 0,
+          last_head_sha: branchRecovery.headSha ?? record.last_head_sha,
+          ...applyFailureSignature(record, failureContext),
+        };
+        const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
+        state.issues[String(record.issue_number)] = updated;
+        changed = true;
         continue;
       }
 
