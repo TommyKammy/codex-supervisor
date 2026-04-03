@@ -36,12 +36,12 @@ Failure signature: PRRT_kwDORgvdZ854uTZo|PRRT_kwDORgvdZ854uTZp
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: The tracked-PR diagnostics only classified "missing provider signal" and "checks=none", so bootstrap repos with no workflows/check runs were being reported like a PR-specific wait instead of a repo capability mismatch.
-- What changed: Addressed the remaining review follow-up by moving the temp-directory cleanup registration to immediately after `fs.mkdtemp(...)` in `supervisor-status-review-bot.test.ts`, and documented the workflow-presence heuristic in `externalSignalReadinessDiagnostics()` with a TODO that calls out external CI and GitHub App checks. Added a focused regression showing emitted external checks already override missing local workflow files.
+- What changed: Addressed the remaining review follow-up by moving the temp-directory cleanup registration to immediately after `fs.mkdtemp(...)` in `supervisor-status-review-bot.test.ts`, and documented the workflow-presence heuristic in `externalSignalReadinessDiagnostics()` with a TODO that calls out external CI and GitHub App checks. Added a focused regression showing emitted external checks already override missing local workflow files, then pushed commit `4641127` to `codex/issue-1275`.
 - Current blocker: none
-- Next exact step: Commit and push the review-follow-up patch to `codex/issue-1275`, then refresh PR #1288 thread state and leave resolution to the operator unless explicitly asked to write on GitHub.
+- Next exact step: Wait for PR #1288 CI and CodeRabbit to finish on commit `4641127`, then leave the remaining test-thread resolution to the operator unless explicitly asked to write on GitHub.
 - Verification gap: none for the requested focused suite and TypeScript build.
 - Files touched: .codex-supervisor/issue-journal.md; src/supervisor/supervisor-status-review-bot.test.ts; src/supervisor/supervisor-status-review-bot.ts
 - Rollback concern: Bootstrap-stage repos that rely on external CI before any check run is observed can still be inferred as `repo_not_configured` because workflow absence is only a local heuristic; the new TODO documents that gap without changing gating behavior.
-- Last focused command: `npx tsx --test src/supervisor/supervisor-status-review-bot.test.ts src/supervisor/supervisor-status-rendering-supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts`; `npm run build`
+- Last focused command: `npx tsx --test src/supervisor/supervisor-status-review-bot.test.ts src/supervisor/supervisor-status-rendering-supervisor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts`; `npm run build`; `gh pr view 1288 --repo TommyKammy/codex-supervisor --json headRefOid,updatedAt,isDraft,reviewDecision,mergeStateStatus,statusCheckRollup,url`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
