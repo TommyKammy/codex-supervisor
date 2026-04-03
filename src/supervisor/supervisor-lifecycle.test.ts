@@ -289,6 +289,90 @@ test("determineTrackedPrRepeatFailureDisposition keeps upgraded tracked PR recor
   assert.match(result.progressSnapshot, /"mergeStateStatus":"CLEAN"/);
 });
 
+test("determineTrackedPrRepeatFailureDisposition stays retryable over the repeat limit when tracked PR progress advanced", () => {
+  const record = createRecord({
+    last_failure_signature: "build (ubuntu-latest):fail",
+    repeated_failure_signature_count: 4,
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: "head-old-366",
+      reviewDecision: null,
+      mergeStateStatus: "UNKNOWN",
+      copilotReviewState: null,
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotCurrentHeadStatusState: null,
+      currentHeadCiGreenAt: null,
+      configuredBotRateLimitedAt: null,
+      configuredBotDraftSkipAt: null,
+      configuredBotTopLevelReviewStrength: null,
+      configuredBotTopLevelReviewSubmittedAt: null,
+      checks: ["build:fail:FAILURE:CI"],
+      unresolvedReviewThreadIds: [],
+    }),
+  });
+  const pr = createPullRequest({
+    headRefOid: "head-new-366",
+    mergeStateStatus: "CLEAN",
+  });
+
+  const result = determineTrackedPrRepeatFailureDisposition({
+    record,
+    config: createConfig({ sameFailureSignatureRepeatLimit: 3 }),
+    pr,
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [],
+  });
+
+  assert.equal(result.shouldStop, false);
+  assert.equal(result.decision, "retry_on_progress");
+  assert.match(result.progressSummary ?? "", /head_advanced head-old-366->head-new-366/);
+  assert.match(result.progressSnapshot, /"headRefOid":"head-new-366"/);
+});
+
+test("determineTrackedPrRepeatFailureDisposition stops over the repeat limit when tracked PR progress did not advance", () => {
+  const snapshot = JSON.stringify({
+    headRefOid: "head-same-366",
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    copilotReviewState: null,
+    copilotReviewRequestedAt: null,
+    copilotReviewArrivedAt: null,
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotCurrentHeadStatusState: null,
+    currentHeadCiGreenAt: "2026-03-13T01:00:00Z",
+    configuredBotRateLimitedAt: null,
+    configuredBotDraftSkipAt: null,
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotTopLevelReviewSubmittedAt: null,
+    checks: ["build:pass:SUCCESS:CI"],
+    unresolvedReviewThreadIds: [],
+  });
+  const record = createRecord({
+    last_failure_signature: "build (ubuntu-latest):fail",
+    repeated_failure_signature_count: 4,
+    last_tracked_pr_progress_snapshot: snapshot,
+  });
+  const pr = createPullRequest({
+    headRefOid: "head-same-366",
+    mergeStateStatus: "CLEAN",
+    currentHeadCiGreenAt: "2026-03-13T01:00:00Z",
+  });
+
+  const result = determineTrackedPrRepeatFailureDisposition({
+    record,
+    config: createConfig({ sameFailureSignatureRepeatLimit: 3 }),
+    pr,
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [],
+  });
+
+  assert.equal(result.shouldStop, true);
+  assert.equal(result.decision, "stop_no_progress");
+  assert.equal(result.progressSummary, "no_meaningful_tracked_pr_progress");
+  assert.equal(result.progressSnapshot, snapshot);
+});
+
 test("derivePullRequestLifecycleSnapshot re-arms CodeRabbit waiting after ready-for-review when draft skip was the latest prior signal", () => {
   withStubbedDateNow("2026-03-13T02:30:10Z", () => {
     const config = createConfig({
