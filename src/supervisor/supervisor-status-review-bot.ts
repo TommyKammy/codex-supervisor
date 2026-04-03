@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import {
   configuredReviewBotLogins,
   configuredReviewProviderKinds,
@@ -83,8 +85,28 @@ export interface ReviewBotDiagnostics {
   nextCheck: string;
 }
 
+export interface ExternalSignalReadinessDiagnostics {
+  status: string;
+  ci: string;
+  review: string;
+  workflows: string;
+}
+
 export function configuredReviewBots(config: SupervisorConfig): string[] {
   return configuredReviewBotLogins(config);
+}
+
+function repoHasGitHubActionsWorkflows(repoPath: string): boolean | null {
+  try {
+    const workflowDir = path.join(repoPath, ".github", "workflows");
+    const entries = fs.readdirSync(workflowDir, { withFileTypes: true });
+    return entries.some((entry) => entry.isFile());
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return false;
+    }
+    return null;
+  }
 }
 
 export function configuredBotRateLimitWaitWindow(
@@ -324,6 +346,73 @@ export function reviewBotDiagnostics(
     observedReview: observed.observedReview,
     nextCheck: "provider_setup_or_delivery",
   };
+}
+
+export function externalSignalReadinessDiagnostics(
+  config: SupervisorConfig,
+  activeRecord: IssueRunRecord,
+  pr: GitHubPullRequest,
+  checks: { bucket: string }[],
+  reviewThreads: ReviewThread[],
+  configuredBotReviewThreads: ReviewThreadClassifier,
+): ExternalSignalReadinessDiagnostics {
+  const workflowPresence = repoHasGitHubActionsWorkflows(config.repoPath);
+  const workflows =
+    workflowPresence === true ? "present" : workflowPresence === false ? "absent" : "unknown";
+  const hasFailingChecks = checks.some((check) => check.bucket === "fail");
+  const hasPendingChecks = checks.some((check) => check.bucket === "pending" || check.bucket === "cancel");
+  const hasPassingChecks = checks.some((check) => check.bucket === "pass" || check.bucket === "skipping");
+  // TODO: `.github/workflows/*` absence is only a bootstrap heuristic. Repos can emit
+  // checks from external CI providers or GitHub Apps without committed Actions workflows,
+  // so readiness detection should eventually consider those integrations before falling
+  // back to `repo_not_configured` when no signal has been observed yet.
+  const ci =
+    hasFailingChecks
+      ? "failing"
+      : hasPendingChecks
+        ? "pending"
+        : hasPassingChecks || pr.currentHeadCiGreenAt
+          ? "passing"
+          : workflowPresence === false
+            ? "repo_not_configured"
+            : checks.length === 0
+              ? "awaiting_signal"
+              : "unknown";
+
+  const unresolvedConfiguredThreads = configuredBotReviewThreads(config, reviewThreads).filter(
+    (thread) => !thread.isResolved && !thread.isOutdated,
+  );
+  const observed = summarizeObservedReviewSignal(config, activeRecord, pr, reviewThreads, configuredBotReviewThreads);
+  const topLevelReviewEffect = configuredBotTopLevelReviewEffect(config, pr, reviewThreads, configuredBotReviewThreads);
+  const reviewSignalSource = reviewProviderProfileFromConfig(config).signalSource;
+  const review =
+    !repoExpectsConfiguredBotReview(config)
+      ? "disabled"
+      : unresolvedConfiguredThreads.length > 0 || topLevelReviewEffect === "blocking"
+        ? "feedback_present"
+        : observed.hasSignal || topLevelReviewEffect !== "none"
+          ? "signal_observed"
+          : observed.observedReview === "copilot_requested"
+            ? "pending_delivery"
+            : workflowPresence === false &&
+                reviewSignalSource === "review_threads" &&
+                checks.length === 0 &&
+                !pr.currentHeadCiGreenAt &&
+                !pr.configuredBotCurrentHeadObservedAt
+              ? "repo_not_configured"
+              : "awaiting_signal";
+
+  const hasRepoReadinessGap = ci === "repo_not_configured" || review === "repo_not_configured";
+  const status =
+    ci === "failing" || review === "feedback_present"
+      ? "blocked_by_ci_or_review_feedback"
+      : hasRepoReadinessGap
+        ? "repo_not_ready_for_expected_signals"
+        : ci === "awaiting_signal" || review === "awaiting_signal" || review === "pending_delivery"
+          ? "awaiting_expected_signals"
+          : "signals_observed";
+
+  return { status, ci, review, workflows };
 }
 
 export function configuredBotTopLevelReviewEffect(

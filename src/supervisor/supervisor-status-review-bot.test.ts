@@ -1,10 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import {
   configuredBotInitialGraceWaitWindow,
   configuredBotSettledWaitWindow,
   configuredBotRateLimitWaitWindow,
   configuredBotTopLevelReviewEffect,
+  externalSignalReadinessDiagnostics,
   configuredReviewStatusLabel,
   inferReviewBotProfile,
   reviewBotDiagnostics,
@@ -237,6 +241,131 @@ test("reviewBotDiagnostics tracks observed review signal precedence", () => {
     observedReview: "none",
     nextCheck: "provider_setup_or_delivery",
   });
+});
+
+test("externalSignalReadinessDiagnostics marks bootstrap repos without workflows as not ready for expected signals", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-bootstrap-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  assert.deepEqual(
+    externalSignalReadinessDiagnostics(
+      createConfig({
+        repoPath,
+        reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      }),
+      createRecord(),
+      createPr({
+        isDraft: true,
+        currentHeadCiGreenAt: null,
+        configuredBotCurrentHeadObservedAt: null,
+      }),
+      [],
+      [],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "repo_not_ready_for_expected_signals",
+      ci: "repo_not_configured",
+      review: "repo_not_configured",
+      workflows: "absent",
+    },
+  );
+});
+
+test("externalSignalReadinessDiagnostics treats observed external checks as CI signals without workflows", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-external-checks-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  assert.deepEqual(
+    externalSignalReadinessDiagnostics(
+      createConfig({
+        repoPath,
+        reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      }),
+      createRecord(),
+      createPr({
+        currentHeadCiGreenAt: null,
+        configuredBotCurrentHeadObservedAt: null,
+      }),
+      [{ bucket: "pass" }],
+      [],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "awaiting_expected_signals",
+      ci: "passing",
+      review: "awaiting_signal",
+      workflows: "absent",
+    },
+  );
+});
+
+test("externalSignalReadinessDiagnostics treats blocking configured-bot top-level reviews as feedback", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-configured-review-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+  await fs.mkdir(path.join(repoPath, ".github", "workflows"), { recursive: true });
+  await fs.writeFile(path.join(repoPath, ".github", "workflows", "ci.yml"), "name: CI\n");
+
+  assert.deepEqual(
+    externalSignalReadinessDiagnostics(
+      createConfig({
+        repoPath,
+        reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      }),
+      createRecord(),
+      createPr({
+        configuredBotTopLevelReviewStrength: "blocking",
+        configuredBotTopLevelReviewSubmittedAt: "2026-03-16T00:10:00Z",
+      }),
+      [],
+      [],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "blocked_by_ci_or_review_feedback",
+      ci: "awaiting_signal",
+      review: "feedback_present",
+      workflows: "present",
+    },
+  );
+});
+
+test("externalSignalReadinessDiagnostics preserves CI repo-readiness gaps after softened review signals arrive", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-softened-review-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  assert.deepEqual(
+    externalSignalReadinessDiagnostics(
+      createConfig({
+        repoPath,
+        reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      }),
+      createRecord(),
+      createPr({
+        configuredBotTopLevelReviewStrength: "nitpick_only",
+        configuredBotTopLevelReviewSubmittedAt: "2026-03-16T00:10:00Z",
+        currentHeadCiGreenAt: null,
+        configuredBotCurrentHeadObservedAt: null,
+      }),
+      [],
+      [],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "repo_not_ready_for_expected_signals",
+      ci: "repo_not_configured",
+      review: "signal_observed",
+      workflows: "absent",
+    },
+  );
 });
 
 test("configured review helpers preserve top-level status semantics", () => {

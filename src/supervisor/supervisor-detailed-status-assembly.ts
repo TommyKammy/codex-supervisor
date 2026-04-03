@@ -20,6 +20,7 @@ import {
   configuredBotTopLevelReviewEffect,
   configuredReviewBots,
   configuredReviewStatusLabel,
+  externalSignalReadinessDiagnostics,
   inferReviewBotProfile,
   reviewBotDiagnostics,
 } from "./supervisor-status-review-bot";
@@ -174,6 +175,17 @@ export function buildActiveDetailedStatusLines(
     );
     lines.push(
       `review_bot_diagnostics status=${reviewBotStatus.status} observed_review=${reviewBotStatus.observedReview} expected_reviewers=${reviewBotProfile.reviewers.length > 0 ? reviewBotProfile.reviewers.join(",") : "none"} next_check=${reviewBotStatus.nextCheck}`,
+    );
+    const externalSignalReadiness = externalSignalReadinessDiagnostics(
+      config,
+      activeRecord,
+      pr,
+      checks,
+      reviewThreads,
+      configuredBotReviewThreads,
+    );
+    lines.push(
+      `external_signal_readiness status=${externalSignalReadiness.status} ci=${externalSignalReadiness.ci} review=${externalSignalReadiness.review} workflows=${externalSignalReadiness.workflows}`,
     );
     lines.push(
       `${reviewStatusLabel} state=${copilotReviewState}${reviewersSuffix} requested_at=${pr.copilotReviewRequestedAt ?? "none"} arrived_at=${pr.copilotReviewArrivedAt ?? "none"} timed_out_at=${activeRecord.copilot_review_timed_out_at ?? "none"} timeout_action=${activeRecord.copilot_review_timeout_action ?? "none"}`,

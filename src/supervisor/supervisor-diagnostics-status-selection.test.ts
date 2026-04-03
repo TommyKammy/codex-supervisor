@@ -120,6 +120,61 @@ test("status surfaces the default trust posture and execution-safety warning", a
   );
 });
 
+test("status reports bootstrap repos as not ready for expected CI and review signals", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const issueNumber = 144;
+  const prNumber = 244;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "draft_pr",
+        branch,
+        pr_number: prNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        blocked_reason: null,
+        last_error: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    isDraft: true,
+    reviewDecision: "REVIEW_REQUIRED",
+    copilotReviewState: "not_requested",
+    currentHeadCiGreenAt: null,
+    configuredBotCurrentHeadObservedAt: null,
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => pr,
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const status = await supervisor.status();
+  assert.match(
+    status,
+    /^external_signal_readiness status=repo_not_ready_for_expected_signals ci=repo_not_configured review=repo_not_configured workflows=absent$/m,
+  );
+});
+
 test("status does not warn for issue-scoped or custom issue journal paths", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {
