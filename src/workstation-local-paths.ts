@@ -53,6 +53,10 @@ export interface WorkstationLocalPathMatch {
   reason: string;
 }
 
+export function formatWorkstationLocalPathMatch(finding: WorkstationLocalPathMatch): string {
+  return `- ${finding.filePath}:${finding.line} matched ${finding.prefix} (${finding.reason}) via ${JSON.stringify(finding.match)}`;
+}
+
 function escapeForRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 }
