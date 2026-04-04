@@ -2925,7 +2925,7 @@ test("reconcileStaleFailedIssueStates blocks failed no-PR issues for manual revi
   assert.equal(saveCalls, 1);
 });
 
-test("reconcileStaleFailedIssueStates does not requeue failed no-PR issues when only supervisor-local artifacts are dirty", async () => {
+test("reconcileStaleFailedIssueStates converges failed no-PR issues when only supervisor-local artifacts are dirty", async () => {
   const { repoPath, workspaceRoot, baseHead } = await createRepositoryWithOrigin();
   const workspacePath = await createIssueWorktree({
     repoPath,
@@ -3029,25 +3029,17 @@ test("reconcileStaleFailedIssueStates does not requeue failed no-PR issues when 
   );
 
   const updated = state.issues["366"];
-  assert.equal(updated.state, "blocked");
+  assert.equal(updated.state, "done");
   assert.equal(updated.pr_number, null);
   assert.equal(updated.codex_session_id, null);
-  assert.equal(updated.blocked_reason, "manual_review");
+  assert.equal(updated.blocked_reason, null);
   assert.equal(updated.last_failure_kind, null);
-  assert.equal(updated.last_failure_context?.signature, "failed-no-pr-already-satisfied-on-main");
-  assert.match(updated.last_error ?? "", /no longer differs from origin\/main/i);
-  assert.deepEqual(updated.last_failure_context?.details ?? [], [
-    "state=failed",
-    "tracked_pr=none",
-    "branch_state=already_satisfied_on_main",
-    "default_branch=origin/main",
-    `head_sha=${baseHead}`,
-    "operator_action=confirm whether the implementation already landed elsewhere or requeue manually if more work is still required",
-  ]);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_error, null);
   assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 0);
   assert.equal(
     updated.last_recovery_reason,
-    "failed_no_pr_already_satisfied: blocked issue #366 after failed no-PR recovery found no meaningful branch changes relative to origin/main",
+    "already_satisfied_on_main: marked issue #366 done after failed no-PR recovery found no meaningful branch changes",
   );
   assert.ok(updated.last_recovery_at);
   assert.equal(saveCalls, 1);
@@ -3161,31 +3153,24 @@ test("reconcileStaleFailedIssueStates treats artifact-only commits ahead of orig
   );
 
   const updated = state.issues["366"];
-  assert.equal(updated.state, "blocked");
+  assert.equal(updated.state, "done");
   assert.equal(updated.pr_number, null);
   assert.equal(updated.codex_session_id, null);
-  assert.equal(updated.blocked_reason, "manual_review");
+  assert.equal(updated.blocked_reason, null);
   assert.equal(updated.last_failure_kind, null);
-  assert.equal(updated.last_failure_context?.signature, "failed-no-pr-already-satisfied-on-main");
-  assert.match(updated.last_error ?? "", /no longer differs from origin\/main/i);
-  assert.deepEqual(updated.last_failure_context?.details ?? [], [
-    "state=failed",
-    "tracked_pr=none",
-    "branch_state=already_satisfied_on_main",
-    "default_branch=origin/main",
-    `head_sha=${headSha}`,
-    "operator_action=confirm whether the implementation already landed elsewhere or requeue manually if more work is still required",
-  ]);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_head_sha, headSha);
   assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 0);
   assert.equal(
     updated.last_recovery_reason,
-    "failed_no_pr_already_satisfied: blocked issue #366 after failed no-PR recovery found no meaningful branch changes relative to origin/main",
+    "already_satisfied_on_main: marked issue #366 done after failed no-PR recovery found only supervisor-owned branch divergence",
   );
   assert.ok(updated.last_recovery_at);
   assert.equal(saveCalls, 1);
 });
 
-test("reconcileStaleFailedIssueStates blocks failed no-PR issues when the preserved branch is already satisfied on origin/main", async () => {
+test("reconcileStaleFailedIssueStates converges failed no-PR issues when the preserved branch is already satisfied on origin/main", async () => {
   const { repoPath, workspaceRoot, baseHead } = await createRepositoryWithOrigin();
   const workspacePath = await createIssueWorktree({
     repoPath,
@@ -3286,25 +3271,17 @@ test("reconcileStaleFailedIssueStates blocks failed no-PR issues when the preser
   );
 
   const updated = state.issues["366"];
-  assert.equal(updated.state, "blocked");
+  assert.equal(updated.state, "done");
   assert.equal(updated.pr_number, null);
   assert.equal(updated.codex_session_id, null);
-  assert.equal(updated.blocked_reason, "manual_review");
+  assert.equal(updated.blocked_reason, null);
   assert.equal(updated.last_failure_kind, null);
-  assert.equal(updated.last_failure_context?.signature, "failed-no-pr-already-satisfied-on-main");
-  assert.match(updated.last_error ?? "", /no longer differs from origin\/main/i);
-  assert.deepEqual(updated.last_failure_context?.details ?? [], [
-    "state=failed",
-    "tracked_pr=none",
-    "branch_state=already_satisfied_on_main",
-    "default_branch=origin/main",
-    `head_sha=${baseHead}`,
-    "operator_action=confirm whether the implementation already landed elsewhere or requeue manually if more work is still required",
-  ]);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_error, null);
   assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 0);
   assert.equal(
     updated.last_recovery_reason,
-    "failed_no_pr_already_satisfied: blocked issue #366 after failed no-PR recovery found no meaningful branch changes relative to origin/main",
+    "already_satisfied_on_main: marked issue #366 done after failed no-PR recovery found no meaningful branch changes",
   );
   assert.ok(updated.last_recovery_at);
   assert.equal(saveCalls, 1);

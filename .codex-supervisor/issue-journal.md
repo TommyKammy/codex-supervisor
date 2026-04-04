@@ -1,17 +1,17 @@
-# Issue #1291: [codex] Separate stale no-PR recovery budget from implementation attempts
+# Issue #1292: [codex] Treat artifact-only stale no-PR branches as already_satisfied_on_main
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1291
-- Branch: codex/issue-1291
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1292
+- Branch: codex/issue-1292
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: dad4210b1b7dd5b4c4b01679fc10a7e85656f96a
+- Last head SHA: a0ff00cf03130a630c6d47f5d3c0a1459b1a3f02
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-04-03T23:11:34.457Z
+- Updated at: 2026-04-03T23:46:03.089Z
 
 ## Latest Codex Summary
 - None yet.
@@ -21,13 +21,13 @@
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The stale no-PR recovery path was still hitting the generic implementation-attempt gate in `resolveRunnableIssueContext`, so a recoverable stale cleanup could fail before its own stale recovery retry budget was exhausted.
-- What changed: Added a regression test for exhausted implementation attempts during queued stale no-PR recovery, added a no-PR helper to detect when stale recovery budget still applies, and skipped the implementation budget gate for that specific queued stale-recovery case so exhaustion diagnostics now end at the stale recovery loop rather than the implementation lane.
+- Hypothesis: Failed no-PR reconciliation was already classifying artifact-only divergence as `already_satisfied_on_main`, but the recovery branch still converted that result into a blocked manual-review outcome instead of done-style convergence.
+- What changed: Updated `reconcileStaleFailedIssueStates` to map failed no-PR `already_satisfied_on_main` results to `doneResetPatch(...)` and `already_satisfied_on_main` recovery events, while leaving `manual_review_required` fail-closed. Tightened regression tests to expect done-state convergence for artifact-only dirty worktrees, artifact-only commits ahead of `origin/main`, and exact-main matches.
 - Current blocker: none
-- Next exact step: Push or open/update the draft PR with the checkpoint commit if the supervisor wants the branch published now.
-- Verification gap: none for the scoped change; requested focused tests and build passed locally.
-- Files touched: .codex-supervisor/issue-journal.md; src/no-pull-request-state.ts; src/no-pull-request-state.test.ts; src/supervisor/supervisor.ts; src/supervisor/supervisor-execution-orchestration.test.ts
-- Rollback concern: The new bypass is intentionally narrow to queued no-PR stale recovery with remaining stale retry budget; if broadened accidentally it could weaken the normal implementation-attempt guardrail for ordinary no-PR work.
-- Last focused command: npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-execution-orchestration.test.ts && npm run build
+- Next exact step: Commit the verified reconciliation and test changes on `codex/issue-1292`.
+- Verification gap: none for the requested focused tests and build; unrelated test fixtures still log known execution-metrics chronology warnings without failing.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`
+- Rollback concern: Recovery logs for failed no-PR artifact-only cases now emit done-style `already_satisfied_on_main` reasons instead of blocked `failed_no_pr_already_satisfied` reasons, so any downstream tooling matching the old string would need to tolerate the new outcome.
+- Last focused command: `npm run build`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
