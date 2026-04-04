@@ -1,42 +1,33 @@
-# Issue #1298: [codex] Deduplicate workstation-local path finding formatting across CLI and gate
+# Issue #1299: [codex] Distinguish external-provider CI from missing provider setup in readiness diagnostics
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1298
-- Branch: codex/issue-1298
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1299
+- Branch: codex/issue-1299
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 2 (implementation=2, repair=0)
-- Last head SHA: 6977b8759ac60b96d4303e4ecc0b16a4e75a3573
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 2382b76cad60f3beba86e0adef300e9858b55091
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-04-04T03:43:00.000Z
+- Updated at: 2026-04-04T03:40:55.151Z
 
 ## Latest Codex Summary
-Published branch `codex/issue-1298` to `origin`, then opened draft PR [#1300](https://github.com/TommyKammy/codex-supervisor/pull/1300) for the already-verified checkpoint in `6977b87` (`Deduplicate workstation-local path finding rendering`). The implementation remains the shared workstation-local finding formatter in [src/workstation-local-paths.ts](src/workstation-local-paths.ts), with both [scripts/check-workstation-local-paths.ts](scripts/check-workstation-local-paths.ts) and [src/workstation-local-path-gate.ts](src/workstation-local-path-gate.ts) consuming it and the regression coverage in [src/workstation-local-path-detector.test.ts](src/workstation-local-path-detector.test.ts).
-
-Verification remains green from `npx tsx --test src/workstation-local-path-detector.test.ts src/workstation-local-paths.test.ts`, `npm run verify:paths`, and `npm run build`. This turn only published the branch, opened the PR, and refreshed [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md).
-
-Summary: Published the verified shared workstation-local formatter checkpoint and opened draft PR #1300.
-State hint: draft_pr
-Blocked reason: none
-Tests: `npx tsx --test src/workstation-local-path-detector.test.ts src/workstation-local-paths.test.ts`; `npm run verify:paths`; `npm run build`
-Next action: Monitor PR #1300 checks and address any review or CI feedback from the published checkpoint.
-Failure signature: none
+- Refined external signal readiness diagnostics so missing local GitHub Actions workflows no longer imply missing provider setup when authoritative external CI or provider activity is already present for the current head.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The CLI checker and runtime gate each rendered workstation-local findings separately, causing drift in failure detail formatting.
-- What changed: Added a regression test in `src/workstation-local-path-detector.test.ts`, introduced `formatWorkstationLocalPathMatch` in `src/workstation-local-paths.ts`, and switched both `scripts/check-workstation-local-paths.ts` and `src/workstation-local-path-gate.ts` to the shared formatter.
+- Hypothesis: `externalSignalReadinessDiagnostics` was overusing `.github/workflows/*` absence as a bootstrap proxy for missing CI/provider setup, even when current-head external provider success or provider review activity had already been observed.
+- What changed: Added focused regression coverage for absent-workflow repos with softened provider review activity and persisted current-head provider success; updated readiness diagnostics to treat those as authoritative external-provider signals and emit `ci=awaiting_external_signal` or `ci=passing` instead of `repo_not_configured`.
 - Current blocker: none
-- Next exact step: Watch draft PR #1300 for CI and review feedback, then land any follow-up fixes on `codex/issue-1298`.
-- Verification gap: none for local reproduction and requested issue verification.
-- Files touched: `.codex-supervisor/issue-journal.md`, `scripts/check-workstation-local-paths.ts`, `src/workstation-local-path-detector.test.ts`, `src/workstation-local-path-gate.ts`, `src/workstation-local-paths.ts`
-- Rollback concern: Low; the behavior change is limited to rendered finding text, and detector classification logic was not altered.
-- Last focused command: `gh pr create --draft --base main --head codex/issue-1298 --title "[codex] Deduplicate workstation-local path finding formatting across CLI and gate" --body-file -`
+- Next exact step: Commit the readiness diagnostic fix on `codex/issue-1299`.
+- Verification gap: none after focused tests and build passed.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-status-review-bot.ts`, `src/supervisor/supervisor-status-review-bot.test.ts`
+- Rollback concern: Low; behavior only changes when workflows are absent but current-head external-provider evidence already exists, so bootstrap repos with no signals still fail closed.
+- Last focused command: `npm run build`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

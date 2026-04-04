@@ -360,9 +360,42 @@ test("externalSignalReadinessDiagnostics preserves CI repo-readiness gaps after 
       configuredBotReviewThreads,
     ),
     {
-      status: "repo_not_ready_for_expected_signals",
-      ci: "repo_not_configured",
+      status: "awaiting_expected_signals",
+      ci: "awaiting_external_signal",
       review: "signal_observed",
+      workflows: "absent",
+    },
+  );
+});
+
+test("externalSignalReadinessDiagnostics treats recorded provider success on the current head as external CI", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-provider-success-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  assert.deepEqual(
+    externalSignalReadinessDiagnostics(
+      createConfig({
+        repoPath,
+        reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      }),
+      createRecord({
+        provider_success_head_sha: "head-sha",
+        provider_success_observed_at: "2026-03-16T00:10:00Z",
+      }),
+      createPr({
+        currentHeadCiGreenAt: null,
+        configuredBotCurrentHeadObservedAt: null,
+      }),
+      [],
+      [],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "awaiting_expected_signals",
+      ci: "passing",
+      review: "awaiting_signal",
       workflows: "absent",
     },
   );
