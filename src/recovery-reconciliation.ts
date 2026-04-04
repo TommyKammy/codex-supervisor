@@ -190,6 +190,7 @@ async function classifyFailedNoPrBranchRecovery(args: {
     "repoPath" | "defaultBranch" | "issueJournalRelativePath" | "codexExecTimeoutMinutes" | "workspaceRoot" | "branchPrefix"
   >;
   record: Pick<IssueRunRecord, "issue_number" | "workspace" | "journal_path" | "branch">;
+  ensureOriginDefaultBranchFetched: () => Promise<void>;
 }): Promise<{ state: FailedNoPrBranchRecoveryState; headSha: string | null }> {
   const { config, record } = args;
   if (!isSafeCleanupTarget(config, record.workspace, record.branch) || !fs.existsSync(path.join(record.workspace, ".git"))) {
@@ -227,9 +228,7 @@ async function classifyFailedNoPrBranchRecovery(args: {
       return { state: "manual_review_required", headSha: null };
     }
 
-    await runCommand("git", ["-C", config.repoPath, "fetch", "origin", config.defaultBranch], {
-      timeoutMs: gitProbeTimeoutMs,
-    });
+    await args.ensureOriginDefaultBranchFetched();
     const [headResult, baseAheadResult, baseDiffResult, workspaceStatusResult] = await Promise.all([
       runCommand("git", ["-C", record.workspace, "rev-parse", "HEAD"], {
         timeoutMs: gitProbeTimeoutMs,
@@ -268,6 +267,14 @@ async function classifyFailedNoPrBranchRecovery(args: {
   } catch {
     return { state: "manual_review_required", headSha: null };
   }
+}
+
+async function fetchOriginDefaultBranch(
+  config: Pick<SupervisorConfig, "repoPath" | "defaultBranch" | "codexExecTimeoutMinutes">,
+): Promise<void> {
+  await runCommand("git", ["-C", config.repoPath, "fetch", "origin", config.defaultBranch], {
+    timeoutMs: config.codexExecTimeoutMinutes * 60_000,
+  });
 }
 
 function shouldAutoRecoverFailedNoPr(record: IssueRunRecord, config: SupervisorConfig): boolean {
@@ -1327,6 +1334,9 @@ export async function reconcileStaleFailedIssueStates(
       pr: NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
     ) => Partial<IssueRunRecord>;
     syncCopilotReviewTimeoutState: typeof syncCopilotReviewTimeoutState;
+    fetchOriginDefaultBranch?: (
+      config: Pick<SupervisorConfig, "repoPath" | "defaultBranch" | "codexExecTimeoutMinutes">
+    ) => Promise<void>;
     inferGitHubWaitStep?: (
       config: SupervisorConfig,
       record: IssueRunRecord,
@@ -1342,6 +1352,11 @@ export async function reconcileStaleFailedIssueStates(
 ): Promise<void> {
   let changed = false;
   const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
+  let failedNoPrFetchPromise: Promise<void> | null = null;
+  const ensureOriginDefaultBranchFetched = (): Promise<void> => {
+    failedNoPrFetchPromise ??= (deps.fetchOriginDefaultBranch ?? fetchOriginDefaultBranch)(config);
+    return failedNoPrFetchPromise;
+  };
 
   for (const record of Object.values(state.issues)) {
     if (record.state !== "failed") {
@@ -1372,7 +1387,11 @@ export async function reconcileStaleFailedIssueStates(
         continue;
       }
 
-      const branchRecovery = await classifyFailedNoPrBranchRecovery({ config, record });
+      const branchRecovery = await classifyFailedNoPrBranchRecovery({
+        config,
+        record,
+        ensureOriginDefaultBranchFetched,
+      });
       if (branchRecovery.state !== "recoverable") {
         const branchRecoveryState = branchRecovery.state;
         const shouldMarkAlreadySatisfiedOnMain = branchRecoveryState === "already_satisfied_on_main";
