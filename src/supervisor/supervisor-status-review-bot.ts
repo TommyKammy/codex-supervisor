@@ -92,6 +92,25 @@ export interface ExternalSignalReadinessDiagnostics {
   workflows: string;
 }
 
+function hasCurrentHeadProviderSuccess(activeRecord: IssueRunRecord, pr: GitHubPullRequest): boolean {
+  return activeRecord.provider_success_head_sha === pr.headRefOid && Boolean(activeRecord.provider_success_observed_at);
+}
+
+function hasAuthoritativeExternalProviderActivity(
+  activeRecord: IssueRunRecord,
+  pr: GitHubPullRequest,
+  observedReviewSignal: boolean,
+  topLevelReviewEffect: string,
+): boolean {
+  return Boolean(
+    hasCurrentHeadProviderSuccess(activeRecord, pr) ||
+      pr.currentHeadCiGreenAt ||
+      pr.configuredBotCurrentHeadObservedAt ||
+      observedReviewSignal ||
+      topLevelReviewEffect !== "none",
+  );
+}
+
 export function configuredReviewBots(config: SupervisorConfig): string[] {
   return configuredReviewBotLogins(config);
 }
@@ -362,28 +381,32 @@ export function externalSignalReadinessDiagnostics(
   const hasFailingChecks = checks.some((check) => check.bucket === "fail");
   const hasPendingChecks = checks.some((check) => check.bucket === "pending" || check.bucket === "cancel");
   const hasPassingChecks = checks.some((check) => check.bucket === "pass" || check.bucket === "skipping");
-  // TODO: `.github/workflows/*` absence is only a bootstrap heuristic. Repos can emit
-  // checks from external CI providers or GitHub Apps without committed Actions workflows,
-  // so readiness detection should eventually consider those integrations before falling
-  // back to `repo_not_configured` when no signal has been observed yet.
+  const unresolvedConfiguredThreads = configuredBotReviewThreads(config, reviewThreads).filter(
+    (thread) => !thread.isResolved && !thread.isOutdated,
+  );
+  const observed = summarizeObservedReviewSignal(config, activeRecord, pr, reviewThreads, configuredBotReviewThreads);
+  const topLevelReviewEffect = configuredBotTopLevelReviewEffect(config, pr, reviewThreads, configuredBotReviewThreads);
+  const hasExternalProviderActivity = hasAuthoritativeExternalProviderActivity(
+    activeRecord,
+    pr,
+    observed.hasSignal,
+    topLevelReviewEffect,
+  );
   const ci =
     hasFailingChecks
       ? "failing"
       : hasPendingChecks
         ? "pending"
-        : hasPassingChecks || pr.currentHeadCiGreenAt
+        : hasPassingChecks || pr.currentHeadCiGreenAt || hasCurrentHeadProviderSuccess(activeRecord, pr)
           ? "passing"
+          : workflowPresence === false && hasExternalProviderActivity
+            ? "awaiting_external_signal"
           : workflowPresence === false
             ? "repo_not_configured"
             : checks.length === 0
               ? "awaiting_signal"
               : "unknown";
 
-  const unresolvedConfiguredThreads = configuredBotReviewThreads(config, reviewThreads).filter(
-    (thread) => !thread.isResolved && !thread.isOutdated,
-  );
-  const observed = summarizeObservedReviewSignal(config, activeRecord, pr, reviewThreads, configuredBotReviewThreads);
-  const topLevelReviewEffect = configuredBotTopLevelReviewEffect(config, pr, reviewThreads, configuredBotReviewThreads);
   const reviewSignalSource = reviewProviderProfileFromConfig(config).signalSource;
   const review =
     !repoExpectsConfiguredBotReview(config)
@@ -397,8 +420,7 @@ export function externalSignalReadinessDiagnostics(
             : workflowPresence === false &&
                 reviewSignalSource === "review_threads" &&
                 checks.length === 0 &&
-                !pr.currentHeadCiGreenAt &&
-                !pr.configuredBotCurrentHeadObservedAt
+                !hasExternalProviderActivity
               ? "repo_not_configured"
               : "awaiting_signal";
 
@@ -408,7 +430,10 @@ export function externalSignalReadinessDiagnostics(
       ? "blocked_by_ci_or_review_feedback"
       : hasRepoReadinessGap
         ? "repo_not_ready_for_expected_signals"
-        : ci === "awaiting_signal" || review === "awaiting_signal" || review === "pending_delivery"
+        : ci === "awaiting_signal" ||
+            ci === "awaiting_external_signal" ||
+            review === "awaiting_signal" ||
+            review === "pending_delivery"
           ? "awaiting_expected_signals"
           : "signals_observed";
 
