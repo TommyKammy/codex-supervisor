@@ -1,5 +1,10 @@
 import path from "node:path";
-import { DEFAULT_EXCLUDED_PATHS, findForbiddenWorkstationLocalPaths, normalizeRepoRelativePath } from "../src/workstation-local-paths";
+import {
+  DEFAULT_EXCLUDED_PATHS,
+  findForbiddenWorkstationLocalPaths,
+  formatWorkstationLocalPathMatch,
+  normalizeRepoRelativePath,
+} from "../src/workstation-local-paths";
 
 interface Args {
   workspacePath: string;
@@ -63,11 +68,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const renderedFindings = findings
-    .map(
-      (finding) => `- ${finding.filePath}:${finding.line} matched ${finding.prefix} (${finding.reason}) via ${JSON.stringify(finding.match)}`,
-    )
-    .join("\n");
+  const renderedFindings = findings.map(formatWorkstationLocalPathMatch).join("\n");
   const renderedExclusions = [...excludedPaths].sort().map((entry) => `- ${entry}`).join("\n");
 
   throw new Error(

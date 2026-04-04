@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { runWorkstationLocalPathGate } from "./workstation-local-path-gate";
 
 const SAMPLE_FORBIDDEN_PATH = ["", "home", "alice", "dev", "private-repo"].join("/");
 
@@ -50,6 +51,33 @@ function runVerifyPaths(repoPath: string, ...args: string[]): SpawnSyncReturns<s
       FORCE_COLOR: "0",
     },
   });
+}
+
+function extractRenderedFindingLines(stderr: string): string[] {
+  const lines = stderr.split(/\r?\n/);
+  const findingLines: string[] = [];
+  let collecting = false;
+
+  for (const line of lines) {
+    if (line.includes("Forbidden workstation-local absolute path references found:")) {
+      collecting = true;
+      continue;
+    }
+
+    if (!collecting) {
+      continue;
+    }
+
+    if (line.trim().length === 0) {
+      break;
+    }
+
+    if (line.startsWith("- ")) {
+      findingLines.push(line);
+    }
+  }
+
+  return findingLines;
 }
 
 test("workstation-local path detector flags tracked durable artifacts and allows explicit exclusions", async (t) => {
@@ -134,4 +162,28 @@ test("npm run verify:paths exposes the focused workstation-local path detector",
   assert.notEqual(failingResult.status, 0, "expected forbidden tracked path to fail via package script");
   assert.match(failingResult.stderr, /Forbidden workstation-local absolute path references found:/);
   assert.match(failingResult.stderr, /README\.md:1/);
+});
+
+test("runtime gate reuses the CLI finding rendering for workstation-local path violations", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.join(repoPath, "docs"), { recursive: true });
+  await fs.writeFile(path.join(repoPath, "docs", "guide.md"), `Workspace note: ${SAMPLE_FORBIDDEN_PATH}\n`, "utf8");
+  git(repoPath, "add", "docs/guide.md");
+
+  const detectorResult = runDetector(repoPath, "--workspace", repoPath);
+  assert.notEqual(detectorResult.status, 0, "expected forbidden tracked path to fail");
+  const renderedFindings = extractRenderedFindingLines(detectorResult.stderr);
+  assert.deepEqual(renderedFindings, [`- docs/guide.md:1 matched /home/<user>/ (Linux user home directory) via ${JSON.stringify(SAMPLE_FORBIDDEN_PATH)}`]);
+
+  const gateResult = await runWorkstationLocalPathGate({
+    workspacePath: repoPath,
+    gateLabel: "before publication",
+  });
+
+  assert.equal(gateResult.ok, false);
+  assert.deepEqual(gateResult.failureContext?.details, renderedFindings);
 });
