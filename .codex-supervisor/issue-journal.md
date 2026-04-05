@@ -1,36 +1,36 @@
-# Issue #1304: [codex] Detect invalid worktree-incompatible workspacePreparationCommand in setup readiness and doctor
+# Issue #1305: [codex] Reject missing or untracked repo-relative workspacePreparationCommand targets at config write time
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1304
-- Branch: codex/issue-1304
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1305
+- Branch: codex/issue-1305
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: d3b89e5e22167a74ec3049fe4b5472f2041885b3
+- Last head SHA: a5af941fbfad550b9b0d07550b62700e9ef214ac
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-04-05T23:07:58.287Z
+- Updated at: 2026-04-05T23:35:04.603Z
 
 ## Latest Codex Summary
-- Reproduced the gap with focused setup-readiness tests: repo-relative `workspacePreparationCommand` helpers under `repoPath` were not validated at all, so readiness stayed green and the field was absent even when the helper was missing or untracked.
-- Added shared worktree-compatibility validation for repo-relative workspace-preparation helpers, surfaced `workspacePreparationCommand` as a setup-readiness field, and wired doctor config warnings to the same diagnosis. Focused tests and build now pass.
+- Reproduced that `updateSetupConfig` persisted invalid repo-relative `workspacePreparationCommand` values instead of rejecting them at write time.
+- Added focused config-write coverage for missing, untracked, tracked, and non-file command cases.
+- Fixed the write path to validate the prospective config document before backup rotation or disk writes.
+- Pushed `codex/issue-1305` and opened draft PR #1309.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: repo-relative workspace preparation helpers need validation against the tracked repo contents before preserved issue worktrees attempt to run them.
-- What changed: added shared validation in `src/core/config.ts` for repo-relative helper paths that are missing or untracked; setup readiness now includes `workspacePreparationCommand` and marks invalid helper cases as blocking config errors; doctor report tests cover the new config-warning text; setup config/fixture helpers were updated for the added readiness field.
-- Current blocker: none.
-- Next exact step: commit the validated implementation on `codex/issue-1304`, then open or update the draft PR if needed.
-- Verification gap: no broader web UI regression pass yet beyond build and the focused readiness/doctor tests.
-- Files touched: .codex-supervisor/issue-journal.md, src/core/config.ts, src/setup-readiness.ts, src/setup-readiness.test.ts, src/doctor.test.ts, src/setup-config-write.ts, src/setup-config-preview.ts, src/backend/setup-test-fixtures.ts
-- Rollback concern: low; the change is additive and only flags repo-relative workspace-preparation helpers that would be absent from preserved worktrees.
-- Last focused command: npx tsx --test src/setup-readiness.test.ts src/doctor.test.ts
+- Hypothesis: The existing worktree validator only surfaced through diagnostics/readiness and was not enforced during setup config writes, so invalid helper paths were written and only warned about later.
+- What changed: `updateSetupConfig` now validates the prospective config document before creating backups or writing JSON; added focused tests covering missing/untracked rejection plus tracked/non-file acceptance.
+- Current blocker: none
+- Next exact step: Monitor draft PR #1309 for CI and review feedback, then address any follow-up failures or comments.
+- Verification gap: The issue body mentions `src/setup-config-write.test.ts`, but that file does not exist in this branch; verified with `src/config.test.ts` plus `npm run build` instead.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/setup-config-write.ts`, `src/config.test.ts`
+- Rollback concern: Low; the change only tightens config-write validation for repo-relative helper commands and preserves prior behavior for tracked helpers and non-file commands.
+- Last focused command: `gh pr create --draft --base main --head codex/issue-1305 --title "[codex] Reject missing or untracked repo-relative workspacePreparationCommand targets at config write time" ...`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
-- 2026-04-06: Reproduced the issue with new focused tests in `src/setup-readiness.test.ts` before implementation.
-- 2026-04-06: Verified with `npx tsx --test src/setup-readiness.test.ts src/doctor.test.ts` and `npm run build`.

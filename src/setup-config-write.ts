@@ -1,8 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { displayLocalCiCommand, loadConfigSummary, resolveConfigPath } from "./core/config";
+import {
+  displayLocalCiCommand,
+  loadConfigSummary,
+  normalizeLocalCiCommand as normalizeConfigLocalCiCommand,
+  resolveConfigPath,
+  validateWorkspacePreparationCommandForWorktrees,
+} from "./core/config";
 import { reviewProviderProfileFromConfig } from "./core/review-providers";
-import { isValidGitRefName, parseJson, writeJsonAtomic } from "./core/utils";
+import { isValidGitRefName, parseJson, resolveMaybeRelative, writeJsonAtomic } from "./core/utils";
 import type { SetupConfigPreviewSelectableReviewProviderProfile } from "./setup-config-preview";
 import { diagnoseSetupReadiness, type SetupReadinessFieldKey, type SetupReadinessReport } from "./setup-readiness";
 
@@ -102,6 +108,22 @@ function normalizeLocalCiCommand(value: unknown): string | null {
 
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : null;
+}
+
+function validateProspectiveSetupDocument(configPath: string, nextDocument: Record<string, unknown>): void {
+  const configDir = path.dirname(configPath);
+  const repoPath =
+    typeof nextDocument.repoPath === "string" && nextDocument.repoPath.trim() !== ""
+      ? resolveMaybeRelative(configDir, nextDocument.repoPath)
+      : undefined;
+  const workspacePreparationCommand = normalizeConfigLocalCiCommand(nextDocument.workspacePreparationCommand);
+  const validationError = validateWorkspacePreparationCommandForWorktrees({
+    repoPath,
+    workspacePreparationCommand,
+  });
+  if (validationError !== null) {
+    throw new Error(validationError);
+  }
 }
 
 function normalizeSetupChanges(changes: unknown): SetupConfigChanges {
@@ -350,6 +372,7 @@ export async function updateSetupConfig(args: UpdateSetupConfigArgs): Promise<Se
     changes,
   });
   const nextDocument = applySetupChanges(existing.document, changes);
+  validateProspectiveSetupDocument(configPath, nextDocument);
 
   let backupPath: string | null = null;
   if (existing.rawContents !== null) {

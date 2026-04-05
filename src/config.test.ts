@@ -9,6 +9,12 @@ import { SupervisorConfig } from "./core/types";
 import { buildSetupConfigPreview } from "./setup-config-preview";
 import { updateSetupConfig } from "./setup-config-write";
 
+function initGitRepo(repoPath: string): void {
+  execFileSync("git", ["init"], { cwd: repoPath, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Codex Test"], { cwd: repoPath, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "codex@example.com"], { cwd: repoPath, stdio: "ignore" });
+}
+
 test("loadConfig leaves bare codexBinary values unresolved for PATH lookup", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
   t.after(async () => {
@@ -1362,4 +1368,174 @@ test("updateSetupConfig rejects invalid setup field values before touching the c
   const after = await fs.readFile(configPath, "utf8");
   assert.equal(after, before);
   await assert.rejects(fs.access(`${configPath}.bak`));
+});
+
+test("updateSetupConfig rejects missing repo-relative workspacePreparationCommand helpers before touching the config file", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-update-workspace-prep-missing-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const repoPath = path.join(tempDir, "repo");
+  await fs.mkdir(repoPath, { recursive: true });
+  initGitRepo(repoPath);
+
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  const originalDocument = {
+    repoPath,
+    repoSlug: "owner/repo",
+    defaultBranch: "main",
+    workspaceRoot: path.join(tempDir, "worktrees"),
+    stateFile: path.join(tempDir, "state.json"),
+    codexBinary: process.execPath,
+    branchPrefix: "codex/issue-",
+    reviewBotLogins: [],
+    experimentalFlag: true,
+  };
+  await fs.writeFile(configPath, JSON.stringify(originalDocument, null, 2), "utf8");
+  const before = await fs.readFile(configPath, "utf8");
+
+  await assert.rejects(
+    () =>
+      updateSetupConfig({
+        configPath,
+        changes: {
+          workspacePreparationCommand: "./scripts/prepare-workspace.sh",
+        },
+      }),
+    /workspacePreparationCommand points at \.\/scripts\/prepare-workspace\.sh, but that path does not resolve to a file inside repoPath\./u,
+  );
+
+  const after = await fs.readFile(configPath, "utf8");
+  assert.equal(after, before);
+  await assert.rejects(fs.access(`${configPath}.bak`));
+});
+
+test("updateSetupConfig rejects untracked repo-relative workspacePreparationCommand helpers before touching the config file", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-update-workspace-prep-untracked-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const repoPath = path.join(tempDir, "repo");
+  await fs.mkdir(path.join(repoPath, "scripts"), { recursive: true });
+  initGitRepo(repoPath);
+  await fs.writeFile(path.join(repoPath, "scripts", "prepare-workspace.sh"), "#!/bin/sh\nexit 0\n", "utf8");
+
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  const originalDocument = {
+    repoPath,
+    repoSlug: "owner/repo",
+    defaultBranch: "main",
+    workspaceRoot: path.join(tempDir, "worktrees"),
+    stateFile: path.join(tempDir, "state.json"),
+    codexBinary: process.execPath,
+    branchPrefix: "codex/issue-",
+    reviewBotLogins: [],
+    experimentalFlag: true,
+  };
+  await fs.writeFile(configPath, JSON.stringify(originalDocument, null, 2), "utf8");
+  const before = await fs.readFile(configPath, "utf8");
+
+  await assert.rejects(
+    () =>
+      updateSetupConfig({
+        configPath,
+        changes: {
+          workspacePreparationCommand: "./scripts/prepare-workspace.sh",
+        },
+      }),
+    /workspacePreparationCommand points at \.\/scripts\/prepare-workspace\.sh, but that path resolves to an untracked helper\./u,
+  );
+
+  const after = await fs.readFile(configPath, "utf8");
+  assert.equal(after, before);
+  await assert.rejects(fs.access(`${configPath}.bak`));
+});
+
+test("updateSetupConfig accepts tracked repo-owned workspacePreparationCommand helpers", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-update-workspace-prep-tracked-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const repoPath = path.join(tempDir, "repo");
+  await fs.mkdir(path.join(repoPath, "scripts"), { recursive: true });
+  initGitRepo(repoPath);
+  await fs.writeFile(path.join(repoPath, "scripts", "prepare-workspace.sh"), "#!/bin/sh\nexit 0\n", "utf8");
+  execFileSync("git", ["add", "scripts/prepare-workspace.sh"], { cwd: repoPath, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "Add workspace helper"], { cwd: repoPath, stdio: "ignore" });
+
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath,
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: path.join(tempDir, "worktrees"),
+      stateFile: path.join(tempDir, "state.json"),
+      codexBinary: process.execPath,
+      branchPrefix: "codex/issue-",
+      reviewBotLogins: [],
+      experimentalFlag: true,
+    }, null, 2),
+    "utf8",
+  );
+
+  const result = await updateSetupConfig({
+    configPath,
+    changes: {
+      workspacePreparationCommand: "./scripts/prepare-workspace.sh",
+    },
+  });
+
+  const updatedDocument = JSON.parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown>;
+  const workspacePreparationField = result.readiness.fields.find((field) => field.key === "workspacePreparationCommand");
+  assert.equal(updatedDocument.workspacePreparationCommand, "./scripts/prepare-workspace.sh");
+  assert.equal(updatedDocument.experimentalFlag, true);
+  assert.deepEqual(result.updatedFields, ["workspacePreparationCommand"]);
+  assert.ok(workspacePreparationField);
+  assert.equal(workspacePreparationField.state, "configured");
+  assert.equal(workspacePreparationField.value, "./scripts/prepare-workspace.sh");
+  assert.equal(workspacePreparationField.message, "Workspace preparation command is configured.");
+});
+
+test("updateSetupConfig accepts non-file workspacePreparationCommand probes", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-update-workspace-prep-probe-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const repoPath = path.join(tempDir, "repo");
+  await fs.mkdir(repoPath, { recursive: true });
+  initGitRepo(repoPath);
+
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath,
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: path.join(tempDir, "worktrees"),
+      stateFile: path.join(tempDir, "state.json"),
+      codexBinary: process.execPath,
+      branchPrefix: "codex/issue-",
+      reviewBotLogins: [],
+    }, null, 2),
+    "utf8",
+  );
+
+  const result = await updateSetupConfig({
+    configPath,
+    changes: {
+      workspacePreparationCommand: "node --version",
+    },
+  });
+
+  const updatedDocument = JSON.parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown>;
+  const workspacePreparationField = result.readiness.fields.find((field) => field.key === "workspacePreparationCommand");
+  assert.equal(updatedDocument.workspacePreparationCommand, "node --version");
+  assert.deepEqual(result.updatedFields, ["workspacePreparationCommand"]);
+  assert.ok(workspacePreparationField);
+  assert.equal(workspacePreparationField.state, "configured");
+  assert.equal(workspacePreparationField.value, "node --version");
+  assert.equal(workspacePreparationField.message, "Workspace preparation command is configured.");
 });
