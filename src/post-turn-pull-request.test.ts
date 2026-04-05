@@ -22,9 +22,12 @@ async function createTrackedRepo(): Promise<string> {
   git(repoPath, "init", "-b", "main");
   git(repoPath, "config", "user.name", "Codex Supervisor");
   git(repoPath, "config", "user.email", "codex@example.test");
+  git(repoPath, "init", "--bare", "origin.git");
   await fs.writeFile(path.join(repoPath, "README.md"), "# fixture\n", "utf8");
   git(repoPath, "add", "README.md");
   git(repoPath, "commit", "-m", "seed");
+  git(repoPath, "remote", "add", "origin", path.join(repoPath, "origin.git"));
+  git(repoPath, "push", "-u", "origin", "main");
   return repoPath;
 }
 
@@ -996,6 +999,7 @@ test("handlePostTurnPullRequestTransitionsPhase redacts supervisor-owned cross-i
   t.after(async () => {
     await fs.rm(workspacePath, { recursive: true, force: true });
   });
+  git(workspacePath, "checkout", "-b", "codex/issue-102");
 
   const currentJournalPath = path.join(workspacePath, ".codex-supervisor", "issues", "102", "issue-journal.md");
   const otherJournalPath = path.join(workspacePath, ".codex-supervisor", "issues", "181", "issue-journal.md");
@@ -1015,14 +1019,21 @@ test("handlePostTurnPullRequestTransitionsPhase redacts supervisor-owned cross-i
     "utf8",
   );
   git(workspacePath, "add", ".codex-supervisor/issues/102/issue-journal.md", ".codex-supervisor/issues/181/issue-journal.md");
+  git(workspacePath, "commit", "-m", "seed ready-gate journal leak");
+  git(workspacePath, "push", "-u", "origin", "codex/issue-102");
 
   const config = createConfig({
     localCiCommand: "npm run ci:local",
     issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
   });
   const issue = createIssue({ title: "Gate ready promotion on cross-issue journal hygiene" });
-  const draftPr = createPullRequest({ title: "Gate ready promotion", isDraft: true });
-  const readyPr = createPullRequest({ title: "Gate ready promotion", isDraft: false });
+  const initialHead = git(workspacePath, "rev-parse", "HEAD").trim();
+  const draftPr = createPullRequest({
+    title: "Gate ready promotion",
+    isDraft: true,
+    headRefName: "codex/issue-102",
+    headRefOid: initialHead,
+  });
   const state: SupervisorStateFile = {
     activeIssueNumber: 102,
     issues: {
@@ -1108,18 +1119,28 @@ test("handlePostTurnPullRequestTransitionsPhase redacts supervisor-owned cross-i
     },
     loadOpenPullRequestSnapshot: async () => {
       snapshotLoads += 1;
-      return snapshotLoads === 1
-        ? { pr: draftPr, checks: [], reviewThreads: [] satisfies ReviewThread[] }
-        : { pr: readyPr, checks: [], reviewThreads: [] satisfies ReviewThread[] };
+      return {
+        pr: {
+          ...draftPr,
+          headRefOid: git(workspacePath, "rev-parse", "HEAD").trim(),
+        },
+        checks: [],
+        reviewThreads: [] satisfies ReviewThread[],
+      };
     },
   });
 
-  assert.equal(result.record.state, "pr_open");
-  assert.equal(readyCalls, 1);
-  assert.equal(localCiCalls, 1);
+  assert.equal(result.record.state, "draft_pr");
+  assert.equal(result.record.last_head_sha, git(workspacePath, "rev-parse", "HEAD").trim());
+  assert.notEqual(result.record.last_head_sha, initialHead);
+  assert.equal(readyCalls, 0);
+  assert.equal(localCiCalls, 0);
+  assert.equal(snapshotLoads, 2);
   const redactedJournal = await fs.readFile(otherJournalPath, "utf8");
   assert.doesNotMatch(redactedJournal, new RegExp(SAMPLE_MACOS_WORKSTATION_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(redactedJournal, /<redacted-local-path>/);
+  assert.match(git(workspacePath, "log", "-1", "--pretty=%s"), /Normalize supervisor-owned issue journals for path hygiene/);
+  assert.match(git(workspacePath, "ls-remote", "--heads", "origin", "codex/issue-102"), /refs\/heads\/codex\/issue-102/);
 });
 
 test("handlePostTurnPullRequestTransitionsPhase creates execution-ready follow-up issues for follow-up-eligible residuals", async () => {

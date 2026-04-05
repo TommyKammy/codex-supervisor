@@ -187,3 +187,47 @@ test("runtime gate reuses the CLI finding rendering for workstation-local path v
   assert.equal(gateResult.ok, false);
   assert.deepEqual(gateResult.failureContext?.details, renderedFindings);
 });
+
+test("runtime gate fails closed when supervisor-owned journal normalization throws", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("directory permission semantics differ on Windows");
+    return;
+  }
+
+  const repoPath = await createTrackedRepo();
+  const journalDir = path.join(repoPath, ".codex-supervisor", "issues", "181");
+  const journalPath = path.join(journalDir, "issue-journal.md");
+  t.after(async () => {
+    await fs.chmod(journalDir, 0o755).catch(() => undefined);
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(journalDir, { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    [
+      "# Issue #181: stale leak",
+      "",
+      "## Codex Working Notes",
+      "### Current Handoff",
+      `- What changed: copied ${["", "Users", "alice", "Dev", "private-repo"].join("/")} from another workstation.`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  git(repoPath, "add", ".codex-supervisor/issues/181/issue-journal.md");
+  await fs.chmod(journalDir, 0o555);
+
+  const gateResult = await runWorkstationLocalPathGate({
+    workspacePath: repoPath,
+    gateLabel: "before publication",
+  });
+
+  assert.equal(gateResult.ok, false);
+  assert.match(gateResult.failureContext?.summary ?? "", /workstation-local path hygiene before publication/);
+  assert.match(gateResult.failureContext?.details[0] ?? "", /journal normalization failed for \.codex-supervisor\/issues\/181\/issue-journal\.md/i);
+  assert.match(
+    gateResult.failureContext?.details.join("\n") ?? "",
+    /\.codex-supervisor\/issues\/181\/issue-journal\.md:5/,
+  );
+});

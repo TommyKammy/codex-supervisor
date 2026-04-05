@@ -21,9 +21,12 @@ async function createTrackedRepo(): Promise<string> {
   git(repoPath, "init", "-b", "main");
   git(repoPath, "config", "user.name", "Codex Supervisor");
   git(repoPath, "config", "user.email", "codex@example.test");
+  git(repoPath, "init", "--bare", "origin.git");
   await fs.writeFile(path.join(repoPath, "README.md"), "# fixture\n", "utf8");
   git(repoPath, "add", "README.md");
   git(repoPath, "commit", "-m", "seed");
+  git(repoPath, "remote", "add", "origin", path.join(repoPath, "origin.git"));
+  git(repoPath, "push", "-u", "origin", "main");
   return repoPath;
 }
 
@@ -121,6 +124,7 @@ test("applyCodexTurnPublicationGate redacts supervisor-owned cross-issue journal
   t.after(async () => {
     await fs.rm(workspacePath, { recursive: true, force: true });
   });
+  git(workspacePath, "checkout", "-b", "codex/issue-102");
 
   const currentJournalPath = path.join(workspacePath, ".codex-supervisor", "issues", "102", "issue-journal.md");
   const otherJournalPath = path.join(workspacePath, ".codex-supervisor", "issues", "181", "issue-journal.md");
@@ -140,6 +144,7 @@ test("applyCodexTurnPublicationGate redacts supervisor-owned cross-issue journal
     "utf8",
   );
   git(workspacePath, "add", ".codex-supervisor/issues/102/issue-journal.md", ".codex-supervisor/issues/181/issue-journal.md");
+  git(workspacePath, "commit", "-m", "seed cross-issue journal leak");
 
   let createPullRequestCalls = 0;
   const issue = createIssue({ title: "Gate draft PR creation on cross-issue journal hygiene" });
@@ -171,11 +176,11 @@ test("applyCodexTurnPublicationGate redacts supervisor-owned cross-issue journal
     workspacePath,
     workspaceStatus: {
       branch: "codex/issue-102",
-      headSha: "head-102",
+      headSha: git(workspacePath, "rev-parse", "HEAD").trim(),
       hasUncommittedChanges: false,
       baseAhead: 1,
       baseBehind: 0,
-      remoteBranchExists: true,
+      remoteBranchExists: false,
       remoteAhead: 0,
       remoteBehind: 0,
     },
@@ -202,6 +207,9 @@ test("applyCodexTurnPublicationGate redacts supervisor-owned cross-issue journal
   const redactedJournal = await fs.readFile(otherJournalPath, "utf8");
   assert.doesNotMatch(redactedJournal, new RegExp(SAMPLE_MACOS_WORKSTATION_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(redactedJournal, /<redacted-local-path>/);
+  assert.match(git(workspacePath, "log", "-1", "--pretty=%s"), /Normalize supervisor-owned issue journals for path hygiene/);
+  assert.match(git(workspacePath, "ls-remote", "--heads", "origin", "codex/issue-102"), /refs\/heads\/codex\/issue-102/);
+  assert.equal(git(workspacePath, "status", "--short", "--untracked-files=no").trim(), "");
 });
 
 test("applyCodexTurnPublicationGate blocks draft PR creation when local CI fails", async () => {

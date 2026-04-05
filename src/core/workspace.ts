@@ -378,6 +378,33 @@ export async function pushBranch(workspacePath: string, branch: string, remoteBr
   await runCommand("git", ["-C", workspacePath, "push", "-u", "origin", branch]);
 }
 
+export async function commitAndPushTrackedFiles(args: {
+  workspacePath: string;
+  branch: string;
+  remoteBranchExists: boolean;
+  filePaths: string[];
+  commitMessage: string;
+}): Promise<boolean> {
+  const filePaths = [...new Set(args.filePaths.map((filePath) => filePath.trim()).filter(Boolean))];
+  if (filePaths.length === 0) {
+    return false;
+  }
+
+  await runCommand("git", ["-C", args.workspacePath, "add", "--", ...filePaths]);
+  const stagedDiff = await runCommand(
+    "git",
+    ["-C", args.workspacePath, "diff", "--cached", "--quiet", "--exit-code", "--", ...filePaths],
+    { allowExitCodes: [0, 1] },
+  );
+  if (stagedDiff.exitCode === 0) {
+    return false;
+  }
+
+  await runCommand("git", ["-C", args.workspacePath, "commit", "-m", args.commitMessage, "--", ...filePaths]);
+  await pushBranch(args.workspacePath, args.branch, args.remoteBranchExists);
+  return true;
+}
+
 export async function cleanupWorkspace(
   repoPath: string,
   workspacePath: string,

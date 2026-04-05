@@ -20,6 +20,7 @@ import {
 import { IssueJournalSync, MemoryArtifacts } from "./run-once-issue-preparation";
 import { type LocalCiCommandRunner } from "./local-ci";
 import {
+  buildWorkstationLocalPathFailureContext,
   runWorkstationLocalPathGate,
   type WorkstationLocalPathGateResult,
 } from "./workstation-local-path-gate";
@@ -47,7 +48,7 @@ import {
   WorkspaceStatus,
 } from "./core/types";
 import { truncate } from "./core/utils";
-import { getWorkspaceStatus, pushBranch } from "./core/workspace";
+import { commitAndPushTrackedFiles, getWorkspaceStatus, pushBranch } from "./core/workspace";
 import { AgentRunner, createCodexAgentRunner } from "./supervisor/agent-runner";
 import {
   executionMetricsRetentionRootPath,
@@ -93,6 +94,8 @@ export interface CodexTurnResult {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
 }
+
+const SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE = "Normalize supervisor-owned issue journals for path hygiene";
 
 export interface CodexTurnShortCircuit {
   kind: "returned";
@@ -484,8 +487,54 @@ export async function executeCodexTurnPhase(
             message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
           };
         }
-        await pushBranchImpl(workspacePath, record.branch, workspaceStatus.remoteBranchExists);
-        workspaceStatus = await getWorkspaceStatusImpl(workspacePath, record.branch, config.defaultBranch);
+        const rewrittenJournalPaths = pathHygieneGate.rewrittenJournalPaths ?? [];
+        if (rewrittenJournalPaths.length > 0) {
+          try {
+            await commitAndPushTrackedFiles({
+              workspacePath,
+              branch: record.branch,
+              remoteBranchExists: workspaceStatus.remoteBranchExists,
+              filePaths: rewrittenJournalPaths,
+              commitMessage: SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE,
+            });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            const failureContext = buildWorkstationLocalPathFailureContext({
+              gateLabel: "before publication",
+              details: [
+                `journal normalization persistence failed for ${rewrittenJournalPaths.join(", ")}: ${message}`,
+              ],
+            });
+            record = stateStore.touch(record, {
+              state: "blocked",
+              last_error: truncate(failureContext.summary, 1000),
+              last_failure_kind: null,
+              last_failure_context: failureContext,
+              ...args.applyFailureSignature(record, failureContext),
+              blocked_reason: "verification",
+            });
+            state.issues[String(record.issue_number)] = record;
+            await stateStore.save(state);
+            await syncExecutionMetricsRunSummarySafely({
+              previousRecord: args.context.record,
+              nextRecord: record,
+              issue,
+              pullRequest: pr,
+              retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
+              warningContext: "persisting",
+            });
+            await syncJournal(record);
+            return {
+              kind: "returned",
+              message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
+            };
+          }
+          workspaceStatus = await getWorkspaceStatusImpl(workspacePath, record.branch, config.defaultBranch);
+        }
+        if (workspaceStatus.remoteAhead > 0 || !workspaceStatus.remoteBranchExists) {
+          await pushBranchImpl(workspacePath, record.branch, workspaceStatus.remoteBranchExists);
+          workspaceStatus = await getWorkspaceStatusImpl(workspacePath, record.branch, config.defaultBranch);
+        }
       }
 
       const publicationGate = await applyCodexTurnPublicationGate({

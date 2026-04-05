@@ -35,6 +35,7 @@ import {
 import { nowIso, truncate } from "./core/utils";
 import { runLocalCiGate, runWorkspacePreparationGate, type LocalCiCommandRunner } from "./local-ci";
 import {
+  buildWorkstationLocalPathFailureContext,
   runWorkstationLocalPathGate,
   type WorkstationLocalPathGateResult,
 } from "./workstation-local-path-gate";
@@ -44,6 +45,7 @@ import {
   type SupervisorEventSink,
 } from "./supervisor/supervisor-events";
 import { parseIssueMetadata } from "./issue-metadata";
+import { commitAndPushTrackedFiles } from "./core/workspace";
 
 export interface PostTurnPullRequestContext {
   state: SupervisorStateFile;
@@ -82,6 +84,8 @@ export interface PullRequestLifecycleSnapshot {
 }
 
 type HostLocalTrackedPrBlockerGateType = "workspace_preparation" | "local_ci";
+
+const SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE = "Normalize supervisor-owned issue journals for path hygiene";
 
 function workspacePreparationFailureClass(
   signature: string | null | undefined,
@@ -534,6 +538,65 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         pr: refreshed.pr,
         checks: refreshed.checks,
         reviewThreads: refreshed.reviewThreads,
+      };
+    }
+    const rewrittenJournalPaths = pathHygieneGate.rewrittenJournalPaths ?? [];
+    if (rewrittenJournalPaths.length > 0) {
+      try {
+        await commitAndPushTrackedFiles({
+          workspacePath,
+          branch: refreshed.pr.headRefName,
+          remoteBranchExists: true,
+          filePaths: rewrittenJournalPaths,
+          commitMessage: SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const failureContext = buildWorkstationLocalPathFailureContext({
+          gateLabel: `before marking PR #${refreshed.pr.number} ready`,
+          details: [
+            `journal normalization persistence failed for ${rewrittenJournalPaths.join(", ")}: ${message}`,
+          ],
+        });
+        record = stateStore.touch(record, {
+          state: "blocked",
+          last_error: truncate(failureContext.summary, 1000),
+          last_failure_kind: null,
+          last_failure_context: failureContext,
+          ...args.applyFailureSignature(record, failureContext),
+          blocked_reason: "verification",
+        });
+        state.issues[String(record.issue_number)] = record;
+        await stateStore.save(state);
+        await syncJournal(record);
+        return {
+          record,
+          pr: refreshed.pr,
+          checks: refreshed.checks,
+          reviewThreads: refreshed.reviewThreads,
+        };
+      }
+
+      const persisted = await loadOpenPullRequestSnapshotImpl(refreshed.pr.number);
+      record = stateStore.touch(record, {
+        state: "draft_pr",
+        pr_number: persisted.pr.number,
+        last_head_sha: persisted.pr.headRefOid,
+        blocked_reason: null,
+        last_error: null,
+        last_failure_kind: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+      });
+      state.issues[String(record.issue_number)] = record;
+      await stateStore.save(state);
+      await syncJournal(record);
+      return {
+        record,
+        pr: persisted.pr,
+        checks: persisted.checks,
+        reviewThreads: persisted.reviewThreads,
       };
     }
 
