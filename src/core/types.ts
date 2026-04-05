@@ -89,6 +89,7 @@ export interface LocalCiContractSummary {
 export interface WorkspacePreparationContractSummary {
   configured: boolean;
   command: string | null;
+  recommendedCommand: string | null;
   source: "config";
   summary: string;
   warning?: string | null;
@@ -116,6 +117,7 @@ export type LocalCiResultOutcome = "passed" | "failed" | "not_configured";
 export type LocalCiFailureClass =
   | "missing_command"
   | "workspace_toolchain_missing"
+  | "worktree_helper_missing"
   | "non_zero_exit"
   | "unset_contract";
 export type LocalCiRemediationTarget =

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   displayLocalCiCommand,
+  findRepoOwnedWorkspacePreparationCandidate,
   loadConfigSummary,
   normalizeLocalCiCommand,
   resolveConfigPath,
@@ -178,17 +179,26 @@ function tryNormalizeLocalCiCommand(value: unknown): ReturnType<typeof normalize
   }
 }
 
-function buildFieldMessage(field: SetupReadinessField, workspacePreparationWarning: string | null): string {
+function buildFieldMessage(args: {
+  field: SetupReadinessField;
+  workspacePreparationWarning: string | null;
+  recommendedWorkspacePreparationCommand: string | null;
+}): string {
+  const { field, workspacePreparationWarning, recommendedWorkspacePreparationCommand } = args;
   if (field.key === "workspacePreparationCommand") {
     if (workspacePreparationWarning !== null && field.state === "invalid") {
-      return workspacePreparationWarning;
+      return recommendedWorkspacePreparationCommand === null
+        ? workspacePreparationWarning
+        : `${workspacePreparationWarning} Recommended repo-native command: ${recommendedWorkspacePreparationCommand}.`;
     }
 
     if (field.state === "configured") {
       return "Workspace preparation command is configured.";
     }
 
-    return "Workspace preparation command is optional until you opt in to the repo-owned contract.";
+    return recommendedWorkspacePreparationCommand === null
+      ? "Workspace preparation command is optional until you opt in to the repo-owned contract."
+      : `Workspace preparation command is optional until you opt in to the repo-owned contract. Recommended repo-native command: ${recommendedWorkspacePreparationCommand}.`;
   }
 
   if (field.key === "localCiCommand") {
@@ -218,8 +228,9 @@ function buildConfigFields(args: {
   rawConfig: RawConfigDocument;
   configSummary: ReturnType<typeof loadConfigSummary>;
   workspacePreparationWarning: string | null;
+  recommendedWorkspacePreparationCommand: string | null;
 }): SetupReadinessField[] {
-  const { rawConfig, configSummary, workspacePreparationWarning } = args;
+  const { rawConfig, configSummary, workspacePreparationWarning, recommendedWorkspacePreparationCommand } = args;
   const resolvedConfig = configSummary.config;
   const fields = SETUP_FIELD_DEFINITIONS.map(({ key, label, required }) => {
     const resolvedValue = resolvedConfig !== null ? displayValue(resolvedConfig[key]) : displayValue(rawConfig?.[key]);
@@ -243,7 +254,7 @@ function buildConfigFields(args: {
     };
     return {
       ...field,
-      message: buildFieldMessage(field, workspacePreparationWarning),
+      message: buildFieldMessage({ field, workspacePreparationWarning, recommendedWorkspacePreparationCommand }),
     };
   });
 
@@ -439,10 +450,12 @@ export async function diagnoseSetupReadiness(
     repoPath: fallbackRepoPath,
   };
   const workspacePreparationWarning = validateWorkspacePreparationCommandForWorktrees(localCiContractConfig);
+  const recommendedWorkspacePreparationCommand = findRepoOwnedWorkspacePreparationCandidate(localCiContractConfig.repoPath);
   const fields = buildConfigFields({
     rawConfig,
     configSummary,
     workspacePreparationWarning,
+    recommendedWorkspacePreparationCommand,
   });
   const hostDiagnostics = configSummary.config
     ? await diagnoseSupervisorHost({

@@ -166,3 +166,38 @@ test("diagnoseSetupReadiness keeps a tracked repo-owned workspace preparation he
   assert.equal(field?.value, "./scripts/prepare-workspace.sh");
   assert.match(field?.message ?? "", /workspace preparation command is configured/i);
 });
+
+test("diagnoseSetupReadiness suggests a repo-native workspace preparation command when package-lock is present", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(path.join(repoPath, "package.json"), JSON.stringify({ private: true }, null, 2), "utf8");
+  await fs.writeFile(path.join(repoPath, "package-lock.json"), "{}\n", "utf8");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+      }),
+    ),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  const field = summary.fields.find((entry) => entry.key === "workspacePreparationCommand");
+  assert.equal(field?.state, "missing");
+  assert.match(field?.message ?? "", /recommended repo-native command: npm ci/i);
+});
