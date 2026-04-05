@@ -154,6 +154,7 @@ export async function applyCodexTurnPublicationGate(args: {
         };
       }
       workspaceStatus = await getWorkspaceStatus(args.workspacePath, record.branch, args.config.defaultBranch);
+      record = args.stateStore.touch(record, { last_head_sha: workspaceStatus.headSha });
     }
 
     const workspacePreparationGate = await runWorkspacePreparationGate({

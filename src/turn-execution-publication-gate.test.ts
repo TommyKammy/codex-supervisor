@@ -204,6 +204,7 @@ test("applyCodexTurnPublicationGate redacts supervisor-owned cross-issue journal
 
   assert.equal(result.kind, "ready");
   assert.equal(createPullRequestCalls, 1);
+  assert.equal(result.record.last_head_sha, git(workspacePath, "rev-parse", "HEAD").trim());
   const redactedJournal = await fs.readFile(otherJournalPath, "utf8");
   assert.doesNotMatch(redactedJournal, new RegExp(SAMPLE_MACOS_WORKSTATION_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(redactedJournal, /<redacted-local-path>/);

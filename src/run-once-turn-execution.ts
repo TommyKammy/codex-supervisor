@@ -451,7 +451,7 @@ export async function executeCodexTurnPhase(
 
       workspaceStatus = await getWorkspaceStatusImpl(workspacePath, record.branch, config.defaultBranch);
       record = stateStore.touch(record, { last_head_sha: workspaceStatus.headSha });
-      const evaluatedReviewHeadSha = workspaceStatus.headSha;
+      let evaluatedReviewHeadSha = workspaceStatus.headSha;
 
       if ((workspaceStatus.remoteAhead > 0 || !workspaceStatus.remoteBranchExists) && !workspaceStatus.hasUncommittedChanges) {
         const pathHygieneGate = await runWorkstationLocalPathGateImpl({
@@ -530,10 +530,14 @@ export async function executeCodexTurnPhase(
             };
           }
           workspaceStatus = await getWorkspaceStatusImpl(workspacePath, record.branch, config.defaultBranch);
+          evaluatedReviewHeadSha = workspaceStatus.headSha;
+          record = stateStore.touch(record, { last_head_sha: evaluatedReviewHeadSha });
         }
         if (workspaceStatus.remoteAhead > 0 || !workspaceStatus.remoteBranchExists) {
           await pushBranchImpl(workspacePath, record.branch, workspaceStatus.remoteBranchExists);
           workspaceStatus = await getWorkspaceStatusImpl(workspacePath, record.branch, config.defaultBranch);
+          evaluatedReviewHeadSha = workspaceStatus.headSha;
+          record = stateStore.touch(record, { last_head_sha: evaluatedReviewHeadSha });
         }
       }
 
