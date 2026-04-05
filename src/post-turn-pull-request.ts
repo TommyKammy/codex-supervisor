@@ -45,7 +45,7 @@ import {
   type SupervisorEventSink,
 } from "./supervisor/supervisor-events";
 import { parseIssueMetadata } from "./issue-metadata";
-import { commitAndPushTrackedFiles } from "./core/workspace";
+import { commitAndPushTrackedFiles, getWorkspaceStatus } from "./core/workspace";
 
 export interface PostTurnPullRequestContext {
   state: SupervisorStateFile;
@@ -542,8 +542,9 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     }
     const rewrittenJournalPaths = pathHygieneGate.rewrittenJournalPaths ?? [];
     if (rewrittenJournalPaths.length > 0) {
+      let persistedNormalizationCommit = false;
       try {
-        await commitAndPushTrackedFiles({
+        persistedNormalizationCommit = await commitAndPushTrackedFiles({
           workspacePath,
           branch: refreshed.pr.headRefName,
           remoteBranchExists: true,
@@ -556,6 +557,31 @@ export async function handlePostTurnPullRequestTransitionsPhase(
           gateLabel: `before marking PR #${refreshed.pr.number} ready`,
           details: [
             `journal normalization persistence failed for ${rewrittenJournalPaths.join(", ")}: ${message}`,
+          ],
+        });
+        record = stateStore.touch(record, {
+          state: "blocked",
+          last_error: truncate(failureContext.summary, 1000),
+          last_failure_kind: null,
+          last_failure_context: failureContext,
+          ...args.applyFailureSignature(record, failureContext),
+          blocked_reason: "verification",
+        });
+        state.issues[String(record.issue_number)] = record;
+        await stateStore.save(state);
+        await syncJournal(record);
+        return {
+          record,
+          pr: refreshed.pr,
+          checks: refreshed.checks,
+          reviewThreads: refreshed.reviewThreads,
+        };
+      }
+      if (!persistedNormalizationCommit) {
+        const failureContext = buildWorkstationLocalPathFailureContext({
+          gateLabel: `before marking PR #${refreshed.pr.number} ready`,
+          details: [
+            `journal normalization reported rewritten paths for ${rewrittenJournalPaths.join(", ")} but did not create a commit to publish.`,
           ],
         });
         record = stateStore.touch(record, {
@@ -696,6 +722,32 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     state.issues[String(record.issue_number)] = record;
     await stateStore.save(state);
     await syncJournal(record);
+    const localWorkspaceStatus = await getWorkspaceStatus(workspacePath, record.branch, config.defaultBranch);
+    if (localWorkspaceStatus.headSha !== refreshed.pr.headRefOid) {
+      const failureContext = buildWorkstationLocalPathFailureContext({
+        gateLabel: `before marking PR #${refreshed.pr.number} ready`,
+        details: [
+          `local workspace HEAD ${localWorkspaceStatus.headSha} does not match PR head ${refreshed.pr.headRefOid}; the ready gate is failing closed until the local commit is published.`,
+        ],
+      });
+      record = stateStore.touch(record, {
+        state: "blocked",
+        last_error: truncate(failureContext.summary, 1000),
+        last_failure_kind: null,
+        last_failure_context: failureContext,
+        ...args.applyFailureSignature(record, failureContext),
+        blocked_reason: "verification",
+      });
+      state.issues[String(record.issue_number)] = record;
+      await stateStore.save(state);
+      await syncJournal(record);
+      return {
+        record,
+        pr: refreshed.pr,
+        checks: refreshed.checks,
+        reviewThreads: refreshed.reviewThreads,
+      };
+    }
     await github.markPullRequestReady(refreshed.pr.number);
   }
 

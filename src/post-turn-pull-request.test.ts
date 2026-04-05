@@ -31,11 +31,34 @@ async function createTrackedRepo(): Promise<string> {
   return repoPath;
 }
 
-test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking ready", async () => {
+async function createTrackedIssueBranchRepo(branch = "codex/issue-102"): Promise<{ workspacePath: string; headSha: string }> {
+  const workspacePath = await createTrackedRepo();
+  git(workspacePath, "checkout", "-b", branch);
+  git(workspacePath, "push", "-u", "origin", branch);
+  return {
+    workspacePath,
+    headSha: git(workspacePath, "rev-parse", "HEAD").trim(),
+  };
+}
+
+test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking ready", async (t) => {
+  const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
   const config = createConfig({ localCiCommand: "npm run ci:local" });
   const issue = createIssue({ title: "Refresh post-ready PR state" });
-  const draftPr = createPullRequest({ title: "Refresh after ready", isDraft: true });
-  const readyPr = createPullRequest({ title: "Refresh after ready" });
+  const draftPr = createPullRequest({
+    title: "Refresh after ready",
+    isDraft: true,
+    headRefName: "codex/issue-102",
+    headRefOid: headSha,
+  });
+  const readyPr = createPullRequest({
+    title: "Refresh after ready",
+    headRefName: "codex/issue-102",
+    headRefOid: headSha,
+  });
   const initialChecks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
   const postReadyChecks: PullRequestCheck[] = [{ name: "build", state: "IN_PROGRESS", bucket: "pending", workflow: "CI" }];
   const state: SupervisorStateFile = {
@@ -72,7 +95,7 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking
       state,
       record: state.issues["102"]!,
       issue,
-      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      workspacePath,
       syncJournal: async () => {
         syncJournalCalls += 1;
       },
@@ -119,7 +142,7 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking
     runLocalCiCommand: async (command, cwd) => {
       assert.equal(command.displayCommand, "npm run ci:local");
       assert.equal(command.executionMode, "legacy_shell_string");
-      assert.equal(cwd, path.join("/tmp/workspaces", "issue-102"));
+      assert.equal(cwd, workspacePath);
       localCiCalls += 1;
     },
     runWorkstationLocalPathGate: async () => ({
@@ -136,13 +159,13 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking
 
   assert.equal(result.pr.isDraft, false);
   assert.equal(result.record.state, "waiting_ci");
-  assert.equal(result.record.review_wait_head_sha, "head-116");
-  assert.equal(result.record.last_head_sha, "head-116");
+  assert.equal(result.record.review_wait_head_sha, headSha);
+  assert.equal(result.record.last_head_sha, headSha);
   assert.deepEqual(result.record.latest_local_ci_result, {
     outcome: "passed",
     summary: "Configured local CI command passed before marking PR #116 ready.",
     ran_at: result.record.latest_local_ci_result?.ran_at ?? "",
-    head_sha: "head-116",
+    head_sha: headSha,
     execution_mode: "legacy_shell_string",
     failure_class: null,
     remediation_target: null,
@@ -256,13 +279,22 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion 
   );
 });
 
-test("handlePostTurnPullRequestTransitionsPhase runs workspace preparation before local CI", async () => {
+test("handlePostTurnPullRequestTransitionsPhase runs workspace preparation before local CI", async (t) => {
+  const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
   const config = createConfig({
     workspacePreparationCommand: "npm ci",
     localCiCommand: "npm run ci:local",
   });
   const issue = createIssue({ title: "Prepare workspace before ready promotion" });
-  const draftPr = createPullRequest({ title: "Prepare before ready", isDraft: true });
+  const draftPr = createPullRequest({
+    title: "Prepare before ready",
+    isDraft: true,
+    headRefName: "codex/issue-102",
+    headRefOid: headSha,
+  });
   const state: SupervisorStateFile = {
     activeIssueNumber: 102,
     issues: { "102": createRecord({ state: "draft_pr", pr_number: draftPr.number }) },
@@ -291,7 +323,7 @@ test("handlePostTurnPullRequestTransitionsPhase runs workspace preparation befor
       state,
       record: state.issues["102"]!,
       issue,
-      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      workspacePath,
       syncJournal: async () => undefined,
       memoryArtifacts: {
         alwaysReadFiles: [],
@@ -350,8 +382,8 @@ test("handlePostTurnPullRequestTransitionsPhase runs workspace preparation befor
 
   assert.equal(result.record.state, "draft_pr");
   assert.deepEqual(callOrder, [
-    "prepare:npm ci:/tmp/workspaces/issue-102",
-    "local-ci:npm run ci:local:/tmp/workspaces/issue-102",
+    `prepare:npm ci:${workspacePath}`,
+    `local-ci:npm run ci:local:${workspacePath}`,
   ]);
 });
 
@@ -1143,7 +1175,166 @@ test("handlePostTurnPullRequestTransitionsPhase redacts supervisor-owned cross-i
   assert.match(git(workspacePath, "ls-remote", "--heads", "origin", "codex/issue-102"), /refs\/heads\/codex\/issue-102/);
 });
 
-test("handlePostTurnPullRequestTransitionsPhase creates execution-ready follow-up issues for follow-up-eligible residuals", async () => {
+test("handlePostTurnPullRequestTransitionsPhase blocks ready promotion until a local normalization commit reaches the PR head", async (t) => {
+  const workspacePath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+  git(workspacePath, "checkout", "-b", "codex/issue-102");
+
+  const currentJournalPath = path.join(workspacePath, ".codex-supervisor", "issues", "102", "issue-journal.md");
+  const otherJournalPath = path.join(workspacePath, ".codex-supervisor", "issues", "181", "issue-journal.md");
+  await fs.mkdir(path.dirname(currentJournalPath), { recursive: true });
+  await fs.mkdir(path.dirname(otherJournalPath), { recursive: true });
+  await fs.writeFile(currentJournalPath, "# Issue #102\n", "utf8");
+  await fs.writeFile(
+    otherJournalPath,
+    [
+      "# Issue #181: stale leak",
+      "",
+      "## Codex Working Notes",
+      "### Current Handoff",
+      `- What changed: copied ${SAMPLE_MACOS_WORKSTATION_PATH} from another workstation.`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  git(workspacePath, "add", ".codex-supervisor/issues/102/issue-journal.md", ".codex-supervisor/issues/181/issue-journal.md");
+  git(workspacePath, "commit", "-m", "seed ready-gate remote journal leak");
+  git(workspacePath, "push", "-u", "origin", "codex/issue-102");
+
+  const remoteHead = git(workspacePath, "rev-parse", "HEAD").trim();
+  await fs.writeFile(
+    otherJournalPath,
+    [
+      "# Issue #181: stale leak",
+      "",
+      "## Codex Working Notes",
+      "### Current Handoff",
+      "- What changed: copied <redacted-local-path> from another workstation.",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  git(workspacePath, "add", ".codex-supervisor/issues/181/issue-journal.md");
+  git(workspacePath, "commit", "-m", "local-only normalization");
+  const localHead = git(workspacePath, "rev-parse", "HEAD").trim();
+  assert.notEqual(localHead, remoteHead);
+
+  const config = createConfig({
+    localCiCommand: "npm run ci:local",
+    issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
+  });
+  const issue = createIssue({ title: "Fail closed when local normalization stays unpublished" });
+  const draftPr = createPullRequest({
+    title: "Gate ready promotion",
+    isDraft: true,
+    headRefName: "codex/issue-102",
+    headRefOid: remoteHead,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "draft_pr",
+        pr_number: draftPr.number,
+        workspace: workspacePath,
+        journal_path: currentJournalPath,
+      }),
+    },
+  };
+
+  let readyCalls = 0;
+  let localCiCalls = 0;
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      markPullRequestReady: async () => {
+        readyCalls += 1;
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      workspacePath,
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: draftPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "pr_open",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => {
+      localCiCalls += 1;
+    },
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: draftPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(readyCalls, 0);
+  assert.equal(localCiCalls, 1);
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.blocked_reason, "verification");
+  assert.match(result.record.last_error ?? "", /Tracked durable artifacts failed workstation-local path hygiene before marking PR #116 ready\./);
+  assert.match(result.record.last_failure_context?.details[0] ?? "", /local workspace HEAD/);
+  assert.ok((result.record.last_failure_context?.details[0] ?? "").includes(localHead));
+  assert.ok((result.record.last_failure_context?.details[0] ?? "").includes(remoteHead));
+});
+
+test("handlePostTurnPullRequestTransitionsPhase creates execution-ready follow-up issues for follow-up-eligible residuals", async (t) => {
+  const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
   const config = createConfig({
     localReviewEnabled: true,
     localReviewPolicy: "block_merge",
@@ -1170,7 +1361,12 @@ Depends on: none
 Execution order: 1 of 1
 Parallelizable: No`,
   });
-  const draftPr = createPullRequest({ title: "Create residual follow-up issues", isDraft: true });
+  const draftPr = createPullRequest({
+    title: "Create residual follow-up issues",
+    isDraft: true,
+    headRefName: "codex/issue-102",
+    headRefOid: headSha,
+  });
   const createdIssues: Array<{ title: string; body: string }> = [];
   let readyCalls = 0;
 
@@ -1210,7 +1406,7 @@ Parallelizable: No`,
       },
       record: createRecord({ state: "draft_pr", pr_number: draftPr.number }),
       issue,
-      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      workspacePath,
       syncJournal: async () => undefined,
       memoryArtifacts: {
         alwaysReadFiles: [],
