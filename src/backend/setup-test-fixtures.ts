@@ -176,6 +176,18 @@ const DEFAULT_SETUP_FIELD_FIXTURES: Record<SetupReadinessFieldKey, Omit<SetupRea
       valueType: "text",
     },
   },
+  workspacePreparationCommand: {
+    label: "Workspace preparation command",
+    state: "missing",
+    value: null,
+    message: "Workspace preparation command is optional until you opt in to the repo-owned contract.",
+    required: false,
+    metadata: {
+      source: "config",
+      editable: true,
+      valueType: "text",
+    },
+  },
   localCiCommand: {
     label: "Local CI command",
     state: "missing",

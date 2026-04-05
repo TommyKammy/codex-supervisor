@@ -14,6 +14,7 @@ export interface SetupConfigChanges {
   stateFile?: string;
   codexBinary?: string;
   branchPrefix?: string;
+  workspacePreparationCommand?: string | null;
   localCiCommand?: string | null;
   reviewProvider?: SetupConfigPreviewSelectableReviewProviderProfile;
 }
@@ -43,6 +44,7 @@ const CONFIGURABLE_FIELDS: SetupReadinessFieldKey[] = [
   "stateFile",
   "codexBinary",
   "branchPrefix",
+  "workspacePreparationCommand",
   "localCiCommand",
   "reviewProvider",
 ];
@@ -135,6 +137,9 @@ function normalizeSetupChanges(changes: unknown): SetupConfigChanges {
   if ("branchPrefix" in raw) {
     normalized.branchPrefix = assertGitRef(raw.branchPrefix, "branchPrefix");
   }
+  if ("workspacePreparationCommand" in raw) {
+    normalized.workspacePreparationCommand = normalizeLocalCiCommand(raw.workspacePreparationCommand);
+  }
   if ("localCiCommand" in raw) {
     normalized.localCiCommand = normalizeLocalCiCommand(raw.localCiCommand);
   }
@@ -200,6 +205,13 @@ function applySetupChanges(document: Record<string, unknown>, changes: SetupConf
   if (changes.branchPrefix !== undefined) {
     nextDocument.branchPrefix = changes.branchPrefix;
   }
+  if ("workspacePreparationCommand" in changes) {
+    if (changes.workspacePreparationCommand === null) {
+      delete nextDocument.workspacePreparationCommand;
+    } else {
+      nextDocument.workspacePreparationCommand = changes.workspacePreparationCommand;
+    }
+  }
   if ("localCiCommand" in changes) {
     if (changes.localCiCommand === null) {
       delete nextDocument.localCiCommand;
@@ -252,6 +264,14 @@ function currentSemanticFieldValue(args: {
     return displayStringValue(existingDocument.localCiCommand);
   }
 
+  if (field === "workspacePreparationCommand") {
+    if (resolvedConfig !== null) {
+      return displayLocalCiCommand(resolvedConfig.workspacePreparationCommand);
+    }
+
+    return displayStringValue(existingDocument.workspacePreparationCommand);
+  }
+
   if (resolvedConfig !== null) {
     return displayStringValue(resolvedConfig[field]);
   }
@@ -275,6 +295,8 @@ function nextSemanticFieldValue(field: SetupReadinessFieldKey, changes: SetupCon
       return changes.codexBinary ?? null;
     case "branchPrefix":
       return changes.branchPrefix ?? null;
+    case "workspacePreparationCommand":
+      return changes.workspacePreparationCommand ?? null;
     case "localCiCommand":
       return changes.localCiCommand ?? null;
     case "reviewProvider":

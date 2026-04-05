@@ -7,6 +7,7 @@ import {
   resolveConfigPath,
   summarizeLocalCiContract,
   summarizeTrustDiagnostics,
+  validateWorkspacePreparationCommandForWorktrees,
 } from "./core/config";
 import type { LocalCiContractSummary, TrustDiagnosticsSummary } from "./core/types";
 import { diagnoseSupervisorHost, type DoctorCheck, type DoctorCheckStatus } from "./doctor";
@@ -22,6 +23,7 @@ export type SetupReadinessFieldKey =
   | "stateFile"
   | "codexBinary"
   | "branchPrefix"
+  | "workspacePreparationCommand"
   | "localCiCommand"
   | "reviewProvider";
 
@@ -120,6 +122,7 @@ const SETUP_FIELD_DEFINITIONS: Array<{
   { key: "stateFile", label: "State file", required: true },
   { key: "codexBinary", label: "Codex binary", required: true },
   { key: "branchPrefix", label: "Branch prefix", required: true },
+  { key: "workspacePreparationCommand", label: "Workspace preparation command", required: false },
   { key: "localCiCommand", label: "Local CI command", required: false },
 ];
 
@@ -131,6 +134,7 @@ const SETUP_FIELD_METADATA: Record<SetupReadinessFieldKey, SetupReadinessFieldMe
   stateFile: { source: "config", editable: true, valueType: "file_path" },
   codexBinary: { source: "config", editable: true, valueType: "executable_path" },
   branchPrefix: { source: "config", editable: true, valueType: "text" },
+  workspacePreparationCommand: { source: "config", editable: true, valueType: "text" },
   localCiCommand: { source: "config", editable: true, valueType: "text" },
   reviewProvider: { source: "config", editable: true, valueType: "review_provider" },
 };
@@ -174,7 +178,19 @@ function tryNormalizeLocalCiCommand(value: unknown): ReturnType<typeof normalize
   }
 }
 
-function buildFieldMessage(field: SetupReadinessField): string {
+function buildFieldMessage(field: SetupReadinessField, workspacePreparationWarning: string | null): string {
+  if (field.key === "workspacePreparationCommand") {
+    if (workspacePreparationWarning !== null && field.state === "invalid") {
+      return workspacePreparationWarning;
+    }
+
+    if (field.state === "configured") {
+      return "Workspace preparation command is configured.";
+    }
+
+    return "Workspace preparation command is optional until you opt in to the repo-owned contract.";
+  }
+
   if (field.key === "localCiCommand") {
     if (field.state === "configured") {
       return "Local CI command is configured.";
@@ -201,12 +217,15 @@ function buildFieldMessage(field: SetupReadinessField): string {
 function buildConfigFields(args: {
   rawConfig: RawConfigDocument;
   configSummary: ReturnType<typeof loadConfigSummary>;
+  workspacePreparationWarning: string | null;
 }): SetupReadinessField[] {
-  const { rawConfig, configSummary } = args;
+  const { rawConfig, configSummary, workspacePreparationWarning } = args;
   const resolvedConfig = configSummary.config;
   const fields = SETUP_FIELD_DEFINITIONS.map(({ key, label, required }) => {
     const resolvedValue = resolvedConfig !== null ? displayValue(resolvedConfig[key]) : displayValue(rawConfig?.[key]);
-    const state: SetupFieldState = configSummary.missingRequiredFields.includes(key)
+    const state: SetupFieldState = key === "workspacePreparationCommand" && workspacePreparationWarning !== null
+      ? "invalid"
+      : configSummary.missingRequiredFields.includes(key)
       ? "missing"
       : configSummary.invalidFields.includes(key)
         ? "invalid"
@@ -224,7 +243,7 @@ function buildConfigFields(args: {
     };
     return {
       ...field,
-      message: buildFieldMessage(field),
+      message: buildFieldMessage(field, workspacePreparationWarning),
     };
   });
 
@@ -410,18 +429,6 @@ export async function diagnoseSetupReadiness(
   const configPath = resolveConfigPath(args.configPath);
   const rawConfig = readRawConfigDocument(configPath);
   const rawConfigDocument = rawConfig ?? {};
-  const fields = buildConfigFields({
-    rawConfig,
-    configSummary,
-  });
-  const hostDiagnostics = configSummary.config
-    ? await diagnoseSupervisorHost({
-      config: configSummary.config,
-      authStatus: args.authStatus,
-    })
-    : null;
-  const hostReadiness = buildHostReadiness(hostDiagnostics?.checks ?? null, hostDiagnostics?.overallStatus ?? null);
-  const blockers = buildBlockers({ fields, hostReadiness });
   const fallbackRepoPath =
     typeof rawConfigDocument.repoPath === "string" && rawConfigDocument.repoPath.trim() !== ""
       ? path.resolve(path.dirname(configPath), rawConfigDocument.repoPath)
@@ -431,6 +438,20 @@ export async function diagnoseSetupReadiness(
     workspacePreparationCommand: tryNormalizeLocalCiCommand(rawConfigDocument.workspacePreparationCommand),
     repoPath: fallbackRepoPath,
   };
+  const workspacePreparationWarning = validateWorkspacePreparationCommandForWorktrees(localCiContractConfig);
+  const fields = buildConfigFields({
+    rawConfig,
+    configSummary,
+    workspacePreparationWarning,
+  });
+  const hostDiagnostics = configSummary.config
+    ? await diagnoseSupervisorHost({
+      config: configSummary.config,
+      authStatus: args.authStatus,
+    })
+    : null;
+  const hostReadiness = buildHostReadiness(hostDiagnostics?.checks ?? null, hostDiagnostics?.overallStatus ?? null);
+  const blockers = buildBlockers({ fields, hostReadiness });
 
   return {
     kind: "setup_readiness",

@@ -7,7 +7,7 @@ import type { SetupReadinessFieldKey } from "./setup-readiness";
 export type SetupConfigPreviewSelectableReviewProviderProfile = Exclude<ReviewProviderProfileId, "custom">;
 export type SetupConfigPreviewSource = "existing_config" | "scaffold_default" | "selected_review_provider_profile";
 export type SetupConfigPreviewFieldState = "unchanged" | "suggested";
-type SetupConfigPreviewFieldKey = Exclude<SetupReadinessFieldKey, "localCiCommand">;
+type SetupConfigPreviewFieldKey = Exclude<SetupReadinessFieldKey, "localCiCommand" | "workspacePreparationCommand">;
 
 export interface SetupConfigPreviewSupportedProfile {
   id: SetupConfigPreviewSelectableReviewProviderProfile;

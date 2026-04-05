@@ -336,6 +336,7 @@ test("diagnoseSetupReadiness returns typed first-run setup state distinct from d
       ["stateFile", "configured", "config", true, "file_path"],
       ["codexBinary", "configured", "config", true, "executable_path"],
       ["branchPrefix", "configured", "config", true, "text"],
+      ["workspacePreparationCommand", "missing", "config", true, "text"],
       ["localCiCommand", "missing", "config", true, "text"],
       ["reviewProvider", "missing", "config", true, "review_provider"],
     ],
@@ -911,6 +912,84 @@ test("renderDoctorReport warns when localCiCommand is configured without workspa
 
   assert.equal(report.includes(`doctor_warning kind=config detail=${MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING}`), true);
   assert.equal(report.split(MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING).length - 1, 1);
+});
+
+test("renderDoctorReport warns when workspacePreparationCommand points at a missing repo-relative helper", () => {
+  const warning =
+    "workspacePreparationCommand points at ./scripts/prepare-workspace.sh, but that path does not resolve to a file inside repoPath. Move the helper into the repository and commit it, or switch to a worktree-compatible repo-owned command.";
+  const report = renderDoctorReport({
+    overallStatus: "pass",
+    trustDiagnostics: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+      configWarning: null,
+    },
+    checks: [],
+    cadenceDiagnostics: {
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: null,
+      mergeCriticalEffectiveSeconds: 120,
+      mergeCriticalRecheckEnabled: false,
+    },
+    candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
+    candidateDiscoveryWarning: null,
+    workspacePreparationContract: {
+      configured: true,
+      command: "./scripts/prepare-workspace.sh",
+      source: "config",
+      summary: "Repo-owned workspace preparation contract is configured.",
+      warning,
+    },
+    localCiContract: {
+      configured: false,
+      command: null,
+      recommendedCommand: null,
+      source: "config",
+      summary: "No repo-owned local CI contract is configured.",
+    },
+  } as Awaited<ReturnType<typeof diagnoseSupervisorHost>>);
+
+  assert.equal(report.includes(`doctor_warning kind=config detail=${warning}`), true);
+});
+
+test("renderDoctorReport warns when workspacePreparationCommand points at an untracked repo-relative helper", () => {
+  const warning =
+    "workspacePreparationCommand points at ./scripts/prepare-workspace.sh, but that path resolves to an untracked helper. Commit the helper so preserved issue worktrees inherit it, or switch to a tracked repo-owned command.";
+  const report = renderDoctorReport({
+    overallStatus: "pass",
+    trustDiagnostics: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+      configWarning: null,
+    },
+    checks: [],
+    cadenceDiagnostics: {
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: null,
+      mergeCriticalEffectiveSeconds: 120,
+      mergeCriticalRecheckEnabled: false,
+    },
+    candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
+    candidateDiscoveryWarning: null,
+    workspacePreparationContract: {
+      configured: true,
+      command: "./scripts/prepare-workspace.sh",
+      source: "config",
+      summary: "Repo-owned workspace preparation contract is configured.",
+      warning,
+    },
+    localCiContract: {
+      configured: false,
+      command: null,
+      recommendedCommand: null,
+      source: "config",
+      summary: "No repo-owned local CI contract is configured.",
+    },
+  } as Awaited<ReturnType<typeof diagnoseSupervisorHost>>);
+
+  assert.equal(report.includes(`doctor_warning kind=config detail=${warning}`), true);
 });
 
 test("renderDoctorReport surfaces absent local CI posture when no repo-owned contract exists", () => {
