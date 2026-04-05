@@ -1,11 +1,32 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { handlePostTurnPullRequestTransitionsPhase } from "./post-turn-pull-request";
 import { PullRequestCheck, ReviewThread, SupervisorStateFile } from "./core/types";
 import { createConfig, createFailureContext, createIssue, createPullRequest, createRecord } from "./turn-execution-test-helpers";
 
 const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
+const SAMPLE_MACOS_WORKSTATION_PATH = `/${"Users"}/alice/Dev/private-repo`;
+
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync("git", ["-C", cwd, ...args], {
+    encoding: "utf8",
+  });
+}
+
+async function createTrackedRepo(): Promise<string> {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "ready-gate-path-hygiene-"));
+  git(repoPath, "init", "-b", "main");
+  git(repoPath, "config", "user.name", "Codex Supervisor");
+  git(repoPath, "config", "user.email", "codex@example.test");
+  await fs.writeFile(path.join(repoPath, "README.md"), "# fixture\n", "utf8");
+  git(repoPath, "add", "README.md");
+  git(repoPath, "commit", "-m", "seed");
+  return repoPath;
+}
 
 test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking ready", async () => {
   const config = createConfig({ localCiCommand: "npm run ci:local" });
@@ -968,6 +989,137 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion 
     /Tracked durable artifacts failed workstation-local path hygiene before marking PR #116 ready\./,
   );
   assert.match(result.record.last_failure_context?.details[0] ?? "", /docs\/guide\.md:1/);
+});
+
+test("handlePostTurnPullRequestTransitionsPhase redacts supervisor-owned cross-issue journals before ready promotion", async (t) => {
+  const workspacePath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+
+  const currentJournalPath = path.join(workspacePath, ".codex-supervisor", "issues", "102", "issue-journal.md");
+  const otherJournalPath = path.join(workspacePath, ".codex-supervisor", "issues", "181", "issue-journal.md");
+  await fs.mkdir(path.dirname(currentJournalPath), { recursive: true });
+  await fs.mkdir(path.dirname(otherJournalPath), { recursive: true });
+  await fs.writeFile(currentJournalPath, "# Issue #102\n", "utf8");
+  await fs.writeFile(
+    otherJournalPath,
+    [
+      "# Issue #181: stale leak",
+      "",
+      "## Codex Working Notes",
+      "### Current Handoff",
+      `- What changed: copied ${SAMPLE_MACOS_WORKSTATION_PATH} from another workstation.`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  git(workspacePath, "add", ".codex-supervisor/issues/102/issue-journal.md", ".codex-supervisor/issues/181/issue-journal.md");
+
+  const config = createConfig({
+    localCiCommand: "npm run ci:local",
+    issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
+  });
+  const issue = createIssue({ title: "Gate ready promotion on cross-issue journal hygiene" });
+  const draftPr = createPullRequest({ title: "Gate ready promotion", isDraft: true });
+  const readyPr = createPullRequest({ title: "Gate ready promotion", isDraft: false });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "draft_pr",
+        pr_number: draftPr.number,
+        workspace: workspacePath,
+        journal_path: currentJournalPath,
+      }),
+    },
+  };
+
+  let readyCalls = 0;
+  let localCiCalls = 0;
+  let snapshotLoads = 0;
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      markPullRequestReady: async (prNumber: number) => {
+        assert.equal(prNumber, 116);
+        readyCalls += 1;
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      workspacePath,
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: draftPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "pr_open",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => {
+      localCiCalls += 1;
+    },
+    loadOpenPullRequestSnapshot: async () => {
+      snapshotLoads += 1;
+      return snapshotLoads === 1
+        ? { pr: draftPr, checks: [], reviewThreads: [] satisfies ReviewThread[] }
+        : { pr: readyPr, checks: [], reviewThreads: [] satisfies ReviewThread[] };
+    },
+  });
+
+  assert.equal(result.record.state, "pr_open");
+  assert.equal(readyCalls, 1);
+  assert.equal(localCiCalls, 1);
+  const redactedJournal = await fs.readFile(otherJournalPath, "utf8");
+  assert.doesNotMatch(redactedJournal, new RegExp(SAMPLE_MACOS_WORKSTATION_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(redactedJournal, /<redacted-local-path>/);
 });
 
 test("handlePostTurnPullRequestTransitionsPhase creates execution-ready follow-up issues for follow-up-eligible residuals", async () => {

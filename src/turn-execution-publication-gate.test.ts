@@ -1,8 +1,31 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { applyCodexTurnPublicationGate } from "./turn-execution-publication-gate";
 import { SupervisorStateFile } from "./core/types";
 import { createConfig, createIssue, createPullRequest, createRecord } from "./turn-execution-test-helpers";
+
+const SAMPLE_MACOS_WORKSTATION_PATH = `/${"Users"}/alice/Dev/private-repo`;
+
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync("git", ["-C", cwd, ...args], {
+    encoding: "utf8",
+  });
+}
+
+async function createTrackedRepo(): Promise<string> {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "publication-gate-path-hygiene-"));
+  git(repoPath, "init", "-b", "main");
+  git(repoPath, "config", "user.name", "Codex Supervisor");
+  git(repoPath, "config", "user.email", "codex@example.test");
+  await fs.writeFile(path.join(repoPath, "README.md"), "# fixture\n", "utf8");
+  git(repoPath, "add", "README.md");
+  git(repoPath, "commit", "-m", "seed");
+  return repoPath;
+}
 
 test("applyCodexTurnPublicationGate blocks draft PR creation when path hygiene fails", async () => {
   const issue = createIssue({ title: "Gate draft PR creation on path hygiene" });
@@ -91,6 +114,94 @@ test("applyCodexTurnPublicationGate blocks draft PR creation when path hygiene f
   assert.equal(syncExecutionMetricsCalls, 1);
   assert.equal(createPullRequestCalls, 0);
   assert.equal(runLocalCiCalls, 0);
+});
+
+test("applyCodexTurnPublicationGate redacts supervisor-owned cross-issue journals before publication", async (t) => {
+  const workspacePath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+
+  const currentJournalPath = path.join(workspacePath, ".codex-supervisor", "issues", "102", "issue-journal.md");
+  const otherJournalPath = path.join(workspacePath, ".codex-supervisor", "issues", "181", "issue-journal.md");
+  await fs.mkdir(path.dirname(currentJournalPath), { recursive: true });
+  await fs.mkdir(path.dirname(otherJournalPath), { recursive: true });
+  await fs.writeFile(currentJournalPath, "# Issue #102\n", "utf8");
+  await fs.writeFile(
+    otherJournalPath,
+    [
+      "# Issue #181: stale leak",
+      "",
+      "## Codex Working Notes",
+      "### Current Handoff",
+      `- What changed: reproduced a leak from ${SAMPLE_MACOS_WORKSTATION_PATH}.`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  git(workspacePath, "add", ".codex-supervisor/issues/102/issue-journal.md", ".codex-supervisor/issues/181/issue-journal.md");
+
+  let createPullRequestCalls = 0;
+  const issue = createIssue({ title: "Gate draft PR creation on cross-issue journal hygiene" });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "stabilizing",
+        pr_number: null,
+        implementation_attempt_count: 1,
+        workspace: workspacePath,
+        journal_path: currentJournalPath,
+      }),
+    },
+  };
+
+  const result = await applyCodexTurnPublicationGate({
+    config: createConfig({
+      localCiCommand: "npm run ci:local",
+      issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
+    }),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    state,
+    record: state.issues["102"]!,
+    issue,
+    workspacePath,
+    workspaceStatus: {
+      branch: "codex/issue-102",
+      headSha: "head-102",
+      hasUncommittedChanges: false,
+      baseAhead: 1,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      createPullRequest: async () => {
+        createPullRequestCalls += 1;
+        return createPullRequest({ number: 200, isDraft: true, headRefOid: "head-102" });
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    syncJournal: async () => undefined,
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    runLocalCiCommand: async () => undefined,
+    syncExecutionMetricsRunSummary: async () => undefined,
+  });
+
+  assert.equal(result.kind, "ready");
+  assert.equal(createPullRequestCalls, 1);
+  const redactedJournal = await fs.readFile(otherJournalPath, "utf8");
+  assert.doesNotMatch(redactedJournal, new RegExp(SAMPLE_MACOS_WORKSTATION_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(redactedJournal, /<redacted-local-path>/);
 });
 
 test("applyCodexTurnPublicationGate blocks draft PR creation when local CI fails", async () => {
