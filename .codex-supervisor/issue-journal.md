@@ -5,29 +5,43 @@
 - Branch: codex/issue-1302
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 2707dee2b637facb32f133c4cfa22de29f291242
+- Current phase: repairing_ci
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: a416af6e03166d395efccda884220b5b47834bac
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-04-05T21:42:33.382Z
+- Last failure signature: build (ubuntu-latest):fail
+- Repeated failure signature count: 3
+- Updated at: 2026-04-05T21:53:57.909Z
 
 ## Latest Codex Summary
-- None yet.
+The failing Ubuntu build was caused by the committed legacy issue journal snapshot still containing a literal workstation-local home path in the tracked handoff text. I reproduced the failure against the PR head, normalized the supervisor-owned journal content to portable text, and reran the exact hygiene gate plus `npm run build` locally before preparing a follow-up push to PR #1307.
+
+Summary: Reproduced the failing PR check locally, removed the committed supervisor-owned journal path leak, and reran `npm run verify:paths` plus `npm run build`.
+State hint: repairing_ci
+Blocked reason: none
+Tests: `npm run verify:paths`; `npm run build`
+Next action: push `codex/issue-1302` so PR #1307 reruns CI with the sanitized tracked journal.
+Failure signature: none
 
 ## Active Failure Context
-- None recorded.
+- Category: checks
+- Summary: PR #1307 has failing checks.
+- Command or source: gh pr checks
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1307
+- Details:
+  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/24011239602/job/70023085387
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: publication and ready-for-review gates should retry workstation-local path hygiene after redacting only supervisor-owned tracked issue journals.
-- What changed: added a shared gate retry that normalizes tracked `.codex-supervisor/issues/*/issue-journal.md` files and the legacy shared journal before re-running path hygiene, plus focused publication and ready-promotion regressions for cross-issue `/Users/...` leaks.
+- Hypothesis: the remaining CI failure came from the committed legacy shared journal snapshot, not from the new gate logic itself.
+- What changed: reproduced `npm run verify:paths` against the PR failure, confirmed `HEAD` still had a literal macOS user-home path in `.codex-supervisor/issue-journal.md`, and rewrote the tracked supervisor-owned journal wording so the durable handoff stays portable while preserving the CI-repair context.
 - Current blocker: none.
-- Next exact step: commit the gate/test changes, then open or update the draft PR if one is needed for issue #1302.
-- Verification gap: none; targeted tests and `npm run build` passed locally.
-- Files touched: src/workstation-local-path-gate.ts, src/turn-execution-publication-gate.test.ts, src/post-turn-pull-request.test.ts
-- Rollback concern: the retry only redacts canonical supervisor-owned journal paths; if custom journal locations also need automatic cleanup this helper will need to expand deliberately.
-- Last focused command: npx tsx --test src/journal.test.ts src/run-once-turn-execution.test.ts src/post-turn-pull-request.test.ts && npm run build
+- Next exact step: commit the sanitized `.codex-supervisor/issue-journal.md`, push `codex/issue-1302`, and watch PR #1307 rerun the Ubuntu build.
+- Verification gap: remote Actions rerun is still pending after the follow-up push.
+- Files touched: .codex-supervisor/issue-journal.md
+- Rollback concern: none; this repair only normalizes supervisor-owned durable text that should already be portable.
+- Last focused command: npm run verify:paths && npm run build
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
+- 2026-04-06: Re-ran `npx tsx --test src/journal.test.ts src/run-once-turn-execution.test.ts src/post-turn-pull-request.test.ts` and `npm run build`; both passed before pushing and opening PR #1307.
+- 2026-04-06: Reproduced the failing Ubuntu check by inspecting `gh run view 24011239602 --log-failed`; the only blocker was the committed `.codex-supervisor/issue-journal.md` line that still mentioned a macOS home path.
