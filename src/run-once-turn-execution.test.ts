@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { executeCodexTurnPhase } from "./run-once-turn-execution";
 import { FailureContextCategory, GitHubIssue, GitHubPullRequest, IssueRunRecord, SupervisorStateFile } from "./core/types";
@@ -10,6 +12,27 @@ import { AgentRunner, AgentTurnRequest } from "./supervisor/agent-runner";
 import { interruptedTurnMarkerPath } from "./interrupted-turn-marker";
 
 const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
+const SAMPLE_MACOS_WORKSTATION_PATH = `/${"Users"}/alice/Dev/private-repo`;
+
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync("git", ["-C", cwd, ...args], {
+    encoding: "utf8",
+  });
+}
+
+async function createTrackedRepo(): Promise<string> {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "run-once-turn-path-hygiene-"));
+  git(repoPath, "init", "-b", "main");
+  git(repoPath, "config", "user.name", "Codex Supervisor");
+  git(repoPath, "config", "user.email", "codex@example.test");
+  git(repoPath, "init", "--bare", "origin.git");
+  await fs.writeFile(path.join(repoPath, "README.md"), "# fixture\n", "utf8");
+  git(repoPath, "add", "README.md");
+  git(repoPath, "commit", "-m", "seed");
+  git(repoPath, "remote", "add", "origin", path.join(repoPath, "origin.git"));
+  git(repoPath, "push", "-u", "origin", "main");
+  return repoPath;
+}
 
 function createSuccessfulAgentRunner(
   impl: (request: AgentTurnRequest) => ReturnType<AgentRunner["runTurn"]>,
@@ -171,6 +194,253 @@ test("executeCodexTurnPhase does not mark review threads processed for a refresh
   assert.deepEqual(state.issues["102"]?.processed_review_thread_ids, ["thread-1@head-a"]);
   assert.deepEqual(state.issues["102"]?.processed_review_thread_fingerprints, ["thread-1@head-a#comment-1"]);
   assert.deepEqual(resolvePurposes, ["action"]);
+});
+
+test("executeCodexTurnPhase refreshes review bookkeeping after supervisor-owned journal normalization commits", async (t) => {
+  const workspacePath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+  git(workspacePath, "checkout", "-b", "codex/issue-102");
+
+  const currentJournalPath = path.join(workspacePath, ".codex-supervisor", "issue-journal.md");
+  const otherJournalPath = path.join(workspacePath, ".codex-supervisor", "issues", "181", "issue-journal.md");
+  await fs.mkdir(path.dirname(currentJournalPath), { recursive: true });
+  await fs.mkdir(path.dirname(otherJournalPath), { recursive: true });
+  await fs.writeFile(
+    currentJournalPath,
+    [
+      "# Issue #102: review bookkeeping normalization",
+      "",
+      "## Codex Working Notes",
+      "### Current Handoff",
+      "- Hypothesis: publish the normalization commit and keep review bookkeeping aligned.",
+      "- What changed: published the supervisor-owned journal normalization commit.",
+      "- Current blocker: none.",
+      "- Next exact step: continue review handling on the normalized head.",
+      "- Verification gap:",
+      "- Files touched: .codex-supervisor/issues/181/issue-journal.md",
+      "- Rollback concern: low.",
+      "- Last focused command: git push",
+      "",
+      "### Scratchpad",
+      "- Keep this section short. The supervisor may compact older notes automatically.",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await fs.writeFile(
+    otherJournalPath,
+    [
+      "# Issue #181: stale leak",
+      "",
+      "## Codex Working Notes",
+      "### Current Handoff",
+      `- What changed: reproduced a leak from ${SAMPLE_MACOS_WORKSTATION_PATH}.`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  git(workspacePath, "add", ".codex-supervisor/issue-journal.md", ".codex-supervisor/issues/181/issue-journal.md");
+  git(workspacePath, "commit", "-m", "seed cross-issue journal leak");
+  git(workspacePath, "push", "-u", "origin", "codex/issue-102");
+
+  const remoteHead = git(workspacePath, "rev-parse", "HEAD").trim();
+  await fs.appendFile(path.join(workspacePath, "README.md"), "implementation change\n", "utf8");
+  git(workspacePath, "add", "README.md");
+  git(workspacePath, "commit", "-m", "local implementation change");
+  const preNormalizationHead = git(workspacePath, "rev-parse", "HEAD").trim();
+
+  const issue = createIssue({ title: "Refresh review bookkeeping after supervisor normalization" });
+  const reviewThreads = [createReviewThread()];
+  let pathGateCalls = 0;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "addressing_review",
+        workspace: workspacePath,
+        journal_path: currentJournalPath,
+        last_head_sha: remoteHead,
+      }),
+    },
+  };
+  const context = createCodexTurnContext({
+    state,
+    record: state.issues["102"]!,
+    issue,
+    workspacePath,
+    journalPath: currentJournalPath,
+    syncJournal: async () => undefined,
+    workspaceStatus: {
+      branch: "codex/issue-102",
+      headSha: preNormalizationHead,
+      baseAhead: 2,
+      remoteBranchExists: true,
+      remoteAhead: 1,
+    },
+    pr: createPullRequest({
+      number: 116,
+      title: "Review bookkeeping normalization",
+      reviewDecision: "CHANGES_REQUESTED",
+      headRefName: "codex/issue-102",
+      headRefOid: remoteHead,
+    }),
+    checks: [],
+    reviewThreads,
+  });
+
+  const result = await executeCodexTurnPhase({
+    config: createConfig(),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      resolvePullRequestForBranch: async () =>
+        createPullRequest({
+          number: 116,
+          title: "Review bookkeeping normalization",
+          reviewDecision: "CHANGES_REQUESTED",
+          headRefName: "codex/issue-102",
+          headRefOid: git(workspacePath, "rev-parse", "HEAD").trim(),
+        }),
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => reviewThreads,
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    context,
+    acquireSessionLock: async () => null,
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-03-13T06:20:00Z",
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    normalizeBlockerSignature: () => null,
+    isVerificationBlockedMessage: () => false,
+    getWorkspaceStatus: async () => {
+      const currentHead = git(workspacePath, "rev-parse", "HEAD").trim();
+      return currentHead === preNormalizationHead
+        ? createWorkspaceStatus({
+            branch: "codex/issue-102",
+            headSha: preNormalizationHead,
+            baseAhead: 2,
+            remoteBranchExists: true,
+            remoteAhead: 1,
+          })
+        : createWorkspaceStatus({
+            branch: "codex/issue-102",
+            headSha: currentHead,
+            baseAhead: 3,
+            remoteBranchExists: true,
+            remoteAhead: 0,
+          });
+    },
+    runWorkstationLocalPathGate: async () => {
+      pathGateCalls += 1;
+      await fs.writeFile(
+        otherJournalPath,
+        (
+          await fs.readFile(otherJournalPath, "utf8")
+        ).replaceAll(SAMPLE_MACOS_WORKSTATION_PATH, "<redacted-local-path>"),
+        "utf8",
+      );
+      return {
+        ok: true,
+        failureContext: null,
+        rewrittenJournalPaths: [".codex-supervisor/issues/181/issue-journal.md"],
+      };
+    },
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "addressing_review",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    inferStateWithoutPullRequest: () => "stabilizing",
+    blockedReasonFromReviewState: () => null,
+    recoverUnexpectedCodexTurnFailure: async () => {
+      throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+    },
+    readIssueJournal: (() => {
+      const journalContent = [
+        "## Codex Working Notes",
+        "### Current Handoff",
+        "- Hypothesis: publish the normalization commit and keep review bookkeeping aligned.",
+        "- What changed:",
+        "- Current blocker: none.",
+        "- Next exact step: write the supervisor handoff after the turn.",
+      ].join("\n");
+      return async () => journalContent;
+    })(),
+    agentRunner: createSuccessfulAgentRunner(async () => {
+      return {
+        exitCode: 0,
+        sessionId: "session-102",
+        supervisorMessage: [
+          "Summary: implementation complete",
+          "State hint: addressing_review",
+          "Blocked reason: none",
+          "Tests: not run",
+          "Failure signature: none",
+          "Next action: publish the rewritten journal",
+        ].join("\n"),
+        stderr: "",
+        stdout: "",
+        structuredResult: {
+          summary: "implementation complete",
+          stateHint: "addressing_review",
+          blockedReason: null,
+          failureSignature: null,
+          nextAction: "publish the rewritten journal",
+          tests: "not run",
+        },
+        failureKind: null,
+        failureContext: null,
+      };
+    }),
+  });
+
+  const normalizedHead = git(workspacePath, "rev-parse", "HEAD").trim();
+  assert.equal(pathGateCalls, 1);
+  assert.equal(result.kind, "completed");
+  assert.notEqual(normalizedHead, preNormalizationHead);
+  assert.equal(state.issues["102"]?.last_head_sha, normalizedHead);
+  assert.deepEqual(state.issues["102"]?.processed_review_thread_ids, [`thread-1@${normalizedHead}`]);
+  assert.deepEqual(
+    state.issues["102"]?.processed_review_thread_fingerprints,
+    [`thread-1@${normalizedHead}#comment-1`],
+  );
+  assert.match(git(workspacePath, "log", "-1", "--pretty=%s"), /Normalize supervisor-owned issue journals for path hygiene/);
+  assert.doesNotMatch(
+    await fs.readFile(otherJournalPath, "utf8"),
+    new RegExp(SAMPLE_MACOS_WORKSTATION_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+  );
 });
 
 test("executeCodexTurnPhase skips prompt preparation side effects when the session lock is unavailable", async () => {

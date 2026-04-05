@@ -14,9 +14,11 @@ import {
 } from "./core/types";
 import { truncate } from "./core/utils";
 import {
+  buildWorkstationLocalPathFailureContext,
   runWorkstationLocalPathGate,
   type WorkstationLocalPathGateResult,
 } from "./workstation-local-path-gate";
+import { commitAndPushTrackedFiles, getWorkspaceStatus } from "./core/workspace";
 
 function isOpenPullRequest(pr: GitHubPullRequest | null): pr is GitHubPullRequest {
   return pr !== null && pr.state === "OPEN" && !pr.mergedAt;
@@ -43,8 +45,10 @@ export type CodexTurnPublicationGateResult =
   | CodexTurnPublicationGateBlockedResult
   | CodexTurnPublicationGateReadyResult;
 
+const SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE = "Normalize supervisor-owned issue journals for path hygiene";
+
 export async function applyCodexTurnPublicationGate(args: {
-  config: Pick<SupervisorConfig, "draftPrAfterAttempt" | "workspacePreparationCommand" | "localCiCommand">;
+  config: Pick<SupervisorConfig, "defaultBranch" | "draftPrAfterAttempt" | "workspacePreparationCommand" | "localCiCommand">;
   stateStore: Pick<StateStore, "touch" | "save">;
   state: SupervisorStateFile;
   record: IssueRunRecord;
@@ -69,14 +73,15 @@ export async function applyCodexTurnPublicationGate(args: {
   syncExecutionMetricsRunSummary: (record: IssueRunRecord) => Promise<void>;
 }): Promise<CodexTurnPublicationGateResult> {
   let record = args.record;
+  let workspaceStatus = args.workspaceStatus;
   const runWorkstationLocalPathGateImpl = args.runWorkstationLocalPathGate ?? runWorkstationLocalPathGate;
   const resolvedPr = await args.github.resolvePullRequestForBranch(record.branch, record.pr_number, { purpose: "action" });
   let pr = isOpenPullRequest(resolvedPr) ? resolvedPr : null;
 
   if (
     !pr &&
-    args.workspaceStatus.baseAhead > 0 &&
-    !args.workspaceStatus.hasUncommittedChanges &&
+    workspaceStatus.baseAhead > 0 &&
+    !workspaceStatus.hasUncommittedChanges &&
     record.implementation_attempt_count >= args.config.draftPrAfterAttempt
   ) {
     const pathHygieneGate = await runWorkstationLocalPathGateImpl({
@@ -108,6 +113,48 @@ export async function applyCodexTurnPublicationGate(args: {
         checks: [],
         reviewThreads: [],
       };
+    }
+    const rewrittenJournalPaths = pathHygieneGate.rewrittenJournalPaths ?? [];
+    if (rewrittenJournalPaths.length > 0) {
+      try {
+        await commitAndPushTrackedFiles({
+          workspacePath: args.workspacePath,
+          branch: record.branch,
+          remoteBranchExists: workspaceStatus.remoteBranchExists,
+          filePaths: rewrittenJournalPaths,
+          commitMessage: SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const failureContext = buildWorkstationLocalPathFailureContext({
+          gateLabel: "before publication",
+          details: [
+            `journal normalization persistence failed for ${rewrittenJournalPaths.join(", ")}: ${message}`,
+          ],
+        });
+        record = args.stateStore.touch(record, {
+          state: "blocked",
+          last_error: truncate(failureContext.summary, 1000),
+          last_failure_kind: null,
+          last_failure_context: failureContext,
+          ...args.applyFailureSignature(record, failureContext),
+          blocked_reason: "verification",
+        });
+        args.state.issues[String(record.issue_number)] = record;
+        await args.stateStore.save(args.state);
+        await args.syncExecutionMetricsRunSummary(record);
+        await args.syncJournal(record);
+        return {
+          kind: "blocked",
+          message: `Workstation-local path hygiene blocked pull request creation for issue #${record.issue_number}.`,
+          record,
+          pr: null,
+          checks: [],
+          reviewThreads: [],
+        };
+      }
+      workspaceStatus = await getWorkspaceStatus(args.workspacePath, record.branch, args.config.defaultBranch);
+      record = args.stateStore.touch(record, { last_head_sha: workspaceStatus.headSha });
     }
 
     const workspacePreparationGate = await runWorkspacePreparationGate({
@@ -153,7 +200,7 @@ export async function applyCodexTurnPublicationGate(args: {
         latest_local_ci_result: localCiGate.latestResult
           ? {
               ...localCiGate.latestResult,
-              head_sha: args.workspaceStatus.headSha,
+              head_sha: workspaceStatus.headSha,
             }
           : null,
         last_error: truncate(failureContext?.summary, 1000),
@@ -180,7 +227,7 @@ export async function applyCodexTurnPublicationGate(args: {
       latest_local_ci_result: localCiGate.latestResult
         ? {
             ...localCiGate.latestResult,
-            head_sha: args.workspaceStatus.headSha,
+            head_sha: workspaceStatus.headSha,
           }
         : null,
     });
