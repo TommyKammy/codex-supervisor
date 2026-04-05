@@ -1,0 +1,168 @@
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { diagnoseSetupReadiness } from "./setup-readiness";
+
+async function createTrackedRepo(root: string): Promise<string> {
+  const repoPath = path.join(root, "repo");
+  await fs.mkdir(repoPath, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  await fs.writeFile(path.join(repoPath, "README.md"), "# fixture\n", "utf8");
+  execFileSync("git", ["add", "README.md"], { cwd: repoPath });
+  execFileSync("git", ["commit", "-m", "seed"], {
+    cwd: repoPath,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Codex",
+      GIT_AUTHOR_EMAIL: "codex@example.com",
+      GIT_COMMITTER_NAME: "Codex",
+      GIT_COMMITTER_EMAIL: "codex@example.com",
+    },
+  });
+
+  return repoPath;
+}
+
+function buildConfigDocument(args: {
+  repoPath: string;
+  workspaceRoot: string;
+  stateFile: string;
+  workspacePreparationCommand: unknown;
+}): Record<string, unknown> {
+  return {
+    repoPath: args.repoPath,
+    repoSlug: "owner/repo",
+    defaultBranch: "main",
+    workspaceRoot: args.workspaceRoot,
+    stateFile: args.stateFile,
+    codexBinary: process.execPath,
+    branchPrefix: "codex/issue-",
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    workspacePreparationCommand: args.workspacePreparationCommand,
+  };
+}
+
+test("diagnoseSetupReadiness marks a repo-relative missing workspace preparation helper invalid", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: "./scripts/prepare-workspace.sh",
+      }),
+    ),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.ready, false);
+  assert.equal(summary.overallStatus, "invalid");
+  const field = summary.fields.find((entry) => entry.key === "workspacePreparationCommand");
+  assert.equal(field?.state, "invalid");
+  assert.match(field?.message ?? "", /does not resolve to a file inside repoPath/i);
+  assert.match(field?.message ?? "", /move the helper into the repository and commit it/i);
+});
+
+test("diagnoseSetupReadiness marks an untracked repo-relative workspace preparation helper invalid", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(path.join(repoPath, "scripts"), { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(path.join(repoPath, "scripts", "prepare-workspace.sh"), "#!/bin/sh\nexit 0\n", "utf8");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: "./scripts/prepare-workspace.sh",
+      }),
+    ),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.ready, false);
+  assert.equal(summary.overallStatus, "invalid");
+  const field = summary.fields.find((entry) => entry.key === "workspacePreparationCommand");
+  assert.equal(field?.state, "invalid");
+  assert.match(field?.message ?? "", /resolves to an untracked helper/i);
+  assert.match(field?.message ?? "", /commit the helper/i);
+});
+
+test("diagnoseSetupReadiness keeps a tracked repo-owned workspace preparation helper configured", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(path.join(repoPath, "scripts"), { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(path.join(repoPath, "scripts", "prepare-workspace.sh"), "#!/bin/sh\nexit 0\n", "utf8");
+  execFileSync("git", ["add", "scripts/prepare-workspace.sh"], { cwd: repoPath });
+  execFileSync("git", ["commit", "-m", "add workspace helper"], {
+    cwd: repoPath,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Codex",
+      GIT_AUTHOR_EMAIL: "codex@example.com",
+      GIT_COMMITTER_NAME: "Codex",
+      GIT_COMMITTER_EMAIL: "codex@example.com",
+    },
+  });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: "./scripts/prepare-workspace.sh",
+      }),
+    ),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.overallStatus, "configured");
+  const field = summary.fields.find((entry) => entry.key === "workspacePreparationCommand");
+  assert.equal(field?.state, "configured");
+  assert.equal(field?.value, "./scripts/prepare-workspace.sh");
+  assert.match(field?.message ?? "", /workspace preparation command is configured/i);
+});
