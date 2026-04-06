@@ -5,6 +5,7 @@ import {
   localReviewRequiresManualReview,
   localReviewRetryLoopStalled,
 } from "./review-handling";
+import { shouldRunLocalReview } from "./local-review";
 import {
   mergeConflictDetected,
   summarizeChecks,
@@ -898,6 +899,18 @@ export function inferStateFromPullRequest(
 
   if (config.humanReviewBlocksMerge && manualThreads.length > 0) {
     return "blocked";
+  }
+
+  if (
+    !pr.isDraft &&
+    config.trackedPrCurrentHeadLocalReviewRequired &&
+    shouldRunLocalReview(config, record, pr) &&
+    !checkSummary.hasPending &&
+    unresolvedBotThreads.length === 0 &&
+    (!config.humanReviewBlocksMerge || manualThreads.length === 0) &&
+    !mergeConflictDetected(pr)
+  ) {
+    return "local_review";
   }
 
   if (localReviewRequiresManualReview(config, record, pr)) {

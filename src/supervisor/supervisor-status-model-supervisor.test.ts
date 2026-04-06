@@ -240,13 +240,13 @@ test("buildDetailedStatusModel marks the tracked PR current-head gate as active 
     mergeConflictDetected: (pr) => pr.mergeStateStatus === "DIRTY",
   });
 
-  assert.ok(
-    lines.some((line) =>
-      /local_review gating=yes policy=advisory findings=0 .* head=stale .* needs_review_run=yes drift=head-old->head-new/.test(
-        line,
-      ),
-    ),
-  );
+  const localReviewLine = lines.find((line) => line.startsWith("local_review "));
+  assert.ok(localReviewLine);
+  assert.match(localReviewLine, /\bgating=yes\b/);
+  assert.match(localReviewLine, /\bpolicy=advisory\b/);
+  assert.match(localReviewLine, /\bhead=stale\b/);
+  assert.match(localReviewLine, /\bneeds_review_run=yes\b/);
+  assert.match(localReviewLine, /\bdrift=head-old->head-new\b/);
 });
 
 test("buildDetailedStatusModel explains why an active CodeRabbit settled wait is pausing merge progression", () => {

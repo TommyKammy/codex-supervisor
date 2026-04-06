@@ -374,7 +374,7 @@ test("inferStateFromPullRequest covers local review policy gating combinations",
       expected: "ready_to_merge",
     },
     {
-      name: "tracked current-head gate blocks a ready PR until local review reruns on the new head",
+      name: "tracked current-head gate routes a ready PR back into local review once the rerun can start",
       config: {
         localReviewEnabled: true,
         localReviewPolicy: "advisory",
@@ -389,7 +389,7 @@ test("inferStateFromPullRequest covers local review policy gating combinations",
         pre_merge_evaluation_outcome: "mergeable",
       },
       pr: { isDraft: false, headRefOid: "newhead" },
-      expected: "blocked",
+      expected: "local_review",
     },
     {
       name: "retry escalates verifier-confirmed high severity findings into local_review_fix",

@@ -5,30 +5,36 @@
 - Branch: codex/issue-1312
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: d8279549ba31dee66d7768902d6306f401482b87
+- Current phase: local_review_fix
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: c523281c139003a90024df04510a9ff015c54b9e
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-04-06T22:00:18.819Z
+- Last failure signature: local-review:high:high:3:1:clean
+- Repeated failure signature count: 2
+- Updated at: 2026-04-06T22:21:13.449Z
 
 ## Latest Codex Summary
-- Added an opt-in `trackedPrCurrentHeadLocalReviewRequired` gate that blocks tracked PR ready/merge progression until local review has run on the current PR head, while preserving existing post-review policy behavior once the head is current.
-- Added focused regression coverage for rerun triggering, tracked-PR state inference, pre-merge pending diagnostics, ready-PR transition handling, and active status rendering.
+Draft PR is open at https://github.com/TommyKammy/codex-supervisor/pull/1313 against `main` from `codex/issue-1312`. I repaired the stale-current-head local-review deadlock by routing runnable tracked-gate reruns through `local_review`, added the pending-checks-then-green regression coverage, tightened the status assertion, and re-ran the focused verification plus `npm run build`.
+
+Summary: Repaired the tracked current-head local-review deadlock, added later-cycle rerun coverage, and re-verified the branch locally for PR #1313.
+State hint: local_review_fix
+Blocked reason: none
+Tests: `npx tsx --test src/post-turn-pull-request.test.ts src/local-review/index.test.ts src/supervisor/supervisor-pre-merge-evaluation.test.ts src/pull-request-state-policy.test.ts`; `npx tsx --test src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-status-rendering-supervisor.test.ts`; `npm run build`
+Next action: Commit and push the repaired tracked-gate lifecycle update to draft PR #1313, then wait for CI or fresh review feedback.
+Failure signature: local-review:high:high:3:1:clean
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: tracked PRs only re-ran or gated local review according to `localReviewPolicy`, so ready PR head updates under `advisory` or `block_ready` could progress without a fresh current-head local review.
-- What changed: introduced `trackedPrCurrentHeadLocalReviewRequired` in config parsing/examples; extended `shouldRunLocalReview`, `localReviewBlocksReady`, and `localReviewBlocksMerge` to enforce current-head freshness when enabled; added focused tests plus status/pre-merge diagnostic coverage; documented the new knob.
-- Current blocker: none.
-- Next exact step: optionally commit the focused implementation slice and open/update the draft PR if the supervisor wants a checkpoint.
-- Verification gap: none from local reproduction; broader full-suite verification was not run beyond the issue-targeted tests plus `npm run build`.
-- Files touched: `src/core/types.ts`, `src/core/config.ts`, `src/local-review/index.ts`, `src/review-handling.ts`, `src/local-review/index.test.ts`, `src/review-handling.test.ts`, `src/pull-request-state-policy.test.ts`, `src/post-turn-pull-request.test.ts`, `src/supervisor/supervisor-pre-merge-evaluation.test.ts`, `src/supervisor/supervisor-status-model-supervisor.test.ts`, `src/setup-config-preview.ts`, `supervisor.config.example.json`, `docs/configuration.md`, `docs/local-review.md`, `docs/examples/atlaspm.md`, `docs/examples/atlaspm.supervisor.config.example.json`.
+- Hypothesis: when the opt-in tracked current-head gate is enabled, a ready PR whose head advanced during pending CI could still fall into `blocked` before any later-cycle rerun path reopened local review.
+- What changed: `inferStateFromPullRequest` now returns `local_review` for ready tracked PRs once the current-head rerun is actually runnable, preventing the stale-head gate from stranding the PR in `blocked`; added a two-cycle post-turn regression for the pending-to-green sequence; narrowed the new status-model assertion to stable gate-specific tokens.
+- Current blocker: none; the stale-head rerun path is repaired locally and verified.
+- Next exact step: commit and push this repair to PR #1313, then let CI and review re-evaluate the updated branch.
+- Verification gap: none in the targeted regression area; broader full-suite verification was not run beyond the focused tests and `npm run build`.
+- Files touched: `src/pull-request-state.ts`, `src/pull-request-state-policy.test.ts`, `src/post-turn-pull-request.test.ts`, `src/supervisor/supervisor-status-model-supervisor.test.ts`.
 - Rollback concern: low; the new behavior is fully opt-in and defaults to `false`, so existing repos stay on current semantics unless they enable the gate.
-- Last focused command: `npm run build`
+- Last focused commands: `npx tsx --test src/post-turn-pull-request.test.ts src/local-review/index.test.ts src/supervisor/supervisor-pre-merge-evaluation.test.ts src/pull-request-state-policy.test.ts`; `npx tsx --test src/supervisor/supervisor-status-model-supervisor.test.ts src/supervisor/supervisor-status-rendering-supervisor.test.ts`; `npm run build`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

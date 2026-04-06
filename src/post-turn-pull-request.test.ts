@@ -4,8 +4,8 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { handlePostTurnPullRequestTransitionsPhase } from "./post-turn-pull-request";
-import { PullRequestCheck, ReviewThread, SupervisorStateFile } from "./core/types";
+import { handlePostTurnPullRequestTransitionsPhase, type PullRequestLifecycleSnapshot } from "./post-turn-pull-request";
+import { IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorStateFile } from "./core/types";
 import { createConfig, createFailureContext, createIssue, createPullRequest, createRecord } from "./turn-execution-test-helpers";
 
 const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
@@ -1638,6 +1638,240 @@ test("handlePostTurnPullRequestTransitionsPhase reruns local review on a ready P
   assert.equal(result.record.state, "ready_to_merge");
   assert.equal(result.record.local_review_head_sha, "head-new");
   assert.equal(result.record.pre_merge_evaluation_outcome, "mergeable");
+});
+
+test("handlePostTurnPullRequestTransitionsPhase reruns local review on a later cycle after pending checks clear for a stale ready PR head", async () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "advisory",
+    trackedPrCurrentHeadLocalReviewRequired: true,
+  });
+  const readyPr = createPullRequest({
+    title: "Re-review once pending checks clear",
+    isDraft: false,
+    headRefOid: "head-new",
+  });
+  const pendingChecks: PullRequestCheck[] = [
+    { name: "build", state: "IN_PROGRESS", bucket: "pending", workflow: "CI" },
+  ];
+  const passingChecks: PullRequestCheck[] = [
+    { name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+  ];
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "waiting_ci",
+        pr_number: readyPr.number,
+        local_review_head_sha: "head-old",
+        local_review_findings_count: 0,
+        local_review_recommendation: "ready",
+        pre_merge_evaluation_outcome: "mergeable",
+      }),
+    },
+  };
+  let currentChecks = pendingChecks;
+  let localReviewCalls = 0;
+
+  const deriveLifecycle = (
+    record: IssueRunRecord,
+    pr: typeof readyPr,
+    checks: PullRequestCheck[],
+    _reviewThreads: ReviewThread[],
+    _recordPatch?: Partial<IssueRunRecord>,
+  ): PullRequestLifecycleSnapshot => ({
+    recordForState: record,
+    nextState: checks.some((check) => check.bucket === "pending")
+      ? "waiting_ci"
+      : record.local_review_head_sha === pr.headRefOid
+        ? "ready_to_merge"
+        : "local_review",
+    failureContext: null,
+    reviewWaitPatch: {},
+    copilotRequestObservationPatch: {},
+    mergeLatencyVisibilityPatch: {
+      provider_success_observed_at: null,
+      provider_success_head_sha: null,
+      merge_readiness_last_evaluated_at: null,
+    },
+    copilotTimeoutPatch: {
+      copilot_review_timed_out_at: null,
+      copilot_review_timeout_action: null,
+      copilot_review_timeout_reason: null,
+    },
+  });
+
+  const first = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      markPullRequestReady: async () => {
+        throw new Error("unexpected markPullRequestReady call");
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue: createIssue({ title: "Rerun current-head local review after pending CI settles" }),
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: readyPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: deriveLifecycle,
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: (checks) => ({
+      hasPending: checks.some((check) => check.bucket === "pending"),
+      hasFailing: checks.some((check) => check.bucket === "fail"),
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalReviewImpl: async () => {
+      localReviewCalls += 1;
+      return {
+        ranAt: "2026-03-24T00:11:00Z",
+        summaryPath: "/tmp/reviews/owner-repo/issue-102/head-new.md",
+        findingsPath: "/tmp/reviews/owner-repo/issue-102/head-new.json",
+        summary: "Local review revalidated the current head.",
+        blockerSummary: null,
+        findingsCount: 0,
+        rootCauseCount: 0,
+        maxSeverity: "none",
+        verifiedFindingsCount: 0,
+        verifiedMaxSeverity: "none",
+        recommendation: "ready",
+        degraded: false,
+        finalEvaluation: {
+          outcome: "mergeable",
+          residualFindings: [],
+          mustFixCount: 0,
+          manualReviewCount: 0,
+          followUpCount: 0,
+        },
+        rawOutput: "raw output",
+      };
+    },
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: readyPr,
+      checks: currentChecks,
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(localReviewCalls, 0);
+  assert.equal(first.record.state, "waiting_ci");
+  assert.equal(first.record.local_review_head_sha, "head-old");
+
+  currentChecks = passingChecks;
+  state.issues["102"] = first.record;
+
+  const second = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      markPullRequestReady: async () => {
+        throw new Error("unexpected markPullRequestReady call");
+      },
+    },
+    context: {
+      state,
+      record: first.record,
+      issue: createIssue({ title: "Rerun current-head local review after pending CI settles" }),
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: readyPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: deriveLifecycle,
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: (checks) => ({
+      hasPending: checks.some((check) => check.bucket === "pending"),
+      hasFailing: checks.some((check) => check.bucket === "fail"),
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalReviewImpl: async () => {
+      localReviewCalls += 1;
+      return {
+        ranAt: "2026-03-24T00:11:00Z",
+        summaryPath: "/tmp/reviews/owner-repo/issue-102/head-new.md",
+        findingsPath: "/tmp/reviews/owner-repo/issue-102/head-new.json",
+        summary: "Local review revalidated the current head.",
+        blockerSummary: null,
+        findingsCount: 0,
+        rootCauseCount: 0,
+        maxSeverity: "none",
+        verifiedFindingsCount: 0,
+        verifiedMaxSeverity: "none",
+        recommendation: "ready",
+        degraded: false,
+        finalEvaluation: {
+          outcome: "mergeable",
+          residualFindings: [],
+          mustFixCount: 0,
+          manualReviewCount: 0,
+          followUpCount: 0,
+        },
+        rawOutput: "raw output",
+      };
+    },
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: readyPr,
+      checks: currentChecks,
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(localReviewCalls, 1);
+  assert.equal(second.record.state, "ready_to_merge");
+  assert.equal(second.record.local_review_head_sha, "head-new");
+  assert.equal(second.record.pre_merge_evaluation_outcome, "mergeable");
 });
 
 test("handlePostTurnPullRequestTransitionsPhase blocks draft PRs when local review requires manual verification", async () => {
