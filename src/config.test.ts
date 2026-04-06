@@ -4,7 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadConfig, loadConfigSummary, summarizeCadenceDiagnostics } from "./core/config";
+import {
+  findRepoOwnedWorkspacePreparationCandidate,
+  loadConfig,
+  loadConfigSummary,
+  summarizeCadenceDiagnostics,
+} from "./core/config";
 import { SupervisorConfig } from "./core/types";
 import { buildSetupConfigPreview } from "./setup-config-preview";
 import { updateSetupConfig } from "./setup-config-write";
@@ -13,6 +18,11 @@ function initGitRepo(repoPath: string): void {
   execFileSync("git", ["init"], { cwd: repoPath, stdio: "ignore" });
   execFileSync("git", ["config", "user.name", "Codex Test"], { cwd: repoPath, stdio: "ignore" });
   execFileSync("git", ["config", "user.email", "codex@example.com"], { cwd: repoPath, stdio: "ignore" });
+}
+
+function commitAll(repoPath: string, message: string): void {
+  execFileSync("git", ["add", "."], { cwd: repoPath, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", message], { cwd: repoPath, stdio: "ignore" });
 }
 
 test("loadConfig leaves bare codexBinary values unresolved for PATH lookup", async (t) => {
@@ -136,6 +146,34 @@ test("loadConfigSummary accepts an explicit safer trust diagnostics posture with
     warning: null,
     configWarning: null,
   });
+});
+
+test("findRepoOwnedWorkspacePreparationCandidate ignores untracked lockfiles", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  initGitRepo(tempDir);
+  await fs.writeFile(path.join(tempDir, "README.md"), "# fixture\n", "utf8");
+  commitAll(tempDir, "seed");
+  await fs.writeFile(path.join(tempDir, "package-lock.json"), "{}\n", "utf8");
+
+  assert.equal(findRepoOwnedWorkspacePreparationCandidate(tempDir), null);
+});
+
+test("findRepoOwnedWorkspacePreparationCandidate recommends tracked lockfiles", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  initGitRepo(tempDir);
+  await fs.writeFile(path.join(tempDir, "README.md"), "# fixture\n", "utf8");
+  await fs.writeFile(path.join(tempDir, "package-lock.json"), "{}\n", "utf8");
+  commitAll(tempDir, "seed");
+
+  assert.equal(findRepoOwnedWorkspacePreparationCandidate(tempDir), "npm ci");
 });
 
 test("loadConfig rejects negative orphan cleanup grace values", async (t) => {

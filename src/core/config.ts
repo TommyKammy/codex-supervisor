@@ -649,12 +649,31 @@ export function findRepoOwnedWorkspacePreparationCandidate(repoPath: string | un
   }
 
   for (const candidate of WORKSPACE_PREPARATION_LOCKFILE_CANDIDATES) {
-    if (fs.existsSync(path.join(repoPath, candidate.file))) {
-      return candidate.command;
+    const candidatePath = path.join(repoPath, candidate.file);
+    if (!isTrackedRepoFile(repoPath, candidate.file) || !isFilePath(candidatePath)) {
+      continue;
     }
+
+    return candidate.command;
   }
 
   return null;
+}
+
+function isFilePath(filePath: string): boolean {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function isTrackedRepoFile(repoPath: string, repoRelativePath: string): boolean {
+  const trackedCheck = spawnSync("git", ["-C", repoPath, "ls-files", "--error-unmatch", "--", repoRelativePath], {
+    encoding: "utf8",
+  });
+
+  return trackedCheck.status === 0;
 }
 
 export function loadConfigSummary(configPath?: string): ConfigLoadSummary {

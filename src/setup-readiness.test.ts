@@ -179,6 +179,17 @@ test("diagnoseSetupReadiness suggests a repo-native workspace preparation comman
   await fs.mkdir(workspaceRoot, { recursive: true });
   await fs.writeFile(path.join(repoPath, "package.json"), JSON.stringify({ private: true }, null, 2), "utf8");
   await fs.writeFile(path.join(repoPath, "package-lock.json"), "{}\n", "utf8");
+  execFileSync("git", ["add", "package.json", "package-lock.json"], { cwd: repoPath });
+  execFileSync("git", ["commit", "-m", "add workspace lockfile"], {
+    cwd: repoPath,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Codex",
+      GIT_AUTHOR_EMAIL: "codex@example.com",
+      GIT_COMMITTER_NAME: "Codex",
+      GIT_COMMITTER_EMAIL: "codex@example.com",
+    },
+  });
   await fs.writeFile(
     configPath,
     JSON.stringify(
