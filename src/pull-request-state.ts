@@ -512,6 +512,11 @@ function configuredBotCurrentHeadSignalPending(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
 ): boolean {
+  const timeoutMinutes = config.configuredBotCurrentHeadSignalTimeoutMinutes ?? 0;
+  if (!requiresConfiguredBotCurrentHeadSignal(config) || timeoutMinutes <= 0) {
+    return false;
+  }
+
   return configuredBotCurrentHeadSignalWaitStartAt(config, record, pr) !== null;
 }
 
