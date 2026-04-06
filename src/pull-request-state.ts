@@ -486,6 +486,10 @@ function configuredBotCurrentHeadSignalWaitStartAt(
     return null;
   }
 
+  if (!pr.currentHeadCiGreenAt) {
+    return null;
+  }
+
   const draftSkipStartedAt = configuredBotDraftSkipRearmStartedAt(config, record, pr);
   if (draftSkipStartedAt) {
     return draftSkipStartedAt;
@@ -498,10 +502,6 @@ function configuredBotCurrentHeadSignalWaitStartAt(
 
   if (pr.currentHeadCiGreenAt) {
     return pr.currentHeadCiGreenAt;
-  }
-
-  if (record.review_wait_started_at && record.review_wait_head_sha === pr.headRefOid) {
-    return record.review_wait_started_at;
   }
 
   return null;

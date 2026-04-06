@@ -1,5 +1,6 @@
 import { displayRelativeArtifactPath } from "./supervisor-status-summary-helpers";
 import {
+  configuredBotCurrentHeadSignalWaitWindow,
   configuredBotInitialGraceWaitWindow,
   configuredBotSettledWaitWindow,
 } from "./supervisor-status-review-bot";
@@ -18,7 +19,10 @@ export interface SupervisorLatestRecoveryDto {
 }
 
 export interface SupervisorReviewWaitDto {
-  kind: "configured_bot_initial_grace_wait" | "configured_bot_settled_wait";
+  kind:
+    | "configured_bot_initial_grace_wait"
+    | "configured_bot_current_head_signal_wait"
+    | "configured_bot_settled_wait";
   status: "active";
   provider: "coderabbit";
   pauseReason: string;
@@ -322,6 +326,21 @@ export function buildReviewWaitDtos(
       observedAt: settledWait.observedAt,
       configuredWaitSeconds: settledWait.configuredWaitSeconds,
       waitUntil: settledWait.waitUntil,
+    });
+  }
+
+  const currentHeadSignalWait = configuredBotCurrentHeadSignalWaitWindow(config, pr);
+  if (currentHeadSignalWait.status === "active" && currentHeadSignalWait.provider === "coderabbit") {
+    reviewWaits.push({
+      kind: "configured_bot_current_head_signal_wait",
+      status: "active",
+      provider: "coderabbit",
+      pauseReason: currentHeadSignalWait.pauseReason,
+      recentObservation: currentHeadSignalWait.recentObservation,
+      observedAt: currentHeadSignalWait.observedAt,
+      configuredWaitSeconds:
+        currentHeadSignalWait.configuredWaitMinutes === null ? null : currentHeadSignalWait.configuredWaitMinutes * 60,
+      waitUntil: currentHeadSignalWait.waitUntil,
     });
   }
 

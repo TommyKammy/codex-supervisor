@@ -419,6 +419,37 @@ test("inferStateFromPullRequest blocks after a strict CodeRabbit current-head si
   });
 });
 
+test("inferStateFromPullRequest does not spend strict CodeRabbit timeout budget before checks turn green", () => {
+  withStubbedDateNow("2026-03-11T00:11:00Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      configuredBotRequireCurrentHeadSignal: true,
+      configuredBotInitialGraceWaitSeconds: 30,
+      configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+      configuredBotCurrentHeadSignalTimeoutAction: "block",
+    });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-03-11T00:00:00Z",
+      review_wait_head_sha: "head123",
+    });
+
+    assert.equal(
+      inferStateFromPullRequest(
+        config,
+        record,
+        createPullRequest({
+          currentHeadCiGreenAt: null,
+          configuredBotCurrentHeadObservedAt: null,
+        }),
+        passingChecks(),
+        [],
+      ),
+      "ready_to_merge",
+    );
+  });
+});
+
 test("inferStateFromPullRequest does not start Copilot timeout from the generic review wait window", () => {
   withStubbedDateNow("2026-03-11T00:30:00Z", () => {
     const config = createConfig({

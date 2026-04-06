@@ -201,6 +201,62 @@ export function configuredBotSettledWaitWindow(
   };
 }
 
+export function configuredBotCurrentHeadSignalWaitWindow(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+): {
+  status: "inactive" | "active" | "expired";
+  provider: "none" | "coderabbit";
+  pauseReason: "none" | "awaiting_current_head_signal_after_required_checks";
+  recentObservation: "none" | "required_checks_green";
+  observedAt: string | null;
+  configuredWaitMinutes: number | null;
+  waitUntil: string | null;
+} {
+  if (
+    !configuredReviewProviderKinds(config).includes("coderabbit") ||
+    !config.configuredBotRequireCurrentHeadSignal ||
+    pr.isDraft ||
+    pr.configuredBotCurrentHeadObservedAt ||
+    !pr.currentHeadCiGreenAt
+  ) {
+    return {
+      status: "inactive",
+      provider: "none",
+      pauseReason: "none",
+      recentObservation: "none",
+      observedAt: pr.currentHeadCiGreenAt ?? null,
+      configuredWaitMinutes: null,
+      waitUntil: null,
+    };
+  }
+
+  const observedAtMs = Date.parse(pr.currentHeadCiGreenAt);
+  const configuredWaitMinutes = config.configuredBotCurrentHeadSignalTimeoutMinutes ?? null;
+  if (Number.isNaN(observedAtMs) || !configuredWaitMinutes || configuredWaitMinutes <= 0) {
+    return {
+      status: "inactive",
+      provider: "coderabbit",
+      pauseReason: "awaiting_current_head_signal_after_required_checks",
+      recentObservation: "required_checks_green",
+      observedAt: pr.currentHeadCiGreenAt,
+      configuredWaitMinutes,
+      waitUntil: null,
+    };
+  }
+
+  const waitUntil = new Date(observedAtMs + configuredWaitMinutes * 60_000).toISOString();
+  return {
+    status: Date.now() < Date.parse(waitUntil) ? "active" : "expired",
+    provider: "coderabbit",
+    pauseReason: "awaiting_current_head_signal_after_required_checks",
+    recentObservation: "required_checks_green",
+    observedAt: pr.currentHeadCiGreenAt,
+    configuredWaitMinutes,
+    waitUntil,
+  };
+}
+
 export function configuredBotInitialGraceWaitWindow(
   config: SupervisorConfig,
   pr: GitHubPullRequest,
