@@ -742,6 +742,42 @@ test("formatDetailedStatus explains CodeRabbit re-waiting after a draft skip whe
   });
 });
 
+test("formatDetailedStatus surfaces an active strict CodeRabbit current-head signal wait after the initial grace", () => {
+  withStubbedDateNow("2026-03-13T02:17:00Z", () => {
+    const status = formatDetailedStatus({
+      config: createConfig({
+        reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+        configuredBotRequireCurrentHeadSignal: true,
+        configuredBotInitialGraceWaitSeconds: 90,
+        configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+      }),
+      activeRecord: createRecord({
+        pr_number: 44,
+        state: "waiting_ci",
+        review_wait_started_at: "2026-03-13T02:00:00Z",
+        review_wait_head_sha: "deadbeef",
+      }),
+      latestRecord: null,
+      trackedIssueCount: 1,
+      pr: createPullRequest({
+        number: 44,
+        headRefName: "codex/issue-38",
+        copilotReviewState: "not_requested",
+        copilotReviewArrivedAt: null,
+        currentHeadCiGreenAt: "2026-03-13T02:15:00Z",
+        configuredBotCurrentHeadObservedAt: null,
+      }),
+      checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [],
+    });
+
+    assert.match(
+      status,
+      /configured_bot_current_head_signal_wait status=active provider=coderabbit pause_reason=awaiting_current_head_signal_after_required_checks recent_observation=required_checks_green observed_at=2026-03-13T02:15:00Z configured_wait_minutes=10 wait_until=2026-03-13T02:25:00\.000Z/,
+    );
+  });
+});
+
 test("formatDetailedStatus preserves Copilot-specific timeout wording for Copilot-only repos", () => {
   const config = createConfig({
     reviewBotLogins: ["copilot-pull-request-reviewer"],

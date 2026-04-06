@@ -188,6 +188,9 @@ export interface SupervisorConfig {
   configuredBotRateLimitWaitMinutes?: number;
   configuredBotInitialGraceWaitSeconds?: number;
   configuredBotSettledWaitSeconds?: number;
+  configuredBotRequireCurrentHeadSignal?: boolean;
+  configuredBotCurrentHeadSignalTimeoutMinutes?: number;
+  configuredBotCurrentHeadSignalTimeoutAction?: CopilotReviewTimeoutAction;
   codexExecTimeoutMinutes: number;
   maxCodexAttemptsPerIssue: number;
   maxImplementationAttemptsPerIssue: number;

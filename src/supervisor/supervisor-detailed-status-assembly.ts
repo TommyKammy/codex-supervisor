@@ -14,6 +14,7 @@ import {
   summarizeCheckBuckets,
 } from "./supervisor-status-summary-helpers";
 import {
+  configuredBotCurrentHeadSignalWaitWindow,
   configuredBotInitialGraceWaitWindow,
   configuredBotSettledWaitWindow,
   configuredBotRateLimitWaitWindow,
@@ -210,6 +211,12 @@ export function buildActiveDetailedStatusLines(
     if (configuredBotSettledWait.status === "active") {
       lines.push(
         `configured_bot_settled_wait status=${configuredBotSettledWait.status} provider=${configuredBotSettledWait.provider} pause_reason=${configuredBotSettledWait.pauseReason} recent_observation=${configuredBotSettledWait.recentObservation} observed_at=${configuredBotSettledWait.observedAt ?? "none"} configured_wait_seconds=${configuredBotSettledWait.configuredWaitSeconds ?? "none"} wait_until=${configuredBotSettledWait.waitUntil ?? "none"}`,
+      );
+    }
+    const configuredBotCurrentHeadSignalWait = configuredBotCurrentHeadSignalWaitWindow(config, pr);
+    if (configuredBotCurrentHeadSignalWait.status === "active") {
+      lines.push(
+        `configured_bot_current_head_signal_wait status=${configuredBotCurrentHeadSignalWait.status} provider=${configuredBotCurrentHeadSignalWait.provider} pause_reason=${configuredBotCurrentHeadSignalWait.pauseReason} recent_observation=${configuredBotCurrentHeadSignalWait.recentObservation} observed_at=${configuredBotCurrentHeadSignalWait.observedAt ?? "none"} configured_wait_minutes=${configuredBotCurrentHeadSignalWait.configuredWaitMinutes ?? "none"} wait_until=${configuredBotCurrentHeadSignalWait.waitUntil ?? "none"}`,
       );
     }
     if (activeRecord.copilot_review_timeout_reason) {

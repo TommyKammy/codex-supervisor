@@ -918,6 +918,21 @@ function parseSupervisorConfigDocument(raw: Record<string, unknown>, resolvedPat
       raw.configuredBotSettledWaitSeconds >= 0
         ? raw.configuredBotSettledWaitSeconds
         : 5,
+    configuredBotRequireCurrentHeadSignal:
+      typeof raw.configuredBotRequireCurrentHeadSignal === "boolean"
+        ? raw.configuredBotRequireCurrentHeadSignal
+        : false,
+    configuredBotCurrentHeadSignalTimeoutMinutes:
+      typeof raw.configuredBotCurrentHeadSignalTimeoutMinutes === "number" &&
+      Number.isFinite(raw.configuredBotCurrentHeadSignalTimeoutMinutes) &&
+      raw.configuredBotCurrentHeadSignalTimeoutMinutes >= 0
+        ? raw.configuredBotCurrentHeadSignalTimeoutMinutes
+        : 10,
+    configuredBotCurrentHeadSignalTimeoutAction:
+      typeof raw.configuredBotCurrentHeadSignalTimeoutAction === "string" &&
+      VALID_COPILOT_REVIEW_TIMEOUT_ACTIONS.has(raw.configuredBotCurrentHeadSignalTimeoutAction as CopilotReviewTimeoutAction)
+        ? (raw.configuredBotCurrentHeadSignalTimeoutAction as CopilotReviewTimeoutAction)
+        : "block",
     codexExecTimeoutMinutes:
       typeof raw.codexExecTimeoutMinutes === "number" && raw.codexExecTimeoutMinutes > 0
         ? raw.codexExecTimeoutMinutes

@@ -606,6 +606,37 @@ test("loadConfig accepts an explicit configuredBotInitialGraceWaitSeconds overri
   assert.equal(config.configuredBotInitialGraceWaitSeconds, 120);
 });
 
+test("loadConfig accepts strict current-head configured-bot signal settings", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./.local/worktrees",
+      stateBackend: "json",
+      stateFile: "./.local/state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      configuredBotRequireCurrentHeadSignal: true,
+      configuredBotCurrentHeadSignalTimeoutMinutes: 12,
+      configuredBotCurrentHeadSignalTimeoutAction: "block",
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+  assert.equal(config.configuredBotRequireCurrentHeadSignal, true);
+  assert.equal(config.configuredBotCurrentHeadSignalTimeoutMinutes, 12);
+  assert.equal(config.configuredBotCurrentHeadSignalTimeoutAction, "block");
+});
+
 test("loadConfig accepts an explicit mergeCriticalRecheckSeconds override", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
   t.after(async () => {
@@ -936,6 +967,20 @@ test("shipped CodeRabbit starter profile preserves the default Epic skip policy"
     ["Epic:"],
     "supervisor.config.coderabbit.json should preserve the default Epic skip policy unless operators intentionally override it",
   );
+});
+
+test("shipped CodeRabbit starter profile enables strict current-head provider gating with a bounded timeout", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  const profilePath = path.join(rootDir, "supervisor.config.coderabbit.json");
+  const raw = JSON.parse(await fs.readFile(profilePath, "utf8")) as {
+    configuredBotRequireCurrentHeadSignal?: unknown;
+    configuredBotCurrentHeadSignalTimeoutMinutes?: unknown;
+    configuredBotCurrentHeadSignalTimeoutAction?: unknown;
+  };
+
+  assert.equal(raw.configuredBotRequireCurrentHeadSignal, true);
+  assert.equal(raw.configuredBotCurrentHeadSignalTimeoutMinutes, 10);
+  assert.equal(raw.configuredBotCurrentHeadSignalTimeoutAction, "block");
 });
 
 test("repo gitignore ignores .DS_Store without hiding host-specific coderabbit config", async (t) => {
