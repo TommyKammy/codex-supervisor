@@ -168,6 +168,7 @@ export interface SupervisorConfig {
   localReviewConfidenceThreshold: number;
   localReviewReviewerThresholds: Record<LocalReviewReviewerType, LocalReviewReviewerThresholdConfig>;
   localReviewPolicy: LocalReviewPolicy;
+  trackedPrCurrentHeadLocalReviewRequired?: boolean;
   localReviewHighSeverityAction: LocalReviewHighSeverityAction;
   reviewBotLogins: string[];
   configuredReviewProviders?: ConfiguredReviewProvider[];

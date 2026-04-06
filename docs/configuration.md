@@ -107,7 +107,7 @@ Review and merge policy:
 - `copilotReviewWaitMinutes`, `copilotReviewTimeoutAction`
 - `configuredBotRateLimitWaitMinutes`, `configuredBotInitialGraceWaitSeconds`, `configuredBotSettledWaitSeconds`
 - `localReviewEnabled`, `localReviewAutoDetect`, `localReviewRoles`
-- `localReviewPolicy`, `localReviewHighSeverityAction`
+- `localReviewPolicy`, `trackedPrCurrentHeadLocalReviewRequired`, `localReviewHighSeverityAction`
 - `localReviewArtifactDir`, `localReviewConfidenceThreshold`, `localReviewReviewerThresholds`
 - `mergeMethod`
 

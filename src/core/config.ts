@@ -838,6 +838,10 @@ function parseSupervisorConfigDocument(raw: Record<string, unknown>, resolvedPat
       typeof raw.localReviewPolicy === "string" && VALID_LOCAL_REVIEW_POLICIES.has(raw.localReviewPolicy as LocalReviewPolicy)
         ? (raw.localReviewPolicy as LocalReviewPolicy)
         : "block_ready",
+    trackedPrCurrentHeadLocalReviewRequired:
+      typeof raw.trackedPrCurrentHeadLocalReviewRequired === "boolean"
+        ? raw.trackedPrCurrentHeadLocalReviewRequired
+        : false,
     localReviewHighSeverityAction:
       typeof raw.localReviewHighSeverityAction === "string" &&
       VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS.has(raw.localReviewHighSeverityAction as LocalReviewHighSeverityAction)

@@ -10,6 +10,7 @@ Core behavior:
 
 - each role runs in a separate Codex turn
 - `localReviewPolicy` controls whether the swarm is advisory or blocking
+- `trackedPrCurrentHeadLocalReviewRequired` adds an opt-in freshness gate for tracked codex PRs without changing the underlying policy once the current head has been reviewed
 - verifier-confirmed high-severity findings can trigger `local_review_fix`
 - findings are written as Markdown and JSON artifacts
 - the same memory budget policy still applies: read the compact context index and issue journal first, then open durable memory only on demand
@@ -19,6 +20,7 @@ Policy guidance:
 - `block_merge` is the recommended default: gate merge on ready PRs and re-run on ready PR head updates
 - `block_ready` is stricter earlier in the flow: gate the draft-to-ready transition
 - `advisory` is non-blocking and fits setups that want saved findings without automation gates
+- `trackedPrCurrentHeadLocalReviewRequired: true` makes tracked codex PRs wait for a fresh local review on every head update before ready-for-review or merge can continue
 
 ## Choosing reviewer roles
 

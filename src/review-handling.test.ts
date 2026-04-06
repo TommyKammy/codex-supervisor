@@ -259,6 +259,23 @@ test("block_ready keeps stale local reviews blocking the ready transition", () =
   assert.equal(localReviewBlocksReady(createConfig({ localReviewPolicy: "block_ready" }), staleRecord, pr), true);
 });
 
+test("tracked PR current-head gate blocks ready and merge progression until local review catches up", () => {
+  const pr = createPullRequest({ isDraft: false, headRefOid: "head-new" });
+  const staleRecord = createRecord({
+    local_review_head_sha: "head-old",
+    local_review_findings_count: 0,
+    local_review_recommendation: "ready",
+    pre_merge_evaluation_outcome: "mergeable",
+  });
+  const config = createConfig({
+    localReviewPolicy: "advisory",
+    trackedPrCurrentHeadLocalReviewRequired: true,
+  });
+
+  assert.equal(localReviewBlocksReady(config, staleRecord, pr), true);
+  assert.equal(localReviewBlocksMerge(config, staleRecord, pr), true);
+});
+
 test("local review high-severity actions distinguish retry from blocked", () => {
   const pr = createPullRequest();
   const record = createRecord({

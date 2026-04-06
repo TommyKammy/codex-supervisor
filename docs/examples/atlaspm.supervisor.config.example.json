@@ -55,6 +55,7 @@
     }
   },
   "localReviewPolicy": "block_merge",
+  "trackedPrCurrentHeadLocalReviewRequired": false,
   "localReviewHighSeverityAction": "blocked",
   "reviewBotLogins": [
     "copilot-pull-request-reviewer"

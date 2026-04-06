@@ -47,6 +47,16 @@ test("shouldRunLocalReview covers draft and ready policy gating combinations", (
       expected: false,
     },
     {
+      name: "ready PR reruns on head updates when the tracked PR current-head gate is enabled",
+      config: createConfig({
+        localReviewPolicy: "advisory",
+        trackedPrCurrentHeadLocalReviewRequired: true,
+      }),
+      recordHead: "oldhead",
+      pr: createPullRequest({ isDraft: false, headRefOid: "newhead" }),
+      expected: true,
+    },
+    {
       name: "local review disabled suppresses draft gating",
       config: createConfig({ localReviewEnabled: false, localReviewPolicy: "block_merge" }),
       recordHead: null,

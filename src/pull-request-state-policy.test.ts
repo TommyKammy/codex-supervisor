@@ -374,6 +374,24 @@ test("inferStateFromPullRequest covers local review policy gating combinations",
       expected: "ready_to_merge",
     },
     {
+      name: "tracked current-head gate routes a ready PR back into local review once the rerun can start",
+      config: {
+        localReviewEnabled: true,
+        localReviewPolicy: "advisory",
+        trackedPrCurrentHeadLocalReviewRequired: true,
+        copilotReviewWaitMinutes: 0,
+      },
+      record: {
+        state: "pr_open",
+        local_review_head_sha: "oldhead",
+        local_review_findings_count: 0,
+        local_review_recommendation: "ready",
+        pre_merge_evaluation_outcome: "mergeable",
+      },
+      pr: { isDraft: false, headRefOid: "newhead" },
+      expected: "local_review",
+    },
+    {
       name: "retry escalates verifier-confirmed high severity findings into local_review_fix",
       config: {
         localReviewEnabled: true,
@@ -443,6 +461,52 @@ test("inferStateFromPullRequest covers local review policy gating combinations",
 
     assert.equal(inferStateFromPullRequest(config, record, pr, [], []), testCase.expected, testCase.name);
   }
+});
+
+test("inferStateFromPullRequest waits for pending checks before rerunning tracked current-head local review", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "advisory",
+    trackedPrCurrentHeadLocalReviewRequired: true,
+    copilotReviewWaitMinutes: 0,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    local_review_head_sha: "oldhead",
+    local_review_findings_count: 0,
+    local_review_recommendation: "ready",
+    pre_merge_evaluation_outcome: "mergeable",
+  });
+  const checks = [{ name: "build", state: "IN_PROGRESS", bucket: "pending", workflow: "CI" }] as const;
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, createPullRequest({ isDraft: false, headRefOid: "newhead" }), [...checks], []),
+    "waiting_ci",
+  );
+});
+
+test("inferStateFromPullRequest keeps merge-conflicted tracked stale heads in resolving_conflict", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "advisory",
+    trackedPrCurrentHeadLocalReviewRequired: true,
+    copilotReviewWaitMinutes: 0,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    local_review_head_sha: "oldhead",
+    local_review_findings_count: 0,
+    local_review_recommendation: "ready",
+    pre_merge_evaluation_outcome: "mergeable",
+  });
+  const pr = createPullRequest({
+    isDraft: false,
+    headRefOid: "newhead",
+    mergeStateStatus: "DIRTY",
+    mergeable: "CONFLICTING",
+  });
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), []), "resolving_conflict");
 });
 
 test("inferStateFromPullRequest blocks stalled identical high local-review retries", () => {

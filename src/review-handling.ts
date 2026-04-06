@@ -83,6 +83,10 @@ export function localReviewBlocksReady(
     return false;
   }
 
+  if (config.trackedPrCurrentHeadLocalReviewRequired && record.local_review_head_sha !== pr.headRefOid) {
+    return true;
+  }
+
   if (config.localReviewPolicy === "block_ready") {
     return record.local_review_head_sha !== pr.headRefOid || localReviewHasActionableFindings(record, pr);
   }
@@ -113,7 +117,15 @@ export function localReviewBlocksMerge(
   >,
   pr: GitHubPullRequest,
 ): boolean {
-  if (!config.localReviewEnabled || pr.isDraft || config.localReviewPolicy !== "block_merge") {
+  if (!config.localReviewEnabled || pr.isDraft) {
+    return false;
+  }
+
+  if (config.trackedPrCurrentHeadLocalReviewRequired && record.local_review_head_sha !== pr.headRefOid) {
+    return true;
+  }
+
+  if (config.localReviewPolicy !== "block_merge") {
     return false;
   }
 
