@@ -1,4 +1,11 @@
+import fs from "node:fs";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { displayLocalCiCommand } from "./core/config";
+import {
+  extractRepoRelativeWorkspacePreparationHelper,
+  findRepoOwnedWorkspacePreparationCandidate,
+} from "./core/config";
 import { runCommand } from "./core/command";
 import {
   FailureContext,
@@ -180,6 +187,8 @@ function remediationTargetForFailureClass(failureClass: LocalCiFailureClass): Lo
       return "supervisor_config";
     case "workspace_toolchain_missing":
       return "workspace_environment";
+    case "worktree_helper_missing":
+      return "supervisor_config";
     case "non_zero_exit":
       return "repo_owned_command";
     case "unset_contract":
@@ -277,6 +286,9 @@ function buildFailureDetails(error: unknown, executionMode: LocalCiExecutionMode
 function buildWorkspacePreparationSummary(args: {
   failureClass: Exclude<LocalCiFailureClass, "unset_contract">;
   gateLabel: string;
+  helperPath?: string;
+  likelyCause?: string | null;
+  recommendedCommand?: string | null;
 }): string {
   switch (args.failureClass) {
     case "missing_command":
@@ -294,6 +306,19 @@ function buildWorkspacePreparationSummary(args: {
         ) ??
         "Configured workspace preparation command could not run because the workspace toolchain is unavailable. Remediation target: workspace environment."
       );
+    case "worktree_helper_missing": {
+      const likelyCause = args.likelyCause ? ` ${args.likelyCause}` : "";
+      const recommendedCommand = args.recommendedCommand
+        ? ` Recommended repo-native command: ${args.recommendedCommand}.`
+        : "";
+      return (
+        truncate(
+          `Configured workspace preparation command could not run ${args.gateLabel} because repo-relative helper ${args.helperPath ?? "the configured helper"} is missing from this issue worktree.${likelyCause}${recommendedCommand} Remediation target: supervisor config.`,
+          1000,
+        ) ??
+        "Configured workspace preparation command could not run because a repo-relative helper is missing from this issue worktree. Remediation target: supervisor config."
+      );
+    }
     case "non_zero_exit":
       return (
         truncate(
@@ -302,6 +327,90 @@ function buildWorkspacePreparationSummary(args: {
         ) ?? "Configured workspace preparation command failed. Remediation target: workspace environment."
       );
   }
+}
+
+function isFilePath(filePath: string): boolean {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function isTrackedRepoFile(repoPath: string, repoRelativePath: string): boolean | null {
+  const trackedCheck = spawnSync("git", ["-C", repoPath, "ls-files", "--error-unmatch", "--", repoRelativePath], {
+    encoding: "utf8",
+  });
+  if (trackedCheck.status === 0) {
+    return true;
+  }
+
+  if (trackedCheck.status === 1) {
+    return false;
+  }
+
+  return null;
+}
+
+function diagnoseMissingWorktreeHelper(args: {
+  workspacePreparationCommand: LocalCiCommandConfig | undefined;
+  workspacePath: string;
+  repoPath?: string;
+}): {
+  helperPath: string;
+  likelyCause: string | null;
+  recommendedCommand: string | null;
+} | null {
+  const helper = extractRepoRelativeWorkspacePreparationHelper(args.workspacePreparationCommand);
+  if (helper === null) {
+    return null;
+  }
+
+  const workspaceHelperPath = path.resolve(args.workspacePath, helper.repoRelativePath);
+  if (isFilePath(workspaceHelperPath)) {
+    return null;
+  }
+
+  const recommendedCommand = findRepoOwnedWorkspacePreparationCandidate(args.repoPath);
+  const normalizedRepoPath =
+    typeof args.repoPath === "string" && args.repoPath.trim() !== ""
+      ? path.resolve(args.repoPath)
+      : null;
+  const normalizedWorkspacePath = path.resolve(args.workspacePath);
+  if (normalizedRepoPath === null || normalizedRepoPath === normalizedWorkspacePath) {
+    return {
+      helperPath: helper.repoRelativePath,
+      likelyCause: null,
+      recommendedCommand,
+    };
+  }
+
+  const repoHelperPath = path.resolve(normalizedRepoPath, helper.repoRelativePath);
+  if (!isFilePath(repoHelperPath)) {
+    return {
+      helperPath: helper.repoRelativePath,
+      likelyCause:
+        "Likely cause: the configured command depends on a repo-relative helper that this issue worktree does not contain.",
+      recommendedCommand,
+    };
+  }
+
+  const trackedState = isTrackedRepoFile(normalizedRepoPath, helper.repoRelativePath.split(path.sep).join("/"));
+  if (trackedState === false) {
+    return {
+      helperPath: helper.repoRelativePath,
+      likelyCause:
+        "Likely cause: the helper exists only as an untracked file in the primary checkout, so preserved issue worktrees do not contain it.",
+      recommendedCommand,
+    };
+  }
+
+  return {
+    helperPath: helper.repoRelativePath,
+    likelyCause:
+      "Likely cause: the configured command appears to rely on checkout-local helper state outside the tracked issue worktree contents.",
+    recommendedCommand,
+  };
 }
 
 export async function executeLocalCiCommand(command: ResolvedLocalCiCommand | LocalCiCommandConfig, workspacePath: string): Promise<void> {
@@ -402,7 +511,7 @@ export async function runLocalCiGate(args: {
 }
 
 export async function runWorkspacePreparationGate(args: {
-  config: Pick<SupervisorConfig, "workspacePreparationCommand">;
+  config: Pick<SupervisorConfig, "workspacePreparationCommand" | "repoPath">;
   workspacePath: string;
   gateLabel: string;
   runWorkspacePreparationCommand?: LocalCiCommandRunner;
@@ -422,8 +531,21 @@ export async function runWorkspacePreparationGate(args: {
       failureContext: null,
     };
   } catch (error) {
-    const failureClass = classifyLocalCiFailure(error, command.displayCommand);
-    const summary = buildWorkspacePreparationSummary({ failureClass, gateLabel: args.gateLabel });
+    const missingHelperDiagnosis = diagnoseMissingWorktreeHelper({
+      workspacePreparationCommand: args.config.workspacePreparationCommand,
+      workspacePath: args.workspacePath,
+      repoPath: args.config.repoPath,
+    });
+    const failureClass = missingHelperDiagnosis === null
+      ? classifyLocalCiFailure(error, command.displayCommand)
+      : "worktree_helper_missing";
+    const summary = buildWorkspacePreparationSummary({
+      failureClass,
+      gateLabel: args.gateLabel,
+      helperPath: missingHelperDiagnosis?.helperPath,
+      likelyCause: missingHelperDiagnosis?.likelyCause ?? null,
+      recommendedCommand: missingHelperDiagnosis?.recommendedCommand ?? null,
+    });
     return {
       ok: false,
       failureContext: {
@@ -431,7 +553,22 @@ export async function runWorkspacePreparationGate(args: {
         summary,
         signature: workspacePreparationFailureSignature(failureClass),
         command: command.displayCommand,
-        details: buildFailureDetails(error, command.executionMode),
+        details: [
+          ...(() => {
+            if (failureClass !== "worktree_helper_missing") {
+              return [];
+            }
+
+            return [
+              missingHelperDiagnosis ? `repo-relative helper: ${missingHelperDiagnosis.helperPath}` : null,
+              missingHelperDiagnosis?.likelyCause ?? null,
+              missingHelperDiagnosis?.recommendedCommand
+                ? `recommended repo-native command: ${missingHelperDiagnosis.recommendedCommand}`
+                : null,
+            ].filter((detail): detail is string => detail !== null);
+          })(),
+          ...buildFailureDetails(error, command.executionMode),
+        ],
         url: null,
         updated_at: nowIso(),
       },

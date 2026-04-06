@@ -775,6 +775,7 @@ test("renderDoctorReport surfaces merge-critical recheck cadence visibility", ()
     workspacePreparationContract: {
       configured: true,
       command: "npm ci",
+      recommendedCommand: null,
       source: "config",
       summary: "Repo-owned workspace preparation contract is configured.",
     },
@@ -822,6 +823,7 @@ test("renderDoctorReport surfaces absent workspace preparation posture when no r
     workspacePreparationContract: {
       configured: false,
       command: null,
+      recommendedCommand: null,
       source: "config",
       summary: "No repo-owned workspace preparation contract is configured.",
     },
@@ -896,6 +898,7 @@ test("renderDoctorReport warns when localCiCommand is configured without workspa
     workspacePreparationContract: {
       configured: false,
       command: null,
+      recommendedCommand: null,
       source: "config",
       summary: "No repo-owned workspace preparation contract is configured.",
       warning: null,
@@ -937,6 +940,7 @@ test("renderDoctorReport warns when workspacePreparationCommand points at a miss
     workspacePreparationContract: {
       configured: true,
       command: "./scripts/prepare-workspace.sh",
+      recommendedCommand: null,
       source: "config",
       summary: "Repo-owned workspace preparation contract is configured.",
       warning,
@@ -976,6 +980,7 @@ test("renderDoctorReport warns when workspacePreparationCommand points at an unt
     workspacePreparationContract: {
       configured: true,
       command: "./scripts/prepare-workspace.sh",
+      recommendedCommand: null,
       source: "config",
       summary: "Repo-owned workspace preparation contract is configured.",
       warning,

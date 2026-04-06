@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { executeLocalCiCommand, runLocalCiGate } from "./local-ci";
+import { executeLocalCiCommand, runLocalCiGate, runWorkspacePreparationGate } from "./local-ci";
 
 test("runLocalCiGate reports an unset local CI contract as a non-blocking issue-body remediation", async () => {
   const result = await runLocalCiGate({
@@ -193,6 +194,71 @@ test("runLocalCiGate preserves timeout summaries at the tail of bounded stderr d
   assert.match(result.failureContext?.details[1] ?? "", /\n\.\.\.\n/);
   assert.match(result.failureContext?.details[2] ?? "", /Command timed out after 5000ms: sh -lc \+1 args/);
   assert.match(result.failureContext?.details[2] ?? "", /\n\.\.\.\n/);
+});
+
+test("runWorkspacePreparationGate explains when a repo-relative helper is missing from the issue worktree", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-workspace-prep-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspacePath = path.join(root, "workspaces", "issue-102");
+  await fs.mkdir(path.join(repoPath, "scripts"), { recursive: true });
+  await fs.mkdir(workspacePath, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  await fs.writeFile(path.join(repoPath, "package.json"), JSON.stringify({
+    private: true,
+    scripts: {
+      build: "tsc -p tsconfig.json",
+    },
+  }), "utf8");
+  await fs.writeFile(path.join(repoPath, "package-lock.json"), "{}\n", "utf8");
+  execFileSync("git", ["add", "package.json", "package-lock.json"], { cwd: repoPath });
+  execFileSync("git", ["commit", "-m", "seed"], {
+    cwd: repoPath,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Codex",
+      GIT_AUTHOR_EMAIL: "codex@example.com",
+      GIT_COMMITTER_NAME: "Codex",
+      GIT_COMMITTER_EMAIL: "codex@example.com",
+    },
+  });
+  await fs.writeFile(path.join(repoPath, "scripts", "prepare-workspace.sh"), "#!/bin/sh\nexit 0\n", "utf8");
+
+  const failure = Object.assign(
+    new Error("Command failed: sh -lc +1 args\nexitCode=127\nsh: ./scripts/prepare-workspace.sh: not found"),
+    {
+      stderr: "sh: ./scripts/prepare-workspace.sh: not found",
+    },
+  );
+  const result = await runWorkspacePreparationGate({
+    config: {
+      repoPath,
+      workspacePreparationCommand: "./scripts/prepare-workspace.sh",
+    },
+    workspacePath,
+    gateLabel: "before marking PR #116 ready",
+    runWorkspacePreparationCommand: async () => {
+      throw failure;
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.failureContext?.signature, "workspace-preparation-gate-worktree_helper_missing");
+  assert.match(
+    result.failureContext?.summary ?? "",
+    /repo-relative helper \.\/scripts\/prepare-workspace\.sh is missing from this issue worktree/i,
+  );
+  assert.match(
+    result.failureContext?.summary ?? "",
+    /preserved issue worktrees do not contain/i,
+  );
+  assert.match(
+    result.failureContext?.summary ?? "",
+    /recommended repo-native command: npm ci/i,
+  );
 });
 
 test("executeLocalCiCommand structured mode passes shell metacharacters as literal args", async (t) => {

@@ -98,10 +98,25 @@ function workspacePreparationFailureClass(
   switch (failureClass) {
     case "missing_command":
     case "workspace_toolchain_missing":
+    case "worktree_helper_missing":
     case "non_zero_exit":
       return failureClass;
     default:
       return null;
+  }
+}
+
+function workspacePreparationRemediationTarget(
+  failureClass: Exclude<LatestLocalCiResult["failure_class"], "unset_contract"> | null,
+): string {
+  switch (failureClass) {
+    case "worktree_helper_missing":
+    case "missing_command":
+      return "supervisor_config";
+    case "workspace_toolchain_missing":
+    case "non_zero_exit":
+    default:
+      return "workspace_environment";
   }
 }
 
@@ -655,7 +670,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         gateType: "workspace_preparation",
         blockerSignature: failureContext?.signature ?? null,
         failureClass: workspacePreparationFailureClass(failureContext?.signature),
-        remediationTarget: "workspace_environment",
+        remediationTarget: workspacePreparationRemediationTarget(workspacePreparationFailureClass(failureContext?.signature)),
         summary: failureContext?.summary ?? null,
       });
       return {

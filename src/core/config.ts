@@ -31,6 +31,15 @@ export const PREFERRED_ISSUE_JOURNAL_RELATIVE_PATH = ".codex-supervisor/issues/{
 export const MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING =
   "localCiCommand is configured but workspacePreparationCommand is unset. Configure a repo-owned workspacePreparationCommand so preserved issue worktrees can prepare toolchains before host-local CI runs. GitHub checks can stay green while host-local CI still blocks tracked PR progress.";
 const LOCAL_CI_SCRIPT_CANDIDATES = ["verify:supervisor-pre-pr", "verify:pre-pr", "ci:local"] as const;
+const WORKSPACE_PREPARATION_LOCKFILE_CANDIDATES = [
+  { file: "package-lock.json", command: "npm ci" },
+  { file: "npm-shrinkwrap.json", command: "npm ci" },
+  { file: "pnpm-lock.yaml", command: "pnpm install --frozen-lockfile" },
+  { file: "yarn.lock", command: "yarn install --frozen-lockfile" },
+  { file: "bun.lock", command: "bun install --frozen-lockfile" },
+  { file: "bun.lockb", command: "bun install --frozen-lockfile" },
+  { file: "deno.lock", command: "deno install" },
+] as const;
 const WORKSPACE_PREPARATION_SCRIPT_RUNNERS = new Set(["bash", "sh", "node", "bun", "deno", "python", "python3", "ruby", "tsx", "ts-node"]);
 const REQUIRED_STRING_CONFIG_FIELDS = [
   "repoPath",
@@ -212,7 +221,7 @@ function firstRepoRelativeScriptArg(args: string[] | undefined): string | null {
   return null;
 }
 
-function extractRepoRelativeWorkspacePreparationHelper(
+export function extractRepoRelativeWorkspacePreparationHelper(
   command: LocalCiCommandConfig | undefined,
 ): { commandText: string; repoRelativePath: string } | null {
   const commandText = displayLocalCiCommand(command);
@@ -566,10 +575,12 @@ export function summarizeWorkspacePreparationContract(
 ): WorkspacePreparationContractSummary {
   const command = displayLocalCiCommand(config.workspacePreparationCommand);
   const warning = buildMissingWorkspacePreparationContractWarning(config);
+  const recommendedCommand = findRepoOwnedWorkspacePreparationCandidate(config.repoPath);
   if (command !== null) {
     return {
       configured: true,
       command,
+      recommendedCommand: null,
       source: "config",
       summary: "Repo-owned workspace preparation contract is configured.",
       warning: validateWorkspacePreparationCommandForWorktrees(config),
@@ -579,8 +590,12 @@ export function summarizeWorkspacePreparationContract(
   return {
     configured: false,
     command: null,
+    recommendedCommand,
     source: "config",
-    summary: "No repo-owned workspace preparation contract is configured.",
+    summary:
+      recommendedCommand === null
+        ? "No repo-owned workspace preparation contract is configured."
+        : `No repo-owned workspace preparation contract is configured. Recommended command: ${recommendedCommand}.`,
     warning,
   };
 }
@@ -626,6 +641,39 @@ function findRepoOwnedLocalCiCandidate(repoPath: string | undefined): string | n
   }
 
   return null;
+}
+
+export function findRepoOwnedWorkspacePreparationCandidate(repoPath: string | undefined): string | null {
+  if (typeof repoPath !== "string" || repoPath.trim() === "") {
+    return null;
+  }
+
+  for (const candidate of WORKSPACE_PREPARATION_LOCKFILE_CANDIDATES) {
+    const candidatePath = path.join(repoPath, candidate.file);
+    if (!isTrackedRepoFile(repoPath, candidate.file) || !isFilePath(candidatePath)) {
+      continue;
+    }
+
+    return candidate.command;
+  }
+
+  return null;
+}
+
+function isFilePath(filePath: string): boolean {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function isTrackedRepoFile(repoPath: string, repoRelativePath: string): boolean {
+  const trackedCheck = spawnSync("git", ["-C", repoPath, "ls-files", "--error-unmatch", "--", repoRelativePath], {
+    encoding: "utf8",
+  });
+
+  return trackedCheck.status === 0;
 }
 
 export function loadConfigSummary(configPath?: string): ConfigLoadSummary {

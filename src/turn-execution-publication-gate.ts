@@ -48,7 +48,10 @@ export type CodexTurnPublicationGateResult =
 const SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE = "Normalize supervisor-owned issue journals for path hygiene";
 
 export async function applyCodexTurnPublicationGate(args: {
-  config: Pick<SupervisorConfig, "defaultBranch" | "draftPrAfterAttempt" | "workspacePreparationCommand" | "localCiCommand">;
+  config: Pick<
+    SupervisorConfig,
+    "repoPath" | "defaultBranch" | "draftPrAfterAttempt" | "workspacePreparationCommand" | "localCiCommand"
+  >;
   stateStore: Pick<StateStore, "touch" | "save">;
   state: SupervisorStateFile;
   record: IssueRunRecord;
