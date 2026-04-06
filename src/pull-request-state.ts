@@ -928,12 +928,12 @@ export function inferStateFromPullRequest(
     return "blocked";
   }
 
-  if (localReviewBlocksMerge(config, record, pr)) {
-    return "blocked";
-  }
-
   if (mergeConflictDetected(pr)) {
     return "resolving_conflict";
+  }
+
+  if (localReviewBlocksMerge(config, record, pr)) {
+    return "blocked";
   }
 
   if (pr.isDraft) {

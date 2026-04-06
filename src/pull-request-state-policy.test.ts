@@ -485,6 +485,30 @@ test("inferStateFromPullRequest waits for pending checks before rerunning tracke
   );
 });
 
+test("inferStateFromPullRequest keeps merge-conflicted tracked stale heads in resolving_conflict", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "advisory",
+    trackedPrCurrentHeadLocalReviewRequired: true,
+    copilotReviewWaitMinutes: 0,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    local_review_head_sha: "oldhead",
+    local_review_findings_count: 0,
+    local_review_recommendation: "ready",
+    pre_merge_evaluation_outcome: "mergeable",
+  });
+  const pr = createPullRequest({
+    isDraft: false,
+    headRefOid: "newhead",
+    mergeStateStatus: "DIRTY",
+    mergeable: "CONFLICTING",
+  });
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), []), "resolving_conflict");
+});
+
 test("inferStateFromPullRequest blocks stalled identical high local-review retries", () => {
   const config = createConfig({
     localReviewEnabled: true,
