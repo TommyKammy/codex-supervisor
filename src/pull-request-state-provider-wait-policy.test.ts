@@ -481,6 +481,73 @@ test("inferStateFromPullRequest does not wait forever when strict CodeRabbit tim
   });
 });
 
+test("inferStateFromPullRequest keeps strict current-head waiting active even when requested-review timeout already expired", () => {
+  withStubbedDateNow("2026-03-11T00:11:00Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]", "copilot-pull-request-reviewer"],
+      configuredBotRequireCurrentHeadSignal: true,
+      configuredBotInitialGraceWaitSeconds: 30,
+      configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+      configuredBotCurrentHeadSignalTimeoutAction: "block",
+      copilotReviewWaitMinutes: 5,
+      copilotReviewTimeoutAction: "continue",
+    });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-03-11T00:00:00Z",
+      review_wait_head_sha: "head123",
+    });
+
+    assert.equal(
+      inferStateFromPullRequest(
+        config,
+        record,
+        createPullRequest({
+          copilotReviewState: "requested",
+          copilotReviewRequestedAt: "2026-03-11T00:00:00Z",
+          copilotReviewArrivedAt: null,
+          currentHeadCiGreenAt: "2026-03-11T00:10:00Z",
+          configuredBotCurrentHeadObservedAt: null,
+        }),
+        passingChecks(),
+        [],
+      ),
+      "waiting_ci",
+    );
+  });
+});
+
+test("inferStateFromPullRequest ignores malformed currentHeadCiGreenAt values for strict CodeRabbit waiting", () => {
+  withStubbedDateNow("2026-03-11T00:11:00Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      configuredBotRequireCurrentHeadSignal: true,
+      configuredBotInitialGraceWaitSeconds: 30,
+      configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+      configuredBotCurrentHeadSignalTimeoutAction: "block",
+    });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-03-11T00:00:00Z",
+      review_wait_head_sha: "head123",
+    });
+
+    assert.equal(
+      inferStateFromPullRequest(
+        config,
+        record,
+        createPullRequest({
+          currentHeadCiGreenAt: "not-a-timestamp",
+          configuredBotCurrentHeadObservedAt: null,
+        }),
+        passingChecks(),
+        [],
+      ),
+      "ready_to_merge",
+    );
+  });
+});
+
 test("inferStateFromPullRequest does not start Copilot timeout from the generic review wait window", () => {
   withStubbedDateNow("2026-03-11T00:30:00Z", () => {
     const config = createConfig({

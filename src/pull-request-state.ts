@@ -157,103 +157,102 @@ function determineCopilotReviewTimeout(
   pr: GitHubPullRequest,
 ): CopilotReviewTimeoutStatus {
   const policy = reviewProviderWaitPolicyFromConfig(config);
+  const empty: CopilotReviewTimeoutStatus = {
+    timedOut: false,
+    action: null,
+    startedAt: null,
+    timedOutAt: null,
+    reason: null,
+    timeoutMinutes: null,
+    kind: null,
+  };
   const reviewRequestTimeoutEnabled = policy.shouldApplyRequestedReviewTimeout && config.copilotReviewWaitMinutes > 0;
   const requestedReviewStartedAt = reviewRequestTimeoutEnabled ? copilotReviewTimeoutStart(config, record, pr) : null;
-  if (requestedReviewStartedAt) {
-    const requestedAtMs = Date.parse(requestedReviewStartedAt);
-    if (!Number.isNaN(requestedAtMs)) {
-      const timeoutMs = config.copilotReviewWaitMinutes * 60_000;
-      if (Date.now() >= requestedAtMs + timeoutMs) {
+  const requestedReviewTimeout: CopilotReviewTimeoutStatus = requestedReviewStartedAt
+    ? (() => {
+        const requestedAtMs = Date.parse(requestedReviewStartedAt);
+        if (!Number.isNaN(requestedAtMs)) {
+          const timeoutMs = config.copilotReviewWaitMinutes * 60_000;
+          if (Date.now() >= requestedAtMs + timeoutMs) {
+            return {
+              timedOut: true,
+              action: config.copilotReviewTimeoutAction,
+              startedAt: requestedReviewStartedAt,
+              timedOutAt: new Date(requestedAtMs + timeoutMs).toISOString(),
+              reason:
+                `Requested ${configuredReviewBotLabel(config)} review never arrived within ${config.copilotReviewWaitMinutes} minute(s) ` +
+                `for head ${pr.headRefOid}.`,
+              timeoutMinutes: config.copilotReviewWaitMinutes,
+              kind: "requested_review",
+            };
+          }
+        }
+
         return {
-          timedOut: true,
-          action: config.copilotReviewTimeoutAction,
+          timedOut: false,
+          action: null,
           startedAt: requestedReviewStartedAt,
-          timedOutAt: new Date(requestedAtMs + timeoutMs).toISOString(),
-          reason:
-            `Requested ${configuredReviewBotLabel(config)} review never arrived within ${config.copilotReviewWaitMinutes} minute(s) ` +
-            `for head ${pr.headRefOid}.`,
+          timedOutAt: null,
+          reason: null,
           timeoutMinutes: config.copilotReviewWaitMinutes,
           kind: "requested_review",
         };
-      }
-
-      return {
-        timedOut: false,
-        action: null,
-        startedAt: requestedReviewStartedAt,
-        timedOutAt: null,
-        reason: null,
-        timeoutMinutes: config.copilotReviewWaitMinutes,
-        kind: "requested_review",
-      };
-    }
-
-    return {
-      timedOut: false,
-      action: null,
-      startedAt: requestedReviewStartedAt,
-      timedOutAt: null,
-      reason: null,
-      timeoutMinutes: config.copilotReviewWaitMinutes,
-      kind: "requested_review",
-    };
-  }
+      })()
+    : empty;
 
   const configuredBotTimeoutEnabled =
     requiresConfiguredBotCurrentHeadSignal(config) && (config.configuredBotCurrentHeadSignalTimeoutMinutes ?? 0) > 0;
   const currentHeadSignalStartedAt = configuredBotTimeoutEnabled
     ? configuredBotCurrentHeadSignalWaitStartAt(config, record, pr)
     : null;
-  if (!currentHeadSignalStartedAt) {
-    return {
-      timedOut: false,
-      action: null,
-      startedAt: null,
-      timedOutAt: null,
-      reason: null,
-      timeoutMinutes: null,
-      kind: null,
-    };
+  const currentHeadSignalTimeout: CopilotReviewTimeoutStatus = currentHeadSignalStartedAt
+    ? (() => {
+        const startedAtMs = Date.parse(currentHeadSignalStartedAt);
+        if (Number.isNaN(startedAtMs)) {
+          return {
+            timedOut: false,
+            action: null,
+            startedAt: currentHeadSignalStartedAt,
+            timedOutAt: null,
+            reason: null,
+            timeoutMinutes: config.configuredBotCurrentHeadSignalTimeoutMinutes ?? null,
+            kind: "current_head_signal",
+          };
+        }
+
+        const timeoutMs = (config.configuredBotCurrentHeadSignalTimeoutMinutes ?? 0) * 60_000;
+        if (Date.now() < startedAtMs + timeoutMs) {
+          return {
+            timedOut: false,
+            action: null,
+            startedAt: currentHeadSignalStartedAt,
+            timedOutAt: null,
+            reason: null,
+            timeoutMinutes: config.configuredBotCurrentHeadSignalTimeoutMinutes ?? null,
+            kind: "current_head_signal",
+          };
+        }
+
+        const timedOutAt = new Date(startedAtMs + timeoutMs).toISOString();
+        return {
+          timedOut: true,
+          action: config.configuredBotCurrentHeadSignalTimeoutAction ?? "block",
+          startedAt: currentHeadSignalStartedAt,
+          timedOutAt,
+          reason:
+            `${configuredReviewBotLabel(config)} never produced a current-head review signal within ` +
+            `${config.configuredBotCurrentHeadSignalTimeoutMinutes} minute(s) for head ${pr.headRefOid}.`,
+          timeoutMinutes: config.configuredBotCurrentHeadSignalTimeoutMinutes ?? null,
+          kind: "current_head_signal",
+        };
+      })()
+    : empty;
+
+  if (currentHeadSignalTimeout.kind !== null) {
+    return currentHeadSignalTimeout;
   }
 
-  const startedAtMs = Date.parse(currentHeadSignalStartedAt);
-  if (Number.isNaN(startedAtMs)) {
-    return {
-      timedOut: false,
-      action: null,
-      startedAt: currentHeadSignalStartedAt,
-      timedOutAt: null,
-      reason: null,
-      timeoutMinutes: config.configuredBotCurrentHeadSignalTimeoutMinutes ?? null,
-      kind: "current_head_signal",
-    };
-  }
-
-  const timeoutMs = (config.configuredBotCurrentHeadSignalTimeoutMinutes ?? 0) * 60_000;
-  if (Date.now() < startedAtMs + timeoutMs) {
-    return {
-      timedOut: false,
-      action: null,
-      startedAt: currentHeadSignalStartedAt,
-      timedOutAt: null,
-      reason: null,
-      timeoutMinutes: config.configuredBotCurrentHeadSignalTimeoutMinutes ?? null,
-      kind: "current_head_signal",
-    };
-  }
-
-  const timedOutAt = new Date(startedAtMs + timeoutMs).toISOString();
-  return {
-    timedOut: true,
-    action: config.configuredBotCurrentHeadSignalTimeoutAction ?? "block",
-    startedAt: currentHeadSignalStartedAt,
-    timedOutAt,
-    reason:
-      `${configuredReviewBotLabel(config)} never produced a current-head review signal within ` +
-      `${config.configuredBotCurrentHeadSignalTimeoutMinutes} minute(s) for head ${pr.headRefOid}.`,
-    timeoutMinutes: config.configuredBotCurrentHeadSignalTimeoutMinutes ?? null,
-    kind: "current_head_signal",
-  };
+  return requestedReviewTimeout;
 }
 
 function shouldWaitForCopilotReviewPropagation(
@@ -486,25 +485,42 @@ function configuredBotCurrentHeadSignalWaitStartAt(
     return null;
   }
 
-  if (!pr.currentHeadCiGreenAt) {
+  const currentHeadCiGreenAt = pr.currentHeadCiGreenAt;
+  if (!currentHeadCiGreenAt) {
     return null;
   }
 
+  const currentHeadCiGreenAtMs = Date.parse(currentHeadCiGreenAt);
+  if (Number.isNaN(currentHeadCiGreenAtMs)) {
+    return null;
+  }
+
+  const clampWaitStartAt = (startedAt: string | null): string | null => {
+    if (!startedAt) {
+      return null;
+    }
+
+    const startedAtMs = Date.parse(startedAt);
+    if (Number.isNaN(startedAtMs)) {
+      return null;
+    }
+
+    return startedAtMs < currentHeadCiGreenAtMs ? currentHeadCiGreenAt : startedAt;
+  };
+
   const draftSkipStartedAt = configuredBotDraftSkipRearmStartedAt(config, record, pr);
-  if (draftSkipStartedAt) {
-    return draftSkipStartedAt;
+  const clampedDraftSkipStartedAt = clampWaitStartAt(draftSkipStartedAt);
+  if (clampedDraftSkipStartedAt) {
+    return clampedDraftSkipStartedAt;
   }
 
   const latestHeadRearmStartedAt = configuredBotLatestHeadRearmStartedAt(config, record, pr);
-  if (latestHeadRearmStartedAt) {
-    return latestHeadRearmStartedAt;
+  const clampedLatestHeadRearmStartedAt = clampWaitStartAt(latestHeadRearmStartedAt);
+  if (clampedLatestHeadRearmStartedAt) {
+    return clampedLatestHeadRearmStartedAt;
   }
 
-  if (pr.currentHeadCiGreenAt) {
-    return pr.currentHeadCiGreenAt;
-  }
-
-  return null;
+  return currentHeadCiGreenAt;
 }
 
 function configuredBotCurrentHeadSignalPending(
