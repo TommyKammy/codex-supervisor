@@ -202,6 +202,53 @@ test("buildDetailedStatusModel returns the reusable core status lines for an act
   );
 });
 
+test("buildDetailedStatusModel marks the tracked PR current-head gate as active even in advisory mode", () => {
+  const lines = buildDetailedStatusModel({
+    config: createConfig({
+      localReviewEnabled: true,
+      localReviewPolicy: "advisory",
+      trackedPrCurrentHeadLocalReviewRequired: true,
+    }),
+    activeRecord: createRecord({
+      local_review_head_sha: "head-old",
+      local_review_findings_count: 0,
+      local_review_recommendation: "ready",
+      local_review_run_at: "2026-03-11T14:05:00Z",
+      pr_number: 44,
+      state: "blocked",
+      blocked_reason: "verification",
+      last_error: "Waiting for a current-head local review run.",
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr: createPullRequest({ headRefOid: "head-new" }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [],
+    manualReviewThreads,
+    configuredBotReviewThreads,
+    pendingBotReviewThreads: (innerConfig, innerRecord, innerPr, innerReviewThreads) =>
+      configuredBotReviewThreads(innerConfig, innerReviewThreads).filter(
+        (thread) =>
+          !innerRecord.processed_review_thread_ids.includes(thread.id) &&
+          innerRecord.last_head_sha === innerPr.headRefOid,
+      ),
+    summarizeChecks: (checks) => ({
+      allPassing: checks.every((check) => check.bucket === "pass"),
+      hasPending: checks.some((check) => check.bucket === "pending" || check.bucket === "cancel"),
+      hasFailing: checks.some((check) => check.bucket === "fail"),
+    }),
+    mergeConflictDetected: (pr) => pr.mergeStateStatus === "DIRTY",
+  });
+
+  assert.ok(
+    lines.some((line) =>
+      /local_review gating=yes policy=advisory findings=0 .* head=stale .* needs_review_run=yes drift=head-old->head-new/.test(
+        line,
+      ),
+    ),
+  );
+});
+
 test("buildDetailedStatusModel explains why an active CodeRabbit settled wait is pausing merge progression", () => {
   const originalNow = Date.now;
   Date.now = () => Date.parse("2026-03-16T00:00:03.000Z");

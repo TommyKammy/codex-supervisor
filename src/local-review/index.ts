@@ -73,10 +73,15 @@ export function shouldRunLocalReview(
   record: { local_review_head_sha: string | null },
   pr: GitHubPullRequest,
 ): boolean {
+  const currentHeadNeedsReview = record.local_review_head_sha !== pr.headRefOid;
   return (
     config.localReviewEnabled &&
-    (pr.isDraft || config.localReviewPolicy === "block_merge") &&
-    record.local_review_head_sha !== pr.headRefOid
+    currentHeadNeedsReview &&
+    (
+      pr.isDraft ||
+      config.localReviewPolicy === "block_merge" ||
+      config.trackedPrCurrentHeadLocalReviewRequired === true
+    )
   );
 }
 

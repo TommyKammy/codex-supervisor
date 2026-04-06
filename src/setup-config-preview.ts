@@ -83,6 +83,7 @@ const KNOWN_CONFIG_KEYS = new Set([
   "localReviewConfidenceThreshold",
   "localReviewReviewerThresholds",
   "localReviewPolicy",
+  "trackedPrCurrentHeadLocalReviewRequired",
   "localReviewHighSeverityAction",
   "reviewBotLogins",
   "configuredReviewProviders",

@@ -1504,6 +1504,142 @@ Parallelizable: No`,
   assert.equal(result.record.pre_merge_evaluation_outcome, "follow_up_eligible");
 });
 
+test("handlePostTurnPullRequestTransitionsPhase reruns local review on a ready PR head update when the tracked current-head gate is enabled", async () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "advisory",
+    trackedPrCurrentHeadLocalReviewRequired: true,
+  });
+  const readyPr = createPullRequest({
+    title: "Re-review the current head before merge",
+    isDraft: false,
+    headRefOid: "head-new",
+  });
+  let readyCalls = 0;
+  let localReviewCalls = 0;
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      markPullRequestReady: async () => {
+        readyCalls += 1;
+      },
+    },
+    context: {
+      state: {
+        activeIssueNumber: 102,
+        issues: {
+          "102": createRecord({
+            state: "pr_open",
+            pr_number: readyPr.number,
+            local_review_head_sha: "head-old",
+            local_review_findings_count: 0,
+            local_review_recommendation: "ready",
+            pre_merge_evaluation_outcome: "mergeable",
+          }),
+        },
+      },
+      record: createRecord({
+        state: "pr_open",
+        pr_number: readyPr.number,
+        local_review_head_sha: "head-old",
+        local_review_findings_count: 0,
+        local_review_recommendation: "ready",
+        pre_merge_evaluation_outcome: "mergeable",
+      }),
+      issue: createIssue({ title: "Require current-head local review before merge" }),
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: readyPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "ready_to_merge",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalReviewImpl: async () => {
+      localReviewCalls += 1;
+      return {
+        ranAt: "2026-03-24T00:11:00Z",
+        summaryPath: "/tmp/reviews/owner-repo/issue-102/head-new.md",
+        findingsPath: "/tmp/reviews/owner-repo/issue-102/head-new.json",
+        summary: "Local review revalidated the current head.",
+        blockerSummary: null,
+        findingsCount: 0,
+        rootCauseCount: 0,
+        maxSeverity: "none",
+        verifiedFindingsCount: 0,
+        verifiedMaxSeverity: "none",
+        recommendation: "ready",
+        degraded: false,
+        finalEvaluation: {
+          outcome: "mergeable",
+          residualFindings: [],
+          mustFixCount: 0,
+          manualReviewCount: 0,
+          followUpCount: 0,
+        },
+        rawOutput: "raw output",
+      };
+    },
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: readyPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(localReviewCalls, 1);
+  assert.equal(readyCalls, 0);
+  assert.equal(result.record.state, "ready_to_merge");
+  assert.equal(result.record.local_review_head_sha, "head-new");
+  assert.equal(result.record.pre_merge_evaluation_outcome, "mergeable");
+});
+
 test("handlePostTurnPullRequestTransitionsPhase blocks draft PRs when local review requires manual verification", async () => {
   const config = createConfig({
     localReviewEnabled: true,
