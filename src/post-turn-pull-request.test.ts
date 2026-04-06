@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { handlePostTurnPullRequestTransitionsPhase, type PullRequestLifecycleSnapshot } from "./post-turn-pull-request";
 import { IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorStateFile } from "./core/types";
+import { derivePullRequestLifecycleSnapshot as deriveSupervisorPullRequestLifecycleSnapshot } from "./supervisor/supervisor-lifecycle";
 import { createConfig, createFailureContext, createIssue, createPullRequest, createRecord } from "./turn-execution-test-helpers";
 
 const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
@@ -1677,29 +1678,10 @@ test("handlePostTurnPullRequestTransitionsPhase reruns local review on a later c
     record: IssueRunRecord,
     pr: typeof readyPr,
     checks: PullRequestCheck[],
-    _reviewThreads: ReviewThread[],
-    _recordPatch?: Partial<IssueRunRecord>,
-  ): PullRequestLifecycleSnapshot => ({
-    recordForState: record,
-    nextState: checks.some((check) => check.bucket === "pending")
-      ? "waiting_ci"
-      : record.local_review_head_sha === pr.headRefOid
-        ? "ready_to_merge"
-        : "local_review",
-    failureContext: null,
-    reviewWaitPatch: {},
-    copilotRequestObservationPatch: {},
-    mergeLatencyVisibilityPatch: {
-      provider_success_observed_at: null,
-      provider_success_head_sha: null,
-      merge_readiness_last_evaluated_at: null,
-    },
-    copilotTimeoutPatch: {
-      copilot_review_timed_out_at: null,
-      copilot_review_timeout_action: null,
-      copilot_review_timeout_reason: null,
-    },
-  });
+    reviewThreads: ReviewThread[],
+    recordPatch?: Partial<IssueRunRecord>,
+  ): PullRequestLifecycleSnapshot =>
+    deriveSupervisorPullRequestLifecycleSnapshot(config, record, pr, checks, reviewThreads, recordPatch);
 
   const first = await handlePostTurnPullRequestTransitionsPhase({
     config,

@@ -463,6 +463,28 @@ test("inferStateFromPullRequest covers local review policy gating combinations",
   }
 });
 
+test("inferStateFromPullRequest waits for pending checks before rerunning tracked current-head local review", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "advisory",
+    trackedPrCurrentHeadLocalReviewRequired: true,
+    copilotReviewWaitMinutes: 0,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    local_review_head_sha: "oldhead",
+    local_review_findings_count: 0,
+    local_review_recommendation: "ready",
+    pre_merge_evaluation_outcome: "mergeable",
+  });
+  const checks = [{ name: "build", state: "IN_PROGRESS", bucket: "pending", workflow: "CI" }] as const;
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, createPullRequest({ isDraft: false, headRefOid: "newhead" }), [...checks], []),
+    "waiting_ci",
+  );
+});
+
 test("inferStateFromPullRequest blocks stalled identical high local-review retries", () => {
   const config = createConfig({
     localReviewEnabled: true,

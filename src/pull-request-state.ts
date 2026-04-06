@@ -913,6 +913,17 @@ export function inferStateFromPullRequest(
     return "local_review";
   }
 
+  if (
+    config.trackedPrCurrentHeadLocalReviewRequired &&
+    shouldRunLocalReview(config, record, pr) &&
+    checkSummary.hasPending &&
+    unresolvedBotThreads.length === 0 &&
+    (!config.humanReviewBlocksMerge || manualThreads.length === 0) &&
+    !mergeConflictDetected(pr)
+  ) {
+    return "waiting_ci";
+  }
+
   if (localReviewRequiresManualReview(config, record, pr)) {
     return "blocked";
   }
