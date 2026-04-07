@@ -76,6 +76,7 @@ export function localReviewBlocksReady(
     | "local_review_findings_count"
     | "local_review_recommendation"
     | "pre_merge_evaluation_outcome"
+    | "pre_merge_follow_up_count"
   >,
   pr: GitHubPullRequest,
 ): boolean {
@@ -89,6 +90,10 @@ export function localReviewBlocksReady(
 
   if (config.localReviewPolicy === "block_ready") {
     return record.local_review_head_sha !== pr.headRefOid || localReviewHasActionableFindings(record, pr);
+  }
+
+  if (localReviewFollowUpNeedsRepair(config, record, pr)) {
+    return true;
   }
 
   if (config.localReviewPolicy !== "block_merge") {
@@ -114,6 +119,7 @@ export function localReviewBlocksMerge(
     | "local_review_findings_count"
     | "local_review_recommendation"
     | "pre_merge_evaluation_outcome"
+    | "pre_merge_follow_up_count"
   >,
   pr: GitHubPullRequest,
 ): boolean {
@@ -127,6 +133,10 @@ export function localReviewBlocksMerge(
 
   if (config.localReviewPolicy !== "block_merge") {
     return false;
+  }
+
+  if (localReviewFollowUpNeedsRepair(config, record, pr)) {
+    return true;
   }
 
   if (record.local_review_head_sha !== pr.headRefOid) {
@@ -185,6 +195,8 @@ export function localReviewRetryLoopCandidate(
     IssueRunRecord,
     | "local_review_head_sha"
     | "local_review_verified_max_severity"
+    | "pre_merge_evaluation_outcome"
+    | "pre_merge_follow_up_count"
     | "repeated_local_review_signature_count"
     | "processed_review_thread_ids"
     | "processed_review_thread_fingerprints"
@@ -201,7 +213,7 @@ export function localReviewRetryLoopCandidate(
   const manualThreads = manualReviewThreads(config, reviewThreads);
   const unresolvedBotThreads = configuredBotReviewThreads(config, reviewThreads);
   return (
-    localReviewHighSeverityNeedsRetry(config, record, pr) &&
+    (localReviewHighSeverityNeedsRetry(config, record, pr) || localReviewFollowUpNeedsRepair(config, record, pr)) &&
     !checkSummary.hasFailing &&
     !checkSummary.hasPending &&
     unresolvedBotThreads.length === 0 &&
@@ -216,6 +228,8 @@ export function localReviewRetryLoopStalled(
     IssueRunRecord,
     | "local_review_head_sha"
     | "local_review_verified_max_severity"
+    | "pre_merge_evaluation_outcome"
+    | "pre_merge_follow_up_count"
     | "repeated_local_review_signature_count"
     | "processed_review_thread_ids"
     | "processed_review_thread_fingerprints"

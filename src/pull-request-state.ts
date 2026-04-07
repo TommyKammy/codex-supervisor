@@ -833,6 +833,7 @@ export function inferStateFromPullRequest(
   const unresolvedBotThreads = effectiveConfiguredBotReviewThreads(config, pr, checks, reviewThreads);
   const pendingBotThreads = pendingBotReviewThreads(config, record, pr, unresolvedBotThreads);
   const botFollowUpState = configuredBotReviewFollowUpState(record, pr, unresolvedBotThreads);
+  const checkSummary = summarizeChecks(checks);
 
   if (pr.mergedAt || pr.state === "MERGED") {
     return "done";
@@ -881,15 +882,17 @@ export function inferStateFromPullRequest(
     return "local_review_fix";
   }
 
-  if (localReviewFollowUpNeedsRepair(config, record, pr)) {
+  if (
+    localReviewFollowUpNeedsRepair(config, record, pr) &&
+    !checkSummary.hasFailing &&
+    !checkSummary.hasPending &&
+    unresolvedBotThreads.length === 0 &&
+    (!config.humanReviewBlocksMerge || manualThreads.length === 0) &&
+    !mergeConflictDetected(pr)
+  ) {
     return "local_review_fix";
   }
 
-  if (localReviewHighSeverityNeedsBlock(config, record, pr)) {
-    return "blocked";
-  }
-
-  const checkSummary = summarizeChecks(checks);
   if (checkSummary.hasFailing) {
     return "repairing_ci";
   }
@@ -903,6 +906,10 @@ export function inferStateFromPullRequest(
   }
 
   if (config.humanReviewBlocksMerge && manualThreads.length > 0) {
+    return "blocked";
+  }
+
+  if (localReviewHighSeverityNeedsBlock(config, record, pr)) {
     return "blocked";
   }
 
