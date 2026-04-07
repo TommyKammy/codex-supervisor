@@ -76,6 +76,7 @@ export function localReviewBlocksReady(
     | "local_review_findings_count"
     | "local_review_recommendation"
     | "pre_merge_evaluation_outcome"
+    | "pre_merge_manual_review_count"
     | "pre_merge_follow_up_count"
   >,
   pr: GitHubPullRequest,
@@ -119,6 +120,7 @@ export function localReviewBlocksMerge(
     | "local_review_findings_count"
     | "local_review_recommendation"
     | "pre_merge_evaluation_outcome"
+    | "pre_merge_manual_review_count"
     | "pre_merge_follow_up_count"
   >,
   pr: GitHubPullRequest,
@@ -152,14 +154,18 @@ export function localReviewBlocksMerge(
 
 export function localReviewRequiresManualReview(
   config: SupervisorConfig,
-  record: Pick<IssueRunRecord, "local_review_head_sha" | "pre_merge_evaluation_outcome">,
+  record: Pick<
+    IssueRunRecord,
+    "local_review_head_sha" | "pre_merge_evaluation_outcome" | "pre_merge_manual_review_count" | "pre_merge_follow_up_count"
+  >,
   pr: GitHubPullRequest,
 ): boolean {
   return (
     config.localReviewEnabled &&
     config.localReviewPolicy === "block_merge" &&
     record.local_review_head_sha === pr.headRefOid &&
-    record.pre_merge_evaluation_outcome === "manual_review_blocked"
+    record.pre_merge_evaluation_outcome === "manual_review_blocked" &&
+    !localReviewFollowUpNeedsRepair(config, record, pr)
   );
 }
 
@@ -178,14 +184,18 @@ export function localReviewHighSeverityNeedsRetry(
 
 export function localReviewFollowUpNeedsRepair(
   config: SupervisorConfig,
-  record: Pick<IssueRunRecord, "local_review_head_sha" | "pre_merge_evaluation_outcome" | "pre_merge_follow_up_count">,
+  record: Pick<
+    IssueRunRecord,
+    "local_review_head_sha" | "pre_merge_evaluation_outcome" | "pre_merge_manual_review_count" | "pre_merge_follow_up_count"
+  >,
   pr: GitHubPullRequest,
 ): boolean {
   return (
     config.localReviewFollowUpRepairEnabled === true &&
     record.local_review_head_sha === pr.headRefOid &&
-    record.pre_merge_evaluation_outcome === "follow_up_eligible" &&
-    (record.pre_merge_follow_up_count ?? 0) > 0
+    ((record.pre_merge_evaluation_outcome === "follow_up_eligible" && (record.pre_merge_follow_up_count ?? 0) > 0) ||
+      (record.pre_merge_evaluation_outcome === "manual_review_blocked" &&
+        (record.pre_merge_manual_review_count ?? 0) > 0))
   );
 }
 
@@ -196,6 +206,7 @@ export function localReviewRetryLoopCandidate(
     | "local_review_head_sha"
     | "local_review_verified_max_severity"
     | "pre_merge_evaluation_outcome"
+    | "pre_merge_manual_review_count"
     | "pre_merge_follow_up_count"
     | "repeated_local_review_signature_count"
     | "processed_review_thread_ids"
@@ -229,6 +240,7 @@ export function localReviewRetryLoopStalled(
     | "local_review_head_sha"
     | "local_review_verified_max_severity"
     | "pre_merge_evaluation_outcome"
+    | "pre_merge_manual_review_count"
     | "pre_merge_follow_up_count"
     | "repeated_local_review_signature_count"
     | "processed_review_thread_ids"

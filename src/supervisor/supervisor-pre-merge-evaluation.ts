@@ -7,7 +7,12 @@ import { displayRelativeArtifactPath, localReviewHeadStatus, localReviewIsGating
 export interface SupervisorPreMergeEvaluationDto {
   status: "pending" | "passed" | "blocked" | "follow_up_eligible";
   outcome: LocalReviewArtifact["finalEvaluation"]["outcome"] | null;
-  repair?: "none" | "same_pr_follow_up_current_head" | "high_severity_retry_current_head" | "manual_review_required";
+  repair?:
+    | "none"
+    | "same_pr_follow_up_current_head"
+    | "same_pr_manual_review_current_head"
+    | "high_severity_retry_current_head"
+    | "manual_review_required";
   reason: string;
   headStatus: "none" | "current" | "stale" | "unknown";
   summaryPath: string | null;
@@ -70,7 +75,7 @@ function outcomeReason(artifact: LocalReviewArtifact): string {
 
 function repairDisposition(args: {
   config: Pick<SupervisorConfig, "localReviewFollowUpRepairEnabled" | "localReviewHighSeverityAction">;
-  record: Pick<IssueRunRecord, "state" | "pre_merge_follow_up_count">;
+  record: Pick<IssueRunRecord, "state" | "pre_merge_follow_up_count" | "pre_merge_manual_review_count">;
   headStatus: SupervisorPreMergeEvaluationDto["headStatus"];
   artifact: LocalReviewArtifact | null;
 }): SupervisorPreMergeEvaluationDto["repair"] {
@@ -78,12 +83,19 @@ function repairDisposition(args: {
     return "none";
   }
 
-  if (args.artifact.finalEvaluation.outcome === "manual_review_blocked") {
-    return "manual_review_required";
+  if (args.headStatus !== "current" || args.record.state !== "local_review_fix") {
+    if (args.artifact.finalEvaluation.outcome === "manual_review_blocked") {
+      return "manual_review_required";
+    }
+    return "none";
   }
 
-  if (args.headStatus !== "current" || args.record.state !== "local_review_fix") {
-    return "none";
+  if (
+    args.artifact.finalEvaluation.outcome === "manual_review_blocked" &&
+    args.config.localReviewFollowUpRepairEnabled === true &&
+    (args.record.pre_merge_manual_review_count ?? args.artifact.finalEvaluation.manualReviewCount) > 0
+  ) {
+    return "same_pr_manual_review_current_head";
   }
 
   if (

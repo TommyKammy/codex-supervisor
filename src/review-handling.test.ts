@@ -294,6 +294,23 @@ test("opted-in same-PR follow-up repair blocks ready and merge progression on th
   assert.equal(localReviewBlocksMerge(config, record, pr), true);
 });
 
+test("opted-in same-PR repair also blocks ready and merge progression for current-head manual-review local-review residuals", () => {
+  const pr = createPullRequest({ isDraft: false, headRefOid: "deadbeef" });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+  });
+  const config = createConfig({
+    localReviewPolicy: "block_merge",
+    localReviewFollowUpRepairEnabled: true,
+  });
+
+  assert.equal(localReviewFollowUpNeedsRepair(config, record, pr), true);
+  assert.equal(localReviewBlocksReady(config, record, pr), true);
+  assert.equal(localReviewBlocksMerge(config, record, pr), true);
+});
+
 test("local review high-severity actions distinguish retry from blocked", () => {
   const pr = createPullRequest();
   const record = createRecord({
@@ -436,6 +453,50 @@ test("local review retry loop helpers also stall repeated same-PR follow-up repa
       mergeConflictDetected,
     ),
     true,
+  );
+});
+
+test("local review retry loop helpers keep manual-review residual repairs out of the lane when CI or review blockers remain", () => {
+  const config = createConfig({
+    localReviewPolicy: "block_merge",
+    localReviewFollowUpRepairEnabled: true,
+    humanReviewBlocksMerge: true,
+  });
+  const pr = createPullRequest({ isDraft: false });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+  });
+
+  assert.equal(
+    localReviewRetryLoopCandidate(
+      config,
+      record,
+      pr,
+      [{ name: "test", state: "FAILURE", bucket: "fail", workflow: "CI" }],
+      [],
+      () => [],
+      () => [],
+      () => ({ hasFailing: true, hasPending: false }),
+      () => false,
+    ),
+    false,
+  );
+
+  assert.equal(
+    localReviewRetryLoopCandidate(
+      config,
+      record,
+      pr,
+      [],
+      [createReviewThread()],
+      () => [createReviewThread()],
+      () => [],
+      () => ({ hasFailing: false, hasPending: false }),
+      () => false,
+    ),
+    false,
   );
 });
 

@@ -1828,6 +1828,154 @@ test("handlePostTurnPullRequestTransitionsPhase routes opted-in follow-up-eligib
   assert.equal(result.record.pre_merge_evaluation_outcome, "follow_up_eligible");
 });
 
+test("handlePostTurnPullRequestTransitionsPhase routes opted-in current-head manual-review local-review residuals into local_review_fix", async (t) => {
+  const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewFollowUpRepairEnabled: true,
+  });
+  const issue = createIssue({
+    title: "Repair current-head manual-review residuals in the same PR",
+  });
+  const readyPr = createPullRequest({
+    title: "Keep manual-review residual repair in the tracked PR",
+    isDraft: false,
+    headRefName: "codex/issue-102",
+    headRefOid: headSha,
+  });
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      createIssue: async () => {
+        throw new Error("unexpected createIssue call");
+      },
+      markPullRequestReady: async () => {
+        throw new Error("unexpected markPullRequestReady call");
+      },
+    },
+    context: {
+      state: {
+        activeIssueNumber: 102,
+        issues: { "102": createRecord({ state: "pr_open", pr_number: readyPr.number, last_head_sha: headSha }) },
+      },
+      record: createRecord({ state: "pr_open", pr_number: readyPr.number, last_head_sha: headSha }),
+      issue,
+      workspacePath,
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: readyPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record, pr, checks, reviewThreads) => ({
+      recordForState: record,
+      nextState: inferStateFromPullRequest(config, record, pr, checks, reviewThreads),
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: (record, pr, checks, reviewThreads) =>
+      inferStateFromPullRequest(config, record, pr, checks, reviewThreads) === "blocked" &&
+      record.pre_merge_evaluation_outcome === "manual_review_blocked"
+        ? "manual_review"
+        : record.pre_merge_evaluation_outcome === "fix_blocked"
+          ? "verification"
+          : null,
+    summarizeChecks: (checks) => ({
+      hasPending: checks.some((check) => check.bucket === "pending"),
+      hasFailing: checks.some((check) => check.bucket === "fail"),
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    runLocalReviewImpl: async () => ({
+      ranAt: "2026-03-24T00:11:00Z",
+      summaryPath: "/tmp/reviews/owner-repo/issue-102/head-116.md",
+      findingsPath: "/tmp/reviews/owner-repo/issue-102/head-116.json",
+      summary: "Local review found a current-head residual that still needs direct repair.",
+      blockerSummary: "medium src/ui/panel.tsx:20-21 Browser flow still needs implementation follow-up.",
+      findingsCount: 1,
+      rootCauseCount: 1,
+      maxSeverity: "medium",
+      verifiedFindingsCount: 0,
+      verifiedMaxSeverity: "none",
+      recommendation: "changes_requested",
+      degraded: false,
+      finalEvaluation: {
+        outcome: "manual_review_blocked",
+        residualFindings: [
+          {
+            findingKey: "src/ui/panel.tsx|20|21|manual review residual|browser flow still needs implementation follow-up.",
+            summary: "Browser flow still needs implementation follow-up.",
+            severity: "medium",
+            category: "behavior",
+            file: "src/ui/panel.tsx",
+            start: 20,
+            end: 21,
+            source: "local_review",
+            resolution: "manual_review_required",
+            rationale: "Current-head local-review residual can be retried in the same PR when the operator opts in.",
+          },
+        ],
+        mustFixCount: 0,
+        manualReviewCount: 1,
+        followUpCount: 0,
+      },
+      rawOutput: "raw output",
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: readyPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "local_review_fix");
+  assert.equal(result.record.blocked_reason, null);
+  assert.equal(result.record.pre_merge_evaluation_outcome, "manual_review_blocked");
+  assert.match(result.record.last_error ?? "", /same-PR|current-head|repair/i);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase reruns local review on a ready PR head update when the tracked current-head gate is enabled", async () => {
   const config = createConfig({
     localReviewEnabled: true,

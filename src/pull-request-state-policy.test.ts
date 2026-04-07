@@ -431,6 +431,25 @@ test("inferStateFromPullRequest covers local review policy gating combinations",
       expected: "local_review_fix",
     },
     {
+      name: "same-PR follow-up repair escalates current-head manual-review local-review residuals into local_review_fix",
+      config: {
+        localReviewEnabled: true,
+        localReviewPolicy: "block_merge",
+        localReviewFollowUpRepairEnabled: true,
+        copilotReviewWaitMinutes: 0,
+      },
+      record: {
+        state: "pr_open",
+        local_review_head_sha: "head123",
+        local_review_findings_count: 1,
+        local_review_recommendation: "changes_requested",
+        pre_merge_evaluation_outcome: "manual_review_blocked",
+        pre_merge_manual_review_count: 1,
+      },
+      pr: { isDraft: false, headRefOid: "head123" },
+      expected: "local_review_fix",
+    },
+    {
       name: "blocked escalates verifier-confirmed high severity findings to blocked",
       config: {
         localReviewEnabled: true,
@@ -711,5 +730,41 @@ test("inferStateFromPullRequest preserves CI, review-thread, and conflict preced
       [],
     ),
     "resolving_conflict",
+  );
+
+  assert.equal(
+    inferStateFromPullRequest(
+      baseConfig,
+      createRecord({
+        state: "local_review_fix",
+        pr_number: 44,
+        local_review_head_sha: "head123",
+        local_review_findings_count: 1,
+        local_review_recommendation: "changes_requested",
+        pre_merge_evaluation_outcome: "manual_review_blocked",
+        pre_merge_manual_review_count: 1,
+      }),
+      createPullRequest({ isDraft: false }),
+      passingChecks(),
+      [
+        createReviewThread({
+          comments: {
+            nodes: [
+              {
+                id: "comment-1",
+                body: "Human review still needs a response.",
+                createdAt: "2026-03-11T00:00:00Z",
+                url: "https://example.test/pr/44#discussion_r1",
+                author: {
+                  login: "tommykammy",
+                  typeName: "User",
+                },
+              },
+            ],
+          },
+        }),
+      ],
+    ),
+    "blocked",
   );
 });
