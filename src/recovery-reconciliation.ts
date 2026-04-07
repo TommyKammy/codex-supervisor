@@ -30,6 +30,7 @@ import {
   syncExecutionMetricsRunSummarySafely,
 } from "./supervisor/execution-metrics-run-summary";
 import { syncPostMergeAuditArtifactSafely } from "./supervisor/post-merge-audit-artifact";
+import { resetTrackedPrHeadScopedStateOnAdvance } from "./tracked-pr-lifecycle-projection";
 import {
   buildSupervisorMutationRecordSnapshot,
   type PrunedOrphanedWorkspaceResultDto,
@@ -926,6 +927,7 @@ export function buildTrackedPrStaleFailureConvergencePatch(args: {
     copilotReviewRequestObservationPatch = {},
     copilotReviewTimeoutPatch = {},
   } = args;
+  const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(record, pr.headRefOid);
 
   return {
     state: nextState,
@@ -941,6 +943,7 @@ export function buildTrackedPrStaleFailureConvergencePatch(args: {
     blocked_verification_retry_count: 0,
     pr_number: pr.number,
     last_head_sha: pr.headRefOid,
+    ...headAdvanceResetPatch,
     ...reviewWaitPatch,
     ...copilotReviewRequestObservationPatch,
     ...copilotReviewTimeoutPatch,

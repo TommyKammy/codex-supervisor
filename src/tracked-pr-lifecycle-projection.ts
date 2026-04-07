@@ -41,6 +41,47 @@ export interface TrackedPrLifecycleProjection {
   shouldSuppressRecovery: boolean;
 }
 
+export function resetTrackedPrHeadScopedStateOnAdvance(
+  record: IssueRunRecord,
+  nextHeadSha: string,
+): Partial<IssueRunRecord> {
+  if (record.last_head_sha === null || record.last_head_sha === nextHeadSha) {
+    return {};
+  }
+
+  return {
+    local_review_head_sha: null,
+    local_review_blocker_summary: null,
+    local_review_summary_path: null,
+    local_review_run_at: null,
+    local_review_max_severity: null,
+    local_review_findings_count: 0,
+    local_review_root_cause_count: 0,
+    local_review_verified_max_severity: null,
+    local_review_verified_findings_count: 0,
+    local_review_recommendation: null,
+    local_review_degraded: false,
+    pre_merge_evaluation_outcome: null,
+    pre_merge_must_fix_count: 0,
+    pre_merge_manual_review_count: 0,
+    pre_merge_follow_up_count: 0,
+    last_local_review_signature: null,
+    repeated_local_review_signature_count: 0,
+    latest_local_ci_result: null,
+    external_review_head_sha: null,
+    external_review_misses_path: null,
+    external_review_matched_findings_count: 0,
+    external_review_near_match_findings_count: 0,
+    external_review_missed_findings_count: 0,
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
+    last_host_local_pr_blocker_comment_signature: null,
+    last_host_local_pr_blocker_comment_head_sha: null,
+    processed_review_thread_ids: [],
+    processed_review_thread_fingerprints: [],
+  };
+}
+
 export function projectTrackedPrLifecycle(args: ProjectTrackedPrLifecycleArgs): TrackedPrLifecycleProjection {
   const inferStateFromPullRequestImpl = args.inferStateFromPullRequest ?? inferStateFromPullRequest;
   const blockedReasonForLifecycleStateImpl = args.blockedReasonForLifecycleState ?? blockedReasonForLifecycleState;
@@ -49,18 +90,23 @@ export function projectTrackedPrLifecycle(args: ProjectTrackedPrLifecycleArgs): 
     args.syncCopilotReviewRequestObservation ?? syncCopilotReviewRequestObservation;
   const syncCopilotReviewTimeoutStateImpl =
     args.syncCopilotReviewTimeoutState ?? syncCopilotReviewTimeoutState;
+  const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(args.record, args.pr.headRefOid);
 
-  const reviewWaitPatch = syncReviewWaitWindowImpl(args.record, args.pr);
-  const copilotReviewRequestObservationPatch = syncCopilotReviewRequestObservationImpl(
-    args.config,
-    args.record,
-    args.pr,
-  );
-  const copilotReviewTimeoutPatch = syncCopilotReviewTimeoutStateImpl(args.config, args.record, args.pr);
-  const recordForState: IssueRunRecord = {
+  const projectionSeedRecord: IssueRunRecord = {
     ...args.record,
+    ...headAdvanceResetPatch,
     pr_number: args.pr.number,
     last_head_sha: args.pr.headRefOid,
+  };
+  const reviewWaitPatch = syncReviewWaitWindowImpl(projectionSeedRecord, args.pr);
+  const copilotReviewRequestObservationPatch = syncCopilotReviewRequestObservationImpl(
+    args.config,
+    projectionSeedRecord,
+    args.pr,
+  );
+  const copilotReviewTimeoutPatch = syncCopilotReviewTimeoutStateImpl(args.config, projectionSeedRecord, args.pr);
+  const recordForState: IssueRunRecord = {
+    ...projectionSeedRecord,
     ...reviewWaitPatch,
     ...copilotReviewRequestObservationPatch,
     ...copilotReviewTimeoutPatch,

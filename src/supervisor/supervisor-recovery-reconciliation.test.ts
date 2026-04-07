@@ -1156,6 +1156,141 @@ test("reconcileRecoverableBlockedIssueStates persists refreshed tracked PR lifec
   assert.equal(saveCalls, 1);
   assert.deepEqual(recoveryEvents, []);
 });
+
+test("reconcileRecoverableBlockedIssueStates clears stale head-scoped review state after a tracked PR repair push", async () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    trackedPrCurrentHeadLocalReviewRequired: true,
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 366,
+        state: "blocked",
+        blocked_reason: "verification",
+        pr_number: 191,
+        last_head_sha: "head-old-191",
+        local_review_head_sha: "head-old-191",
+        local_review_blocker_summary: "medium issue on the previous head",
+        local_review_summary_path: "/tmp/reviews/issue-366/head-old-191.md",
+        local_review_run_at: "2026-03-13T00:19:00Z",
+        local_review_max_severity: "medium",
+        local_review_findings_count: 2,
+        local_review_root_cause_count: 1,
+        local_review_verified_max_severity: "none",
+        local_review_verified_findings_count: 0,
+        local_review_recommendation: "changes_requested",
+        pre_merge_evaluation_outcome: "follow_up_eligible",
+        pre_merge_follow_up_count: 2,
+        last_local_review_signature: "local-review:medium",
+        repeated_local_review_signature_count: 8,
+        external_review_head_sha: "head-old-191",
+        external_review_misses_path: "/tmp/reviews/issue-366/head-old-191-misses.json",
+        external_review_matched_findings_count: 1,
+        external_review_near_match_findings_count: 1,
+        external_review_missed_findings_count: 1,
+        review_follow_up_head_sha: "head-old-191",
+        review_follow_up_remaining: 1,
+        processed_review_thread_ids: ["thread-1"],
+        processed_review_thread_fingerprints: [],
+        last_error: "Local review requested changes (2 actionable findings across 1 root cause).",
+        last_failure_kind: null,
+        last_failure_context: {
+          category: "blocked",
+          summary: "Local review requested changes (2 actionable findings across 1 root cause).",
+          signature: "local-review:medium:none:1:0:clean",
+          command: null,
+          details: ["findings=2", "root_causes=1"],
+          url: null,
+          updated_at: "2026-03-13T00:19:00Z",
+        },
+        last_failure_signature: "local-review:medium:none:1:0:clean",
+        repeated_failure_signature_count: 137,
+      }),
+    ],
+  });
+  const issue = createIssue({
+    number: 366,
+    title: "Tracked PR stale local review recovery",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+  const pr = createPullRequest({
+    number: 191,
+    title: "Repair push",
+    url: "https://example.test/pr/191",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-new-191",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [createReviewThread()],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "addressing_review");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_head_sha, "head-new-191");
+  assert.equal(updated.local_review_head_sha, null);
+  assert.equal(updated.local_review_summary_path, null);
+  assert.equal(updated.pre_merge_evaluation_outcome, null);
+  assert.equal(updated.external_review_head_sha, null);
+  assert.equal(updated.review_follow_up_head_sha, null);
+  assert.equal(updated.review_follow_up_remaining, 0);
+  assert.deepEqual(updated.processed_review_thread_ids, []);
+  assert.deepEqual(updated.processed_review_thread_fingerprints, []);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.repeated_local_review_signature_count, 0);
+  assert.equal(
+    updated.last_recovery_reason,
+    "tracked_pr_head_advanced: resumed issue #366 from blocked to addressing_review after tracked PR #191 advanced from head-old-191 to head-new-191",
+  );
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "tracked_pr_head_advanced: resumed issue #366 from blocked to addressing_review after tracked PR #191 advanced from head-old-191 to head-new-191",
+  ]);
+});
+
 test("reconcileStaleActiveIssueReservation clears a stale reservation and emits a recovery loggable event", async () => {
   const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
   const state: SupervisorStateFile = {
@@ -4130,6 +4265,35 @@ test("buildTrackedPrStaleFailureConvergencePatch isolates persisted tracked PR r
     blocked_verification_retry_count: 0,
     pr_number: 191,
     last_head_sha: "head-191",
+    local_review_head_sha: null,
+    local_review_blocker_summary: null,
+    local_review_summary_path: null,
+    local_review_run_at: null,
+    local_review_max_severity: null,
+    local_review_findings_count: 0,
+    local_review_root_cause_count: 0,
+    local_review_verified_max_severity: null,
+    local_review_verified_findings_count: 0,
+    local_review_recommendation: null,
+    local_review_degraded: false,
+    pre_merge_evaluation_outcome: null,
+    pre_merge_must_fix_count: 0,
+    pre_merge_manual_review_count: 0,
+    pre_merge_follow_up_count: 0,
+    last_local_review_signature: null,
+    repeated_local_review_signature_count: 0,
+    latest_local_ci_result: null,
+    external_review_head_sha: null,
+    external_review_misses_path: null,
+    external_review_matched_findings_count: 0,
+    external_review_near_match_findings_count: 0,
+    external_review_missed_findings_count: 0,
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
+    last_host_local_pr_blocker_comment_signature: null,
+    last_host_local_pr_blocker_comment_head_sha: null,
+    processed_review_thread_ids: [],
+    processed_review_thread_fingerprints: [],
     review_wait_started_at: "2026-03-13T00:24:00Z",
     review_wait_head_sha: "head-191",
     copilot_review_requested_observed_at: "2026-03-13T00:24:30Z",
