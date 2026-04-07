@@ -842,6 +842,10 @@ function parseSupervisorConfigDocument(raw: Record<string, unknown>, resolvedPat
       typeof raw.trackedPrCurrentHeadLocalReviewRequired === "boolean"
         ? raw.trackedPrCurrentHeadLocalReviewRequired
         : false,
+    localReviewFollowUpIssueCreationEnabled:
+      typeof raw.localReviewFollowUpIssueCreationEnabled === "boolean"
+        ? raw.localReviewFollowUpIssueCreationEnabled
+        : false,
     localReviewHighSeverityAction:
       typeof raw.localReviewHighSeverityAction === "string" &&
       VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS.has(raw.localReviewHighSeverityAction as LocalReviewHighSeverityAction)

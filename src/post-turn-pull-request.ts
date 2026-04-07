@@ -238,6 +238,30 @@ function renderResidualLines(finding: Pick<PreMergeResidualFinding, "start" | "e
     : `${finding.start}`;
 }
 
+function isIssueSchedulingMetadataLine(line: string): boolean {
+  const trimmed = line.trim();
+  return (
+    trimmed.startsWith("Part of:") ||
+    trimmed.startsWith("Depends on:") ||
+    trimmed.startsWith("Parallelizable:")
+  );
+}
+
+function sanitizeVerificationLines(content: string | null, fallbackLocation: string): string[] {
+  if (!content) {
+    return [`- add and run the narrowest targeted verification for ${fallbackLocation}.`];
+  }
+
+  const sanitized = content
+    .split(/\r?\n/)
+    .filter((line) => !isIssueSchedulingMetadataLine(line))
+    .filter((line, index, lines) => line.trim() !== "" || (index > 0 && lines[index - 1]?.trim() !== ""));
+
+  return sanitized.length > 0
+    ? sanitized
+    : [`- add and run the narrowest targeted verification for ${fallbackLocation}.`];
+}
+
 function buildResidualFollowUpIssueDraft(args: {
   sourceIssue: GitHubIssue;
   pr: GitHubPullRequest;
@@ -255,9 +279,7 @@ function buildResidualFollowUpIssueDraft(args: {
     `Follow-up: ${sourceIssue.title} (#${sourceIssue.number}) - ${residualFinding.summary}`,
     240,
   ) ?? `Follow-up: issue #${sourceIssue.number}`;
-  const verificationLines = sourceVerification
-    ? sourceVerification.split(/\r?\n/)
-    : [`- add and run the narrowest targeted verification for ${location}.`];
+  const verificationLines = sanitizeVerificationLines(sourceVerification, location);
 
   return {
     title,
@@ -281,8 +303,10 @@ function buildResidualFollowUpIssueDraft(args: {
       "",
       ...(metadata.parentIssueNumber ? [`Part of: #${metadata.parentIssueNumber}`] : []),
       `Depends on: #${sourceIssue.number}`,
-      "Execution order: 1 of 1",
-      "Parallelizable: Yes",
+      "Parallelizable: No",
+      "",
+      "## Execution order",
+      "1 of 1",
       "",
       "## Traceability",
       `- Source issue: #${sourceIssue.number}`,
@@ -472,7 +496,10 @@ export async function handlePostTurnPullRequestTransitionsPhase(
             : null,
       });
 
-      if (localReview.finalEvaluation.outcome === "follow_up_eligible") {
+      if (
+        localReview.finalEvaluation.outcome === "follow_up_eligible" &&
+        config.localReviewFollowUpIssueCreationEnabled === true
+      ) {
         await createResidualFollowUpIssues({
           github,
           issue,
