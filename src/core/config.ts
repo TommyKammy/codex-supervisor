@@ -842,6 +842,8 @@ function parseSupervisorConfigDocument(raw: Record<string, unknown>, resolvedPat
       typeof raw.trackedPrCurrentHeadLocalReviewRequired === "boolean"
         ? raw.trackedPrCurrentHeadLocalReviewRequired
         : false,
+    localReviewFollowUpRepairEnabled:
+      typeof raw.localReviewFollowUpRepairEnabled === "boolean" ? raw.localReviewFollowUpRepairEnabled : false,
     localReviewFollowUpIssueCreationEnabled:
       typeof raw.localReviewFollowUpIssueCreationEnabled === "boolean"
         ? raw.localReviewFollowUpIssueCreationEnabled
@@ -1019,6 +1021,11 @@ function parseSupervisorConfigDocument(raw: Record<string, unknown>, resolvedPat
   ) {
     throw new Error(
       `Missing or invalid config field: localReviewModel (required when localReviewModelStrategy=${config.localReviewModelStrategy})`,
+    );
+  }
+  if (config.localReviewFollowUpRepairEnabled === true && config.localReviewFollowUpIssueCreationEnabled === true) {
+    throw new Error(
+      "Invalid config field: localReviewFollowUpRepairEnabled (cannot enable same-PR local-review follow-up repair together with localReviewFollowUpIssueCreationEnabled)",
     );
   }
 

@@ -60,6 +60,7 @@
   },
   "localReviewPolicy": "block_merge",
   "trackedPrCurrentHeadLocalReviewRequired": false,
+  "localReviewFollowUpRepairEnabled": false,
   "localReviewFollowUpIssueCreationEnabled": false,
   "localReviewHighSeverityAction": "blocked",
   "reviewBotLogins": [

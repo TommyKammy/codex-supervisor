@@ -55,6 +55,7 @@
     }
   },
   "localReviewPolicy": "block_merge",
+  "localReviewFollowUpRepairEnabled": false,
   "localReviewFollowUpIssueCreationEnabled": false,
   "localReviewHighSeverityAction": "blocked",
   "reviewBotLogins": [
