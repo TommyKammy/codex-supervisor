@@ -115,6 +115,37 @@ test("loadConfigSummary surfaces the default trust diagnostics posture", async (
   });
 });
 
+test("loadConfig keeps local review disabled by default while using the opinionated enabled posture", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+
+  assert.equal(config.localReviewEnabled, false);
+  assert.equal(config.localReviewAutoDetect, true);
+  assert.deepEqual(config.localReviewRoles, []);
+  assert.equal(config.localReviewPolicy, "block_merge");
+  assert.equal(config.trackedPrCurrentHeadLocalReviewRequired, false);
+  assert.equal(config.localReviewHighSeverityAction, "blocked");
+});
+
 test("loadConfigSummary accepts an explicit safer trust diagnostics posture without warning", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
   t.after(async () => {
@@ -854,6 +885,21 @@ test("shipped example configs recommend block_merge for local review gating", as
   }
 });
 
+test("shipped starter config profiles keep local review disabled until operators opt in", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  const examplePaths = [
+    path.join(rootDir, "supervisor.config.example.json"),
+    path.join(rootDir, "supervisor.config.copilot.json"),
+    path.join(rootDir, "supervisor.config.codex.json"),
+    path.join(rootDir, "supervisor.config.coderabbit.json"),
+  ];
+
+  for (const examplePath of examplePaths) {
+    const raw = JSON.parse(await fs.readFile(examplePath, "utf8")) as { localReviewEnabled?: unknown };
+    assert.equal(raw.localReviewEnabled, false, `${path.relative(rootDir, examplePath)} should keep local review disabled by default`);
+  }
+});
+
 test("shipped example configs recommend blocked for high-severity local review findings", async () => {
   const rootDir = path.resolve(__dirname, "..");
   const examplePaths = [
@@ -1061,6 +1107,8 @@ test("getting started links to focused configuration and local review references
   assert.match(gettingStarted, /\[Issue metadata reference\]\(\.\/issue-metadata\.md\)/i);
   assert.match(gettingStarted, /review provider profile/i);
   assert.match(gettingStarted, /provider-specific review settings/i);
+  assert.match(gettingStarted, /disabled by default/i);
+  assert.match(gettingStarted, /recommended once enabled/i);
   assert.doesNotMatch(gettingStarted, /review-bot profile/i);
   assert.doesNotMatch(gettingStarted, /^### Option 1: Auto-detect roles$/m);
   assert.doesNotMatch(gettingStarted, /^### Option 2: Explicit roles$/m);
@@ -1071,6 +1119,8 @@ test("getting started links to focused configuration and local review references
   assert.match(localReview, /^# Local Review Reference$/m);
   assert.match(localReview, /^## Choosing reviewer roles$/m);
   assert.match(localReview, /^## Artifacts, thresholds, and guardrails$/m);
+  assert.match(localReview, /disabled by default/i);
+  assert.match(localReview, /recommended once enabled/i);
 
   assert.match(issueMetadata, /^# Issue Metadata$/m);
   assert.match(issueMetadata, /^## Canonical fields$/m);

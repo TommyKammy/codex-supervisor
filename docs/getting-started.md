@@ -399,7 +399,7 @@ When should I open a PR?
 Open or update a draft PR as soon as the branch has a coherent checkpoint. The supervisor is designed to publish early rather than waiting for a perfect final state.
 
 When should I enable local review?
-Enable it when you want a committed pre-merge review gate or an additional local advisory pass before CI and external reviews. Use the [Local review reference](./local-review.md) for role selection, thresholds, artifacts, and policy choices.
+Local review is disabled by default in the shipped starter configs. Enable it when you want a committed pre-merge review gate or an additional local advisory pass before CI and external reviews. The recommended once enabled posture is `localReviewAutoDetect: true`, `localReviewRoles: []`, `localReviewPolicy: "block_merge"`, `trackedPrCurrentHeadLocalReviewRequired: false`, and `localReviewHighSeverityAction: "blocked"`. Use the [Local review reference](./local-review.md) for role selection, thresholds, artifacts, and policy choices.
 
 When should orphaned workspaces be cleaned up?
 Treat orphaned `issue-*` worktrees as explicit cleanup work, not as the same thing as delayed cleanup for tracked done workspaces. Use `doctor` to confirm the effective policy: `doctor_orphan_policy mode=explicit_only background_prune=false operator_prune=true grace_hours=... preserved=locked,recent,unsafe_target`. The explicit `prune-orphaned-workspaces` action only preserves orphan candidates marked `locked`, `recent`, or `unsafe_target`; there is no separate manual-keep state. The orphan grace setting only controls when `doctor` and `prune-orphaned-workspaces` consider an orphan old enough to avoid the `recent` state; it does not make `run-once` prune orphan workspaces in the background.

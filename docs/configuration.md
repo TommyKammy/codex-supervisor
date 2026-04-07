@@ -111,6 +111,12 @@ Review and merge policy:
 - `localReviewArtifactDir`, `localReviewConfidenceThreshold`, `localReviewReviewerThresholds`
 - `mergeMethod`
 
+Local-review default posture:
+
+- shipped starter profiles and default config loading keep `localReviewEnabled: false`
+- once an operator intentionally enables local review, the recommended baseline is `localReviewAutoDetect: true`, `localReviewRoles: []`, `localReviewPolicy: "block_merge"`, `trackedPrCurrentHeadLocalReviewRequired: false`, and `localReviewHighSeverityAction: "blocked"`
+- use `trackedPrCurrentHeadLocalReviewRequired: true` only when your workflow explicitly requires a fresh current-head local review before ready-for-review or merge can continue
+
 Repository-owned local CI policy:
 
 - when a repo exposes a canonical pre-PR entrypoint such as `ci:local` or `verify:pre-pr`, keep that command definition in the managed repo rather than in supervisor inference logic

@@ -4,7 +4,9 @@ This guide holds the detailed local-review swarm reference so the landing docs c
 
 ## What local review is for
 
-`codex-supervisor` can run a local review swarm on pull requests before merge. The recommended starting policy is `block_merge`, because it preserves the usual ready-for-review flow while still making the swarm a practical merge gate on the current PR head.
+`codex-supervisor` can run a local review swarm on pull requests before merge. It is disabled by default in shipped starter configs and in default config loading behavior. Once an operator intentionally enables it, the recommended once enabled posture uses `localReviewAutoDetect: true`, `localReviewRoles: []`, `localReviewPolicy: "block_merge"`, `trackedPrCurrentHeadLocalReviewRequired: false`, and `localReviewHighSeverityAction: "blocked"`.
+
+The recommended starting policy is `block_merge`, because it preserves the usual ready-for-review flow while still making the swarm a practical merge gate on the current PR head.
 
 Core behavior:
 
@@ -20,7 +22,8 @@ Policy guidance:
 - `block_merge` is the recommended default: gate merge on ready PRs and re-run on ready PR head updates
 - `block_ready` is stricter earlier in the flow: gate the draft-to-ready transition
 - `advisory` is non-blocking and fits setups that want saved findings without automation gates
-- `trackedPrCurrentHeadLocalReviewRequired: true` makes tracked codex PRs wait for a fresh local review on every head update before ready-for-review or merge can continue
+- `trackedPrCurrentHeadLocalReviewRequired: false` keeps the enabled baseline opinionated without adding a separate freshness gate
+- `trackedPrCurrentHeadLocalReviewRequired: true` is the stricter opt-in mode: tracked codex PRs wait for a fresh local review on every head update before ready-for-review or merge can continue
 
 ## Choosing reviewer roles
 
@@ -38,7 +41,10 @@ Example:
 {
   "localReviewEnabled": true,
   "localReviewAutoDetect": true,
-  "localReviewRoles": []
+  "localReviewRoles": [],
+  "localReviewPolicy": "block_merge",
+  "trackedPrCurrentHeadLocalReviewRequired": false,
+  "localReviewHighSeverityAction": "blocked"
 }
 ```
 

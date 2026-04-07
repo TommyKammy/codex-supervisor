@@ -75,11 +75,12 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
 - If you use GSD for upstream planning, enable `gsdEnabled` and point `gsdPlanningFiles` at `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, and `STATE.md`.
 - Copilot review is expected to start automatically after the PR is marked ready.
 - Leave `boundedRepairModelStrategy` unset unless you explicitly want `repairing_ci` and `addressing_review` turns to use a smaller bounded-repair model such as `gpt-5.4-mini`.
+- The shipped starter profiles keep local review disabled by default. This atlaspm example intentionally shows the recommended once enabled posture.
 - A local review swarm should usually run with `localReviewPolicy: "block_merge"` so it acts as a practical merge gate, with Markdown (`head-<sha>.md`) and JSON (`head-<sha>.json`) artifacts written under the supervisor's `.local/reviews` directory.
 - Leaving `localReviewRoles` empty while `localReviewAutoDetect` is `true` lets the supervisor add repo-specific specialists such as `prisma_postgres_reviewer`, `migration_invariant_reviewer`, `contract_consistency_reviewer`, and workflow-oriented roles like `github_actions_semantics_reviewer`, `workflow_test_reviewer`, and `portability_reviewer` when the repo shape suggests them.
 - `localReviewPolicy: "block_merge"` is the recommended starting point because it allows normal ready-for-review flow while still blocking merge until actionable findings are resolved.
 - Use `block_ready` when you want the swarm to stop draft PRs before `gh pr ready`, and `advisory` when you only want saved findings without merge gating.
-- Set `trackedPrCurrentHeadLocalReviewRequired: true` when tracked codex PRs must always refresh local review on the current head before either ready-for-review or merge can proceed.
+- Keep `trackedPrCurrentHeadLocalReviewRequired: false` for the recommended enabled baseline. Set it to `true` only when tracked codex PRs must always refresh local review on the current head before either ready-for-review or merge can proceed.
 - `localReviewHighSeverityAction: "blocked"` is the safer default for solo operators because verifier-confirmed high-severity findings stop the merge until a human decides the next step.
 - Switch to `localReviewHighSeverityAction: "retry"` when your team explicitly wants the supervisor to start another repair pass automatically after verifier-confirmed high-severity findings.
 - Findings below the configured confidence threshold stay in the raw role reports but are not counted as actionable.
