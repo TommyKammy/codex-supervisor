@@ -36,6 +36,7 @@ export function createConfig(overrides: Partial<SupervisorConfig> = {}): Supervi
       specialist: { confidenceThreshold: 0.7, minimumSeverity: "low" },
     },
     localReviewPolicy: "block_ready",
+    localReviewFollowUpIssueCreationEnabled: false,
     localReviewHighSeverityAction: "retry",
     reviewBotLogins: [],
     humanReviewBlocksMerge: true,

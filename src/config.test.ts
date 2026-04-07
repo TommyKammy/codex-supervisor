@@ -143,7 +143,34 @@ test("loadConfig keeps local review disabled by default while using the opiniona
   assert.deepEqual(config.localReviewRoles, []);
   assert.equal(config.localReviewPolicy, "block_merge");
   assert.equal(config.trackedPrCurrentHeadLocalReviewRequired, false);
+  assert.equal(config.localReviewFollowUpIssueCreationEnabled, false);
   assert.equal(config.localReviewHighSeverityAction, "blocked");
+});
+
+test("loadConfig accepts explicit local review follow-up issue creation opt-in", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      localReviewFollowUpIssueCreationEnabled: true,
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+  assert.equal(config.localReviewFollowUpIssueCreationEnabled, true);
 });
 
 test("loadConfigSummary accepts an explicit safer trust diagnostics posture without warning", async (t) => {
