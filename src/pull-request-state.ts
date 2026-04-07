@@ -1,4 +1,5 @@
 import {
+  localReviewFollowUpNeedsRepair,
   localReviewBlocksMerge,
   localReviewHighSeverityNeedsBlock,
   localReviewHighSeverityNeedsRetry,
@@ -877,6 +878,10 @@ export function inferStateFromPullRequest(
   }
 
   if (localReviewHighSeverityNeedsRetry(config, record, pr)) {
+    return "local_review_fix";
+  }
+
+  if (localReviewFollowUpNeedsRepair(config, record, pr)) {
     return "local_review_fix";
   }
 
