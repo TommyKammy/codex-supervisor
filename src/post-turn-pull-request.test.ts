@@ -1528,6 +1528,7 @@ Allow merge after local review while tracking bounded residual work.
 
 Part of: #900
 Depends on: none
+Execution order: 1 of 1
 Parallelizable: No
 
 ## Execution order
@@ -1672,6 +1673,7 @@ Parallelizable: No
   assert.match(createdIssues[0]?.body ?? "", /Parallelizable: No/);
   assert.match(createdIssues[0]?.body ?? "", /## Execution order/);
   assert.match(createdIssues[0]?.body ?? "", /\n1 of 1\n/);
+  assert.doesNotMatch(createdIssues[0]?.body ?? "", /Execution order:\s*1 of 1/);
   assert.match(createdIssues[0]?.body ?? "", /Source issue: #102/);
   assert.equal(readyCalls, 1);
   assert.equal(result.record.pre_merge_evaluation_outcome, "follow_up_eligible");

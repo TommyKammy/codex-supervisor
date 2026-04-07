@@ -239,12 +239,7 @@ function renderResidualLines(finding: Pick<PreMergeResidualFinding, "start" | "e
 }
 
 function isIssueSchedulingMetadataLine(line: string): boolean {
-  const trimmed = line.trim();
-  return (
-    trimmed.startsWith("Part of:") ||
-    trimmed.startsWith("Depends on:") ||
-    trimmed.startsWith("Parallelizable:")
-  );
+  return /^(Part of|Depends on|Parallelizable|Execution order):/i.test(line.trim());
 }
 
 function sanitizeVerificationLines(content: string | null, fallbackLocation: string): string[] {
