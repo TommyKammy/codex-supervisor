@@ -4,6 +4,7 @@ import {
   hasProcessedReviewThread,
   localReviewBlocksMerge,
   localReviewBlocksReady,
+  localReviewFollowUpNeedsRepair,
   localReviewHighSeverityNeedsBlock,
   localReviewHighSeverityNeedsRetry,
   localReviewRetryLoopCandidate,
@@ -276,6 +277,23 @@ test("tracked PR current-head gate blocks ready and merge progression until loca
   assert.equal(localReviewBlocksMerge(config, staleRecord, pr), true);
 });
 
+test("opted-in same-PR follow-up repair blocks ready and merge progression on the current head", () => {
+  const pr = createPullRequest({ isDraft: false, headRefOid: "deadbeef" });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "follow_up_eligible",
+    pre_merge_follow_up_count: 2,
+  });
+  const config = createConfig({
+    localReviewPolicy: "block_merge",
+    localReviewFollowUpRepairEnabled: true,
+  });
+
+  assert.equal(localReviewFollowUpNeedsRepair(config, record, pr), true);
+  assert.equal(localReviewBlocksReady(config, record, pr), true);
+  assert.equal(localReviewBlocksMerge(config, record, pr), true);
+});
+
 test("local review high-severity actions distinguish retry from blocked", () => {
   const pr = createPullRequest();
   const record = createRecord({
@@ -329,6 +347,58 @@ test("local review retry loop helpers require a clean path and stall after repea
   const record = createRecord({
     local_review_head_sha: "deadbeef",
     local_review_verified_max_severity: "high",
+    repeated_local_review_signature_count: 2,
+  });
+  const checks: PullRequestCheck[] = [];
+  const reviewThreads: ReviewThread[] = [];
+
+  const manualReviewThreads = () => [];
+  const configuredBotReviewThreads = () => [];
+  const summarizeChecks = () => ({ hasFailing: false, hasPending: false });
+  const mergeConflictDetected = () => false;
+
+  assert.equal(
+    localReviewRetryLoopCandidate(
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+      manualReviewThreads,
+      configuredBotReviewThreads,
+      summarizeChecks,
+      mergeConflictDetected,
+    ),
+    true,
+  );
+  assert.equal(
+    localReviewRetryLoopStalled(
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+      manualReviewThreads,
+      configuredBotReviewThreads,
+      summarizeChecks,
+      mergeConflictDetected,
+    ),
+    true,
+  );
+});
+
+test("local review retry loop helpers also stall repeated same-PR follow-up repairs on a clean path", () => {
+  const config = createConfig({
+    localReviewPolicy: "block_merge",
+    localReviewFollowUpRepairEnabled: true,
+    sameFailureSignatureRepeatLimit: 2,
+    humanReviewBlocksMerge: true,
+  });
+  const pr = createPullRequest({ isDraft: false });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "follow_up_eligible",
+    pre_merge_follow_up_count: 1,
     repeated_local_review_signature_count: 2,
   });
   const checks: PullRequestCheck[] = [];
