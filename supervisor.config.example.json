@@ -60,6 +60,7 @@
   },
   "localReviewPolicy": "block_merge",
   "trackedPrCurrentHeadLocalReviewRequired": false,
+  "localReviewFollowUpIssueCreationEnabled": false,
   "localReviewHighSeverityAction": "blocked",
   "reviewBotLogins": [
     "copilot-pull-request-reviewer"

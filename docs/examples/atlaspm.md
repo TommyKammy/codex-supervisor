@@ -42,6 +42,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
   "localReviewArtifactDir": "/Users/yourname/Dev/codex-supervisor/.local/reviews",
   "localReviewConfidenceThreshold": 0.7,
   "localReviewPolicy": "block_merge",
+  "localReviewFollowUpIssueCreationEnabled": false,
   "localReviewHighSeverityAction": "blocked",
   "reviewBotLogins": ["copilot-pull-request-reviewer"],
   "humanReviewBlocksMerge": true,
@@ -81,6 +82,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
 - `localReviewPolicy: "block_merge"` is the recommended starting point because it allows normal ready-for-review flow while still blocking merge until actionable findings are resolved.
 - Use `block_ready` when you want the swarm to stop draft PRs before `gh pr ready`, and `advisory` when you only want saved findings without merge gating.
 - Keep `trackedPrCurrentHeadLocalReviewRequired: false` for the recommended enabled baseline. Set it to `true` only when tracked codex PRs must always refresh local review on the current head before either ready-for-review or merge can proceed.
+- Keep `localReviewFollowUpIssueCreationEnabled: false` unless you explicitly want local-review findings to create GitHub follow-up issues automatically.
 - `localReviewHighSeverityAction: "blocked"` is the safer default for solo operators because verifier-confirmed high-severity findings stop the merge until a human decides the next step.
 - Switch to `localReviewHighSeverityAction: "retry"` when your team explicitly wants the supervisor to start another repair pass automatically after verifier-confirmed high-severity findings.
 - Findings below the configured confidence threshold stay in the raw role reports but are not counted as actionable.
