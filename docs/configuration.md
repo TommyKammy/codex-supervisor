@@ -1,173 +1,483 @@
-# Configuration Reference
+# Configuration Guide
 
-This guide holds the setup and reference material that used to make the root `README.md` too dense.
+Use this page when you want to understand `codex-supervisor` config without reading every field in one pass.
 
-## Base Setup
+This guide is organized in the order a beginner usually needs:
 
-Start from [supervisor.config.example.json](../supervisor.config.example.json), then choose the review provider profile that matches your review flow:
+1. what the config is responsible for
+2. which fields you actually need to edit first
+3. common setup recipes
+4. field groups for deeper reference
 
+If you want the end-to-end first-run flow, start with [Getting started](./getting-started.md). If you want the local-review feature in more depth, use [Local review](./local-review.md).
+
+## Start Here
+
+The active config is whichever file you pass with `--config`.
+
+Most operators start from one of these files:
+
+- [supervisor.config.example.json](../supervisor.config.example.json)
 - [supervisor.config.copilot.json](../supervisor.config.copilot.json)
 - [supervisor.config.codex.json](../supervisor.config.codex.json)
 - [supervisor.config.coderabbit.json](../supervisor.config.coderabbit.json)
 
-The active file is whichever config path you pass with `--config`. `supervisor.config.json` is the common local default, and the shipped provider profiles are starting points, so you can either copy one over `supervisor.config.json` and customize it for your repo or copy its `reviewBotLogins` into your existing active config and keep your other edits.
+The simplest workflow is:
 
-Requirements:
+1. copy a starter file to `supervisor.config.json`
+2. edit the repo-specific fields
+3. run `issue-lint`, then `run-once`, then `loop`
 
-- `gh auth status` succeeds
-- `codex` CLI is installed
-- the managed repository is already cloned locally
-- branch protection and CI are already configured on the managed repository
-- the repo is a trusted repo for autonomous execution
-- the GitHub authors who can supply issue bodies, review comments, and related execution text are trusted authors for that repo
+```bash
+cp supervisor.config.example.json supervisor.config.json
+node dist/index.js issue-lint 123 --config /path/to/supervisor.config.json
+node dist/index.js run-once --config /path/to/supervisor.config.json
+node dist/index.js loop --config /path/to/supervisor.config.json
+```
 
-Current execution posture: supervisor-managed Codex turns use `--dangerously-bypass-approvals-and-sandbox`. Approvals and sandboxing are therefore not the active safety boundary during an autonomous turn. The practical safety boundary is the operator's trust decision about the repo and the GitHub-authored text that becomes execution input.
+## Mental Model
 
-Pull-request hydration posture: fresh GitHub review facts are required before the supervisor takes PR actions such as marking ready, clearing review-driven blockers, or merging. Retained cached hydration data may still appear in diagnostics or operator-facing status output, but it is informational and non-authoritative. No configuration should treat cached pull-request hydration as authority for readiness, review-blocking, or merge decisions.
+Think of the config as four layers.
 
-State backend posture: a missing JSON state file is a normal empty bootstrap case, but corrupted JSON state is not a normal empty-state bootstrap case. When the JSON backend reports corrupted JSON state, treat it as a recovery event to inspect, acknowledge, or reset before relying on that state again. Until that explicit operator handling happens, corrupted JSON state is not a durable recovery point.
+### 1. Repository and workspace
 
-Workspace restore posture: when `ensureWorkspace()` reconstructs an issue workspace, it should prefer an existing local issue branch first, then an existing remote issue branch, and only then bootstrap a fresh issue branch from an authoritative fresh default-branch ref such as `origin/<defaultBranch>`. A missing local branch alone should not imply a fresh bootstrap when the remote issue branch still exists; bootstrapping from the default branch is the fallback only after both restore paths are unavailable.
+These fields tell the supervisor which repo it manages and where it may create per-issue worktrees.
 
-## Provider Profiles
-
-Each shipped profile only covers supervisor-side expectations. You still need the matching provider-side setup before the supervisor can observe a usable review signal.
-
-### Copilot profile
-
-- Supervisor-side: use `supervisor.config.copilot.json` or copy its `reviewBotLogins` entry into `supervisor.config.json`.
-- Provider-side: install and enable GitHub Copilot review for the repository or organization, and make sure your PR flow requests or auto-triggers Copilot review.
-- Verify: open a small test PR, mark it ready, and confirm GitHub shows review activity from `copilot-pull-request-reviewer`.
-
-### Codex Connector profile
-
-- Supervisor-side: use `supervisor.config.codex.json`, which tells the supervisor to watch for `chatgpt-codex-connector`.
-- Provider-side: connect the repository to Codex in ChatGPT/OpenAI and enable the review flow your Codex Connector setup requires.
-- Verify: trigger a PR that should receive Codex review and confirm the review arrives on the PR from `chatgpt-codex-connector`.
-
-### CodeRabbit profile
-
-- Supervisor-side: use `supervisor.config.coderabbit.json`, which tracks both `coderabbitai` and `coderabbitai[bot]`, waits up to 30 minutes after a CodeRabbit `Rate limit exceeded` warning before continuing, applies an initial startup grace period after required checks turn green, re-arms that same grace period when the latest earlier CodeRabbit signal was only a draft skip and the PR later becomes ready for review, then requires a fresh current-head CodeRabbit signal before merge progression resumes. The shipped profile blocks after a bounded 10-minute timeout instead of waiting indefinitely when CodeRabbit never produces a current-head signal.
-- Starter-profile note: the shipped CodeRabbit profile uses an intentionally non-loadable `repoSlug` placeholder so copying it without customization fails fast instead of silently targeting another repository.
-- Tuning: `configuredBotInitialGraceWaitSeconds` controls both the initial startup grace period and the draft-skip re-wait window. The default is `90`, and practical tuning can extend into the 60-120 second range. `configuredBotSettledWaitSeconds` controls the later post-activity quiet period. The default is `5`, which preserves current behavior after CodeRabbit begins reviewing the current head. `configuredBotRequireCurrentHeadSignal=true` turns on strict gating for current-head provider activity, and `configuredBotCurrentHeadSignalTimeoutMinutes` plus `configuredBotCurrentHeadSignalTimeoutAction` bound that wait so merges do not stall forever.
-- Provider-side: install CodeRabbit. Add `.coderabbit.yaml` only when you intentionally want repo-specific CodeRabbit behavior; it is not required just to make the supervisor wait through temporary rate limits.
-- Operator note: during the initial startup grace, `status` shows `configured_bot_initial_grace_wait status=active provider=coderabbit pause_reason=awaiting_initial_provider_activity recent_observation=required_checks_green ... configured_wait_seconds=90 wait_until=...`. That means required checks just turned green, CodeRabbit has not yet produced a current-head signal, and the supervisor is intentionally holding merge progression for the configured startup window.
-- Operator note: if the latest earlier CodeRabbit signal was only a draft skip and the PR later becomes ready for review, `status` can instead show `configured_bot_initial_grace_wait status=active provider=coderabbit pause_reason=awaiting_fresh_provider_review_after_draft_skip recent_observation=ready_for_review_reopened_wait ... configured_wait_seconds=90 wait_until=...`. That means the supervisor restarted the grace window from the ready-for-review transition because the earlier draft-state skip does not satisfy the ready-state review requirement.
-- Operator note: after that initial grace expires, if `configuredBotRequireCurrentHeadSignal=true` and CodeRabbit still has not produced a current-head signal, `status` can show `configured_bot_current_head_signal_wait status=active provider=coderabbit pause_reason=awaiting_current_head_signal_after_required_checks recent_observation=required_checks_green ... configured_wait_minutes=10 wait_until=...`. That means merge progression is strictly gated on a current-head CodeRabbit signal, but the gate remains bounded by the configured timeout instead of waiting forever.
-- Operator note: after CodeRabbit does produce a current-head signal, `status` can switch to `configured_bot_settled_wait status=active provider=coderabbit pause_reason=recent_current_head_observation recent_observation=current_head_activity ... configured_wait_seconds=5 wait_until=...`. That later settled wait is distinct from the startup grace: it is a short post-activity quiet period before merge progression resumes.
-- Verify: open a PR and confirm CodeRabbit posts review activity under one of the configured bot identities.
-
-Only treat a profile as working after the provider produces a usable PR review signal that the supervisor can observe and react to.
-
-## Key Config Areas
-
-Repository and workspace:
-
-- `repoPath`, `repoSlug`, `workspaceRoot`
-- `stateBackend`, `stateFile`, `stateBootstrapFile`
+- `repoPath`
+- `repoSlug`
+- `defaultBranch`
+- `workspaceRoot`
 - `branchPrefix`
-- issue-workspace restore precedence: local branch, then remote branch, then fallback bootstrap from an authoritative fresh default-branch ref such as `origin/<defaultBranch>`
 
-Operator diagnostics for state:
+### 2. Runtime and state
 
-- `node dist/index.js status --config /path/to/supervisor.config.json` reports the current tracked issue/PR view, but it should not be read as permission to trust corrupted state implicitly.
-- `node dist/index.js doctor --config /path/to/supervisor.config.json` is the primary check when you need to distinguish missing JSON state from corrupted JSON state and confirm whether operator recovery is required.
+These fields control how the supervisor stores durable state and how long autonomous turns may run.
 
-Codex execution policy:
-
+- `stateBackend`
+- `stateFile`
+- `stateBootstrapFile`
 - `codexBinary`
-- `trustMode`, `executionSafetyMode`
-- `codexModelStrategy`, `codexModel`
-- `boundedRepairModelStrategy`, `boundedRepairModel`
-- `codexReasoningEffortByState`
-- `codexReasoningEscalateOnRepeatedFailure`
 - `codexExecTimeoutMinutes`
 
-Durable memory and planning:
+### 3. Scheduler and retry policy
+
+These fields decide which issue is runnable, how long the supervisor keeps retrying, and when it should stop.
+
+- `issueLabel`
+- `skipTitlePrefixes`
+- `candidateDiscoveryFetchWindow`
+- `maxImplementationAttemptsPerIssue`
+- `maxRepairAttemptsPerIssue`
+- `maxCodexAttemptsPerIssue`
+- `timeoutRetryLimit`
+- `blockedVerificationRetryLimit`
+- `sameBlockerRepeatLimit`
+- `sameFailureSignatureRepeatLimit`
+
+### 4. PR, review, and merge gates
+
+These fields control how the supervisor waits on CI, review bots, human review, and local review.
+
+- `reviewBotLogins`
+- `humanReviewBlocksMerge`
+- `copilotReviewWaitMinutes`
+- `configuredBotRateLimitWaitMinutes`
+- `configuredBotInitialGraceWaitSeconds`
+- `configuredBotSettledWaitSeconds`
+- `configuredBotRequireCurrentHeadSignal`
+- `configuredBotCurrentHeadSignalTimeoutMinutes`
+- `configuredBotCurrentHeadSignalTimeoutAction`
+- `localReviewEnabled`
+- `localReviewPolicy`
+- `trackedPrCurrentHeadLocalReviewRequired`
+- `localReviewFollowUpIssueCreationEnabled`
+- `localReviewHighSeverityAction`
+- `localReviewArtifactDir`
+
+If you keep these four layers in mind, the file becomes much easier to read.
+
+## Edit These First
+
+For a first run, most people only need to touch the fields below.
+
+| Field | What to put here | Why it matters |
+| --- | --- | --- |
+| `repoPath` | local filesystem path to the managed repo | tells the supervisor where git operations happen |
+| `repoSlug` | GitHub `owner/repo` | used for GitHub issue and PR operations |
+| `defaultBranch` | usually `main` | used for worktree restore and fresh branch bootstrap |
+| `workspaceRoot` | directory for per-issue worktrees | keeps issue work isolated |
+| `stateFile` | path to the supervisor state JSON | keeps durable progress between runs |
+| `codexBinary` | usually `codex` | the CLI used for autonomous turns |
+| `reviewBotLogins` | provider-specific bot identities | tells the supervisor which review activity to trust |
+
+Everything else is usually tuning, not bootstrapping.
+
+## Minimum Working Example
+
+This is the smallest mental checklist for a beginner.
+
+```json
+{
+  "repoPath": "/absolute/path/to/managed-repo",
+  "repoSlug": "owner/repo",
+  "defaultBranch": "main",
+  "workspaceRoot": "/absolute/path/to/worktrees",
+  "stateBackend": "json",
+  "stateFile": "/absolute/path/to/state.json",
+  "codexBinary": "codex",
+  "issueLabel": "codex",
+  "reviewBotLogins": ["coderabbitai", "coderabbitai[bot]"]
+}
+```
+
+If your config loads, `gh auth status` succeeds, and `run-once` chooses the right issue, you can tune the rest incrementally.
+
+## Choose a Provider Profile
+
+Each shipped profile only configures what the supervisor expects to observe. You still need the provider itself installed and working on the repo.
+
+### Copilot
+
+- Start from [supervisor.config.copilot.json](../supervisor.config.copilot.json)
+- Supervisor watches `copilot-pull-request-reviewer`
+- Best when your PR flow already requests or auto-triggers Copilot review
+
+### Codex Connector
+
+- Start from [supervisor.config.codex.json](../supervisor.config.codex.json)
+- Supervisor watches `chatgpt-codex-connector`
+- Best when the repo is already connected to Codex review
+
+### CodeRabbit
+
+- Start from [supervisor.config.coderabbit.json](../supervisor.config.coderabbit.json)
+- Supervisor watches both `coderabbitai` and `coderabbitai[bot]`
+- Good when you want bounded waiting for current-head CodeRabbit review signals
+
+Important note:
+
+- the shipped CodeRabbit profile intentionally uses `repoSlug: "REPLACE_ME"`
+- this is a fail-closed guardrail so you do not accidentally point the supervisor at the wrong repo
+
+## The Most Common Recipes
+
+These are the combinations most operators actually want.
+
+### I just want a safe baseline
+
+Use the shipped profile for your review provider and keep local review off.
+
+Recommended starting posture:
+
+- `localReviewEnabled: false`
+- `humanReviewBlocksMerge: true`
+- keep the provider wait defaults from the shipped profile
+
+This is the easiest mode to reason about.
+
+### I want local review, but conservative
+
+Use local review as a merge gate, not as an autonomous repair engine.
+
+Recommended posture:
+
+- `localReviewEnabled: true`
+- `localReviewAutoDetect: true`
+- `localReviewRoles: []`
+- `localReviewPolicy: "block_merge"`
+- `trackedPrCurrentHeadLocalReviewRequired: false`
+- `localReviewFollowUpIssueCreationEnabled: false`
+- `localReviewHighSeverityAction: "blocked"`
+
+This is the current recommended enabled baseline in the docs and shipped examples.
+
+### I want local review to rerun on the current tracked PR head
+
+Turn on the stricter freshness gate.
+
+- `trackedPrCurrentHeadLocalReviewRequired: true`
+
+Use this only when your repo really wants current-head local review freshness. It makes the loop stricter and can push work back into `local_review` or `waiting_ci` after the head changes.
+
+### I want the supervisor to auto-repair verifier-confirmed high-severity findings
+
+This is the opt-in switch:
+
+- `localReviewHighSeverityAction: "retry"`
+
+What it means:
+
+- current-head verifier-confirmed high-severity local-review findings can route into `local_review_fix`
+- repeated unchanged results are still bounded by retry protections
+- the safer shipped default remains `"blocked"`
+
+If you are evaluating whether a new enhancement is needed here, check this field first. A surprising amount of "why didn't it auto-repair?" behavior is simply the difference between `"blocked"` and `"retry"`.
+
+### I want local review findings to open follow-up issues automatically
+
+This is separate from merge gating and separate from repair retries.
+
+- `localReviewFollowUpIssueCreationEnabled: true`
+
+Keep this off unless you explicitly want issue creation noise. The current safe default is `false`.
+
+### I want repo-owned local CI to gate PR progression
+
+Configure a canonical repo-owned command rather than asking the supervisor to infer one.
+
+Typical examples:
+
+- `npm run verify:pre-pr`
+- `pnpm ci:local`
+- `cargo test`
+
+The repo owns the command contract. The supervisor should only execute the configured entrypoint and react to its exit code.
+
+## The Config Questions Most Beginners Ask
+
+### What is the difference between `repoPath` and `repoSlug`?
+
+- `repoPath` is the local checkout path
+- `repoSlug` is the GitHub `owner/repo`
+
+You need both.
+
+### Which config file is actually active?
+
+Whichever path you pass to `--config`.
+
+Example:
+
+```bash
+node dist/index.js status --config /path/to/supervisor.config.json
+```
+
+### Why did the CodeRabbit profile fail to load?
+
+Most likely because `repoSlug` is still `REPLACE_ME`.
+
+### Why is the loop blocked on local review instead of auto-fixing?
+
+Usually one of these:
+
+- `localReviewEnabled` is still `false`
+- `localReviewPolicy` is still conservative
+- `localReviewHighSeverityAction` is `"blocked"` instead of `"retry"`
+- there is a higher-priority blocker such as failing CI, manual review, or merge conflict
+
+### Why does a tracked PR go back to `local_review` or `waiting_ci`?
+
+Usually because the PR head changed and current-head freshness is being enforced, especially when `trackedPrCurrentHeadLocalReviewRequired: true`.
+
+## Important Operating Rules
+
+These are not "tuning" choices. They are part of the safety model.
+
+### Trust boundary
+
+GitHub-authored issue bodies, review comments, and similar GitHub text are execution inputs. The current runtime uses `--dangerously-bypass-approvals-and-sandbox`, so the practical safety boundary is whether the repo and its GitHub authors are trusted.
+
+### PR hydration authority
+
+Fresh GitHub PR facts are authoritative for review and merge decisions. Cached hydration can appear in diagnostics, but it is not the source of truth for readiness or merge safety.
+
+### JSON state recovery
+
+- missing JSON state is a normal empty bootstrap case
+- corrupted JSON state is not a normal bootstrap case
+- corrupted state should be treated as a recovery event until an operator inspects or resets it
+
+### Workspace restore order
+
+When `ensureWorkspace()` restores an issue workspace, the intended order is:
+
+1. existing local issue branch
+2. existing remote issue branch
+3. fresh bootstrap from `origin/<defaultBranch>`
+
+Fresh bootstrap is the fallback, not the default answer to every missing local branch.
+
+## Field Groups Reference
+
+This section is for browsing, not for first-time learning.
+
+### Repository and workspace
+
+- `repoPath`
+- `repoSlug`
+- `defaultBranch`
+- `workspaceRoot`
+- `branchPrefix`
+
+### State and runtime
+
+- `stateBackend`
+- `stateFile`
+- `stateBootstrapFile`
+- `codexBinary`
+- `codexExecTimeoutMinutes`
+
+Diagnostics that matter here:
+
+- `status` for current tracked state
+- `doctor` when you need to distinguish missing state from corrupted state
+
+### Codex execution policy
+
+- `trustMode`
+- `executionSafetyMode`
+- `codexModelStrategy`
+- `codexModel`
+- `boundedRepairModelStrategy`
+- `boundedRepairModel`
+- `codexReasoningEffortByState`
+- `codexReasoningEscalateOnRepeatedFailure`
+
+### Durable memory and planning
 
 - `sharedMemoryFiles`
-- `issueJournalRelativePath`, `issueJournalMaxChars`
-- `gsdEnabled`, `gsdAutoInstall`, `gsdInstallScope`, `gsdCodexConfigDir`, `gsdPlanningFiles`
+- `issueJournalRelativePath`
+- `issueJournalMaxChars`
+- `gsdEnabled`
+- `gsdAutoInstall`
+- `gsdInstallScope`
+- `gsdCodexConfigDir`
+- `gsdPlanningFiles`
 
-Issue selection and retry policy:
+### Issue selection and retry policy
 
-- `issueLabel`, `issueSearch`, `skipTitlePrefixes`
+- `issueLabel`
+- `issueSearch`
+- `skipTitlePrefixes`
 - `candidateDiscoveryFetchWindow`
-- `maxImplementationAttemptsPerIssue`, `maxRepairAttemptsPerIssue`, `maxCodexAttemptsPerIssue`
-- `timeoutRetryLimit`, `blockedVerificationRetryLimit`
-- `sameBlockerRepeatLimit`, `sameFailureSignatureRepeatLimit`
+- `maxImplementationAttemptsPerIssue`
+- `maxRepairAttemptsPerIssue`
+- `maxCodexAttemptsPerIssue`
+- `timeoutRetryLimit`
+- `blockedVerificationRetryLimit`
+- `sameBlockerRepeatLimit`
+- `sameFailureSignatureRepeatLimit`
 
-By default, `skipTitlePrefixes` contains `Epic:` so umbrella issues are not treated as runnable implementation work. Set it explicitly if you want a different policy.
+Default note:
 
-Review and merge policy:
+- `skipTitlePrefixes` includes `Epic:` by default so umbrella issues are not treated as runnable execution work
+
+### Review and merge policy
 
 - `reviewBotLogins`
 - `humanReviewBlocksMerge`
 - `mergeCriticalRecheckSeconds`
-- `copilotReviewWaitMinutes`, `copilotReviewTimeoutAction`
-- `configuredBotRateLimitWaitMinutes`, `configuredBotInitialGraceWaitSeconds`, `configuredBotSettledWaitSeconds`
-- `localReviewEnabled`, `localReviewAutoDetect`, `localReviewRoles`
-- `localReviewPolicy`, `trackedPrCurrentHeadLocalReviewRequired`, `localReviewFollowUpRepairEnabled`, `localReviewFollowUpIssueCreationEnabled`, `localReviewHighSeverityAction`
-- `localReviewArtifactDir`, `localReviewConfidenceThreshold`, `localReviewReviewerThresholds`
+- `copilotReviewWaitMinutes`
+- `copilotReviewTimeoutAction`
+- `configuredBotRateLimitWaitMinutes`
+- `configuredBotInitialGraceWaitSeconds`
+- `configuredBotSettledWaitSeconds`
+- `configuredBotRequireCurrentHeadSignal`
+- `configuredBotCurrentHeadSignalTimeoutMinutes`
+- `configuredBotCurrentHeadSignalTimeoutAction`
+- `localReviewEnabled`
+- `localReviewAutoDetect`
+- `localReviewRoles`
+- `localReviewPolicy`
+- `trackedPrCurrentHeadLocalReviewRequired`
+- `localReviewFollowUpRepairEnabled`
+- `localReviewFollowUpIssueCreationEnabled`
+- `localReviewHighSeverityAction`
+- `localReviewArtifactDir`
+- `localReviewConfidenceThreshold`
+- `localReviewReviewerThresholds`
 - `mergeMethod`
 
-Local-review default posture:
+Default local-review posture:
 
 - shipped starter profiles and default config loading keep `localReviewEnabled: false`
-- `localReviewFollowUpRepairEnabled: false` is the safe default: same-PR repair of `follow_up_eligible` local-review residuals stays off until an operator explicitly opts in
-- `localReviewFollowUpIssueCreationEnabled: false` is the safe default: follow-up issue creation stays advisory until an operator explicitly opts in
-- once an operator intentionally enables local review, the recommended baseline is `localReviewAutoDetect: true`, `localReviewRoles: []`, `localReviewPolicy: "block_merge"`, `trackedPrCurrentHeadLocalReviewRequired: false`, `localReviewFollowUpRepairEnabled: false`, `localReviewFollowUpIssueCreationEnabled: false`, and `localReviewHighSeverityAction: "blocked"`
-- `localReviewFollowUpRepairEnabled` and `localReviewFollowUpIssueCreationEnabled` are mutually exclusive: choose same-PR repair when you want the supervisor to keep residual follow-up work on the current PR, or issue creation when you want explicit GitHub follow-up issues instead
+- `localReviewFollowUpRepairEnabled: false` is the safe default, so same-PR repair of `follow_up_eligible` residual local-review work stays off until you opt in
+- `localReviewFollowUpIssueCreationEnabled: false` is the safe default, so follow-up issue creation stays advisory until you opt in
+- once you intentionally enable local review, the recommended baseline is `localReviewAutoDetect: true`, `localReviewRoles: []`, `localReviewPolicy: "block_merge"`, `trackedPrCurrentHeadLocalReviewRequired: false`, `localReviewFollowUpRepairEnabled: false`, `localReviewFollowUpIssueCreationEnabled: false`, and `localReviewHighSeverityAction: "blocked"`
+- `localReviewFollowUpRepairEnabled` and `localReviewFollowUpIssueCreationEnabled` are mutually exclusive
 - use `trackedPrCurrentHeadLocalReviewRequired: true` only when your workflow explicitly requires a fresh current-head local review before ready-for-review or merge can continue
 
-Repository-owned local CI policy:
-
-- when a repo exposes a canonical pre-PR entrypoint such as `ci:local` or `verify:pre-pr`, keep that command definition in the managed repo rather than in supervisor inference logic
-- the repo is the source of truth for the command contents; the supervisor should only run the configured entrypoint and observe its exit status
-- exit code `0` means the repo-declared local verification passed; any non-zero exit code means the repo-declared local verification failed
-- if no local CI contract is configured, preserve backward compatibility by not inventing one from workflow YAML or changed-file heuristics
-- `No repo-owned local CI contract is configured.` means no canonical repo-owned local gate is active.
-- `Repo-owned local CI candidate exists but localCiCommand is unset.` means setup/readiness found a repo script candidate. The source is `repo script candidate`. codex-supervisor will not run it until localCiCommand is configured. This warning is advisory only.
-- `Repo-owned local CI contract is configured.` means the configured command is active and fail-closed. When configured local CI fails, PR publication stays blocked until the command passes again.
-
-`localCiCommand` execution modes:
-
-- structured mode: configure an explicit executable plus argument list. This is the preferred mode because the supervisor runs the declared program directly without shell expansion.
-- explicit shell mode: configure a shell command intentionally when you really need shell grammar such as pipes or compound commands. Treat this as the high-risk escape hatch.
-- legacy shell-string mode: older string configs still work for backward compatibility, but they run through the shell and should be migrated to structured mode when practical.
-
-Operator rule of thumb:
-
-- prefer structured mode for repo-owned commands such as `npm`, `pnpm`, `cargo`, or `make`
-- use explicit shell mode only when the repo contract truly depends on shell syntax
-- if a configured local CI gate fails, inspect whether the failure came from the repo-owned command itself or from missing workspace toolchain prerequisites before changing the issue body
-
-Workspace cleanup:
+### Workspace cleanup
 
 - `maxDoneWorkspaces`
 - `cleanupDoneWorkspacesAfterHours`
 - `cleanupOrphanedWorkspacesAfterHours`
 
-`maxDoneWorkspaces` and `cleanupDoneWorkspacesAfterHours` apply only to tracked done workspaces. `cleanupOrphanedWorkspacesAfterHours` does not enable background orphan cleanup; it defines the age gate used when `doctor` reports orphan prune candidates and when the operator runs `prune-orphaned-workspaces`. An orphaned workspace is an untracked canonical issue workspace that no longer has a live state entry. The explicit `prune-orphaned-workspaces` path only preserves candidates whose eligibility is `locked`, `recent`, or `unsafe_target`; there is no separate manual-keep marker outside those states. The default orphan grace period is 24 hours, so `cleanupOrphanedWorkspacesAfterHours` keeps recently touched orphan workspaces in the `recent` state until that window expires. When you need to verify the live effective policy, run `doctor` and inspect `doctor_orphan_policy mode=explicit_only background_prune=false operator_prune=true grace_hours=... preserved=locked,recent,unsafe_target`.
+Important distinction:
 
-Setup config backup posture:
+- `maxDoneWorkspaces` and `cleanupDoneWorkspacesAfterHours` apply to tracked done workspaces
+- `cleanupOrphanedWorkspacesAfterHours` is an age gate for explicit orphan pruning, not a background cleanup toggle
 
-- setup writes now keep a rotating local backup chain instead of overwriting a single `.bak` forever
-- the newest backup still lives at `<configPath>.bak`, and older snapshots rotate to numbered siblings such as `<configPath>.bak.1`
-- treat those backups as local operator rollback aids, not as a substitute for version control or host backups
-- if you automate config edits outside the setup flow, preserve the same expectation that backups are bounded and local rather than an infinite history log
+### Repo-owned local CI contract
+
+Use a repo-owned command when the repo has a canonical pre-PR gate.
+
+Execution modes:
+
+- structured mode: preferred
+- explicit shell mode: high-risk escape hatch
+- legacy shell string: supported for compatibility, but migrate when practical
+
+Operational notes:
+
+- when a repo exposes a canonical pre-PR entrypoint such as `ci:local` or `verify:pre-pr`, keep that command definition in the managed repo rather than in supervisor inference logic
+- the repo is the source of truth for the command contents, and the supervisor should only run the configured entrypoint and observe its exit status
+- `No repo-owned local CI contract is configured.` means no canonical repo-owned local gate is active
+- `Repo-owned local CI candidate exists but localCiCommand is unset.` means setup or readiness found a repo script candidate, but the supervisor will not run it until you configure `localCiCommand`
+- `Repo-owned local CI contract is configured.` means the configured command is active and fail-closed, so PR publication stays blocked until the command passes again
+
+Operator rule:
+
+- keep the command defined in the managed repo
+- let the supervisor execute it
+- do not ask the supervisor to infer CI behavior from workflow YAML
+
+## Provider-Specific Notes
+
+### CodeRabbit waits
+
+The CodeRabbit profile has more moving parts than the others.
+
+What it does:
+
+- waits through temporary rate limits
+- holds a short startup grace window after required checks turn green
+- re-arms that grace window when draft-skip behavior means the ready-state review has not really happened yet
+- can require a fresh current-head review signal before merge progression resumes
+- uses a bounded timeout instead of waiting forever
+
+This is why the CodeRabbit profile feels more complex than the Copilot or Codex Connector profiles.
+
+### Local review posture
+
+The shipped docs and configs intentionally recommend:
+
+- `localReviewEnabled: false` by default
+- `localReviewHighSeverityAction: "blocked"` as the safer enabled baseline
+
+That posture is deliberate. If you switch to `"retry"`, you are choosing a more autonomous correction loop.
+
+## Model and Reasoning Guidance
+
+Recommended default:
+
+- set your Codex default model to `GPT-5.4`
+- use `codexModelStrategy: "inherit"`
+- tune cost and depth through `codexReasoningEffortByState`
+
+Practical rule of thumb:
+
+- use `inherit` unless you have a strong reason not to
+- leave `boundedRepairModelStrategy` unset unless you intentionally want smaller models for repair turns
+- reserve `xhigh` for escalation paths rather than using it everywhere
 
 ## Operator Dashboard
 
-The local WebUI uses the same supervisor config and `SupervisorService` boundary as the CLI.
-
-Start it with:
+The WebUI uses the same config and the same `SupervisorService` boundary as the CLI.
 
 ```bash
 node dist/index.js web --config /path/to/supervisor.config.json
 ```
-
-The current dashboard is local-only and reads typed JSON endpoints plus the live SSE stream. It does not read the state file directly, and it does not call `gh` or `codex` from the browser.
 
 Current safe command surface:
 
@@ -176,27 +486,12 @@ Current safe command surface:
 - `prune-orphaned-workspaces`
 - `reset-corrupt-json-state`
 
-Use the dashboard when you want the same operator state through a browser view, not a different execution model.
-
-## Model and Reasoning Guidance
-
-Recommended default:
-
-- set your Codex CLI or app default model to `GPT-5.4`
-- use `codexModelStrategy: "inherit"` so the supervisor follows that default
-- tune cost and effort through per-state reasoning instead of constant model switching
-
-Practical guidance:
-
-- `inherit` keeps the supervisor aligned with your Codex default
-- `fixed` pins one model explicitly
-- `alias` uses a moving alias when your Codex environment exposes one
-- leave `boundedRepairModelStrategy` unset unless you explicitly want `repairing_ci` and `addressing_review` turns to route to a smaller model such as `GPT-5.4 mini`
-- keep `xhigh` reserved for escalation paths rather than the default policy
+Use the dashboard when you want a browser view of the same supervisor state, not a separate execution model.
 
 ## Related Docs
 
 - [Getting started](./getting-started.md)
+- [Local review](./local-review.md)
 - [Operator dashboard](./operator-dashboard.md)
 - [Architecture](./architecture.md)
 - [Issue metadata](./issue-metadata.md)

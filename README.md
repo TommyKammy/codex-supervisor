@@ -7,6 +7,8 @@ Keep Codex moving through execution-ready GitHub issues without babysitting ever
 Japanese overview: [docs/README.ja.md](./docs/README.ja.md)  
 Japanese getting started: [docs/getting-started.ja.md](./docs/getting-started.ja.md)
 
+If you read only one document before editing `supervisor.config.json`, read the [Configuration guide](./docs/configuration.md). It is the main operator reference for provider profiles, required fields, and safe defaults.
+
 ## The Problem
 
 Codex CLI is powerful, but long-running execution often breaks at the edges:
@@ -41,6 +43,7 @@ flowchart LR
 GitHub-authored issue bodies, PR review comments, and related GitHub text are execution inputs, not trusted instructions by default. Treat that GitHub-authored text as part of the supervisor trust boundary and use the autonomous loop only in repos where the operator trusts both the repository and the GitHub authors who can supply that text.
 
 If you want the setup flow, first-run commands, and operator decisions, start with [Getting started](./docs/getting-started.md).
+If you need to understand what to put in `supervisor.config.json`, jump straight to the [Configuration guide](./docs/configuration.md).
 If you are an AI agent entering the repo, start with the [AI agent handoff](./docs/agent-instructions.md) before reading the detailed references.
 If you need the narrower freshness and durability contracts, use [Architecture](./docs/architecture.md) and [Configuration reference](./docs/configuration.md) instead of treating this README as the full runtime spec.
 
@@ -56,6 +59,8 @@ If you need the narrower freshness and durability contracts, use [Architecture](
 ## Quick Start
 
 Prerequisites: Node.js 18+, `gh auth status`, and `codex` CLI available from your shell.
+
+Before the first run, keep the [Configuration guide](./docs/configuration.md) open in another tab. It explains which fields you actually need to edit, which provider profile to start from, and which defaults are safest for a new repo.
 
 1. Install dependencies and build the CLI.
 
@@ -76,7 +81,7 @@ Prerequisites: Node.js 18+, `gh auth status`, and `codex` CLI available from you
    - [supervisor.config.codex.json](./supervisor.config.codex.json)
    - [supervisor.config.coderabbit.json](./supervisor.config.coderabbit.json)
 
-4. Edit `supervisor.config.json` and set `repoPath`, `repoSlug`, `workspaceRoot`, `codexBinary`, and any review-provider-specific values you want to keep before the first run. The shipped CodeRabbit profile intentionally uses a non-loadable `repoSlug` placeholder so you must replace it for your repo.
+4. Edit `supervisor.config.json` and set `repoPath`, `repoSlug`, `workspaceRoot`, `codexBinary`, and any review-provider-specific values you want to keep before the first run. Use the [Configuration guide](./docs/configuration.md) as the source of truth while you edit. The shipped CodeRabbit profile intentionally uses a non-loadable `repoSlug` placeholder so you must replace it for your repo.
 
 5. Run a single pass first, then switch to the loop when the config looks right.
 
@@ -214,6 +219,7 @@ Each profile is a starting point. Copy the review provider profile you want, the
 
 ## Docs Map
 
+- [Configuration guide](./docs/configuration.md): the most important doc for operators; start here for required fields, provider profiles, safe defaults, and common setup recipes
 - [AI agent handoff](./docs/agent-instructions.md): bootstrap read order, first-run checks, and escalation rules for repo-entering AI agents
 - [Getting started](./docs/getting-started.md): setup checklist, execution-ready issue flow, first-run commands, and common operator decisions
 - [Configuration reference](./docs/configuration.md): config setup, provider profiles, model/reasoning controls, durable memory, and execution policy
