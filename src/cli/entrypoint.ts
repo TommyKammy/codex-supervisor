@@ -14,10 +14,12 @@ import {
   handleReplayCorpusPromoteCommand,
 } from "./replay-corpus-command";
 import { isSupervisorRuntimeCommand, runSupervisorCommand } from "./supervisor-runtime";
+import { assertRuntimeFreshness } from "../build-freshness";
 
 type SupervisorRuntimeOptions = Pick<CliOptions, "command" | "dryRun" | "why" | "issueNumber">;
 
 export interface CliEntrypointDependencies {
+  assertRuntimeFreshness?: () => Promise<void>;
   parseArgs?: (argv: string[]) => CliOptions;
   handleReplayCommand?: (options: Pick<CliOptions, "configPath" | "snapshotPath">) => Promise<string>;
   createCliIo?: () => CliIo;
@@ -55,6 +57,7 @@ export async function runCli(
   argv: string[],
   dependencies: CliEntrypointDependencies = {},
 ): Promise<void> {
+  const runtimeFreshnessGuard = dependencies.assertRuntimeFreshness ?? assertRuntimeFreshness;
   const parseCliArgs = dependencies.parseArgs ?? parseArgs;
   const replayCommandHandler = dependencies.handleReplayCommand ?? handleReplayCommand;
   const createCliIo = dependencies.createCliIo ?? createProcessCliIo;
@@ -69,6 +72,7 @@ export async function runCli(
   const supervisorCommandRunner = dependencies.runSupervisorCommand ?? runSupervisorCommand;
   const writeStdout = dependencies.writeStdout ?? ((line: string) => console.log(line));
 
+  await runtimeFreshnessGuard();
   const options = parseCliArgs(argv);
   if (options.command === "replay") {
     writeStdout(await replayCommandHandler(options));

@@ -37,6 +37,23 @@ function resolveModule(modulePath: string, repoRoot: string): string {
   return result.stdout.trim();
 }
 
+function runDistCli(repoRoot: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+  const result = spawnSync(process.execPath, ["dist/index.js", ...args], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      NODE_NO_WARNINGS: "1",
+    },
+  });
+
+  return {
+    status: result.status,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
+}
+
 test("npm run build removes stale root-level dist artifacts that can shadow family directories", { concurrency: false }, async (t) => {
   const repoRoot = path.join(__dirname, "..");
   const distDir = path.join(repoRoot, "dist");
@@ -72,4 +89,58 @@ test("npm run build removes stale root-level dist artifacts that can shadow fami
 
   await assert.rejects(fs.access(path.join(distDir, "codex.js")));
   assert.equal(resolveModule(path.join(distDir, "codex"), repoRoot), path.join(distDir, "codex", "index.js"));
+});
+
+test("npm run build writes dist freshness metadata that keeps the compiled entrypoint runnable", { concurrency: false }, () => {
+  const repoRoot = path.join(__dirname, "..");
+
+  runBuild(repoRoot);
+
+  const manifestResult = spawnSync(
+    process.execPath,
+    ["-p", "JSON.stringify(require('./dist/build-manifest.json'))"],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+    },
+  );
+  assert.equal(
+    manifestResult.status,
+    0,
+    `build manifest read failed\nstdout:\n${manifestResult.stdout}\nstderr:\n${manifestResult.stderr}`,
+  );
+  assert.match(manifestResult.stdout, /"schemaVersion":1/u);
+  assert.match(manifestResult.stdout, /"sourceDigest":"[a-f0-9]{64}"/u);
+
+  const result = runDistCli(repoRoot, ["replay-corpus"]);
+  assert.equal(
+    result.status,
+    0,
+    `node dist/index.js replay-corpus failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+  );
+  assert.match(result.stdout, /^Replay corpus summary: total=\d+ passed=\d+ failed=0$/m);
+});
+
+test("compiled entrypoint fails closed when dist freshness metadata is stale", { concurrency: false }, async (t) => {
+  const repoRoot = path.join(__dirname, "..");
+  const manifestPath = path.join(repoRoot, "dist", "build-manifest.json");
+
+  runBuild(repoRoot);
+  const originalManifest = await fs.readFile(manifestPath, "utf8");
+
+  t.after(async () => {
+    await fs.writeFile(manifestPath, originalManifest, "utf8");
+  });
+
+  const staleManifest = JSON.stringify({
+    schemaVersion: 1,
+    builtAt: "2026-04-07T00:00:00.000Z",
+    sourceDigest: "0".repeat(64),
+  }, null, 2) + "\n";
+  await fs.writeFile(manifestPath, staleManifest, "utf8");
+
+  const result = runDistCli(repoRoot, ["replay-corpus"]);
+  assert.equal(result.status, 1, `expected stale compiled runtime to fail closed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  assert.match(result.stderr, /Stale compiled runtime detected:/u);
+  assert.match(result.stderr, /Run `npm run build`/u);
 });
