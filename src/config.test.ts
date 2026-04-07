@@ -927,6 +927,28 @@ test("shipped starter config profiles keep local review disabled until operators
   }
 });
 
+test("shipped example configs keep local-review follow-up issue creation opt-in", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  const examplePaths = [
+    path.join(rootDir, "supervisor.config.example.json"),
+    path.join(rootDir, "supervisor.config.copilot.json"),
+    path.join(rootDir, "supervisor.config.codex.json"),
+    path.join(rootDir, "supervisor.config.coderabbit.json"),
+    path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
+  ];
+
+  for (const examplePath of examplePaths) {
+    const raw = JSON.parse(await fs.readFile(examplePath, "utf8")) as {
+      localReviewFollowUpIssueCreationEnabled?: unknown;
+    };
+    assert.equal(
+      raw.localReviewFollowUpIssueCreationEnabled,
+      false,
+      `${path.relative(rootDir, examplePath)} should keep local-review follow-up issue creation opt-in`,
+    );
+  }
+});
+
 test("shipped example configs recommend blocked for high-severity local review findings", async () => {
   const rootDir = path.resolve(__dirname, "..");
   const examplePaths = [

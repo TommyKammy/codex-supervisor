@@ -107,14 +107,15 @@ Review and merge policy:
 - `copilotReviewWaitMinutes`, `copilotReviewTimeoutAction`
 - `configuredBotRateLimitWaitMinutes`, `configuredBotInitialGraceWaitSeconds`, `configuredBotSettledWaitSeconds`
 - `localReviewEnabled`, `localReviewAutoDetect`, `localReviewRoles`
-- `localReviewPolicy`, `trackedPrCurrentHeadLocalReviewRequired`, `localReviewHighSeverityAction`
+- `localReviewPolicy`, `trackedPrCurrentHeadLocalReviewRequired`, `localReviewFollowUpIssueCreationEnabled`, `localReviewHighSeverityAction`
 - `localReviewArtifactDir`, `localReviewConfidenceThreshold`, `localReviewReviewerThresholds`
 - `mergeMethod`
 
 Local-review default posture:
 
 - shipped starter profiles and default config loading keep `localReviewEnabled: false`
-- once an operator intentionally enables local review, the recommended baseline is `localReviewAutoDetect: true`, `localReviewRoles: []`, `localReviewPolicy: "block_merge"`, `trackedPrCurrentHeadLocalReviewRequired: false`, and `localReviewHighSeverityAction: "blocked"`
+- `localReviewFollowUpIssueCreationEnabled: false` is the safe default: follow-up issue creation stays advisory until an operator explicitly opts in
+- once an operator intentionally enables local review, the recommended baseline is `localReviewAutoDetect: true`, `localReviewRoles: []`, `localReviewPolicy: "block_merge"`, `trackedPrCurrentHeadLocalReviewRequired: false`, `localReviewFollowUpIssueCreationEnabled: false`, and `localReviewHighSeverityAction: "blocked"`
 - use `trackedPrCurrentHeadLocalReviewRequired: true` only when your workflow explicitly requires a fresh current-head local review before ready-for-review or merge can continue
 
 Repository-owned local CI policy:

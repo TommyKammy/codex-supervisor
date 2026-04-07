@@ -55,6 +55,7 @@
     }
   },
   "localReviewPolicy": "block_merge",
+  "localReviewFollowUpIssueCreationEnabled": false,
   "localReviewHighSeverityAction": "blocked",
   "reviewBotLogins": [
     "coderabbitai",
