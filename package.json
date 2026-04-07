@@ -7,6 +7,7 @@
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "prebuild": "npm run clean",
     "build": "tsc -p tsconfig.json",
+    "postbuild": "node dist/build-freshness.js",
     "guardrails:check": "tsx src/committed-guardrails-cli.ts check",
     "guardrails:fix": "tsx src/committed-guardrails-cli.ts fix",
     "verify:paths": "tsx scripts/check-workstation-local-paths.ts",

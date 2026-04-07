@@ -21,6 +21,31 @@ test("runCli routes replay commands through the replay handler and stdout bounda
   assert.deepEqual(stdout, ["replay output"]);
 });
 
+test("runCli fails closed on a stale compiled runtime before constructing supervisor services", async () => {
+  let createdSupervisorService = false;
+  let createdLoopController = false;
+
+  await assert.rejects(
+    runCli(["status"], {
+      assertRuntimeFreshness: async () => {
+        throw new Error("Stale compiled runtime detected: run `npm run build`.");
+      },
+      createSupervisorService: () => {
+        createdSupervisorService = true;
+        throw new Error("unexpected createSupervisorService");
+      },
+      createSupervisorLoopController: () => {
+        createdLoopController = true;
+        throw new Error("unexpected createSupervisorLoopController");
+      },
+    }),
+    /Stale compiled runtime detected/u,
+  );
+
+  assert.equal(createdSupervisorService, false);
+  assert.equal(createdLoopController, false);
+});
+
 test("runCli routes replay-corpus commands through the CLI IO handler boundary", async () => {
   const stdout: string[] = [];
   const stderr: string[] = [];
